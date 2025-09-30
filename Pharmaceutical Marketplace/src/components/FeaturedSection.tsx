@@ -1,7 +1,7 @@
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { ImageWithFallback } from './figma/ImageWithFallback';
+import { ImageWithFallback } from './ImageWithFallback';
 import { ArrowRight, Zap } from 'lucide-react';
 import { Product } from './ProductCard';
 
@@ -57,11 +57,11 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                   
                   <div className="flex items-center gap-3 mb-4">
                     <span className="text-green-600 font-bold text-lg">
-                      ${mainFeatured.price}
+                      ${mainFeatured.price.toFixed(2)}
                     </span>
                     {mainFeatured.originalPrice && (
                       <span className="text-gray-500 line-through">
-                        ${mainFeatured.originalPrice}
+                        ${mainFeatured.originalPrice.toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -99,10 +99,10 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                     </Badge>
                     <h4 className="line-clamp-1 text-sm mb-1">{product.name}</h4>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-green-600">${product.price}</span>
+                      <span className="text-sm font-bold text-green-600">${product.price.toFixed(2)}</span>
                       {product.originalPrice && (
                         <span className="text-xs text-gray-500 line-through">
-                          ${product.originalPrice}
+                          ${product.originalPrice.toFixed(2)}
                         </span>
                       )}
                     </div>

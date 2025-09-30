@@ -1,0 +1,26 @@
+[
+  {
+    "id": "1759206127279",
+    "name": "Prof. Patrick Star",
+    "email": "diggleda@icloud.com",
+    "password": "$2b$10$0wflQEWwgeWytqSYO..vK.HLB7zy53Y8Aoes95JKCltHa9Vtl.nmW",
+    "referralCode": "RZB7OB",
+    "referralCredits": 0,
+    "totalReferrals": 0,
+    "visits": 3,
+    "createdAt": "2025-09-30T04:22:07.279Z",
+    "lastLoginAt": "2025-09-30T05:03:55.587Z"
+  },
+  {
+    "id": "1759208352967",
+    "name": "Dr. Peter Gibbons",
+    "email": "diggledadiggz@gmail.com",
+    "password": "$2b$10$mPfbCUK/3PQfp6xAAq1l3egA87ejA/lwx6I12rdP9OjksjHv0JNMC",
+    "referralCode": "EUE8S3",
+    "referralCredits": 0,
+    "totalReferrals": 0,
+    "visits": 2,
+    "createdAt": "2025-09-30T04:59:12.967Z",
+    "lastLoginAt": "2025-09-30T05:03:40.492Z"
+  }
+]

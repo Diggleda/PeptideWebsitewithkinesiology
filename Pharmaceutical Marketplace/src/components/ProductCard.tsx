@@ -1,8 +1,8 @@
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
-import { ImageWithFallback } from './figma/ImageWithFallback';
-import { ShoppingCart, Star } from 'lucide-react';
+import { ImageWithFallback } from './ImageWithFallback';
+import { ShoppingCart, Star, Info } from 'lucide-react';
 
 export interface Product {
   id: string;
@@ -17,22 +17,30 @@ export interface Product {
   prescription: boolean;
   dosage: string;
   manufacturer: string;
+  type?: string;
+  description?: string;
+  benefits?: string;
+  protocol?: string;
 }
 
 interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string) => void;
+  onViewDetails: (product: Product) => void;
 }
 
-export function ProductCard({ product, onAddToCart }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onViewDetails }: ProductCardProps) {
   const discount = product.originalPrice 
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
 
   return (
-    <Card className="group overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-      <CardContent className="p-0">
-        <div className="relative aspect-square overflow-hidden">
+    <Card className="group flex h-full flex-col overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+      <CardContent className="flex-1 p-0">
+        <div
+          className="relative aspect-square overflow-hidden cursor-pointer"
+          onClick={() => onViewDetails(product)}
+        >
           <ImageWithFallback
             src={product.image}
             alt={product.name}
@@ -54,8 +62,7 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
             </div>
           )}
         </div>
-        
-        <div className="p-4 space-y-3">
+        <div className="flex h-full flex-col p-4">
           <div className="space-y-1">
             <Badge variant="outline" className="text-xs squircle-sm">{product.category}</Badge>
             <h3 className="line-clamp-2 group-hover:text-blue-600 transition-colors">
@@ -81,26 +88,40 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
             <span className="text-sm text-gray-600">({product.reviews})</span>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="mt-auto flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-green-600">${product.price}</span>
-              {product.originalPrice && (
-                <span className="text-sm text-gray-500 line-through">${product.originalPrice}</span>
+              {product.price > 0 ? (
+                <span className="font-bold text-green-600">${product.price.toFixed(2)}</span>
+              ) : (
+                <span className="text-sm font-medium text-green-600">Request Pricing</span>
+              )}
+              {product.price > 0 && product.originalPrice && (
+                <span className="text-sm text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
               )}
             </div>
           </div>
         </div>
       </CardContent>
       
-      <CardFooter className="p-4 pt-0">
-        <Button 
-          onClick={() => onAddToCart(product.id)}
-          disabled={!product.inStock}
-          className="w-full bg-primary hover:bg-primary/90 squircle-sm"
-        >
-          <ShoppingCart className="w-4 h-4 mr-2" />
-          {product.inStock ? 'Add to Cart' : 'Out of Stock'}
-        </Button>
+      <CardFooter className="mt-auto w-full p-4 pt-0">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            onClick={() => onViewDetails(product)}
+            className="glass squircle-sm"
+          >
+            <Info className="w-4 h-4 mr-2" />
+            Details
+          </Button>
+          <Button 
+            onClick={() => onAddToCart(product.id)}
+            disabled={!product.inStock}
+            className="w-full bg-primary hover:bg-primary/90 squircle-sm"
+          >
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            {product.inStock ? 'Add to Cart' : 'Out of Stock'}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );

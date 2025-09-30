@@ -2,54 +2,52 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Checkbox } from './ui/checkbox';
-import { Slider } from './ui/slider';
 import { Label } from './ui/label';
 import { Filter } from 'lucide-react';
 
 interface FilterState {
   categories: string[];
-  priceRange: [number, number];
+  types: string[];
   inStockOnly: boolean;
   prescriptionOnly: boolean;
-  rating: number;
 }
 
 interface CategoryFilterProps {
   categories: string[];
+  types: string[];
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
   productCounts: Record<string, number>;
+  typeCounts: Record<string, number>;
 }
 
-export function CategoryFilter({ categories, filters, onFiltersChange, productCounts }: CategoryFilterProps) {
-  const handleCategoryToggle = (category: string) => {
-    const newCategories = filters.categories.includes(category)
-      ? filters.categories.filter(c => c !== category)
-      : [...filters.categories, category];
-    
-    onFiltersChange({ ...filters, categories: newCategories });
+export function CategoryFilter({ categories, types, filters, onFiltersChange, productCounts, typeCounts }: CategoryFilterProps) {
+  const toggleCategory = (category: string) => {
+    const categoriesSet = new Set(filters.categories);
+    categoriesSet.has(category) ? categoriesSet.delete(category) : categoriesSet.add(category);
+    onFiltersChange({ ...filters, categories: Array.from(categoriesSet) });
   };
 
-  const handlePriceRangeChange = (value: number[]) => {
-    onFiltersChange({ ...filters, priceRange: [value[0], value[1]] });
+  const toggleType = (type: string) => {
+    const typesSet = new Set(filters.types);
+    typesSet.has(type) ? typesSet.delete(type) : typesSet.add(type);
+    onFiltersChange({ ...filters, types: Array.from(typesSet) });
   };
 
   const clearFilters = () => {
     onFiltersChange({
       categories: [],
-      priceRange: [0, 500],
+      types: [],
       inStockOnly: false,
-      prescriptionOnly: false,
-      rating: 0
+      prescriptionOnly: false
     });
   };
 
-  const activeFiltersCount = 
-    filters.categories.length + 
-    (filters.inStockOnly ? 1 : 0) + 
-    (filters.prescriptionOnly ? 1 : 0) + 
-    (filters.rating > 0 ? 1 : 0) +
-    (filters.priceRange[0] > 0 || filters.priceRange[1] < 500 ? 1 : 0);
+  const activeFiltersCount =
+    filters.categories.length +
+    filters.types.length +
+    (filters.inStockOnly ? 1 : 0) +
+    (filters.prescriptionOnly ? 1 : 0);
 
   return (
     <Card className="glass-card squircle-lg shadow-lg">
@@ -69,7 +67,7 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
           )}
         </CardTitle>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         {/* Categories */}
         <div className="space-y-3">
@@ -79,11 +77,11 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
               <div key={category} className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <Checkbox
-                    id={category}
+                    id={`category-${category}`}
                     checked={filters.categories.includes(category)}
-                    onCheckedChange={() => handleCategoryToggle(category)}
+                    onCheckedChange={() => toggleCategory(category)}
                   />
-                  <Label htmlFor={category} className="text-sm cursor-pointer">
+                  <Label htmlFor={`category-${category}`} className="text-sm cursor-pointer">
                     {category}
                   </Label>
                 </div>
@@ -95,35 +93,38 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
           </div>
         </div>
 
-        {/* Price Range */}
+        {/* Types */}
         <div className="space-y-3">
-          <Label>Price Range</Label>
-          <div className="px-2">
-            <Slider
-              value={filters.priceRange}
-              onValueChange={handlePriceRangeChange}
-              max={500}
-              min={0}
-              step={5}
-              className="w-full"
-            />
-            <div className="flex justify-between text-sm text-gray-600 mt-2">
-              <span>${filters.priceRange[0]}</span>
-              <span>${filters.priceRange[1]}</span>
-            </div>
+          <Label>Type</Label>
+          <div className="space-y-2">
+            {types.map((type) => (
+              <div key={type} className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`type-${type}`}
+                    checked={filters.types.includes(type)}
+                    onCheckedChange={() => toggleType(type)}
+                  />
+                  <Label htmlFor={`type-${type}`} className="text-sm cursor-pointer">
+                    {type}
+                  </Label>
+                </div>
+                <Badge variant="outline" className="text-xs squircle-sm">
+                  {typeCounts[type] || 0}
+                </Badge>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Stock Status */}
+        {/* Availability */}
         <div className="space-y-3">
           <Label>Availability</Label>
           <div className="flex items-center space-x-2">
             <Checkbox
               id="inStock"
               checked={filters.inStockOnly}
-              onCheckedChange={(checked) => 
-                onFiltersChange({ ...filters, inStockOnly: !!checked })
-              }
+              onCheckedChange={(checked) => onFiltersChange({ ...filters, inStockOnly: !!checked })}
             />
             <Label htmlFor="inStock" className="text-sm cursor-pointer">
               In Stock Only
@@ -133,36 +134,16 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
 
         {/* Prescription */}
         <div className="space-y-3">
-          <Label>Type</Label>
+          <Label>Prescription</Label>
           <div className="flex items-center space-x-2">
             <Checkbox
               id="prescription"
               checked={filters.prescriptionOnly}
-              onCheckedChange={(checked) => 
-                onFiltersChange({ ...filters, prescriptionOnly: !!checked })
-              }
+              onCheckedChange={(checked) => onFiltersChange({ ...filters, prescriptionOnly: !!checked })}
             />
             <Label htmlFor="prescription" className="text-sm cursor-pointer">
               Prescription Only
             </Label>
-          </div>
-        </div>
-
-        {/* Rating */}
-        <div className="space-y-3">
-          <Label>Minimum Rating</Label>
-          <div className="px-2">
-            <Slider
-              value={[filters.rating]}
-              onValueChange={(value) => onFiltersChange({ ...filters, rating: value[0] })}
-              max={5}
-              min={0}
-              step={0.5}
-              className="w-full"
-            />
-            <div className="text-sm text-gray-600 mt-2">
-              {filters.rating > 0 ? `${filters.rating}+ stars` : 'Any rating'}
-            </div>
           </div>
         </div>
       </CardContent>

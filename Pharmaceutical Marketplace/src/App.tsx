@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
 import { ProductCard, Product } from './components/ProductCard';
@@ -8,25 +8,30 @@ import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { Grid, List, ShoppingCart } from 'lucide-react';
-import { mockProducts, categories, generateReferralCode } from './data/mockData';
+import { peptideProducts, peptideCategories, peptideTypes } from './data/peptideData';
+import { authAPI } from './services/api';
+import { ProductDetailDialog } from './components/ProductDetailDialog';
+import { AuthActionResult } from './types/auth';
 
 interface User {
   name: string;
   email: string;
   referralCode: string;
+  referralCredits?: number;
+  totalReferrals?: number;
 }
 
 interface CartItem {
   product: Product;
   quantity: number;
+  note?: string;
 }
 
 interface FilterState {
   categories: string[];
-  priceRange: [number, number];
+  types: string[];
   inStockOnly: boolean;
   prescriptionOnly: boolean;
-  rating: number;
 }
 
 export default function App() {
@@ -35,47 +40,139 @@ export default function App() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productDetailOpen, setProductDetailOpen] = useState(false);
+  const [loginPromptToken, setLoginPromptToken] = useState(0);
+  const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
+  const [loginContext, setLoginContext] = useState<'checkout' | null>(null);
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
-    priceRange: [0, 500],
+    types: [],
     inStockOnly: false,
-    prescriptionOnly: false,
-    rating: 0
+    prescriptionOnly: false
   });
 
-  // Mock login function
-  const handleLogin = (email: string, password: string) => {
-    const mockUser: User = {
-      name: 'Dr. Sarah Johnson',
-      email: email,
-      referralCode: generateReferralCode()
+  // Check if user is already logged in on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const currentUser = await authAPI.getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        // Not logged in or token expired
+      }
     };
-    setUser(mockUser);
-    toast.success(`Welcome back, ${mockUser.name}!`);
+    checkAuth();
+  }, []);
+
+  // Login function connected to backend
+  const handleLogin = async (email: string, password: string): Promise<AuthActionResult> => {
+    try {
+      const user = await authAPI.login(email, password);
+      setUser(user);
+      const isReturning = (user.visits ?? 1) > 1;
+      toast.success(`${isReturning ? 'Welcome back' : 'Welcome to Protixa'}, ${user.name}!`);
+      if (shouldReopenCheckout) {
+        setCheckoutOpen(true);
+        setShouldReopenCheckout(false);
+      }
+      setLoginContext(null);
+      return { status: 'success' };
+    } catch (error: any) {
+      const message = error.message || 'LOGIN_ERROR';
+
+      if (message === 'EMAIL_NOT_FOUND') {
+        return { status: 'email_not_found' };
+      }
+
+      if (message === 'INVALID_PASSWORD') {
+        return { status: 'invalid_password' };
+      }
+
+      if (message === 'Invalid credentials' || message === 'INVALID_CREDENTIALS') {
+        try {
+          const result = await authAPI.checkEmail(email);
+          return result.exists ? { status: 'invalid_password' } : { status: 'email_not_found' };
+        } catch (lookupError: any) {
+          return { status: 'email_not_found' };
+        }
+      }
+
+      if (message === 'EMAIL_REQUIRED') {
+        return { status: 'error', message };
+      }
+
+      return { status: 'error', message };
+    }
+  };
+
+  // Create account function connected to backend
+  const handleCreateAccount = async (details: {
+    name: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<AuthActionResult> => {
+    try {
+      if (details.password !== details.confirmPassword) {
+        toast.error('Passwords do not match');
+        return { status: 'error', message: 'PASSWORD_MISMATCH' };
+      }
+
+      const user = await authAPI.register(details.name, details.email, details.password);
+      setUser(user);
+      toast.success(`Welcome to Protixa, ${user.name}!`);
+      if (shouldReopenCheckout) {
+        setCheckoutOpen(true);
+        setShouldReopenCheckout(false);
+      }
+      setLoginContext(null);
+      return { status: 'success' };
+    } catch (error: any) {
+      const message = error.message || 'REGISTER_ERROR';
+      if (message === 'EMAIL_EXISTS') {
+        return { status: 'email_exists' };
+      }
+      if (message === 'User already exists') {
+        return { status: 'email_exists' };
+      }
+      return { status: 'error', message };
+    }
   };
 
   const handleLogout = () => {
+    authAPI.logout();
     setUser(null);
+    setLoginContext(null);
+    setShouldReopenCheckout(false);
     toast.success('Logged out successfully');
   };
 
-  const handleAddToCart = (productId: string) => {
-    const product = mockProducts.find(p => p.id === productId);
+  const handleAddToCart = (productId: string, quantity = 1, note?: string) => {
+    const product = peptideProducts.find(p => p.id === productId);
     if (!product) return;
+
+    const quantityToAdd = Math.max(1, Math.floor(quantity));
 
     setCartItems(prev => {
       const existingItem = prev.find(item => item.product.id === productId);
       if (existingItem) {
         return prev.map(item =>
           item.product.id === productId
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+              ...item,
+              quantity: item.quantity + quantityToAdd,
+              note: note ?? item.note
+            }
             : item
         );
       }
-      return [...prev, { product, quantity: 1 }];
+      return [...prev, { product, quantity: quantityToAdd, note }];
     });
     
-    toast.success(`${product.name} added to cart`);
+    toast.success(`${quantityToAdd} × ${product.name} added to cart`);
   };
 
   const handleSearch = (query: string) => {
@@ -87,16 +184,51 @@ export default function App() {
     setCartItems([]);
   };
 
+  const handleRequireLogin = () => {
+    setCheckoutOpen(false);
+    setLoginPromptToken((token) => token + 1);
+    setShouldReopenCheckout(true);
+    setLoginContext('checkout');
+  };
+
+  const handleUpdateCartItemQuantity = (productId: string, quantity: number) => {
+    const normalized = Math.max(1, Math.floor(quantity || 1));
+    setCartItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId
+          ? { ...item, quantity: normalized }
+          : item
+      )
+    );
+  };
+
+  const handleRemoveCartItem = (productId: string) => {
+    setCartItems((prev) => prev.filter((item) => item.product.id !== productId));
+    toast.success('Item removed from cart');
+  };
+
+  const handleViewProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setProductDetailOpen(true);
+  };
+
+  const handleCloseProductDetail = () => {
+    setProductDetailOpen(false);
+    setSelectedProduct(null);
+  };
+
   // Filter and search products
   const filteredProducts = useMemo(() => {
-    let filtered = mockProducts;
+    let filtered = peptideProducts;
 
     // Search filter
     if (searchQuery) {
       filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.manufacturer.toLowerCase().includes(searchQuery.toLowerCase())
+        product.manufacturer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (product.benefits && product.benefits.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     }
 
@@ -106,11 +238,6 @@ export default function App() {
         filters.categories.includes(product.category)
       );
     }
-
-    // Price filter
-    filtered = filtered.filter(product =>
-      product.price >= filters.priceRange[0] && product.price <= filters.priceRange[1]
-    );
 
     // Stock filter
     if (filters.inStockOnly) {
@@ -122,9 +249,9 @@ export default function App() {
       filtered = filtered.filter(product => product.prescription);
     }
 
-    // Rating filter
-    if (filters.rating > 0) {
-      filtered = filtered.filter(product => product.rating >= filters.rating);
+    // Type filter
+    if (filters.types.length > 0) {
+      filtered = filtered.filter(product => product.type && filters.types.includes(product.type));
     }
 
     return filtered;
@@ -133,14 +260,22 @@ export default function App() {
   // Get product counts by category
   const productCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    categories.forEach(category => {
-      counts[category] = mockProducts.filter(product => product.category === category).length;
+    peptideCategories.forEach(category => {
+      counts[category] = peptideProducts.filter(product => product.category === category).length;
+    });
+    return counts;
+  }, []);
+
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    peptideTypes.forEach(type => {
+      counts[type] = peptideProducts.filter(product => product.type === type).length;
     });
     return counts;
   }, []);
 
   // Get featured products
-  const featuredProducts = mockProducts.filter(product => product.originalPrice).slice(0, 4);
+  const featuredProducts = peptideProducts.slice(0, 4);
 
   const totalCartItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -153,27 +288,25 @@ export default function App() {
         onLogout={handleLogout}
         cartItems={totalCartItems}
         onSearch={handleSearch}
+        onCreateAccount={handleCreateAccount}
+        onCartClick={() => setCheckoutOpen(true)}
+        loginPromptToken={loginPromptToken}
+        loginContext={loginContext}
       />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Featured Section */}
-        {!searchQuery && filters.categories.length === 0 && (
-          <FeaturedSection
-            featuredProducts={featuredProducts}
-            onAddToCart={handleAddToCart}
-          />
-        )}
-
         {/* Products Section */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Filters Sidebar */}
           <div className="lg:col-span-1">
             <CategoryFilter
-              categories={categories}
+              categories={peptideCategories}
+              types={peptideTypes}
               filters={filters}
               onFiltersChange={setFilters}
               productCounts={productCounts}
+              typeCounts={typeCounts}
             />
           </div>
 
@@ -233,6 +366,7 @@ export default function App() {
                     key={product.id}
                     product={product}
                     onAddToCart={handleAddToCart}
+                    onViewDetails={handleViewProduct}
                   />
                 ))}
               </div>
@@ -255,6 +389,17 @@ export default function App() {
         cartItems={cartItems}
         userReferralCode={user?.referralCode}
         onCheckout={handleCheckout}
+        onUpdateItemQuantity={handleUpdateCartItemQuantity}
+        onRemoveItem={handleRemoveCartItem}
+        isAuthenticated={Boolean(user)}
+        onRequireLogin={handleRequireLogin}
+      />
+
+      <ProductDetailDialog
+        product={selectedProduct}
+        isOpen={productDetailOpen}
+        onClose={handleCloseProductDetail}
+        onAddToCart={handleAddToCart}
       />
     </div>
   );
