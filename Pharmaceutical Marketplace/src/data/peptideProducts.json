@@ -1,0 +1,218 @@
+[
+  {
+    "name": "BPC-157",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Healing & Recovery",
+    "description": "A fragment of a protein found in gastric juice; known as \"Body Protection Compound.\"",
+    "benefits": "Promotes gut healing, tissue repair, reduced inflammation, may accelerate recovery from injuries.",
+    "protocol": "Commonly used subcutaneously near the injury site or systemically; often 200–500 mcg daily, though protocols vary."
+  },
+  {
+    "name": "BPC-157 / TB-500",
+    "dosage": "10mg / 10mg",
+    "type": "Injectables",
+    "category": "Healing & Recovery",
+    "description": "Combination of two regenerative peptides for synergistic repair support.",
+    "benefits": "Synergistic effect for wound healing, tissue repair, angiogenesis (new blood vessel growth), and reduced inflammation.",
+    "protocol": "Typically injected subcutaneously or intramuscularly; cycles often run 4–6 weeks with low daily or every-other-day dosing."
+  },
+  {
+    "name": "CJC-1295 / Ipamorelin",
+    "dosage": "7.5mg / 15mg",
+    "type": "Injectables",
+    "category": "Growth Hormone Releasing",
+    "description": "CJC-1295 (GHRH analog) combined with Ipamorelin (GHRP) to stimulate natural growth hormone release.",
+    "benefits": "Improved sleep, recovery, lean muscle gain, fat loss, and anti-aging effects.",
+    "protocol": "100–300 mcg of each peptide administered subcutaneously, usually at night to align with endogenous GH pulses."
+  },
+  {
+    "name": "Epitalon",
+    "dosage": "50mg",
+    "type": "Injectables",
+    "category": "Longevity & Anti-Aging",
+    "description": "A synthetic tetrapeptide linked to anti-aging effects through telomerase activation.",
+    "benefits": "May promote longevity, improve sleep quality, and support immune function.",
+    "protocol": "Commonly used at 10–20 mg daily for 10–20 days, followed by a pause (cyclic use)."
+  },
+  {
+    "name": "GHK-Cu",
+    "dosage": "50mg",
+    "type": "Injectables",
+    "category": "Longevity & Anti-Aging",
+    "description": "Copper-binding peptide naturally present in plasma and saliva.",
+    "benefits": "Supports skin repair, hair growth, wound healing, and exhibits anti-inflammatory properties.",
+    "protocol": "Typically administered subcutaneously; dosing ranges from 1–5 mg daily depending on application."
+  },
+  {
+    "name": "Humanin",
+    "dosage": "5mg",
+    "type": "Injectables",
+    "category": "Longevity & Anti-Aging",
+    "description": "Mitochondrial-derived peptide with cytoprotective effects.",
+    "benefits": "Neuroprotective, anti-apoptotic, with potential anti-aging and metabolic benefits.",
+    "protocol": "Research usage often explores microgram dosing, injected subcutaneously daily or 2–3 times weekly."
+  },
+  {
+    "name": "KPV",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Healing & Recovery",
+    "description": "Short peptide derived from alpha-MSH.",
+    "benefits": "Potent anti-inflammatory peptide studied for gut health, colitis, and inflammatory bowel disease.",
+    "protocol": "Often dosed subcutaneously at 250–500 mcg daily."
+  },
+  {
+    "name": "Kisspeptin",
+    "dosage": "5mg",
+    "type": "Injectables",
+    "category": "Libido & Sexual Support",
+    "description": "Neuropeptide that regulates reproduction via GnRH stimulation.",
+    "benefits": "Supports fertility, hormonal balance, and may boost libido.",
+    "protocol": "Dosing varies; typically low microgram amounts administered subcutaneously on a daily or cyclic schedule."
+  },
+  {
+    "name": "MOTS-c",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Metabolic Support & Weight Loss",
+    "description": "Mitochondrial-derived peptide that influences metabolic function.",
+    "benefits": "Improves insulin sensitivity, supports fat metabolism, and may increase energy levels.",
+    "protocol": "Typically 5–15 mg injected subcutaneously two to three times per week in research settings."
+  },
+  {
+    "name": "NAD+",
+    "dosage": "500mg",
+    "type": "Injectables",
+    "category": "Longevity & Anti-Aging",
+    "description": "Essential coenzyme critical for cellular energy production and DNA repair.",
+    "benefits": "Supports mitochondrial health, healthy aging, energy production, and cognition.",
+    "protocol": "Commonly delivered via IV infusion (250–750 mg over 1–2 hours); subcutaneous or intramuscular routes are also studied."
+  },
+  {
+    "name": "PT-141 / Oxytocin",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Libido & Sexual Support",
+    "description": "Melanocortin receptor agonist formulation focused on sexual wellness.",
+    "benefits": "Enhances libido and sexual function for both men and women.",
+    "protocol": "Often 1–2 mg subcutaneously, administered 30–60 minutes before sexual activity."
+  },
+  {
+    "name": "Retatrutide",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Metabolic Support & Weight Loss",
+    "description": "Multi-receptor agonist targeting GLP-1, GIP, and glucagon receptors for weight management.",
+    "benefits": "Supports weight loss, glucose control, and appetite suppression.",
+    "protocol": "Weekly subcutaneous injections in clinical trials with dose escalation."
+  },
+  {
+    "name": "SS-31",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Longevity & Anti-Aging",
+    "description": "Also known as Elamipretide; a mitochondrial-targeting peptide.",
+    "benefits": "Protects mitochondria, improves cellular energy production, and reduces oxidative stress.",
+    "protocol": "Typically 1–5 mg daily administered subcutaneously in research contexts."
+  },
+  {
+    "name": "Sermorelin",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Growth Hormone Releasing",
+    "description": "Growth hormone–releasing hormone analog that promotes endogenous GH output.",
+    "benefits": "Supports recovery, fat loss, improved sleep, and anti-aging benefits.",
+    "protocol": "Commonly 100–300 mcg injected subcutaneously, usually at night."
+  },
+  {
+    "name": "TB-500",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Healing & Recovery",
+    "description": "Synthetic fragment of thymosin beta-4.",
+    "benefits": "Encourages tissue repair, injury recovery, angiogenesis, and reduced inflammation.",
+    "protocol": "Often 2–5 mg twice weekly administered subcutaneously or intramuscularly for 4–6 weeks."
+  },
+  {
+    "name": "Tesamorelin",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Growth Hormone Releasing",
+    "description": "GHRH analog with FDA approval for HIV-associated lipodystrophy.",
+    "benefits": "Reduces visceral fat, promotes GH release, and improves body composition.",
+    "protocol": "Typically 1–2 mg daily via subcutaneous injection."
+  },
+  {
+    "name": "Thymosin Alpha-1",
+    "dosage": "10mg",
+    "type": "Injectables",
+    "category": "Healing & Recovery",
+    "description": "Immune-modulating peptide supporting host defenses.",
+    "benefits": "Enhances immune response with antiviral and anticancer potential.",
+    "protocol": "Generally 1.6–4.8 mg administered subcutaneously two to three times weekly."
+  },
+  {
+    "name": "Tirzepatide",
+    "dosage": "10mg & 40mg",
+    "type": "Injectables",
+    "category": "Metabolic Support & Weight Loss",
+    "description": "Dual GIP and GLP-1 receptor agonist designed for weight management.",
+    "benefits": "Promotes significant weight loss, glucose regulation, and metabolic health.",
+    "protocol": "Weekly subcutaneous injection with dose escalation from 2.5 mg up to 15 mg; the 40 mg vial serves as a multi-dose format."
+  },
+  {
+    "name": "BPC-157 / TB-500",
+    "dosage": "10mg / 5mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Healing & Recovery",
+    "description": "Synergistic blend of regenerative peptides formulated for intranasal delivery.",
+    "benefits": "Supports tissue repair, reduces inflammation, and enhances the healing response.",
+    "protocol": "Nasal spray format allows daily or every-other-day use; dosing varies by formulation."
+  },
+  {
+    "name": "DSIP",
+    "dosage": "6mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Healing & Recovery",
+    "description": "Delta sleep–inducing peptide engineered for restorative rest.",
+    "benefits": "Promotes restorative sleep, reduces stress, and supports hormone regulation.",
+    "protocol": "Typically administered intranasally or via injection at 0.1–0.3 mg/kg before sleep."
+  },
+  {
+    "name": "NAD+",
+    "dosage": "500mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Longevity & Anti-Aging",
+    "description": "Critical coenzyme for cellular energy and DNA repair delivered in nasal spray format.",
+    "benefits": "Supports mitochondrial function, cognitive clarity, healthy aging, and improved energy levels.",
+    "protocol": "Nasal spray delivery for systemic support; commonly used daily or in cycles."
+  },
+  {
+    "name": "Selank",
+    "dosage": "10mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Nootropic, Mood & Anti-Anxiety",
+    "description": "Anxiolytic peptide that produces calming effects without sedation.",
+    "benefits": "Reduces anxiety, enhances focus, and may support memory formation.",
+    "protocol": "Typically 200–500 mcg intranasally, two to three times daily."
+  },
+  {
+    "name": "Semax",
+    "dosage": "10mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Nootropic, Mood & Anti-Anxiety",
+    "description": "Nootropic peptide derived from ACTH fragment for cognitive support.",
+    "benefits": "Enhances cognitive function, supports memory, and provides neuroprotection.",
+    "protocol": "Commonly 200–600 mcg intranasally, one to two times daily."
+  },
+  {
+    "name": "PT-141 / Oxytocin",
+    "dosage": "10mg",
+    "type": "Bio-Available Nasal Sprays",
+    "category": "Libido & Sexual Support",
+    "description": "Combination of libido-enhancing PT-141 with bonding hormone oxytocin.",
+    "benefits": "Offers synergistic effects for sexual function, intimacy, and emotional connection.",
+    "protocol": "Typically administered as 1–2 sprays before intimacy; specific dosing varies by formulation."
+  }
+]
