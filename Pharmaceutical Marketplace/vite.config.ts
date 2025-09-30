@@ -56,5 +56,6 @@
     server: {
       port: 3000,
       open: true,
+      allowedHosts: ['b7cc365a-92a2-467b-9262-c7ef91928cae-00-ynnadg2l5w6o.worf.replit.dev'],
     },
   });
