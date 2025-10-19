@@ -3,6 +3,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import path from 'path'
 
+const isReplit = Boolean(
+  process.env.REPL_ID ||
+  process.env.REPL_SLUG ||
+  process.env.REPLIT_ENV ||
+  process.env.REPLIT_DB_URL
+);
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -46,6 +53,7 @@ export default defineConfig({
       '@radix-ui/react-aspect-ratio@1.1.2': '@radix-ui/react-aspect-ratio',
       '@radix-ui/react-alert-dialog@1.1.6': '@radix-ui/react-alert-dialog',
       '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
+      '@radix-ui/react-visually-hidden@1.0.3': '@radix-ui/react-visually-hidden',
       '@': path.resolve(__dirname, './src'),
     },
   },
@@ -59,7 +67,9 @@ export default defineConfig({
     open: false,
     // allow any *.replit.dev (and legacy *.repl.co) hostnames:
     allowedHosts: [/\.replit\.dev$/, /\.repl\.co$/],
-    // HMR over HTTPS on Replit
-    hmr: { protocol: 'wss', clientPort: 443 },
+    // Use secure HMR only on Replit deployments
+    ...(isReplit
+      ? { hmr: { protocol: 'wss', clientPort: 443 } }
+      : { hmr: { protocol: 'ws', host: 'localhost', port: 3000 } }),
   },
 })

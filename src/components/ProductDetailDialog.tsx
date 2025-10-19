@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -7,12 +7,11 @@ import {
   DialogTitle
 } from './ui/dialog';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ImageWithFallback } from './ImageWithFallback';
 import { Product } from './ProductCard';
-import { Minus, Plus, ShoppingCart, Star } from 'lucide-react';
+import { Minus, Plus, ShoppingCart } from 'lucide-react';
 
 interface ProductDetailDialogProps {
   product: Product | null;
@@ -25,12 +24,16 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [quantityDescription, setQuantityDescription] = useState('');
+  const shouldSkipNextCloseRef = useRef(false);
+
+  console.debug('[ProductDetailDialog] Render', { isOpen, hasProduct: Boolean(product) });
 
   useEffect(() => {
     if (isOpen) {
       setQuantity(1);
       setQuantityInput('1');
       setQuantityDescription('');
+      shouldSkipNextCloseRef.current = true;
     }
   }, [isOpen, product]);
 
@@ -62,6 +65,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
   const handleAddToCart = () => {
     if (!product) return;
     const note = quantityDescription.trim();
+    console.debug('[ProductDetailDialog] Add to cart', { productId: product.id, quantity, note });
     onAddToCart(product.id, quantity, note ? note : undefined);
     onClose();
   };
@@ -70,184 +74,147 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
     <Dialog
       open={isOpen}
       onOpenChange={(open) => {
+        console.debug('[ProductDetailDialog] Open change', { open, productId: product?.id });
         if (!open) {
+          if (shouldSkipNextCloseRef.current) {
+            shouldSkipNextCloseRef.current = false;
+            return;
+          }
           onClose();
         }
       }}
     >
-      <DialogContent
-        className="glass-strong squircle-lg w-full max-w-[1100px] lg:h-[90vh] border border-slate-200/80 bg-white/95 p-0 shadow-[0_40px_80px_-40px_rgba(15,37,37,0.55)]"
-        style={{
-          background: 'linear-gradient(160deg, rgba(255,255,255,0.98), rgba(226,240,240,0.92))',
-          backdropFilter: 'blur(28px)'
-        }}
-      >
+      <DialogContent className="squircle-xl">
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle className="text-xl font-semibold">
+            {product ? product.name : 'Product details'}
+          </DialogTitle>
+          <DialogDescription>Review the product details and add it to your cart.</DialogDescription>
+        </DialogHeader>
+
         {product ? (
-          <div className="flex h-full flex-col lg:flex-row">
-            {/* Left column */}
-            <aside className="flex-shrink-0 border-slate-200/70 bg-white/92 lg:w-[400px] lg:border-r">
-              <DialogHeader className="space-y-3 px-6 pt-6">
-                <DialogTitle className="text-2xl">{product.name}</DialogTitle>
-                <DialogDescription>
-                  Comprehensive details and ordering options for this medication.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-5">
-                <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white shadow-xl">
-                  <ImageWithFallback
-                    src={product.image}
-                    alt={product.name}
-                    className="h-64 w-full object-cover sm:h-72"
-                  />
-                  {product.prescription && (
-                    <Badge
-                      variant="secondary"
-                      className="absolute top-3 right-3 bg-orange-100 text-orange-800 squircle-sm"
-                    >
-                      Prescription Required
-                    </Badge>
-                  )}
+          <div className="pb-6">
+            <div className="grid gap-6 border-t border-[var(--brand-glass-border-1)] px-6 pt-5 md:grid-cols-[240px_1fr]">
+              <aside className="space-y-4 px-0 md:px-0">
+                <div className="overflow-hidden rounded-2xl glass-card border border-[var(--brand-glass-border-2)] shadow-inner">
+                  <ImageWithFallback src={product.image} alt={product.name} className="h-56 w-full object-cover" />
                 </div>
-                <div className="rounded-3xl border border-slate-200/70 bg-white/97 p-5 shadow-inner space-y-3">
-                  <Badge variant="outline" className="squircle-sm">
-                    {product.category}
-                  </Badge>
-                  <p className="text-sm text-slate-600">Manufacturer: {product.manufacturer}</p>
+                <div className="space-y-2 text-sm text-slate-800">
+                  <div>
+                    <span className="font-medium text-slate-900">Manufacturer:</span> {product.manufacturer || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-slate-900">Dosage:</span> {product.dosage}
+                  </div>
                   {product.type && (
-                    <p className="text-sm text-slate-600">Type: {product.type}</p>
+                    <div>
+                      <span className="font-medium text-slate-900">Type:</span> {product.type}
+                    </div>
                   )}
-                  <p className="text-sm text-slate-600">Dosage: {product.dosage}</p>
-                  {!product.inStock && (
-                    <p className="text-sm font-medium text-red-600">Currently out of stock</p>
-                  )}
+                  {product.prescription && <div className="font-medium text-orange-700">Prescription required</div>}
+                  {!product.inStock && <div className="font-medium text-red-600">Currently out of stock</div>}
                 </div>
-              </div>
-            </aside>
+              </aside>
 
-            {/* Right column */}
-            <section className="flex-1 overflow-y-auto px-4 pb-6 sm:px-6">
-              <div className="space-y-6 pt-6 lg:pt-10">
-                <div className="rounded-3xl border border-slate-200/70 bg-white/98 p-6 shadow-sm space-y-4">
-                  <div className="flex flex-wrap items-center gap-2 text-green-600">
-                    {product.price > 0 ? (
-                      <span className="text-3xl font-semibold">${product.price.toFixed(2)}</span>
-                    ) : (
-                      <span className="text-lg font-semibold text-green-600">Contact for pricing</span>
-                    )}
-                    {product.price > 0 && product.originalPrice && (
-                      <span className="text-sm text-gray-500 line-through">
-                        ${product.originalPrice.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                    <div className="flex items-center">
-                      {Array.from({ length: 5 }).map((_, index) => (
-                        <Star
-                          key={index}
-                          className={`h-4 w-4 ${
-                            index < Math.floor(product.rating)
-                              ? 'fill-yellow-400 text-yellow-400'
-                              : 'text-gray-200'
-                          }`}
+              <section className="flex flex-col">
+                <div className="space-y-5">
+                  {(product.description || product.benefits || product.protocol) && (
+                    <div className="space-y-4">
+                      {product.description && (
+                        <div className="space-y-2">
+                          <Label>Overview</Label>
+                          <p className="text-sm leading-relaxed text-slate-700/95">{product.description}</p>
+                        </div>
+                      )}
+                      {product.benefits && (
+                        <div className="space-y-2">
+                          <Label>Benefits</Label>
+                          <p className="text-sm leading-relaxed text-slate-700/95">{product.benefits}</p>
+                        </div>
+                      )}
+                      {product.protocol && (
+                        <div className="space-y-2">
+                          <Label>Protocol</Label>
+                          <p className="text-sm leading-relaxed text-slate-700/95">{product.protocol}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-4 glass-card rounded-2xl border border-[var(--brand-glass-border-2)] p-4 shadow-inner">
+                    <div className="space-y-3">
+                      <Label htmlFor="quantity">Quantity</Label>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => handleQuantityChange(quantity - 1)}
+                          disabled={quantity <= 1}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          id="quantity"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={quantityInput}
+                          onChange={handleQuantityInputChange}
+                          onBlur={handleQuantityInputBlur}
+                          className="w-24 text-center"
                         />
-                      ))}
+                        <Button type="button" variant="outline" size="icon" onClick={() => handleQuantityChange(quantity + 1)}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <span>{product.rating.toFixed(1)} rating</span>
-                    <span>&bull;</span>
-                    <span>{product.reviews} reviews</span>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Ensure dosage suitability and review any contraindications prior to fulfillment.
-                  </p>
-                </div>
 
-                <div className="rounded-3xl border border-slate-200/70 bg-white/98 p-6 shadow-sm space-y-4">
-                  <div className="space-y-3">
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleQuantityChange(quantity - 1)}
-                        disabled={quantity <= 1}
-                        className="squircle-sm"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </Button>
-                      <Input
-                        id="quantity"
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={quantityInput}
-                        onChange={handleQuantityInputChange}
-                        onBlur={handleQuantityInputBlur}
-                        className="w-24 text-center squircle-sm"
+                    <div className="space-y-3">
+                      <Label htmlFor="quantityDescription">Order Notes</Label>
+                      <textarea
+                        id="quantityDescription"
+                        value={quantityDescription}
+                        onChange={(event) => setQuantityDescription(event.target.value)}
+                        placeholder="Add fulfillment notes or special instructions"
+                      className="min-h-[120px] w-full resize-y glass squircle-sm p-3 text-sm focus-visible:outline-none focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
                       />
+                    </div>
+
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-baseline gap-3 text-green-700">
+                          {product.price > 0 ? (
+                            <span className="text-2xl font-semibold">${product.price.toFixed(2)}</span>
+                          ) : (
+                            <span className="text-base font-semibold text-green-700">Contact for pricing</span>
+                          )}
+                          {product.price > 0 && product.originalPrice && (
+                            <span className="text-sm text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Total:{' '}
+                          <span className="font-semibold text-green-700">
+                            ${(product.price * quantity).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
                       <Button
-                        type="button"
                         variant="outline"
-                        size="icon"
-                        onClick={() => handleQuantityChange(quantity + 1)}
-                        className="squircle-sm"
+                        onClick={handleAddToCart}
+                        disabled={!product.inStock}
+                        className="glass-strong squircle-sm btn-hover-lighter text-[rgb(7,27,27)] border border-[var(--brand-glass-border-2)]"
                       >
-                        <Plus className="h-4 w-4" />
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        {product.inStock ? 'Add to Cart' : 'Out of Stock'}
                       </Button>
                     </div>
                   </div>
-
-                  <div className="space-y-3">
-                    <Label htmlFor="quantityDescription">Quantity Description</Label>
-                    <textarea
-                      id="quantityDescription"
-                      value={quantityDescription}
-                      onChange={(event) => setQuantityDescription(event.target.value)}
-                      placeholder="Add fulfillment notes, packaging instructions, or quantity details"
-                      className="min-h-[120px] w-full resize-y rounded-3xl border border-slate-200/70 bg-white/96 p-3 text-sm shadow-inner focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
                 </div>
-
-                {(product.description || product.benefits || product.protocol) && (
-                  <div className="rounded-3xl border border-slate-200/70 bg-white/98 p-6 shadow-sm space-y-4">
-                    {product.description && (
-                      <div className="space-y-2">
-                        <Label>Overview</Label>
-                        <p className="text-sm text-slate-600 leading-relaxed">{product.description}</p>
-                      </div>
-                    )}
-                    {product.benefits && (
-                      <div className="space-y-2">
-                        <Label>Benefits</Label>
-                        <p className="text-sm text-slate-600 leading-relaxed">{product.benefits}</p>
-                      </div>
-                    )}
-                    {product.protocol && (
-                      <div className="space-y-2">
-                        <Label>Protocol</Label>
-                        <p className="text-sm text-slate-600 leading-relaxed">{product.protocol}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-4 rounded-3xl border border-slate-200/70 bg-white/98 p-6 shadow-sm md:flex-row md:items-center md:justify-between">
-                  <div className="text-sm text-gray-600">
-                    Total: <span className="font-semibold text-green-600">${(product.price * quantity).toFixed(2)}</span>
-                  </div>
-                  <Button
-                    onClick={handleAddToCart}
-                    disabled={!product.inStock}
-                    className="bg-primary hover:bg-primary/90 squircle-sm"
-                  >
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    {product.inStock ? 'Add to Cart' : 'Out of Stock'}
-                  </Button>
-                </div>
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
         ) : null}
       </DialogContent>

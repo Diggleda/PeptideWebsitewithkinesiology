@@ -22,7 +22,7 @@ interface CheckoutModalProps {
   onClose: () => void;
   cartItems: CartItem[];
   userReferralCode?: string;
-  onCheckout: (referralCode?: string) => void;
+  onCheckout: (referralCode?: string) => Promise<void> | void;
   onUpdateItemQuantity: (productId: string, quantity: number) => void;
   onRemoveItem: (productId: string) => void;
   isAuthenticated: boolean;
@@ -44,6 +44,7 @@ export function CheckoutModal({
   const [appliedReferralCode, setAppliedReferralCode] = useState<string | null>(null);
   const [discount, setDiscount] = useState(0);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Mock referral codes
   const validReferralCodes = ['SAVE10', 'HEALTH5', 'PHARMA15'];
@@ -52,7 +53,9 @@ export function CheckoutModal({
   const discountAmount = (subtotal * discount) / 100;
   const total = subtotal - discountAmount;
   const canCheckout = isAuthenticated;
-  const checkoutButtonLabel = canCheckout ? `Complete Purchase (${total.toFixed(2)})` : 'Login to complete purchase';
+  const checkoutButtonLabel = canCheckout
+    ? (isProcessing ? 'Processing order...' : `Complete Purchase (${total.toFixed(2)})`)
+    : 'Login to complete purchase';
 
   const applyReferralCode = () => {
     if (validReferralCodes.includes(referralCode)) {
@@ -72,18 +75,40 @@ export function CheckoutModal({
     toast.success('Referral code removed');
   };
 
-  const handleCheckout = () => {
-    onCheckout(appliedReferralCode || undefined);
-    onClose();
+  const handleCheckout = async () => {
+    console.debug('[CheckoutModal] Checkout start', {
+      appliedReferralCode,
+      total,
+      items: cartItems.map((item) => ({ id: item.product.id, qty: item.quantity }))
+    });
+    setIsProcessing(true);
+    try {
+      await onCheckout(appliedReferralCode || undefined);
+      onClose();
+      console.debug('[CheckoutModal] Checkout success');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handlePrimaryAction = () => {
+  const handlePrimaryAction = async () => {
     if (!canCheckout) {
       toast.info('Please log in to complete your purchase.');
+      console.debug('[CheckoutModal] Require login from checkout button');
       onRequireLogin();
       return;
     }
-    handleCheckout();
+    if (isProcessing) {
+      console.debug('[CheckoutModal] Checkout ignored, already processing');
+      return;
+    }
+    try {
+      console.debug('[CheckoutModal] Checkout button confirmed');
+      await handleCheckout();
+    } catch {
+      // Error feedback handled by onCheckout caller
+      console.warn('[CheckoutModal] Checkout handler threw');
+    }
   };
 
   const handleCopyUserReferralCode = async () => {
@@ -128,6 +153,7 @@ export function CheckoutModal({
   };
 
   const handleRemoveItem = (productId: string) => {
+    console.debug('[CheckoutModal] Remove item request', { productId });
     onRemoveItem(productId);
     setQuantityInputs((prev) => {
       const { [productId]: _removed, ...rest } = prev;
@@ -142,6 +168,7 @@ export function CheckoutModal({
       setAppliedReferralCode(null);
       setDiscount(0);
       setQuantityInputs({});
+      setIsProcessing(false);
     }
   }, [isOpen]);
 
@@ -160,8 +187,15 @@ export function CheckoutModal({
 
   if (cartItems.length === 0) {
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="glass-strong squircle-lg max-w-md">
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            onClose();
+          }
+        }}
+      >
+        <DialogContent className="glass-strong squircle-lg w-full max-w-[min(480px,calc(100vw-2.5rem))]">
           <DialogHeader>
             <DialogTitle>Your Cart</DialogTitle>
             <DialogDescription>Your cart is empty</DialogDescription>
@@ -176,15 +210,21 @@ export function CheckoutModal({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        console.debug('[CheckoutModal] Dialog open change', { open });
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
       <DialogContent
-        className="glass-strong squircle-lg max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200/80 bg-white/96 shadow-[0_32px_72px_-32px_rgba(15,37,37,0.55)]"
-        style={{
-          backdropFilter: 'blur(26px)'
-        }}
+        className="glass-strong squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-[0_32px_80px_-36px_rgba(7,27,27,0.45)]"
+        style={{ backdropFilter: 'blur(26px) saturate(1.7)' }}
       >
         <DialogHeader>
-          <DialogTitle>Checkout</DialogTitle>
+          <DialogTitle className="text-xl font-semibold text-[rgb(7,27,27)]">Checkout</DialogTitle>
           <DialogDescription>Review your order and complete your purchase</DialogDescription>
         </DialogHeader>
 
@@ -296,22 +336,7 @@ export function CheckoutModal({
                 </Button>
               </div>
             )}
-            {userReferralCode && (
-              <div className="text-xs text-gray-600">
-                Share your code:
-                <button
-                  type="button"
-                  onClick={handleCopyUserReferralCode}
-                  className="group copy-trigger ml-2 inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 font-medium text-slate-700 transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
-                >
-                  <Gift className="h-3 w-3 text-slate-600" />
-                  <span className="text-xs">{userReferralCode}</span>
-                  <Copy className="copy-icon h-3 w-3 pointer-events-none" aria-hidden="true" />
-                  <span className="sr-only">Copy referral code</span>
-                </button>
-                for rewards!
-              </div>
-            )}
+            {/* Removed referral share promo to reduce checkout clutter */}
           </div>
 
           {/* Payment Form */}
@@ -378,8 +403,10 @@ export function CheckoutModal({
           {/* Checkout Button */}
           <div className="pt-4">
             <Button 
+              variant="ghost"
               onClick={handlePrimaryAction}
-              className="w-full bg-primary hover:bg-primary/90 squircle-sm"
+              disabled={isProcessing}
+              className="w-full glass-strong squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(7,27,27)] transition-all duration-200"
             >
               {canCheckout ? (
                 <CreditCard className="w-4 h-4 mr-2" />

@@ -29,7 +29,7 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Featured Product */}
         {mainFeatured && (
-          <Card className="lg:col-span-2 overflow-hidden glass-card squircle-lg shadow-xl">
+          <Card className="lg:col-span-2 overflow-hidden glass-card squircle-lg shadow-lg">
             <CardContent className="p-0">
               <div className="grid md:grid-cols-2 gap-0">
                 <div className="relative aspect-square md:aspect-auto">
@@ -67,8 +67,9 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                   </div>
                   
                   <Button 
+                    variant="outline"
                     onClick={() => onAddToCart(mainFeatured.id)}
-                    className="bg-primary hover:bg-primary/90 squircle-sm"
+                    className="glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
                   >
                     Add to Cart
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -82,7 +83,7 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
         {/* Other Featured Products */}
         <div className="space-y-4">
           {otherFeatured.map((product) => (
-            <Card key={product.id} className="overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300">
+            <Card key={product.id} className="overflow-hidden glass-card squircle-lg shadow-md hover:shadow-lg transition-all duration-300">
               <CardContent className="p-0">
                 <div className="flex gap-3 p-4">
                   <div className="relative w-16 h-16 flex-shrink-0">
@@ -109,9 +110,10 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                   </div>
                   
                   <Button 
+                    variant="outline"
                     size="sm" 
                     onClick={() => onAddToCart(product.id)}
-                    className="bg-primary hover:bg-primary/90 squircle-sm"
+                    className="glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
                   >
                     Add
                   </Button>

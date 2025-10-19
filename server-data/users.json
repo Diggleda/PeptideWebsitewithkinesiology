@@ -1,41 +1,5 @@
 [
   {
-    "id": "1759206127279",
-    "name": "Prof. Patrick Star",
-    "email": "diggleda@icloud.com",
-    "password": "$2b$10$0wflQEWwgeWytqSYO..vK.HLB7zy53Y8Aoes95JKCltHa9Vtl.nmW",
-    "referralCode": "RZB7OB",
-    "referralCredits": 0,
-    "totalReferrals": 0,
-    "visits": 3,
-    "createdAt": "2025-09-30T04:22:07.279Z",
-    "lastLoginAt": "2025-09-30T05:03:55.587Z"
-  },
-  {
-    "id": "1759208352967",
-    "name": "Dr. Peter Gibbons",
-    "email": "diggledadiggz@gmail.com",
-    "password": "$2b$10$mPfbCUK/3PQfp6xAAq1l3egA87ejA/lwx6I12rdP9OjksjHv0JNMC",
-    "referralCode": "EUE8S3",
-    "referralCredits": 0,
-    "totalReferrals": 0,
-    "visits": 3,
-    "createdAt": "2025-09-30T04:59:12.967Z",
-    "lastLoginAt": "2025-09-30T17:58:40.735Z"
-  },
-  {
-    "id": "1759258203292",
-    "name": "Dame Notre",
-    "email": "diggleda@gmail.com",
-    "password": "$2b$10$gynLGa25DJm.do6Sh9vUD.Rpdq761m9lN4OEHveSLeNUyy8l7KyFK",
-    "referralCode": "KOF9N2",
-    "referralCredits": 0,
-    "totalReferrals": 0,
-    "visits": 1,
-    "createdAt": "2025-09-30T18:50:03.292Z",
-    "lastLoginAt": "2025-09-30T18:50:03.292Z"
-  },
-  {
     "id": "1759258406985",
     "name": "Prof. Alyssa Riter",
     "email": "ariter@nd.edu",
@@ -43,8 +7,44 @@
     "referralCode": "S5GU2Q",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 2,
+    "visits": 5,
     "createdAt": "2025-09-30T18:53:26.985Z",
-    "lastLoginAt": "2025-09-30T18:53:51.825Z"
+    "lastLoginAt": "2025-10-02T01:36:56.943Z"
+  },
+  {
+    "id": "1759372218770",
+    "name": "Mr. Peter J. Gibbons",
+    "email": "diggleda@icloud.com",
+    "password": "$2b$10$bfGepAEQDd4N.j1vyK29UuV6PmlMK1IEYI3NjXmmbDOGI10cHwCP6",
+    "referralCode": "ZMJN9Y",
+    "referralCredits": 0,
+    "totalReferrals": 0,
+    "visits": 111,
+    "createdAt": "2025-10-02T02:30:18.770Z",
+    "lastLoginAt": "2025-10-13T22:11:11.148Z"
+  },
+  {
+    "id": "1759414542687",
+    "name": "Dr. Peter Gibbons",
+    "email": "petergibbons7@icloud.com",
+    "password": "$2b$10$KpnBo3/EnwCqXpW3tZAnx.OyGW3fJnxn0Tkq/oo6ysEdy8MOKyUkm",
+    "referralCode": "LGH87X",
+    "referralCredits": 0,
+    "totalReferrals": 0,
+    "visits": 1,
+    "createdAt": "2025-10-02T14:15:42.687Z",
+    "lastLoginAt": "2025-10-02T14:15:42.687Z"
+  },
+  {
+    "id": "1759719202075",
+    "name": "Mr. Diggleda Diggz",
+    "email": "diggledadiggz@gmail.com",
+    "password": "$2b$10$khY8bh4lG6hxOiP4/fhSueBXrdRU4DrlszG7fgl/gWx1oxl37XqqK",
+    "referralCode": "0NA1CM",
+    "referralCredits": 0,
+    "totalReferrals": 0,
+    "visits": 1,
+    "createdAt": "2025-10-06T02:53:22.075Z",
+    "lastLoginAt": "2025-10-06T02:53:22.075Z"
   }
 ]

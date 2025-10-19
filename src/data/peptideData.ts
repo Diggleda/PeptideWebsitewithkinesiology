@@ -11,17 +11,39 @@ type RawPeptide = {
   protocol: string;
 };
 
-const baseImage = (category: string) => {
-  const catalog: Record<string, string> = {
-    'Healing & Recovery': 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1200&q=80',
-    'Growth Hormone Releasing': 'https://images.unsplash.com/photo-1576765607924-3f7b1d01da7c?auto=format&fit=crop&w=1200&q=80',
-    'Longevity & Anti-Aging': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=80',
-    'Libido & Sexual Support': 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=80',
-    'Metabolic Support & Weight Loss': 'https://images.unsplash.com/photo-1558611848-73f7eb4001a1?auto=format&fit=crop&w=1200&q=80',
-    'Nootropic, Mood & Anti-Anxiety': 'https://images.unsplash.com/photo-1525184697326-bf1c7e38f7d3?auto=format&fit=crop&w=1200&q=80'
-  };
-  return catalog[category] || 'https://images.unsplash.com/photo-1580281657529-47dcb0fb41ef?auto=format&fit=crop&w=1200&q=80';
+const createGradientImage = (start: string, end: string) => {
+  const svg = [
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 400'>",
+    "<defs>",
+    "<linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>",
+    `<stop offset='0%' stop-color='${start}'/>`,
+    `<stop offset='100%' stop-color='${end}'/>`,
+    '</linearGradient>',
+    "<linearGradient id='overlay' x1='0' y1='0' x2='0' y2='1'>",
+    "<stop offset='0%' stop-color='rgba(255,255,255,0.15)'/>",
+    "<stop offset='100%' stop-color='rgba(0,0,0,0.25)'/>",
+    '</linearGradient>',
+    '</defs>',
+    "<rect width='600' height='400' fill='url(%23g)'/>",
+    "<rect width='600' height='400' fill='url(%23overlay)'/>",
+    "<path d='M40 320 Q180 260 320 320 T600 320 V400 H0 V320 Z' fill='rgba(255,255,255,0.12)'/>",
+    "<path d='M0 120 Q150 60 300 120 T600 120 V0 H0 Z' fill='rgba(255,255,255,0.1)'/>",
+    '</svg>',
+  ].join('');
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
+
+const gradientCatalog: Record<string, string> = {
+  'Healing & Recovery': createGradientImage('#0f766e', '#5eead4'),
+  'Growth Hormone Releasing': createGradientImage('#2563eb', '#22d3ee'),
+  'Longevity & Anti-Aging': createGradientImage('#8b5cf6', '#f472b6'),
+  'Libido & Sexual Support': createGradientImage('#f97316', '#f43f5e'),
+  'Metabolic Support & Weight Loss': createGradientImage('#16a34a', '#84cc16'),
+  'Nootropic, Mood & Anti-Anxiety': createGradientImage('#6366f1', '#38bdf8'),
+};
+
+const baseImage = (category: string) =>
+  gradientCatalog[category] || createGradientImage('#0f172a', '#22d3ee');
 
 const toPeptideProduct = (raw: RawPeptide, index: number): Product => ({
   id: `peptide-${index + 1}`,
@@ -34,7 +56,7 @@ const toPeptideProduct = (raw: RawPeptide, index: number): Product => ({
   inStock: true,
   prescription: raw.type === 'Injectables',
   dosage: raw.dosage,
-  manufacturer: raw.type,
+  manufacturer: 'N/A',
   type: raw.type,
   description: raw.description,
   benefits: raw.benefits,

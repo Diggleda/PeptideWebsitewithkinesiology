@@ -1,6 +1,7 @@
 [
   {
     "name": "BPC-157",
+    "image1": "",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Healing & Recovery",
@@ -10,6 +11,7 @@
   },
   {
     "name": "BPC-157 / TB-500",
+    "image1": "",
     "dosage": "10mg / 10mg",
     "type": "Injectables",
     "category": "Healing & Recovery",
@@ -19,6 +21,7 @@
   },
   {
     "name": "CJC-1295 / Ipamorelin",
+    "image1": "",
     "dosage": "7.5mg / 15mg",
     "type": "Injectables",
     "category": "Growth Hormone Releasing",
@@ -28,6 +31,7 @@
   },
   {
     "name": "Epitalon",
+    "image1": "Epitalon.png",
     "dosage": "50mg",
     "type": "Injectables",
     "category": "Longevity & Anti-Aging",
@@ -37,6 +41,7 @@
   },
   {
     "name": "GHK-Cu",
+    "image1": "GHk-Cu.png",
     "dosage": "50mg",
     "type": "Injectables",
     "category": "Longevity & Anti-Aging",
@@ -46,6 +51,7 @@
   },
   {
     "name": "Humanin",
+    "image1": "Humanin.png",
     "dosage": "5mg",
     "type": "Injectables",
     "category": "Longevity & Anti-Aging",
@@ -55,6 +61,7 @@
   },
   {
     "name": "KPV",
+    "image1": "KPV.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Healing & Recovery",
@@ -64,6 +71,7 @@
   },
   {
     "name": "Kisspeptin",
+    "image1": "Kisspeptin.png",
     "dosage": "5mg",
     "type": "Injectables",
     "category": "Libido & Sexual Support",
@@ -73,6 +81,7 @@
   },
   {
     "name": "MOTS-c",
+    "image1": "MOTS-C.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Metabolic Support & Weight Loss",
@@ -82,6 +91,7 @@
   },
   {
     "name": "NAD+",
+    "image1": "NAD+.png",
     "dosage": "500mg",
     "type": "Injectables",
     "category": "Longevity & Anti-Aging",
@@ -91,6 +101,7 @@
   },
   {
     "name": "PT-141 / Oxytocin",
+    "image1": "PT-141:Oxy spray.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Libido & Sexual Support",
@@ -100,6 +111,7 @@
   },
   {
     "name": "Retatrutide",
+    "image1": "Retatrutide.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Metabolic Support & Weight Loss",
@@ -109,6 +121,7 @@
   },
   {
     "name": "SS-31",
+    "image1": "SS-31.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Longevity & Anti-Aging",
@@ -118,6 +131,7 @@
   },
   {
     "name": "Sermorelin",
+    "image1": "Sermorelin.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Growth Hormone Releasing",
@@ -127,6 +141,7 @@
   },
   {
     "name": "TB-500",
+    "image1": "TB-500.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Healing & Recovery",
@@ -136,6 +151,7 @@
   },
   {
     "name": "Tesamorelin",
+    "image1": "Tesamorelin.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Growth Hormone Releasing",
@@ -145,6 +161,7 @@
   },
   {
     "name": "Thymosin Alpha-1",
+    "image1": "Thymosin Alpha-1.png",
     "dosage": "10mg",
     "type": "Injectables",
     "category": "Healing & Recovery",
@@ -154,6 +171,8 @@
   },
   {
     "name": "Tirzepatide",
+    "image1": "Tirzepatide 10.png",
+    "image2": "Tirzepatide 40.png",
     "dosage": "10mg & 40mg",
     "type": "Injectables",
     "category": "Metabolic Support & Weight Loss",
@@ -163,6 +182,7 @@
   },
   {
     "name": "BPC-157 / TB-500",
+    "image1": "",
     "dosage": "10mg / 5mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Healing & Recovery",
@@ -172,6 +192,7 @@
   },
   {
     "name": "DSIP",
+    "image1": "",
     "dosage": "6mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Healing & Recovery",
@@ -181,6 +202,7 @@
   },
   {
     "name": "NAD+",
+    "image1": "",
     "dosage": "500mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Longevity & Anti-Aging",
@@ -190,6 +212,7 @@
   },
   {
     "name": "Selank",
+    "image1": "Selank.png",
     "dosage": "10mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Nootropic, Mood & Anti-Anxiety",
@@ -199,6 +222,7 @@
   },
   {
     "name": "Semax",
+    "image1": "Semax.png",
     "dosage": "10mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Nootropic, Mood & Anti-Anxiety",
@@ -208,6 +232,7 @@
   },
   {
     "name": "PT-141 / Oxytocin",
+    "image1": "",
     "dosage": "10mg",
     "type": "Bio-Available Nasal Sprays",
     "category": "Libido & Sexual Support",

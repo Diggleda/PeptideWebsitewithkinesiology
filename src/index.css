@@ -1,3 +1,35 @@
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  /* Try project image first; fall back to inline texture */
+  background-image:
+    url('/leafTexture.jpg'),
+    url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
+  <defs>\
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>\
+      <stop offset='0' stop-color='rgba(7,27,27,0.06)'/>\
+      <stop offset='1' stop-color='rgba(7,27,27,0.00)'/>\
+    </linearGradient>\
+    <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>\
+      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(7,27,27,0.06)' stroke-width='1.5' stroke-linecap='round'/>\
+      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(7,27,27,0.04)' stroke-width='1.5' stroke-linecap='round'/>\
+    </pattern>\
+  </defs>\
+  <rect width='100%' height='100%' fill='url(%23p)'/>\
+  <rect width='100%' height='100%' fill='url(%23g)'/>\
+</svg>");
+  background-size: cover, 800px 800px;
+  background-repeat: no-repeat, repeat;
+  background-position: center, center;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body { position: relative; }
+
 /*! tailwindcss v4.1.3 | MIT License | https://tailwindcss.com */
 @layer properties {
   @supports (((-webkit-hyphens: none)) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color: rgb(from red r g b)))) {
@@ -2045,27 +2077,27 @@
   }
 
   .glass {
-    -webkit-backdrop-filter: blur(24px) saturate(1.6);
-    backdrop-filter: blur(24px) saturate(1.6);
-    background: #ffffff1a;
-    border: 1px solid #ffffff2b;
-    box-shadow: 0 14px 42px rgba(190, 198, 209, 0.32), inset 0 1px rgba(255, 255, 255, 0.25);
+    -webkit-backdrop-filter: blur(22px) saturate(1.55);
+    backdrop-filter: blur(22px) saturate(1.55);
+    background: var(--brand-glass-tint-1);
+    border: 1px solid var(--brand-glass-border-1);
+    box-shadow: 0 14px 42px rgba(var(--brand-glass-rgb), 0.22), inset 0 1px rgba(255, 255, 255, 0.22);
   }
 
   .glass-card {
-    -webkit-backdrop-filter: blur(28px) saturate(1.65);
-    backdrop-filter: blur(28px) saturate(1.65);
-    background: #ffffff22;
-    border: 1px solid #ffffff33;
-    box-shadow: 0 18px 56px rgba(190, 198, 209, 0.35), inset 0 1px rgba(255, 255, 255, 0.3);
+    -webkit-backdrop-filter: blur(26px) saturate(1.6);
+    backdrop-filter: blur(26px) saturate(1.6);
+    background: var(--brand-glass-tint-2);
+    border: 1px solid var(--brand-glass-border-2);
+    box-shadow: 0 18px 56px rgba(var(--brand-glass-rgb), 0.26), inset 0 1px rgba(255, 255, 255, 0.24);
   }
 
   .glass-strong {
-    -webkit-backdrop-filter: blur(32px) saturate(1.7);
-    backdrop-filter: blur(32px) saturate(1.7);
-    background: #ffffff29;
-    border: 1px solid #ffffff40;
-    box-shadow: 0 22px 68px rgba(190, 198, 209, 0.38), inset 0 1px rgba(255, 255, 255, 0.35);
+    -webkit-backdrop-filter: blur(30px) saturate(1.7);
+    backdrop-filter: blur(30px) saturate(1.7);
+    background: var(--brand-glass-tint-3);
+    border: 1px solid var(--brand-glass-border-3);
+    box-shadow: 0 22px 68px rgba(var(--brand-glass-rgb), 0.30), inset 0 1px rgba(255, 255, 255, 0.28);
   }
 }
 
@@ -2108,6 +2140,13 @@
   --sidebar-accent-foreground: oklch(.205 0 0);
   --sidebar-border: oklch(.922 0 0);
   --sidebar-ring: oklch(.708 0 0);
+  --brand-glass-rgb: 7, 27, 27;
+  --brand-glass-tint-1: rgba(var(--brand-glass-rgb), 0.12);
+  --brand-glass-tint-2: rgba(var(--brand-glass-rgb), 0.18);
+  --brand-glass-tint-3: rgba(var(--brand-glass-rgb), 0.28);
+  --brand-glass-border-1: rgba(var(--brand-glass-rgb), 0.18);
+  --brand-glass-border-2: rgba(var(--brand-glass-rgb), 0.26);
+  --brand-glass-border-3: rgba(var(--brand-glass-rgb), 0.34);
 }
 
 .brand-logo {
@@ -2473,5 +2512,144 @@ html {
 @media (max-width: 799px) {
   .referral-pill {
     display: none;
+  }
+}
+
+.products-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+@media (min-width: 64rem) {
+  .products-layout {
+    display: grid;
+    grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+    align-items: start;
+    gap: 2.5rem;
+  }
+}
+
+@media (min-width: 80rem) {
+  .products-layout {
+    grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr);
+    gap: 3rem;
+  }
+}
+
+
+.filter-sidebar-container,
+.filter-sidebar-content {
+  width: 100%;
+}
+
+/* Ensure sidebar keeps its glass background on small screens too */
+  .filter-sidebar-content {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0; /* inner components already manage spacing */
+}
+
+@media (min-width: 64rem) {
+  .filter-sidebar-container {
+    position: sticky;
+    top: 6rem;
+    align-self: start;
+    padding-right: 0;
+  }
+
+  .filter-sidebar-content {
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    padding-right: 0;
+    scrollbar-gutter: auto;
+    /* Use transparent wrapper; inner Card supplies glass */
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    border-radius: 0;
+    clip-path: none;
+    will-change: auto;
+    transform: none;
+  }
+
+  .filter-sidebar-content > * {
+    width: 100%;
+  }
+
+  .filter-sidebar-content::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .filter-sidebar-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .filter-sidebar-content::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+  }
+
+  .filter-sidebar-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* Simple fade-up animation used for landing welcome overlay */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Subtle lighten hover for all buttons */
+.btn-hover-lighter {
+  transition: filter 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+@media (hover: hover) {
+  .btn-hover-lighter:hover {
+    filter: brightness(1.12) saturate(1.08);
+  }
+  .btn-hover-lighter:active {
+    filter: brightness(0.96) saturate(1);
+  }
+
+	.btn-hover-lighter.glass:hover,
+	.btn-hover-lighter.glass-card:hover,
+	.btn-hover-lighter.glass-strong:hover {
+		background: color-mix(in oklab, var(--brand-glass-tint-2) 70%, white 30%);
+		border-color: color-mix(in oklab, var(--brand-glass-border-2) 55%, white 45%);
+		box-shadow: 0 18px 56px rgba(var(--brand-glass-rgb), 0.32), inset 0 1px rgba(255, 255, 255, 0.34);
+	}
+}
+
+.btn-add-to-cart {
+  background: color-mix(in oklab, rgba(var(--brand-glass-rgb), 0.34) 70%, white 30%);
+  border-color: rgba(var(--brand-glass-rgb), 0.48);
+  color: #f6fbfb;
+  box-shadow: 0 18px 42px -20px rgba(var(--brand-glass-rgb), 0.55);
+}
+
+.btn-add-to-cart:disabled {
+  background: rgba(var(--brand-glass-rgb), 0.18);
+  border-color: rgba(var(--brand-glass-rgb), 0.25);
+  color: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .btn-add-to-cart:hover {
+    filter: brightness(1.05) saturate(1.08);
+    background: color-mix(in oklab, rgba(var(--brand-glass-rgb), 0.28) 60%, white 40%);
+    border-color: rgba(var(--brand-glass-rgb), 0.56);
+    box-shadow: 0 22px 56px -18px rgba(var(--brand-glass-rgb), 0.62);
   }
 }

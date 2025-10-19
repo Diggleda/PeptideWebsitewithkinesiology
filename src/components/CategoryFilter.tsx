@@ -50,21 +50,29 @@ export function CategoryFilter({ categories, types, filters, onFiltersChange, pr
     (filters.prescriptionOnly ? 1 : 0);
 
   return (
-    <Card className="glass-card squircle-lg shadow-lg">
+    <Card className="glass-card squircle-lg w-full lg:max-w-none border border-[var(--brand-glass-border-2)] shadow-[0_18px_48px_-28px_rgba(7,27,27,0.35)]">
       <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5" />
-            Filters
-            {activeFiltersCount > 0 && (
-              <Badge variant="secondary" className="squircle-sm">{activeFiltersCount}</Badge>
-            )}
+        <CardTitle className='flex items-center justify-between'>
+          <div className='flex items-center gap-2 min-w-0'>
+            <div className='flex items-center gap-2 truncate'>
+              <Filter className='w-5 h-5 flex-shrink-0' />
+              <span className='font-semibold truncate'>Filters</span>
+            </div>
+            <Badge
+              variant='secondary'
+              className={`squircle-sm inline-flex items-center justify-center w-7 h-5 flex-shrink-0 ${activeFiltersCount > 0 ? '' : 'invisible'}`}
+            >
+              {activeFiltersCount || 0}
+            </Badge>
           </div>
-          {activeFiltersCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear All
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className={`${activeFiltersCount > 0 ? '' : 'opacity-0 pointer-events-none'} whitespace-nowrap`}
+          >
+            Clear All
+          </Button>
         </CardTitle>
       </CardHeader>
 
