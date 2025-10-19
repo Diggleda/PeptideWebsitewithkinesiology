@@ -189,9 +189,9 @@ export function Header({
       setWelcomeOpen(false);
       setLoginOpen(false);
     };
-    window.addEventListener('protixa:close-dialogs', handleGlobalClose);
+    window.addEventListener('peppro:close-dialogs', handleGlobalClose);
     return () => {
-      window.removeEventListener('protixa:close-dialogs', handleGlobalClose);
+      window.removeEventListener('peppro:close-dialogs', handleGlobalClose);
     };
   }, []);
 
@@ -428,17 +428,20 @@ export function Header({
             <DialogTitle>
               {(user.visits ?? 1) > 1
                 ? `Welcome back, ${user.name}!`
-                : `Welcome to Protixa, ${user.name}!`}
+                : `Welcome to Peppro, ${user.name}!`}
             </DialogTitle>
             <DialogDescription>
               {(user.visits ?? 1) > 1
-                ? `We appreciate your continued trust. This is visit number ${user.visits ?? 1}.`
+                ? `We appreciate your continued trust. Let’s make healthcare simpler together.`
                 : 'We are thrilled to have you with us—let’s make healthcare simpler together.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 pt-4 pb-2">
             <div className="space-y-2">
               <Label>Referral Code</Label>
+              <DialogDescription>
+                Copy and share your referral code below to grow your network.
+              </DialogDescription>
               <div className="flex flex-col items-start gap-1" aria-live="polite">
                 <button
                   type="button"
@@ -547,8 +550,8 @@ export function Header({
               </DialogTitle>
               <DialogDescription>
                 {authMode === 'login'
-                  ? 'Login to enter your Protixa account.'
-                  : 'Set up your Protixa account in moments.'}
+                  ? 'Login to enter your Peppro account.'
+                  : 'Set up your Peppro account in moments.'}
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -621,7 +624,7 @@ export function Header({
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">
-                New to Protixa?{' '}
+                New to Peppro?{' '}
                 <button
                   type="button"
                   onClick={() => setAuthMode('signup')}
@@ -811,8 +814,8 @@ export function Header({
               <div className="flex items-center gap-3">
                 <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
                   <img
-                    src="/logo.png"
-                    alt="Protixa logo"
+                    src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                    alt="Peppro logo"
                     className="relative z-[1] flex-shrink-0"
                     style={{
                       display: 'block',

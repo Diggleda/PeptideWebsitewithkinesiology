@@ -109,8 +109,8 @@ export default function App() {
       setSelectedProduct(null);
       setCheckoutOpen(false);
     };
-    window.addEventListener('protixa:close-dialogs', closeAllDialogs);
-    return () => window.removeEventListener('protixa:close-dialogs', closeAllDialogs);
+    window.addEventListener('peppro:close-dialogs', closeAllDialogs);
+    return () => window.removeEventListener('peppro:close-dialogs', closeAllDialogs);
   }, []);
 
   // Login function connected to backend
@@ -122,7 +122,7 @@ export default function App() {
       setPostLoginHold(true);
       const isReturning = (user.visits ?? 1) > 1;
       setIsReturningUser(isReturning);
-      toast.success(`${isReturning ? 'Welcome back' : 'Welcome to Protixa'}, ${user.name}!`);
+      toast.success(`${isReturning ? 'Welcome back' : 'Welcome to Peppro'}, ${user.name}!`);
       setLoginContext(null);
       setShowLandingLoginPassword(false);
       setShowLandingSignupPassword(false);
@@ -176,7 +176,7 @@ export default function App() {
       setUser(user);
       setPostLoginHold(true);
       setIsReturningUser(false);
-      toast.success(`Welcome to Protixa, ${user.name}!`);
+      toast.success(`Welcome to Peppro, ${user.name}!`);
       console.debug('[Auth] Create account success', { userId: user.id });
       setLoginContext(null);
       setShowLandingLoginPassword(false);
@@ -516,8 +516,8 @@ export default function App() {
           }`}>
             <div className="brand-logo">
               <img
-                src="/logo.png"
-                alt="Protixa"
+                src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                alt="Peppro"
                 style={{
                   display: 'block',
                   width: 'auto',
@@ -534,7 +534,7 @@ export default function App() {
           <div className={`w-full max-w-md ${
             landingAuthMode === 'signup' ? 'mt-3 sm:mt-4 md:mt-6' : 'mt-4 sm:mt-6 md:mt-8'
           }`}>
-            <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl">
+          <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl">
               <div className={landingAuthMode === 'login' ? 'space-y-4' : 'space-y-6'}>
                 {postLoginHold && user ? (
                   <div className="relative flex flex-col gap-6 max-h-[70vh]">
@@ -543,7 +543,7 @@ export default function App() {
                         {/* Add introductory copy for returning or new customers here */}
                       </div>
 
-                      <section className="squircle glass-card border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
+                      <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
                         <h2 className="text-lg sm:text-xl font-semibold text-[rgb(7,27,27)]">Customer experiences & referrals</h2>
                         <div className="mt-4 grid gap-4 sm:grid-cols-2">
                           {/* Provide customer testimonials, referral stories, or metrics here */}
@@ -554,7 +554,7 @@ export default function App() {
                       </section>
 
                       <div className="grid gap-10 md:grid-cols-[1.15fr_0.85fr]">
-                        <section className="squircle glass-card border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
+                        <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
                           <h3 className="text-lg font-semibold text-[rgb(7,27,27)]">Shipping & handling pipeline</h3>
                           <div className="mt-2 text-sm text-gray-600">
                             {/* Insert overview of your logistics, fulfillment partners, or SLAs */}
@@ -566,11 +566,11 @@ export default function App() {
                             {/* Add badges, SLAs, or support commitments */}
                           </div>
                         </section>
-                        <section className="squircle glass-card border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
+                        <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm">
                           <figure className="space-y-4">
                             <img
                               src="/Placeholder.png"
-                              alt="Protixa fulfillment specialists preparing temperature-controlled shipments"
+                              alt="Peppro fulfillment specialists preparing temperature-controlled shipments"
                               className="w-full squircle object-cover shadow-md"
                             />
                             <figcaption className="text-xs text-gray-500">
@@ -580,7 +580,7 @@ export default function App() {
                         </section>
                       </div>
 
-                      <section className="squircle glass-strong border border-[var(--brand-glass-border-3)] p-6 text-slate-900 shadow-sm">
+                      <section className="squircle glass-strong landing-glass-strong border border-[var(--brand-glass-border-3)] p-6 text-slate-900 shadow-sm">
                         <h3 className="text-lg font-semibold">Compliance & legal essentials</h3>
                         <ul className="mt-4 space-y-2 text-sm list-disc list-inside">
                           {/* Enumerate legal obligations, storage requirements, or policy acknowledgements */}
@@ -593,7 +593,7 @@ export default function App() {
 
                     <div className="-mx-8 px-8 pb-2">
                     <div
-                        className="sticky bottom-0 flex w-full glass-strong border-t border-[var(--brand-glass-border-2)] pt-4 pb-2 shadow-[0_-10px_30px_-18px_rgba(7,27,27,0.45)]"
+                        className="sticky bottom-0 flex w-full glass-strong landing-glass-strong border-t border-[var(--brand-glass-border-2)] pt-4 pb-2 shadow-[0_-10px_30px_-18px_rgba(7,27,27,0.45)]"
                         style={{ justifyContent: 'flex-end' }}
                       >
                         <Button
@@ -655,7 +655,7 @@ export default function App() {
                     </form>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">
-                        New to Protixa?{' '}
+                        New to Peppro?{' '}
                         <button type="button" onClick={() => setLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(7, 27, 27)' }}>
                           Create an account
                         </button>
@@ -666,7 +666,7 @@ export default function App() {
                   <>
                     <div className="text-center space-y-2">
                       <h1 className="text-2xl font-semibold">Create Account</h1>
-                      <p className="text-sm text-gray-600">Set up your Protixa account in moments.</p>
+                      <p className="text-sm text-gray-600">Set up your Peppro account in moments.</p>
                     </div>
                     <form
                       onSubmit={async (e) => {

@@ -13,6 +13,7 @@ export interface Product {
   rating: number;
   reviews: number;
   image: string;
+  images: string[];
   inStock: boolean;
   prescription: boolean;
   dosage: string;
@@ -35,6 +36,9 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   const discount = product.originalPrice 
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
+  const primaryImage = product.images[0] ?? product.image;
+  const imageWrapperBase = 'flex h-full w-full items-center justify-center bg-white/85';
+  const imageClasses = 'max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105';
 
   const triggerDetails = () => {
     console.debug('[ProductCard] Details requested', { productId: product.id, viewMode });
@@ -94,11 +98,14 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
               onClick={triggerDetails}
               className="block aspect-square w-full overflow-hidden rounded-3xl border border-white/40 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 btn-hover-lighter"
             >
-              <ImageWithFallback
-                src={product.image}
-                alt={product.name}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 rounded-3xl"
-              />
+              <div className={`${imageWrapperBase} rounded-3xl`}>
+                <ImageWithFallback
+                  key={`${product.id}-list-${primaryImage}`}
+                  src={primaryImage}
+                  alt={product.name}
+                  className={imageClasses}
+                />
+              </div>
             </button>
           </div>
 
@@ -169,11 +176,14 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
             className="relative aspect-square overflow-hidden cursor-pointer"
             onClick={triggerDetails}
           >
-            <ImageWithFallback
-              src={product.image}
-              alt={product.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
+            <div className={imageWrapperBase}>
+              <ImageWithFallback
+                key={`${product.id}-grid-${primaryImage}`}
+                src={primaryImage}
+                alt={product.name}
+                className={imageClasses}
+              />
+            </div>
           {discount > 0 && (
             <Badge className="absolute top-2 left-2 bg-red-500 hover:bg-red-600 squircle-sm">
               -{discount}%

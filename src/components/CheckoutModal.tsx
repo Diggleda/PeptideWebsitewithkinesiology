@@ -232,75 +232,81 @@ export function CheckoutModal({
           {/* Cart Items */}
           <div className="space-y-4">
             <h3>Order Summary</h3>
-            {cartItems.map((item) => (
-              <Card key={item.product.id} className="glass squircle-sm">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 flex-shrink-0">
-                        <ImageWithFallback
-                          src={item.product.image}
-                          alt={item.product.name}
-                          className="w-full h-full object-cover squircle-sm"
-                        />
-                      </div>
-                      <div>
-                        <h4 className="line-clamp-1">{item.product.name}</h4>
-                        <p className="text-sm text-gray-600">{item.product.dosage}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                          <span className="text-green-600 font-bold">${item.product.price.toFixed(2)}</span>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => handleDecreaseQuantity(item.product.id, item.quantity)}
-                              disabled={item.quantity <= 1}
-                              className="squircle-sm"
-                            >
-                              <Minus className="h-4 w-4" />
-                            </Button>
-                            <Input
-                              value={quantityInputs[item.product.id] ?? String(item.quantity)}
-                              onChange={(event) => handleQuantityInputChange(item.product.id, event.target.value)}
-                              onBlur={() => handleQuantityInputBlur(item.product.id)}
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              className="w-16 text-center squircle-sm"
+            {cartItems.map((item) => {
+              const primaryImage = item.product.images[0] ?? item.product.image;
+              return (
+                <Card key={item.product.id} className="glass squircle-sm">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 flex-shrink-0">
+                          <div className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2">
+                            <ImageWithFallback
+                              key={`${item.product.id}-checkout-${primaryImage}`}
+                              src={primaryImage}
+                              alt={item.product.name}
+                              className="max-h-full max-w-full object-contain"
                             />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => handleIncreaseQuantity(item.product.id, item.quantity)}
-                              className="squircle-sm"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
                           </div>
                         </div>
-                        {item.note && (
-                          <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
-                        )}
+                        <div>
+                          <h4 className="line-clamp-1">{item.product.name}</h4>
+                          <p className="text-sm text-gray-600">{item.product.dosage}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                            <span className="text-green-600 font-bold">${item.product.price.toFixed(2)}</span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleDecreaseQuantity(item.product.id, item.quantity)}
+                                disabled={item.quantity <= 1}
+                                className="squircle-sm"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                              <Input
+                                value={quantityInputs[item.product.id] ?? String(item.quantity)}
+                                onChange={(event) => handleQuantityInputChange(item.product.id, event.target.value)}
+                                onBlur={() => handleQuantityInputBlur(item.product.id)}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                className="w-16 text-center squircle-sm"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleIncreaseQuantity(item.product.id, item.quantity)}
+                                className="squircle-sm"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          {item.note && (
+                            <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-3">
+                        <p className="font-bold">${(item.product.price * item.quantity).toFixed(2)}</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveItem(item.product.id)}
+                          className="text-red-500 hover:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Remove item</span>
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-3">
-                      <p className="font-bold">${(item.product.price * item.quantity).toFixed(2)}</p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveItem(item.product.id)}
-                        className="text-red-500 hover:text-red-600"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Remove item</span>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           {/* Referral Code Section */}

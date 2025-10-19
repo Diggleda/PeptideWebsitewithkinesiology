@@ -15,7 +15,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '1. Overview',
         body: [
-          'These Terms of Use ("Terms") govern access to and use of the Protixa website, related mobile experiences, and any connected sales channels (collectively, the "Services"). Protixa ("we," "us," or "our") offers research-grade peptides, ancillary supplies, and educational content.',
+          'These Terms of Use ("Terms") govern access to and use of the Peppro website, related mobile experiences, and any connected sales channels (collectively, the "Services"). Peppro ("we," "us," or "our") offers research-grade peptides, ancillary supplies, and educational content.',
         ],
       },
       {
@@ -33,13 +33,13 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '4. Account Registration',
         body: [
-          'Browsing may be available without registration, but certain features require an account. Provide accurate information, protect your password, and notify Protixa promptly of unauthorized use. We may suspend or close accounts at our discretion.',
+          'Browsing may be available without registration, but certain features require an account. Provide accurate information, protect your password, and notify Peppro promptly of unauthorized use. We may suspend or close accounts at our discretion.',
         ],
       },
       {
         heading: '5. Research Use Only',
         body: [
-          'Protixa products are sold strictly for laboratory, educational, or research purposes. They are not approved by the FDA for diagnostic or therapeutic use in humans or animals. You agree not to administer, sell, or distribute products for medical use and acknowledge that misuse may violate law.',
+          'Peppro products are sold strictly for laboratory, educational, or research purposes. They are not approved by the FDA for diagnostic or therapeutic use in humans or animals. You agree not to administer, sell, or distribute products for medical use and acknowledge that misuse may violate law.',
         ],
       },
       {
@@ -51,25 +51,25 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '7. Pricing and Promotions',
         body: [
-          'Prices are displayed in U.S. dollars unless noted otherwise and may change without notice. Discounts or promotional offers can carry additional conditions and may be modified or withdrawn at Protixa’s discretion.',
+          'Prices are displayed in U.S. dollars unless noted otherwise and may change without notice. Discounts or promotional offers can carry additional conditions and may be modified or withdrawn at Peppro’s discretion.',
         ],
       },
       {
         heading: '8. Taxes',
         body: [
-          'You are responsible for any sales, use, value-added, or comparable taxes arising from purchases. Where required, Protixa collects applicable taxes at checkout.',
+          'You are responsible for any sales, use, value-added, or comparable taxes arising from purchases. Where required, Peppro collects applicable taxes at checkout.',
         ],
       },
       {
         heading: '9. Shipping and Delivery',
         body: [
-          'Processing and transit timelines appear in the Protixa Shipping Policy. Title and risk of loss transfer upon delivery to the carrier. Inspect shipments promptly and report damage or shortages within five days.',
+          'Processing and transit timelines appear in the Peppro Shipping Policy. Title and risk of loss transfer upon delivery to the carrier. Inspect shipments promptly and report damage or shortages within five days.',
         ],
       },
       {
         heading: '10. Returns and Refunds',
         body: [
-          'Returns are handled according to the Shipping Policy. Protixa does not accept returns for products that are opened, tampered with, or otherwise ineligible due to safety or regulatory constraints.',
+          'Returns are handled according to the Shipping Policy. Peppro does not accept returns for products that are opened, tampered with, or otherwise ineligible due to safety or regulatory constraints.',
         ],
       },
       {
@@ -81,55 +81,55 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '12. Intellectual Property',
         body: [
-          'All content, trademarks, logos, and service marks displayed in the Services belong to Protixa or its licensors. Except for the limited license to view and purchase products, no intellectual property rights transfer to you.',
+          'All content, trademarks, logos, and service marks displayed in the Services belong to Peppro or its licensors. Except for the limited license to view and purchase products, no intellectual property rights transfer to you.',
         ],
       },
       {
         heading: '13. Third-Party Links',
         body: [
-          'The Services may reference third-party websites or tools. Protixa is not responsible for their content or practices. Use third-party resources at your own risk.',
+          'The Services may reference third-party websites or tools. Peppro is not responsible for their content or practices. Use third-party resources at your own risk.',
         ],
       },
       {
         heading: '14. Medical Disclaimer',
         body: [
-          'Scientific or educational content shared by Protixa is informational only and does not constitute medical advice. Consult qualified professionals regarding health, medical, or veterinary decisions.',
+          'Scientific or educational content shared by Peppro is informational only and does not constitute medical advice. Consult qualified professionals regarding health, medical, or veterinary decisions.',
         ],
       },
       {
         heading: '15. Disclaimer of Warranties',
         body: [
-          'The Services and products are provided "as is" and "as available." Protixa disclaims all warranties, express or implied, including merchantability, fitness for a particular purpose, title, and non-infringement.',
+          'The Services and products are provided "as is" and "as available." Peppro disclaims all warranties, express or implied, including merchantability, fitness for a particular purpose, title, and non-infringement.',
         ],
       },
       {
         heading: '16. Limitation of Liability',
         body: [
-          'To the fullest extent permitted by law, Protixa and its affiliates are not liable for indirect, incidental, consequential, special, exemplary, or punitive damages. Protixa’s total liability shall not exceed the amount paid for the product giving rise to the claim.',
+          'To the fullest extent permitted by law, Peppro and its affiliates are not liable for indirect, incidental, consequential, special, exemplary, or punitive damages. Peppro’s total liability shall not exceed the amount paid for the product giving rise to the claim.',
         ],
       },
       {
         heading: '17. Indemnification',
         body: [
-          'You agree to indemnify and hold Protixa harmless from claims, losses, liabilities, and expenses (including attorneys’ fees) arising from misuse of the Services or violation of these Terms.',
+          'You agree to indemnify and hold Peppro harmless from claims, losses, liabilities, and expenses (including attorneys’ fees) arising from misuse of the Services or violation of these Terms.',
         ],
       },
       {
         heading: '18. Governing Law and Dispute Resolution',
         body: [
-          'These Terms are governed by U.S. law and, where applicable, the laws of the state in which Protixa is incorporated, without regard to conflict-of-laws principles. Disputes will be resolved through binding arbitration or courts in that state unless mandatory law dictates otherwise.',
+          'These Terms are governed by U.S. law and, where applicable, the laws of the state in which Peppro is incorporated, without regard to conflict-of-laws principles. Disputes will be resolved through binding arbitration or courts in that state unless mandatory law dictates otherwise.',
         ],
       },
       {
         heading: '19. Changes to the Terms',
         body: [
-          'Protixa may update these Terms at any time. Changes take effect when posted. Continued use of the Services after updates constitutes acceptance.',
+          'Peppro may update these Terms at any time. Changes take effect when posted. Continued use of the Services after updates constitutes acceptance.',
         ],
       },
       {
         heading: '20. Contact',
         body: [
-          'Direct questions to legal@protixa.com or mail Protixa Legal, [Insert Physical Address]. Update this contact information with your actual details.',
+          'Direct questions to legal@peppro.com or mail Peppro Legal, [Insert Physical Address]. Update this contact information with your actual details.',
         ],
       },
     ],
@@ -140,7 +140,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '1. Overview',
         body: [
-          'This Privacy Policy explains how Protixa collects, uses, shares, and protects personal information obtained through our website, mobile experiences, and customer support channels (collectively, the "Services").',
+          'This Privacy Policy explains how Peppro collects, uses, shares, and protects personal information obtained through our website, mobile experiences, and customer support channels (collectively, the "Services").',
         ],
       },
       {
@@ -158,14 +158,14 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
           'Communicate updates, respond to inquiries, and send transactional notices.',
           'Personalize experiences, perform analytics, improve products, and conduct quality assurance.',
           'Detect, investigate, and prevent fraud, abuse, or illegal activity.',
-          'Comply with legal obligations and enforce Protixa policies.',
+          'Comply with legal obligations and enforce Peppro policies.',
         ],
       },
       {
         heading: '4. Sharing of Information',
         body: [
-          'Service providers: logistics partners, payment processors, IT and security vendors, marketing platforms, and professional advisors access data as needed to support Protixa.',
-          'Legal requirements: information may be disclosed to satisfy legal obligations or protect Protixa, customers, or others from harm.',
+          'Service providers: logistics partners, payment processors, IT and security vendors, marketing platforms, and professional advisors access data as needed to support Peppro.',
+          'Legal requirements: information may be disclosed to satisfy legal obligations or protect Peppro, customers, or others from harm.',
           'Business transfers: in mergers, acquisitions, financings, or sales of assets, customer information may transition to the successor subject to this Policy.',
           'With your consent: data may be shared with other parties when you request or authorize it.',
         ],
@@ -173,7 +173,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '5. Cookies and Tracking',
         body: [
-          'Protixa uses cookies, pixel tags, and similar technologies to recognize browsers, remember preferences, measure campaign performance, and analyze usage. You may refuse cookies, but some features may not function properly.',
+          'Peppro uses cookies, pixel tags, and similar technologies to recognize browsers, remember preferences, measure campaign performance, and analyze usage. You may refuse cookies, but some features may not function properly.',
         ],
       },
       {
@@ -191,49 +191,49 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '8. Security',
         body: [
-          'Protixa implements administrative, technical, and physical safeguards designed to protect personal information. No method of transmission or storage is entirely secure; you provide information at your own risk.',
+          'Peppro implements administrative, technical, and physical safeguards designed to protect personal information. No method of transmission or storage is entirely secure; you provide information at your own risk.',
         ],
       },
       {
         heading: '9. International Transfers',
         body: [
-          'Protixa operates in the United States and may transfer information to jurisdictions with different data-protection laws. Safeguards such as contractual clauses or certification frameworks are applied when required.',
+          'Peppro operates in the United States and may transfer information to jurisdictions with different data-protection laws. Safeguards such as contractual clauses or certification frameworks are applied when required.',
         ],
       },
       {
         heading: '10. Your Choices',
         body: [
-          'Update account details, adjust marketing preferences, or request deletion by contacting privacy@protixa.com. Depending on jurisdiction, you may access, correct, delete, or restrict processing and withdraw consent.',
+          'Update account details, adjust marketing preferences, or request deletion by contacting privacy@peppro.com. Depending on jurisdiction, you may access, correct, delete, or restrict processing and withdraw consent.',
         ],
       },
       {
         heading: '11. California and EU/UK Residents',
         body: [
-          'Residents of California, the European Economic Area, the United Kingdom, or other regions with specific privacy rights may request copies of their data, opt out of certain processing, or file complaints with supervisory authorities. Protixa responds to verifiable requests within legally mandated timelines.',
+          'Residents of California, the European Economic Area, the United Kingdom, or other regions with specific privacy rights may request copies of their data, opt out of certain processing, or file complaints with supervisory authorities. Peppro responds to verifiable requests within legally mandated timelines.',
         ],
       },
       {
         heading: '12. Children’s Privacy',
         body: [
-          'The Services are not directed to children under 13 (or the applicable minimum age). Protixa does not knowingly collect personal information from children and will delete such information if discovered.',
+          'The Services are not directed to children under 13 (or the applicable minimum age). Peppro does not knowingly collect personal information from children and will delete such information if discovered.',
         ],
       },
       {
         heading: '13. Third-Party Services',
         body: [
-          'Links to external sites or embedded tools operate under their own privacy practices. Review third-party policies before sharing personal information. Protixa is not responsible for their practices.',
+          'Links to external sites or embedded tools operate under their own privacy practices. Review third-party policies before sharing personal information. Peppro is not responsible for their practices.',
         ],
       },
       {
         heading: '14. Changes to this Policy',
         body: [
-          'Protixa may update this Privacy Policy to reflect legal or operational changes. Updates become effective when posted, and material changes may be communicated via email or prominent notice.',
+          'Peppro may update this Privacy Policy to reflect legal or operational changes. Updates become effective when posted, and material changes may be communicated via email or prominent notice.',
         ],
       },
       {
         heading: '15. Contact',
         body: [
-          'For privacy questions or requests, email privacy@protixa.com or write to Protixa Privacy, [Insert Physical Address]. Replace this placeholder with your actual business details.',
+          'For privacy questions or requests, email privacy@peppro.com or write to Peppro Privacy, [Insert Physical Address]. Replace this placeholder with your actual business details.',
         ],
       },
     ],
@@ -250,7 +250,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '2. Verification',
         body: [
-          'Protixa may request additional documentation, such as proof of research affiliation, to meet regulatory requirements. Orders pending verification will not ship until review is complete.',
+          'Peppro may request additional documentation, such as proof of research affiliation, to meet regulatory requirements. Orders pending verification will not ship until review is complete.',
         ],
       },
       {
@@ -262,7 +262,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '4. Shipping Restrictions',
         body: [
-          'Protixa cannot ship to P.O. boxes, APO/FPO/DPO addresses, or jurisdictions where peptides are restricted. International shipping is evaluated individually and may require customs declarations. Customers are responsible for understanding and complying with local import laws.',
+          'Peppro cannot ship to P.O. boxes, APO/FPO/DPO addresses, or jurisdictions where peptides are restricted. International shipping is evaluated individually and may require customs declarations. Customers are responsible for understanding and complying with local import laws.',
         ],
       },
       {
@@ -280,9 +280,9 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '7. Delivery Issues',
         body: [
-          'Delays: Protixa is not liable for carrier delays caused by weather, customs inspections, or other factors beyond our control.',
+          'Delays: Peppro is not liable for carrier delays caused by weather, customs inspections, or other factors beyond our control.',
           'Lost packages: Report packages marked “delivered” but not received within three business days. We will coordinate with the carrier to investigate, and resolutions are handled case by case.',
-          'Damaged shipments: Inspect packages upon arrival and notify shipping@protixa.com with photos within five days to initiate a carrier claim.',
+          'Damaged shipments: Inspect packages upon arrival and notify shipping@peppro.com with photos within five days to initiate a carrier claim.',
         ],
       },
       {
@@ -294,31 +294,31 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '9. Temperature-Sensitive Items',
         body: [
-          'Certain products may require insulated packaging or cold packs. Protixa selects materials based on season and destination and recommends expedited shipping for temperature-sensitive orders, especially during extreme weather.',
+          'Certain products may require insulated packaging or cold packs. Peppro selects materials based on season and destination and recommends expedited shipping for temperature-sensitive orders, especially during extreme weather.',
         ],
       },
       {
         heading: '10. Order Changes and Cancellations',
         body: [
-          'Contact support@protixa.com promptly to request modifications or cancellation. Once fulfillment begins, changes may not be possible.',
+          'Contact support@peppro.com promptly to request modifications or cancellation. Once fulfillment begins, changes may not be possible.',
         ],
       },
       {
         heading: '11. Returns',
         body: [
-          'Refer to the returns section in the Terms of Use for eligibility. Authorization must be obtained before shipping products back to Protixa. Unauthorized returns will be discarded and will not qualify for credit.',
+          'Refer to the returns section in the Terms of Use for eligibility. Authorization must be obtained before shipping products back to Peppro. Unauthorized returns will be discarded and will not qualify for credit.',
         ],
       },
       {
         heading: '12. Policy Updates',
         body: [
-          'Protixa may revise this Shipping Policy at any time. The effective date updates whenever changes are posted.',
+          'Peppro may revise this Shipping Policy at any time. The effective date updates whenever changes are posted.',
         ],
       },
       {
         heading: '13. Contact',
         body: [
-          'For shipping questions, email shipping@protixa.com or mail Protixa Fulfillment, [Insert Physical Address]. Replace this placeholder with your actual logistics contact information.',
+          'For shipping questions, email shipping@peppro.com or mail Peppro Fulfillment, [Insert Physical Address]. Replace this placeholder with your actual logistics contact information.',
         ],
       },
     ],
@@ -341,7 +341,7 @@ export function LegalFooter() {
 
   const handleLinkClick = (key: LegalDocumentKey) => {
     console.debug('[LegalFooter] Link clicked', { key });
-    window.dispatchEvent(new Event('protixa:close-dialogs'));
+    window.dispatchEvent(new Event('peppro:close-dialogs'));
     setActiveDocument(key);
   };
 
@@ -364,7 +364,7 @@ export function LegalFooter() {
         <div className="container mx-auto flex flex-col items-center px-4 pt-12 pb-24 text-center">
           <div className="mt-4 space-y-1 text-sm text-slate-600">
             <p>Advancing research-grade peptide access with care and compliance.</p>
-            <p className="text-xs text-slate-500">© {new Date().getFullYear()} Protixa. All rights reserved.</p>
+            <p className="text-xs text-slate-500">© {new Date().getFullYear()} Peppro. All rights reserved.</p>
           </div>
           <nav className="mt-1 mb-6 flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-[rgb(7,27,27)]">
             {legalLinks.map((link) => (

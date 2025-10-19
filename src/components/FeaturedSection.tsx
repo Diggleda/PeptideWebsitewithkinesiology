@@ -13,6 +13,7 @@ interface FeaturedSectionProps {
 export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSectionProps) {
   const mainFeatured = featuredProducts[0];
   const otherFeatured = featuredProducts.slice(1, 4);
+  const mainFeaturedImage = mainFeatured ? (mainFeatured.images[0] ?? mainFeatured.image) : undefined;
 
   return (
     <div className="mb-12">
@@ -33,11 +34,14 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
             <CardContent className="p-0">
               <div className="grid md:grid-cols-2 gap-0">
                 <div className="relative aspect-square md:aspect-auto">
-                  <ImageWithFallback
-                    src={mainFeatured.image}
-                    alt={mainFeatured.name}
-                    className="w-full h-full object-cover"
-                  />
+                  <div className="flex h-full w-full items-center justify-center bg-white/80 p-6">
+                    <ImageWithFallback
+                      key={`${mainFeatured.id}-featured-main`}
+                      src={mainFeaturedImage}
+                      alt={mainFeatured.name}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
                   <div className="absolute top-4 left-4">
                     <Badge className="bg-red-500 hover:bg-red-600 squircle-sm">
                       Best Seller
@@ -87,11 +91,14 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
               <CardContent className="p-0">
                 <div className="flex gap-3 p-4">
                   <div className="relative w-16 h-16 flex-shrink-0">
-                    <ImageWithFallback
-                      src={product.image}
-                      alt={product.name}
-                      className="w-full h-full object-cover squircle-sm"
-                    />
+                    <div className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2">
+                      <ImageWithFallback
+                        key={`${product.id}-featured-secondary`}
+                        src={product.images[0] ?? product.image}
+                        alt={product.name}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
                   </div>
                   
                   <div className="flex-1 min-w-0">

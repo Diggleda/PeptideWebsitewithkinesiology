@@ -11,7 +11,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ImageWithFallback } from './ImageWithFallback';
 import { Product } from './ProductCard';
-import { Minus, Plus, ShoppingCart } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ProductDetailDialogProps {
   product: Product | null;
@@ -24,6 +24,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [quantityDescription, setQuantityDescription] = useState('');
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const shouldSkipNextCloseRef = useRef(false);
 
   console.debug('[ProductDetailDialog] Render', { isOpen, hasProduct: Boolean(product) });
@@ -33,6 +34,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
       setQuantity(1);
       setQuantityInput('1');
       setQuantityDescription('');
+      setActiveImageIndex(0);
       shouldSkipNextCloseRef.current = true;
     }
   }, [isOpen, product]);
@@ -70,6 +72,24 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
     onClose();
   };
 
+  const hasMultipleImages = product ? product.images.length > 1 : false;
+  const safeImageIndex = product && product.images.length > 0
+    ? Math.min(activeImageIndex, product.images.length - 1)
+    : 0;
+  const activeImage = product
+    ? product.images[safeImageIndex] ?? product.image
+    : undefined;
+
+  const handlePreviousImage = () => {
+    if (!product || product.images.length < 2) return;
+    setActiveImageIndex((index) => (index === 0 ? product.images.length - 1 : index - 1));
+  };
+
+  const handleNextImage = () => {
+    if (!product || product.images.length < 2) return;
+    setActiveImageIndex((index) => (index === product.images.length - 1 ? 0 : index + 1));
+  };
+
   return (
     <Dialog
       open={isOpen}
@@ -96,8 +116,56 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
           <div className="pb-6">
             <div className="grid gap-6 border-t border-[var(--brand-glass-border-1)] px-6 pt-5 md:grid-cols-[240px_1fr]">
               <aside className="space-y-4 px-0 md:px-0">
-                <div className="overflow-hidden rounded-2xl glass-card border border-[var(--brand-glass-border-2)] shadow-inner">
-                  <ImageWithFallback src={product.image} alt={product.name} className="h-56 w-full object-cover" />
+                <div className="space-y-3">
+                  <div className="relative flex min-h-[200px] w-full items-center justify-center overflow-hidden rounded-2xl glass-card border border-[var(--brand-glass-border-2)] shadow-inner bg-white/70 md:min-h-[260px]">
+                    <ImageWithFallback
+                      key={`${product.id}-active-${safeImageIndex}`}
+                      src={activeImage}
+                      alt={product.name}
+                      className="max-h-[220px] w-auto max-w-full object-contain p-4 md:max-h-[280px]"
+                    />
+                    {hasMultipleImages && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handlePreviousImage}
+                          aria-label="Previous image"
+                          className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-[rgb(7,27,27)] shadow transition hover:bg-white"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleNextImage}
+                          aria-label="Next image"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-[rgb(7,27,27)] shadow transition hover:bg-white"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
+                    {hasMultipleImages && (
+                      <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/70 px-3 py-1 shadow">
+                        {product.images.map((imageSrc, index) => {
+                          const isActive = index === safeImageIndex;
+                          return (
+                            <button
+                              key={`${imageSrc}-dot-${index}`}
+                              type="button"
+                              onClick={() => setActiveImageIndex(index)}
+                              aria-label={`Go to image ${index + 1}`}
+                              aria-pressed={isActive}
+                              className={`h-2.5 w-2.5 rounded-full transition ${
+                                isActive
+                                  ? 'bg-[rgb(7,27,27)]'
+                                  : 'bg-[rgba(7,27,27,0.25)] hover:bg-[rgba(7,27,27,0.45)]'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2 text-sm text-slate-800">
                   <div>

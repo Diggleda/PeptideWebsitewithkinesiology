@@ -2084,21 +2084,37 @@ body { position: relative; }
     box-shadow: 0 14px 42px rgba(var(--brand-glass-rgb), 0.22), inset 0 1px rgba(255, 255, 255, 0.22);
   }
 
-  .glass-card {
-    -webkit-backdrop-filter: blur(26px) saturate(1.6);
-    backdrop-filter: blur(26px) saturate(1.6);
-    background: var(--brand-glass-tint-2);
-    border: 1px solid var(--brand-glass-border-2);
-    box-shadow: 0 18px 56px rgba(var(--brand-glass-rgb), 0.26), inset 0 1px rgba(255, 255, 255, 0.24);
-  }
+.glass-card {
+  -webkit-backdrop-filter: blur(26px) saturate(1.6);
+  backdrop-filter: blur(26px) saturate(1.6);
+  background: var(--brand-glass-tint-2);
+  border: 1px solid var(--brand-glass-border-2);
+  box-shadow: 0 18px 56px rgba(var(--brand-glass-rgb), 0.26), inset 0 1px rgba(255, 255, 255, 0.24);
+}
 
-  .glass-strong {
-    -webkit-backdrop-filter: blur(30px) saturate(1.7);
-    backdrop-filter: blur(30px) saturate(1.7);
-    background: var(--brand-glass-tint-3);
-    border: 1px solid var(--brand-glass-border-3);
-    box-shadow: 0 22px 68px rgba(var(--brand-glass-rgb), 0.30), inset 0 1px rgba(255, 255, 255, 0.28);
-  }
+.glass-strong {
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  backdrop-filter: blur(30px) saturate(1.7);
+  background: var(--brand-glass-tint-3);
+  border: 1px solid var(--brand-glass-border-3);
+  box-shadow: 0 22px 68px rgba(var(--brand-glass-rgb), 0.30), inset 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.landing-glass {
+  -webkit-backdrop-filter: blur(28px) saturate(1.65);
+  backdrop-filter: blur(28px) saturate(1.65);
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 22px 60px rgba(7, 27, 27, 0.24), inset 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.landing-glass-strong {
+  -webkit-backdrop-filter: blur(32px) saturate(1.7);
+  backdrop-filter: blur(32px) saturate(1.7);
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 25px 70px rgba(7, 27, 27, 0.26), inset 0 1px rgba(255, 255, 255, 0.26);
+}
 }
 
 :root {

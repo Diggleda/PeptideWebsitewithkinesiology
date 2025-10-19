@@ -9,6 +9,40 @@ type RawPeptide = {
   description: string;
   benefits: string;
   protocol: string;
+  image1?: string;
+  image2?: string;
+  image3?: string;
+};
+
+const imageModules = import.meta.glob('./Peptide_PNGs/*', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>;
+
+const imageLookup = Object.entries(imageModules).reduce<Record<string, string>>((acc, [path, value]) => {
+  const fileName = path.split('/').pop();
+  if (fileName) {
+    const normalized = fileName.toLowerCase();
+    acc[fileName] = value;
+    acc[normalized] = value;
+  }
+  return acc;
+}, {});
+
+const resolveImages = (...candidates: Array<string | undefined>) => {
+  return candidates
+    .map((candidate) => {
+      const trimmed = candidate?.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      const direct = imageLookup[trimmed];
+      if (direct) {
+        return direct;
+      }
+      return imageLookup[trimmed.toLowerCase()];
+    })
+    .filter((src): src is string => Boolean(src));
 };
 
 const createGradientImage = (start: string, end: string) => {
@@ -45,23 +79,30 @@ const gradientCatalog: Record<string, string> = {
 const baseImage = (category: string) =>
   gradientCatalog[category] || createGradientImage('#0f172a', '#22d3ee');
 
-const toPeptideProduct = (raw: RawPeptide, index: number): Product => ({
-  id: `peptide-${index + 1}`,
-  name: `${raw.name} (${raw.dosage})`,
-  category: raw.category,
-  price: 0,
-  rating: 5,
-  reviews: 0,
-  image: baseImage(raw.category),
-  inStock: true,
-  prescription: raw.type === 'Injectables',
-  dosage: raw.dosage,
-  manufacturer: 'N/A',
-  type: raw.type,
-  description: raw.description,
-  benefits: raw.benefits,
-  protocol: raw.protocol
-});
+const toPeptideProduct = (raw: RawPeptide, index: number): Product => {
+  const resolvedImages = resolveImages(raw.image1, raw.image2, raw.image3);
+  const fallbackImage = baseImage(raw.category);
+  const images = resolvedImages.length > 0 ? resolvedImages : [fallbackImage];
+
+  return {
+    id: `peptide-${index + 1}`,
+    name: `${raw.name} (${raw.dosage})`,
+    category: raw.category,
+    price: 0,
+    rating: 5,
+    reviews: 0,
+    image: images[0],
+    images,
+    inStock: true,
+    prescription: raw.type === 'Injectables',
+    dosage: raw.dosage,
+    manufacturer: 'N/A',
+    type: raw.type,
+    description: raw.description,
+    benefits: raw.benefits,
+    protocol: raw.protocol,
+  };
+};
 
 const rawList = rawPeptideProducts as RawPeptide[];
 
