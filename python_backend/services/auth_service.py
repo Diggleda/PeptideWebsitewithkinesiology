@@ -36,6 +36,19 @@ def _create_auth_token(payload: Dict) -> str:
 
 
 _CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}$")
+_BCRYPT_PREFIX = re.compile(r"^\$2[abxy]\$")
+
+
+def _safe_check_password(password: str, hashed: str) -> bool:
+    encoded = (hashed or "").strip()
+    if not _BCRYPT_PREFIX.match(encoded):
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), encoded.encode("utf-8"))
+    except ValueError as exc:
+        if "Invalid salt" in str(exc):
+            return False
+        raise
 
 
 def register(data: Dict) -> Dict:
@@ -114,7 +127,7 @@ def login(data: Dict) -> Dict:
 
     user = user_repository.find_by_email(email)
     if user:
-        if not bcrypt.checkpw(password.encode("utf-8"), str(user.get("password", "")).encode("utf-8")):
+        if not _safe_check_password(password, str(user.get("password", ""))):
             raise _unauthorized("INVALID_PASSWORD")
 
         updated = user_repository.update(
@@ -133,7 +146,7 @@ def login(data: Dict) -> Dict:
     if not sales_rep:
         raise _not_found("EMAIL_NOT_FOUND")
 
-    if not bcrypt.checkpw(password.encode("utf-8"), str(sales_rep.get("password", "")).encode("utf-8")):
+    if not _safe_check_password(password, str(sales_rep.get("password", ""))):
         raise _unauthorized("INVALID_PASSWORD")
 
     updated_rep = sales_rep_repository.update(

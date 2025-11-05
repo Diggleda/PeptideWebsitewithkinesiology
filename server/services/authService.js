@@ -4,6 +4,8 @@ const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
 const { env } = require('../config/env');
 
+const BCRYPT_REGEX = /^\$2[abxy]\$/;
+
 const sanitizeUser = (user) => {
   const {
     password,
@@ -13,6 +15,21 @@ const sanitizeUser = (user) => {
 };
 
 const createAuthToken = (payload) => jwt.sign(payload, env.jwtSecret, { expiresIn: '7d' });
+
+const comparePassword = async (plainText, hashed) => {
+  if (typeof hashed !== 'string' || !BCRYPT_REGEX.test(hashed)) {
+    // Treat malformed hashes as invalid credentials instead of throwing
+    return false;
+  }
+  try {
+    return await bcrypt.compare(plainText, hashed);
+  } catch (error) {
+    if (error instanceof Error && /invalid salt/i.test(error.message)) {
+      return false;
+    }
+    throw error;
+  }
+};
 
 const register = async ({ name, email, password }) => {
   if (!name || !email || !password) {
@@ -66,7 +83,7 @@ const login = async ({ email, password }) => {
     throw error;
   }
 
-  const validPassword = await bcrypt.compare(password, user.password);
+  const validPassword = await comparePassword(password, user.password);
   if (!validPassword) {
     const error = new Error('INVALID_PASSWORD');
     error.status = 401;
