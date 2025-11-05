@@ -113,30 +113,47 @@ def login(data: Dict) -> Dict:
         raise _bad_request("Email and password required")
 
     user = user_repository.find_by_email(email)
-    if not user:
+    if user:
+        if not bcrypt.checkpw(password.encode("utf-8"), str(user.get("password", "")).encode("utf-8")):
+            raise _unauthorized("INVALID_PASSWORD")
+
+        updated = user_repository.update(
+            {
+                **user,
+                "visits": int(user.get("visits") or 1) + 1,
+                "lastLoginAt": datetime.now(timezone.utc).isoformat(),
+                "mustResetPassword": False,
+            }
+        ) or user
+
+        token = _create_auth_token({"id": updated["id"], "email": updated["email"]})
+        return {"token": token, "user": _sanitize_user(updated)}
+
+    sales_rep = sales_rep_repository.find_by_email(email)
+    if not sales_rep:
         raise _not_found("EMAIL_NOT_FOUND")
 
-    if not bcrypt.checkpw(password.encode("utf-8"), str(user.get("password", "")).encode("utf-8")):
+    if not bcrypt.checkpw(password.encode("utf-8"), str(sales_rep.get("password", "")).encode("utf-8")):
         raise _unauthorized("INVALID_PASSWORD")
 
-    updated = user_repository.update(
+    updated_rep = sales_rep_repository.update(
         {
-            **user,
-            "visits": int(user.get("visits") or 1) + 1,
+            **sales_rep,
+            "visits": int(sales_rep.get("visits") or 1) + 1,
             "lastLoginAt": datetime.now(timezone.utc).isoformat(),
             "mustResetPassword": False,
         }
-    ) or user
+    ) or sales_rep
 
-    token = _create_auth_token({"id": updated["id"], "email": updated["email"]})
-    return {"token": token, "user": _sanitize_user(updated)}
+    token = _create_auth_token({"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep"})
+    return {"token": token, "user": _sanitize_sales_rep(updated_rep)}
 
 
 def check_email(email: str) -> Dict:
     normalized = _normalize_email(email)
     if not normalized:
         raise _bad_request("EMAIL_REQUIRED")
-    exists = user_repository.find_by_email(normalized) is not None
+    exists = user_repository.find_by_email(normalized) is not None or sales_rep_repository.find_by_email(normalized) is not None
     return {"exists": exists}
 
 
@@ -164,6 +181,15 @@ def _sanitize_user(user: Dict) -> Dict:
             sanitized["salesRep"] = None
     else:
         sanitized["salesRep"] = None
+    return sanitized
+
+
+def _sanitize_sales_rep(rep: Dict) -> Dict:
+    sanitized = dict(rep)
+    sanitized.pop("password", None)
+    sanitized.setdefault("role", "sales_rep")
+    sanitized.setdefault("salesRepId", sanitized.get("id"))
+    sanitized.setdefault("salesRep", None)
     return sanitized
 
 

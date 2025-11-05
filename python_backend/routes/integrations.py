@@ -9,6 +9,7 @@ blueprint = Blueprint("integrations", __name__, url_prefix="/api/integrations")
 
 
 @blueprint.post("/google-sheets/sales-reps")
+@blueprint.post("/google-sheets/sales-reps.php")
 def sync_sales_reps():
     payload = request.get_json(force=True, silent=True) or {}
     headers = {key.lower(): value for key, value in request.headers.items()}

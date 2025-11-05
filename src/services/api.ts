@@ -1,7 +1,12 @@
 const API_BASE_URL = (() => {
-  const configured = (import.meta.env.VITE_API_URL as string | undefined) || '';
-  const base = configured ? configured.replace(/\/+$/, '') : 'http://localhost:3001';
-  return `${base}/api`;
+  const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
+
+  if (!configured) {
+    return 'http://localhost:3001/api';
+  }
+
+  const normalized = configured.replace(/\/+$/, '');
+  return normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 })();
 
 // Helper function to get auth token
