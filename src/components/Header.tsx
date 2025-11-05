@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
@@ -7,9 +7,10 @@ import { Label } from './ui/label';
 import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
+import clsx from 'clsx';
 
 interface HeaderProps {
-  user: { name: string; referralCode: string; visits?: number } | null;
+  user: { name: string; role?: string | null; referralCode?: string | null; visits?: number } | null;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout: () => void;
   cartItems: number;
@@ -19,10 +20,13 @@ interface HeaderProps {
     email: string;
     password: string;
     confirmPassword: string;
+    code: string;
   }) => Promise<AuthActionResult> | AuthActionResult;
   onCartClick?: () => void;
   loginPromptToken?: number;
   loginContext?: 'checkout' | null;
+  showCartIconFallback?: boolean;
+  onShowInfo?: () => void;
 }
 
 export function Header({
@@ -34,12 +38,14 @@ export function Header({
   onCreateAccount,
   onCartClick,
   loginPromptToken,
-  loginContext = null
+  loginContext = null,
+  showCartIconFallback = false,
+  onShowInfo
 }: HeaderProps) {
-  const secondaryColor = 'rgb(7, 27, 27)';
-  const translucentSecondary = 'rgba(7, 27, 27, 0.18)';
-  const elevatedShadow = '0 32px 60px -28px rgba(7, 27, 27, 0.55)';
-  const logoHaloBackground = 'rgba(7, 27, 27, 0.08)';
+  const secondaryColor = 'rgb(95, 179, 249)';
+  const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
+  const elevatedShadow = '0 32px 60px -28px rgba(95, 179, 249, 0.55)';
+  const logoHaloBackground = 'rgba(95, 179, 249, 0.08)';
   const [loginOpen, setLoginOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,6 +56,7 @@ export function Header({
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [signupCode, setSignupCode] = useState('');
   const lastLoginPromptToken = useRef<number | null>(null);
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
@@ -61,6 +68,12 @@ export function Header({
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const headerDisplayName = user
+    ? user.role === 'sales_rep'
+      ? `Admin: ${user.name}`
+      : user.name
+    : '';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +93,7 @@ export function Header({
       setSignupEmail('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -109,6 +123,7 @@ export function Header({
       setSignupSuffix('');
       setSignupPassword(password);
       setSignupConfirmPassword(password);
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -136,6 +151,7 @@ export function Header({
     setSignupEmail('');
     setSignupPassword('');
     setSignupConfirmPassword('');
+    setSignupCode('');
     setShowLoginPassword(false);
     setShowSignupPassword(false);
     setShowSignupConfirmPassword(false);
@@ -172,6 +188,41 @@ export function Header({
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const headerElement = headerRef.current;
+    if (!headerElement) {
+      return;
+    }
+
+    const updateHeightVariable = () => {
+      const { height } = headerElement.getBoundingClientRect();
+      document.documentElement.style.setProperty('--app-header-height', `${Math.round(height)}px`);
+    };
+
+    updateHeightVariable();
+
+    let resizeObserver: ResizeObserver | null = null;
+
+    if ('ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(() => updateHeightVariable());
+      resizeObserver.observe(headerElement);
+    } else {
+      window.addEventListener('resize', updateHeightVariable);
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else {
+        window.removeEventListener('resize', updateHeightVariable);
+      }
     };
   }, []);
 
@@ -222,6 +273,7 @@ export function Header({
       email: signupEmail,
       password: signupPassword,
       confirmPassword: signupConfirmPassword,
+      code: signupCode,
     };
 
     setSignupError('');
@@ -237,6 +289,7 @@ export function Header({
       setSignupEmail('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -259,6 +312,7 @@ export function Header({
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -274,6 +328,7 @@ export function Header({
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
@@ -287,15 +342,46 @@ export function Header({
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
       return;
     }
 
+    if (result.status === 'password_mismatch') {
+      setSignupError('Passwords do not match. Please confirm and try again.');
+      return;
+    }
+
+    if (result.status === 'invalid_referral_code') {
+      setSignupError('Referral codes must be 5 characters (e.g., AB123). Please double-check and try again.');
+      return;
+    }
+
+    if (result.status === 'referral_code_not_found') {
+      setSignupError('We couldn\'t locate that onboarding code. Please confirm it with your sales representative.');
+      return;
+    }
+
+    if (result.status === 'sales_rep_email_mismatch') {
+      setSignupError('Please use the email address associated with your sales representative profile.');
+      return;
+    }
+
+    if (result.status === 'referral_code_unavailable') {
+      setSignupError('This onboarding code has already been used. Please request a new code from your sales representative.');
+      return;
+    }
+
+    if (result.status === 'name_email_required') {
+      setSignupError('Name and email are required to create your account.');
+      return;
+    }
+
     if (result.status === 'error') {
-      if (result.message === 'PASSWORD_MISMATCH') {
-        setSignupError('Passwords do not match. Please confirm and try again.');
+      if (result.message === 'PASSWORD_REQUIRED') {
+        setSignupError('Please create a secure password to access your account.');
       } else {
         setSignupError('Unable to create an account right now. Please try again.');
       }
@@ -312,6 +398,7 @@ export function Header({
       setSignupEmail('');
       setSignupPassword('');
       setSignupConfirmPassword('');
+      setSignupCode('');
       setLoginError('');
       setSignupError('');
       setShowLoginPassword(false);
@@ -327,13 +414,13 @@ export function Header({
   };
 
   const handleCopyReferralCode = async () => {
-    if (!user?.referralCode) return;
+  if (!user?.referralCode) return;
     try {
       if (!navigator?.clipboard) {
         throw new Error('Clipboard API unavailable');
       }
       await navigator.clipboard.writeText(user.referralCode);
-      toast.success('Referral code copied');
+      // toast.success('Referral code copied');
       setReferralCopied(true);
       if (referralCopyTimeout.current) {
         clearTimeout(referralCopyTimeout.current);
@@ -342,17 +429,20 @@ export function Header({
         setReferralCopied(false);
       }, 2000);
     } catch (error) {
-      toast.error('Unable to copy referral code');
+      // toast.error('Unable to copy referral code');
       setReferralCopied(false);
     }
   };
 
-  const renderDesktopCartButton = () => (
+  const renderCartButton = () => (
     <Button
       variant="outline"
       size="sm"
       onClick={handleCartClick}
-      className="relative hidden md:inline-flex glass squircle-sm transition-all duration-300 flex-shrink-0"
+      className={clsx(
+        'relative hidden md:inline-flex glass squircle-sm transition-all duration-300 flex-shrink-0',
+        showCartIconFallback && 'inline-flex'
+      )}
       style={{
         color: secondaryColor,
         borderColor: translucentSecondary,
@@ -362,7 +452,7 @@ export function Header({
       {cartItems > 0 && (
         <Badge
           variant="outline"
-          className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(7,27,27)] shadow"
+          className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
         >
           {cartItems}
         </Badge>
@@ -373,15 +463,14 @@ export function Header({
   const renderSearchField = (inputClassName = '') => (
     <div className="relative">
       <Search
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform"
-        style={{ color: secondaryColor }}
+        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-600"
       />
       <Input
         type="text"
         placeholder="Search peptides..."
         value={searchQuery}
         onChange={(e) => handleSearchChange(e.target.value)}
-        className={`glass squircle-sm pl-10 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)] ${inputClassName}`.trim()}
+        className={`glass squircle-sm pl-10 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
         style={{ borderColor: translucentSecondary, minWidth: '100%' }}
       />
     </div>
@@ -399,27 +488,20 @@ export function Header({
             variant="default"
             size="sm"
             onClick={() => setWelcomeOpen(true)}
-              className="squircle-sm shadow-sm transition-all duration-300 whitespace-nowrap px-4"
-            style={{
-              backgroundColor: secondaryColor,
-              borderColor: 'transparent',
-              color: '#fff',
-            }}
+            className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap px-4"
             aria-haspopup="dialog"
             aria-expanded={welcomeOpen}
           >
-            <User className="h-4 w-4 flex-shrink-0" style={{ color: '#ffffff' }} />
-            <span className="hidden sm:inline ml-3">{user.name}</span>
+            <User className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden sm:inline ml-3">{headerDisplayName}</span>
           </Button>
         </DialogTrigger>
         <DialogContent
-          className="w-full max-w-[min(340px,calc(100vw-2rem))] squircle-xl border backdrop-blur-xl shadow-lg"
+          className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl"
           style={{
-            borderColor: 'rgba(7, 27, 27, 0.32)',
-            borderWidth: '1.5px',
-            background: 'linear-gradient(155deg, rgba(255,255,255,0.98), rgba(240,255,255,0.96))',
-            boxShadow:
-              '0 55px 110px -45px rgba(7, 27, 27, 0.68), 0 28px 60px -40px rgba(7, 27, 27, 0.55)',
+            backdropFilter: 'blur(38px) saturate(1.6)',
+            width: 'min(640px, calc(100vw - 3rem))',
+            maxWidth: 'min(640px, calc(100vw - 3rem))',
           }}
         >
           <DialogTitle className="sr-only">Account greeting</DialogTitle>
@@ -428,64 +510,47 @@ export function Header({
             <DialogTitle>
               {(user.visits ?? 1) > 1
                 ? `Welcome back, ${user.name}!`
-                : `Welcome to Peppro, ${user.name}!`}
+                : `Welcome to PepPro, ${user.name}!`}
             </DialogTitle>
             <DialogDescription>
               {(user.visits ?? 1) > 1
-                ? `We appreciate your continued trust. Let’s make healthcare simpler together.`
-                : 'We are thrilled to have you with us—let’s make healthcare simpler together.'}
+                ? `We appreciate your continued support—let's make healthcare simpler together!`
+                : `We are thrilled to have you with us—let's make healthcare simpler together!`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 pt-4 pb-2">
-            <div className="space-y-2">
-              <Label>Referral Code</Label>
-              <DialogDescription>
-                Copy and share your referral code below to grow your network.
-              </DialogDescription>
-              <div className="flex flex-col items-start gap-1" aria-live="polite">
-                <button
-                  type="button"
-                  onClick={handleCopyReferralCode}
-                  className="group copy-trigger inline-flex h-10 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-transform duration-150 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer btn-hover-lighter"
-                  style={{
-                    backgroundColor: translucentSecondary,
-                    color: secondaryColor,
-                    borderColor: translucentSecondary,
-                  }}
-                >
-                  <Gift className="h-[0.875rem] w-[0.875rem]" style={{ color: secondaryColor }} />
-                  <span className="tracking-wide uppercase leading-none">{user.referralCode}</span>
-                  <Copy className="copy-icon h-3 w-3 pointer-events-none" aria-hidden="true" />
-                  <span className="sr-only">Copy referral code</span>
-                </button>
-                <span
-                  className="h-4 text-xs font-semibold text-emerald-600 transition-opacity duration-200"
-                  style={{ opacity: referralCopied ? 1 : 0 }}
-                  aria-hidden={!referralCopied}
-                >
-                  Copied
-                </span>
+            <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
+              <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+              <div className="space-y-1 text-sm text-slate-600">
+                <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
+                <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
+                <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-3 pt-6 pb-1">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                console.log('[Header] How does this work clicked', { onShowInfo: !!onShowInfo });
+                setWelcomeOpen(false);
+                // Delay the onShowInfo call slightly to ensure modal closes first
+                setTimeout(() => {
+                  if (onShowInfo) {
+                    console.log('[Header] Calling onShowInfo after modal close');
+                    onShowInfo();
+                  }
+                }, 100);
+              }}
+              className="squircle-sm glass btn-hover-lighter w-full"
+            >
+              How does this work?
+            </Button>
+            <div className="flex flex-row gap-3 pt-2 pb-1">
               <Button
                 type="button"
                 variant="outline"
                 onClick={onLogout}
-                className="squircle-sm"
-                style={{
-                  color: secondaryColor,
-                  borderColor: 'rgba(7,27,27,0.25)',
-                  backgroundColor: 'rgba(7,27,27,0.04)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(7,27,27,0.08)';
-                  e.currentTarget.style.borderColor = 'rgba(7,27,27,0.35)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(7,27,27,0.04)';
-                  e.currentTarget.style.borderColor = 'rgba(7,27,27,0.25)';
-                }}
+                className="squircle-sm glass btn-hover-lighter flex-1"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
@@ -493,18 +558,7 @@ export function Header({
               <Button
                 type="button"
                 onClick={() => setWelcomeOpen(false)}
-                className="squircle-sm flex-1 min-w-[150px]"
-                style={{
-                  backgroundColor: secondaryColor,
-                  color: '#fff',
-                  borderColor: 'transparent'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(7,27,27,0.82)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = secondaryColor;
-                }}
+                className="squircle-sm glass-brand btn-hover-lighter flex-1"
               >
                 Continue
               </Button>
@@ -512,7 +566,7 @@ export function Header({
           </div>
         </DialogContent>
       </Dialog>
-      {renderDesktopCartButton()}
+      {renderCartButton()}
     </>
   ) : (
     <>
@@ -520,25 +574,18 @@ export function Header({
         <DialogTrigger asChild>
           <Button
             variant="default"
-            className="squircle-sm shadow-sm transition-all duration-300 whitespace-nowrap"
-            style={{
-              backgroundColor: secondaryColor,
-              borderColor: 'transparent',
-              color: '#fff',
-            }}
+            className="squircle-sm glass-brand-subtle btn-hover-lighter transition-all duration-300 whitespace-nowrap"
           >
-            <User className="h-4 w-4 flex-shrink-0" style={{ color: '#ffffff' }} />
+            <User className="h-4 w-4 flex-shrink-0" />
             <span className="hidden sm:inline ml-2">Login</span>
           </Button>
         </DialogTrigger>
         <DialogContent
-          className="w-full max-w-[min(340px,calc(100vw-2rem))] squircle-xl border backdrop-blur-xl shadow-lg"
+          className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl"
           style={{
-            borderColor: 'rgba(7, 27, 27, 0.32)',
-            borderWidth: '1.5px',
-            background: 'linear-gradient(155deg, rgba(255,255,255,0.98), rgba(240,255,255,0.96))',
-            boxShadow:
-              '0 55px 110px -45px rgba(7, 27, 27, 0.68), 0 28px 60px -40px rgba(7, 27, 27, 0.55)',
+            backdropFilter: 'blur(38px) saturate(1.6)',
+            width: 'min(640px, calc(100vw - 3rem))',
+            maxWidth: 'min(640px, calc(100vw - 3rem))',
           }}
         >
           <DialogTitle className="sr-only">Authentication modal</DialogTitle>
@@ -550,8 +597,8 @@ export function Header({
               </DialogTitle>
               <DialogDescription>
                 {authMode === 'login'
-                  ? 'Login to enter your Peppro account.'
-                  : 'Set up your Peppro account in moments.'}
+                  ? 'Login to enter your PepPro account.'
+                  : ''}
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -567,7 +614,7 @@ export function Header({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
                   />
@@ -575,7 +622,7 @@ export function Header({
                 {/* Login password */}
                 <div className="space-y-3">
                   <Label htmlFor="password">Password</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="relative mt-1">
                     <Input
                       id="password"
                       name="password"
@@ -583,14 +630,14 @@ export function Header({
                       type={showLoginPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="glass squircle-sm mt-1 flex-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
-                      className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(7,27,27,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.12)] btn-hover-lighter"
                       aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                       aria-pressed={showLoginPassword}
                     >
@@ -613,18 +660,14 @@ export function Header({
                 )}
                 <Button
                   type="submit"
-                  className="w-full squircle-sm shadow-sm"
-                  style={{
-                    backgroundColor: secondaryColor,
-                    color: '#fff',
-                    borderColor: 'transparent',
-                  }}
+                  size="lg"
+                  className="w-full squircle-sm glass-brand btn-hover-lighter"
                 >
                   Sign In
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">
-                New to Peppro?{' '}
+                New to PepPro?{' '}
                 <button
                   type="button"
                   onClick={() => setAuthMode('signup')}
@@ -645,17 +688,19 @@ export function Header({
                       id="suffix"
                       value={signupSuffix}
                       onChange={(e) => setSignupSuffix(e.target.value)}
-                      className="glass squircle-sm mt-1 h-10 w-full px-3 text-sm border transition-colors focus-visible:outline-none focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[3px] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                      className="glass squircle-sm mt-1 w-full px-3 text-sm border transition-colors focus-visible:outline-none focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[3px] focus-visible:ring-[rgba(95,179,249,0.3)] leading-tight"
                       style={{
                         borderColor: translucentSecondary,
-                        backgroundColor: 'rgba(7,27,27,0.02)',
+                        backgroundColor: 'rgba(95,179,249,0.02)',
                         WebkitAppearance: 'none',
                         MozAppearance: 'none',
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23071b1b' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                         backgroundRepeat: 'no-repeat',
                         backgroundPosition: 'right 0.75rem center',
                         backgroundSize: '12px',
-                        paddingRight: '2.5rem'
+                        paddingRight: '2.5rem',
+                        height: '2.5rem',
+                        lineHeight: '1.25rem'
                       }}
                     >
                       <option value="">None</option>
@@ -678,10 +723,10 @@ export function Header({
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                      className="glass squircle-sm mt-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
-                      style={{ borderColor: translucentSecondary }}
-                      required
-                    />
+                    className="glass squircle-sm mt-1 h-10 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
+                    style={{ borderColor: translucentSecondary }}
+                    required
+                  />
                   </div>
                 </div>
                 <div className="space-y-3">
@@ -693,7 +738,7 @@ export function Header({
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                    className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
                   />
@@ -701,22 +746,22 @@ export function Header({
                 {/* Signup password */}
                 <div className="space-y-3">
                   <Label htmlFor="signup-password">Password</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="relative mt-1">
                     <Input
                       id="signup-password"
-                      name="new-password"
+                      name="password"
                       autoComplete="new-password"
                       type={showSignupPassword ? 'text' : 'password'}
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
-                      className="glass squircle-sm mt-1 flex-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowSignupPassword((prev) => !prev)}
-                      className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(7,27,27,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.12)] btn-hover-lighter"
                       aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                       aria-pressed={showSignupPassword}
                     >
@@ -737,7 +782,7 @@ export function Header({
                 {/* Signup confirm password */}
                 <div className="space-y-3">
                   <Label htmlFor="signup-confirm-password">Confirm Password</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="relative mt-1">
                     <Input
                       id="signup-confirm-password"
                       name="confirm-password"
@@ -745,14 +790,14 @@ export function Header({
                       type={showSignupConfirmPassword ? 'text' : 'password'}
                       value={signupConfirmPassword}
                       onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                      className="glass squircle-sm mt-1 flex-1 focus-visible:border-[rgb(7,27,27)] focus-visible:ring-[rgba(7,27,27,0.3)]"
+                      className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowSignupConfirmPassword((prev) => !prev)}
-                      className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(7,27,27,0.12)] btn-hover-lighter"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.12)] btn-hover-lighter"
                       aria-label={showSignupConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                       aria-pressed={showSignupConfirmPassword}
                     >
@@ -770,17 +815,31 @@ export function Header({
                     </button>
                   </div>
                 </div>
+                {/* Signup referral code */}
+                <div className="space-y-3">
+                  <Label htmlFor="signup-code">Referral Code</Label>
+                  <Input
+                    id="signup-code"
+                    name="referral-code"
+                    autoComplete="off"
+                    value={signupCode}
+                    onChange={(e) => setSignupCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+                    maxLength={5}
+                    inputMode="text"
+                    pattern="[A-Z0-9]*"
+                    className="glass squircle-sm focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
+                    style={{ borderColor: translucentSecondary, textTransform: 'uppercase' }}
+                    required
+                  />
+                  <p className="text-xs text-slate-500">Codes are 5 characters and issued by your sales representative.</p>
+                </div>
                 {signupError && (
                   <p className="text-sm text-red-600">{signupError}</p>
                 )}
                 <Button
                   type="submit"
-                  className="w-full squircle-sm shadow-sm"
-                  style={{
-                    backgroundColor: secondaryColor,
-                    color: '#fff',
-                    borderColor: 'transparent',
-                  }}
+                  size="lg"
+                  className="w-full squircle-sm glass-brand btn-hover-lighter"
                 >
                   Create Account
                 </Button>
@@ -800,12 +859,17 @@ export function Header({
           )}
         </DialogContent>
       </Dialog>
-      {renderDesktopCartButton()}
+      {renderCartButton()}
     </>
   );
 
   return (
-    <header className="sticky top-0 z-50 glass-strong border-b border-white/20">
+    <header
+      ref={headerRef}
+      data-app-header
+      className="w-full glass-strong border-b border-white/20 bg-white/70 supports-[backdrop-filter]:bg-white/40 backdrop-blur shadow-sm"
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9500 }}
+    >
       <div className="container mx-auto px-4 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
           <div className="flex items-center justify-between gap-4">
@@ -815,7 +879,7 @@ export function Header({
                 <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
                   <img
                     src="/Peppro_FullLogo_Transparent_NoBuffer.png"
-                    alt="Peppro logo"
+                    alt="PepPro logo"
                     className="relative z-[1] flex-shrink-0"
                     style={{
                       display: 'block',

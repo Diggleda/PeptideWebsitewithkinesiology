@@ -7,8 +7,6 @@ type RawPeptide = {
   type: string;
   category: string;
   description: string;
-  benefits: string;
-  protocol: string;
   image1?: string;
   image2?: string;
   image3?: string;
@@ -96,11 +94,9 @@ const toPeptideProduct = (raw: RawPeptide, index: number): Product => {
     inStock: true,
     prescription: raw.type === 'Injectables',
     dosage: raw.dosage,
-    manufacturer: 'N/A',
+    manufacturer: 'Protixa in San Diego, CA',
     type: raw.type,
     description: raw.description,
-    benefits: raw.benefits,
-    protocol: raw.protocol,
   };
 };
 

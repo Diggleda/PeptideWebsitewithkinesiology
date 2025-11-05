@@ -3,4 +3,10 @@ export type AuthActionResult =
   | { status: 'email_not_found' }
   | { status: 'invalid_password' }
   | { status: 'email_exists' }
-  | { status: 'error'; message: string };
+  | { status: 'password_mismatch' }
+  | { status: 'invalid_referral_code' }
+  | { status: 'referral_code_not_found' }
+  | { status: 'referral_code_unavailable' }
+  | { status: 'sales_rep_email_mismatch' }
+  | { status: 'name_email_required' }
+  | { status: 'error'; message?: string };

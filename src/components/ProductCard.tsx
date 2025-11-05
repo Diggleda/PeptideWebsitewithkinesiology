@@ -1,8 +1,9 @@
+import type { CSSProperties, KeyboardEvent } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
-import { ImageWithFallback } from './ImageWithFallback';
 import { ShoppingCart, Star, Info } from 'lucide-react';
+import { ProductImageCarousel } from './ProductImageCarousel';
 
 export interface Product {
   id: string;
@@ -20,8 +21,6 @@ export interface Product {
   manufacturer: string;
   type?: string;
   description?: string;
-  benefits?: string;
-  protocol?: string;
 }
 
 interface ProductCardProps {
@@ -36,9 +35,9 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   const discount = product.originalPrice 
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
-  const primaryImage = product.images[0] ?? product.image;
   const imageWrapperBase = 'flex h-full w-full items-center justify-center bg-white/85';
-  const imageClasses = 'max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105';
+  const imageClasses = 'h-full w-full object-contain transition-transform duration-300';
+  const hasMultipleImages = (product.images?.length ?? 0) > 1;
 
   const triggerDetails = () => {
     console.debug('[ProductCard] Details requested', { productId: product.id, viewMode });
@@ -48,6 +47,13 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   const triggerAddToCart = () => {
     console.debug('[ProductCard] Add to cart button clicked', { productId: product.id, inStock: product.inStock });
     onAddToCart(product.id);
+  };
+
+  const handleCarouselKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      triggerDetails();
+    }
   };
 
   const ratingStars = (
@@ -77,7 +83,7 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
       {product.price > 0 ? (
         <span className="text-lg font-semibold text-green-600">${product.price.toFixed(2)}</span>
       ) : (
-        <span className="text-sm font-medium text-green-600">Request Pricing</span>
+        <span className="text-sm font-medium text-[rgb(95,179,249)]">Request Pricing</span>
       )}
       {product.price > 0 && product.originalPrice && (
         <span className="text-sm text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
@@ -87,26 +93,30 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
 
   if (isList) {
     return (
-      <Card className="group w-full max-w-full overflow-hidden glass-card squircle-full shadow-md hover:shadow-lg transition-all duration-300">
+      <Card className="group w-full max-w-full overflow-hidden glass-card squircle-lg shadow-md hover:shadow-lg transition-all duration-300">
         <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5">
           <div
             className="relative flex-shrink-0"
-            style={{ flexBasis: '15%', maxWidth: '15%', minWidth: '96px' }}
+            style={{ flexBasis: '26%', maxWidth: '26%', minWidth: '160px' }}
           >
-            <button
-              type="button"
+            <div
+              className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/40 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 btn-hover-lighter"
+              tabIndex={0}
+              role="button"
+              aria-label={`View details for ${product.name}`}
               onClick={triggerDetails}
-              className="block aspect-square w-full overflow-hidden rounded-3xl border border-white/40 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 btn-hover-lighter"
+              onKeyDown={handleCarouselKeyDown}
             >
-              <div className={`${imageWrapperBase} rounded-3xl`}>
-                <ImageWithFallback
-                  key={`${product.id}-list-${primaryImage}`}
-                  src={primaryImage}
-                  alt={product.name}
-                  className={imageClasses}
-                />
-              </div>
-            </button>
+              <ProductImageCarousel
+                images={product.images.length > 0 ? product.images : [product.image]}
+                alt={product.name}
+                className={`${imageWrapperBase} h-full`}
+                imageClassName={imageClasses}
+                style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.9vw, 0.8rem)' } as CSSProperties}
+                showDots={hasMultipleImages}
+                showArrows={hasMultipleImages}
+              />
+            </div>
           </div>
 
           <div className="flex-1 min-w-0 flex flex-col gap-3 overflow-hidden">
@@ -135,10 +145,6 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
               {ratingSummary}
             </div>
 
-            {product.description && (
-              <p className="text-sm text-gray-600 line-clamp-2">{product.description}</p>
-            )}
-
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
               <span>{product.dosage}</span>
               <span>{product.manufacturer}</span>
@@ -157,7 +163,7 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
                 variant="outline"
                 onClick={triggerAddToCart}
                 disabled={!product.inStock}
-                className="flex-1 sm:flex-initial sm:min-w-[120px] glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
+                className="flex-1 sm:flex-initial sm:min-w-[120px] glass-brand squircle-sm btn-hover-lighter"
               >
                 <ShoppingCart className="w-4 h-4 mr-2" />
                 {product.inStock ? 'Add to Cart' : 'Out of Stock'}
@@ -172,30 +178,36 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   return (
       <Card className="group w-full flex h-full flex-col overflow-hidden glass-card squircle-lg shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5">
         <CardContent className="flex-1 p-0">
-          <div
-            className="relative aspect-square overflow-hidden cursor-pointer"
-            onClick={triggerDetails}
+        <div
+          className="relative aspect-square overflow-hidden cursor-pointer"
+          tabIndex={0}
+          role="button"
+          aria-label={`View details for ${product.name}`}
+          onClick={triggerDetails}
+          onKeyDown={handleCarouselKeyDown}
+        >
+          <ProductImageCarousel
+            images={product.images.length > 0 ? product.images : [product.image]}
+            alt={product.name}
+            className={`${imageWrapperBase} h-full`}
+            imageClassName={imageClasses}
+            style={{ '--product-image-frame-padding': 'clamp(0.45rem, 1vw, 0.95rem)' } as CSSProperties}
+            showDots={hasMultipleImages}
+            showArrows={hasMultipleImages}
           >
-            <div className={imageWrapperBase}>
-              <ImageWithFallback
-                key={`${product.id}-grid-${primaryImage}`}
-                src={primaryImage}
-                alt={product.name}
-                className={imageClasses}
-              />
-            </div>
-          {discount > 0 && (
-            <Badge className="absolute top-2 left-2 bg-red-500 hover:bg-red-600 squircle-sm">
-              -{discount}%
-            </Badge>
-          )}
-          {/* Removed Rx badge per request */}
-          {!product.inStock && (
-            <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center">
-              <Badge variant="destructive">Out of Stock</Badge>
-            </div>
-          )}
-        </div>
+            {discount > 0 && (
+              <Badge className="absolute top-2 left-2 bg-red-500 hover:bg-red-600 squircle-sm">
+                  -{discount}%
+                </Badge>
+              )}
+              {/* Removed Rx badge per request */}
+              {!product.inStock && (
+                <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center">
+                  <Badge variant="destructive">Out of Stock</Badge>
+                </div>
+              )}
+            </ProductImageCarousel>
+          </div>
         <div className="flex h-full flex-col p-4">
           <div className="space-y-1">
             <Badge variant="outline" className="text-xs squircle-sm">{product.category}</Badge>
@@ -224,11 +236,11 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
             <Info className="w-4 h-4 mr-2" />
             Details
           </Button>
-          <Button 
+          <Button
             variant="outline"
             onClick={triggerAddToCart}
             disabled={!product.inStock}
-            className="w-full glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
+            className="w-full glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
             {product.inStock ? 'Add' : 'Out of Stock'}

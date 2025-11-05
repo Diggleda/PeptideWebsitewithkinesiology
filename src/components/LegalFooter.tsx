@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react@0.487.0';
+import clsx from 'clsx';
 
 type LegalDocumentKey = 'terms' | 'privacy' | 'shipping';
 
@@ -8,128 +10,151 @@ interface LegalSection {
   body: string[];
 }
 
+const EMAIL_REGEX = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})/gi;
+
+function renderTextWithMailto(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  EMAIL_REGEX.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = EMAIL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const email = match[0];
+    nodes.push(
+      <a
+        key={`${keyPrefix}-mailto-${nodes.length}`}
+        href={`mailto:${email}`}
+        className="text-[rgb(95,179,249)] underline hover:text-[rgb(75,149,219)]"
+      >
+        {email}
+      </a>,
+    );
+    lastIndex = match.index + email.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
 const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: LegalSection[] }> = {
   terms: {
-    title: 'Terms of Use',
+    title: 'Terms of Service',
     sections: [
       {
-        heading: '1. Overview',
+        heading: '1. Acceptance of Terms',
         body: [
-          'These Terms of Use ("Terms") govern access to and use of the Peppro website, related mobile experiences, and any connected sales channels (collectively, the "Services"). Peppro ("we," "us," or "our") offers research-grade peptides, ancillary supplies, and educational content.',
+          'Effective Date: November 1, 2025 (Last Updated: October 22, 2025).',
+          'By accessing or using the PepPro website (https://peppro.net/) or purchasing any products or services from PepPro ("we," "us," "our"), you agree to be bound by these Terms of Service, the Privacy Policy, and the Liability Disclaimer. If you do not agree, do not use our website or purchase our products.',
+          'PepPro may modify these Terms at any time. Continued use of the site constitutes acceptance of the revised Terms.',
         ],
       },
       {
-        heading: '2. Acceptance of Terms',
+        heading: '2. Eligibility',
         body: [
-          'By visiting or transacting through the Services, you agree to comply with these Terms and all applicable laws. If you do not agree, discontinue use immediately.',
+          'You represent that you are at least 18 years old, legally capable of entering binding agreements, and that any purchases are made for lawful purposes in compliance with all applicable regulations.',
         ],
       },
       {
-        heading: '3. Eligibility',
+        heading: '3. Research Use Only',
         body: [
-          'The Services are intended for individuals at least 18 years of age who are legally able to enter binding contracts and located in jurisdictions where our products are permitted. You are solely responsible for ensuring compliance with local regulations.',
+          'All PepPro products—including peptides, genetic testing kits, and related compounds—are sold strictly for in vitro laboratory research use only.',
+          'Products are not intended, produced, or authorized for human or animal consumption, diagnostic or therapeutic use, cosmetic or nutritional use, or any use beyond controlled laboratory research.',
+          'By purchasing, you acknowledge and agree to these restrictions and assume full responsibility for compliance.',
         ],
       },
       {
-        heading: '4. Account Registration',
+        heading: '4. Product Information and FDA Disclaimer',
         body: [
-          'Browsing may be available without registration, but certain features require an account. Provide accurate information, protect your password, and notify Peppro promptly of unauthorized use. We may suspend or close accounts at our discretion.',
+          'Information provided on the PepPro website is for informational and educational purposes only.',
+          'Products are not medicines or drugs, have not been evaluated or approved by the U.S. Food and Drug Administration (FDA), and are not intended to diagnose, treat, cure, mitigate, or prevent any disease.',
+          'Always consult qualified professionals before treating any site information as medical advice.',
         ],
       },
       {
-        heading: '5. Research Use Only',
+        heading: '5. "As-Is" Condition and No Warranties',
         body: [
-          'Peppro products are sold strictly for laboratory, educational, or research purposes. They are not approved by the FDA for diagnostic or therapeutic use in humans or animals. You agree not to administer, sell, or distribute products for medical use and acknowledge that misuse may violate law.',
+          'All PepPro products and services are supplied "as is" and "with all faults." PepPro disclaims all express or implied warranties, including merchantability, fitness for a particular purpose, and non-infringement.',
+          'PepPro does not guarantee safety, sterility, efficacy, accuracy, completeness, or uninterrupted operation of the website.',
         ],
       },
       {
-        heading: '6. Ordering and Payment',
+        heading: '6. Assumption of Risk and Limitation of Liability',
         body: [
-          'When placing an order, you affirm that the information provided is complete and correct and that you are authorized to use the selected payment method. Orders are subject to acceptance and availability. We may reject or cancel orders for any reason, including suspected fraud or regulatory concerns.',
+          'You assume full responsibility for the handling, storage, use, and disposal of PepPro products.',
+          'PepPro and its affiliates are not liable for personal injury, illness, death, contamination, adverse reactions, improper use, property damage, business interruption, or data loss.',
+          "PepPro's maximum liability will not exceed the total amount paid for the product in question.",
         ],
       },
       {
-        heading: '7. Pricing and Promotions',
+        heading: '7. Indemnification',
         body: [
-          'Prices are displayed in U.S. dollars unless noted otherwise and may change without notice. Discounts or promotional offers can carry additional conditions and may be modified or withdrawn at Peppro’s discretion.',
+          'You agree to indemnify, defend, and hold harmless PepPro, its affiliates, officers, directors, and employees from any claims, losses, damages, liabilities, and expenses (including attorneys\' fees) arising from misuse of products, violation of these Terms, or breach of your representations.',
         ],
       },
       {
-        heading: '8. Taxes',
+        heading: '8. Intellectual Property',
         body: [
-          'You are responsible for any sales, use, value-added, or comparable taxes arising from purchases. Where required, Peppro collects applicable taxes at checkout.',
+          'All website content—including text, graphics, logos, trademarks, and software—is the property of PepPro or its licensors. You may not copy, reproduce, modify, distribute, or create derivative works without prior written consent.',
         ],
       },
       {
-        heading: '9. Shipping and Delivery',
+        heading: '9. Ordering and Payment',
         body: [
-          'Processing and transit timelines appear in the Peppro Shipping Policy. Title and risk of loss transfer upon delivery to the carrier. Inspect shipments promptly and report damage or shortages within five days.',
+          'Orders are subject to acceptance and availability, and prices may change without notice.',
+          'PepPro may refuse or cancel orders that violate legal or ethical guidelines. Payment is processed through secure third-party gateways, and you authorize PepPro to charge the payment method you provide.',
         ],
       },
       {
-        heading: '10. Returns and Refunds',
+        heading: '10. HIPAA and Health Data',
         body: [
-          'Returns are handled according to the Shipping Policy. Peppro does not accept returns for products that are opened, tampered with, or otherwise ineligible due to safety or regulatory constraints.',
+          'For telehealth or prescription-related services, PepPro complies with the Health Insurance Portability and Accountability Act of 1996 (HIPAA).',
+          'By signing the HIPAA consent form during checkout or registration, you authorize PepPro to use or disclose your Protected Health Information (PHI) for treatment, payment, and healthcare operations as described in the Notice of Privacy Practices.',
+          'You may revoke consent in writing at any time by contacting support@peppro.net.',
         ],
       },
       {
-        heading: '11. User Conduct',
+        heading: '11. Compliance and Misuse',
         body: [
-          'You agree not to engage in unlawful, fraudulent, or abusive activity; attempt to access secured areas without authorization; harvest data; or infringe third-party rights while using the Services.',
+          'You represent and warrant that you are trained and equipped to handle research-grade materials safely, will comply with all applicable laws and regulations, and will not use PepPro products for any prohibited or unlawful purpose.',
+          'PepPro may terminate purchasing rights and pursue legal remedies if misuse or non-compliance is suspected.',
         ],
       },
       {
-        heading: '12. Intellectual Property',
+        heading: '12. No Professional or Medical Advice',
         body: [
-          'All content, trademarks, logos, and service marks displayed in the Services belong to Peppro or its licensors. Except for the limited license to view and purchase products, no intellectual property rights transfer to you.',
+          'PepPro does not provide medical, legal, or professional advice. Information provided through the site is for research and informational purposes only and is not a substitute for professional judgment or treatment.',
         ],
       },
       {
-        heading: '13. Third-Party Links',
+        heading: '13. Governing Law and Dispute Resolution',
         body: [
-          'The Services may reference third-party websites or tools. Peppro is not responsible for their content or practices. Use third-party resources at your own risk.',
+          'These Terms are governed by the laws of the State of [Insert State], without regard to conflict-of-law principles.',
+          'Any dispute arising from these Terms will be resolved through binding arbitration in [Insert State/County], following the rules of the American Arbitration Association (AAA).',
         ],
       },
       {
-        heading: '14. Medical Disclaimer',
+        heading: '14. Termination',
         body: [
-          'Scientific or educational content shared by Peppro is informational only and does not constitute medical advice. Consult qualified professionals regarding health, medical, or veterinary decisions.',
+          'PepPro may suspend or terminate access for violations of these Terms, suspected misuse, or legal non-compliance. Termination does not affect obligations or liabilities that arose prior to termination.',
         ],
       },
       {
-        heading: '15. Disclaimer of Warranties',
+        heading: '15. Changes to Terms',
         body: [
-          'The Services and products are provided "as is" and "as available." Peppro disclaims all warranties, express or implied, including merchantability, fitness for a particular purpose, title, and non-infringement.',
+          'PepPro may update these Terms at any time. Changes take effect when posted on the website, and continued use constitutes acceptance of the revised Terms.',
         ],
       },
       {
-        heading: '16. Limitation of Liability',
+        heading: '16. Contact Information',
         body: [
-          'To the fullest extent permitted by law, Peppro and its affiliates are not liable for indirect, incidental, consequential, special, exemplary, or punitive damages. Peppro’s total liability shall not exceed the amount paid for the product giving rise to the claim.',
-        ],
-      },
-      {
-        heading: '17. Indemnification',
-        body: [
-          'You agree to indemnify and hold Peppro harmless from claims, losses, liabilities, and expenses (including attorneys’ fees) arising from misuse of the Services or violation of these Terms.',
-        ],
-      },
-      {
-        heading: '18. Governing Law and Dispute Resolution',
-        body: [
-          'These Terms are governed by U.S. law and, where applicable, the laws of the state in which Peppro is incorporated, without regard to conflict-of-laws principles. Disputes will be resolved through binding arbitration or courts in that state unless mandatory law dictates otherwise.',
-        ],
-      },
-      {
-        heading: '19. Changes to the Terms',
-        body: [
-          'Peppro may update these Terms at any time. Changes take effect when posted. Continued use of the Services after updates constitutes acceptance.',
-        ],
-      },
-      {
-        heading: '20. Contact',
-        body: [
-          'Direct questions to legal@peppro.com or mail Peppro Legal, [Insert Physical Address]. Update this contact information with your actual details.',
+          'Email: support@peppro.net'
         ],
       },
     ],
@@ -138,102 +163,102 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
     title: 'Privacy Policy',
     sections: [
       {
-        heading: '1. Overview',
+        heading: '1. Introduction',
         body: [
-          'This Privacy Policy explains how Peppro collects, uses, shares, and protects personal information obtained through our website, mobile experiences, and customer support channels (collectively, the "Services").',
+          'Effective Date: November 1, 2025 (Last Updated: October 22, 2025).',
+          'PepPro ("we," "us," "our") respects your privacy and is committed to protecting your personal and health information. This Privacy Policy explains how we collect, use, and safeguard information through our website [insert domain], applications, and services.',
+          'By using our website or purchasing from PepPro, you consent to this Policy as well as the related Disclaimer of Liability and HIPAA Consent and Notice of Privacy Practices.',
         ],
       },
       {
-        heading: '2. Information We Collect',
+        heading: '2. Research-Only Product Disclaimer',
         body: [
-          'Information you provide: account details, order information, payment data, communications, and form submissions.',
-          'Automatically collected data: device identifiers, IP address, browser and operating system details, referring URLs, pages viewed, and on-site actions.',
-          'Information from partners: fraud-prevention providers, payment processors, fulfillment vendors, and marketing partners may supply supplemental data connected to your transactions or preferences.',
+          'All PepPro products, including peptides and genetic testing kits, are for laboratory research use only.',
+          'Products are not intended, produced, or authorized for human or animal consumption, diagnostic or therapeutic use, or cosmetic, nutritional, or clinical applications.',
+          'PepPro products are not medicines or drugs and have not been evaluated or approved by the U.S. Food and Drug Administration (FDA) to diagnose, treat, cure, or prevent any disease.',
+          'By purchasing from PepPro, you agree to use these materials exclusively for in vitro laboratory research under appropriate safety conditions.',
         ],
       },
       {
-        heading: '3. How We Use Information',
+        heading: '3. Information We Collect',
         body: [
-          'Process orders, manage accounts, and deliver customer support.',
-          'Communicate updates, respond to inquiries, and send transactional notices.',
-          'Personalize experiences, perform analytics, improve products, and conduct quality assurance.',
-          'Detect, investigate, and prevent fraud, abuse, or illegal activity.',
-          'Comply with legal obligations and enforce Peppro policies.',
+          'We collect information in three main categories:',
+          'Personal information: name, email address, billing and shipping address, phone number, payment details, and account credentials.',
+          'Usage data: browser type, device identifiers, IP address, referral URLs, pages visited, and timestamps gathered through cookies or analytics tools.',
+          'Protected health information (PHI): when you use PepPro telehealth or prescription-related services, we may collect PHI as defined under HIPAA.',
         ],
       },
       {
-        heading: '4. Sharing of Information',
+        heading: '4. How We Use Information',
         body: [
-          'Service providers: logistics partners, payment processors, IT and security vendors, marketing platforms, and professional advisors access data as needed to support Peppro.',
-          'Legal requirements: information may be disclosed to satisfy legal obligations or protect Peppro, customers, or others from harm.',
-          'Business transfers: in mergers, acquisitions, financings, or sales of assets, customer information may transition to the successor subject to this Policy.',
-          'With your consent: data may be shared with other parties when you request or authorize it.',
+          'Order fulfillment and payment processing.',
+          'Account management, communication, and customer support.',
+          'Legal compliance, including HIPAA, FDA, FTC, or state requirements.',
+          'Improving products and services as well as coordinating healthcare for telehealth users.',
+          'PepPro does not sell or rent personal information or PHI.',
         ],
       },
       {
-        heading: '5. Cookies and Tracking',
+        heading: '5. HIPAA Compliance and Health Information',
         body: [
-          'Peppro uses cookies, pixel tags, and similar technologies to recognize browsers, remember preferences, measure campaign performance, and analyze usage. You may refuse cookies, but some features may not function properly.',
+          'When applicable, PepPro follows HIPAA standards to protect your health information.',
+          'Treatment: coordination and management of care by licensed healthcare providers.',
+          'Payment: billing, claims, and pharmacy fulfillment.',
+          'Healthcare operations: quality review, compliance, training, and administrative purposes.',
+          'You may request restrictions on PHI use, obtain copies of records, or revoke consent in writing at any time (revocation does not affect prior disclosures). To exercise these rights, contact support@peppro.net.',
         ],
       },
       {
-        heading: '6. Advertising',
+        heading: '6. Liability and Assumption of Risk',
         body: [
-          'We may partner with advertising networks that rely on cookies or device identifiers to deliver interest-based ads. Opt-out options are available through the Digital Advertising Alliance, Network Advertising Initiative, or device settings.',
+          'All PepPro products are provided "as is" and "with all faults." PepPro disclaims all express or implied warranties, including merchantability or fitness for a particular purpose.',
+          'By purchasing, you accept full responsibility for handling, storage, and disposal; acknowledge PepPro is not liable for injury, contamination, or adverse events; and agree to indemnify PepPro and its affiliates against claims arising from misuse or unauthorized application.',
+          "PepPro's total liability will not exceed the purchase price paid for the product.",
         ],
       },
       {
-        heading: '7. Data Retention',
+        heading: '7. Cookies and Tracking',
         body: [
-          'Personal information is retained as long as necessary to provide the Services, meet legal obligations, resolve disputes, and enforce agreements. Retention periods vary by data category and regulation.',
+          'PepPro uses cookies, pixels, and analytics tools to improve site performance, measure engagement, and personalize content. Disabling cookies may limit certain site features.',
         ],
       },
       {
-        heading: '8. Security',
+        heading: '8. Your Data Rights',
         body: [
-          'Peppro implements administrative, technical, and physical safeguards designed to protect personal information. No method of transmission or storage is entirely secure; you provide information at your own risk.',
+          'Depending on your jurisdiction, you may have the right to access, correct, delete, restrict processing, or object to the processing of your personal information.',
+          'You may opt out of targeted advertising or data "sales" where state law (such as the CCPA) provides that right and withdraw consent where applicable.',
+          'Submit privacy requests to privacy@peppro.net.',
         ],
       },
       {
-        heading: '9. International Transfers',
+        heading: '9. Data Retention and Security',
         body: [
-          'Peppro operates in the United States and may transfer information to jurisdictions with different data-protection laws. Safeguards such as contractual clauses or certification frameworks are applied when required.',
+          'PepPro retains data only as long as necessary for the purposes described in this Policy.',
+          'Administrative, technical, and physical safeguards are used to help prevent unauthorized access, alteration, or loss of information; however, no online method is completely secure.',
         ],
       },
       {
-        heading: '10. Your Choices',
+        heading: '10. International Users',
         body: [
-          'Update account details, adjust marketing preferences, or request deletion by contacting privacy@peppro.com. Depending on jurisdiction, you may access, correct, delete, or restrict processing and withdraw consent.',
+          'If you access PepPro services from outside the United States, you consent to the transfer and processing of your data in the U.S., which may have different data protection laws than your home jurisdiction.',
         ],
       },
       {
-        heading: '11. California and EU/UK Residents',
+        heading: "11. Children's Privacy",
         body: [
-          'Residents of California, the European Economic Area, the United Kingdom, or other regions with specific privacy rights may request copies of their data, opt out of certain processing, or file complaints with supervisory authorities. Peppro responds to verifiable requests within legally mandated timelines.',
+          'PepPro services are not intended for children under 13. We do not knowingly collect personal information from minors and will delete such data promptly if discovered.',
         ],
       },
       {
-        heading: '12. Children’s Privacy',
+        heading: '12. Updates to this Policy',
         body: [
-          'The Services are not directed to children under 13 (or the applicable minimum age). Peppro does not knowingly collect personal information from children and will delete such information if discovered.',
+          'PepPro may revise this Privacy Policy periodically. Changes take effect when posted, and continued use of the website constitutes acceptance of the updated terms.',
         ],
       },
       {
-        heading: '13. Third-Party Services',
+        heading: '13. Contact Information',
         body: [
-          'Links to external sites or embedded tools operate under their own privacy practices. Review third-party policies before sharing personal information. Peppro is not responsible for their practices.',
-        ],
-      },
-      {
-        heading: '14. Changes to this Policy',
-        body: [
-          'Peppro may update this Privacy Policy to reflect legal or operational changes. Updates become effective when posted, and material changes may be communicated via email or prominent notice.',
-        ],
-      },
-      {
-        heading: '15. Contact',
-        body: [
-          'For privacy questions or requests, email privacy@peppro.com or write to Peppro Privacy, [Insert Physical Address]. Replace this placeholder with your actual business details.',
+          'Email: support@peppro.net'
         ],
       },
     ],
@@ -250,7 +275,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '2. Verification',
         body: [
-          'Peppro may request additional documentation, such as proof of research affiliation, to meet regulatory requirements. Orders pending verification will not ship until review is complete.',
+          'PepPro may request additional documentation, such as proof of research affiliation, to meet regulatory requirements. Orders pending verification will not ship until review is complete.',
         ],
       },
       {
@@ -262,13 +287,13 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '4. Shipping Restrictions',
         body: [
-          'Peppro cannot ship to P.O. boxes, APO/FPO/DPO addresses, or jurisdictions where peptides are restricted. International shipping is evaluated individually and may require customs declarations. Customers are responsible for understanding and complying with local import laws.',
+          'PepPro cannot ship to P.O. boxes, APO/FPO/DPO addresses, or jurisdictions where peptides are restricted. International shipping is evaluated individually and may require customs declarations. Customers are responsible for understanding and complying with local import laws.',
         ],
       },
       {
         heading: '5. Rates and Fees',
         body: [
-          'Shipping charges are calculated based on weight, destination, and the selected service level. Taxes, duties, and brokerage fees for international orders are the customer’s responsibility unless explicitly stated otherwise.',
+          "Shipping charges are calculated based on weight, destination, and the selected service level. Taxes, duties, and brokerage fees for international orders are the customer's responsibility unless explicitly stated otherwise.",
         ],
       },
       {
@@ -280,8 +305,8 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '7. Delivery Issues',
         body: [
-          'Delays: Peppro is not liable for carrier delays caused by weather, customs inspections, or other factors beyond our control.',
-          'Lost packages: Report packages marked “delivered” but not received within three business days. We will coordinate with the carrier to investigate, and resolutions are handled case by case.',
+          'Delays: PepPro is not liable for carrier delays caused by weather, customs inspections, or other factors beyond our control.',
+          'Lost packages: Report packages marked "delivered" but not received within three business days. We will coordinate with the carrier to investigate, and resolutions are handled case by case.',
           'Damaged shipments: Inspect packages upon arrival and notify shipping@peppro.com with photos within five days to initiate a carrier claim.',
         ],
       },
@@ -294,7 +319,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '9. Temperature-Sensitive Items',
         body: [
-          'Certain products may require insulated packaging or cold packs. Peppro selects materials based on season and destination and recommends expedited shipping for temperature-sensitive orders, especially during extreme weather.',
+          'Certain products may require insulated packaging or cold packs. PepPro selects materials based on season and destination and recommends expedited shipping for temperature-sensitive orders, especially during extreme weather.',
         ],
       },
       {
@@ -306,19 +331,19 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
       {
         heading: '11. Returns',
         body: [
-          'Refer to the returns section in the Terms of Use for eligibility. Authorization must be obtained before shipping products back to Peppro. Unauthorized returns will be discarded and will not qualify for credit.',
+          'Refer to the returns section in the Terms of Service for eligibility. Authorization must be obtained before shipping products back to PepPro. Unauthorized returns will be discarded and will not qualify for credit.',
         ],
       },
       {
         heading: '12. Policy Updates',
         body: [
-          'Peppro may revise this Shipping Policy at any time. The effective date updates whenever changes are posted.',
+          'PepPro may revise this Shipping Policy at any time. The effective date updates whenever changes are posted.',
         ],
       },
       {
         heading: '13. Contact',
         body: [
-          'For shipping questions, email shipping@peppro.com or mail Peppro Fulfillment, [Insert Physical Address]. Replace this placeholder with your actual logistics contact information.',
+          'For shipping questions, email support@peppro.net',
         ],
       },
     ],
@@ -327,27 +352,67 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, { title: string; sections: Legal
 
 export function LegalFooter() {
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
+
+  useEffect(() => {
+    const body = document.body;
+    const docEl = document.documentElement;
+    const originalOverflow = body.style.overflow;
+    const originalPaddingRight = body.style.paddingRight;
+
+    if (activeDocument && !isClosing) {
+      const scrollbarWidth = window.innerWidth - docEl.clientWidth;
+      if (!originalPaddingRight && scrollbarWidth > 0) {
+        body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+      body.style.overflow = 'hidden';
+      return () => {
+        body.style.overflow = originalOverflow;
+        body.style.paddingRight = originalPaddingRight;
+      };
+    }
+
+    body.style.overflow = originalOverflow;
+    body.style.paddingRight = originalPaddingRight;
+    return undefined;
+  }, [activeDocument, isClosing]);
 
   const legalLinks = useMemo(
     () => [
-      { key: 'terms' as LegalDocumentKey, label: 'Terms of Use' },
+      { key: 'terms' as LegalDocumentKey, label: 'Terms of Service' },
       { key: 'privacy' as LegalDocumentKey, label: 'Privacy Policy' },
       { key: 'shipping' as LegalDocumentKey, label: 'Shipping Policy' },
     ],
     [],
   );
 
-  const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
-
   const handleLinkClick = (key: LegalDocumentKey) => {
     console.debug('[LegalFooter] Link clicked', { key });
     window.dispatchEvent(new Event('peppro:close-dialogs'));
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(false);
+    setIsVisible(false);
     setActiveDocument(key);
   };
 
   const handleClose = () => {
     console.debug('[LegalFooter] Close requested', { activeDocument });
-    setActiveDocument(null);
+    if (!activeDocument || isClosing) {
+      return;
+    }
+    setIsClosing(true);
+    setIsVisible(false);
+    closeTimerRef.current = setTimeout(() => {
+      setActiveDocument(null);
+      setIsClosing(false);
+      closeTimerRef.current = null;
+    }, 180);
   };
 
   useEffect(() => {
@@ -358,67 +423,154 @@ export function LegalFooter() {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
+  useEffect(() => {
+    if (selectedDocument && !isClosing) {
+      const raf = requestAnimationFrame(() => setIsVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    if (!selectedDocument && !isClosing && isVisible) {
+      setIsVisible(false);
+    }
+    return undefined;
+  }, [selectedDocument, isClosing, isVisible]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+  }, []);
+
+  const shouldBlurBackground = isVisible || isClosing;
+
   return (
     <>
       <footer className="relative z-10 mt-24 glass-strong">
-        <div className="container mx-auto flex flex-col items-center px-4 pt-12 pb-24 text-center">
-          <div className="mt-4 space-y-1 text-sm text-slate-600">
-            <p>Advancing research-grade peptide access with care and compliance.</p>
-            <p className="text-xs text-slate-500">© {new Date().getFullYear()} Peppro. All rights reserved.</p>
+        <div className="w-full px-2 pt-16 pb-12">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+            {/* Disclaimer - Left Third */}
+            <div className="text-justify flex items-center">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
+              </p>
+            </div>
+
+            {/* Center Content - Middle Third */}
+            <div className="flex flex-col items-center text-center">
+              <div className="space-y-1 text-sm text-slate-600">
+                <p>Advancing research-grade peptide access with care and compliance.</p>
+                <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
+              </div>
+              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-[rgb(95,179,249)]">
+                {legalLinks.map((link) => (
+                  <button
+                    key={link.key}
+                    type="button"
+                    className="cursor-pointer rounded-full px-4 py-2 pb-3 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    onClick={() => handleLinkClick(link.key)}
+                  >
+                    {link.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            {/* Empty Right Third */}
+            <div></div>
           </div>
-          <nav className="mt-1 mb-6 flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-[rgb(7,27,27)]">
-            {legalLinks.map((link) => (
-              <button
-                key={link.key}
-                type="button"
-                className="cursor-pointer rounded-full px-4 py-2 pb-3 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(7,27,27,0.4)] btn-hover-lighter"
-                onClick={() => handleLinkClick(link.key)}
-              >
-                {link.label}
-              </button>
-            ))}
-          </nav>
         </div>
       </footer>
 
-      {selectedDocument && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center px-3 py-4 sm:px-4">
-          <div className="absolute inset-0 bg-black/50" onClick={handleClose} aria-hidden="true" />
+      {selectedDocument && createPortal(
+        <div
+          className={clsx(
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-200 ease-out backdrop-blur-[16px]',
+            isVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          )}
+          style={{
+            zIndex: 2147483647,
+            position: 'fixed',
+            willChange: 'opacity',
+            backdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+            WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+          }}
+        >
+          <div
+            className={clsx(
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-200 ease-out',
+              isVisible ? 'opacity-100' : 'opacity-0',
+            )}
+            onClick={handleClose}
+            aria-hidden="true"
+            style={{
+              willChange: 'opacity',
+              backdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+              WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+            }}
+          />
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
-            className="relative glass-strong w-full max-w-[min(520px,calc(100vw-1.5rem))] max-h-[78vh] rounded-lg border border-[var(--brand-glass-border-2)] text-left shadow-lg sm:max-w-[min(600px,calc(100vw-3rem))]"
+            className={clsx(
+              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-200 ease-out h-full',
+              isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
+            )}
+            style={{ willChange: 'opacity, transform', maxHeight: 'calc(100vh - 4rem)' }}
           >
-            <button
-              type="button"
-              onClick={handleClose}
-              className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/85 text-slate-600 shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[rgba(7,27,27,0.35)] btn-hover-lighter"
+            <div
+              className="squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"
+              style={{
+                backgroundColor: 'rgba(245, 251, 255, 0.94)',
+                borderColor: 'rgba(95, 179, 249, 0.65)',
+                backdropFilter: shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none',
+                WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none',
+              }}
             >
-              <X className="h-4 w-4" aria-hidden="true" />
-              <span className="sr-only">Close</span>
-            </button>
-            <div className="flex h-full min-h-0 flex-col">
-              <header className="px-5 pt-7 pb-3 sm:px-6">
-                <h2 id="legal-dialog-title" className="text-lg font-semibold text-[rgb(7,27,27)] sm:text-xl">
+              <div className="flex items-center justify-between gap-4 px-6 sm:px-8 py-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+                <h2 id="legal-dialog-title" className="flex-1 text-xl sm:text-2xl font-semibold text-[rgb(95,179,249)] pr-2">
                   {selectedDocument.title}
                 </h2>
-              </header>
-              <div className="flex-1 overflow-y-auto space-y-4 px-5 pb-7 pr-1.5 text-sm leading-6 text-slate-700 sm:px-6 sm:pb-9">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClose();
+                  }}
+                  className="legal-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                  style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%', marginTop: '6px', marginBottom: '6px' }}
+                >
+                  <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+                  <span className="sr-only">Close</span>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-8">
                 {selectedDocument.sections.map((section, si) => (
-                  <section key={`${section.heading}-${si}`} className="space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgb(7,27,27)]/80">
+                  <section
+                    key={`${section.heading}-${si}`}
+                    className={clsx(si > 0 ? 'mt-6' : undefined)}
+                  >
+                    <h3
+                      className="text-sm font-semibold uppercase tracking-wide text-[rgb(95,179,249)]"
+                      style={{ margin: 0 }}
+                    >
                       {section.heading}
                     </h3>
-                    {section.body.map((paragraph, pi) => (
-                      <p key={`${si}-${pi}`}>{paragraph}</p>
+                    {section.body.map((paragraph, bi) => (
+                      <p
+                        key={`${section.heading}-${si}-${bi}`}
+                        className="text-sm leading-relaxed text-slate-700"
+                        style={{ margin: 0, marginTop: bi === 0 ? 0 : '0.75rem' }}
+                      >
+                        {renderTextWithMailto(paragraph, `${si}-${bi}`)}
+                      </p>
                     ))}
                   </section>
                 ))}
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

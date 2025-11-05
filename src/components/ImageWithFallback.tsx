@@ -17,13 +17,25 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
 
   const PLACEHOLDER = '/Placeholder.png'
 
-  return didError ? (
-    <div className={`inline-block bg-gray-100 text-center align-middle ${className ?? ''}`} style={style}>
-      <div className="flex items-center justify-center w-full h-full">
-        <img src={ERROR_IMG_SRC} alt={alt || 'Image'} {...rest} />
+  if (didError) {
+    return (
+      <div
+        className={`flex h-full w-full items-center justify-center bg-gray-100 text-center align-middle ${className ?? ''}`}
+        style={style}
+      >
+        <img src={ERROR_IMG_SRC} alt={alt || 'Image'} className="block max-h-full max-w-full object-contain" {...rest} />
       </div>
-    </div>
-  ) : (
-    <img src={PLACEHOLDER} alt={alt} className={className} style={style} {...rest} onError={handleError} />
-  )
+    );
+  }
+
+  return (
+    <img
+      src={PLACEHOLDER}
+      alt={alt}
+      className={`block ${className ?? ''}`}
+      style={style}
+      {...rest}
+      onError={handleError}
+    />
+  );
 }

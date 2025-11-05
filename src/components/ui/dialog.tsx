@@ -40,9 +40,14 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-[1000] bg-black/50 transition-opacity duration-200 data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+      "fixed inset-0 z-[9999] backdrop-blur-xl transition-opacity duration-[1200ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
       className,
     )}
+    style={{
+      backdropFilter: 'blur(4px) saturate(1.2)',
+      WebkitBackdropFilter: 'blur(4px) saturate(1.2)',
+      willChange: 'opacity',
+    }}
     {...props}
   />
 ));
@@ -53,26 +58,32 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, style, ...props }, ref) => (
   <DialogPortal data-slot="dialog-portal">
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center px-4 py-8">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-8">
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
         data-slot="dialog-content"
         className={cn(
-          "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto rounded-2xl glass-strong border border-[var(--brand-glass-border-2)] p-6 text-slate-900 shadow-[0_42px_90px_-40px_rgba(7,27,27,0.45)] transition-opacity transition-transform duration-200 data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=closed]:scale-95 focus:outline-none data-[state=closed]:pointer-events-none sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
+          "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] transition-[opacity,transform] duration-[1200ms] ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=closed]:scale-95 focus:outline-none data-[state=closed]:pointer-events-none sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
           className,
         )}
         style={{
+          backgroundColor: 'rgba(245, 251, 255, 0.94)',
+          borderColor: 'rgba(95, 179, 249, 0.65)',
+          backdropFilter: 'blur(16px) saturate(1.45)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.45)',
           // Leave room for the sticky header when positioning + sizing the modal
           maxHeight: 'calc(100vh - (var(--modal-header-offset, 6rem) + 2.5rem))',
           margin: 'calc(var(--modal-header-offset, 6rem) + 1rem) auto 1.5rem',
+          willChange: 'opacity, transform',
           ...style,
         }}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
-          <XIcon />
+        <DialogPrimitive.Close className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 disabled:pointer-events-none"
+          style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}>
+          <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>

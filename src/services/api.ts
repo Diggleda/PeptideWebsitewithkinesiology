@@ -1,4 +1,8 @@
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = (() => {
+  const configured = (import.meta.env.VITE_API_URL as string | undefined) || '';
+  const base = configured ? configured.replace(/\/+$/, '') : 'http://localhost:3001';
+  return `${base}/api`;
+})();
 
 // Helper function to get auth token
 const getAuthToken = () => localStorage.getItem('auth_token');
@@ -21,19 +25,69 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Request failed');
+    const contentType = response.headers.get('content-type') || '';
+    let errorMessage = `Request failed (${response.status})`;
+    let errorDetails: Record<string, unknown> | string | null = null;
+
+    try {
+      if (contentType.includes('application/json')) {
+        errorDetails = await response.json();
+        if (errorDetails && typeof errorDetails === 'object' && 'error' in errorDetails) {
+          const candidate = (errorDetails as Record<string, unknown>).error;
+          if (typeof candidate === 'string' && candidate.trim().length > 0) {
+            errorMessage = candidate;
+          }
+        }
+      } else {
+        errorDetails = await response.text();
+        if (typeof errorDetails === 'string' && errorDetails.trim().length > 0) {
+          errorMessage = `${errorMessage}: ${errorDetails}`;
+        }
+      }
+    } catch (parseError) {
+      errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+    }
+
+    const error = new Error(errorMessage);
+    (error as any).status = response.status;
+    (error as any).details = errorDetails;
+    throw error;
   }
 
-  return response.json();
+  if (response.status === 204 || response.status === 205) {
+    return null;
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      console.warn('[fetchWithAuth] Failed to parse JSON response', { error });
+      return text;
+    }
+  }
+
+  return response.text();
 };
 
 // Auth API
 export const authAPI = {
-  register: async (name: string, email: string, password: string) => {
+  register: async (input: { name: string; email: string; password: string; code: string; phone?: string }) => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({
+        name: input.name,
+        email: input.email,
+        password: input.password,
+        code: input.code,
+        phone: input.phone ?? undefined,
+      }),
     });
 
     // Store token
@@ -89,6 +143,46 @@ export const ordersAPI = {
   },
 };
 
+export const referralAPI = {
+  submitDoctorReferral: async (payload: {
+    contactName: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    notes?: string;
+  }) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/referrals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getDoctorSummary: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/summary`);
+  },
+
+  getDoctorLedger: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`);
+  },
+
+  getSalesRepDashboard: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/dashboard`);
+  },
+
+  createReferralCode: async (referralId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/referrals/code`, {
+      method: 'POST',
+      body: JSON.stringify({ referralId }),
+    });
+  },
+
+  updateCodeStatus: async (codeId: string, status: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/codes/${codeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+};
+
 // Health check
 export const checkServerHealth = async () => {
   try {
@@ -97,4 +191,44 @@ export const checkServerHealth = async () => {
   } catch {
     return false;
   }
+};
+
+export const newsAPI = {
+  getPeptideHeadlines: async () => {
+    const response = await fetch(`${API_BASE_URL}/news/peptides`, {
+      headers: {
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch peptide news (${response.status})`);
+    }
+
+    return response.json() as Promise<{
+      items?: Array<{ title?: unknown; url?: unknown; summary?: unknown; imageUrl?: unknown; date?: unknown }>;
+      count?: number;
+    }>;
+  },
+};
+
+export const quotesAPI = {
+  getQuoteOfTheDay: async () => {
+    const response = await fetch(`${API_BASE_URL}/quotes/daily`, {
+      headers: {
+        Accept: 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch quote (${response.status})`);
+    }
+
+    return response.json() as Promise<{
+      text: string;
+      author: string;
+    }>;
+  },
 };

@@ -1,9 +1,10 @@
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { ImageWithFallback } from './ImageWithFallback';
 import { ArrowRight, Zap } from 'lucide-react';
 import { Product } from './ProductCard';
+import { ProductImageCarousel } from './ProductImageCarousel';
+import type { CSSProperties } from 'react';
 
 interface FeaturedSectionProps {
   featuredProducts: Product[];
@@ -33,21 +34,20 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
           <Card className="lg:col-span-2 overflow-hidden glass-card squircle-lg shadow-lg">
             <CardContent className="p-0">
               <div className="grid md:grid-cols-2 gap-0">
-                <div className="relative aspect-square md:aspect-auto">
-                  <div className="flex h-full w-full items-center justify-center bg-white/80 p-6">
-                    <ImageWithFallback
-                      key={`${mainFeatured.id}-featured-main`}
-                      src={mainFeaturedImage}
-                      alt={mainFeatured.name}
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  </div>
+                <ProductImageCarousel
+                  images={mainFeatured.images.length > 0 ? mainFeatured.images : [mainFeaturedImage ?? mainFeatured.image]}
+                  alt={mainFeatured.name}
+                  className="relative aspect-square md:aspect-auto flex h-full w-full items-center justify-center bg-white/80 p-6"
+                  imageClassName="h-full w-full object-contain"
+                  style={{ '--product-image-frame-padding': 'clamp(0.55rem, 1vw, 1.2rem)' } as CSSProperties}
+                  showArrows={mainFeatured.images.length > 1}
+                >
                   <div className="absolute top-4 left-4">
                     <Badge className="bg-red-500 hover:bg-red-600 squircle-sm">
                       Best Seller
                     </Badge>
                   </div>
-                </div>
+                </ProductImageCarousel>
                 
                 <div className="p-6 flex flex-col justify-center">
                   <Badge variant="outline" className="w-fit mb-3 squircle-sm">
@@ -70,10 +70,10 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                     )}
                   </div>
                   
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => onAddToCart(mainFeatured.id)}
-                    className="glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
+                    className="glass-brand squircle-sm btn-hover-lighter"
                   >
                     Add to Cart
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -91,14 +91,15 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
               <CardContent className="p-0">
                 <div className="flex gap-3 p-4">
                   <div className="relative w-16 h-16 flex-shrink-0">
-                    <div className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2">
-                      <ImageWithFallback
-                        key={`${product.id}-featured-secondary`}
-                        src={product.images[0] ?? product.image}
-                        alt={product.name}
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
+                    <ProductImageCarousel
+                      images={product.images.length > 0 ? product.images : [product.image]}
+                      alt={product.name}
+                      className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2"
+                      imageClassName="h-full w-full object-contain"
+                      style={{ '--product-image-frame-padding': 'clamp(0.4rem, 0.9vw, 0.85rem)' } as CSSProperties}
+                      showDots={false}
+                      showArrows={false}
+                    />
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -116,11 +117,11 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                     </div>
                   </div>
                   
-                  <Button 
+                  <Button
                     variant="outline"
-                    size="sm" 
+                    size="sm"
                     onClick={() => onAddToCart(product.id)}
-                    className="glass-strong squircle-sm btn-hover-lighter btn-add-to-cart border border-[var(--brand-glass-border-2)]"
+                    className="glass-brand squircle-sm btn-hover-lighter"
                   >
                     Add
                   </Button>
