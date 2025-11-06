@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import bcrypt
 import jwt
@@ -65,6 +65,17 @@ def register(data: Dict) -> Dict:
     if not _CODE_PATTERN.fullmatch(code):
         raise _bad_request("INVALID_REFERRAL_CODE")
 
+    sales_rep_account = sales_rep_repository.find_by_email(email)
+    if sales_rep_account:
+        return _register_sales_rep_account(
+            sales_rep_account,
+            name=name,
+            email=email,
+            raw_password=password,
+            code=code,
+            phone=phone,
+        )
+
     if user_repository.find_by_email(email):
         raise _conflict("EMAIL_EXISTS")
 
@@ -118,6 +129,91 @@ def register(data: Dict) -> Dict:
 
     return {"token": token, "user": _sanitize_user(user)}
 
+def _register_sales_rep_account(
+    sales_rep: Dict,
+    *,
+    name: str,
+    email: str,
+    raw_password: str,
+    code: str,
+    phone: Optional[str],
+) -> Dict:
+    expected_code = (sales_rep.get("salesCode") or "").upper()
+    if expected_code and expected_code != code:
+        raise _conflict("SALES_REP_EMAIL_MISMATCH")
+
+    if sales_rep.get("password"):
+        raise _conflict("EMAIL_EXISTS")
+
+    hashed_password = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    now = datetime.now(timezone.utc).isoformat()
+
+    user_record = user_repository.find_by_email(email)
+    if user_record:
+        updated_user = user_repository.update(
+            {
+                **user_record,
+                "name": name,
+                "password": hashed_password,
+                "role": "sales_rep",
+                "status": "active",
+                "phone": phone or user_record.get("phone"),
+                "salesRepId": sales_rep.get("id"),
+                "visits": int(user_record.get("visits") or 0) + 1,
+                "lastLoginAt": now,
+                "mustResetPassword": False,
+            }
+        )
+        user_record = updated_user or user_record
+    else:
+        user_record = user_repository.insert(
+            {
+                "name": name,
+                "email": email,
+                "phone": phone or sales_rep.get("phone"),
+                "password": hashed_password,
+                "role": "sales_rep",
+                "status": "active",
+                "salesRepId": sales_rep.get("id"),
+                "referralCredits": sales_rep.get("referralCredits") or 0,
+                "totalReferrals": sales_rep.get("totalReferrals") or 0,
+                "visits": 1,
+                "createdAt": now,
+                "lastLoginAt": now,
+                "mustResetPassword": False,
+            }
+        )
+
+    sales_rep_update = {
+        **sales_rep,
+        "name": name,
+        "email": email,
+        "phone": phone or sales_rep.get("phone"),
+        "password": hashed_password,
+        "role": "sales_rep",
+        "legacyUserId": user_record.get("id") or sales_rep.get("legacyUserId"),
+        "lastLoginAt": now,
+        "visits": int(sales_rep.get("visits") or 0) + 1,
+        "mustResetPassword": False,
+        "status": "active",
+        "updatedAt": now,
+    }
+
+    updated_sales_rep = sales_rep_repository.update(sales_rep_update)
+    if not updated_sales_rep:
+        updated_sales_rep = sales_rep_repository.insert(sales_rep_update)
+
+    if updated_sales_rep.get("legacyUserId") != user_record.get("id"):
+        updated_sales_rep = sales_rep_repository.update(
+            {**updated_sales_rep, "legacyUserId": user_record.get("id")}
+        ) or updated_sales_rep
+
+    token = _create_auth_token(
+        {"id": updated_sales_rep["id"], "email": updated_sales_rep.get("email"), "role": "sales_rep"}
+    )
+
+    return {"token": token, "user": _sanitize_sales_rep(updated_sales_rep)}
+
 
 def login(data: Dict) -> Dict:
     email = _normalize_email(data.get("email"))
@@ -146,7 +242,11 @@ def login(data: Dict) -> Dict:
     if not sales_rep:
         raise _not_found("EMAIL_NOT_FOUND")
 
-    if not _safe_check_password(password, str(sales_rep.get("password", ""))):
+    hashed_password = (sales_rep.get("password") or "").strip()
+    if not hashed_password:
+        raise _conflict("SALES_REP_ACCOUNT_REQUIRED")
+
+    if not _safe_check_password(password, hashed_password):
         raise _unauthorized("INVALID_PASSWORD")
 
     updated_rep = sales_rep_repository.update(

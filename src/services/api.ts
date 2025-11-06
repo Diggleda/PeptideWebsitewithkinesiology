@@ -186,6 +186,19 @@ export const referralAPI = {
       body: JSON.stringify({ status }),
     });
   },
+
+  updateReferral: async (referralId: string, payload: {
+    status?: string;
+    notes?: string;
+    referredContactName?: string;
+    referredContactEmail?: string;
+    referredContactPhone?: string;
+  }) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/referrals/${referralId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 // Health check

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 import secrets
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from ..repositories import (
     credit_ledger_repository,
@@ -14,6 +15,54 @@ from ..repositories import (
 from . import get_config
 
 ALLOWED_SUFFIX_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+REFERRAL_STATUS_CHOICES = [
+    "pending",
+    "contacted",
+    "follow_up",
+    "code_issued",
+    "converted",
+    "closed",
+    "not_interested",
+    "disqualified",
+    "rejected",
+    "in_review",
+]
+
+
+def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]:
+    if value is None:
+        return None
+    text = re.sub(r"[\r\n\t]+", " ", str(value)).strip()
+    if not text:
+        return None
+    return text[:max_length]
+
+
+def _sanitize_email(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    candidate = re.sub(r"\s+", "", str(value).lower())
+    if re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", candidate or ""):
+        return candidate
+    return None
+
+
+def _sanitize_phone(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"[^0-9+()\-\s]", "", str(value)).strip()
+    return cleaned[:32] if cleaned else None
+
+
+def _sanitize_notes(value: Optional[str]) -> Optional[str]:
+    return _sanitize_text(value, 600)
+
+
+def _sanitize_referral_status(status: Optional[str], fallback: str) -> str:
+    candidate = (status or "").strip().lower()
+    if candidate in REFERRAL_STATUS_CHOICES:
+        return candidate
+    return fallback
 
 
 def _normalize_initials(initials: str) -> str:
@@ -39,6 +88,21 @@ def _collect_existing_codes() -> set[str]:
         if code:
             existing.add(code.upper())
     return existing
+
+
+def _enrich_referral(referral: Dict) -> Dict:
+    enriched = dict(referral)
+    doctor = user_repository.find_by_id(referral.get("referrerDoctorId")) if referral.get("referrerDoctorId") else None
+    if doctor:
+        enriched["referrerDoctorName"] = doctor.get("name")
+        enriched["referrerDoctorEmail"] = doctor.get("email")
+        enriched["referrerDoctorPhone"] = doctor.get("phone")
+    else:
+        enriched["referrerDoctorName"] = None
+        enriched["referrerDoctorEmail"] = None
+        enriched["referrerDoctorPhone"] = None
+    enriched["notes"] = referral.get("notes") or None
+    return enriched
 
 
 def _ensure_sales_rep(sales_rep_id: Optional[str]) -> Dict:
@@ -190,7 +254,63 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str):
     sales_rep_id = _resolve_user_id(sales_rep_identifier)
     if not sales_rep_id:
         return []
-    return [ref for ref in referral_repository.get_all() if ref.get("salesRepId") == sales_rep_id]
+    referrals = [
+        ref
+        for ref in referral_repository.get_all()
+        if ref.get("salesRepId") == sales_rep_id
+    ]
+    referrals.sort(key=lambda item: item.get("createdAt") or "", reverse=True)
+    return [_enrich_referral(ref) for ref in referrals]
+
+
+def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: Dict) -> Dict:
+    referral = referral_repository.find_by_id(referral_id)
+    if not referral or referral.get("salesRepId") != sales_rep_id:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    current_status = referral.get("status") or "pending"
+    payload: Dict = {"id": referral["id"]}
+    changed = False
+
+    if "status" in updates:
+        sanitized_status = _sanitize_referral_status(updates.get("status"), current_status)
+        if sanitized_status != current_status:
+            payload["status"] = sanitized_status
+            changed = True
+
+    if "notes" in updates:
+        sanitized_notes = _sanitize_notes(updates.get("notes"))
+        if sanitized_notes != (referral.get("notes") or None):
+            payload["notes"] = sanitized_notes
+            changed = True
+
+    if "referredContactName" in updates:
+        sanitized_name = _sanitize_text(updates.get("referredContactName"))
+        if sanitized_name and sanitized_name != referral.get("referredContactName"):
+            payload["referredContactName"] = sanitized_name
+            changed = True
+
+    if "referredContactEmail" in updates:
+        sanitized_email = _sanitize_email(updates.get("referredContactEmail"))
+        if sanitized_email != (referral.get("referredContactEmail") or None):
+            payload["referredContactEmail"] = sanitized_email
+            changed = True
+
+    if "referredContactPhone" in updates:
+        sanitized_phone = _sanitize_phone(updates.get("referredContactPhone"))
+        if sanitized_phone != (referral.get("referredContactPhone") or None):
+            payload["referredContactPhone"] = sanitized_phone
+            changed = True
+
+    if not changed:
+        return _enrich_referral(referral)
+
+    updated = referral_repository.update({**referral, **payload})
+    return _enrich_referral(updated or referral)
+
+
+def get_referral_status_choices() -> List[str]:
+    return REFERRAL_STATUS_CHOICES.copy()
 
 
 def handle_order_referral_effects(purchaser_id: str, referral_code: Optional[str], order_total: float, order_id: str):

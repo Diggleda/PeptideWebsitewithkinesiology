@@ -105,6 +105,14 @@ export function Header({
       return;
     }
 
+    if (result.status === 'sales_rep_signup_required') {
+      setLoginError('Your sales rep profile needs to be activated before you can sign in. Please finish setting up your account or contact support for help.');
+      setShowLoginPassword(false);
+      setShowSignupPassword(false);
+      setShowSignupConfirmPassword(false);
+      return;
+    }
+
     if (result.status === 'invalid_password') {
       setLoginError('Incorrect password. Please try again.');
       setPassword('');

@@ -121,7 +121,11 @@ def admin_dashboard():
         _require_sales_rep(user)
         referrals = referral_service.list_referrals_for_sales_rep(user["id"])
         codes = [code for code in referral_code_repository.get_all() if code.get("salesRepId") == user["id"]]
-        return {"referrals": referrals, "codes": codes}
+        return {
+            "referrals": referrals,
+            "codes": codes,
+            "statuses": referral_service.get_referral_status_choices(),
+        }
 
     return handle_action(action)
 
@@ -134,7 +138,10 @@ def admin_referrals():
         user = _ensure_user()
         _require_sales_rep(user)
         referrals = referral_service.list_referrals_for_sales_rep(user["id"])
-        return {"referrals": referrals}
+        return {
+            "referrals": referrals,
+            "statuses": referral_service.get_referral_status_choices(),
+        }
 
     return handle_action(action)
 
@@ -188,6 +195,34 @@ def admin_create_code():
         return {"code": record}
 
     return handle_action(action, status=201)
+
+
+@blueprint.patch("/admin/referrals/<referral_id>")
+@require_auth
+def admin_update_referral(referral_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        updates = {
+            key: payload.get(key)
+            for key in (
+                "status",
+                "notes",
+                "referredContactName",
+                "referredContactEmail",
+                "referredContactPhone",
+            )
+            if key in payload
+        }
+        referral = referral_service.update_referral_for_sales_rep(referral_id, user["id"], updates)
+        return {
+            "referral": referral,
+            "statuses": referral_service.get_referral_status_choices(),
+        }
+
+    return handle_action(action)
 
 
 @blueprint.patch("/admin/codes/<code_id>")

@@ -1,3 +1,15 @@
+export type ReferralStatus =
+  | 'pending'
+  | 'contacted'
+  | 'follow_up'
+  | 'code_issued'
+  | 'converted'
+  | 'closed'
+  | 'not_interested'
+  | 'disqualified'
+  | 'rejected'
+  | 'in_review';
+
 export interface ReferralRecord {
   id: string;
   referrerDoctorId: string;
@@ -6,11 +18,15 @@ export interface ReferralRecord {
   referredContactEmail?: string | null;
   referredContactPhone?: string | null;
   referralCodeId?: string | null;
-  status: 'pending' | 'in_review' | 'code_issued' | 'converted' | 'rejected';
+  status: ReferralStatus | string;
   createdAt: string;
   updatedAt: string;
   convertedDoctorId?: string | null;
   convertedAt?: string | null;
+  notes?: string | null;
+  referrerDoctorName?: string | null;
+  referrerDoctorEmail?: string | null;
+  referrerDoctorPhone?: string | null;
 }
 
 export interface ReferralCodeRecord {
@@ -58,4 +74,5 @@ export interface DoctorCreditSummary {
 export interface SalesRepDashboard {
   referrals: ReferralRecord[];
   codes: ReferralCodeRecord[];
+  statuses?: string[];
 }

@@ -20,8 +20,16 @@ def _get_store():
     return store
 
 
-def _normalize_initials(initials: str) -> str:
-    return re.sub(r"[^A-Za-z]", "", (initials or ""))[:2].upper().ljust(2, "X")[:2]
+def _normalize_initials(initials: str, fallback_name: str = "") -> str:
+    raw = (initials or "").strip().upper()
+    cleaned = re.sub(r"[^A-Z0-9]", "", raw)
+    if cleaned:
+        return cleaned[:6]
+
+    fallback_parts = [part[:1] for part in (fallback_name or "").upper().split() if part]
+    fallback = "".join(fallback_parts) or (fallback_name[:6] if fallback_name else "")
+    fallback_cleaned = re.sub(r"[^A-Z0-9]", "", fallback.upper())
+    return fallback_cleaned[:6] or "XX"
 
 
 def _normalize_sales_code(code: Optional[str]) -> Optional[str]:
@@ -34,17 +42,32 @@ def _normalize_sales_code(code: Optional[str]) -> Optional[str]:
 def _ensure_defaults(rep: Dict) -> Dict:
     normalized = dict(rep)
     normalized.setdefault("id", rep.get("id") or _generate_id())
+    normalized.setdefault("legacyUserId", rep.get("legacyUserId") or rep.get("legacy_user_id") or None)
     name = normalized.get("name") or " ".join(filter(None, [rep.get("firstName"), rep.get("lastName")])).strip()
     normalized["name"] = name or "Sales Rep"
-    normalized["initials"] = _normalize_initials(normalized.get("initials") or normalized["name"])
-    normalized.setdefault("status", "active")
+    normalized["initials"] = _normalize_initials(normalized.get("initials"), normalized["name"])
+    normalized.setdefault("status", normalized.get("status") or "active")
     normalized["email"] = (normalized.get("email") or "").lower() or None
-    normalized.setdefault("phone", None)
-    normalized.setdefault("territory", None)
+    normalized.setdefault("phone", normalized.get("phone") or None)
+    normalized.setdefault("territory", normalized.get("territory") or None)
     normalized["salesCode"] = _normalize_sales_code(normalized.get("salesCode") or normalized.get("sales_code"))
+    normalized["password"] = (normalized.get("password") or "").strip() or None
+    normalized.setdefault("role", normalized.get("role") or "sales_rep")
+    normalized["mustResetPassword"] = bool(normalized.get("mustResetPassword", False))
+    normalized["referralCredits"] = float(normalized.get("referralCredits") or 0)
+    normalized["totalReferrals"] = int(normalized.get("totalReferrals") or 0)
+    normalized["visits"] = int(normalized.get("visits") or 0)
+
     created_at = normalized.get("createdAt") or _now()
     normalized["createdAt"] = created_at
-    normalized["updatedAt"] = normalized.get("updatedAt") or created_at
+    normalized.setdefault("firstOrderBonusGrantedAt", normalized.get("firstOrderBonusGrantedAt") or None)
+
+    last_login = normalized.get("lastLoginAt") or normalized.get("last_login_at")
+    normalized["lastLoginAt"] = last_login or created_at
+
+    updated_at = normalized.get("updatedAt") or normalized.get("updated_at") or created_at
+    normalized["updatedAt"] = updated_at
+
     return normalized
 
 
@@ -112,9 +135,45 @@ def insert(rep: Dict) -> Dict:
         mysql_client.execute(
             """
             INSERT INTO sales_reps (
-                id, name, email, phone, territory, initials, sales_code, status, created_at, updated_at
+                id,
+                legacy_user_id,
+                name,
+                email,
+                phone,
+                territory,
+                initials,
+                sales_code,
+                password,
+                role,
+                status,
+                referral_credits,
+                total_referrals,
+                visits,
+                last_login_at,
+                must_reset_password,
+                first_order_bonus_granted_at,
+                created_at,
+                updated_at
             ) VALUES (
-                %(id)s, %(name)s, %(email)s, %(phone)s, %(territory)s, %(initials)s, %(sales_code)s, %(status)s, %(created_at)s, %(updated_at)s
+                %(id)s,
+                %(legacy_user_id)s,
+                %(name)s,
+                %(email)s,
+                %(phone)s,
+                %(territory)s,
+                %(initials)s,
+                %(sales_code)s,
+                %(password)s,
+                %(role)s,
+                %(status)s,
+                %(referral_credits)s,
+                %(total_referrals)s,
+                %(visits)s,
+                %(last_login_at)s,
+                %(must_reset_password)s,
+                %(first_order_bonus_granted_at)s,
+                %(created_at)s,
+                %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
@@ -123,7 +182,15 @@ def insert(rep: Dict) -> Dict:
                 territory = VALUES(territory),
                 initials = VALUES(initials),
                 sales_code = VALUES(sales_code),
+                password = VALUES(password),
+                role = VALUES(role),
                 status = VALUES(status),
+                referral_credits = VALUES(referral_credits),
+                total_referrals = VALUES(total_referrals),
+                visits = VALUES(visits),
+                last_login_at = VALUES(last_login_at),
+                must_reset_password = VALUES(must_reset_password),
+                first_order_bonus_granted_at = VALUES(first_order_bonus_granted_at),
                 updated_at = VALUES(updated_at)
             """,
             params,
@@ -150,12 +217,21 @@ def update(rep: Dict) -> Optional[Dict]:
             UPDATE sales_reps
             SET
                 name = %(name)s,
+                legacy_user_id = %(legacy_user_id)s,
                 email = %(email)s,
                 phone = %(phone)s,
                 territory = %(territory)s,
                 initials = %(initials)s,
                 sales_code = %(sales_code)s,
+                password = %(password)s,
+                role = %(role)s,
                 status = %(status)s,
+                referral_credits = %(referral_credits)s,
+                total_referrals = %(total_referrals)s,
+                visits = %(visits)s,
+                last_login_at = %(last_login_at)s,
+                must_reset_password = %(must_reset_password)s,
+                first_order_bonus_granted_at = %(first_order_bonus_granted_at)s,
                 updated_at = %(updated_at)s
             WHERE id = %(id)s
             """,
@@ -187,6 +263,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
     return _ensure_defaults(
         {
             "id": row.get("id"),
+            "legacyUserId": row.get("legacy_user_id"),
             "name": row.get("name"),
             "email": row.get("email"),
             "phone": row.get("phone"),
@@ -194,6 +271,14 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "initials": row.get("initials"),
             "salesCode": row.get("sales_code") or row.get("salesCode"),
             "status": row.get("status"),
+            "password": row.get("password"),
+            "role": row.get("role"),
+            "referralCredits": row.get("referral_credits"),
+            "totalReferrals": row.get("total_referrals"),
+            "visits": row.get("visits"),
+            "lastLoginAt": fmt_datetime(row.get("last_login_at")),
+            "mustResetPassword": row.get("must_reset_password"),
+            "firstOrderBonusGrantedAt": fmt_datetime(row.get("first_order_bonus_granted_at")),
             "createdAt": fmt_datetime(row.get("created_at")),
             "updatedAt": fmt_datetime(row.get("updated_at")),
         }
@@ -214,13 +299,22 @@ def _to_db_params(rep: Dict) -> Dict:
 
     return {
         "id": rep.get("id"),
+        "legacy_user_id": rep.get("legacyUserId"),
         "name": rep.get("name"),
         "email": rep.get("email"),
         "phone": rep.get("phone"),
         "territory": rep.get("territory"),
         "initials": rep.get("initials"),
         "sales_code": rep.get("salesCode"),
+        "password": rep.get("password"),
+        "role": rep.get("role"),
         "status": rep.get("status"),
+        "referral_credits": float(rep.get("referralCredits") or 0),
+        "total_referrals": int(rep.get("totalReferrals") or 0),
+        "visits": int(rep.get("visits") or 0),
+        "last_login_at": parse_dt(rep.get("lastLoginAt")),
+        "must_reset_password": 1 if rep.get("mustResetPassword") else 0,
+        "first_order_bonus_granted_at": parse_dt(rep.get("firstOrderBonusGrantedAt")),
         "created_at": parse_dt(rep.get("createdAt")),
         "updated_at": parse_dt(rep.get("updatedAt")),
     }

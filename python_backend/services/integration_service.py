@@ -20,10 +20,16 @@ def _normalize_email(value: str) -> str:
     return ""
 
 
-def _normalize_initials(value: str, fallback: str) -> str:
-    base = _sanitize_string(value or fallback, 10)
-    letters = re.sub(r"[^A-Za-z]", "", base)
-    return (letters[:2].upper() or "XX").ljust(2, "X")[:2]
+def _normalize_initials(value: str, fallback_name: str) -> str:
+    raw = _sanitize_string(value, 10).upper()
+    cleaned = re.sub(r"[^A-Z0-9]", "", raw)
+    if cleaned:
+        return cleaned[:6]
+
+    fallback_parts = [part[:1] for part in _sanitize_string(fallback_name, 190).upper().split() if part]
+    fallback = "".join(fallback_parts) or _sanitize_string(fallback_name, 6).upper()
+    fallback_cleaned = re.sub(r"[^A-Z0-9]", "", fallback)
+    return fallback_cleaned[:6] or "XX"
 
 
 def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:

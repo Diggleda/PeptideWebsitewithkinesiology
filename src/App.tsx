@@ -179,6 +179,7 @@ export default function App() {
   const [doctorSummary, setDoctorSummary] = useState<DoctorCreditSummary | null>(null);
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] = useState<SalesRepDashboard | null>(null);
+  const [salesRepStatusFilter, setSalesRepStatusFilter] = useState<string>('all');
   const [referralForm, setReferralForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -189,9 +190,15 @@ export default function App() {
   const [referralStatusMessage, setReferralStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
-  const [adminActionState, setAdminActionState] = useState<{ creating: string | null; updating: string | null; error: string | null }>({
-    creating: null,
-    updating: null,
+  const [adminActionState, setAdminActionState] = useState<{
+    creatingCode: string | null;
+    updatingCode: string | null;
+    updatingReferral: string | null;
+    error: string | null;
+  }>({
+    creatingCode: null,
+    updatingCode: null,
+    updatingReferral: null,
     error: null,
   });
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(peptideProducts);
@@ -239,11 +246,43 @@ export default function App() {
     });
   }, [doctorReferrals, referralSearchTerm, referralSortOrder]);
 
+  const salesRepStatusOptions = useMemo(() => {
+    if (!salesRepDashboard) {
+      return [] as string[];
+    }
+    if (Array.isArray(salesRepDashboard.statuses) && salesRepDashboard.statuses.length > 0) {
+      return Array.from(new Set(salesRepDashboard.statuses.map((status) => (status || '').trim()))).filter(Boolean);
+    }
+    return Array.from(
+      new Set((salesRepDashboard.referrals ?? []).map((referral) => (referral.status || '').trim()).filter(Boolean))
+    );
+  }, [salesRepDashboard]);
+
+  const filteredSalesRepReferrals = useMemo(() => {
+    const allReferrals = salesRepDashboard?.referrals ?? [];
+    if (salesRepStatusFilter === 'all') {
+      return allReferrals;
+    }
+    return allReferrals.filter(
+      (referral) => (referral.status || '').toLowerCase() === salesRepStatusFilter.toLowerCase()
+    );
+  }, [salesRepDashboard, salesRepStatusFilter]);
+
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
   }, []);
 
   const sortDirectionLabel = referralSortOrder === 'desc' ? 'Newest first' : 'Oldest first';
+
+  useEffect(() => {
+    if (salesRepStatusFilter === 'all') {
+      return;
+    }
+    const available = new Set(salesRepStatusOptions.map((status) => status.toLowerCase()));
+    if (!available.has(salesRepStatusFilter.toLowerCase())) {
+      setSalesRepStatusFilter('all');
+    }
+  }, [salesRepStatusFilter, salesRepStatusOptions]);
 
   const refreshReferralData = useCallback(async () => {
     if (!user) {
@@ -287,6 +326,33 @@ export default function App() {
       day: 'numeric',
       year: 'numeric',
     });
+  }, []);
+
+  const formatDateTime = useCallback((value?: string | null) => {
+    if (!value) {
+      return '—';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, []);
+
+  const formatReferralStatus = useCallback((status: string) => {
+    if (!status) {
+      return 'Unknown';
+    }
+    return status
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }, []);
   const checkoutButtonRef = useCallback((node: HTMLButtonElement | null) => {
     if (checkoutButtonObserverRef.current) {
@@ -497,6 +563,8 @@ export default function App() {
       setDoctorSummary(null);
       setDoctorReferrals([]);
       setSalesRepDashboard(null);
+      setSalesRepStatusFilter('all');
+      setAdminActionState({ creatingCode: null, updatingCode: null, updatingReferral: null, error: null });
       return;
     }
 
@@ -517,6 +585,18 @@ export default function App() {
       active = false;
     };
   }, [user, postLoginHold, refreshReferralData]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'sales_rep' || postLoginHold) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      refreshReferralData();
+    }, 20000);
+
+    return () => window.clearInterval(intervalId);
+  }, [user?.id, user?.role, postLoginHold, refreshReferralData]);
 
   useEffect(() => () => {
     if (checkoutButtonObserverRef.current) {
@@ -593,6 +673,10 @@ export default function App() {
 
       if (message === 'INVALID_PASSWORD') {
         return { status: 'invalid_password' };
+      }
+
+      if (message === 'SALES_REP_ACCOUNT_REQUIRED') {
+        return { status: 'sales_rep_signup_required', message };
       }
 
       const statusCode = typeof error?.status === 'number' ? error.status : null;
@@ -734,7 +818,7 @@ export default function App() {
     setSalesRepDashboard(null);
     setReferralStatusMessage(null);
     setReferralDataError(null);
-    setAdminActionState({ creating: null, updating: null, error: null });
+    setAdminActionState({ creatingCode: null, updatingCode: null, updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   };
 
@@ -953,14 +1037,14 @@ export default function App() {
       return;
     }
     try {
-      setAdminActionState((prev) => ({ ...prev, creating: referralId, error: null }));
+      setAdminActionState((prev) => ({ ...prev, creatingCode: referralId, error: null }));
       await referralAPI.createReferralCode(referralId);
       await refreshReferralData();
     } catch (error: any) {
       console.warn('[Referral] Generate code failed', error);
       setAdminActionState((prev) => ({ ...prev, error: 'Unable to generate referral code. Please try again.' }));
     } finally {
-      setAdminActionState((prev) => ({ ...prev, creating: null }));
+      setAdminActionState((prev) => ({ ...prev, creatingCode: null }));
     }
   };
 
@@ -969,14 +1053,54 @@ export default function App() {
       return;
     }
     try {
-      setAdminActionState((prev) => ({ ...prev, updating: codeId, error: null }));
+      setAdminActionState((prev) => ({ ...prev, updatingCode: codeId, error: null }));
       await referralAPI.updateCodeStatus(codeId, status);
       await refreshReferralData();
     } catch (error: any) {
       console.warn('[Referral] Update code status failed', error);
       setAdminActionState((prev) => ({ ...prev, error: 'Unable to update code status. Please try again.' }));
     } finally {
-      setAdminActionState((prev) => ({ ...prev, updating: null }));
+      setAdminActionState((prev) => ({ ...prev, updatingCode: null }));
+    }
+  };
+
+  const handleUpdateReferralStatus = async (referralId: string, nextStatus: string) => {
+    if (!user || user.role !== 'sales_rep') {
+      return;
+    }
+
+    try {
+      setAdminActionState((prev) => ({ ...prev, updatingReferral: referralId, error: null }));
+      const response = await referralAPI.updateReferral(referralId, { status: nextStatus });
+      setSalesRepDashboard((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const updatedReferral = response?.referral;
+        const statuses = (response?.statuses as string[] | undefined) ?? prev.statuses;
+        if (!updatedReferral) {
+          return { ...prev, statuses };
+        }
+        const updatedReferrals = prev.referrals.map((item) =>
+          item.id === updatedReferral.id ? updatedReferral : item
+        );
+        return {
+          ...prev,
+          referrals: updatedReferrals,
+          statuses,
+        };
+      });
+    } catch (error: any) {
+      console.warn('[Referral] Update referral status failed', error);
+      setAdminActionState((prev) => ({
+        ...prev,
+        error:
+          typeof error?.message === 'string' && error.message
+            ? error.message
+            : 'Unable to update referral status. Please try again.',
+      }));
+    } finally {
+      setAdminActionState((prev) => ({ ...prev, updatingReferral: null }));
     }
   };
 
@@ -1320,60 +1444,120 @@ const renderDoctorDashboard = () => {
 };
 
 const renderSalesRepDashboard = () => {
-    if (!user || user.role !== 'sales_rep') {
-      return null;
-    }
+  if (!user || user.role !== 'sales_rep') {
+    return null;
+  }
 
-    const referrals = salesRepDashboard?.referrals ?? [];
-    const codes = salesRepDashboard?.codes ?? [];
+  const referrals = salesRepDashboard?.referrals ?? [];
+  const codes = salesRepDashboard?.codes ?? [];
+  const statusOptions = Array.from(
+    new Set([
+      ...salesRepStatusOptions,
+      ...referrals.map((referral) => (referral.status || '').trim()).filter(Boolean),
+    ]),
+  ).filter(Boolean);
+  statusOptions.sort();
 
-    return (
-      <section className="grid gap-6 mb-8">
-        <div className="glass-card squircle-lg p-6 shadow-[0_30px_80px_-65px_rgba(95,179,249,0.8)]">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Sales Rep Dashboard</h2>
-              <p className="text-sm text-slate-600">Manage incoming referrals and onboarding codes.</p>
-            </div>
-            <div className="flex gap-4">
-              <div>
-                <p className="text-xs uppercase text-slate-500">Pending Referrals</p>
-                <p className="text-xl font-semibold">{referrals.filter((item) => item.status === 'pending').length}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase text-slate-500">Active Codes</p>
-                <p className="text-xl font-semibold">{codes.filter((item) => item.status === 'available').length}</p>
-              </div>
-            </div>
+  const totalReferrals = referrals.length;
+  const activeStatuses = new Set(['pending', 'contacted', 'follow_up', 'code_issued']);
+  const activeReferrals = referrals.filter((ref) => activeStatuses.has((ref.status || '').toLowerCase())).length;
+  const convertedReferrals = referrals.filter((ref) => (ref.status || '').toLowerCase() === 'converted').length;
+
+  return (
+    <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)]">
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Sales Rep Dashboard</h2>
+            <p className="text-sm text-slate-600">Monitor referral progress and keep statuses in sync.</p>
           </div>
-          {adminActionState.error && (
-            <p className="mt-3 text-sm text-red-600">{adminActionState.error}</p>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={salesRepStatusFilter}
+              onChange={(event) => setSalesRepStatusFilter(event.target.value)}
+              className="rounded-md border border-slate-200/80 bg-white/90 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+            >
+              <option value="all">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {formatReferralStatus(status)}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={refreshReferralData}
+              disabled={referralDataLoading}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${referralDataLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
-        <div className="glass-card squircle-lg p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold">Referral Queue</h3>
-            {referralDataLoading && <span className="text-xs text-slate-500">Loading…</span>}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Referrals</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalReferrals}</p>
           </div>
-          {referrals.length === 0 ? (
-            <p className="text-sm text-slate-600">No referrals submitted yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="pb-2 pr-10">Colleague</th>
-                    <th className="pb-2 pr-8">Status</th>
-                    <th className="pb-2 pr-8">Submitted</th>
-                    <th className="pb-2 pr-6">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/70">
-                  {referrals.map((referral) => (
+          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Pipeline</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{activeReferrals}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Converted</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{convertedReferrals}</p>
+          </div>
+        </div>
+
+        {adminActionState.error && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {adminActionState.error}
+          </p>
+        )}
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200/70 bg-white/90 shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200/70">
+            <thead className="bg-slate-50/70">
+              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-3">Referrer</th>
+                <th className="px-4 py-3">Referral</th>
+                <th className="px-4 py-3">Notes</th>
+                <th className="px-4 py-3 whitespace-nowrap">Submitted</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/60">
+              {referralDataLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
+                    Loading referrals…
+                  </td>
+                </tr>
+              ) : filteredSalesRepReferrals.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
+                    No referrals match this filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredSalesRepReferrals.map((referral) => {
+                  const isUpdating = adminActionState.updatingReferral === referral.id;
+                  const referralStatusOptions = statusOptions.length > 0 ? statusOptions : [referral.status || 'pending'];
+
+                  return (
                     <tr key={referral.id} className="align-top">
-                      <td className="py-2 pr-10">
-                        <div className="font-medium text-slate-800">{referral.referredContactName}</div>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-slate-900">{referral.referrerDoctorName ?? '—'}</div>
+                        <div className="text-xs text-slate-500">{referral.referrerDoctorEmail ?? '—'}</div>
+                        {referral.referrerDoctorPhone && (
+                          <div className="text-xs text-slate-500">{referral.referrerDoctorPhone}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-medium text-slate-900">{referral.referredContactName || '—'}</div>
                         {referral.referredContactEmail && (
                           <div className="text-xs text-slate-500">{referral.referredContactEmail}</div>
                         )}
@@ -1381,71 +1565,92 @@ const renderSalesRepDashboard = () => {
                           <div className="text-xs text-slate-500">{referral.referredContactPhone}</div>
                         )}
                       </td>
-                      <td className="py-2 pr-8">
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                          {referral.status.replace(/_/g, ' ')}
-                        </span>
+                      <td className="px-4 py-4">
+                        {referral.notes ? (
+                          <div className="max-w-md text-sm text-slate-600 whitespace-pre-wrap">
+                            {referral.notes}
+                          </div>
+                        ) : (
+                          <span className="text-xs italic text-slate-400">No notes</span>
+                        )}
                       </td>
-                      <td className="py-2 pr-8 text-slate-600">{formatDate(referral.createdAt)}</td>
-                      <td className="py-2 pr-6">
-                        {referral.status === 'pending' ? (
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        <div>{formatDateTime(referral.createdAt)}</div>
+                        <div className="text-xs text-slate-400">Updated {formatDateTime(referral.updatedAt)}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <select
+                          value={referral.status}
+                          onChange={(event) => handleUpdateReferralStatus(referral.id, event.target.value)}
+                          disabled={isUpdating}
+                          className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                        >
+                          {referralStatusOptions.map((status) => (
+                            <option key={status} value={status}>
+                              {formatReferralStatus(status)}
+                            </option>
+                          ))}
+                        </select>
+                        {referral.status === 'pending' && (
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            disabled={adminActionState.creating === referral.id}
+                            className="mt-2 h-8 px-3 text-xs text-[rgb(95,179,249)]"
+                            disabled={adminActionState.creatingCode === referral.id}
                             onClick={() => handleGenerateReferralCode(referral.id)}
                           >
-                            {adminActionState.creating === referral.id ? 'Generating…' : 'Generate Code'}
+                            {adminActionState.creatingCode === referral.id ? 'Generating…' : 'Generate Code'}
                           </Button>
-                        ) : referral.referralCodeId ? (
-                          <span className="text-xs text-slate-600">Code ID: {referral.referralCodeId}</span>
-                        ) : (
-                          <span className="text-xs text-slate-500">—</span>
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
-        <div className="glass-card squircle-lg p-6">
-          <h3 className="text-lg font-semibold mb-3">Managed Codes</h3>
+        <div className="mt-8 border-t border-slate-200/70 pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-800">Managed Codes</h3>
+            {referralDataLoading && <span className="text-xs text-slate-500">Syncing…</span>}
+          </div>
           {codes.length === 0 ? (
             <p className="text-sm text-slate-600">Codes generated for referrals will appear here.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
+            <div className="overflow-x-auto rounded-xl border border-slate-200/70 bg-white/90 shadow-sm">
+              <table className="min-w-full divide-y divide-slate-200/70 text-sm">
+                <thead className="bg-slate-50/70">
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="pb-2 pr-4">Code</th>
-                    <th className="pb-2 pr-4">Referrer</th>
-                    <th className="pb-2 pr-4">Assigned Colleague</th>
-                    <th className="pb-2 pr-4">Status</th>
-                    <th className="pb-2 pr-4">Updated</th>
+                    <th className="px-4 py-3">Code</th>
+                    <th className="px-4 py-3">Referrer</th>
+                    <th className="px-4 py-3">Assigned</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Updated</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200/70">
+                <tbody className="divide-y divide-slate-200/60">
                   {codes.map((code) => (
                     <tr key={code.id} className="align-top">
-                      <td className="py-2 pr-4 font-mono tracking-[0.3em] text-slate-800">{code.code}</td>
-                      <td className="py-2 pr-4 text-slate-600">{code.referrerDoctorId ?? '—'}</td>
-                      <td className="py-2 pr-4 text-slate-600">{code.doctorId ?? '—'}</td>
-                      <td className="py-2 pr-4">
+                      <td className="px-4 py-3 font-mono tracking-[0.3em] text-slate-900">{code.code}</td>
+                      <td className="px-4 py-3 text-slate-600">{code.referrerDoctorId ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{code.doctorId ?? '—'}</td>
+                      <td className="px-4 py-3">
                         <select
                           value={code.status}
                           onChange={(event) => handleUpdateCodeStatus(code.id, event.target.value)}
-                          disabled={adminActionState.updating === code.id}
-                          className="rounded-md border border-slate-200 bg-white/95 px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                          disabled={adminActionState.updatingCode === code.id}
+                          className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                         >
                           <option value="available">Available</option>
                           <option value="revoked">Revoked</option>
                           <option value="retired">Retired</option>
                         </select>
                       </td>
-                      <td className="py-2 pr-4 text-slate-600">{formatDate((code.updatedAt as string | null) ?? code.issuedAt ?? null)}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDateTime((code.updatedAt as string | null) ?? code.issuedAt ?? null)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1453,9 +1658,10 @@ const renderSalesRepDashboard = () => {
             </div>
           )}
         </div>
-      </section>
-    );
-  };
+      </div>
+    </section>
+  );
+};
 
   const handleViewProduct = (product: Product) => {
     console.debug('[Product] View details', { productId: product.id });
@@ -2181,121 +2387,126 @@ const renderSalesRepDashboard = () => {
 
       {/* Main Content */}
       {user && !postLoginHold && (
-        <>
-          <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
-          {renderDoctorDashboard()}
-          {renderSalesRepDashboard()}
+        <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
+          {user.role === 'sales_rep' ? (
+            <>
+              {renderSalesRepDashboard()}
+            </>
+          ) : (
+            <>
+              {renderDoctorDashboard()}
 
-        {/* Products Section */}
-        <div className="products-layout mt-24">
-          {/* Filters Sidebar */}
-          <div
-            ref={filterSidebarRef}
-            className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
-          >
-            <CategoryFilter
-              categories={catalogCategories}
-              types={catalogTypes}
-              filters={filters}
-              onFiltersChange={setFilters}
-              productCounts={productCounts}
-              typeCounts={typeCounts}
-            />
-          </div>
-
-          {/* Products Grid */}
-          <div className="w-full min-w-0 flex-1">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <h2>Products</h2>
-                <Badge variant="outline" className="squircle-sm glass">
-                  {filteredProducts.length} items
-                </Badge>
-                {searchQuery && (
-                  <Badge variant="outline" className="squircle-sm">
-                    Search: "{searchQuery}"
-                  </Badge>
-                )}
-                {catalogLoading && (
-                  <Badge variant="outline" className="squircle-sm glass">
-                    Syncing…
-                  </Badge>
-                )}
-                {catalogError && (
-                  <Badge variant="destructive" className="squircle-sm">
-                    Woo sync issue
-                  </Badge>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  aria-pressed={viewMode === 'grid'}
-                  onClick={() => setViewMode('grid')}
-                  className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                    viewMode === 'grid'
-                      ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                      : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-                  }`}
+              {/* Products Section */}
+              <div className="products-layout mt-24">
+                {/* Filters Sidebar */}
+                <div
+                  ref={filterSidebarRef}
+                  className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
                 >
-                  <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setViewMode('list')}
-                  aria-pressed={viewMode === 'list'}
-                  className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                    viewMode === 'list'
-                      ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                      : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-                  }`}
-                >
-                  <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
-                </Button>
-                
-                {totalCartItems > 0 && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => setCheckoutOpen(true)}
-                    ref={checkoutButtonRef}
-                    className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                  >
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    Checkout ({totalCartItems})
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {filteredProducts.length > 0 ? (
-              <div className={`grid gap-6 w-full ${
-                viewMode === 'grid' 
-                  ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' 
-                  : 'grid-cols-1'
-              }`}>
-                {filteredProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onAddToCart={handleAddToCart}
-                    onViewDetails={handleViewProduct}
-                    viewMode={viewMode}
+                  <CategoryFilter
+                    categories={catalogCategories}
+                    types={catalogTypes}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    productCounts={productCounts}
+                    typeCounts={typeCounts}
                   />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
-                  <h3 className="mb-2">No products found</h3>
-                  <p className="text-gray-600">Try adjusting your filters or search terms.</p>
+                </div>
+
+                {/* Products Grid */}
+                <div className="w-full min-w-0 flex-1">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <h2>Products</h2>
+                      <Badge variant="outline" className="squircle-sm glass">
+                        {filteredProducts.length} items
+                      </Badge>
+                      {searchQuery && (
+                        <Badge variant="outline" className="squircle-sm">
+                          Search: "{searchQuery}"
+                        </Badge>
+                      )}
+                      {catalogLoading && (
+                        <Badge variant="outline" className="squircle-sm glass">
+                          Syncing…
+                        </Badge>
+                      )}
+                      {catalogError && (
+                        <Badge variant="destructive" className="squircle-sm">
+                          Woo sync issue
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        aria-pressed={viewMode === 'grid'}
+                        onClick={() => setViewMode('grid')}
+                        className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+                          viewMode === 'grid'
+                            ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                            : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+                        }`}
+                      >
+                        <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setViewMode('list')}
+                        aria-pressed={viewMode === 'list'}
+                        className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+                          viewMode === 'list'
+                            ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                            : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+                        }`}
+                      >
+                        <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
+                      </Button>
+
+                      {totalCartItems > 0 && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => setCheckoutOpen(true)}
+                          ref={checkoutButtonRef}
+                          className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                          <ShoppingCart className="w-4 h-4 mr-2" />
+                          Checkout ({totalCartItems})
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {filteredProducts.length > 0 ? (
+                    <div
+                      className={`grid gap-6 w-full ${
+                        viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
+                      }`}
+                    >
+                      {filteredProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onAddToCart={handleAddToCart}
+                          onViewDetails={handleViewProduct}
+                          viewMode={viewMode}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
+                        <h3 className="mb-2">No products found</h3>
+                        <p className="text-gray-600">Try adjusting your filters or search terms.</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      </main>
-        </>
+            </>
+          )}
+        </main>
       )}
 
       {/* Footer */}

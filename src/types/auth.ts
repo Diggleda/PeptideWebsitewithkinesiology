@@ -8,5 +8,6 @@ export type AuthActionResult =
   | { status: 'referral_code_not_found' }
   | { status: 'referral_code_unavailable' }
   | { status: 'sales_rep_email_mismatch' }
+  | { status: 'sales_rep_signup_required' }
   | { status: 'name_email_required' }
   | { status: 'error'; message?: string };
