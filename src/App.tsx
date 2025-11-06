@@ -191,13 +191,9 @@ export default function App() {
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [adminActionState, setAdminActionState] = useState<{
-    creatingCode: string | null;
-    updatingCode: string | null;
     updatingReferral: string | null;
     error: string | null;
   }>({
-    creatingCode: null,
-    updatingCode: null,
     updatingReferral: null,
     error: null,
   });
@@ -587,7 +583,7 @@ export default function App() {
       setDoctorReferrals([]);
       setSalesRepDashboard(null);
       setSalesRepStatusFilter('all');
-      setAdminActionState({ creatingCode: null, updatingCode: null, updatingReferral: null, error: null });
+      setAdminActionState({ updatingReferral: null, error: null });
       return;
     }
 
@@ -841,7 +837,7 @@ export default function App() {
     setSalesRepDashboard(null);
     setReferralStatusMessage(null);
     setReferralDataError(null);
-    setAdminActionState({ creatingCode: null, updatingCode: null, updatingReferral: null, error: null });
+    setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   };
 
@@ -1052,22 +1048,6 @@ export default function App() {
       setReferralStatusMessage({ type: 'error', message: 'Unable to submit referral. Please try again.' });
     } finally {
       setReferralSubmitting(false);
-    }
-  };
-
-  const handleGenerateReferralCode = async (referralId: string) => {
-    if (!user || user.role !== 'sales_rep') {
-      return;
-    }
-    try {
-      setAdminActionState((prev) => ({ ...prev, creatingCode: referralId, error: null }));
-      await referralAPI.createReferralCode(referralId);
-      await refreshReferralData();
-    } catch (error: any) {
-      console.warn('[Referral] Generate code failed', error);
-      setAdminActionState((prev) => ({ ...prev, error: 'Unable to generate referral code. Please try again.' }));
-    } finally {
-      setAdminActionState((prev) => ({ ...prev, creatingCode: null }));
     }
   };
 
@@ -1580,7 +1560,7 @@ const renderSalesRepDashboard = () => {
   const convertedReferrals = referrals.filter((ref) => (ref.status || '').toLowerCase() === 'converted').length;
 
   return (
-    <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)]">
+    <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full">
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1635,7 +1615,7 @@ const renderSalesRepDashboard = () => {
         )}
 
         <div className="overflow-x-auto rounded-xl border border-slate-200/70 bg-white/90 shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200/70">
+          <table className="min-w-[720px] divide-y divide-slate-200/70">
             <thead className="bg-slate-50/70">
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Referrer</th>
@@ -1707,17 +1687,6 @@ const renderSalesRepDashboard = () => {
                             </option>
                           ))}
                         </select>
-                        {referral.status === 'pending' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2 h-8 px-3 text-xs text-[rgb(95,179,249)]"
-                            disabled={adminActionState.creatingCode === referral.id}
-                            onClick={() => handleGenerateReferralCode(referral.id)}
-                          >
-                            {adminActionState.creatingCode === referral.id ? 'Generating…' : 'Generate Code'}
-                          </Button>
-                        )}
                       </td>
                     </tr>
                   );

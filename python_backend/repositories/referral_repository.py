@@ -6,6 +6,115 @@ from typing import Dict, List, Optional
 from ..services import get_config
 from ..database import mysql_client
 from .. import storage
+import re
+
+from . import user_repository, referral_code_repository, sales_rep_repository
+
+
+_POSSIBLE_PREFIXES = (
+    "rep:",
+    "rep-",
+    "rep_",
+    "sales_rep:",
+    "sales_rep-",
+    "sales_rep_",
+    "salesrep:",
+    "salesrep-",
+    "salesrep_",
+    "user:",
+    "user-",
+    "user_",
+    "legacy:",
+    "legacy-",
+    "legacy_",
+    "legacyuser:",
+    "legacyuser-",
+    "legacyuser_",
+)
+
+
+def _normalize_identifier(value) -> Optional[str]:
+    if value is None:
+        return None
+
+    text = str(value).strip().strip("\"")
+    if not text:
+        return None
+
+    lowered = text.lower()
+    for prefix in _POSSIBLE_PREFIXES:
+        if lowered.startswith(prefix):
+            text = text[len(prefix):]
+            lowered = lowered[len(prefix):]
+            break
+
+    text = text.strip()
+    if not text:
+        return None
+
+    # Normalise numeric identifiers so `1762395266050` and `1762395266050.0` are treated the same.
+    if re.fullmatch(r"-?\d+(?:\.0+)?", text):
+        text = text.split(".")[0]
+
+    return text.lower() if "@" in text else text
+
+
+def _collect_sales_rep_aliases(candidate: str) -> set[str]:
+    aliases: set[str] = set()
+
+    def add(value) -> None:
+        normalized = _normalize_identifier(value)
+        if normalized:
+            aliases.add(normalized)
+
+    add(candidate)
+
+    user = user_repository.find_by_id(candidate)
+    if user:
+        add(user.get("id"))
+        add(user.get("salesRepId"))
+        add(user.get("email"))
+        linked_rep_id = user.get("salesRepId")
+        if linked_rep_id:
+            rep_for_user = sales_rep_repository.find_by_id(str(linked_rep_id))
+            if rep_for_user:
+                add(rep_for_user.get("id"))
+                add(rep_for_user.get("legacyUserId"))
+                add(rep_for_user.get("email"))
+                add(rep_for_user.get("salesCode"))
+    elif "@" in candidate:
+        user = user_repository.find_by_email(candidate)
+        if user:
+            add(user.get("id"))
+            add(user.get("salesRepId"))
+            add(user.get("email"))
+            linked_rep_id = user.get("salesRepId")
+            if linked_rep_id:
+                rep_for_user = sales_rep_repository.find_by_id(str(linked_rep_id))
+                if rep_for_user:
+                    add(rep_for_user.get("id"))
+                    add(rep_for_user.get("legacyUserId"))
+                    add(rep_for_user.get("email"))
+                    add(rep_for_user.get("salesCode"))
+
+    rep = sales_rep_repository.find_by_id(candidate)
+    if not rep and "@" in candidate:
+        rep = sales_rep_repository.find_by_email(candidate)
+    if rep:
+        add(rep.get("id"))
+        add(rep.get("legacyUserId"))
+        add(rep.get("email"))
+        add(rep.get("salesCode"))
+
+        legacy_user_id = rep.get("legacyUserId")
+        if legacy_user_id:
+            legacy_user = user_repository.find_by_id(str(legacy_user_id))
+            if legacy_user:
+                add(legacy_user.get("id"))
+                add(legacy_user.get("salesRepId"))
+                add(legacy_user.get("email"))
+
+    return aliases
 
 
 def _using_mysql() -> bool:
@@ -71,6 +180,47 @@ def find_by_referrer(referrer_id: str) -> List[Dict]:
         )
         return [_row_to_referral(row) for row in rows]
     return [record for record in _load() if record.get("referrerDoctorId") == referrer_id]
+
+
+def find_by_sales_rep(sales_rep_id: str) -> List[Dict]:
+    normalized_identifier = _normalize_identifier(sales_rep_id)
+    if not normalized_identifier:
+        return []
+
+    aliases = _collect_sales_rep_aliases(sales_rep_id)
+    if not aliases:
+        aliases.add(normalized_identifier)
+
+    referrals: List[Dict] = []
+    doctor_cache: Dict[str, Optional[Dict]] = {}
+    code_cache: Dict[str, Optional[Dict]] = {}
+    for record in _load():
+        record_rep = _normalize_identifier(record.get("salesRepId"))
+        if record_rep and record_rep in aliases:
+            referrals.append(record)
+            continue
+
+        doctor_id = record.get("referrerDoctorId")
+        if doctor_id:
+            if doctor_id not in doctor_cache:
+                doctor_cache[doctor_id] = user_repository.find_by_id(doctor_id)
+            doctor = doctor_cache.get(doctor_id)
+            doctor_rep = _normalize_identifier(doctor.get("salesRepId") if doctor else None)
+            if doctor_rep and doctor_rep in aliases:
+                referrals.append(record)
+                continue
+
+        code_id = record.get("referralCodeId")
+        if code_id:
+            if code_id not in code_cache:
+                code_cache[code_id] = referral_code_repository.find_by_id(code_id)
+            code = code_cache.get(code_id)
+            code_rep = _normalize_identifier(code.get("salesRepId") if code else None)
+            if code_rep and code_rep in aliases:
+                referrals.append(record)
+                continue
+
+    return referrals
 
 
 def insert(referral: Dict) -> Dict:

@@ -231,6 +231,8 @@ def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
 
     user = user_repository.find_by_id(identifier)
     if user:
+        if (user.get("role") or "").lower() == "sales_rep" and user.get("salesRepId"):
+            return user.get("salesRepId")
         return user.get("id")
 
     rep = sales_rep_repository.find_by_id(identifier)
@@ -257,61 +259,101 @@ def list_referrals_for_doctor(doctor_identifier: str):
     return referral_repository.find_by_referrer(doctor_id)
 
 
-def list_referrals_for_sales_rep(sales_rep_identifier: str):
-    sales_rep_id = _resolve_user_id(sales_rep_identifier)
-    if not sales_rep_id and sales_rep_identifier:
-        sales_rep_id = sales_rep_identifier
-    sales_rep_id_str = str(sales_rep_id) if sales_rep_id is not None else None
-    logger.debug("list_referrals_for_sales_rep lookup", extra={"identifier": sales_rep_identifier, "resolved_id": sales_rep_id_str})
-    if not sales_rep_id:
-        logger.debug("list_referrals_for_sales_rep: no sales rep found")
-        return []
-    codes_index = {
-        code.get("id"): code for code in referral_code_repository.get_all()
-    }
-    referrals: List[Dict] = []
-    for ref in referral_repository.get_all():
-        logger.debug("list_referrals_for_sales_rep inspect referral", extra={"referral_id": ref.get("id"), "ref_sales_rep_id": ref.get("salesRepId"), "referrer_doctor_id": ref.get("referrerDoctorId")})
-        ref_rep_id = ref.get("salesRepId")
-        matches = False
-        if ref_rep_id and str(ref_rep_id) == sales_rep_id_str:
-            logger.debug("list_referrals_for_sales_rep matched on salesRepId", extra={"referral_id": ref.get("id")})
-            matches = True
+def _resolve_sales_rep_aliases(identifiers: List[str]) -> set[str]:
+    aliases: set[str] = set()
+
+    for candidate in identifiers:
+        if not candidate:
+            continue
+        try:
+            aliases.update(referral_repository._collect_sales_rep_aliases(candidate))  # type: ignore[attr-defined]
+        except AttributeError:
+            # Fallback for environments where the helper is unavailable.
+            normalized = referral_repository._normalize_identifier(candidate) if hasattr(referral_repository, "_normalize_identifier") else None  # type: ignore[attr-defined]
+            if normalized:
+                aliases.add(normalized)
+
+    if not aliases:
+        for candidate in identifiers:
+            if not candidate:
+                continue
+            if hasattr(referral_repository, "_normalize_identifier"):
+                normalized = referral_repository._normalize_identifier(candidate)  # type: ignore[attr-defined]
+            else:
+                normalized = str(candidate).strip() or None
+            if normalized:
+                aliases.add(normalized)
+
+    return aliases
+
+
+def _referral_matches_aliases(referral: Dict, aliases: set[str]) -> bool:
+    if not aliases:
+        return False
+
+    def matches(value) -> bool:
+        if not value:
+            return False
+        if hasattr(referral_repository, "_normalize_identifier"):
+            normalized = referral_repository._normalize_identifier(value)  # type: ignore[attr-defined]
         else:
-            doctor_id = ref.get("referrerDoctorId")
-            if doctor_id:
-                doctor = user_repository.find_by_id(doctor_id)
-                if doctor and str(doctor.get("salesRepId") or "") == sales_rep_id_str:
-                    logger.debug("list_referrals_for_sales_rep matched via doctor", extra={"referral_id": ref.get("id"), "doctor_id": doctor_id})
-                    matches = True
-            if not matches:
-                code_id = ref.get("referralCodeId")
-                if code_id:
-                    code = codes_index.get(code_id)
-                    if code:
-                        code_rep_id = code.get("salesRepId")
-                        if code_rep_id and str(code_rep_id) == sales_rep_id_str:
-                            logger.debug("list_referrals_for_sales_rep matched via referral code (direct)", extra={"referral_id": ref.get("id"), "code_id": code_id})
-                            matches = True
-                        elif code.get("referrerDoctorId"):
-                            referrer_doctor = user_repository.find_by_id(code.get("referrerDoctorId"))
-                            if referrer_doctor and str(referrer_doctor.get("salesRepId") or "") == sales_rep_id_str:
-                                logger.debug("list_referrals_for_sales_rep matched via referral code referrer doctor", extra={"referral_id": ref.get("id"), "code_id": code_id})
-                                matches = True
+            normalized = str(value).strip().lower() if "@" in str(value) else str(value).strip()
+        return bool(normalized) and normalized in aliases
 
-        if matches:
-            referrals.append(ref)
-            logger.debug("list_referrals_for_sales_rep added referral", extra={"referral_id": ref.get("id")})
+    if matches(referral.get("salesRepId")):
+        return True
 
-    logger.debug("list_referrals_for_sales_rep final count", extra={"count": len(referrals)})
+    doctor_id = referral.get("referrerDoctorId")
+    if doctor_id:
+        doctor = user_repository.find_by_id(doctor_id)
+        if doctor:
+            if matches(doctor.get("salesRepId")) or matches(doctor.get("email")) or matches(doctor.get("id")):
+                return True
 
+    code_id = referral.get("referralCodeId")
+    if code_id:
+        code = referral_code_repository.find_by_id(code_id)
+        if code and matches(code.get("salesRepId")):
+            return True
+
+    return False
+
+
+def list_referrals_for_sales_rep(sales_rep_identifier: str):
+    sales_rep_id = _resolve_user_id(sales_rep_identifier) or sales_rep_identifier
+    if not sales_rep_id:
+        return []
+    referrals = referral_repository.find_by_sales_rep(str(sales_rep_id))
     referrals.sort(key=lambda item: item.get("createdAt") or "", reverse=True)
     return [_enrich_referral(ref) for ref in referrals]
 
 
 def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: Dict) -> Dict:
+    resolved_sales_rep_id = str(_resolve_user_id(sales_rep_id) or "").strip()
+    fallback_sales_rep_id = str(sales_rep_id or "").strip()
+
     referral = referral_repository.find_by_id(referral_id)
-    if not referral or referral.get("salesRepId") != sales_rep_id:
+    if not referral:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    candidate_identifiers = []
+    if resolved_sales_rep_id:
+        candidate_identifiers.append(resolved_sales_rep_id)
+    if fallback_sales_rep_id and fallback_sales_rep_id not in candidate_identifiers:
+        candidate_identifiers.append(fallback_sales_rep_id)
+
+    alias_set = _resolve_sales_rep_aliases(candidate_identifiers)
+
+    accessible_ids: set[str] = set()
+    for candidate in candidate_identifiers:
+        for item in referral_repository.find_by_sales_rep(candidate):
+            if item.get("id") is not None:
+                accessible_ids.add(str(item["id"]))
+
+    if not accessible_ids and _referral_matches_aliases(referral, alias_set):
+        accessible_ids.add(str(referral.get("id")))
+
+    if str(referral.get("id")) not in accessible_ids:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
 
     current_status = referral.get("status") or "pending"

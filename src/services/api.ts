@@ -10,7 +10,18 @@ const API_BASE_URL = (() => {
 })();
 
 // Helper function to get auth token
-const getAuthToken = () => localStorage.getItem('auth_token');
+const getAuthToken = () => {
+  try {
+    const sessionToken = sessionStorage.getItem('auth_token');
+    if (sessionToken && sessionToken.trim().length > 0) {
+      return sessionToken;
+    }
+  } catch {
+    // sessionStorage may be unavailable in certain environments (e.g., SSR)
+  }
+
+  return localStorage.getItem('auth_token');
+};
 
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
@@ -97,6 +108,11 @@ export const authAPI = {
 
     // Store token
     localStorage.setItem('auth_token', data.token);
+    try {
+      sessionStorage.setItem('auth_token', data.token);
+    } catch {
+      // Ignore sessionStorage errors (Safari private mode, etc.)
+    }
     return data.user;
   },
 
@@ -108,6 +124,11 @@ export const authAPI = {
 
     // Store token
     localStorage.setItem('auth_token', data.token);
+    try {
+      sessionStorage.setItem('auth_token', data.token);
+    } catch {
+      // sessionStorage may fail silently; fall back to localStorage-only persistence
+    }
     return data.user;
   },
 
@@ -121,6 +142,11 @@ export const authAPI = {
 
   logout: () => {
     localStorage.removeItem('auth_token');
+    try {
+      sessionStorage.removeItem('auth_token');
+    } catch {
+      // ignore
+    }
   },
 
   getCurrentUser: async () => {
@@ -129,6 +155,11 @@ export const authAPI = {
     } catch (error) {
       // If token is invalid, clear it
       localStorage.removeItem('auth_token');
+      try {
+        sessionStorage.removeItem('auth_token');
+      } catch {
+        // ignore
+      }
       return null;
     }
   },
