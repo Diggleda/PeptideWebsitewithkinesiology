@@ -527,14 +527,16 @@ export function Header({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 pt-4 pb-2">
-            <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-              <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
-              <div className="space-y-1 text-sm text-slate-600">
-                <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
-                <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
-                <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
+            {user.role !== 'sales_rep' && (
+              <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
+                <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+                <div className="space-y-1 text-sm text-slate-600">
+                  <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
+                  <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
+                  <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
+                </div>
               </div>
-            </div>
+            )}
             <Button
               type="button"
               variant="outline"

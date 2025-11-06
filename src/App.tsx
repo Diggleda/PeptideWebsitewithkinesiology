@@ -260,12 +260,18 @@ export default function App() {
 
   const filteredSalesRepReferrals = useMemo(() => {
     const allReferrals = salesRepDashboard?.referrals ?? [];
+    console.debug('[Referral] Filter compute', {
+      filter: salesRepStatusFilter,
+      total: allReferrals.length,
+    });
     if (salesRepStatusFilter === 'all') {
       return allReferrals;
     }
-    return allReferrals.filter(
+    const filtered = allReferrals.filter(
       (referral) => (referral.status || '').toLowerCase() === salesRepStatusFilter.toLowerCase()
     );
+    console.debug('[Referral] Filter result', { filter: salesRepStatusFilter, count: filtered.length });
+    return filtered;
   }, [salesRepDashboard, salesRepStatusFilter]);
 
   const handleReferralSortToggle = useCallback(() => {
@@ -286,8 +292,11 @@ export default function App() {
 
   const refreshReferralData = useCallback(async () => {
     if (!user) {
+      console.debug('[Referral] refreshReferralData skipped: no user');
       return;
     }
+
+    console.debug('[Referral] Refresh start', { role: user.role, userId: user.id });
 
     try {
       setReferralDataError(null);
@@ -295,12 +304,24 @@ export default function App() {
         const response = await referralAPI.getDoctorSummary();
         setDoctorSummary(response.credits);
         setDoctorReferrals(response.referrals);
+        console.debug('[Referral] Doctor summary loaded', {
+          referrals: response.referrals?.length ?? 0,
+          credits: response.credits ?? null,
+        });
       } else if (user.role === 'sales_rep') {
         const dashboard = await referralAPI.getSalesRepDashboard();
         setSalesRepDashboard(dashboard);
+        console.debug('[Referral] Sales rep dashboard loaded', {
+          referrals: dashboard?.referrals?.length ?? 0,
+          statuses: dashboard?.statuses ?? null,
+        });
+      } else {
+        console.debug('[Referral] Refresh skipped for role', { role: user.role });
       }
     } catch (error: any) {
-      console.warn('[Referral] Failed to load data', error);
+      const status = typeof error?.status === 'number' ? error.status : null;
+      const message = typeof error?.message === 'string' ? error.message : 'UNKNOWN_ERROR';
+      console.warn('[Referral] Failed to load data', { status, message, error });
       setReferralDataError(
         <>
           There is an issue in loading your referral data. Please refresh the page or contact{' '}
@@ -310,6 +331,8 @@ export default function App() {
           .
         </>,
       );
+    } finally {
+      console.debug('[Referral] Refresh complete', { role: user.role });
     }
   }, [user]);
 
@@ -2094,14 +2117,16 @@ const renderSalesRepDashboard = () => {
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
-                    <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-                      <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
-                      <div className="space-y-1 text-sm text-slate-600">
-                        <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
-                        <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
-                        <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
+                    {user.role !== 'sales_rep' && (
+                      <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
+                        <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+                        <div className="space-y-1 text-sm text-slate-600">
+                          <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
+                          <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
+                          <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div className="relative flex flex-col gap-6 max-h-[70vh]">
                       <div className="flex-1 overflow-y-auto pr-1 space-y-16">
                         <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">

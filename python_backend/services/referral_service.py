@@ -259,23 +259,51 @@ def list_referrals_for_doctor(doctor_identifier: str):
 
 def list_referrals_for_sales_rep(sales_rep_identifier: str):
     sales_rep_id = _resolve_user_id(sales_rep_identifier)
+    if not sales_rep_id and sales_rep_identifier:
+        sales_rep_id = sales_rep_identifier
+    sales_rep_id_str = str(sales_rep_id) if sales_rep_id is not None else None
+    logger.debug("list_referrals_for_sales_rep lookup", extra={"identifier": sales_rep_identifier, "resolved_id": sales_rep_id_str})
     if not sales_rep_id:
+        logger.debug("list_referrals_for_sales_rep: no sales rep found")
         return []
+    codes_index = {
+        code.get("id"): code for code in referral_code_repository.get_all()
+    }
     referrals: List[Dict] = []
     for ref in referral_repository.get_all():
-        ref_rep_id = (ref.get("salesRepId") or "") or None
+        logger.debug("list_referrals_for_sales_rep inspect referral", extra={"referral_id": ref.get("id"), "ref_sales_rep_id": ref.get("salesRepId"), "referrer_doctor_id": ref.get("referrerDoctorId")})
+        ref_rep_id = ref.get("salesRepId")
         matches = False
-        if ref_rep_id and str(ref_rep_id) == str(sales_rep_id):
+        if ref_rep_id and str(ref_rep_id) == sales_rep_id_str:
+            logger.debug("list_referrals_for_sales_rep matched on salesRepId", extra={"referral_id": ref.get("id")})
             matches = True
         else:
             doctor_id = ref.get("referrerDoctorId")
             if doctor_id:
                 doctor = user_repository.find_by_id(doctor_id)
-                if doctor and str(doctor.get("salesRepId") or "") == str(sales_rep_id):
+                if doctor and str(doctor.get("salesRepId") or "") == sales_rep_id_str:
+                    logger.debug("list_referrals_for_sales_rep matched via doctor", extra={"referral_id": ref.get("id"), "doctor_id": doctor_id})
                     matches = True
+            if not matches:
+                code_id = ref.get("referralCodeId")
+                if code_id:
+                    code = codes_index.get(code_id)
+                    if code:
+                        code_rep_id = code.get("salesRepId")
+                        if code_rep_id and str(code_rep_id) == sales_rep_id_str:
+                            logger.debug("list_referrals_for_sales_rep matched via referral code (direct)", extra={"referral_id": ref.get("id"), "code_id": code_id})
+                            matches = True
+                        elif code.get("referrerDoctorId"):
+                            referrer_doctor = user_repository.find_by_id(code.get("referrerDoctorId"))
+                            if referrer_doctor and str(referrer_doctor.get("salesRepId") or "") == sales_rep_id_str:
+                                logger.debug("list_referrals_for_sales_rep matched via referral code referrer doctor", extra={"referral_id": ref.get("id"), "code_id": code_id})
+                                matches = True
 
         if matches:
             referrals.append(ref)
+            logger.debug("list_referrals_for_sales_rep added referral", extra={"referral_id": ref.get("id")})
+
+    logger.debug("list_referrals_for_sales_rep final count", extra={"count": len(referrals)})
 
     referrals.sort(key=lambda item: item.get("createdAt") or "", reverse=True)
     return [_enrich_referral(ref) for ref in referrals]
