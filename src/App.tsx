@@ -190,6 +190,7 @@ export default function App() {
   const [referralStatusMessage, setReferralStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
+  const referralRefreshInFlight = useRef(false);
   const [adminActionState, setAdminActionState] = useState<{
     updatingReferral: string | null;
     error: string | null;
@@ -286,10 +287,25 @@ export default function App() {
     }
   }, [salesRepStatusFilter, salesRepStatusOptions]);
 
-  const refreshReferralData = useCallback(async () => {
+  const refreshReferralData = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!user) {
       console.debug('[Referral] refreshReferralData skipped: no user');
       return;
+    }
+
+    const shouldShowLoading = options?.showLoading ?? true;
+
+    if (referralRefreshInFlight.current) {
+      if (shouldShowLoading) {
+        setReferralDataLoading(true);
+      }
+      return;
+    }
+
+    referralRefreshInFlight.current = true;
+
+    if (shouldShowLoading) {
+      setReferralDataLoading(true);
     }
 
     console.debug('[Referral] Refresh start', { role: user.role, userId: user.id });
@@ -298,11 +314,39 @@ export default function App() {
       setReferralDataError(null);
       if (user.role === 'doctor') {
         const response = await referralAPI.getDoctorSummary();
-        setDoctorSummary(response.credits);
-        setDoctorReferrals(response.referrals);
+        const referrals = Array.isArray(response?.referrals) ? response.referrals : [];
+        const credits = response?.credits ?? {};
+
+        const normalizedCredits: DoctorCreditSummary = {
+          totalCredits: Number(credits.totalCredits ?? 0),
+          firstOrderBonuses: Number(credits.firstOrderBonuses ?? 0),
+          ledger: Array.isArray(credits.ledger) ? credits.ledger : [],
+        };
+
+        setDoctorSummary({ ...normalizedCredits });
+        const normalizedReferrals = referrals.map((referral) => ({ ...referral }));
+        setDoctorReferrals(normalizedReferrals);
+        setUser((previous) => {
+          if (!previous) {
+            return previous;
+          }
+          const nextCredits = normalizedCredits.totalCredits;
+          const nextTotalReferrals = normalizedReferrals.length;
+          const unchanged =
+            Number(previous.referralCredits ?? 0) === nextCredits &&
+            Number(previous.totalReferrals ?? 0) === nextTotalReferrals;
+          if (unchanged) {
+            return previous;
+          }
+          return {
+            ...previous,
+            referralCredits: nextCredits,
+            totalReferrals: nextTotalReferrals,
+          };
+        });
         console.debug('[Referral] Doctor summary loaded', {
-          referrals: response.referrals?.length ?? 0,
-          credits: response.credits ?? null,
+          referrals: normalizedReferrals.length,
+          credits: normalizedCredits,
         });
       } else if (user.role === 'sales_rep') {
         const dashboard = await referralAPI.getSalesRepDashboard();
@@ -329,8 +373,12 @@ export default function App() {
       );
     } finally {
       console.debug('[Referral] Refresh complete', { role: user.role });
+      referralRefreshInFlight.current = false;
+      if (shouldShowLoading) {
+        setReferralDataLoading(false);
+      }
     }
-  }, [user]);
+  }, [user, setUser]);
 
   const formatDate = useCallback((value?: string | null) => {
     if (!value) {
@@ -591,17 +639,16 @@ export default function App() {
       return;
     }
 
-    let active = true;
-    setReferralDataLoading(true);
-    refreshReferralData()
-      .finally(() => {
-        if (active) {
-          setReferralDataLoading(false);
-        }
-      });
+    let cancelled = false;
+
+    (async () => {
+      if (!cancelled) {
+        await refreshReferralData({ showLoading: true });
+      }
+    })();
 
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, [user, postLoginHold, refreshReferralData]);
 
@@ -611,8 +658,8 @@ export default function App() {
     }
 
     const intervalId = window.setInterval(() => {
-      refreshReferralData();
-    }, 5000);
+      refreshReferralData({ showLoading: false });
+    }, 15000);
 
     return () => window.clearInterval(intervalId);
   }, [user?.id, user?.role, postLoginHold, refreshReferralData]);
@@ -630,7 +677,7 @@ export default function App() {
 
     const refreshIfActive = () => {
       if (!cancelled) {
-        refreshReferralData();
+        refreshReferralData({ showLoading: false });
       }
     };
 
@@ -649,7 +696,7 @@ export default function App() {
 
     const intervalId = window.setInterval(() => {
       refreshIfActive();
-    }, 5000);
+    }, 15000);
 
     return () => {
       cancelled = true;
@@ -1084,7 +1131,7 @@ export default function App() {
       setReferralStatusMessage({ type: 'success', message: 'Referral sent to your regional administrator.' });
       setReferralForm({ contactName: '', contactEmail: '', contactPhone: '', notes: '' });
       setReferralSearchTerm('');
-      await refreshReferralData();
+      await refreshReferralData({ showLoading: true });
     } catch (error: any) {
       console.warn('[Referral] Submission failed', error);
       setReferralStatusMessage({ type: 'error', message: 'Unable to submit referral. Please try again.' });
@@ -1376,7 +1423,7 @@ const renderDoctorDashboard = () => {
                             </div>
                             <div className="referrals-table__cell" role="cell">
                               <span className="referral-status-badge">
-                                {(referral.status ?? 'pending').replace(/_/g, ' ')}
+                                {formatReferralStatus(referral.status ?? 'pending')}
                               </span>
                             </div>
                           </div>
@@ -1625,7 +1672,7 @@ const renderSalesRepDashboard = () => {
             <Button
               type="button"
               variant="outline"
-              onClick={refreshReferralData}
+              onClick={() => refreshReferralData({ showLoading: true })}
               disabled={referralDataLoading}
               className="gap-2"
             >

@@ -36,8 +36,13 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   }
 
   const response = await fetch(url, {
+    cache: options.cache ?? 'no-store',
     ...options,
-    headers,
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      ...headers,
+    },
   });
 
   if (!response.ok) {
