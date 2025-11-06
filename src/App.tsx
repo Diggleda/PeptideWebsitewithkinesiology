@@ -1048,22 +1048,6 @@ export default function App() {
     }
   };
 
-  const handleUpdateCodeStatus = async (codeId: string, status: string) => {
-    if (!user || user.role !== 'sales_rep') {
-      return;
-    }
-    try {
-      setAdminActionState((prev) => ({ ...prev, updatingCode: codeId, error: null }));
-      await referralAPI.updateCodeStatus(codeId, status);
-      await refreshReferralData();
-    } catch (error: any) {
-      console.warn('[Referral] Update code status failed', error);
-      setAdminActionState((prev) => ({ ...prev, error: 'Unable to update code status. Please try again.' }));
-    } finally {
-      setAdminActionState((prev) => ({ ...prev, updatingCode: null }));
-    }
-  };
-
   const handleUpdateReferralStatus = async (referralId: string, nextStatus: string) => {
     if (!user || user.role !== 'sales_rep') {
       return;
@@ -1443,13 +1427,122 @@ const renderDoctorDashboard = () => {
   );
 };
 
+const renderProductSection = () => (
+  <div className="products-layout mt-24">
+    {/* Filters Sidebar */}
+    <div
+      ref={filterSidebarRef}
+      className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
+    >
+      <CategoryFilter
+        categories={catalogCategories}
+        types={catalogTypes}
+        filters={filters}
+        onFiltersChange={setFilters}
+        productCounts={productCounts}
+        typeCounts={typeCounts}
+      />
+    </div>
+
+    {/* Products Grid */}
+    <div className="w-full min-w-0 flex-1">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <h2>Products</h2>
+          <Badge variant="outline" className="squircle-sm glass">
+            {filteredProducts.length} items
+          </Badge>
+          {searchQuery && (
+            <Badge variant="outline" className="squircle-sm">
+              Search: "{searchQuery}"
+            </Badge>
+          )}
+          {catalogLoading && (
+            <Badge variant="outline" className="squircle-sm glass">
+              Syncing…
+            </Badge>
+          )}
+          {catalogError && (
+            <Badge variant="destructive" className="squircle-sm">
+              Woo sync issue
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            aria-pressed={viewMode === 'grid'}
+            onClick={() => setViewMode('grid')}
+            className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+              viewMode === 'grid'
+                ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+            }`}
+          >
+            <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setViewMode('list')}
+            aria-pressed={viewMode === 'list'}
+            className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+              viewMode === 'list'
+                ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+            }`}
+          >
+            <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
+          </Button>
+
+          {totalCartItems > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => setCheckoutOpen(true)}
+              ref={checkoutButtonRef}
+              className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+            >
+              <ShoppingCart className="w-4 h-4 mr-2" />
+              Checkout ({totalCartItems})
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {filteredProducts.length > 0 ? (
+        <div
+          className={`grid gap-6 w-full ${
+            viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
+          }`}
+        >
+          {filteredProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onAddToCart={handleAddToCart}
+              onViewDetails={handleViewProduct}
+              viewMode={viewMode}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
+            <h3 className="mb-2">No products found</h3>
+            <p className="text-gray-600">Try adjusting your filters or search terms.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
 const renderSalesRepDashboard = () => {
   if (!user || user.role !== 'sales_rep') {
     return null;
   }
 
   const referrals = salesRepDashboard?.referrals ?? [];
-  const codes = salesRepDashboard?.codes ?? [];
   const statusOptions = Array.from(
     new Set([
       ...salesRepStatusOptions,
@@ -1609,54 +1702,6 @@ const renderSalesRepDashboard = () => {
               )}
             </tbody>
           </table>
-        </div>
-
-        <div className="mt-8 border-t border-slate-200/70 pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-800">Managed Codes</h3>
-            {referralDataLoading && <span className="text-xs text-slate-500">Syncing…</span>}
-          </div>
-          {codes.length === 0 ? (
-            <p className="text-sm text-slate-600">Codes generated for referrals will appear here.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200/70 bg-white/90 shadow-sm">
-              <table className="min-w-full divide-y divide-slate-200/70 text-sm">
-                <thead className="bg-slate-50/70">
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-3">Code</th>
-                    <th className="px-4 py-3">Referrer</th>
-                    <th className="px-4 py-3">Assigned</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Updated</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/60">
-                  {codes.map((code) => (
-                    <tr key={code.id} className="align-top">
-                      <td className="px-4 py-3 font-mono tracking-[0.3em] text-slate-900">{code.code}</td>
-                      <td className="px-4 py-3 text-slate-600">{code.referrerDoctorId ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{code.doctorId ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={code.status}
-                          onChange={(event) => handleUpdateCodeStatus(code.id, event.target.value)}
-                          disabled={adminActionState.updatingCode === code.id}
-                          className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                        >
-                          <option value="available">Available</option>
-                          <option value="revoked">Revoked</option>
-                          <option value="retired">Retired</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDateTime((code.updatedAt as string | null) ?? code.issuedAt ?? null)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       </div>
     </section>
@@ -2388,124 +2433,8 @@ const renderSalesRepDashboard = () => {
       {/* Main Content */}
       {user && !postLoginHold && (
         <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
-          {user.role === 'sales_rep' ? (
-            <>
-              {renderSalesRepDashboard()}
-            </>
-          ) : (
-            <>
-              {renderDoctorDashboard()}
-
-              {/* Products Section */}
-              <div className="products-layout mt-24">
-                {/* Filters Sidebar */}
-                <div
-                  ref={filterSidebarRef}
-                  className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
-                >
-                  <CategoryFilter
-                    categories={catalogCategories}
-                    types={catalogTypes}
-                    filters={filters}
-                    onFiltersChange={setFilters}
-                    productCounts={productCounts}
-                    typeCounts={typeCounts}
-                  />
-                </div>
-
-                {/* Products Grid */}
-                <div className="w-full min-w-0 flex-1">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2">
-                      <h2>Products</h2>
-                      <Badge variant="outline" className="squircle-sm glass">
-                        {filteredProducts.length} items
-                      </Badge>
-                      {searchQuery && (
-                        <Badge variant="outline" className="squircle-sm">
-                          Search: "{searchQuery}"
-                        </Badge>
-                      )}
-                      {catalogLoading && (
-                        <Badge variant="outline" className="squircle-sm glass">
-                          Syncing…
-                        </Badge>
-                      )}
-                      {catalogError && (
-                        <Badge variant="destructive" className="squircle-sm">
-                          Woo sync issue
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Button
-                        variant="outline"
-                        aria-pressed={viewMode === 'grid'}
-                        onClick={() => setViewMode('grid')}
-                        className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                          viewMode === 'grid'
-                            ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                            : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-                        }`}
-                      >
-                        <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setViewMode('list')}
-                        aria-pressed={viewMode === 'list'}
-                        className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                          viewMode === 'list'
-                            ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                            : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-                        }`}
-                      >
-                        <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
-                      </Button>
-
-                      {totalCartItems > 0 && (
-                        <Button
-                          variant="ghost"
-                          onClick={() => setCheckoutOpen(true)}
-                          ref={checkoutButtonRef}
-                          className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                        >
-                          <ShoppingCart className="w-4 h-4 mr-2" />
-                          Checkout ({totalCartItems})
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {filteredProducts.length > 0 ? (
-                    <div
-                      className={`grid gap-6 w-full ${
-                        viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
-                      }`}
-                    >
-                      {filteredProducts.map((product) => (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          onAddToCart={handleAddToCart}
-                          onViewDetails={handleViewProduct}
-                          viewMode={viewMode}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
-                        <h3 className="mb-2">No products found</h3>
-                        <p className="text-gray-600">Try adjusting your filters or search terms.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
+          {user.role === 'sales_rep' ? renderSalesRepDashboard() : renderDoctorDashboard()}
+          {renderProductSection()}
         </main>
       )}
 

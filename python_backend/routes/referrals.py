@@ -4,7 +4,7 @@ import re
 from flask import Blueprint, g, request
 
 from ..middleware.auth import require_auth
-from ..repositories import referral_code_repository, referral_repository, user_repository
+from ..repositories import referral_code_repository, referral_repository, user_repository, sales_rep_repository
 from ..services import referral_service
 from ..utils.http import handle_action
 
@@ -35,6 +35,10 @@ def _sanitize_phone(value):
 def _ensure_user():
     user_id = g.current_user.get("id")
     user = user_repository.find_by_id(user_id)
+    if not user and (g.current_user.get("role") == "sales_rep"):
+        rep = sales_rep_repository.find_by_id(user_id)
+        if rep:
+            return {**rep, "id": rep.get("id"), "role": "sales_rep"}
     if not user:
         raise _error("AUTH_USER_NOT_FOUND", 401)
     return user
@@ -46,7 +50,10 @@ def _require_doctor(user):
 
 
 def _require_sales_rep(user):
-    if user.get("role") != "sales_rep":
+    if (user.get("role") or "").lower() != "sales_rep":
+        token_role = (g.current_user.get("role") or "").lower()
+        if token_role == "sales_rep":
+            return
         raise _error("SALES_REP_ACCESS_REQUIRED", 403)
 
 

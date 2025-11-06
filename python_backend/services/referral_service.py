@@ -233,12 +233,19 @@ def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
     if user:
         return user.get("id")
 
+    rep = sales_rep_repository.find_by_id(identifier)
+    if rep:
+        return rep.get("id")
+
     # Some clients still hand us an email address. Fall back to resolving
     # through the user table to obtain the correct id.
     if "@" in identifier:
         user = user_repository.find_by_email(identifier)
         if user:
             return user.get("id")
+        rep = sales_rep_repository.find_by_email(identifier)
+        if rep:
+            return rep.get("id")
 
     return None
 
@@ -254,11 +261,22 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str):
     sales_rep_id = _resolve_user_id(sales_rep_identifier)
     if not sales_rep_id:
         return []
-    referrals = [
-        ref
-        for ref in referral_repository.get_all()
-        if ref.get("salesRepId") == sales_rep_id
-    ]
+    referrals: List[Dict] = []
+    for ref in referral_repository.get_all():
+        ref_rep_id = (ref.get("salesRepId") or "") or None
+        matches = False
+        if ref_rep_id and str(ref_rep_id) == str(sales_rep_id):
+            matches = True
+        else:
+            doctor_id = ref.get("referrerDoctorId")
+            if doctor_id:
+                doctor = user_repository.find_by_id(doctor_id)
+                if doctor and str(doctor.get("salesRepId") or "") == str(sales_rep_id):
+                    matches = True
+
+        if matches:
+            referrals.append(ref)
+
     referrals.sort(key=lambda item: item.get("createdAt") or "", reverse=True)
     return [_enrich_referral(ref) for ref in referrals]
 
