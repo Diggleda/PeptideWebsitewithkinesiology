@@ -612,9 +612,51 @@ export default function App() {
 
     const intervalId = window.setInterval(() => {
       refreshReferralData();
-    }, 20000);
+    }, 5000);
 
     return () => window.clearInterval(intervalId);
+  }, [user?.id, user?.role, postLoginHold, refreshReferralData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return undefined;
+    }
+
+    if (!user || user.role !== 'doctor' || postLoginHold) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const refreshIfActive = () => {
+      if (!cancelled) {
+        refreshReferralData();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshIfActive();
+      }
+    };
+
+    const handleFocus = () => {
+      refreshIfActive();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    const intervalId = window.setInterval(() => {
+      refreshIfActive();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [user?.id, user?.role, postLoginHold, refreshReferralData]);
 
   useEffect(() => () => {
