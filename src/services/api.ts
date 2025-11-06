@@ -35,11 +35,19 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
+  const method = (options.method || 'GET').toUpperCase();
+  let requestUrl = url;
+
+  if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
+    const separator = requestUrl.includes('?') ? '&' : '?';
+    requestUrl = `${requestUrl}${separator}_ts=${Date.now()}`;
+  }
+
+  const response = await fetch(requestUrl, {
     cache: options.cache ?? 'no-store',
     ...options,
     headers: {
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
       Pragma: 'no-cache',
       ...headers,
     },
