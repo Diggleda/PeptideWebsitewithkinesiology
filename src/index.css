@@ -2920,6 +2920,107 @@ html {
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.8);
 }
 
+.referral-date-updated {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: rgb(100, 116, 139);
+}
+
+.sales-rep-chart-card,
+.sales-rep-leads-card {
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.94), rgba(236, 244, 255, 0.9));
+  box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.35);
+  padding: 1.5rem;
+}
+
+.sales-rep-chart-header h3,
+.sales-rep-leads-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+}
+
+.sales-rep-chart-header p,
+.sales-rep-leads-header p {
+  font-size: 0.85rem;
+  color: rgb(100, 116, 139);
+  margin-top: 0.25rem;
+}
+
+.sales-rep-chart-body {
+  margin-top: 1.25rem;
+  height: 280px;
+}
+
+.sales-rep-chart-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.sales-rep-table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.sales-rep-metrics {
+  display: flex;
+  gap: 1.5rem;
+  margin-left: auto;
+  align-items: flex-start;
+}
+
+.sales-rep-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 110px;
+}
+
+.sales-rep-metric__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(100, 116, 139);
+}
+
+.sales-rep-metric__value {
+  margin-top: 0.35rem;
+  font-size: 2rem;
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+}
+
+@media (max-width: 1023px) {
+  .sales-rep-metrics {
+    width: 100%;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+
+  .sales-rep-metric {
+    align-items: center;
+  }
+
+  .sales-rep-metric__label {
+    letter-spacing: 0.06em;
+  }
+}
+
 .referrals-empty-state {
   text-align: center;
   padding: 2rem 0.5rem;

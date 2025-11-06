@@ -8,6 +8,7 @@ import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
 import { peptideProducts, peptideCategories, peptideTypes } from './data/peptideData';
 import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
@@ -82,6 +83,29 @@ const WOO_PLACEHOLDER_IMAGE =
 
 const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23B7D8F9'/%3E%3Cstop offset='100%25' stop-color='%2395C5F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='16' fill='url(%23grad)'/%3E%3Cpath d='M35 80l15-18 12 14 11-12 12 16' stroke='%23ffffff' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='44' cy='43' r='9' fill='none' stroke='%23ffffff' stroke-width='5'/%3E%3C/svg%3E";
+
+const SALES_REP_STATUS_ORDER = [
+  'pending',
+  'contacted',
+  'follow_up',
+  'code_issued',
+  'converted',
+  'closed',
+  'not_interested',
+  'disqualified',
+  'rejected',
+  'in_review',
+];
+
+const humanizeReferralStatus = (status?: string) => {
+  if (!status) {
+    return 'Unknown';
+  }
+  return status
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
 
 const stripHtml = (value?: string | null): string =>
   value ? value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
@@ -271,6 +295,21 @@ export default function App() {
     return filtered;
   }, [salesRepDashboard, salesRepStatusFilter]);
 
+  const salesRepChartData = useMemo(() => {
+    const referralList = salesRepDashboard?.referrals ?? [];
+    const counts = referralList.reduce<Record<string, number>>((acc, referral) => {
+      const status = (referral.status || 'pending').toLowerCase();
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    return SALES_REP_STATUS_ORDER.map((status) => ({
+      status,
+      label: humanizeReferralStatus(status),
+      count: counts[status] || 0,
+    }));
+  }, [salesRepDashboard?.referrals]);
+
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
   }, []);
@@ -412,15 +451,6 @@ export default function App() {
     });
   }, []);
 
-  const formatReferralStatus = useCallback((status: string) => {
-    if (!status) {
-      return 'Unknown';
-    }
-    return status
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }, []);
   const checkoutButtonRef = useCallback((node: HTMLButtonElement | null) => {
     if (checkoutButtonObserverRef.current) {
       checkoutButtonObserverRef.current.disconnect();
@@ -1420,10 +1450,11 @@ const renderDoctorDashboard = () => {
                             </div>
                             <div className="referrals-table__cell" role="cell">
                               <span className="referral-date">{formatDate(referral.createdAt)}</span>
+                              <span className="referral-date-updated">Updated {formatDateTime(referral.updatedAt ?? referral.createdAt)}</span>
                             </div>
                             <div className="referrals-table__cell" role="cell">
                               <span className="referral-status-badge">
-                                {formatReferralStatus(referral.status ?? 'pending')}
+                                {humanizeReferralStatus(referral.status ?? 'pending')}
                               </span>
                             </div>
                           </div>
@@ -1647,6 +1678,7 @@ const renderSalesRepDashboard = () => {
   const activeStatuses = new Set(['pending', 'contacted', 'follow_up', 'code_issued']);
   const activeReferrals = referrals.filter((ref) => activeStatuses.has((ref.status || '').toLowerCase())).length;
   const convertedReferrals = referrals.filter((ref) => (ref.status || '').toLowerCase() === 'converted').length;
+  const hasChartData = salesRepChartData.some((item) => item.count > 0);
 
   return (
     <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full">
@@ -1665,7 +1697,7 @@ const renderSalesRepDashboard = () => {
               <option value="all">All statuses</option>
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {formatReferralStatus(status)}
+                  {humanizeReferralStatus(status)}
                 </option>
               ))}
             </select>
@@ -1679,21 +1711,20 @@ const renderSalesRepDashboard = () => {
               <RefreshCw className={`h-4 w-4 ${referralDataLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Referrals</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalReferrals}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Pipeline</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{activeReferrals}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Converted</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{convertedReferrals}</p>
+            <div className="sales-rep-metrics">
+              <div className="sales-rep-metric">
+                <span className="sales-rep-metric__label">Total</span>
+                <span className="sales-rep-metric__value">{totalReferrals}</span>
+              </div>
+              <div className="sales-rep-metric">
+                <span className="sales-rep-metric__label">Active</span>
+                <span className="sales-rep-metric__value">{activeReferrals}</span>
+              </div>
+              <div className="sales-rep-metric">
+                <span className="sales-rep-metric__label">Converted</span>
+                <span className="sales-rep-metric__value">{convertedReferrals}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1703,13 +1734,20 @@ const renderSalesRepDashboard = () => {
           </p>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-slate-200/70 bg-white/90 shadow-sm">
-          <table className="min-w-[720px] divide-y divide-slate-200/70">
-            <thead className="bg-slate-50/70">
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Referrer</th>
-                <th className="px-4 py-3">Referral</th>
-                <th className="px-4 py-3">Notes</th>
+        <div className="sales-rep-leads-card">
+          <div className="sales-rep-leads-header">
+            <div>
+              <h3>Referral Leads</h3>
+              <p>Review contact details and keep statuses accurate.</p>
+            </div>
+          </div>
+          <div className="sales-rep-table-wrapper">
+            <table className="min-w-[720px] divide-y divide-slate-200/70">
+              <thead className="bg-slate-50/70">
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3">Referrer</th>
+                  <th className="px-4 py-3">Referral</th>
+                  <th className="px-4 py-3">Notes</th>
                 <th className="px-4 py-3 whitespace-nowrap">Submitted</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
@@ -1772,7 +1810,7 @@ const renderSalesRepDashboard = () => {
                         >
                           {referralStatusOptions.map((status) => (
                             <option key={status} value={status}>
-                              {formatReferralStatus(status)}
+                              {humanizeReferralStatus(status)}
                             </option>
                           ))}
                         </select>
@@ -1781,8 +1819,41 @@ const renderSalesRepDashboard = () => {
                   );
                 })
               )}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="sales-rep-chart-card">
+          <div className="sales-rep-chart-header">
+            <div>
+              <h3>Referral Pipeline</h3>
+              <p>Track lead volume as contacts advance through each stage.</p>
+            </div>
+          </div>
+          <div className="sales-rep-chart-body">
+            {hasChartData ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={salesRepChartData} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="statusBar" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#5FB3F9" stopOpacity={0.9} />
+                      <stop offset="100%" stopColor="#95C5F9" stopOpacity={0.9} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.3)" />
+                  <XAxis dataKey="label" interval={0} tick={{ fontSize: 12, fill: '#334155' }} angle={-15} textAnchor="end" height={60} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#334155' }} />
+                  <Tooltip cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }} formatter={(value: number) => [`${value} referral${value === 1 ? '' : 's'}`, 'Leads']} />
+                  <Bar dataKey="count" radius={[10, 10, 6, 6]} fill="url(#statusBar)" barSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="sales-rep-chart-empty">
+                <p className="text-sm text-slate-600">No referral activity yet. Keep an eye here as leads arrive.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </section>
