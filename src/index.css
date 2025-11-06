@@ -2874,6 +2874,12 @@ html {
   min-width: 0;
 }
 
+.referrals-table__cell--date {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
 .referral-contact {
   display: flex;
   flex-direction: column;
@@ -2930,7 +2936,7 @@ html {
 .sales-rep-chart-card,
 .sales-rep-leads-card {
   border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(95, 179, 249, 0.55);
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.94), rgba(236, 244, 255, 0.9));
   box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.35);
   padding: 1.5rem;
@@ -2969,23 +2975,26 @@ html {
   margin-top: 1rem;
   overflow-x: auto;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid rgba(95, 179, 249, 0.35);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .sales-rep-metrics {
   display: flex;
-  gap: 1.5rem;
+  gap: 1.25rem;
   margin-left: auto;
   align-items: flex-start;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .sales-rep-metric {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  min-width: 110px;
+  min-width: 96px;
+  flex: 0 1 auto;
 }
 
 .sales-rep-metric__label {
@@ -3007,17 +3016,30 @@ html {
     width: 100%;
     justify-content: space-between;
     padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.85);
     border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    border: 1px solid rgba(95, 179, 249, 0.35);
+    margin-left: 0;
   }
 
   .sales-rep-metric {
     align-items: center;
+    flex: 1 1 80px;
+    min-width: 0;
   }
 
   .sales-rep-metric__label {
     letter-spacing: 0.06em;
+  }
+}
+
+@media (max-width: 640px) {
+  .sales-rep-metrics {
+    gap: 0.75rem;
+  }
+
+  .sales-rep-metric__value {
+    font-size: 1.5rem;
   }
 }
 

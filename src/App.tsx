@@ -1448,7 +1448,7 @@ const renderDoctorDashboard = () => {
                                 )}
                               </div>
                             </div>
-                            <div className="referrals-table__cell" role="cell">
+                            <div className="referrals-table__cell referrals-table__cell--date" role="cell">
                               <span className="referral-date">{formatDate(referral.createdAt)}</span>
                               <span className="referral-date-updated">Updated {formatDateTime(referral.updatedAt ?? referral.createdAt)}</span>
                             </div>
@@ -1856,6 +1856,16 @@ const renderSalesRepDashboard = () => {
           </div>
         </div>
       </div>
+      <p className="text-xs text-slate-500/80 text-center italic">
+        Send dashboard recommendations and ideas that will improve your productivity to{' '}
+        <a
+          className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
+          href="mailto:petergibbons7@icloud.com"
+        >
+          petergibbons7@icloud.com
+        </a>
+        .
+      </p>
     </section>
   );
 };
