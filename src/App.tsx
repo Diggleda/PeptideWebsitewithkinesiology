@@ -1746,8 +1746,8 @@ const renderSalesRepDashboard = () => {
               <thead className="bg-slate-50/70">
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">Referrer</th>
-                  <th className="px-4 py-3">Referral</th>
-                  <th className="px-4 py-3">Notes</th>
+                  <th className="px-4 py-3">Lead</th>
+                  <th className="px-4 py-3">Notes from Referrer</th>
                 <th className="px-4 py-3 whitespace-nowrap">Submitted</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
@@ -1827,7 +1827,7 @@ const renderSalesRepDashboard = () => {
         <div className="sales-rep-chart-card">
           <div className="sales-rep-chart-header">
             <div>
-              <h3>Referral Pipeline</h3>
+              <h3>Pipeline</h3>
               <p>Track lead volume as contacts advance through each stage.</p>
             </div>
           </div>

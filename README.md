@@ -33,6 +33,16 @@ Key variables:
 - `JWT_SECRET`: Secret used to sign login tokens.
 - `CORS_ALLOW_ORIGINS`: Comma-separated list of allowed origins (use `*` to allow all).
 
+## Frontend Environment
+
+Vite only exposes variables prefixed with `VITE_`. Copy `.env.example` to `.env.local` (or `.env.production`) and set:
+
+| Variable | Description |
+| --- | --- |
+| `VITE_API_URL` | Base URL of the Express API (without the trailing `/api`; defaults to `http://localhost:3001`). |
+| `VITE_WOO_PROXY_URL` | Optional override for the catalog proxy. Leave blank to use `${VITE_API_URL}/api/woo`. |
+| `VITE_WOO_PROXY_TOKEN` | Shared secret when using a legacy PHP proxy (`token` query param). Safe to leave blank when calling the Express proxy. |
+
 ### WooCommerce Integration
 
 The backend builds a WooCommerce order payload for every checkout and will forward it when credentials are supplied.
@@ -45,6 +55,24 @@ The backend builds a WooCommerce order payload for every checkout and will forwa
 | `WC_AUTO_SUBMIT_ORDERS` | When `true`, orders are pushed immediately; when `false`, payloads are logged and saved for manual submission. |
 
 Each order response includes an `integrations.wooCommerce` object so you can confirm whether the payload was dispatched, queued, or skipped.
+
+#### Catalog Proxy Endpoints
+
+Live product/category data now flows through the backend so no credentials ever reach the browser.
+
+```
+GET /api/woo/products              # ?per_page=48&status=publish
+GET /api/woo/products/categories   # ?per_page=100
+```
+
+The proxy understands the common WooCommerce catalog query params (`per_page`, `page`, `status`, `search`, `category`, etc.) and relays responses verbatim to the frontend.
+
+1. Generate WooCommerce REST API keys (`READ/WRITE`) inside WordPress.
+2. Populate `WC_STORE_URL`, `WC_CONSUMER_KEY`, and `WC_CONSUMER_SECRET` in `.env`.
+3. Start the backend (`npm run server`) and hit `GET /api/woo/products?per_page=5` to verify connectivity.
+4. Point the React app at the API by setting `VITE_API_URL` accordingly (defaults to `http://localhost:3001` in development).
+
+If you must serve the frontend from a PHP-only host, keep `VITE_WOO_PROXY_URL` pointed at your PHP script (it should accept the `token`, `endpoint`, and `q` parameters). Otherwise, leave it blank and the app automatically targets the Express proxy.
 
 ### ShipEngine Integration
 

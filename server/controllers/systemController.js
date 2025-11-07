@@ -31,6 +31,8 @@ const getHelp = (_req, res) => {
       '/api/auth/me',
       '/api/auth/check-email',
       '/api/orders',
+      '/api/woo/products',
+      '/api/woo/products/categories',
       '/api/help',
       '/api/health',
     ],

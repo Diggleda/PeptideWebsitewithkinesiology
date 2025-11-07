@@ -42,6 +42,8 @@ def help_endpoint():
                 "/api/auth/me",
                 "/api/auth/check-email",
                 "/api/orders",
+                "/api/woo/products",
+                "/api/woo/products/categories",
                 "/api/referrals/doctor/summary",
                 "/api/referrals/admin/dashboard",
                 "/api/integrations/google-sheets/sales-reps",

@@ -11,6 +11,71 @@ const isConfigured = () => Boolean(
 
 const shouldAutoSubmitOrders = env.wooCommerce.autoSubmitOrders === true;
 
+const allowedCatalogQueryKeys = new Set([
+  'per_page',
+  'page',
+  'search',
+  'status',
+  'orderby',
+  'order',
+  'slug',
+  'sku',
+  'category',
+  'tag',
+  'type',
+  'featured',
+  'stock_status',
+  'min_price',
+  'max_price',
+  'before',
+  'after',
+]);
+
+const sanitizeQueryValue = (value) => {
+  if (Array.isArray(value)) {
+    return sanitizeQueryValue(value[value.length - 1]);
+  }
+
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  return undefined;
+};
+
+const sanitizeQueryParams = (query = {}) => {
+  if (!query || typeof query !== 'object') {
+    return {};
+  }
+
+  return Object.entries(query).reduce((acc, [key, value]) => {
+    if (!allowedCatalogQueryKeys.has(key)) {
+      return acc;
+    }
+
+    const sanitizedValue = sanitizeQueryValue(value);
+    if (sanitizedValue === undefined) {
+      return acc;
+    }
+
+    acc[key] = sanitizedValue;
+    return acc;
+  }, {});
+};
+
 const getClient = () => {
   if (!isConfigured()) {
     throw new Error('WooCommerce is not configured');
@@ -114,4 +179,31 @@ module.exports = {
   isConfigured,
   forwardOrder,
   buildOrderPayload,
+  fetchCatalog: async (endpoint, query = {}) => {
+    if (!isConfigured()) {
+      const error = new Error('WooCommerce is not configured');
+      error.status = 503;
+      throw error;
+    }
+
+    const normalizedEndpoint = endpoint.replace(/^\/+/, '');
+    const client = getClient();
+
+    try {
+      const response = await client.get(`/${normalizedEndpoint}`, {
+        params: sanitizeQueryParams(query),
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(
+        { err: error, endpoint: normalizedEndpoint },
+        'WooCommerce catalog fetch failed',
+      );
+      const fetchError = new Error('WooCommerce catalog request failed');
+      fetchError.status = error.response?.status ?? 502;
+      fetchError.cause = error.response?.data || error;
+      throw fetchError;
+    }
+  },
 };

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Mapping, Any
 from uuid import uuid4
 
 import requests
@@ -104,3 +104,95 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
             "status": body.get("status"),
         },
     }
+
+
+# ---- Catalog proxy helpers -------------------------------------------------
+
+_ALLOWED_QUERY_KEYS = {
+    "per_page",
+    "page",
+    "search",
+    "status",
+    "orderby",
+    "order",
+    "slug",
+    "sku",
+    "category",
+    "tag",
+    "type",
+    "featured",
+    "stock_status",
+    "min_price",
+    "max_price",
+    "before",
+    "after",
+}
+
+
+def _sanitize_query_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        try:
+            return str(int(value)) if float(value).is_integer() else str(float(value))
+        except Exception:
+            return None
+    s = str(value).strip()
+    return s or None
+
+
+def _sanitize_params(params: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    if not params:
+        return {}
+    cleaned: Dict[str, str] = {}
+    for key, raw in params.items():
+        if key not in _ALLOWED_QUERY_KEYS:
+            continue
+        val = _sanitize_query_value(raw)
+        if val is not None:
+            cleaned[key] = val
+    return cleaned
+
+
+def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> Any:
+    """Fetch Woo catalog resources via server-side credentials.
+
+    endpoint examples:
+      - "products"
+      - "products/categories"
+    """
+    if not is_configured():
+        raise IntegrationError("WooCommerce is not configured")
+
+    config = get_config()
+    base_url = (config.woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = (config.woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    normalized = endpoint.lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/{normalized}"
+
+    try:
+        response = requests.get(
+            url,
+            params=_sanitize_params(params or {}),
+            auth=HTTPBasicAuth(config.woo_commerce["consumer_key"], config.woo_commerce["consumer_secret"]),
+            timeout=10,
+        )
+        response.raise_for_status()
+        # Try JSON; fall back to text if necessary.
+        try:
+            return response.json()
+        except ValueError:
+            return response.text
+    except requests.RequestException as exc:  # pragma: no cover - network error path
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("WooCommerce catalog fetch failed", exc_info=True, extra={"endpoint": endpoint})
+        err = IntegrationError("WooCommerce catalog request failed", response=data)
+        setattr(err, "status", getattr(exc.response, "status_code", 502) if exc.response else 502)
+        raise err

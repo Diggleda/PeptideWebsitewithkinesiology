@@ -1,4 +1,4 @@
-const API_BASE_URL = (() => {
+export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
 
   if (!configured) {
