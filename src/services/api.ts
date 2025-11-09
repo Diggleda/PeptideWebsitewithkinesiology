@@ -137,6 +137,13 @@ export const authAPI = {
     return data.user;
   },
 
+  verifyNpi: async (npiNumber: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/verify-npi`, {
+      method: 'POST',
+      body: JSON.stringify({ npiNumber }),
+    });
+  },
+
   login: async (email: string, password: string) => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/login`, {
       method: 'POST',

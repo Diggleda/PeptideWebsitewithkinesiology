@@ -32,3 +32,10 @@ def check_email():
 def me():
     user_id = g.current_user.get("id")
     return handle_action(lambda: auth_service.get_profile(user_id))
+
+
+@blueprint.post("/verify-npi")
+def verify_npi():
+    payload = request.get_json(force=True, silent=True) or {}
+    npi_number = payload.get("npiNumber") or payload.get("npi_number")
+    return handle_action(lambda: auth_service.verify_npi(npi_number))

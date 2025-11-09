@@ -1,4 +1,5 @@
 const authService = require('../services/authService');
+const { verifyDoctorNpi } = require('../services/npiService');
 
 const register = async (req, res, next) => {
   try {
@@ -36,9 +37,19 @@ const getProfile = (req, res, next) => {
   }
 };
 
+const verifyNpi = async (req, res, next) => {
+  try {
+    await verifyDoctorNpi(req.body?.npiNumber);
+    res.json({ status: 'verified' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   checkEmail,
   getProfile,
+  verifyNpi,
 };

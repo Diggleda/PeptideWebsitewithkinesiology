@@ -204,6 +204,9 @@ export default function App() {
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState('');
   const [landingSignupError, setLandingSignupError] = useState('');
+  const [landingNpiStatus, setLandingNpiStatus] = useState<'idle' | 'checking' | 'verified' | 'rejected'>('idle');
+  const [landingNpiMessage, setLandingNpiMessage] = useState('');
+  const landingNpiCheckIdRef = useRef(0);
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     types: [],
@@ -879,6 +882,56 @@ export default function App() {
   };
 
   // Login function connected to backend
+  const resetLandingNpiState = useCallback(() => {
+    landingNpiCheckIdRef.current += 1;
+    setLandingNpiStatus('idle');
+    setLandingNpiMessage('');
+  }, []);
+
+  const handleLandingNpiInputChange = useCallback((rawValue: string) => {
+    const digits = (rawValue || '').replace(/[^0-9]/g, '').slice(0, 10);
+    if (digits.length < 10) {
+      console.debug('[NPI] Waiting for 10 digits before verification', { digits });
+      landingNpiCheckIdRef.current += 1;
+      setLandingNpiStatus('idle');
+      setLandingNpiMessage('');
+      return;
+    }
+
+    const checkId = Date.now();
+    landingNpiCheckIdRef.current = checkId;
+    console.debug('[NPI] Verifying against CMS registry', { npiNumber: digits, checkId });
+    setLandingNpiStatus('checking');
+    setLandingNpiMessage('');
+
+    authAPI.verifyNpi(digits)
+      .then(() => {
+        if (landingNpiCheckIdRef.current !== checkId) {
+          return;
+        }
+        console.debug('[NPI] Verified successfully', { npiNumber: digits });
+        setLandingNpiStatus('verified');
+        setLandingNpiMessage('NPI verified with the CMS registry.');
+      })
+      .catch((error: any) => {
+        if (landingNpiCheckIdRef.current !== checkId) {
+          return;
+        }
+        console.warn('[NPI] Verification failed', { npiNumber: digits, error });
+        const message =
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : 'Unable to verify this NPI number. Please confirm it is correct.';
+        setLandingNpiStatus('rejected');
+        setLandingNpiMessage(message);
+      });
+  }, []);
+
+  const updateLandingAuthMode = useCallback((mode: 'login' | 'signup') => {
+    setLandingAuthMode(mode);
+    resetLandingNpiState();
+  }, [resetLandingNpiState]);
+
   const handleLogin = (email: string, password: string): Promise<AuthActionResult> => {
     return loginWithRetry(email, password, 0);
   };
@@ -1110,7 +1163,7 @@ export default function App() {
     setLoginPromptToken((token) => token + 1);
     setShouldReopenCheckout(true);
     setLoginContext('checkout');
-    setLandingAuthMode('login');
+    updateLandingAuthMode('login');
     QueueMicrotask(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   };
 
@@ -2437,7 +2490,7 @@ const renderSalesRepDashboard = () => {
                     <div className="text-center">
                       <p className="text-sm text-gray-600">
                         Have a referral code?{' '}
-                        <button type="button" onClick={() => setLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
+                        <button type="button" onClick={() => updateLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
                           Create an account
                         </button>
                       </p>
@@ -2466,7 +2519,7 @@ const renderSalesRepDashboard = () => {
                         };
                         const res = await handleCreateAccount(details);
                         if (res.status === 'success') {
-                          setLandingAuthMode('login');
+                          updateLandingAuthMode('login');
                         } else if (res.status === 'email_exists') {
                           setLandingSignupError('An account with this email already exists. Please sign in.');
                         } else if (res.status === 'invalid_referral_code') {
@@ -2600,12 +2653,27 @@ const renderSalesRepDashboard = () => {
                           placeholder="10-digit NPI"
                           onInput={(event) => {
                             const target = event.currentTarget;
-                            target.value = target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                            const digits = target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                            target.value = digits;
+                            handleLandingNpiInputChange(digits);
                           }}
                           className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                         />
-                        <p className="text-xs text-slate-500">
-                          We securely verify your medical credentials with the CMS NPI registry. Sales reps can leave this blank.
+                        <p
+                          className={`text-xs ${
+                            landingNpiStatus === 'verified'
+                              ? 'text-emerald-600'
+                              : landingNpiStatus === 'rejected'
+                                ? 'text-red-600'
+                                : 'text-slate-500'
+                          }`}
+                        >
+                          {landingNpiStatus === 'idle' &&
+                            'We securely verify your medical credentials with the CMS NPI registry. Sales reps can leave this blank.'}
+                          {landingNpiStatus === 'checking' && 'Contacting the CMS NPI registry...'}
+                          {landingNpiStatus === 'verified' && landingNpiMessage}
+                          {landingNpiStatus === 'rejected' &&
+                            (landingNpiMessage || 'We were unable to verify this NPI number. Please double-check and try again.')}
                         </p>
                       </div>
                       <div className="space-y-2">
@@ -2642,7 +2710,7 @@ const renderSalesRepDashboard = () => {
                     <div className="text-center">
                       <p className="text-sm text-gray-600">
                         Already have an account?{' '}
-                        <button type="button" onClick={() => setLandingAuthMode('login')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
+                        <button type="button" onClick={() => updateLandingAuthMode('login')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
                           Sign in
                         </button>
                       </p>

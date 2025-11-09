@@ -307,6 +307,29 @@ def get_profile(user_id: str) -> Dict:
     return _sanitize_user(user)
 
 
+def verify_npi(npi_number: Optional[str]) -> Dict:
+    normalized = npi_service.normalize_npi(npi_number)
+    if len(normalized) != 10:
+        raise _bad_request("NPI_INVALID")
+    try:
+        verification = npi_service.verify_npi(normalized)
+        return {
+            "status": "verified",
+            "npiNumber": verification.get("npiNumber"),
+            "name": verification.get("name"),
+            "credential": verification.get("credential"),
+            "primaryTaxonomy": verification.get("primaryTaxonomy"),
+            "organizationName": verification.get("organizationName"),
+        }
+    except npi_service.NpiInvalidError:
+        raise _bad_request("NPI_INVALID")
+    except npi_service.NpiNotFoundError:
+        raise _not_found("NPI_NOT_FOUND")
+    except npi_service.NpiLookupError as exc:
+        err = _bad_request("NPI_LOOKUP_FAILED")
+        raise err from exc
+
+
 def _sanitize_user(user: Dict) -> Dict:
     sanitized = dict(user)
     sanitized.pop("password", None)
