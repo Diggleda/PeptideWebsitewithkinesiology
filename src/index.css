@@ -3338,3 +3338,32 @@ html {
 .dialog {
   z-index: 9999 !important;
 }
+
+@keyframes npi-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.npi-checkmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #059669;
+  font-weight: 600;
+  font-size: 0.85rem;
+  animation: npi-pop 320ms ease-out both;
+}

@@ -140,6 +140,22 @@ const formatNewsDate = (dateString?: string | null): string => {
   }
 };
 
+const describeNpiErrorMessage = (code?: string): string => {
+  const normalized = (code || '').toUpperCase().trim();
+  switch (normalized) {
+    case 'NPI_INVALID':
+      return 'Please enter a valid 10-digit NPI number.';
+    case 'NPI_NOT_FOUND':
+      return 'We could not verify that NPI in the CMS registry. Double-check the digits and try again.';
+    case 'NPI_ALREADY_REGISTERED':
+      return 'An account already exists for this NPI number.';
+    case 'NPI_LOOKUP_FAILED':
+      return 'We could not reach the CMS registry. Please try again in a moment.';
+    default:
+      return 'Unable to verify this NPI number. Please confirm it is correct.';
+  }
+};
+
 const mapWooProductToProduct = (product: WooProduct): Product => {
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
@@ -918,10 +934,7 @@ export default function App() {
           return;
         }
         console.warn('[NPI] Verification failed', { npiNumber: digits, error });
-        const message =
-          typeof error?.message === 'string' && error.message.trim()
-            ? error.message.trim()
-            : 'Unable to verify this NPI number. Please confirm it is correct.';
+        const message = describeNpiErrorMessage(error?.message);
         setLandingNpiStatus('rejected');
         setLandingNpiMessage(message);
       });
@@ -2669,9 +2682,14 @@ const renderSalesRepDashboard = () => {
                           }`}
                         >
                           {landingNpiStatus === 'idle' &&
-                            'We securely verify your medical credentials with the CMS NPI registry. Sales reps can leave this blank.'}
+                            'We securely verify your medical credentials with the CMS NPI registry.'}
                           {landingNpiStatus === 'checking' && 'Contacting the CMS NPI registry...'}
-                          {landingNpiStatus === 'verified' && landingNpiMessage}
+                          {landingNpiStatus === 'verified' && (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="npi-checkmark" aria-hidden="true">✔</span>
+                              {landingNpiMessage || 'NPI verified with the CMS registry.'}
+                            </span>
+                          )}
                           {landingNpiStatus === 'rejected' &&
                             (landingNpiMessage || 'We were unable to verify this NPI number. Please double-check and try again.')}
                         </p>
