@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
-import { Minus, Plus, Gift, CreditCard, Trash2, LogIn, ShoppingCart } from 'lucide-react';
+import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart } from 'lucide-react';
 import { Product } from './ProductCard';
 import { toast } from 'sonner@2.0.3';
 import { ProductImageCarousel } from './ProductImageCarousel';
@@ -38,8 +38,7 @@ export function CheckoutModal({
   isAuthenticated,
   onRequireLogin
 }: CheckoutModalProps) {
-  const [referralCode, setReferralCode] = useState('');
-  const [appliedReferralCode, setAppliedReferralCode] = useState<string | null>(null);
+  // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -50,30 +49,16 @@ export function CheckoutModal({
     ? (isProcessing ? 'Processing order...' : `Complete Purchase (${total.toFixed(2)})`)
     : 'Login to complete purchase';
 
-  const applyReferralCode = () => {
-    const sanitized = referralCode.trim().toUpperCase();
-    if (!sanitized) {
-      return;
-    }
-    setAppliedReferralCode(sanitized);
-    setReferralCode('');
-  };
-
-  const removeReferralCode = () => {
-    setAppliedReferralCode(null);
-    setReferralCode('');
-    // toast.success('Referral code removed');
-  };
+  // No-op referral handling removed
 
   const handleCheckout = async () => {
     console.debug('[CheckoutModal] Checkout start', {
-      appliedReferralCode,
       total,
       items: cartItems.map((item) => ({ id: item.product.id, qty: item.quantity }))
     });
     setIsProcessing(true);
     try {
-      await onCheckout(appliedReferralCode || undefined);
+      await onCheckout(undefined);
       onClose();
       console.debug('[CheckoutModal] Checkout success');
     } finally {
@@ -141,8 +126,7 @@ export function CheckoutModal({
   // Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
-      setReferralCode('');
-      setAppliedReferralCode(null);
+      // referral fields removed
       setQuantityInputs({});
       setIsProcessing(false);
     }
@@ -283,46 +267,7 @@ export function CheckoutModal({
                 })}
               </div>
 
-              {/* Referral Code Section */}
-              <div className="space-y-3">
-                <Label>Referral Code</Label>
-                {!appliedReferralCode ? (
-                  <>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Enter referral code"
-                        value={referralCode}
-                        onChange={(e) => setReferralCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
-                        maxLength={5}
-                        className="squircle-sm bg-slate-50 border-2"
-                        style={{ textTransform: 'uppercase' }}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={applyReferralCode}
-                        disabled={referralCode.trim().length !== 5}
-                        className="squircle-sm bg-slate-50 border-2"
-                      >
-                        <Gift className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-slate-500">Codes are 5 characters and issued by your sales representative.</p>
-                  </>
-                ) : (
-                  <div className="flex items-center justify-between squircle-sm p-3 bg-slate-50 border-2">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <Gift className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium tracking-[0.3em]">{appliedReferralCode}</span>
-                      </div>
-                      <span className="text-xs text-slate-500 mt-1">Referral credits are granted after the referred doctor completes their first paid order.</span>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={removeReferralCode}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                )}
-              </div>
+              {/* Referral Code Section removed */}
 
               {/* Payment Form */}
               <div className="space-y-5">

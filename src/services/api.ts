@@ -191,6 +191,13 @@ export const authAPI = {
       return null;
     }
   },
+
+  updateMe: async (payload: { name?: string; email?: string; phone?: string }) => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/me`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 // Orders API

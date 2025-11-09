@@ -46,10 +46,20 @@ const verifyNpi = async (req, res, next) => {
   }
 };
 
+const updateProfile = async (req, res, next) => {
+  try {
+    const updated = await authService.updateProfile(req.user.id, req.body || {});
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   checkEmail,
   getProfile,
   verifyNpi,
+  updateProfile,
 };

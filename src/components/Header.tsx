@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -69,10 +69,12 @@ export function Header({
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
-  const headerDisplayName = user
+  const [localUser, setLocalUser] = useState(user);
+  useEffect(() => { setLocalUser(user); }, [user]);
+  const headerDisplayName = localUser
     ? user.role === 'sales_rep'
-      ? `Admin: ${user.name}`
-      : user.name
+      ? `Admin: ${localUser.name}`
+      : localUser.name
     : '';
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -527,13 +529,37 @@ export function Header({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 pt-4 pb-2">
-            {user.role !== 'sales_rep' && (
+            {localUser && localUser.role !== 'sales_rep' && (
               <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                 <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
                 <div className="space-y-1 text-sm text-slate-600">
-                  <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
-                  <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
-                  <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
+                  <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
+                  <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
+                  <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
+                </div>
+              </div>
+            )}
+            {localUser && (
+              <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
+                <div className="grid gap-3">
+                  {([['name','Full Name'],['email','Email'],['phone','Phone']] as const).map(([key,label]) => (
+                    <EditableRow
+                      key={key}
+                      label={label}
+                      value={(localUser as any)[key] || ''}
+                      type={key === 'email' ? 'email' : 'text'}
+                      onSave={async (next) => {
+                        try {
+                          const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
+                          setLocalUser(updated);
+                          toast.success(`${label} updated`);
+                        } catch (e:any) {
+                          toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
+                          throw e;
+                        }
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -552,6 +578,10 @@ export function Header({
                 }, 100);
               }}
               className="squircle-sm glass btn-hover-lighter w-full"
+              style={{
+                boxShadow:
+                  '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
+              }}
             >
               How does this work?
             </Button>
@@ -561,6 +591,10 @@ export function Header({
                 variant="outline"
                 onClick={onLogout}
                 className="squircle-sm glass btn-hover-lighter flex-1"
+                style={{
+                  boxShadow:
+                    '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
+                }}
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
@@ -951,5 +985,69 @@ export function Header({
         </div>
       </div>
     </header>
+  );
+}
+
+function EditableRow({ label, value, type = 'text', onSave }: { label: string; value: string; type?: string; onSave: (next: string) => Promise<void> | void }) {
+  const [editing, setEditing] = useState(false);
+  const [next, setNext] = useState(value);
+  useEffect(() => setNext(value), [value]);
+  const [saving, setSaving] = useState(false);
+  return (
+    <div className="group flex items-center justify-between gap-3">
+      <div className="min-w-[7rem] text-sm font-medium text-slate-700">{label}</div>
+      <div className="flex-1 flex items-center gap-2">
+        {editing ? (
+          <input
+            className="w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            value={next}
+            type={type}
+            onChange={(e) => setNext(e.currentTarget.value)}
+          />
+        ) : (
+          <div className="flex-1 text-sm text-slate-700">{value || '—'}</div>
+        )}
+        {!editing ? (
+          <button
+            type="button"
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-700"
+            onClick={() => setEditing(true)}
+            aria-label={`Edit ${label}`}
+            title={`Edit ${label}`}
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="squircle-sm"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onSave(next);
+                  setEditing(false);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Save
+            </Button>
+            <Button
+              variant="ghost"
+              className="squircle-sm"
+              onClick={() => {
+                setNext(value);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

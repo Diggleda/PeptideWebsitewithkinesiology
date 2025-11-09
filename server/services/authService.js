@@ -176,9 +176,35 @@ const getProfile = (userId) => {
   return sanitizeUser(user);
 };
 
+const updateProfile = async (userId, data) => {
+  const user = userRepository.findById(userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
+  }
+
+  const next = { ...user };
+  if (typeof data.name === 'string' && data.name.trim()) next.name = data.name.trim();
+  if (typeof data.phone === 'string') next.phone = data.phone.trim();
+  if (typeof data.email === 'string' && data.email.trim() && data.email.trim() !== user.email) {
+    const existing = userRepository.findByEmail(data.email.trim());
+    if (existing && existing.id !== user.id) {
+      const error = new Error('EMAIL_EXISTS');
+      error.status = 409;
+      throw error;
+    }
+    next.email = data.email.trim();
+  }
+
+  const updated = userRepository.update(next) || next;
+  return sanitizeUser(updated);
+};
+
 module.exports = {
   register,
   login,
   checkEmail,
   getProfile,
+  updateProfile,
 };
