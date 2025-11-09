@@ -72,6 +72,10 @@ const env = {
     shipFromCountry: process.env.SHIPENGINE_SHIP_FROM_COUNTRY || 'US',
     autoCreateLabels: process.env.SHIPENGINE_AUTO_CREATE_LABELS === 'true',
   },
+  quotes: {
+    sourceUrl: process.env.QUOTES_SOURCE_URL || 'https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php',
+    secret: process.env.QUOTES_WEBHOOK_SECRET || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
+  },
 };
 
 const isProduction = env.nodeEnv === 'production';

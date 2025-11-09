@@ -9,6 +9,7 @@ import jwt
 
 from ..repositories import user_repository, sales_rep_repository
 from . import get_config
+from . import npi_service
 from . import referral_service
 
 
@@ -57,6 +58,11 @@ def register(data: Dict) -> Dict:
     password = (data.get("password") or "").strip()
     code = (data.get("code") or "").strip().upper()
     phone = data.get("phone") or None
+    raw_npi = data.get("npiNumber") or data.get("npi_number") or ""
+    normalized_npi = npi_service.normalize_npi(raw_npi)
+    npi_verification = None
+    npi_last_verified_at = None
+    npi_status = None
 
     if not name or not email:
         raise _bad_request("NAME_EMAIL_REQUIRED")
@@ -78,6 +84,25 @@ def register(data: Dict) -> Dict:
 
     if user_repository.find_by_email(email):
         raise _conflict("EMAIL_EXISTS")
+
+    if len(normalized_npi) != 10:
+        raise _bad_request("NPI_INVALID")
+
+    if user_repository.find_by_npi_number(normalized_npi):
+        raise _conflict("NPI_ALREADY_REGISTERED")
+
+    try:
+        npi_verification = npi_service.verify_npi(normalized_npi)
+    except npi_service.NpiInvalidError:
+        raise _bad_request("NPI_INVALID")
+    except npi_service.NpiNotFoundError:
+        raise _not_found("NPI_NOT_FOUND")
+    except npi_service.NpiLookupError as exc:
+        err = _bad_request("NPI_LOOKUP_FAILED")
+        raise err from exc
+
+    npi_last_verified_at = datetime.now(timezone.utc).isoformat()
+    npi_status = "verified"
 
     onboarding_record = referral_service.get_onboarding_code(code)
     sales_rep = None
@@ -119,6 +144,11 @@ def register(data: Dict) -> Dict:
             "createdAt": now,
             "lastLoginAt": now,
             "mustResetPassword": False,
+            "npiNumber": normalized_npi,
+            "npiLastVerifiedAt": npi_last_verified_at,
+            "npiVerification": npi_verification,
+            "npiStatus": npi_status,
+            "npiCheckError": None,
         }
     )
 

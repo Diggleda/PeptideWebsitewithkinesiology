@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
@@ -14,6 +16,10 @@ def _get_store():
     if store is None:
         raise RuntimeError("user_store is not initialised")
     return store
+
+
+def _normalize_npi(value: Optional[str]) -> str:
+    return re.sub(r"[^0-9]", "", str(value or ""))[:10]
 
 
 def _ensure_defaults(user: Dict) -> Dict:
@@ -34,6 +40,20 @@ def _ensure_defaults(user: Dict) -> Dict:
     referral_credits = normalized.get("referralCredits", 0)
     normalized["referralCredits"] = float(referral_credits or 0)
     normalized["totalReferrals"] = int(normalized.get("totalReferrals", 0) or 0)
+    npi_number = _normalize_npi(normalized.get("npiNumber"))
+    normalized["npiNumber"] = npi_number or None
+    normalized.setdefault("npiLastVerifiedAt", normalized.get("npiLastVerifiedAt") or None)
+    normalized.setdefault("npiStatus", normalized.get("npiStatus") or None)
+    normalized.setdefault("npiCheckError", normalized.get("npiCheckError") or None)
+    verification = normalized.get("npiVerification")
+    if isinstance(verification, str):
+        try:
+            verification = json.loads(verification)
+        except json.JSONDecodeError:
+            verification = None
+    if verification is not None and not isinstance(verification, dict):
+        verification = None
+    normalized["npiVerification"] = verification
     return normalized
 
 
@@ -153,12 +173,14 @@ def _mysql_insert(user: Dict) -> Dict:
         INSERT INTO users (
             id, name, email, password, role, status, sales_rep_id, referrer_doctor_id,
             phone, referral_credits, total_referrals, visits,
-            created_at, last_login_at, must_reset_password, first_order_bonus_granted_at
+            created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
+            npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(sales_rep_id)s,
             %(referrer_doctor_id)s, %(phone)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
-            %(must_reset_password)s, %(first_order_bonus_granted_at)s
+            %(must_reset_password)s, %(first_order_bonus_granted_at)s,
+            %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
         )
         ON DUPLICATE KEY UPDATE
             name = VALUES(name),
@@ -174,7 +196,12 @@ def _mysql_insert(user: Dict) -> Dict:
             created_at = VALUES(created_at),
             last_login_at = VALUES(last_login_at),
             must_reset_password = VALUES(must_reset_password),
-            first_order_bonus_granted_at = VALUES(first_order_bonus_granted_at)
+            first_order_bonus_granted_at = VALUES(first_order_bonus_granted_at),
+            npi_number = VALUES(npi_number),
+            npi_last_verified_at = VALUES(npi_last_verified_at),
+            npi_verification = VALUES(npi_verification),
+            npi_status = VALUES(npi_status),
+            npi_check_error = VALUES(npi_check_error)
         """,
         params,
     )
@@ -205,7 +232,12 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             created_at = %(created_at)s,
             last_login_at = %(last_login_at)s,
             must_reset_password = %(must_reset_password)s,
-            first_order_bonus_granted_at = %(first_order_bonus_granted_at)s
+            first_order_bonus_granted_at = %(first_order_bonus_granted_at)s,
+            npi_number = %(npi_number)s,
+            npi_last_verified_at = %(npi_last_verified_at)s,
+            npi_verification = %(npi_verification)s,
+            npi_status = %(npi_status)s,
+            npi_check_error = %(npi_check_error)s
         WHERE id = %(id)s
         """,
         params,
@@ -223,6 +255,13 @@ def _row_to_user(row: Dict) -> Dict:
         if isinstance(value, datetime):
             return value.replace(tzinfo=timezone.utc).isoformat()
         return str(value)
+
+    verification = row.get("npi_verification")
+    if isinstance(verification, str):
+        try:
+            verification = json.loads(verification)
+        except json.JSONDecodeError:
+            verification = None
 
     return _ensure_defaults(
         {
@@ -243,6 +282,11 @@ def _row_to_user(row: Dict) -> Dict:
             "lastLoginAt": fmt_datetime(row.get("last_login_at")),
             "mustResetPassword": bool(row.get("must_reset_password")),
             "firstOrderBonusGrantedAt": fmt_datetime(row.get("first_order_bonus_granted_at")),
+            "npiNumber": _normalize_npi(row.get("npi_number")),
+            "npiLastVerifiedAt": fmt_datetime(row.get("npi_last_verified_at")),
+            "npiVerification": verification,
+            "npiStatus": row.get("npi_status"),
+            "npiCheckError": row.get("npi_check_error"),
         }
     )
 
@@ -276,4 +320,20 @@ def _to_db_params(user: Dict) -> Dict:
         "last_login_at": parse_dt(user.get("lastLoginAt")),
         "must_reset_password": 1 if user.get("mustResetPassword") else 0,
         "first_order_bonus_granted_at": parse_dt(user.get("firstOrderBonusGrantedAt")),
+        "npi_number": _normalize_npi(user.get("npiNumber")) or None,
+        "npi_last_verified_at": parse_dt(user.get("npiLastVerifiedAt")),
+        "npi_verification": json.dumps(user.get("npiVerification")) if user.get("npiVerification") else None,
+        "npi_status": user.get("npiStatus"),
+        "npi_check_error": user.get("npiCheckError"),
     }
+def find_by_npi_number(npi_number: str) -> Optional[Dict]:
+    normalized = _normalize_npi(npi_number)
+    if not normalized:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one("SELECT * FROM users WHERE npi_number = %(npi_number)s", {"npi_number": normalized})
+        return _row_to_user(row)
+    return next(
+        (user for user in _load() if _normalize_npi(user.get("npiNumber")) == normalized),
+        None,
+    )

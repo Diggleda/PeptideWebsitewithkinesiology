@@ -22,6 +22,15 @@ interface User {
   name: string;
   email: string;
   referralCode?: string | null;
+  npiNumber?: string | null;
+  npiLastVerifiedAt?: string | null;
+  npiVerification?: {
+    name?: string | null;
+    credential?: string | null;
+    enumerationType?: string | null;
+    primaryTaxonomy?: string | null;
+    organizationName?: string | null;
+  } | null;
   role: 'doctor' | 'sales_rep' | string;
   salesRepId?: string | null;
   salesRep?: {
@@ -881,6 +890,7 @@ export default function App() {
     password: string;
     confirmPassword: string;
     code: string;
+    npiNumber: string;
   }): Promise<AuthActionResult> => {
     console.debug('[Auth] Create account attempt', { email: details.email });
     try {
@@ -901,11 +911,17 @@ export default function App() {
         return { status: 'invalid_referral_code' };
       }
 
+      const normalizedNpi = (details.npiNumber || '').replace(/\D/g, '');
+      if (normalizedNpi && !/^\d{10}$/.test(normalizedNpi)) {
+        return { status: 'invalid_npi' };
+      }
+
       const user = await authAPI.register({
         name: details.name,
         email: details.email,
         password,
         code: normalizedCode,
+        npiNumber: normalizedNpi || undefined,
       });
       setUser(user);
       setPostLoginHold(true);
@@ -950,6 +966,18 @@ export default function App() {
       }
       if (message === 'PASSWORD_REQUIRED') {
         return { status: 'error', message };
+      }
+      if (message === 'NPI_INVALID') {
+        return { status: 'invalid_npi' };
+      }
+      if (message === 'NPI_NOT_FOUND') {
+        return { status: 'npi_not_found' };
+      }
+      if (message === 'NPI_ALREADY_REGISTERED') {
+        return { status: 'npi_already_registered' };
+      }
+      if (message === 'NPI_LOOKUP_FAILED') {
+        return { status: 'npi_verification_failed', message };
       }
       return { status: 'error', message };
     }
@@ -2281,48 +2309,40 @@ const renderSalesRepDashboard = () => {
                     )}
                     <div className="relative flex flex-col gap-6 max-h-[70vh]">
                       <div className="flex-1 overflow-y-auto pr-1 space-y-16">
-                        <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">
-                          <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">Customer experiences & referrals</h2>
-                          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                            {/* Provide customer testimonials, referral stories, or metrics here */}
-                          </div>
-                          <div className="mt-4 text-sm text-gray-600">
-                            {/* Add referral program call-to-action or highlight here */}
-                          </div>
-                        </section>
+                        {/* Removed: Customer experiences & referrals section */}
 
                         <div className="grid gap-10 md:grid-cols-[1.15fr_0.85fr] mb-4">
                           <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">
-                            <h3 className="text-lg font-semibold text-[rgb(95,179,249)]">Physicians' Choice Program</h3>
-                            <div className="mt-4 space-y-4 text-sm text-gray-700 leading-relaxed">
+                            <h3 className="text-lg font-semibold text-[rgb(95,179,249)] mb-4">Physicians' Choice Program</h3>
+                            <div className="space-y-4 text-sm text-gray-700 leading-relaxed">
                               <p>
                                 The Physicians' Choice Program is designed exclusively for medical professionals who order 25 units or more of a single product. Participants can choose to private label their products and/or utilize our 3PL Fulfillment Program for seamless inventory and distribution management.
                               </p>
                             </div>
-                            <div className="mt-6 space-y-3 text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide">Private Labeling</h4>
-                              <p>
+                            <div className="text-sm text-gray-700 leading-relaxed">
+                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}>Private Labeling</h4>
+                              <p className="mt-0">
                                 Physicians who opt to private label will collaborate with their Regional Administrator to provide logos and branding details for custom product labels.
                               </p>
-                              <p>
+                              <p className="mt-3">
                                 For those wishing to customize beyond the standard PepPro label design - such as changing colors, layout, or branding - we will provide a die line template for your designer to create your preferred look and feel. If design assistance is needed, we can connect you with a trusted graphic design partner.
                               </p>
                             </div>
-                            <div className="mt-6 space-y-3 text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide">3PL Fulfillment Program</h4>
-                              <p>
+                            <div className="text-sm text-gray-700 leading-relaxed">
+                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}>3PL Fulfillment Program</h4>
+                              <p className="mt-0">
                                 Our third-party logistics (3PL) program enables physicians to maintain inventory at our Anaheim, CA fulfillment center, ensuring quick, reliable delivery directly to patients. Participants may also hold stock at their practice for in-person distribution.
                               </p>
-                              <p>
+                              <p className="mt-3">
                                 All PepPro products are produced in GMP-certified and 503A/503B-compliant facilities located in San Diego, CA. Each order is stored in a temperature-controlled environment and shipped within 24 hours of receipt.
                               </p>
-                              <p>
+                              <p className="mt-3">
                                 Shipments include ice packs to maintain product integrity, ensuring all items arrive cold and ready for use. Comprehensive dosing instructions are included with every order - covering nasal sprays, vials, and chewables.
                               </p>
                             </div>
-                            <div className="mt-6 space-y-3 text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide">Shipping</h4>
-                              <p className="font-semibold text-[rgb(95,179,249)]">
+                            <div className="text-sm text-gray-700 leading-relaxed">
+                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}></h4>
+                              <p className="mt-0 font-semibold text-[rgb(95,179,249)]">
                                 Orders over $250 qualify for free shipping within the U.S.A.
                               </p>
                             </div>
@@ -2441,7 +2461,8 @@ const renderSalesRepDashboard = () => {
                           email: (fd.get('email') as string) || '',
                           password: (fd.get('password') as string) || '',
                           confirmPassword: (fd.get('confirm') as string) || '',
-                          code: ((fd.get('code') as string) || '').toUpperCase()
+                          code: ((fd.get('code') as string) || '').toUpperCase(),
+                          npiNumber: (fd.get('npiNumber') as string) || '',
                         };
                         const res = await handleCreateAccount(details);
                         if (res.status === 'success') {
@@ -2458,6 +2479,14 @@ const renderSalesRepDashboard = () => {
                           setLandingSignupError('Name and email are required to create your account.');
                         } else if (res.status === 'password_mismatch') {
                           setLandingSignupError('Passwords do not match. Please confirm and try again.');
+                        } else if (res.status === 'invalid_npi') {
+                          setLandingSignupError('Enter a valid 10-digit NPI number assigned to you by CMS.');
+                        } else if (res.status === 'npi_not_found') {
+                          setLandingSignupError('We couldn\'t verify that NPI number in the CMS registry. Please double-check and try again.');
+                        } else if (res.status === 'npi_already_registered') {
+                          setLandingSignupError('An account already exists for this NPI number. Please sign in or contact support.');
+                        } else if (res.status === 'npi_verification_failed') {
+                          setLandingSignupError('We were unable to reach the CMS NPI registry. Please try again in a moment.');
                         } else if (res.status === 'error') {
                           setLandingSignupError(res.message === 'PASSWORD_REQUIRED'
                             ? 'Please create a secure password to access your account.'
@@ -2558,6 +2587,26 @@ const renderSalesRepDashboard = () => {
                             )}
                           </button>
                         </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label htmlFor="landing-npi" className="text-sm font-medium">NPI Number</label>
+                        <input
+                          id="landing-npi"
+                          name="npiNumber"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          maxLength={10}
+                          placeholder="10-digit NPI"
+                          onInput={(event) => {
+                            const target = event.currentTarget;
+                            target.value = target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                          }}
+                          className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        <p className="text-xs text-slate-500">
+                          We securely verify your medical credentials with the CMS NPI registry. Sales reps can leave this blank.
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <label htmlFor="landing-code" className="text-sm font-medium">Referral Code</label>

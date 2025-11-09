@@ -2,7 +2,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
+const salesRepRepository = require('../repositories/salesRepRepository');
 const { env } = require('../config/env');
+const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
 
@@ -31,7 +33,18 @@ const comparePassword = async (plainText, hashed) => {
   }
 };
 
-const register = async ({ name, email, password }) => {
+const createError = (message, status = 400) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
+const register = async ({
+  name,
+  email,
+  password,
+  npiNumber,
+}) => {
   if (!name || !email || !password) {
     const error = new Error('All fields are required');
     error.status = 400;
@@ -44,6 +57,27 @@ const register = async ({ name, email, password }) => {
     error.status = 409;
     throw error;
   }
+
+  const salesRepAccount = salesRepRepository.findByEmail(email);
+  const isSalesRepEmail = Boolean(salesRepAccount);
+
+  const normalizedNpi = normalizeNpiNumber(npiNumber);
+  const hasValidNpi = /^\d{10}$/.test(normalizedNpi);
+
+  if (!isSalesRepEmail && !hasValidNpi) {
+    throw createError('NPI_INVALID', 400);
+  }
+
+  if (hasValidNpi) {
+    const existingNpi = userRepository.findByNpiNumber(normalizedNpi);
+    if (existingNpi) {
+      throw createError('NPI_ALREADY_REGISTERED', 409);
+    }
+  }
+
+  const npiVerification = hasValidNpi
+    ? await verifyDoctorNpi(normalizedNpi)
+    : null;
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const now = new Date().toISOString();
@@ -59,6 +93,24 @@ const register = async ({ name, email, password }) => {
     visits: 1,
     createdAt: now,
     lastLoginAt: now,
+    role: isSalesRepEmail ? 'sales_rep' : 'doctor',
+    salesRepId: isSalesRepEmail
+      ? salesRepAccount?.id
+        || salesRepAccount?.legacyUserId
+        || salesRepAccount?.salesRepId
+        || null
+      : null,
+    npiNumber: npiVerification ? npiVerification.npiNumber : null,
+    npiLastVerifiedAt: npiVerification ? now : null,
+    npiVerification: npiVerification
+      ? {
+        name: npiVerification.name,
+        credential: npiVerification.credential,
+        enumerationType: npiVerification.enumerationType,
+        primaryTaxonomy: npiVerification.primaryTaxonomy,
+        organizationName: npiVerification.organizationName,
+      }
+      : null,
   });
 
   const token = createAuthToken({ id: user.id, email: user.email });

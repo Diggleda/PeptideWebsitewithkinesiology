@@ -10,4 +10,8 @@ export type AuthActionResult =
   | { status: 'sales_rep_email_mismatch' }
   | { status: 'sales_rep_signup_required' }
   | { status: 'name_email_required' }
+  | { status: 'invalid_npi' }
+  | { status: 'npi_not_found' }
+  | { status: 'npi_already_registered' }
+  | { status: 'npi_verification_failed'; message?: string }
   | { status: 'error'; message?: string };

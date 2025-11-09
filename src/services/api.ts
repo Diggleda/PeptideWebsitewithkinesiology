@@ -107,7 +107,14 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
 
 // Auth API
 export const authAPI = {
-  register: async (input: { name: string; email: string; password: string; code: string; phone?: string }) => {
+  register: async (input: {
+    name: string;
+    email: string;
+    password: string;
+    code: string;
+    npiNumber?: string;
+    phone?: string;
+  }) => {
     const data = await fetchWithAuth(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       body: JSON.stringify({
@@ -115,6 +122,7 @@ export const authAPI = {
         email: input.email,
         password: input.password,
         code: input.code,
+        npiNumber: input.npiNumber,
         phone: input.phone ?? undefined,
       }),
     });

@@ -46,8 +46,8 @@ body.non-login-bg::before {
   background-size: cover, 800px 800px;
   background-repeat: no-repeat, repeat;
   background-position: center, center;
-  /* Shop pages: match requested lower intensity */
-  opacity: 0.04;
+  /* Non-login views: keep image faintly visible */
+  opacity: 0.05;
 }
 
 /* Login page: reduce whiteness at the top for better depth */
@@ -3110,6 +3110,8 @@ html {
   margin-top: 2rem;
   /* Sticky offset for catalog filter within this section */
   --catalog-sticky-top: 0px;
+  /* Shop surface: 95% white so background image shows ~5% */
+  background: rgba(255, 255, 255, 0.95);
 }
 
 @media (min-width: 64rem) {

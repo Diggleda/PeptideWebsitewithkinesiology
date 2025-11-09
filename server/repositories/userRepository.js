@@ -1,5 +1,12 @@
 const { userStore } = require('../storage');
 
+const normalizeNpiNumber = (value) => {
+  if (!value) {
+    return '';
+  }
+  return String(value).replace(/[^0-9]/g, '').slice(0, 10);
+};
+
 const ensureUserDefaults = (user) => {
   const normalized = { ...user };
   if (typeof normalized.visits !== 'number' || Number.isNaN(normalized.visits)) {
@@ -13,6 +20,23 @@ const ensureUserDefaults = (user) => {
   }
   if (!normalized.totalReferrals) {
     normalized.totalReferrals = 0;
+  }
+  if (typeof normalized.npiNumber === 'string') {
+    normalized.npiNumber = normalizeNpiNumber(normalized.npiNumber) || null;
+  } else if (normalized.npiNumber == null) {
+    normalized.npiNumber = null;
+  }
+  if (!normalized.role) {
+    normalized.role = 'doctor';
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'salesRepId')) {
+    normalized.salesRepId = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'npiVerification')) {
+    normalized.npiVerification = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'npiLastVerifiedAt')) {
+    normalized.npiLastVerifiedAt = null;
   }
   return normalized;
 };
@@ -51,6 +75,14 @@ const findByEmail = (email) => loadUsers().find((user) => user.email === email) 
 const findById = (id) => loadUsers().find((user) => user.id === id) || null;
 
 const findByReferralCode = (code) => loadUsers().find((user) => user.referralCode === code) || null;
+
+const findByNpiNumber = (npiNumber) => {
+  const normalized = normalizeNpiNumber(npiNumber);
+  if (!normalized) {
+    return null;
+  }
+  return loadUsers().find((user) => normalizeNpiNumber(user.npiNumber) === normalized) || null;
+};
 
 const insert = (user) => {
   const users = loadUsers();
@@ -91,4 +123,5 @@ module.exports = {
   findByEmail,
   findById,
   findByReferralCode,
+  findByNpiNumber,
 };
