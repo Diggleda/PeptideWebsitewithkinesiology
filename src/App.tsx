@@ -682,6 +682,19 @@ export default function App() {
     };
   }, [user, postLoginHold, refreshReferralData]);
 
+  // Set body classes to control background per view
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const isNonLoginView = Boolean(user) && !postLoginHold;
+    const isLoginView = !user;
+    document.body.classList.toggle('non-login-bg', isNonLoginView);
+    document.body.classList.toggle('login-view', isLoginView);
+    return () => {
+      document.body.classList.remove('non-login-bg');
+      document.body.classList.remove('login-view');
+    };
+  }, [user, postLoginHold]);
+
   useEffect(() => {
     if (!user || user.role !== 'sales_rep' || postLoginHold) {
       return undefined;

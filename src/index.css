@@ -9,12 +9,12 @@ body::before {
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
   <defs>\
     <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>\
-      <stop offset='0' stop-color='rgba(95,179,249,0.06)'/>\
-      <stop offset='1' stop-color='rgba(95,179,249,0.00)'/>\
+      <stop offset='0' stop-color='rgba(255,255,255,0.01)'/>\
+      <stop offset='1' stop-color='rgba(255,255,255,0.00)'/>\
     </linearGradient>\
     <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>\
-      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(95,179,249,0.06)' stroke-width='1.5' stroke-linecap='round'/>\
-      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(95,179,249,0.04)' stroke-width='1.5' stroke-linecap='round'/>\
+      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/>\
+      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/>\
     </pattern>\
   </defs>\
   <rect width='100%' height='100%' fill='url(%23p)'/>\
@@ -23,9 +23,57 @@ body::before {
   background-size: cover, 800px 800px;
   background-repeat: no-repeat, repeat;
   background-position: center, center;
-  opacity: 0.12;
+  opacity: 0.04;
   pointer-events: none;
   z-index: 0;
+}
+
+/* Non-login pages: add subtle white veil to lift overall whiteness */
+body.non-login-bg::before {
+  /* Constant overlay: no gradient layer, just texture + pattern */
+  background-image:
+    url('/leafTexture.jpg'),
+    url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
+  <defs>\
+    <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>\
+      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/>\
+      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/>\
+    </pattern>\
+  </defs>\
+  <rect width='100%' height='100%' fill='url(%23p)'/>\
+</svg>");
+  background-size: cover, 800px 800px;
+  background-repeat: no-repeat, repeat;
+  background-position: center, center;
+  /* Shop pages: match requested lower intensity */
+  opacity: 0.04;
+}
+
+/* Login page: reduce whiteness at the top for better depth */
+body.login-view::before {
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.01) 20%, rgba(255,255,255,0.14) 100%),
+    url('/leafTexture.jpg'),
+    url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\
+  <defs>\
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>\
+      <stop offset='0' stop-color='rgba(255,255,255,0.16)'/>\
+      <stop offset='1' stop-color='rgba(255,255,255,0.00)'/>\
+    </linearGradient>\
+    <pattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'>\
+      <path d='M10,50 C40,20 40,80 70,50' fill='none' stroke='rgba(255,255,255,0.06)' stroke-width='1.5' stroke-linecap='round'/>\
+      <path d='M20,20 C30,35 50,45 60,60' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5' stroke-linecap='round'/>\
+    </pattern>\
+  </defs>\
+  <rect width='100%' height='100%' fill='url(%23p)'/>\
+  <rect width='100%' height='100%' fill='url(%23g)'/>\
+</svg>");
+  background-size: cover, cover, 800px 800px;
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-position: center, center, center;
+  opacity: 0.08;
 }
 
 html, body {
@@ -2216,8 +2264,8 @@ body {
 .glass-card {
   -webkit-backdrop-filter: blur(40px) saturate(1.7);
   backdrop-filter: blur(40px) saturate(1.7);
-  background: rgba(255, 255, 255, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.52);
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.1),
               0 1px 2px -1px rgba(0, 0, 0, 0.06),
               inset 0 1px rgba(255, 255, 255, 0.5);
@@ -2255,8 +2303,8 @@ body {
 .landing-glass {
   -webkit-backdrop-filter: blur(28px) saturate(1.65);
   backdrop-filter: blur(28px) saturate(1.65);
-  background: rgba(255, 255, 255, 0.28);
-  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.34);
+  border-color: rgba(255, 255, 255, 0.36);
   box-shadow: 0 22px 60px rgba(95, 179, 249, 0.24), inset 0 1px rgba(255, 255, 255, 0.3);
 }
 
