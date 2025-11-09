@@ -198,6 +198,14 @@ const updateProfile = async (userId, data) => {
   }
 
   const updated = userRepository.update(next) || next;
+
+  if (updated.role === 'sales_rep' && updated.salesRepId) {
+    salesRepRepository.update({
+      id: updated.salesRepId,
+      phone: updated.phone,
+    });
+  }
+
   return sanitizeUser(updated);
 };
 

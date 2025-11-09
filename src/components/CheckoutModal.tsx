@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
-import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart } from 'lucide-react';
+import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
 import { Product } from './ProductCard';
 import { toast } from 'sonner@2.0.3';
 import { ProductImageCarousel } from './ProductImageCarousel';
@@ -158,19 +158,29 @@ export function CheckoutModal({
       }}
     >
       <DialogContent
-        className="glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl"
+        className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
         style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
       >
-        <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
-            Checkout
-          </DialogTitle>
-          {!isCartEmpty && (
-            <DialogDescription>Review your order and complete your purchase</DialogDescription>
-          )}
+        <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                Checkout
+              </DialogTitle>
+              {!isCartEmpty && (
+                <DialogDescription>Review your order and complete your purchase</DialogDescription>
+              )}
+            </div>
+            <DialogClose className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              aria-label="Close checkout"
+            >
+              <X className="h-4 w-4" />
+            </DialogClose>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <div className="space-y-6 pt-6">
           {isCartEmpty ? (
             <div className="flex flex-col items-center justify-center py-14 space-y-6 text-center">
               <div className="flex items-center gap-3 text-slate-600">
@@ -342,6 +352,7 @@ export function CheckoutModal({
               </div>
             </>
           )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

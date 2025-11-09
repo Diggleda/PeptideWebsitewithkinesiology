@@ -39,3 +39,11 @@ def verify_npi():
     payload = request.get_json(force=True, silent=True) or {}
     npi_number = payload.get("npiNumber") or payload.get("npi_number")
     return handle_action(lambda: auth_service.verify_npi(npi_number))
+
+
+@blueprint.put("/me")
+@require_auth
+def update_me():
+    user_id = g.current_user.get("id")
+    payload = request.get_json(force=True, silent=True) or {}
+    return handle_action(lambda: auth_service.update_profile(user_id, payload))

@@ -38,7 +38,7 @@
     "status": "active",
     "salesRepId": null,
     "referrerDoctorId": null,
-    "phone": null,
+    "phone": "1",
     "mustResetPassword": false,
     "firstOrderBonusGrantedAt": null,
     "npiNumber": null,

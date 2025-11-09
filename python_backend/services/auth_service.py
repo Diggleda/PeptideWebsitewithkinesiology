@@ -330,6 +330,31 @@ def verify_npi(npi_number: Optional[str]) -> Dict:
         raise err from exc
 
 
+def update_profile(user_id: str, data: Dict) -> Dict:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+
+    name = _sanitize_name(data.get("name") or user.get("name") or "")
+    phone = (data.get("phone") or user.get("phone") or None)
+    email = _normalize_email(data.get("email") or user.get("email") or "")
+
+    if email and email != user.get("email"):
+        existing = user_repository.find_by_email(email)
+        if existing and existing.get("id") != user.get("id"):
+            raise _conflict("EMAIL_EXISTS")
+
+    updated = {
+        **user,
+        "name": name or user.get("name"),
+        "phone": phone,
+        "email": email or user.get("email"),
+    }
+
+    saved = user_repository.update(updated) or updated
+    return _sanitize_user(saved)
+
+
 def _sanitize_user(user: Dict) -> Dict:
     sanitized = dict(user)
     sanitized.pop("password", None)
