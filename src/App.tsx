@@ -2835,23 +2835,6 @@ const renderSalesRepDashboard = () => {
                       >
                         Sign In
                       </Button>
-                      {passkeySupport.platform && (
-                        <div className="space-y-1.5 pt-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="lg"
-                            disabled={passkeyLoginPending}
-                            onClick={handleManualPasskeyLogin}
-                            className="w-full squircle-sm border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white disabled:opacity-70"
-                          >
-                            {passkeyLoginPending ? 'Waiting for Face ID…' : 'Sign in with Face ID / Touch ID'}
-                          </Button>
-                          <p className="text-xs text-center text-gray-500">
-                            Works on Apple devices & passkey-ready browsers.
-                          </p>
-                        </div>
-                      )}
                     </form>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">

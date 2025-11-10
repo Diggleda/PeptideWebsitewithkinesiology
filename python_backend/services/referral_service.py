@@ -531,6 +531,46 @@ def calculate_doctor_credit_summary(doctor_id: str):
     }
 
 
+def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
+    """Deduct referral credits from a doctor's balance and write a debit ledger entry.
+
+    Guards against overdraft and no-ops. Returns the ledger entry and the updated
+    doctor snapshot.
+    """
+    if not doctor_id or not isinstance(amount, (int, float)):
+        raise _service_error("INVALID_CREDIT_REQUEST", 400)
+    amt = float(amount)
+    if amt <= 0:
+        raise _service_error("INVALID_CREDIT_AMOUNT", 400)
+
+    doctor = user_repository.find_by_id(doctor_id)
+    if not doctor:
+        raise _service_error("USER_NOT_FOUND", 404)
+    balance = float(doctor.get("referralCredits") or 0)
+    if amt > balance + 1e-9:
+        raise _service_error("INSUFFICIENT_CREDITS", 400)
+
+    new_balance = round(balance - amt, 2)
+    updated = user_repository.update({**doctor, "referralCredits": new_balance}) or {**doctor, "referralCredits": new_balance}
+
+    ledger_entry = credit_ledger_repository.insert(
+        {
+            "doctorId": doctor_id,
+            "salesRepId": doctor.get("salesRepId"),
+            "orderId": order_id,
+            "amount": round(amt, 2),
+            "currency": "USD",
+            "direction": "debit",
+            "reason": "referral_credit_applied",
+            "description": f"Applied ${amt:.2f} referral credit to order {order_id}",
+            "firstOrderBonus": False,
+            "metadata": {"context": "checkout", "orderId": order_id},
+        }
+    )
+
+    return {"ledgerEntry": ledger_entry, "doctor": updated}
+
+
 def count_orders_for_doctor(doctor_id: str) -> int:
     return len(order_repository.find_by_user_id(doctor_id))
 

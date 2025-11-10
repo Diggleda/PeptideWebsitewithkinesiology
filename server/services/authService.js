@@ -11,9 +11,13 @@ const BCRYPT_REGEX = /^\$2[abxy]\$/;
 const sanitizeUser = (user) => {
   const {
     password,
+    passkeys,
     ...rest
   } = user;
-  return rest;
+  return {
+    ...rest,
+    hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
+  };
 };
 
 const createAuthToken = (payload) => jwt.sign(payload, env.jwtSecret, { expiresIn: '7d' });
@@ -215,4 +219,6 @@ module.exports = {
   checkEmail,
   getProfile,
   updateProfile,
+  sanitizeUser,
+  createAuthToken,
 };

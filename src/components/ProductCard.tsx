@@ -5,6 +5,23 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { ShoppingCart, Star, Info } from 'lucide-react';
 import { ProductImageCarousel } from './ProductImageCarousel';
 
+export interface ProductVariantAttribute {
+  name: string;
+  value: string;
+}
+
+export interface ProductVariant {
+  id: string;
+  label: string;
+  price: number;
+  originalPrice?: number;
+  sku?: string;
+  inStock: boolean;
+  attributes: ProductVariantAttribute[];
+  image?: string;
+  description?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -21,11 +38,15 @@ export interface Product {
   manufacturer: string;
   type?: string;
   description?: string;
+  variants?: ProductVariant[];
+  hasVariants?: boolean;
+  defaultVariantId?: string;
+  variantSummary?: string;
 }
 
 interface ProductCardProps {
   product: Product;
-  onAddToCart: (productId: string) => void;
+  onAddToCart: (productId: string, variantId?: string | null) => void;
   onViewDetails: (product: Product) => void;
   viewMode: 'grid' | 'list';
 }
@@ -35,6 +56,7 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   const discount = product.originalPrice 
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
     : 0;
+  const requiresVariantSelection = Boolean(product.variants?.length);
   const imageWrapperBase = 'flex h-full w-full items-center justify-center bg-white/85';
   const imageClasses = 'h-full w-full object-contain transition-transform duration-300';
   const hasMultipleImages = (product.images?.length ?? 0) > 1;
@@ -45,7 +67,15 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   };
 
   const triggerAddToCart = () => {
-    console.debug('[ProductCard] Add to cart button clicked', { productId: product.id, inStock: product.inStock });
+    console.debug('[ProductCard] Add to cart button clicked', {
+      productId: product.id,
+      inStock: product.inStock,
+      requiresVariantSelection,
+    });
+    if (requiresVariantSelection) {
+      onViewDetails(product);
+      return;
+    }
     onAddToCart(product.id);
   };
 
@@ -81,15 +111,23 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
   const priceDisplay = (
     <div className="flex items-center gap-2">
       {product.price > 0 ? (
-        <span className="text-lg font-semibold text-green-600">${product.price.toFixed(2)}</span>
+        <span className="text-lg font-semibold text-green-600">
+          {product.hasVariants ? 'From ' : ''}
+          ${product.price.toFixed(2)}
+        </span>
       ) : (
         <span className="text-sm font-medium text-[rgb(95,179,249)]">Request Pricing</span>
       )}
-      {product.price > 0 && product.originalPrice && (
+      {product.price > 0 && product.originalPrice && !product.hasVariants && (
         <span className="text-sm text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
       )}
     </div>
   );
+  const addButtonLabel = requiresVariantSelection
+    ? 'Select Options'
+    : product.inStock
+      ? 'Add to Cart'
+      : 'Out of Stock';
 
   if (isList) {
     return (
@@ -149,6 +187,11 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
               <span>{product.dosage}</span>
               <span>{product.manufacturer}</span>
             </div>
+            {product.variantSummary && (
+              <p className="text-xs text-gray-500 line-clamp-1">
+                Options: {product.variantSummary}
+              </p>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-2 pt-1 max-w-full">
               <Button
@@ -166,7 +209,7 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
                 className="flex-1 sm:flex-initial sm:min-w-[120px] glass-brand squircle-sm btn-hover-lighter"
               >
                 <ShoppingCart className="w-4 h-4 mr-2" />
-                {product.inStock ? 'Add to Cart' : 'Out of Stock'}
+                {addButtonLabel}
               </Button>
             </div>
           </div>
@@ -216,6 +259,11 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
             </h3>
             <p className="text-sm text-gray-600">{product.dosage}</p>
             <p className="text-xs text-gray-500">{product.manufacturer}</p>
+            {product.variantSummary && (
+              <p className="text-xs text-gray-500 line-clamp-1">
+                Options: {product.variantSummary}
+              </p>
+            )}
           </div>
 
           {ratingSummary}
@@ -243,7 +291,7 @@ export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: P
             className="w-full glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            {product.inStock ? 'Add' : 'Out of Stock'}
+            {addButtonLabel}
           </Button>
         </div>
       </CardFooter>

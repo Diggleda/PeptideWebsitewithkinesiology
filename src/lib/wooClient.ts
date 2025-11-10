@@ -104,4 +104,7 @@ export const listProducts = <T = unknown>(opts: QueryParams = {}) =>
 export const listCategories = <T = unknown>(opts: QueryParams = {}) =>
   wooGet<T>('products/categories', { per_page: 50, ...opts });
 
+export const listProductVariations = <T = unknown>(productId: number, opts: QueryParams = {}) =>
+  wooGet<T>(`products/${productId}/variations`, { per_page: 100, status: 'publish', ...opts });
+
 export type { QueryParams };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
@@ -8,9 +8,10 @@ import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil 
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
+import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 
 interface HeaderProps {
-  user: { name: string; role?: string | null; referralCode?: string | null; visits?: number } | null;
+  user: { name: string; role?: string | null; referralCode?: string | null; visits?: number; hasPasskeys?: boolean } | null;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout: () => void;
   cartItems: number;
@@ -40,15 +41,13 @@ export function Header({
   loginPromptToken,
   loginContext = null,
   showCartIconFallback = false,
-  onShowInfo
+  onShowInfo,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
   const elevatedShadow = '0 32px 60px -28px rgba(95, 179, 249, 0.55)';
   const logoHaloBackground = 'rgba(95, 179, 249, 0.08)';
   const [loginOpen, setLoginOpen] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [signupName, setSignupName] = useState('');
@@ -70,25 +69,89 @@ export function Header({
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
   const [localUser, setLocalUser] = useState(user);
+  const loginFormRef = useRef<HTMLFormElement | null>(null);
+  const loginEmailRef = useRef<HTMLInputElement | null>(null);
+  const loginPasswordRef = useRef<HTMLInputElement | null>(null);
+  const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
+  const applyPendingLoginPrefill = useCallback(() => {
+    const pending = pendingLoginPrefill.current;
+    if (pending.email !== undefined && loginEmailRef.current) {
+      loginEmailRef.current.value = pending.email;
+      pending.email = undefined;
+    }
+    if (pending.password !== undefined && loginPasswordRef.current) {
+      loginPasswordRef.current.value = pending.password;
+      pending.password = undefined;
+    }
+  }, []);
+  const queueLoginPrefill = useCallback(
+    (values: { email?: string; password?: string }) => {
+      if (values.email !== undefined) {
+        pendingLoginPrefill.current.email = values.email;
+      }
+      if (values.password !== undefined) {
+        pendingLoginPrefill.current.password = values.password;
+      }
+      applyPendingLoginPrefill();
+    },
+    [applyPendingLoginPrefill]
+  );
+  const credentialAutofillRequestInFlight = useRef(false);
+  const triggerCredentialAutofill = useCallback(async () => {
+    if (credentialAutofillRequestInFlight.current) {
+      return;
+    }
+    credentialAutofillRequestInFlight.current = true;
+    try {
+      const credential = await requestStoredPasswordCredential();
+      if (credential) {
+        queueLoginPrefill({
+          email: credential.id,
+          password: credential.password,
+        });
+      }
+    } finally {
+      credentialAutofillRequestInFlight.current = false;
+    }
+  }, [queueLoginPrefill]);
+  const handleLoginCredentialFocus = useCallback(() => {
+    if (!loginOpen || authMode !== 'login') {
+      return;
+    }
+    void triggerCredentialAutofill();
+  }, [triggerCredentialAutofill, loginOpen, authMode]);
   useEffect(() => { setLocalUser(user); }, [user]);
+  useEffect(() => {
+    if (!loginOpen || authMode !== 'login') {
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      applyPendingLoginPrefill();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loginOpen, authMode, applyPendingLoginPrefill]);
   const headerDisplayName = localUser
     ? user.role === 'sales_rep'
       ? `Admin: ${localUser.name}`
       : localUser.name
     : '';
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
 
     setLoginError('');
     setSignupError('');
 
-    const result = await onLogin(email, password);
+    const formElement = event.currentTarget;
+    const emailValue = loginEmailRef.current?.value ?? '';
+    const passwordValue = loginPasswordRef.current?.value ?? '';
+
+    const result = await onLogin(emailValue, passwordValue);
 
     if (result.status === 'success') {
+      queueLoginPrefill({ email: '', password: '' });
+      formElement.reset();
       setLoginOpen(false);
-      setEmail('');
-      setPassword('');
       setAuthMode('login');
       setSignupName('');
       setSignupSuffix('');
@@ -117,7 +180,7 @@ export function Header({
 
     if (result.status === 'invalid_password') {
       setLoginError('Incorrect password. Please try again.');
-      setPassword('');
+      queueLoginPrefill({ password: '' });
       setAuthMode('login');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
@@ -129,10 +192,10 @@ export function Header({
       setLoginError('');
       setSignupError('We couldn\'t find that email. Please create your account below.');
       setAuthMode('signup');
-      setSignupEmail(email);
+      setSignupEmail(emailValue);
       setSignupSuffix('');
-      setSignupPassword(password);
-      setSignupConfirmPassword(password);
+      setSignupPassword(passwordValue);
+      setSignupConfirmPassword(passwordValue);
       setSignupCode('');
       setShowLoginPassword(false);
       setShowSignupPassword(false);
@@ -162,6 +225,7 @@ export function Header({
     setSignupPassword('');
     setSignupConfirmPassword('');
     setSignupCode('');
+    queueLoginPrefill({ email: '', password: '' });
     setShowLoginPassword(false);
     setShowSignupPassword(false);
     setShowSignupConfirmPassword(false);
@@ -256,13 +320,14 @@ export function Header({
     };
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSearch(searchQuery);
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setMobileSearchOpen(false);
     }
   };
+
 
   const handleSearchChange = (value: string) => {
     console.debug('[Header] Search change', { value });
@@ -274,7 +339,7 @@ export function Header({
     setMobileSearchOpen((prev) => !prev);
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fullName = signupSuffix ? `${signupSuffix} ${signupName}`.trim() : signupName;
 
@@ -317,8 +382,7 @@ export function Header({
       setSignupError('');
       setLoginError('An account with this email already exists. Please log in.');
       setAuthMode('login');
-      setEmail(details.email);
-      setPassword('');
+      queueLoginPrefill({ email: details.email, password: '' });
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
@@ -333,8 +397,7 @@ export function Header({
       setSignupError('');
       setLoginError('Incorrect password. Please try again.');
       setAuthMode('login');
-      setEmail(details.email);
-      setPassword('');
+      queueLoginPrefill({ email: details.email, password: '' });
       setSignupSuffix('');
       setSignupPassword('');
       setSignupConfirmPassword('');
@@ -648,16 +711,20 @@ export function Header({
           </DialogHeader>
           {authMode === 'login' ? (
             <div className="space-y-5">
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form ref={loginFormRef} autoComplete="on" onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-3">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="login-username">Email</Label>
                   <Input
-                    id="email"
+                    ref={loginEmailRef}
+                    id="login-username"
                     name="username"
-                    autoComplete="username"
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="username"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onFocus={handleLoginCredentialFocus}
                     className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
@@ -665,15 +732,17 @@ export function Header({
                 </div>
                 {/* Login password */}
                 <div className="space-y-3">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="login-password">Password</Label>
                   <div className="relative mt-1">
                     <Input
-                      id="password"
+                      ref={loginPasswordRef}
+                      id="login-password"
                       name="password"
                       autoComplete="current-password"
                       type={showLoginPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      autoCorrect="off"
+                      spellCheck={false}
+                      onFocus={handleLoginCredentialFocus}
                       className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required

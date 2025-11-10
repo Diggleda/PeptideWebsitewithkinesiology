@@ -1,3 +1,5 @@
+import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
+
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
 
@@ -21,6 +23,16 @@ const getAuthToken = () => {
   }
 
   return localStorage.getItem('auth_token');
+};
+
+const persistAuthToken = (token: string) => {
+  if (!token) return;
+  localStorage.setItem('auth_token', token);
+  try {
+    sessionStorage.setItem('auth_token', token);
+  } catch {
+    // Ignore sessionStorage errors (Safari private mode, etc.)
+  }
 };
 
 // Helper function to make authenticated requests
@@ -127,13 +139,7 @@ export const authAPI = {
       }),
     });
 
-    // Store token
-    localStorage.setItem('auth_token', data.token);
-    try {
-      sessionStorage.setItem('auth_token', data.token);
-    } catch {
-      // Ignore sessionStorage errors (Safari private mode, etc.)
-    }
+    persistAuthToken(data.token);
     return data.user;
   },
 
@@ -150,13 +156,7 @@ export const authAPI = {
       body: JSON.stringify({ email, password }),
     });
 
-    // Store token
-    localStorage.setItem('auth_token', data.token);
-    try {
-      sessionStorage.setItem('auth_token', data.token);
-    } catch {
-      // sessionStorage may fail silently; fall back to localStorage-only persistence
-    }
+    persistAuthToken(data.token);
     return data.user;
   },
 
@@ -197,6 +197,63 @@ export const authAPI = {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
+  },
+
+  passkeys: {
+    getRegistrationOptions: async (): Promise<{
+      requestId: string;
+      publicKey: PublicKeyCredentialCreationOptionsJSON;
+    }> => {
+      return fetchWithAuth(`${API_BASE_URL}/auth/passkeys/register/options`, {
+        method: 'POST',
+      });
+    },
+    completeRegistration: async (payload: {
+      requestId: string;
+      attestationResponse: RegistrationResponseJSON;
+      label?: string;
+    }) => {
+      return fetchWithAuth(`${API_BASE_URL}/auth/passkeys/register/verify`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    getAuthenticationOptions: async (email?: string): Promise<{
+      requestId: string;
+      publicKey: PublicKeyCredentialRequestOptionsJSON;
+    }> => {
+      const response = await fetch(`${API_BASE_URL}/auth/passkeys/login/options`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'PASSKEY_OPTIONS_FAILED');
+      }
+      return response.json();
+    },
+    completeAuthentication: async (payload: {
+      requestId: string;
+      assertionResponse: AuthenticationResponseJSON;
+    }) => {
+      const response = await fetch(`${API_BASE_URL}/auth/passkeys/login/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'PASSKEY_AUTH_FAILED');
+      }
+      const data = await response.json();
+      persistAuthToken(data.token);
+      return data.user;
+    },
   },
 };
 

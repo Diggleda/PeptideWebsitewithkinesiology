@@ -38,6 +38,9 @@ const ensureUserDefaults = (user) => {
   if (!Object.prototype.hasOwnProperty.call(normalized, 'npiLastVerifiedAt')) {
     normalized.npiLastVerifiedAt = null;
   }
+  if (!Array.isArray(normalized.passkeys)) {
+    normalized.passkeys = [];
+  }
   return normalized;
 };
 
@@ -84,6 +87,15 @@ const findByNpiNumber = (npiNumber) => {
   return loadUsers().find((user) => normalizeNpiNumber(user.npiNumber) === normalized) || null;
 };
 
+const findByPasskeyId = (credentialId) => {
+  if (!credentialId) {
+    return null;
+  }
+  const users = loadUsers();
+  return users.find((user) => Array.isArray(user.passkeys)
+    && user.passkeys.some((pk) => pk.credentialID === credentialId)) || null;
+};
+
 const insert = (user) => {
   const users = loadUsers();
   const candidate = ensureUserDefaults(user);
@@ -124,4 +136,5 @@ module.exports = {
   findById,
   findByReferralCode,
   findByNpiNumber,
+  findByPasskeyId,
 };

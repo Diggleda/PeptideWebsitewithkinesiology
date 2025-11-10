@@ -18,10 +18,17 @@ class IntegrationError(RuntimeError):
         self.response = response
 
 
+def _strip(s: Optional[str]) -> str:
+    return (s or "").strip()
+
+
 def is_configured() -> bool:
     config = get_config()
     data = config.woo_commerce
-    return bool(data.get("store_url") and data.get("consumer_key") and data.get("consumer_secret"))
+    store = _strip(data.get("store_url"))
+    ck = _strip(data.get("consumer_key"))
+    cs = _strip(data.get("consumer_secret"))
+    return bool(store and ck and cs)
 
 
 def build_line_items(items):
@@ -43,11 +50,24 @@ def build_line_items(items):
 
 
 def build_order_payload(order: Dict, customer: Dict) -> Dict:
+    # Optional referral credit applied at checkout (negative fee)
+    applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
+    fee_lines = []
+    if applied_credit > 0:
+        fee_lines.append(
+            {
+                "name": "Referral credit",
+                "total": f"-{applied_credit:.2f}",
+                "tax_status": "none",
+            }
+        )
+
     return {
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
         "line_items": build_line_items(order.get("items")),
+        "fee_lines": fee_lines,
         "meta_data": [
             {"key": "protixa_order_id", "value": order.get("id")},
             {"key": "protixa_total", "value": order.get("total")},
@@ -72,15 +92,18 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
         logger.info("WooCommerce auto-submit disabled; draft generated", extra={"draftId": draft_id, "orderId": order.get("id")})
         return {"status": "pending", "reason": "auto_submit_disabled", "payload": payload, "draftId": draft_id}
 
-    base_url = config.woo_commerce.get("store_url", "").rstrip("/")
-    api_version = config.woo_commerce.get("api_version", "wc/v3").lstrip("/")
+    base_url = _strip(config.woo_commerce.get("store_url", "")).rstrip("/")
+    api_version = _strip(config.woo_commerce.get("api_version", "wc/v3")).lstrip("/")
     url = f"{base_url}/wp-json/{api_version}/orders"
 
     try:
         response = requests.post(
             url,
             json=payload,
-            auth=HTTPBasicAuth(config.woo_commerce["consumer_key"], config.woo_commerce["consumer_secret"]),
+            auth=HTTPBasicAuth(
+                _strip(config.woo_commerce.get("consumer_key")),
+                _strip(config.woo_commerce.get("consumer_secret")),
+            ),
             timeout=10,
         )
         response.raise_for_status()
@@ -95,6 +118,18 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
         raise IntegrationError("WooCommerce order creation failed", response=data) from exc
 
     body = response.json()
+    # Attempt to derive a payment URL that will present WooCommerce checkout
+    payment_url = body.get("payment_url")
+    try:
+        # Fallback: construct order-pay URL
+        if not payment_url:
+            order_id = body.get("id")
+            order_key = body.get("order_key") or body.get("key")
+            payment_url = f"{base_url}/checkout/order-pay/{order_id}/?pay_for_order=true"
+            if order_key:
+                payment_url += f"&key={order_key}"
+    except Exception:
+        payment_url = None
     return {
         "status": "success",
         "payload": payload,
@@ -102,6 +137,7 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
             "id": body.get("id"),
             "number": body.get("number"),
             "status": body.get("status"),
+            "paymentUrl": payment_url,
         },
     }
 
@@ -167,8 +203,8 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
         raise IntegrationError("WooCommerce is not configured")
 
     config = get_config()
-    base_url = (config.woo_commerce.get("store_url") or "").rstrip("/")
-    api_version = (config.woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    base_url = _strip(config.woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(config.woo_commerce.get("api_version") or "wc/v3").lstrip("/")
     normalized = endpoint.lstrip("/")
     url = f"{base_url}/wp-json/{api_version}/{normalized}"
 
@@ -176,7 +212,10 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
         response = requests.get(
             url,
             params=_sanitize_params(params or {}),
-            auth=HTTPBasicAuth(config.woo_commerce["consumer_key"], config.woo_commerce["consumer_secret"]),
+            auth=HTTPBasicAuth(
+                _strip(config.woo_commerce.get("consumer_key")),
+                _strip(config.woo_commerce.get("consumer_secret")),
+            ),
             timeout=10,
         )
         response.raise_for_status()

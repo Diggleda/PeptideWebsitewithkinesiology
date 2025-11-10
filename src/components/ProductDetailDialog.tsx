@@ -18,7 +18,7 @@ interface ProductDetailDialogProps {
   product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (productId: string, quantity: number, note?: string) => void;
+  onAddToCart: (productId: string, quantity: number, note?: string, variantId?: string | null) => void;
 }
 
 export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: ProductDetailDialogProps) {
@@ -27,6 +27,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
   const [quantityDescription, setQuantityDescription] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'specs'>('overview');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
   console.debug('[ProductDetailDialog] Render', { isOpen, hasProduct: Boolean(product) });
 
@@ -37,6 +38,12 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
     ].filter(tab => tab.show)
   ), [product?.description, product?.id]);
 
+  const variantOptions = product?.variants ?? [];
+  const showVariantSelector = variantOptions.length > 0;
+  const activeVariant = showVariantSelector
+    ? variantOptions.find((variant) => variant.id === selectedVariantId) ?? variantOptions[0] ?? null
+    : null;
+
   useEffect(() => {
     if (isOpen) {
       setQuantity(1);
@@ -45,6 +52,12 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
       const defaultTab = (tabs[0]?.id ?? 'specs') as 'overview' | 'specs';
       setActiveTab(defaultTab);
       setSelectedImageIndex(0);
+      const defaultVariantId =
+        product?.defaultVariantId ??
+        product?.variants?.find((variant) => variant.inStock)?.id ??
+        product?.variants?.[0]?.id ??
+        null;
+      setSelectedVariantId(defaultVariantId);
     }
   }, [isOpen, product, tabs]);
 
@@ -75,16 +88,47 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
 
   const handleAddToCart = () => {
     if (!product) return;
+    if (showVariantSelector && !activeVariant) {
+      console.warn('[ProductDetailDialog] Variant selection required before adding to cart');
+      return;
+    }
     const note = quantityDescription.trim();
-    console.debug('[ProductDetailDialog] Add to cart', { productId: product.id, quantity, note });
-    onAddToCart(product.id, quantity, note ? note : undefined);
+    console.debug('[ProductDetailDialog] Add to cart', {
+      productId: product.id,
+      quantity,
+      note,
+      variantId: activeVariant?.id,
+    });
+    onAddToCart(product.id, quantity, note ? note : undefined, activeVariant?.id ?? null);
     onClose();
   };
 
-  const images = product?.images.length ? product.images : (product ? [product.image] : []);
-  const discount = product?.originalPrice
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+  const images = useMemo(() => {
+    if (!product) return [];
+    const baseImages = product.images.length > 0 ? product.images : [product.image];
+    if (activeVariant?.image) {
+      const seen = new Set<string>();
+      const ordered = [activeVariant.image, ...baseImages];
+      return ordered.filter((src) => {
+        if (!src || seen.has(src)) {
+          return false;
+        }
+        seen.add(src);
+        return true;
+      });
+    }
+    return baseImages;
+  }, [product, activeVariant]);
+
+  const displayPrice = activeVariant?.price ?? product?.price ?? 0;
+  const displayOriginalPrice = activeVariant?.originalPrice ?? (!product?.hasVariants ? product?.originalPrice : undefined);
+  const discount = displayOriginalPrice
+    ? Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)
     : 0;
+  const isInStock = showVariantSelector ? Boolean(activeVariant?.inStock) : Boolean(product?.inStock);
+  const skuDisplay = showVariantSelector
+    ? (activeVariant?.sku ? `SKU ${activeVariant.sku}` : product?.dosage)
+    : product?.dosage;
 
   useEffect(() => {
     if (!tabs.some(tab => tab.id === activeTab)) {
@@ -222,7 +266,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                           </div>
                           <div>
                             <dt className="text-xs font-medium text-slate-600 uppercase tracking-wide">Dosage</dt>
-                            <dd className="mt-1 text-sm font-semibold text-slate-900">{product.dosage}</dd>
+                            <dd className="mt-1 text-sm font-semibold text-slate-900">{skuDisplay}</dd>
                           </div>
                           {product.type && (
                             <div>
@@ -250,7 +294,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                       <Pill className="w-4 h-4" />
                       <span className="text-xs font-medium uppercase tracking-wide">Dosage</span>
                     </div>
-                    <p className="text-sm font-semibold text-slate-900">{product.dosage}</p>
+                    <p className="text-sm font-semibold text-slate-900">{skuDisplay}</p>
                   </div>
 
                   {product.type && (
@@ -271,13 +315,15 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                   {/* Price Section */}
                   <div className="space-y-3 pb-5 border-b border-[var(--brand-glass-border-1)]">
                     <div className="flex items-baseline gap-3">
-                      {product.price > 0 ? (
+                      {displayPrice > 0 ? (
                         <>
-                          <span className="text-4xl font-bold text-green-600">${product.price.toFixed(2)}</span>
-                          {product.originalPrice && (
+                          <span className="text-4xl font-bold text-green-600">${displayPrice.toFixed(2)}</span>
+                          {displayOriginalPrice && (
                             <div className="flex flex-col">
-                              <span className="text-lg text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
-                              <span className="text-xs font-semibold text-red-600">Save ${(product.originalPrice - product.price).toFixed(2)}</span>
+                              <span className="text-lg text-gray-500 line-through">${displayOriginalPrice.toFixed(2)}</span>
+                              <span className="text-xs font-semibold text-red-600">
+                                Save ${(displayOriginalPrice - displayPrice).toFixed(2)}
+                              </span>
                             </div>
                           )}
                         </>
@@ -285,12 +331,53 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                         <span className="text-lg font-semibold text-green-600">Contact for pricing</span>
                       )}
                     </div>
-                    {product.price > 0 && quantity > 1 && (
+                    {displayPrice > 0 && quantity > 1 && (
                       <div className="text-sm text-slate-600">
-                        Total: <span className="text-lg font-bold text-green-600">${(product.price * quantity).toFixed(2)}</span>
+                        Total:{' '}
+                        <span className="text-lg font-bold text-green-600">
+                          ${(displayPrice * quantity).toFixed(2)}
+                        </span>
                       </div>
                     )}
                   </div>
+
+                  {/* Variant Selector */}
+                  {showVariantSelector && (
+                    <div className="space-y-3 pb-5 border-b border-[var(--brand-glass-border-1)]">
+                      <Label className="text-sm font-semibold">Select an option</Label>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {variantOptions.map((variant) => {
+                          const isActive = variant.id === activeVariant?.id;
+                          const attributesSummary = variant.attributes
+                            .map((attr) => attr.value || attr.name)
+                            .filter(Boolean)
+                            .join(' • ');
+                          return (
+                            <Button
+                              key={variant.id}
+                              type="button"
+                              variant={isActive ? 'default' : 'outline'}
+                              onClick={() => setSelectedVariantId(variant.id)}
+                              disabled={!variant.inStock}
+                              className={`justify-between text-left ${!variant.inStock ? 'opacity-60' : ''}`}
+                            >
+                              <span className="flex flex-col text-left">
+                                <span className="font-semibold">{variant.label}</span>
+                                {attributesSummary && (
+                                  <span className="text-xs text-slate-500">
+                                    {attributesSummary}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-semibold">
+                                {variant.price > 0 ? `$${variant.price.toFixed(2)}` : '—'}
+                              </span>
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Quantity Selector */}
                   <div className="space-y-3">
@@ -343,11 +430,11 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                   {/* Add to Cart Button */}
                   <Button
                     onClick={handleAddToCart}
-                    disabled={!product.inStock}
+                    disabled={!isInStock}
                     className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ShoppingCart className="mr-2 h-5 w-5" />
-                    {product.inStock ? 'Add to Cart' : 'Out of Stock'}
+                    {isInStock ? 'Add to Cart' : 'Out of Stock'}
                   </Button>
                 </div>
               </div>

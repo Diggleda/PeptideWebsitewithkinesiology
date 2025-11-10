@@ -6,15 +6,17 @@ import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
 import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
-import { Product } from './ProductCard';
+import { Product, ProductVariant } from './ProductCard';
 import { toast } from 'sonner@2.0.3';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 
 interface CartItem {
+  id: string;
   product: Product;
   quantity: number;
   note?: string;
+  variant?: ProductVariant | null;
 }
 
 interface CheckoutModalProps {
@@ -22,8 +24,8 @@ interface CheckoutModalProps {
   onClose: () => void;
   cartItems: CartItem[];
   onCheckout: (referralCode?: string) => Promise<void> | void;
-  onUpdateItemQuantity: (productId: string, quantity: number) => void;
-  onRemoveItem: (productId: string) => void;
+  onUpdateItemQuantity: (cartItemId: string, quantity: number) => void;
+  onRemoveItem: (cartItemId: string) => void;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
 }
@@ -42,7 +44,10 @@ export function CheckoutModal({
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  const subtotal = cartItems.reduce((sum, item) => {
+    const unitPrice = item.variant?.price ?? item.product.price;
+    return sum + (unitPrice * item.quantity);
+  }, 0);
   const total = subtotal;
   const canCheckout = isAuthenticated;
   const checkoutButtonLabel = canCheckout
@@ -54,7 +59,12 @@ export function CheckoutModal({
   const handleCheckout = async () => {
     console.debug('[CheckoutModal] Checkout start', {
       total,
-      items: cartItems.map((item) => ({ id: item.product.id, qty: item.quantity }))
+      items: cartItems.map((item) => ({
+        id: item.id,
+        productId: item.product.id,
+        variantId: item.variant?.id,
+        qty: item.quantity
+      }))
     });
     setIsProcessing(true);
     try {
@@ -86,39 +96,39 @@ export function CheckoutModal({
     }
   };
 
-  const handleIncreaseQuantity = (productId: string, currentQuantity: number) => {
+  const handleIncreaseQuantity = (cartItemId: string, currentQuantity: number) => {
     const next = Math.min(999, currentQuantity + 1);
-    setQuantityInputs((prev) => ({ ...prev, [productId]: String(next) }));
-    onUpdateItemQuantity(productId, next);
+    setQuantityInputs((prev) => ({ ...prev, [cartItemId]: String(next) }));
+    onUpdateItemQuantity(cartItemId, next);
   };
 
-  const handleDecreaseQuantity = (productId: string, currentQuantity: number) => {
+  const handleDecreaseQuantity = (cartItemId: string, currentQuantity: number) => {
     const next = Math.max(1, currentQuantity - 1);
-    setQuantityInputs((prev) => ({ ...prev, [productId]: String(next) }));
-    onUpdateItemQuantity(productId, next);
+    setQuantityInputs((prev) => ({ ...prev, [cartItemId]: String(next) }));
+    onUpdateItemQuantity(cartItemId, next);
   };
 
-  const handleQuantityInputChange = (productId: string, value: string) => {
+  const handleQuantityInputChange = (cartItemId: string, value: string) => {
     const digits = value.replace(/[^0-9]/g, '');
-    setQuantityInputs((prev) => ({ ...prev, [productId]: digits }));
+    setQuantityInputs((prev) => ({ ...prev, [cartItemId]: digits }));
     if (digits) {
       const normalized = Math.max(1, Math.min(999, parseInt(digits, 10)));
-      onUpdateItemQuantity(productId, normalized);
+      onUpdateItemQuantity(cartItemId, normalized);
     }
   };
 
-  const handleQuantityInputBlur = (productId: string) => {
-    if (!quantityInputs[productId]) {
-      setQuantityInputs((prev) => ({ ...prev, [productId]: '1' }));
-      onUpdateItemQuantity(productId, 1);
+  const handleQuantityInputBlur = (cartItemId: string) => {
+    if (!quantityInputs[cartItemId]) {
+      setQuantityInputs((prev) => ({ ...prev, [cartItemId]: '1' }));
+      onUpdateItemQuantity(cartItemId, 1);
     }
   };
 
-  const handleRemoveItem = (productId: string) => {
-    console.debug('[CheckoutModal] Remove item request', { productId });
-    onRemoveItem(productId);
+  const handleRemoveItem = (cartItemId: string) => {
+    console.debug('[CheckoutModal] Remove item request', { cartItemId });
+    onRemoveItem(cartItemId);
     setQuantityInputs((prev) => {
-      const { [productId]: _removed, ...rest } = prev;
+      const { [cartItemId]: _removed, ...rest } = prev;
       return rest;
     });
   };
@@ -140,7 +150,7 @@ export function CheckoutModal({
 
     const next: Record<string, string> = {};
     cartItems.forEach((item) => {
-      next[item.product.id] = String(item.quantity);
+      next[item.id] = String(item.quantity);
     });
     setQuantityInputs(next);
   }, [cartItems]);
@@ -200,43 +210,51 @@ export function CheckoutModal({
               <div className="space-y-4">
                 <h3>Order Summary</h3>
                 {cartItems.map((item) => {
-                  const primaryImage = item.product.images[0] ?? item.product.image;
+                  const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
+                  const carouselImages = item.variant?.image
+                    ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
+                    : baseImages;
+                  const unitPrice = item.variant?.price ?? item.product.price;
+                  const lineTotal = unitPrice * item.quantity;
                   return (
-                    <Card key={item.product.id} className="glass squircle-sm">
+                    <Card key={item.id} className="glass squircle-sm">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-center gap-4">
                             <div className="w-24 h-24 flex-shrink-0">
                               <ProductImageCarousel
-                                images={item.product.images.length > 0 ? item.product.images : [primaryImage]}
+                                images={carouselImages}
                                 alt={item.product.name}
                                 className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2"
                                 imageClassName="h-full w-full object-contain"
                                 style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.75vw, 0.7rem)' } as CSSProperties}
-                                showDots={item.product.images.length > 1}
+                                showDots={carouselImages.length > 1}
                                 showArrows={false}
                               />
                             </div>
                             <div>
                               <h4 className="line-clamp-1">{item.product.name}</h4>
                               <p className="text-sm text-gray-600">{item.product.dosage}</p>
+                              {item.variant && (
+                                <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
+                              )}
                               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                <span className="text-green-600 font-bold">${item.product.price.toFixed(2)}</span>
+                                <span className="text-green-600 font-bold">${unitPrice.toFixed(2)}</span>
                                 <div className="flex items-center gap-2">
                                   <Button
                                     type="button"
                                     variant="outline"
                                     size="icon"
-                                    onClick={() => handleDecreaseQuantity(item.product.id, item.quantity)}
+                                    onClick={() => handleDecreaseQuantity(item.id, item.quantity)}
                                     disabled={item.quantity <= 1}
                                     className="squircle-sm bg-slate-50 border-2"
                                   >
                                     <Minus className="h-4 w-4" />
                                   </Button>
                                   <Input
-                                    value={quantityInputs[item.product.id] ?? String(item.quantity)}
-                                    onChange={(event) => handleQuantityInputChange(item.product.id, event.target.value)}
-                                    onBlur={() => handleQuantityInputBlur(item.product.id)}
+                                    value={quantityInputs[item.id] ?? String(item.quantity)}
+                                    onChange={(event) => handleQuantityInputChange(item.id, event.target.value)}
+                                    onBlur={() => handleQuantityInputBlur(item.id)}
                                     inputMode="numeric"
                                     pattern="[0-9]*"
                                     className="w-16 text-center squircle-sm bg-slate-50 border-2"
@@ -245,7 +263,7 @@ export function CheckoutModal({
                                     type="button"
                                     variant="outline"
                                     size="icon"
-                                    onClick={() => handleIncreaseQuantity(item.product.id, item.quantity)}
+                                    onClick={() => handleIncreaseQuantity(item.id, item.quantity)}
                                     className="squircle-sm bg-slate-50 border-2"
                                   >
                                     <Plus className="h-4 w-4" />
@@ -258,12 +276,12 @@ export function CheckoutModal({
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-3">
-                            <p className="font-bold">${(item.product.price * item.quantity).toFixed(2)}</p>
+                            <p className="font-bold">${lineTotal.toFixed(2)}</p>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleRemoveItem(item.product.id)}
+                              onClick={() => handleRemoveItem(item.id)}
                               className="text-red-500 hover:text-red-600"
                             >
                               <Trash2 className="h-4 w-4" />

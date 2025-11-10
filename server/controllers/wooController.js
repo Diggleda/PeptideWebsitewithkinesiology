@@ -1,7 +1,10 @@
 const wooCommerceClient = require('../integration/wooCommerceClient');
 
 const allowedExactEndpoints = new Set(['products', 'products/categories']);
-const allowedPatternEndpoints = [/^products\/[A-Za-z0-9_-]+$/];
+const allowedPatternEndpoints = [
+  /^products\/[A-Za-z0-9_-]+$/,
+  /^products\/[A-Za-z0-9_-]+\/variations$/,
+];
 
 const normalizeEndpoint = (value) => value.replace(/^\/+|\/+$/g, '');
 

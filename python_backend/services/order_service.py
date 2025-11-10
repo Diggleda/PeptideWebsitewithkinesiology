@@ -41,6 +41,12 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
         "createdAt": now,
     }
 
+    # Auto-apply available referral credits to this order
+    available_credit = float(user.get("referralCredits") or 0)
+    if available_credit > 0 and float(total) > 0:
+        applied = min(available_credit, float(total))
+        order["appliedReferralCredit"] = round(applied, 2)
+
     referral_effects = referral_service.handle_order_referral_effects(
         purchaser_id=user_id,
         referral_code=normalized_referral,
@@ -71,6 +77,12 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
 
     try:
         integrations["wooCommerce"] = woo_commerce.forward_order(order, user)
+        # On successful Woo order creation, finalize referral credit deduction
+        if order.get("appliedReferralCredit"):
+            try:
+                referral_service.apply_referral_credit(user_id, float(order["appliedReferralCredit"]), order["id"])
+            except Exception as credit_exc:  # best effort; don't fail checkout
+                logger.error("Failed to apply referral credit", exc_info=True, extra={"orderId": order["id"]})
     except Exception as exc:  # pragma: no cover - network error path
         logger.error("WooCommerce integration failed", exc_info=True, extra={"orderId": order["id"]})
         integrations["wooCommerce"] = {

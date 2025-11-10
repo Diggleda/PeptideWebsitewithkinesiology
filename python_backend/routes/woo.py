@@ -25,3 +25,11 @@ def list_categories():
 
     return handle_action(action)
 
+
+@blueprint.get("/products/<int:product_id>/variations")
+def list_product_variations(product_id: int):
+    def action():
+        endpoint = f"products/{product_id}/variations"
+        return woo_commerce.fetch_catalog(endpoint, request.args)
+
+    return handle_action(action)

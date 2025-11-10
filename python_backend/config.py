@@ -85,6 +85,10 @@ def load_config() -> AppConfig:
     if cors_allow_list == ["*"]:
         cors_allow_list = ["*"]
 
+    # helper to safely strip whitespace
+    def _s(val: Optional[str]) -> str:
+        return (val or "").strip()
+
     config = AppConfig(
         node_env=node_env,
         port=_to_int(os.environ.get("PORT"), 3001),
@@ -95,10 +99,10 @@ def load_config() -> AppConfig:
         backend_build=os.environ.get("BACKEND_BUILD", "2024.10.01-02"),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
-            "store_url": os.environ.get("WC_STORE_URL", ""),
-            "consumer_key": os.environ.get("WC_CONSUMER_KEY", ""),
-            "consumer_secret": os.environ.get("WC_CONSUMER_SECRET", ""),
-            "api_version": os.environ.get("WC_API_VERSION", "wc/v3"),
+            "store_url": _s(os.environ.get("WC_STORE_URL")),
+            "consumer_key": _s(os.environ.get("WC_CONSUMER_KEY")),
+            "consumer_secret": _s(os.environ.get("WC_CONSUMER_SECRET")),
+            "api_version": _s(os.environ.get("WC_API_VERSION") or "wc/v3"),
             "auto_submit_orders": os.environ.get("WC_AUTO_SUBMIT_ORDERS", "").lower() == "true",
         },
         ship_engine={
