@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, FormEvent, ReactNode } from 'react';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
-import { ProductCard, Product } from './components/ProductCard';
+import { ProductCard, Product, ProductVariant } from './components/ProductCard';
 import { CategoryFilter } from './components/CategoryFilter';
 import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
@@ -9,18 +9,20 @@ import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
-import { peptideProducts, peptideCategories, peptideTypes } from './data/peptideData';
 import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
 import { LegalFooter } from './components/LegalFooter';
 import { AuthActionResult } from './types/auth';
 import { DoctorCreditSummary, ReferralRecord, SalesRepDashboard } from './types/referral';
-import { listProducts, listCategories } from './lib/wooClient';
+import { listProducts, listCategories, listProductVariations } from './lib/wooClient';
+import { beginPasskeyAuthentication, beginPasskeyRegistration, detectConditionalPasskeySupport, detectPlatformPasskeySupport } from './lib/passkeys';
+import { requestStoredPasswordCredential, storePasswordCredential } from './lib/passwordCredential';
 
 interface User {
   id: string;
   name: string;
   email: string;
+  hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
   npiLastVerifiedAt?: string | null;
@@ -47,9 +49,11 @@ interface User {
 }
 
 interface CartItem {
+  id: string;
   product: Product;
   quantity: number;
   note?: string;
+  variant?: ProductVariant | null;
 }
 
 interface FilterState {
@@ -61,6 +65,19 @@ interface FilterState {
 type WooImage = { src?: string | null };
 type WooCategory = { id: number; name: string };
 type WooMeta = { key?: string | null; value?: string | null };
+type WooAttribute = { id?: number; name?: string | null; option?: string | null };
+type WooVariationAttribute = { id?: number; name?: string | null; option?: string | null };
+
+interface WooVariation {
+  id: number;
+  price?: string;
+  regular_price?: string;
+  stock_status?: string;
+  image?: WooImage | null;
+  attributes?: WooVariationAttribute[];
+  description?: string | null;
+  sku?: string | null;
+}
 
 interface WooProduct {
   id: number;
@@ -77,6 +94,9 @@ interface WooProduct {
   short_description?: string;
   description?: string;
   meta_data?: WooMeta[];
+  attributes?: WooAttribute[];
+  default_attributes?: WooVariationAttribute[];
+  variations?: number[];
 }
 
 interface PeptideNewsItem {
@@ -156,11 +176,10 @@ const describeNpiErrorMessage = (code?: string): string => {
   }
 };
 
-const mapWooProductToProduct = (product: WooProduct): Product => {
+const mapWooProductToProduct = (product: WooProduct, productVariations: WooVariation[] = []): Product => {
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
     .filter((src): src is string => Boolean(src));
-
   const categoryName = product.categories?.[0]?.name ?? 'WooCommerce';
 
   const parsePrice = (value?: string) => {
@@ -171,28 +190,143 @@ const mapWooProductToProduct = (product: WooProduct): Product => {
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
-  const price = parsePrice(product.price) ?? parsePrice(product.regular_price) ?? 0;
-  const originalPrice = parsePrice(product.regular_price);
+  const normalizeAttributes = (attributes?: WooVariationAttribute[]) =>
+    (attributes ?? [])
+      .map((attr) => {
+        const name = stripHtml(attr?.name ?? '').trim();
+        const value = stripHtml(attr?.option ?? '').trim();
+        if (!name && !value) {
+          return null;
+        }
+        return {
+          name: name || value || 'Option',
+          value: value || name || '',
+        };
+      })
+      .filter(
+        (attr): attr is { name: string; value: string } =>
+          Boolean(attr && (attr.name || attr.value)),
+      );
+
+  const variantList: ProductVariant[] = (productVariations ?? [])
+    .map((variation) => {
+      const parsedVariantPrice = parsePrice(variation.price) ?? parsePrice(variation.regular_price);
+      const fallbackPrice = parsePrice(product.price) ?? parsePrice(product.regular_price) ?? 0;
+      const price = parsedVariantPrice ?? fallbackPrice;
+      const originalPrice = parsePrice(variation.regular_price);
+      const attributes = normalizeAttributes(variation.attributes);
+      const label =
+        attributes.length > 0
+          ? attributes.map((attr) => attr.value || attr.name).filter(Boolean).join(' • ')
+          : variation.sku
+            ? variation.sku
+            : `Variant ${variation.id}`;
+      const variantId = `woo-variation-${variation.id}`;
+      return {
+        id: variantId,
+        label,
+        price,
+        originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
+        sku: variation.sku ?? undefined,
+        inStock: (variation.stock_status ?? '').toLowerCase() !== 'outofstock',
+        attributes,
+        image: variation.image?.src ?? undefined,
+        description: stripHtml(variation.description ?? '') || undefined,
+      };
+    })
+    .filter((variant): variant is ProductVariant => Number.isFinite(variant.price));
+
+  const hasVariants = variantList.length > 0;
+  const variantPrices = variantList
+    .map((variant) => variant.price)
+    .filter((value): value is number => Number.isFinite(value));
+  const minVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : undefined;
+  const basePrice = parsePrice(product.price) ?? parsePrice(product.regular_price) ?? 0;
+  const price = hasVariants ? (minVariantPrice ?? basePrice) : basePrice;
+  const baseOriginalPrice = parsePrice(product.regular_price);
+  const originalPrice = !hasVariants && baseOriginalPrice && baseOriginalPrice > price ? baseOriginalPrice : undefined;
   const cleanedDescription = stripHtml(product.short_description || product.description);
   const manufacturerMeta = product.meta_data?.find((meta) => meta?.key === 'manufacturer')?.value;
+  const variantImages = variantList.map((variant) => variant.image).filter((src): src is string => Boolean(src));
+  const combinedImages = [...variantImages, ...imageSources].filter(
+    (src, index, self) => Boolean(src) && self.indexOf(src) === index,
+  ) as string[];
+  const galleryImages = combinedImages.length > 0 ? combinedImages : [WOO_PLACEHOLDER_IMAGE];
+  const variantSummary = hasVariants
+    ? (() => {
+        const labels = variantList.map((variant) => variant.label).filter(Boolean);
+        if (labels.length <= 3) {
+          return labels.join(' • ');
+        }
+        const remaining = labels.length - 3;
+        return `${labels.slice(0, 3).join(' • ')} +${remaining} more`;
+      })()
+    : undefined;
+  const defaultVariantId = hasVariants
+    ? variantList.find((variant) => variant.inStock)?.id ?? variantList[0]?.id
+    : undefined;
 
   return {
     id: `woo-${product.id}`,
     name: stripHtml(product.name) || `Product ${product.id}`,
     category: categoryName,
     price,
-    originalPrice: originalPrice && originalPrice > price ? originalPrice : undefined,
+    originalPrice,
     rating: Number.parseFloat(product.average_rating || '') || 5,
     reviews: Number.isFinite(product.rating_count) ? Number(product.rating_count) : 0,
-    image: imageSources[0] ?? WOO_PLACEHOLDER_IMAGE,
-    images: imageSources.length > 0 ? imageSources : [WOO_PLACEHOLDER_IMAGE],
-    inStock: (product.stock_status ?? '').toLowerCase() !== 'outofstock',
+    image: galleryImages[0] ?? WOO_PLACEHOLDER_IMAGE,
+    images: galleryImages,
+    inStock: hasVariants
+      ? variantList.some((variant) => variant.inStock)
+      : (product.stock_status ?? '').toLowerCase() !== 'outofstock',
     prescription: false,
-    dosage: product.sku ? `SKU ${product.sku}` : 'See details',
+    dosage: hasVariants
+      ? `${variantList.length} option${variantList.length === 1 ? '' : 's'} available`
+      : product.sku
+        ? `SKU ${product.sku}`
+        : 'See details',
     manufacturer: stripHtml(typeof manufacturerMeta === 'string' ? manufacturerMeta : '') || 'WooCommerce Catalog',
     type: product.type ?? 'General',
     description: cleanedDescription || undefined,
+    variants: hasVariants ? variantList : undefined,
+    hasVariants,
+    defaultVariantId,
+    variantSummary,
   };
+};
+
+const fetchProductVariations = async (products: WooProduct[]): Promise<Map<number, WooVariation[]>> => {
+  const variationMap = new Map<number, WooVariation[]>();
+  if (products.length === 0) {
+    return variationMap;
+  }
+
+  const queue = [...products];
+  const concurrency = Math.min(4, queue.length);
+
+  const workers = Array.from({ length: concurrency }, () =>
+    (async function worker() {
+      while (queue.length > 0) {
+        const nextProduct = queue.shift();
+        if (!nextProduct) {
+          break;
+        }
+        try {
+          const variations = await listProductVariations<WooVariation[]>(nextProduct.id, { per_page: 100, status: 'publish' });
+          if (Array.isArray(variations)) {
+            variationMap.set(nextProduct.id, variations);
+          } else {
+            variationMap.set(nextProduct.id, []);
+          }
+        } catch (error) {
+          console.warn('[WooCommerce] Failed to load variations', { productId: nextProduct.id, error });
+        }
+      }
+    })(),
+  );
+
+  await Promise.all(workers);
+  return variationMap;
 };
 
 export default function App() {
@@ -216,6 +350,132 @@ export default function App() {
   const checkoutButtonObserverRef = useRef<IntersectionObserver | null>(null);
   const [isCheckoutButtonVisible, setIsCheckoutButtonVisible] = useState(false);
   const filterSidebarRef = useRef<HTMLDivElement | null>(null);
+  const landingLoginEmailRef = useRef<HTMLInputElement | null>(null);
+  const landingLoginPasswordRef = useRef<HTMLInputElement | null>(null);
+  const landingCredentialAutofillInFlight = useRef(false);
+  const [passkeySupport, setPasskeySupport] = useState({
+    platform: false,
+    conditional: false,
+    checked: false,
+  });
+  const passkeyConditionalInFlight = useRef(false);
+  const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
+  const triggerLandingCredentialAutofill = useCallback(async () => {
+    if (landingCredentialAutofillInFlight.current) {
+      return;
+    }
+    landingCredentialAutofillInFlight.current = true;
+    try {
+      const credential = await requestStoredPasswordCredential();
+      if (credential) {
+        if (landingLoginEmailRef.current) {
+          landingLoginEmailRef.current.value = credential.id;
+        }
+        if (landingLoginPasswordRef.current) {
+          landingLoginPasswordRef.current.value = credential.password;
+        }
+      }
+    } finally {
+      landingCredentialAutofillInFlight.current = false;
+    }
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const platform = await detectPlatformPasskeySupport();
+      const conditional = detectConditionalPasskeySupport();
+      if (!cancelled) {
+        setPasskeySupport({
+          platform,
+          conditional,
+          checked: true,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyLoginSuccessState = useCallback((nextUser: User) => {
+    setUser(nextUser);
+    setPostLoginHold(true);
+    const isReturning = (nextUser.visits ?? 1) > 1;
+    setIsReturningUser(isReturning);
+    setLoginContext(null);
+    setShowLandingLoginPassword(false);
+    setShowLandingSignupPassword(false);
+    setShowLandingSignupConfirm(false);
+  }, []);
+
+  const performPasskeyLogin = useCallback(async (options?: {
+    emailHint?: string | null;
+    useConditionalUI?: boolean;
+  }) => {
+    const { requestId, publicKey } = await authAPI.passkeys.getAuthenticationOptions(options?.emailHint || undefined);
+    const assertion = await beginPasskeyAuthentication(publicKey, Boolean(options?.useConditionalUI));
+    const nextUser = await authAPI.passkeys.completeAuthentication({
+      requestId,
+      assertionResponse: assertion,
+    });
+    applyLoginSuccessState(nextUser);
+    return nextUser;
+  }, [applyLoginSuccessState]);
+
+  const startConditionalPasskeyLogin = useCallback(async () => {
+    if (user || !passkeySupport.conditional || passkeyConditionalInFlight.current) {
+      return;
+    }
+    passkeyConditionalInFlight.current = true;
+    try {
+      await performPasskeyLogin({ useConditionalUI: true });
+    } catch (error: any) {
+      if (!(error instanceof DOMException) || error.name !== 'NotAllowedError') {
+        console.debug('[Passkey] Conditional login dismissed or failed', error);
+      }
+    } finally {
+      passkeyConditionalInFlight.current = false;
+    }
+  }, [passkeySupport.conditional, performPasskeyLogin, user]);
+
+  useEffect(() => {
+    if (!user) {
+      void startConditionalPasskeyLogin();
+    }
+  }, [user, startConditionalPasskeyLogin]);
+
+  const handleLandingCredentialFocus = useCallback(() => {
+    void triggerLandingCredentialAutofill();
+    void startConditionalPasskeyLogin();
+  }, [startConditionalPasskeyLogin, triggerLandingCredentialAutofill]);
+
+  const handleManualPasskeyLogin = useCallback(async () => {
+    if (!passkeySupport.platform) {
+      setLandingLoginError('Passkey login is not available on this device.');
+      return;
+    }
+    setPasskeyLoginPending(true);
+    setLandingLoginError('');
+    try {
+      const emailHint = landingLoginEmailRef.current?.value || undefined;
+      await performPasskeyLogin({ emailHint });
+    } catch (error: any) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        return;
+      }
+      const message = (error?.message || '').toUpperCase();
+      if (message.includes('PASSKEY_NOT_REGISTERED')) {
+        setLandingLoginError('No passkey found for that email yet. Sign in with your password once to enable passkeys.');
+      } else if (message.includes('EMAIL_NOT_FOUND')) {
+        setLandingLoginError('We could not find that email.');
+      } else {
+        setLandingLoginError('Unable to sign in with passkey. Please try again or use your password.');
+      }
+      console.warn('[Passkey] Authentication failed', error);
+    } finally {
+      setPasskeyLoginPending(false);
+    }
+  }, [passkeySupport.platform, performPasskeyLogin]);
 
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState('');
@@ -250,9 +510,9 @@ export default function App() {
     updatingReferral: null,
     error: null,
   });
-  const [catalogProducts, setCatalogProducts] = useState<Product[]>(peptideProducts);
-  const [catalogCategories, setCatalogCategories] = useState<string[]>(peptideCategories);
-  const [catalogTypes, setCatalogTypes] = useState<string[]>(peptideTypes);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
@@ -506,6 +766,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const warmApi = async () => {
+      const start = typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+      try {
+        const healthy = await checkServerHealth();
+        if (!cancelled) {
+          const end = typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+          console.debug('[Auth] API warm-up complete', {
+            healthy,
+            durationMs: Math.round(end - start),
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[Auth] API warm-up failed', error);
+        }
+      }
+    };
+    warmApi();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -524,9 +813,20 @@ export default function App() {
           return;
         }
 
+        const variableProducts = (wooProducts ?? []).filter(
+          (item): item is WooProduct => Boolean(item && typeof item === 'object' && item.type === 'variable'),
+        );
+        const variationMap = variableProducts.length > 0
+          ? await fetchProductVariations(variableProducts)
+          : new Map<number, WooVariation[]>();
+
+        if (cancelled) {
+          return;
+        }
+
         const mappedProducts = (wooProducts ?? [])
           .filter((item): item is WooProduct => Boolean(item && typeof item === 'object' && 'id' in item))
-          .map(mapWooProductToProduct)
+          .map((item) => mapWooProductToProduct(item, variationMap.get(item.id) ?? []))
           .filter((product) => product && product.name);
 
         if (mappedProducts.length > 0) {
@@ -542,13 +842,13 @@ export default function App() {
               ? categoriesFromProducts
               : categoryNamesFromApi.length > 0
                 ? categoryNamesFromApi
-                : peptideCategories;
+                : [];
           setCatalogCategories(nextCategories);
 
           const typesFromProducts = Array.from(
             new Set(mappedProducts.map((product) => product.type).filter(Boolean)),
           ) as string[];
-          setCatalogTypes(typesFromProducts.length > 0 ? typesFromProducts : peptideTypes);
+          setCatalogTypes(typesFromProducts);
         } else if (Array.isArray(wooCategories) && wooCategories.length > 0) {
           const categoryNames = wooCategories
             .map((category) => category?.name)
@@ -827,19 +1127,13 @@ export default function App() {
     return () => window.removeEventListener('peppro:close-dialogs', closeAllDialogs);
   }, []);
 
+
   const loginWithRetry = async (email: string, password: string, attempt = 0): Promise<AuthActionResult> => {
     console.debug('[Auth] Login attempt', { email, attempt });
     try {
       const user = await authAPI.login(email, password);
-      setUser(user);
-      setPostLoginHold(true);
-      const isReturning = (user.visits ?? 1) > 1;
-      setIsReturningUser(isReturning);
-      // toast.success(`${isReturning ? 'Welcome back' : 'Welcome to PepPro'}, ${user.name}!`);
-      setLoginContext(null);
-      setShowLandingLoginPassword(false);
-      setShowLandingSignupPassword(false);
-      setShowLandingSignupConfirm(false);
+      applyLoginSuccessState(user);
+      void storePasswordCredential(email, password, user.name || email);
       console.debug('[Auth] Login success', { userId: user.id, visits: user.visits });
       return { status: 'success' };
     } catch (error: any) {
@@ -1067,33 +1361,49 @@ export default function App() {
     // toast.success('Logged out successfully');
   };
 
-  const handleAddToCart = (productId: string, quantity = 1, note?: string) => {
-    console.debug('[Cart] Add to cart requested', { productId, quantity, note });
-    const product =
-      catalogProducts.find((item) => item.id === productId) ||
-      peptideProducts.find((item) => item.id === productId);
+  const buildCartItemId = (productId: string, variantId?: string | null) =>
+    variantId ? `${productId}::${variantId}` : productId;
+
+  const handleAddToCart = (productId: string, quantity = 1, note?: string, variantId?: string | null) => {
+    console.debug('[Cart] Add to cart requested', { productId, quantity, note, variantId });
+    const product = catalogProducts.find((item) => item.id === productId);
     if (!product) return;
 
     const quantityToAdd = Math.max(1, Math.floor(quantity));
+    let resolvedVariant: ProductVariant | null = null;
 
-    setCartItems(prev => {
-      const existingItem = prev.find(item => item.product.id === productId);
+    if (product.variants?.length) {
+      resolvedVariant = variantId
+        ? product.variants.find((variant) => variant.id === variantId) ?? null
+        : product.variants.find((variant) => variant.inStock) ?? product.variants[0] ?? null;
+
+      if (!resolvedVariant) {
+        console.warn('[Cart] Variant selection required, opening product details', { productId, variantId });
+        setSelectedProduct(product);
+        setProductDetailOpen(true);
+        return;
+      }
+    }
+
+    const cartItemId = buildCartItemId(productId, resolvedVariant?.id ?? null);
+
+    setCartItems((prev) => {
+      const existingItem = prev.find((item) => item.id === cartItemId);
       if (existingItem) {
-        return prev.map(item =>
-          item.product.id === productId
+        return prev.map((item) =>
+          item.id === cartItemId
             ? {
               ...item,
               quantity: item.quantity + quantityToAdd,
-              note: note ?? item.note
+              note: note ?? item.note,
             }
-            : item
+            : item,
         );
       }
-      return [...prev, { product, quantity: quantityToAdd, note }];
+      return [...prev, { id: cartItemId, product, quantity: quantityToAdd, note, variant: resolvedVariant }];
     });
 
-    console.debug('[Cart] Add to cart success', { productId, quantity: quantityToAdd });
-    // toast.success(`${quantityToAdd} × ${product.name} added to cart`);
+    console.debug('[Cart] Add to cart success', { productId, variantId: resolvedVariant?.id, quantity: quantityToAdd });
   };
 
   const handleRefreshNews = async () => {
@@ -1142,10 +1452,12 @@ export default function App() {
       return;
     }
 
-    const items = cartItems.map(({ product, quantity, note }) => ({
+    const items = cartItems.map(({ id, product, quantity, note, variant }) => ({
+      cartItemId: id,
       productId: product.id,
-      name: product.name,
-      price: product.price,
+      variantId: variant?.id ?? null,
+      name: variant ? `${product.name} — ${variant.label}` : product.name,
+      price: variant?.price ?? product.price,
       quantity,
       note: note ?? null
     }));
@@ -1189,21 +1501,21 @@ export default function App() {
     }
   };
 
-  const handleUpdateCartItemQuantity = (productId: string, quantity: number) => {
-    console.debug('[Cart] Update quantity', { productId, quantity });
+  const handleUpdateCartItemQuantity = (cartItemId: string, quantity: number) => {
+    console.debug('[Cart] Update quantity', { cartItemId, quantity });
     const normalized = Math.max(1, Math.floor(quantity || 1));
     setCartItems((prev) =>
       prev.map((item) =>
-        item.product.id === productId
+        item.id === cartItemId
           ? { ...item, quantity: normalized }
           : item
       )
     );
   };
 
-  const handleRemoveCartItem = (productId: string) => {
-    console.debug('[Cart] Remove item', { productId });
-    setCartItems((prev) => prev.filter((item) => item.product.id !== productId));
+  const handleRemoveCartItem = (cartItemId: string) => {
+    console.debug('[Cart] Remove item', { cartItemId });
+    setCartItems((prev) => prev.filter((item) => item.id !== cartItemId));
     // toast.success('Item removed from cart');
   };
 
@@ -2457,7 +2769,7 @@ const renderSalesRepDashboard = () => {
                         e.preventDefault();
                         setLandingLoginError('');
                         const fd = new FormData(e.currentTarget);
-                        const res = await handleLogin(fd.get('email') as string, fd.get('password') as string);
+                        const res = await handleLogin(fd.get('username') as string, fd.get('password') as string);
                         if (res.status !== 'success') {
                           if (res.status === 'invalid_password') setLandingLoginError('Incorrect password. Please try again.');
                           else if (res.status === 'email_not_found') setLandingLoginError('We could not find that email.');
@@ -2467,13 +2779,37 @@ const renderSalesRepDashboard = () => {
                       className="space-y-3"
                     >
                       <div className="space-y-2">
-                        <label htmlFor="landing-email" className="text-sm font-medium">Email</label>
-                        <input id="landing-email" name="email" type="email" autoComplete="email" required className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                        <label htmlFor="landing-username" className="text-sm font-medium">Email</label>
+                        <input
+                          ref={landingLoginEmailRef}
+                          id="landing-username"
+                          name="username"
+                          type="email"
+                          autoComplete="username"
+                          inputMode="email"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          required
+                          onFocus={handleLandingCredentialFocus}
+                          className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
                       </div>
                       <div className="space-y-2">
                         <label htmlFor="landing-password" className="text-sm font-medium">Password</label>
                         <div className="relative">
-                          <input id="landing-password" name="password" type={showLandingLoginPassword ? 'text' : 'password'} autoComplete="current-password" required className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                          <input
+                            ref={landingLoginPasswordRef}
+                            id="landing-password"
+                            name="password"
+                            type={showLandingLoginPassword ? 'text' : 'password'}
+                            autoComplete="current-password"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            required
+                            onFocus={handleLandingCredentialFocus}
+                            className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
                           <button
                             type="button"
                             onClick={() => setShowLandingLoginPassword((p) => !p)}
@@ -2499,6 +2835,23 @@ const renderSalesRepDashboard = () => {
                       >
                         Sign In
                       </Button>
+                      {passkeySupport.platform && (
+                        <div className="space-y-1.5 pt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            disabled={passkeyLoginPending}
+                            onClick={handleManualPasskeyLogin}
+                            className="w-full squircle-sm border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white disabled:opacity-70"
+                          >
+                            {passkeyLoginPending ? 'Waiting for Face ID…' : 'Sign in with Face ID / Touch ID'}
+                          </Button>
+                          <p className="text-xs text-center text-gray-500">
+                            Works on Apple devices & passkey-ready browsers.
+                          </p>
+                        </div>
+                      )}
                     </form>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">
