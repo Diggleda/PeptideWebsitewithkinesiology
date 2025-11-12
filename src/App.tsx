@@ -7,7 +7,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
 import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
@@ -47,6 +47,10 @@ interface User {
   totalReferrals?: number;
   mustResetPassword?: boolean;
 }
+
+// Feature flags for passkey UX. Defaults keep prompts manual-only.
+const PASSKEY_AUTOPROMPT = String((import.meta as any).env?.VITE_PASSKEY_AUTOPROMPT || '').toLowerCase() === 'true';
+const PASSKEY_AUTOREGISTER = String((import.meta as any).env?.VITE_PASSKEY_AUTOREGISTER || '').toLowerCase() === 'true';
 
 interface CartItem {
   id: string;
@@ -360,6 +364,9 @@ export default function App() {
   });
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
+  const [enablePasskeyPending, setEnablePasskeyPending] = useState(false);
+  const [enablePasskeyError, setEnablePasskeyError] = useState('');
+  const passkeyAutoRegisterAttemptedRef = useRef(false);
   const triggerLandingCredentialAutofill = useCallback(async () => {
     if (landingCredentialAutofillInFlight.current) {
       return;
@@ -406,6 +413,8 @@ export default function App() {
     setShowLandingLoginPassword(false);
     setShowLandingSignupPassword(false);
     setShowLandingSignupConfirm(false);
+    // Allow auto-registration attempt after each successful login
+    passkeyAutoRegisterAttemptedRef.current = false;
   }, []);
 
   const performPasskeyLogin = useCallback(async (options?: {
@@ -423,7 +432,8 @@ export default function App() {
   }, [applyLoginSuccessState]);
 
   const startConditionalPasskeyLogin = useCallback(async () => {
-    if (user || !passkeySupport.conditional || passkeyConditionalInFlight.current) {
+    // Try conditional UI even if detection says unavailable; some browsers under-report support.
+    if (user || passkeyConditionalInFlight.current) {
       return;
     }
     passkeyConditionalInFlight.current = true;
@@ -436,18 +446,19 @@ export default function App() {
     } finally {
       passkeyConditionalInFlight.current = false;
     }
-  }, [passkeySupport.conditional, performPasskeyLogin, user]);
+  }, [performPasskeyLogin, user]);
 
   useEffect(() => {
-    if (!user) {
+    // Only attempt conditional UI when explicitly enabled via env flag.
+    if (!user && PASSKEY_AUTOPROMPT && passkeySupport.conditional) {
       void startConditionalPasskeyLogin();
     }
-  }, [user, startConditionalPasskeyLogin]);
+  }, [user, passkeySupport.conditional, startConditionalPasskeyLogin]);
 
   const handleLandingCredentialFocus = useCallback(() => {
+    // Only try to autofill saved username/password; do not auto-trigger passkey UI.
     void triggerLandingCredentialAutofill();
-    void startConditionalPasskeyLogin();
-  }, [startConditionalPasskeyLogin, triggerLandingCredentialAutofill]);
+  }, [triggerLandingCredentialAutofill]);
 
   const handleManualPasskeyLogin = useCallback(async () => {
     if (!passkeySupport.platform) {
@@ -476,6 +487,46 @@ export default function App() {
       setPasskeyLoginPending(false);
     }
   }, [passkeySupport.platform, performPasskeyLogin]);
+
+  const handleEnablePasskey = useCallback(async () => {
+    if (!user) return;
+    if (!passkeySupport.platform) {
+      setEnablePasskeyError('Passkey setup is not available on this device.');
+      return;
+    }
+    setEnablePasskeyPending(true);
+    setEnablePasskeyError('');
+    try {
+      const { requestId, publicKey } = await authAPI.passkeys.getRegistrationOptions();
+      const attestation = await beginPasskeyRegistration(publicKey);
+      const result = await authAPI.passkeys.completeRegistration({ requestId, attestationResponse: attestation, label: 'This device' });
+      if (result?.user) {
+        setUser(result.user);
+      }
+    } catch (error: any) {
+      const msg = (error?.message || '').toUpperCase();
+      if (msg.includes('PASSKEY_ALREADY_REGISTERED')) {
+        setEnablePasskeyError('A passkey is already registered for this device.');
+      } else if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        // User canceled; do not show an error
+      } else {
+        setEnablePasskeyError('Unable to enable biometric sign-in. Please try again.');
+      }
+      console.warn('[Passkey] Registration failed', error);
+    } finally {
+      setEnablePasskeyPending(false);
+    }
+  }, [user, passkeySupport.platform]);
+
+  // Optionally auto-register a passkey after successful login (opt-in via env).
+  useEffect(() => {
+    if (!PASSKEY_AUTOREGISTER) return;
+    if (!user || !passkeySupport.platform || passkeyAutoRegisterAttemptedRef.current) {
+      return;
+    }
+    passkeyAutoRegisterAttemptedRef.current = true;
+    void handleEnablePasskey();
+  }, [user, passkeySupport.platform, handleEnablePasskey]);
 
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState('');
@@ -2675,6 +2726,7 @@ const renderSalesRepDashboard = () => {
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
+                    {/* Passkey registration now handled automatically after login when supported */}
                     {user.role !== 'sales_rep' && (
                       <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                         <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
@@ -2777,6 +2829,7 @@ const renderSalesRepDashboard = () => {
                         }
                       }}
                       className="space-y-3"
+                      autoComplete="on"
                     >
                       <div className="space-y-2">
                         <label htmlFor="landing-username" className="text-sm font-medium">Email</label>
@@ -2784,8 +2837,8 @@ const renderSalesRepDashboard = () => {
                           ref={landingLoginEmailRef}
                           id="landing-username"
                           name="username"
-                          type="email"
-                          autoComplete="username"
+                          type="text"
+                          autoComplete="username webauthn"
                           inputMode="email"
                           autoCapitalize="none"
                           autoCorrect="off"
@@ -2793,6 +2846,14 @@ const renderSalesRepDashboard = () => {
                           required
                           onFocus={handleLandingCredentialFocus}
                           className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        {/* Hidden field to hint WebAuthn conditional UI to the browser */}
+                        <input
+                          type="text"
+                          autoComplete="webauthn"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                          style={{ position: 'absolute', left: '-9999px', top: 'auto', width: '1px', height: '1px', opacity: 0 }}
                         />
                       </div>
                       <div className="space-y-2">
@@ -2827,6 +2888,20 @@ const renderSalesRepDashboard = () => {
                       </div>
                       {landingLoginError && (
                         <p className="text-sm text-red-600" role="alert">{landingLoginError}</p>
+                      )}
+                      {passkeySupport.platform && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="lg"
+                          onClick={handleManualPasskeyLogin}
+                          disabled={passkeyLoginPending}
+                          className="w-full squircle-sm btn-hover-lighter"
+                          aria-label="Sign in with a passkey (biometrics)"
+                        >
+                          <Fingerprint className="h-4 w-4" aria-hidden="true" />
+                          {passkeyLoginPending ? 'Waiting for biometric confirmation…' : 'Sign in with passkey'}
+                        </Button>
                       )}
                       <Button
                         type="submit"
