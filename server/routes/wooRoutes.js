@@ -3,6 +3,8 @@ const wooController = require('../controllers/wooController');
 
 const router = Router();
 
-router.get('/*', wooController.proxyCatalog);
+// Catch-all under this router using middleware form to avoid
+// path-to-regexp wildcard quirks in Express 5.
+router.use(wooController.proxyCatalog);
 
 module.exports = router;

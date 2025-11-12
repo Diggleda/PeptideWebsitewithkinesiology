@@ -21,7 +21,9 @@ const createHttpError = (message, status = 400) => {
 
 const proxyCatalog = async (req, res, next) => {
   try {
-    const requestedEndpoint = normalizeEndpoint(req.params[0] || '');
+    // Support both wildcard param capture (e.g. '/*') and middleware usage
+    // where we rely on req.path under the '/api/woo' mount.
+    const requestedEndpoint = normalizeEndpoint((req.params && (req.params[0] || req.params.path)) || req.path || '');
     if (!requestedEndpoint) {
       throw createHttpError('Missing WooCommerce endpoint', 400);
     }

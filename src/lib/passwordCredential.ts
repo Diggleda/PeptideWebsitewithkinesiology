@@ -34,6 +34,14 @@ export const requestStoredPasswordCredential = async (): Promise<StoredPasswordC
     return null;
   }
 
+  // Safari/WebKit often throws NotSupportedError when the PasswordCredential API
+  // isn't fully implemented. Avoid calling get({ password: true }) unless the
+  // constructor exists, which is a reliable support signal.
+  const passwordCtor = (window as typeof window & { PasswordCredential?: typeof PasswordCredential }).PasswordCredential;
+  if (typeof passwordCtor !== 'function') {
+    return null;
+  }
+
   try {
     const credential = await container.get({
       password: true,

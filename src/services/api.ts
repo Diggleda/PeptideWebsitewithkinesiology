@@ -336,7 +336,8 @@ export const checkServerHealth = async () => {
 
 export const newsAPI = {
   getPeptideHeadlines: async () => {
-    const response = await fetch(`${API_BASE_URL}/news/peptides`, {
+    const ts = Date.now();
+    const response = await fetch(`${API_BASE_URL}/news/peptides?_ts=${ts}`, {
       headers: {
         Accept: 'application/json',
       },
@@ -344,6 +345,13 @@ export const newsAPI = {
     });
 
     if (!response.ok) {
+      if (response.status === 404) {
+        // Backend route not implemented in local/dev; return empty list gracefully.
+        return { items: [], count: 0 } as {
+          items?: Array<{ title?: unknown; url?: unknown; summary?: unknown; imageUrl?: unknown; date?: unknown }>;
+          count?: number;
+        };
+      }
       throw new Error(`Failed to fetch peptide news (${response.status})`);
     }
 

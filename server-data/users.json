@@ -5,7 +5,7 @@
     "email": "ariter@nd.edu",
     "password": "$2b$10$THHmWfFp5.0o/tsio9KeV.qvhJeEfG6RID6Ci5Xn6neH3dAEBIsAu",
     "referralCode": "S5GU2Q",
-    "referralCredits": 0.0,
+    "referralCredits": 0,
     "totalReferrals": 0,
     "visits": 5,
     "createdAt": "2025-09-30T18:53:26.985Z",
@@ -21,7 +21,8 @@
     "npiLastVerifiedAt": null,
     "npiStatus": null,
     "npiCheckError": null,
-    "npiVerification": null
+    "npiVerification": null,
+    "passkeys": []
   },
   {
     "id": "1759372218770",
@@ -29,11 +30,11 @@
     "email": "diggleda@icloud.com",
     "password": "$2b$10$bfGepAEQDd4N.j1vyK29UuV6PmlMK1IEYI3NjXmmbDOGI10cHwCP6",
     "referralCode": "ZMJN9Y",
-    "referralCredits": 0.0,
+    "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 143,
+    "visits": 175,
     "createdAt": "2025-10-02T02:30:18.770Z",
-    "lastLoginAt": "2025-11-10T20:23:12.268653+00:00",
+    "lastLoginAt": "2025-11-12T06:01:37.506Z",
     "role": "doctor",
     "status": "active",
     "salesRepId": null,
@@ -45,7 +46,8 @@
     "npiLastVerifiedAt": null,
     "npiStatus": null,
     "npiCheckError": null,
-    "npiVerification": null
+    "npiVerification": null,
+    "passkeys": []
   },
   {
     "id": "1759414542687",
@@ -53,7 +55,7 @@
     "email": "petergibbons7@icloud.com",
     "password": "$2b$10$KpnBo3/EnwCqXpW3tZAnx.OyGW3fJnxn0Tkq/oo6ysEdy8MOKyUkm",
     "referralCode": "LGH87X",
-    "referralCredits": 0.0,
+    "referralCredits": 0,
     "totalReferrals": 0,
     "visits": 1,
     "createdAt": "2025-10-02T14:15:42.687Z",
@@ -69,7 +71,8 @@
     "npiLastVerifiedAt": null,
     "npiStatus": null,
     "npiCheckError": null,
-    "npiVerification": null
+    "npiVerification": null,
+    "passkeys": []
   },
   {
     "id": "1759719202075",
@@ -77,7 +80,7 @@
     "email": "diggledadiggz@gmail.com",
     "password": "$2b$10$khY8bh4lG6hxOiP4/fhSueBXrdRU4DrlszG7fgl/gWx1oxl37XqqK",
     "referralCode": "0NA1CM",
-    "referralCredits": 0.0,
+    "referralCredits": 0,
     "totalReferrals": 0,
     "visits": 1,
     "createdAt": "2025-10-06T02:53:22.075Z",
@@ -93,6 +96,7 @@
     "npiLastVerifiedAt": null,
     "npiStatus": null,
     "npiCheckError": null,
-    "npiVerification": null
+    "npiVerification": null,
+    "passkeys": []
   }
 ]

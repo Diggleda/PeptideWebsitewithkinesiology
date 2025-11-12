@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const systemRoutes = require('./routes/systemRoutes');
+const newsRoutes = require('./routes/newsRoutes');
 const wooRoutes = require('./routes/wooRoutes');
 const quotesRoutes = require('./routes/quotesRoutes');
 const { env } = require('./config/env');
@@ -38,6 +39,7 @@ const createApp = () => {
   app.use('/api/orders', orderRoutes);
   app.use('/api/woo', wooRoutes);
   app.use('/api/quotes', quotesRoutes);
+  app.use('/api/news', newsRoutes);
   app.use('/api', systemRoutes);
 
   app.use((err, req, res, _next) => {

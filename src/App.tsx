@@ -145,22 +145,51 @@ const stripHtml = (value?: string | null): string =>
 
 const formatNewsDate = (dateString?: string | null): string => {
   if (!dateString) return '';
+  const raw = dateString.trim();
   try {
-    // Parse ISO date string (YYYY-MM-DD) to avoid timezone issues
-    const parts = dateString.split('-');
+    // Try generic Date parsing (covers RFC-2822 like: Mon, 27 Oct 2025 00:00:00 +0000)
+    const dt = new Date(raw);
+    if (!Number.isNaN(dt.getTime())) {
+      dt.setDate(dt.getDate() + 1);
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    // Parse ISO date string (YYYY-MM-DD)
+    const parts = raw.split('-');
     if (parts.length === 3) {
       const year = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
       const day = parseInt(parts[2], 10);
       const date = new Date(year, month, day);
-      if (!isNaN(date.getTime())) {
-        const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-        return date.toLocaleDateString('en-US', options);
+      if (!Number.isNaN(date.getTime())) {
+        date.setDate(date.getDate() + 1);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       }
     }
-    return dateString;
+
+    // Fallback: strip time segment if present and keep day+month+year
+    const rfc = raw.match(/^([A-Za-z]{3},?\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{4})/);
+    if (rfc) return rfc[1];
+
+    const tIndex = raw.indexOf('T');
+    if (tIndex > 0) {
+      const ymd = raw.slice(0, tIndex);
+      const ymdParts = ymd.split('-');
+      if (ymdParts.length === 3) {
+        const y = parseInt(ymdParts[0], 10);
+        const m = parseInt(ymdParts[1], 10) - 1;
+        const d = parseInt(ymdParts[2], 10);
+        const d2 = new Date(y, m, d);
+        if (!Number.isNaN(d2.getTime())) {
+          d2.setDate(d2.getDate() + 1);
+          return d2.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+      }
+    }
+
+    return raw;
   } catch {
-    return dateString;
+    return raw;
   }
 };
 
@@ -465,11 +494,15 @@ export default function App() {
       setLandingLoginError('Passkey login is not available on this device.');
       return;
     }
+    const emailInput = landingLoginEmailRef.current?.value?.trim();
+    if (!emailInput) {
+      setLandingLoginError('Enter your email to sign in with a passkey.');
+      return;
+    }
     setPasskeyLoginPending(true);
     setLandingLoginError('');
     try {
-      const emailHint = landingLoginEmailRef.current?.value || undefined;
-      await performPasskeyLogin({ emailHint });
+      await performPasskeyLogin({ emailHint: emailInput });
     } catch (error: any) {
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         return;
@@ -911,7 +944,11 @@ export default function App() {
       } catch (error) {
         if (!cancelled) {
           console.warn('[WooCommerce] Catalog fetch failed', error);
-          setCatalogError(error instanceof Error ? error.message : 'Unable to load WooCommerce catalog.');
+          // Per preference: keep catalog empty when Woo is not available.
+          setCatalogProducts([]);
+          setCatalogCategories([]);
+          setCatalogTypes([]);
+          setCatalogError(null);
         }
       } finally {
         if (!cancelled) {
@@ -2663,18 +2700,19 @@ const renderSalesRepDashboard = () => {
                                 </div>
                                 <div className="space-y-1">
                                   <div>
-                                    {item.date && (
-                                      <span className="text-xs text-gray-500 mr-2">
-                                        {formatNewsDate(item.date)}
-                                      </span>
-                                    )}
                                     <a
                                       href={item.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-[rgb(95,179,249)] font-semibold hover:underline"
+                                      aria-label={`${item.date ? formatNewsDate(item.date) + ' — ' : ''}${item.title}`}
                                     >
-                                      {item.title}
+                                      {item.date && (
+                                        <span className="text-xs text-gray-500 mr-2">
+                                          {formatNewsDate(item.date)}
+                                        </span>
+                                      )}
+                                      <span className="align-middle">{item.title}</span>
                                     </a>
                                   </div>
                                   {item.summary && (
@@ -2838,7 +2876,7 @@ const renderSalesRepDashboard = () => {
                           id="landing-username"
                           name="username"
                           type="text"
-                          autoComplete="username webauthn"
+                          autoComplete="username"
                           inputMode="email"
                           autoCapitalize="none"
                           autoCorrect="off"

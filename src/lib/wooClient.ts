@@ -2,6 +2,7 @@ import { API_BASE_URL } from '../services/api';
 
 const DEFAULT_PHP_PROXY = '/api/woo.php';
 const DEFAULT_PROXY_TOKEN = 'a-long-random-string-to-serve-as-proxy-token';
+const WOO_DISABLED = String((import.meta as any).env?.VITE_WOO_DISABLED || '').toLowerCase() === 'true';
 
 const resolveProxyBase = () => {
   const configuredProxy = ((import.meta.env.VITE_WOO_PROXY_URL as string | undefined) || '').trim();
@@ -89,6 +90,13 @@ function buildURL(endpoint: string, params: QueryParams = {}): string {
 }
 
 export async function wooGet<T = unknown>(endpoint: string, params: QueryParams = {}): Promise<T> {
+  if (WOO_DISABLED) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[WooCommerce] Frontend Woo access is disabled via VITE_WOO_DISABLED');
+    }
+    // @ts-ignore
+    return (Array.isArray([]) ? [] : {}) as T;
+  }
   const res = await fetch(buildURL(endpoint, params), { method: 'GET' });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -99,12 +107,12 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
 
 // Example domain functions
 export const listProducts = <T = unknown>(opts: QueryParams = {}) =>
-  wooGet<T>('products', { per_page: 12, status: 'publish', ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>('products', { per_page: 12, status: 'publish', ...opts });
 
 export const listCategories = <T = unknown>(opts: QueryParams = {}) =>
-  wooGet<T>('products/categories', { per_page: 50, ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>('products/categories', { per_page: 50, ...opts });
 
 export const listProductVariations = <T = unknown>(productId: number, opts: QueryParams = {}) =>
-  wooGet<T>(`products/${productId}/variations`, { per_page: 100, status: 'publish', ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>(`products/${productId}/variations`, { per_page: 100, status: 'publish', ...opts });
 
 export type { QueryParams };

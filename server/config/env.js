@@ -1,9 +1,21 @@
 const path = require('path');
+const fs = require('fs');
 const dotenv = require('dotenv');
 
-const envFile = process.env.DOTENV_CONFIG_PATH
+// Resolve the env file to load. Priority:
+// 1) DOTENV_CONFIG_PATH if provided
+// 2) .env.production when NODE_ENV=production and file exists
+// 3) .env as default
+let envFile = process.env.DOTENV_CONFIG_PATH
   ? path.resolve(process.env.DOTENV_CONFIG_PATH)
   : path.join(process.cwd(), '.env');
+
+if (!process.env.DOTENV_CONFIG_PATH && (process.env.NODE_ENV === 'production')) {
+  const prodPath = path.join(process.cwd(), '.env.production');
+  if (fs.existsSync(prodPath)) {
+    envFile = prodPath;
+  }
+}
 
 dotenv.config({ path: envFile });
 

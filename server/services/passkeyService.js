@@ -16,6 +16,8 @@ const expectedOrigins = (env.passkeys?.origins?.length ? env.passkeys.origins : 
   .concat([
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
   ])
   .map((value) => value && value.trim())
   .filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
@@ -78,7 +80,7 @@ const generateOptionsForRegistration = async (userId) => {
     userDisplayName: user.name || user.email,
     attestationType: 'none',
     authenticatorSelection: {
-      residentKey: 'preferred',
+      residentKey: 'required',
       userVerification: 'required',
       authenticatorAttachment: 'platform',
     },
