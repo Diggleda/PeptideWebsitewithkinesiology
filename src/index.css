@@ -152,6 +152,33 @@ body { position: relative; }
   display: block;
 }
 
+.news-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(148, 163, 184, 0.35);
+  border-radius: 0.35rem;
+  min-height: 0.6rem;
+}
+
+.news-skeleton.news-skeleton-line {
+  height: 0.55rem;
+}
+
+.news-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
+  animation: news-shimmer 1.4s infinite;
+}
+
+@keyframes news-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .product-image-frame {
   --product-image-frame-padding: clamp(0.4rem, 1.2vw, 0.5rem);
   position: relative;
@@ -2813,6 +2840,19 @@ html {
   }
 }
 
+/* Shared moving underline for account tabs */
+.account-tab-underline-indicator {
+  position: absolute;
+  bottom: -6px;
+  height: 3px;
+  background: rgb(95, 179, 249);
+  border-radius: 9999px;
+  box-shadow: 0 4px 12px rgba(95, 179, 249, 0.45);
+  opacity: 0;
+  transition: left 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
+  pointer-events: none;
+}
+
 .referral-toolbar__search {
   width: 100%;
   max-width: 22rem;
@@ -3425,4 +3465,45 @@ html {
     0 36px 76px -28px rgba(15, 23, 42, 0.66),
     0 22px 44px -26px rgba(15, 23, 42, 0.52) !important;
   transform: translateY(-1px) !important;
+}
+
+.news-loading-card {
+  position: relative;
+  border-radius: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+}
+
+.news-loading-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 0.85rem;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.news-loading-line {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.news-loading-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.news-loading-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(95, 179, 249, 0.35), transparent);
+  animation: news-swipe 1.2s ease-in-out infinite;
+}
+
+@keyframes news-swipe {
+  100% {
+    transform: translateX(100%);
+  }
 }

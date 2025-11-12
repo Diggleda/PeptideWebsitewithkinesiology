@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -60,6 +60,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [accountTab, setAccountTab] = useState<'info' | 'orders'>('info');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
   const referralCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,11 +135,58 @@ export function Header({
     });
     return () => cancelAnimationFrame(raf);
   }, [loginOpen, authMode, applyPendingLoginPrefill]);
+  useEffect(() => {
+    if (welcomeOpen) {
+      setAccountTab('info');
+    }
+  }, [welcomeOpen]);
   const headerDisplayName = localUser
     ? user.role === 'sales_rep'
       ? `Admin: ${localUser.name}`
       : localUser.name
     : '';
+
+  // Account tab underline indicator (shared bar that moves to active tab)
+  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [indicatorLeft, setIndicatorLeft] = useState<number>(0);
+  const [indicatorWidth, setIndicatorWidth] = useState<number>(0);
+  const [indicatorOpacity, setIndicatorOpacity] = useState<number>(0);
+
+  const updateTabIndicator = useCallback(() => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector<HTMLButtonElement>(`button[data-tab="${accountTab}"]`);
+    if (!activeBtn) return;
+    const cRect = container.getBoundingClientRect();
+    const bRect = activeBtn.getBoundingClientRect();
+    const inset = 8; // match left/right padding for a tidy fit
+    const left = Math.max(0, bRect.left - cRect.left + inset);
+    const width = Math.max(0, bRect.width - inset * 2);
+    setIndicatorLeft(left);
+    setIndicatorWidth(width);
+    setIndicatorOpacity(1);
+  }, [accountTab]);
+
+  useLayoutEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      updateTabIndicator();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [updateTabIndicator, welcomeOpen, accountTab]);
+
+  useEffect(() => {
+    const onResize = () => updateTabIndicator();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [updateTabIndicator]);
+
+  useEffect(() => {
+    if (!welcomeOpen) return;
+    const timer = setTimeout(() => {
+      updateTabIndicator();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [welcomeOpen, updateTabIndicator, accountTab]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -586,6 +634,104 @@ export function Header({
     </div>
   );
 
+  const accountHeaderTabs = [
+    { id: 'info', label: 'Info', Icon: Info },
+    { id: 'orders', label: 'Orders', Icon: Package },
+  ] as const;
+
+  const accountInfoPanel = localUser ? (
+    <div className="space-y-4">
+      {localUser.role !== 'sales_rep' && (
+        <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
+          <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+          <div className="space-y-1 text-sm text-slate-600">
+            <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
+            <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
+            <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
+          </div>
+        </div>
+      )}
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
+        <div className="grid gap-3">
+          {([['name', 'Full Name'], ['email', 'Email'], ['phone', 'Phone']] as const).map(([key, label]) => (
+            <EditableRow
+              key={key}
+              label={label}
+              value={(localUser as any)[key] || ''}
+              type={key === 'email' ? 'email' : 'text'}
+              onSave={async (next) => {
+                try {
+                  const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
+                  setLocalUser(updated);
+                  toast.success(`${label} updated`);
+                } catch (e: any) {
+                  toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
+                  throw e;
+                }
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const accountOrdersPanel = localUser ? (
+    localUser.role !== 'sales_rep' ? (
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+        <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
+        <p className="text-sm text-slate-600">
+          Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
+        </p>
+        <form className="grid gap-3" onSubmit={handleTrackOrder}>
+          <div>
+            <Label htmlFor="welcome-track-id">Order ID</Label>
+            <Input
+              id="welcome-track-id"
+              value={trackingForm.orderId}
+              onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
+              className="mt-1"
+              placeholder="ORD-12345"
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="welcome-track-email">Email</Label>
+            <Input
+              id="welcome-track-email"
+              type="email"
+              value={trackingForm.email}
+              onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
+              className="mt-1"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="submit"
+              className="glass-brand squircle-sm inline-flex items-center gap-2"
+              disabled={trackingPending}
+            >
+              {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {trackingPending ? 'Checking…' : 'Email tracking link'}
+            </Button>
+            {trackingMessage && (
+              <p className="text-sm text-slate-600">{trackingMessage}</p>
+            )}
+          </div>
+        </form>
+      </div>
+    ) : (
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
+        <p className="text-sm text-slate-600">
+          Order history and tracking details for your sales rep profile will appear here soon.
+        </p>
+      </div>
+    )
+  ) : null;
+
+  const activeAccountPanel = accountTab === 'info' ? accountInfoPanel : accountOrdersPanel;
+
   const authControls = user ? (
     <>
       <Dialog open={welcomeOpen} onOpenChange={(open) => {
@@ -614,7 +760,7 @@ export function Header({
             className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4"
             style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.2)' }}
           >
-            <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex-1 min-w-0 space-y-3">
               <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
                 {(user.visits ?? 1) > 1
                   ? `Welcome back, ${user.name}!`
@@ -625,138 +771,86 @@ export function Header({
                   ? `We appreciate your continued support—let's make healthcare simpler together!`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
+              <div className="relative flex items-center gap-4 pb-2" ref={tabsContainerRef}>
+                {accountHeaderTabs.map((tab) => {
+                  const isActive = accountTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      className={clsx(
+                        'relative inline-flex items-center gap-2 px-3 pb-2 pt-1 text-sm font-semibold transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30',
+                        isActive && 'text-slate-900'
+                      )}
+                      data-tab={tab.id}
+                      aria-pressed={isActive}
+                      onClick={() => setAccountTab(tab.id)}
+                    >
+                      <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+                <span
+                  aria-hidden="true"
+                  className="account-tab-underline-indicator"
+                  style={{ left: indicatorLeft, width: indicatorWidth, opacity: indicatorOpacity }}
+                />
+              </div>
             </div>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 pb-6">
             <div className="space-y-6 pt-4">
-            {localUser && (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="space-y-4">
-                  {localUser.role !== 'sales_rep' && (
-                    <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-                      <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
-                      <div className="space-y-1 text-sm text-slate-600">
-                        <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
-                        <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
-                        <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
-                    <div className="grid gap-3">
-                      {([['name','Full Name'],['email','Email'],['phone','Phone']] as const).map(([key,label]) => (
-                        <EditableRow
-                          key={key}
-                          label={label}
-                          value={(localUser as any)[key] || ''}
-                          type={key === 'email' ? 'email' : 'text'}
-                          onSave={async (next) => {
-                            try {
-                              const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
-                              setLocalUser(updated);
-                              toast.success(`${label} updated`);
-                            } catch (e:any) {
-                              toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
-                              throw e;
-                            }
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
+              {activeAccountPanel ?? (
+                <div className="text-sm text-slate-600">
+                  Loading account details...
                 </div>
-                {localUser.role !== 'sales_rep' && (
-                <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-                  <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
-                  <p className="text-sm text-slate-600">
-                    Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
-                  </p>
-                  <form className="grid gap-3" onSubmit={handleTrackOrder}>
-                    <div>
-                      <Label htmlFor="welcome-track-id">Order ID</Label>
-                      <Input
-                        id="welcome-track-id"
-                        value={trackingForm.orderId}
-                        onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
-                        className="mt-1"
-                        placeholder="ORD-12345"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="welcome-track-email">Email</Label>
-                      <Input
-                        id="welcome-track-email"
-                        type="email"
-                        value={trackingForm.email}
-                        onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
-                        className="mt-1"
-                        placeholder="you@example.com"
-                      />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button
-                        type="submit"
-                        className="glass-brand squircle-sm inline-flex items-center gap-2"
-                        disabled={trackingPending}
-                      >
-                        {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                        {trackingPending ? 'Checking…' : 'Email tracking link'}
-                      </Button>
-                      {trackingMessage && (
-                        <p className="text-sm text-slate-600">{trackingMessage}</p>
-                      )}
-                    </div>
-                  </form>
-                </div>
-                )}
-              </div>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                console.log('[Header] How does this work clicked', { onShowInfo: !!onShowInfo });
-                setWelcomeOpen(false);
-                // Delay the onShowInfo call slightly to ensure modal closes first
-                setTimeout(() => {
-                  if (onShowInfo) {
-                    console.log('[Header] Calling onShowInfo after modal close');
-                    onShowInfo();
-                  }
-                }, 100);
-              }}
-              className="squircle-sm glass btn-hover-lighter w-full"
-              style={{
-                boxShadow:
-                  '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
-              }}
-            >
-              How does this work?
-            </Button>
-            <div className="flex flex-row gap-3 pt-2 pb-1">
+              )}
               <Button
                 type="button"
                 variant="outline"
-                onClick={onLogout}
-                className="squircle-sm glass btn-hover-lighter flex-1"
+                onClick={() => {
+                  console.log('[Header] How does this work clicked', { onShowInfo: !!onShowInfo });
+                  setWelcomeOpen(false);
+                  // Delay the onShowInfo call slightly to ensure modal closes first
+                  setTimeout(() => {
+                    if (onShowInfo) {
+                      console.log('[Header] Calling onShowInfo after modal close');
+                      onShowInfo();
+                    }
+                  }, 100);
+                }}
+                className="squircle-sm glass btn-hover-lighter w-full"
                 style={{
                   boxShadow:
                     '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
                 }}
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                How does this work?
               </Button>
-              <Button
-                type="button"
-                onClick={() => setWelcomeOpen(false)}
-                className="squircle-sm glass-brand btn-hover-lighter flex-1"
-              >
-                Continue
-              </Button>
+              <div className="flex flex-row gap-3 pt-2 pb-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onLogout}
+                  className="squircle-sm glass btn-hover-lighter flex-1"
+                  style={{
+                    boxShadow:
+                      '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
+                  }}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setWelcomeOpen(false)}
+                  className="squircle-sm glass-brand btn-hover-lighter flex-1"
+                >
+                  Continue
+                </Button>
+              </div>
             </div>
-          </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -782,7 +876,14 @@ export function Header({
             maxWidth: 'min(640px, calc(100vw - 3rem))',
           }}
         >
-          <DialogHeader className="flex items-start justify-between gap-4 border-b border-[var(--brand-glass-border-1)] pb-3">
+          <DialogHeader
+            className="flex items-start justify-between gap-4 border-b border-[var(--brand-glass-border-1)] pb-3"
+            style={{
+              boxShadow: '0 20px 45px -18px rgba(15,23,42,0.1)',
+              position: 'relative',
+              zIndex: 20,
+            }}
+          >
             <div className="flex-1 min-w-0 space-y-1">
               <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
                 {authMode === 'login' ? 'Welcome back' : 'Create Account'}

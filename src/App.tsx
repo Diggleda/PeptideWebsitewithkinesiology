@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback, FormEvent, ReactNode } from 'react';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
-import { ProductCard, Product, ProductVariant } from './components/ProductCard';
+import { ProductCard, Product, ProductVariant, BulkPricingTier } from './components/ProductCard';
+import { loadLocalProductForCard } from './lib/localWooFixture';
 import { CategoryFilter } from './components/CategoryFilter';
 import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
@@ -68,7 +69,7 @@ interface FilterState {
 
 type WooImage = { src?: string | null };
 type WooCategory = { id: number; name: string };
-type WooMeta = { key?: string | null; value?: string | null };
+type WooMeta = { key?: string | null; value?: unknown };
 type WooAttribute = { id?: number; name?: string | null; option?: string | null };
 type WooVariationAttribute = { id?: number; name?: string | null; option?: string | null };
 
@@ -116,6 +117,8 @@ const WOO_PLACEHOLDER_IMAGE =
 
 const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23B7D8F9'/%3E%3Cstop offset='100%25' stop-color='%2395C5F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='16' fill='url(%23grad)'/%3E%3Cpath d='M35 80l15-18 12 14 11-12 12 16' stroke='%23ffffff' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='44' cy='43' r='9' fill='none' stroke='%23ffffff' stroke-width='5'/%3E%3C/svg%3E";
+
+const MIN_NEWS_LOADING_MS = 600;
 
 const SALES_REP_STATUS_ORDER = [
   'pending',
@@ -209,6 +212,87 @@ const describeNpiErrorMessage = (code?: string): string => {
   }
 };
 
+const BULK_META_KEYS = [
+  'bulk_pricing_tiers',
+  'bulk_pricing',
+  '_bulk_pricing_tiers',
+  'quantity_discounts',
+  'quantity_discount',
+];
+
+const normalizeBulkTier = (min: unknown, discount: unknown): BulkPricingTier | null => {
+  const minQuantity = Number(min);
+  const discountPct = Number(discount);
+  if (!Number.isFinite(minQuantity) || !Number.isFinite(discountPct)) {
+    return null;
+  }
+  if (minQuantity <= 0) {
+    return null;
+  }
+  return {
+    minQuantity: Math.max(1, Math.floor(minQuantity)),
+    discountPercentage: Math.max(0, Math.min(100, Number(discountPct))),
+  };
+};
+
+const parseBulkPricingValue = (value: unknown): BulkPricingTier[] => {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === 'object' && entry !== null) {
+          const maybe = entry as Record<string, unknown>;
+          return (
+            normalizeBulkTier(
+              maybe.minQuantity ?? maybe.min ?? maybe.quantity ?? maybe.qty,
+              maybe.discountPercentage ?? maybe.discount ?? maybe.percent ?? maybe.percentage,
+            )
+          );
+        }
+        if (typeof entry === 'string') {
+          const match = entry.match(/(\d+(?:\.\d+)?)\s*[:=,-]\s*(\d+(?:\.\d+)?)/);
+          if (match) {
+            return normalizeBulkTier(match[1], match[2]);
+          }
+        }
+        return null;
+      })
+      .filter((tier): tier is BulkPricingTier => Boolean(tier));
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.entries(record)
+      .map(([key, discount]) => normalizeBulkTier(key, discount))
+      .filter((tier): tier is BulkPricingTier => Boolean(tier));
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parseBulkPricingValue(parsed);
+    } catch {
+      return value
+        .split(/[\n,;]/)
+        .map((token) => token.trim())
+        .filter(Boolean)
+        .map((token) => {
+          const parts = token.split(/[:=|-]/).map((part) => part.trim());
+          if (parts.length >= 2) {
+            return normalizeBulkTier(parts[0].replace(/[^\d.]/g, ''), parts[1].replace(/[^\d.]/g, ''));
+          }
+          return null;
+        })
+        .filter((tier): tier is BulkPricingTier => Boolean(tier));
+    }
+  }
+
+  return [];
+};
+
 const mapWooProductToProduct = (product: WooProduct, productVariations: WooVariation[] = []): Product => {
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
@@ -280,6 +364,11 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
   const originalPrice = !hasVariants && baseOriginalPrice && baseOriginalPrice > price ? baseOriginalPrice : undefined;
   const cleanedDescription = stripHtml(product.short_description || product.description);
   const manufacturerMeta = product.meta_data?.find((meta) => meta?.key === 'manufacturer')?.value;
+  const bulkPricingMeta = product.meta_data?.find((meta) => {
+    const key = (meta?.key ?? '').toString().toLowerCase();
+    return BULK_META_KEYS.includes(key);
+  });
+  const bulkPricingTiers = bulkPricingMeta ? parseBulkPricingValue(bulkPricingMeta.value) : [];
   const variantImages = variantList.map((variant) => variant.image).filter((src): src is string => Boolean(src));
   const combinedImages = [...variantImages, ...imageSources].filter(
     (src, index, self) => Boolean(src) && self.indexOf(src) === index,
@@ -325,6 +414,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
     hasVariants,
     defaultVariantId,
     variantSummary,
+    bulkPricingTiers: bulkPricingTiers.length > 0 ? bulkPricingTiers : undefined,
   };
 };
 
@@ -430,6 +520,14 @@ export default function App() {
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (newsLoadingTimeoutRef.current) {
+        clearTimeout(newsLoadingTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -599,10 +697,29 @@ export default function App() {
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
-  const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
-  const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
-  const [peptideNewsUpdatedAt, setPeptideNewsUpdatedAt] = useState<Date | null>(null);
+const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
+const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
+const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
+const [peptideNewsUpdatedAt, setPeptideNewsUpdatedAt] = useState<Date | null>(null);
+const newsLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const beginNewsLoading = useCallback(() => {
+  if (newsLoadingTimeoutRef.current) {
+    clearTimeout(newsLoadingTimeoutRef.current);
+    newsLoadingTimeoutRef.current = null;
+  }
+  setPeptideNewsLoading(true);
+}, []);
+const settleNewsLoading = useCallback((startedAt: number) => {
+  const elapsed = Date.now() - startedAt;
+  const remaining = Math.max(0, MIN_NEWS_LOADING_MS - elapsed);
+  if (newsLoadingTimeoutRef.current) {
+    clearTimeout(newsLoadingTimeoutRef.current);
+  }
+  newsLoadingTimeoutRef.current = window.setTimeout(() => {
+    setPeptideNewsLoading(false);
+    newsLoadingTimeoutRef.current = null;
+  }, remaining);
+}, []);
   const [isReferralSectionExpanded, setIsReferralSectionExpanded] = useState(false);
   const [quoteOfTheDay, setQuoteOfTheDay] = useState<{ text: string; author: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -879,6 +996,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Dev-only: Load a local Woo fixture for testing ProductCard if flag set
+    const useFixture = (import.meta as any).env?.VITE_USE_LOCAL_WOO_FIXTURE === 'true';
+    if (useFixture) {
+      (async () => {
+        const fixture = await loadLocalProductForCard();
+        if (fixture) {
+          setCatalogProducts([fixture as any]);
+          setCatalogCategories([fixture.category]);
+          setCatalogTypes(['variable']);
+        }
+      })();
+    }
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -964,11 +1096,12 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadPeptideNews = async () => {
-      setPeptideNewsLoading(true);
-      setPeptideNewsError(null);
+useEffect(() => {
+  let cancelled = false;
+  const loadPeptideNews = async () => {
+    beginNewsLoading();
+    setPeptideNewsError(null);
+    const startedAt = Date.now();
 
       try {
         const data = await newsAPI.getPeptideHeadlines();
@@ -1004,17 +1137,17 @@ export default function App() {
         }
       } finally {
         if (!cancelled) {
-          setPeptideNewsLoading(false);
+          settleNewsLoading(startedAt);
         }
       }
-    };
+  };
 
     loadPeptideNews();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+}, []);
 
   // Load quote and trigger sequenced appearance when user logs in
   useEffect(() => {
@@ -1495,8 +1628,9 @@ export default function App() {
   };
 
   const handleRefreshNews = async () => {
-    setPeptideNewsLoading(true);
+    beginNewsLoading();
     setPeptideNewsError(null);
+    const startedAt = Date.now();
 
     try {
       const data = await newsAPI.getPeptideHeadlines();
@@ -1525,7 +1659,7 @@ export default function App() {
       setPeptideNewsError('Unable to load peptide news at the moment.');
       setPeptideNews([]);
     } finally {
-      setPeptideNewsLoading(false);
+      settleNewsLoading(startedAt);
     }
   };
 
@@ -2479,22 +2613,24 @@ const renderSalesRepDashboard = () => {
 
   const totalCartItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const shouldShowHeaderCartIcon = totalCartItems > 0 && !isCheckoutButtonVisible;
+  const newsLoadingPlaceholders = Array.from({ length: 5 });
 
   return (
     <div
-      className="min-h-screen bg-slate-50"
+      className="min-h-screen bg-slate-50 flex flex-col"
       style={{
         position: 'static',
       }}
     >
       {/* Ambient background texture */}
       <div
+        aria-hidden="true"
         style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
+          top: '-12vh',
+          left: '-6vw',
+          width: '112vw',
+          height: '140vh',
           backgroundImage: 'url(/leafTexture.jpg)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
@@ -2505,29 +2641,31 @@ const renderSalesRepDashboard = () => {
           WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.05) 50%, rgba(0,0,0,0) 100%)'
         }}
       />
-      {/* Header - Only show when logged in */}
-      {user && !postLoginHold && (
-        <Header
-          user={user}
-          onLogin={handleLogin}
-          onLogout={handleLogout}
-          cartItems={totalCartItems}
-          onSearch={handleSearch}
-          onCreateAccount={handleCreateAccount}
-          onCartClick={() => setCheckoutOpen(true)}
-          loginPromptToken={loginPromptToken}
-          loginContext={loginContext}
-          showCartIconFallback={shouldShowHeaderCartIcon}
-          onShowInfo={() => {
-            console.log('[App] onShowInfo called, setting postLoginHold to true');
-            setPostLoginHold(true);
-          }}
-        />
-      )}
+      <div className="relative z-10 flex flex-1 flex-col">
+        {/* Header - Only show when logged in */}
+        {user && !postLoginHold && (
+          <Header
+            user={user}
+            onLogin={handleLogin}
+            onLogout={handleLogout}
+            cartItems={totalCartItems}
+            onSearch={handleSearch}
+            onCreateAccount={handleCreateAccount}
+            onCartClick={() => setCheckoutOpen(true)}
+            loginPromptToken={loginPromptToken}
+            loginContext={loginContext}
+            showCartIconFallback={shouldShowHeaderCartIcon}
+            onShowInfo={() => {
+              console.log('[App] onShowInfo called, setting postLoginHold to true');
+              setPostLoginHold(true);
+            }}
+          />
+        )}
 
-      {/* Landing Page - Show when not logged in */}
-      {(!user || postLoginHold) && (
-        <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
+        <div className="flex-1 w-full flex flex-col">
+          {/* Landing Page - Show when not logged in */}
+          {(!user || postLoginHold) && (
+            <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
           {/* Logo with Welcome and Quote Containers */}
           {postLoginHold && user ? (
             <div className="w-full max-w-7xl mb-6 px-4">
@@ -2672,13 +2810,19 @@ const renderSalesRepDashboard = () => {
                     </div>
                     <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-sm text-gray-700 leading-relaxed">
                       {peptideNewsLoading && (
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Loading latest headlines…
-                        </div>
+                        <ul className="space-y-4" aria-live="polite">
+                          {newsLoadingPlaceholders.map((_, index) => (
+                            <li key={index} className="news-loading-card flex items-start gap-3">
+                              <div className="news-loading-thumb" aria-hidden="true" />
+                              <div className="flex-1 space-y-2">
+                                <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
+                                <div className="news-loading-line news-loading-shimmer w-full" aria-hidden="true" />
+                                <div className="news-loading-line news-loading-shimmer w-1/2" aria-hidden="true" />
+                              </div>
+                            </li>
+                          ))}
+                          <li className="text-xs text-slate-500 pl-1">Loading latest headlines…</li>
+                        </ul>
                       )}
                       {!peptideNewsLoading && peptideNewsError && (
                         <p className="text-xs text-red-600">{peptideNewsError}</p>
@@ -3191,16 +3335,17 @@ const renderSalesRepDashboard = () => {
         </div>
       )}
 
-      {/* Main Content */}
-      {user && !postLoginHold && (
-        <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
-          {user.role === 'sales_rep' ? renderSalesRepDashboard() : renderDoctorDashboard()}
-          {renderProductSection()}
-        </main>
-      )}
+          {/* Main Content */}
+          {user && !postLoginHold && (
+            <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
+              {user.role === 'sales_rep' ? renderSalesRepDashboard() : renderDoctorDashboard()}
+              {renderProductSection()}
+            </main>
+          )}
+        </div>
 
-      {/* Footer */}
-      <LegalFooter />
+        <LegalFooter />
+      </div>
 
       {/* Checkout Modal */}
       <CheckoutModal

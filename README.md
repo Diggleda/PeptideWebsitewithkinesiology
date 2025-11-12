@@ -43,6 +43,27 @@ Vite only exposes variables prefixed with `VITE_`. Copy `.env.example` to `.env.
 | `VITE_WOO_PROXY_URL` | Optional override for the catalog proxy. Leave blank to use `${VITE_API_URL}/api/woo`. |
 | `VITE_WOO_PROXY_TOKEN` | Shared secret when using a legacy PHP proxy (`token` query param). Safe to leave blank when calling the Express proxy. |
 
+### Testing on phones/tablets (LAN)
+
+1. Find your machine’s local IP (e.g. `10.0.0.42`) and add it to your env:
+   ```bash
+   # .env.local or .env
+   VITE_API_URL=http://10.0.0.42:3001
+   CORS_ALLOW_ORIGINS=http://localhost:3000,http://10.0.0.42:3000
+   ```
+2. Start the backend (it already listens on all interfaces):
+   ```bash
+   npm run server
+   ```
+3. In a second terminal run the LAN-friendly Vite script:
+   ```bash
+   npm run dev:lan
+   ```
+   This serves the app on `http://10.0.0.42:3000`.
+4. Connect your phone to the same Wi‑Fi and open that URL in mobile Safari/Chrome. You’ll see live updates as you edit code.
+
+> Tip: If you only need temporary access, you can pass `--host` once with `npm run dev -- --host 0.0.0.0`, but the `dev:lan` script makes it one command.
+
 ### WooCommerce Integration
 
 The backend builds a WooCommerce order payload for every checkout and will forward it when credentials are supplied.

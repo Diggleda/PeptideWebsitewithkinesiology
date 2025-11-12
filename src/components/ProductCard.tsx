@@ -1,9 +1,10 @@
-import type { CSSProperties, KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import clsx from 'clsx';
+import { Minus, Plus, ShoppingCart, Info } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
-import { ShoppingCart, Star, Info } from 'lucide-react';
-import { ProductImageCarousel } from './ProductImageCarousel';
+import { ImageWithFallback } from './ImageWithFallback';
 
 export interface ProductVariantAttribute {
   name: string;
@@ -20,6 +21,11 @@ export interface ProductVariant {
   attributes: ProductVariantAttribute[];
   image?: string;
   description?: string;
+}
+
+export interface BulkPricingTier {
+  minQuantity: number;
+  discountPercentage: number;
 }
 
 export interface Product {
@@ -42,258 +48,267 @@ export interface Product {
   hasVariants?: boolean;
   defaultVariantId?: string;
   variantSummary?: string;
+  bulkPricingTiers?: BulkPricingTier[];
 }
 
 interface ProductCardProps {
   product: Product;
-  onAddToCart: (productId: string, variantId?: string | null) => void;
+  onAddToCart: (productId: string, quantity?: number, note?: string, variantId?: string | null) => void;
   onViewDetails: (product: Product) => void;
   viewMode: 'grid' | 'list';
 }
 
+const formatCurrency = (value: number) =>
+  value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
 export function ProductCard({ product, onAddToCart, onViewDetails, viewMode }: ProductCardProps) {
   const isList = viewMode === 'list';
-  const discount = product.originalPrice 
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-    : 0;
-  const requiresVariantSelection = Boolean(product.variants?.length);
-  const imageWrapperBase = 'flex h-full w-full items-center justify-center bg-white/85';
-  const imageClasses = 'h-full w-full object-contain transition-transform duration-300';
-  const hasMultipleImages = (product.images?.length ?? 0) > 1;
+  const variantOptions = product.variants ?? [];
+  const hasVariantOptions = variantOptions.length > 0;
 
-  const triggerDetails = () => {
-    console.debug('[ProductCard] Details requested', { productId: product.id, viewMode });
-    onViewDetails(product);
+  const defaultVariant = useMemo(() => {
+    if (!hasVariantOptions) {
+      return null;
+    }
+    return (
+      variantOptions.find((variant) => variant.id === product.defaultVariantId) ??
+      variantOptions.find((variant) => variant.inStock) ??
+      variantOptions[0]
+    );
+  }, [hasVariantOptions, product.defaultVariantId, variantOptions]);
+
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(defaultVariant?.id ?? null);
+  const [quantity, setQuantity] = useState(1);
+
+  useEffect(() => {
+    setSelectedVariantId(defaultVariant?.id ?? null);
+    setQuantity(1);
+  }, [defaultVariant?.id, product.id]);
+
+  const selectedVariant = hasVariantOptions
+    ? variantOptions.find((variant) => variant.id === selectedVariantId) ?? defaultVariant ?? variantOptions[0] ?? null
+    : null;
+
+  const sortedBulkTiers = useMemo(() => {
+    if (!product.bulkPricingTiers?.length) {
+      return [];
+    }
+    return [...product.bulkPricingTiers].sort((a, b) => a.minQuantity - b.minQuantity);
+  }, [product.bulkPricingTiers]);
+
+  const activeBulkTier = sortedBulkTiers
+    .filter((tier) => quantity >= tier.minQuantity)
+    .slice(-1)[0];
+
+  const nextBulkTier = sortedBulkTiers.find((tier) => tier.minQuantity > quantity);
+
+  const baseUnitPrice = selectedVariant?.price ?? product.price ?? 0;
+  const unitDiscount = activeBulkTier ? activeBulkTier.discountPercentage / 100 : 0;
+  const unitPrice = baseUnitPrice * (1 - unitDiscount);
+  const totalPrice = unitPrice * quantity;
+  const savingsBadge =
+    activeBulkTier && activeBulkTier.discountPercentage > 0
+      ? `-${activeBulkTier.discountPercentage}% bulk savings`
+      : null;
+
+  const canAddToCart = product.inStock && (!hasVariantOptions || Boolean(selectedVariant?.inStock));
+  const coverImage = selectedVariant?.image ?? product.image;
+  const descriptionSnippet = product.description ? product.description.slice(0, 120) : '';
+
+  const handleQuantityChange = (delta: number) => {
+    setQuantity((prev) => Math.max(1, prev + delta));
   };
 
-  const triggerAddToCart = () => {
-    console.debug('[ProductCard] Add to cart button clicked', {
-      productId: product.id,
-      inStock: product.inStock,
-      requiresVariantSelection,
-    });
-    if (requiresVariantSelection) {
-      onViewDetails(product);
+  const handleAddToCart = () => {
+    if (!canAddToCart) {
       return;
     }
-    onAddToCart(product.id);
+    onAddToCart(product.id, quantity, undefined, selectedVariant?.id ?? null);
   };
 
-  const handleCarouselKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      triggerDetails();
-    }
-  };
-
-  const ratingStars = (
-    <div className="flex items-center">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Star 
-          key={i} 
-          className={`w-3 h-3 ${
-            i < Math.floor(product.rating) 
-              ? 'fill-yellow-400 text-yellow-400' 
-              : 'text-gray-300'
-          }`} 
-        />
-      ))}
-    </div>
+  const infoButton = (
+    <button
+      type="button"
+      onClick={() => onViewDetails(product)}
+      className="absolute top-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-slate-600 shadow-md transition hover:scale-105 hover:text-[rgb(95,179,249)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(95,179,249)]"
+      aria-label={`View details for ${product.name}`}
+    >
+      <Info className="h-4 w-4" />
+    </button>
   );
 
-  const ratingSummary = (
-    <div className="flex items-center gap-1 text-sm text-gray-600">
-      {ratingStars}
-      <span>({product.reviews})</span>
-    </div>
+  const containerClass = clsx(
+    'flex w-full',
+    isList ? 'flex-col gap-6 lg:flex-row' : 'flex-col gap-4'
   );
-
-  const priceDisplay = (
-    <div className="flex items-center gap-2">
-      {product.price > 0 ? (
-        <span className="text-lg font-semibold text-green-600">
-          {product.hasVariants ? 'From ' : ''}
-          ${product.price.toFixed(2)}
-        </span>
-      ) : (
-        <span className="text-sm font-medium text-[rgb(95,179,249)]">Request Pricing</span>
-      )}
-      {product.price > 0 && product.originalPrice && !product.hasVariants && (
-        <span className="text-sm text-gray-500 line-through">${product.originalPrice.toFixed(2)}</span>
-      )}
-    </div>
+  const imageWrapperClass = clsx(
+    'relative overflow-hidden bg-white/85',
+    isList ? 'rounded-b-none lg:rounded-tr-none lg:w-60 xl:w-72' : 'rounded-b-3xl'
   );
-  const addButtonLabel = requiresVariantSelection
-    ? 'Select Options'
-    : product.inStock
-      ? 'Add to Cart'
-      : 'Out of Stock';
-
-  if (isList) {
-    return (
-      <Card className="group w-full max-w-full overflow-hidden glass-card squircle-lg shadow-md hover:shadow-lg transition-all duration-300">
-        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5">
-          <div
-            className="relative flex-shrink-0"
-            style={{ flexBasis: '26%', maxWidth: '26%', minWidth: '160px' }}
-          >
-            <div
-              className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/40 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 btn-hover-lighter"
-              tabIndex={0}
-              role="button"
-              aria-label={`View details for ${product.name}`}
-              onClick={triggerDetails}
-              onKeyDown={handleCarouselKeyDown}
-            >
-              <ProductImageCarousel
-                images={product.images.length > 0 ? product.images : [product.image]}
-                alt={product.name}
-                className={`${imageWrapperBase} h-full`}
-                imageClassName={imageClasses}
-                style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.9vw, 0.8rem)' } as CSSProperties}
-                showDots={hasMultipleImages}
-                showArrows={hasMultipleImages}
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-0 flex flex-col gap-3 overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline" className="text-xs squircle-sm">{product.category}</Badge>
-                {/* Removed Rx badge per request */}
-                {discount > 0 && (
-                  <Badge className="squircle-sm bg-red-500 hover:bg-red-600 text-white">
-                    -{discount}%
-                  </Badge>
-                )}
-                {!product.inStock && (
-                  <Badge variant="destructive" className="squircle-sm">
-                    Out of Stock
-                  </Badge>
-                )}
-              </div>
-              {priceDisplay}
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <h3 className="text-lg font-semibold leading-tight">
-                {product.name}
-              </h3>
-              {ratingSummary}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-              <span>{product.dosage}</span>
-              <span>{product.manufacturer}</span>
-            </div>
-            {product.variantSummary && (
-              <p className="text-xs text-gray-500 line-clamp-1">
-                Options: {product.variantSummary}
-              </p>
-            )}
-
-            <div className="flex flex-col sm:flex-row gap-2 pt-1 max-w-full">
-              <Button
-                variant="outline"
-                onClick={triggerDetails}
-                className="glass squircle-sm flex-1 sm:flex-initial sm:min-w-[100px] btn-hover-lighter"
-              >
-                <Info className="w-4 h-4 mr-2" />
-                Details
-              </Button>
-              <Button
-                variant="outline"
-                onClick={triggerAddToCart}
-                disabled={!product.inStock}
-                className="flex-1 sm:flex-initial sm:min-w-[120px] glass-brand squircle-sm btn-hover-lighter"
-              >
-                <ShoppingCart className="w-4 h-4 mr-2" />
-                {addButtonLabel}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
-      <Card className="group w-full flex h-full flex-col overflow-hidden glass-card squircle-lg shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5">
-        <CardContent className="flex-1 p-0">
-        <div
-          className="relative aspect-square overflow-hidden cursor-pointer"
-          tabIndex={0}
-          role="button"
-          aria-label={`View details for ${product.name}`}
-          onClick={triggerDetails}
-          onKeyDown={handleCarouselKeyDown}
-        >
-          <ProductImageCarousel
-            images={product.images.length > 0 ? product.images : [product.image]}
-            alt={product.name}
-            className={`${imageWrapperBase} h-full`}
-            imageClassName={imageClasses}
-            style={{ '--product-image-frame-padding': 'clamp(0.45rem, 1vw, 0.95rem)' } as CSSProperties}
-            showDots={hasMultipleImages}
-            showArrows={hasMultipleImages}
-          >
-            {discount > 0 && (
-              <Badge className="absolute top-2 left-2 bg-red-500 hover:bg-red-600 squircle-sm">
-                  -{discount}%
-                </Badge>
-              )}
-              {/* Removed Rx badge per request */}
+    <Card className="group glass-card squircle-2xl shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 overflow-hidden">
+      <CardContent className="p-0">
+        <div className={containerClass}>
+          <div className={clsx('relative aspect-square w-full', isList ? 'lg:w-60 xl:w-72' : '')}>
+            <div className={imageWrapperClass}>
+              <ImageWithFallback
+                src={coverImage}
+                alt={product.name}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
               {!product.inStock && (
-                <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center">
-                  <Badge variant="destructive">Out of Stock</Badge>
+                <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center">
+                  <Badge variant="destructive" className="squircle-sm text-sm px-4 py-1.5">
+                    Out of Stock
+                  </Badge>
                 </div>
               )}
-            </ProductImageCarousel>
+              {infoButton}
+            </div>
           </div>
-        <div className="flex h-full flex-col p-4">
-          <div className="space-y-1">
-            <Badge variant="outline" className="text-xs squircle-sm">{product.category}</Badge>
-            <h3 className="line-clamp-2 transition-colors">
-              {product.name}
-            </h3>
-            <p className="text-sm text-gray-600">{product.dosage}</p>
-            <p className="text-xs text-gray-500">{product.manufacturer}</p>
-            {product.variantSummary && (
-              <p className="text-xs text-gray-500 line-clamp-1">
-                Options: {product.variantSummary}
+
+          <div className={clsx('flex-1 p-5 space-y-4', isList ? 'lg:p-6' : '')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-xs squircle-sm">
+                {product.category}
+              </Badge>
+              <span className="text-xs uppercase tracking-wide text-slate-500">
+                {product.manufacturer}
+              </span>
+              {savingsBadge && (
+                <Badge className="squircle-sm bg-green-500/90 text-white">{savingsBadge}</Badge>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-slate-900 leading-tight">
+                {product.name}
+              </h3>
+              <p className="text-sm text-slate-500 line-clamp-2">
+                {product.dosage}
+                {descriptionSnippet && ` • ${descriptionSnippet}`}
               </p>
+            </div>
+
+            {hasVariantOptions && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-600" htmlFor={`variant-${product.id}`}>
+                  Dosage / Strength
+                </label>
+                <div className="relative">
+                  <select
+                    id={`variant-${product.id}`}
+                    value={selectedVariant?.id ?? ''}
+                    onChange={(event) => setSelectedVariantId(event.target.value)}
+                    className="w-full squircle-sm border border-[var(--brand-glass-border-2)] bg-white/85 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(95,179,249)]"
+                  >
+                    {variantOptions.map((variant) => (
+                      <option key={variant.id} value={variant.id} disabled={!variant.inStock}>
+                        {variant.label} {variant.inStock ? '' : '(Out of stock)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
-          </div>
 
-          {ratingSummary}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Quantity</label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 squircle-sm"
+                  onClick={() => handleQuantityChange(-1)}
+                  disabled={quantity <= 1}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <div className="flex-1 text-center px-3 py-2 glass-card squircle-sm text-lg font-semibold">
+                  {quantity}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 squircle-sm"
+                  onClick={() => handleQuantityChange(1)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
-          <div className="mt-auto flex items-center justify-between">
-            {priceDisplay}
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm text-slate-600">
+                <span>Unit Price</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(unitPrice)}</span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-slate-600">Total</span>
+                <span className="text-2xl font-bold text-[rgb(56,148,97)]">
+                  {formatCurrency(totalPrice)}
+                </span>
+              </div>
+            </div>
+
+            {sortedBulkTiers.length > 0 && (
+              <div className="glass-card squircle-lg p-3 space-y-2 border border-[var(--brand-glass-border-2)]">
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span>Bulk Pricing</span>
+                  {activeBulkTier ? (
+                    <span className="font-semibold text-green-600">
+                      Saving {activeBulkTier.discountPercentage}% at {activeBulkTier.minQuantity}+
+                    </span>
+                  ) : (
+                    <span>Save more when you buy in bulk</span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {sortedBulkTiers.map((tier) => (
+                    <div
+                      key={`${tier.minQuantity}-${tier.discountPercentage}`}
+                      className={clsx(
+                        'flex items-center justify-between text-xs',
+                        quantity >= tier.minQuantity ? 'text-green-600 font-medium' : 'text-slate-600'
+                      )}
+                    >
+                      <span>Buy {tier.minQuantity}+</span>
+                      <span>Save {tier.discountPercentage}%</span>
+                    </div>
+                  ))}
+                </div>
+                {nextBulkTier && (
+                  <p className="text-xs text-[rgb(95,179,249)] font-medium">
+                    Add {nextBulkTier.minQuantity - quantity} more to unlock {nextBulkTier.discountPercentage}% savings
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
-      
-      <CardFooter className="mt-auto w-full p-4 pt-0">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 w-full">
-          <Button
-            variant="outline"
-            onClick={triggerDetails}
-            className="glass squircle-sm btn-hover-lighter"
-          >
-            <Info className="w-4 h-4 mr-2" />
-            Details
-          </Button>
-          <Button
-            variant="outline"
-            onClick={triggerAddToCart}
-            disabled={!product.inStock}
-            className="w-full glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-          >
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            {addButtonLabel}
-          </Button>
-        </div>
+
+      <CardFooter className={clsx('flex flex-col gap-2 p-5 pt-0', isList ? 'lg:flex-row lg:items-center' : '')}>
+        <Button
+          type="button"
+          onClick={handleAddToCart}
+          disabled={!canAddToCart}
+          className="w-full squircle-sm glass-brand btn-hover-lighter flex items-center justify-center gap-2"
+        >
+          <ShoppingCart className="w-4 h-4" />
+          {canAddToCart ? 'Add to Cart' : 'Unavailable'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onViewDetails(product)}
+          className="w-full squircle-sm"
+        >
+          View Details
+        </Button>
       </CardFooter>
     </Card>
   );

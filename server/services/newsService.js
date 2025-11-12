@@ -9,6 +9,15 @@ const DEFAULT_HEADERS = {
   'Referer': 'https://www.nature.com/',
 };
 
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_ENRICH_ITEMS = 6;
+
+const newsCache = {
+  items: [],
+  fetchedAt: 0,
+  pending: null,
+};
+
 const stripHtml = (value = '') => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const cleanText = (value = '') => stripHtml(value).replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
 const shorten = (text = '', max = 180) => {
@@ -21,14 +30,61 @@ const shorten = (text = '', max = 180) => {
 const parseDateToNum = (raw = '') => {
   const s = (raw || '').trim();
   if (!s) return 0;
+  // 1) Native parsing first
   let t = Date.parse(s);
   if (!Number.isNaN(t)) return t;
-  // Try YYYY-MM-DD
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  // 2) Common formats
+  // YYYY-MM-DD
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) {
     const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     if (!Number.isNaN(dt.getTime())) return dt.getTime();
   }
+
+  // DD Mon YYYY (e.g., 12 Nov 2025)
+  m = s.match(/^(?:[A-Za-z]{3},\s*)?(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/);
+  if (m) {
+    const day = Number(m[1]);
+    const mon = String(m[2]).toLowerCase();
+    const year = Number(m[3]);
+    const months = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+      may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8,
+      september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+    };
+    const month = months[mon];
+    if (month !== undefined) {
+      const dt = new Date(year, month, day);
+      if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    }
+  }
+
+  // Mon DD, YYYY (e.g., Nov 12, 2025)
+  m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),\s*(\d{4})/);
+  if (m) {
+    const mon = String(m[1]).toLowerCase();
+    const day = Number(m[2]);
+    const year = Number(m[3]);
+    const months = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+      may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8,
+      september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+    };
+    const month = months[mon];
+    if (month !== undefined) {
+      const dt = new Date(year, month, day);
+      if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    }
+  }
+
+  // YYYY/MM/DD
+  m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) {
+    const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (!Number.isNaN(dt.getTime())) return dt.getTime();
+  }
+
   return 0;
 };
 
@@ -184,6 +240,35 @@ function hostname(url) {
 }
 
 async function getPeptideNews({ limit = 20 } = {}) {
+  const now = Date.now();
+  if (newsCache.items.length && now - newsCache.fetchedAt < CACHE_TTL_MS) {
+    return newsCache.items.slice(0, limit);
+  }
+
+  if (newsCache.pending) {
+    try {
+      await newsCache.pending;
+      if (newsCache.items.length && Date.now() - newsCache.fetchedAt < CACHE_TTL_MS) {
+        return newsCache.items.slice(0, limit);
+      }
+    } catch (_) {
+      // fall through to refetch
+    }
+  }
+
+  const fetchPromise = fetchFreshNews(limit * 2);
+  newsCache.pending = fetchPromise;
+  try {
+    const fresh = await fetchPromise;
+    newsCache.items = fresh;
+    newsCache.fetchedAt = Date.now();
+    return fresh.slice(0, limit);
+  } finally {
+    newsCache.pending = null;
+  }
+}
+
+async function fetchFreshNews(limit = 20) {
   // Pull directly from Nature subject page by default
   const natureSubjectUrl = (process.env.NEWS_NATURE_URL || 'https://www.nature.com/subjects/peptides').trim();
   let rssList = parseCsv(process.env.NEWS_RSS_URLS || '');
@@ -203,32 +288,49 @@ async function getPeptideNews({ limit = 20 } = {}) {
   const pageItems = await fetchNatureSubject(natureSubjectUrl, limit);
   items = pageItems.slice();
 
-  // 2) Only if we have fewer than requested items, supplement with RSS
-  if (items.length < limit) {
-    const chunks = await Promise.allSettled(rssList.map((url) => fetchRss(url, limit)));
-    for (const c of chunks) {
-      if (c.status === 'fulfilled' && Array.isArray(c.value)) {
-        items.push(...c.value);
+  // 2) Always supplement with RSS so we capture chronological updates even if the subject page returns older featured stories
+  if (rssList.length > 0) {
+    const rssChunks = await Promise.allSettled(rssList.map((url) => fetchRss(url, limit)));
+    for (const chunk of rssChunks) {
+      if (chunk.status === 'fulfilled' && Array.isArray(chunk.value)) {
+        items.push(...chunk.value);
       }
     }
   }
 
-  // If nothing from configured feeds, fallback to Google News, then filter by allowed hosts
-  if (items.length === 0) {
-    try {
-      items = await fetchGoogleNews(query, limit * 2);
-    } catch (_) {
-      // ignore
+  // 3) Pull from Google News as well to ensure we always include the very latest stories even when the subject page/RSS lag
+  try {
+    const googleItems = await fetchGoogleNews(query, limit * 2);
+    if (Array.isArray(googleItems) && googleItems.length > 0) {
+      items.push(...googleItems);
     }
+  } catch (_) {
+    // ignore – other sources will cover
   }
 
-  // Filter by allowed hosts if specified
+  // Filter by allowed hosts if specified, resolving Google News redirect URLs first so we judge the destination domain
   if (allowedHosts.length > 0) {
     const normalizedHosts = allowedHosts.map((h) => h.toLowerCase());
-    items = items.filter((it) => {
-      const host = hostname(it.url).toLowerCase();
-      return normalizedHosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
-    });
+    const filtered = [];
+    for (const item of items) {
+      let host = hostname(item.url).toLowerCase();
+      if (host.includes('news.google.com')) {
+        try {
+          const resolved = await resolveGoogleNewsTarget(item.url);
+          if (resolved) {
+            item.url = resolved;
+            host = hostname(resolved).toLowerCase();
+          }
+        } catch (_) {
+          // ignore resolution issues, fall back to original host
+        }
+      }
+      const isAllowed = normalizedHosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+      if (isAllowed) {
+        filtered.push(item);
+      }
+    }
+    items = filtered;
   }
 
   // Deduplicate by URL while preserving order (Nature page order first)
@@ -248,7 +350,7 @@ async function getPeptideNews({ limit = 20 } = {}) {
 
   // Enrich images on the final set to ensure the visible items get thumbnails
   const finalItems = items.slice(0, limit);
-  await enrichItemsWithOg(finalItems, finalItems.length);
+  await enrichItemsWithOg(finalItems, Math.min(MAX_ENRICH_ITEMS, Math.max(1, finalItems.length)));
 
   return finalItems
     .map((item, idx) => ({ item, idx, ts: parseDateToNum(item.date) }))
