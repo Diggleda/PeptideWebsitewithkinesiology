@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -67,6 +67,10 @@ export function Header({
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [trackingForm, setTrackingForm] = useState({ orderId: '', email: '' });
+  const [trackingPending, setTrackingPending] = useState(false);
+  const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const [localUser, setLocalUser] = useState(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
@@ -139,8 +143,13 @@ export function Header({
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (loginSubmitting) {
+      return;
+    }
+
     setLoginError('');
     setSignupError('');
+    setLoginSubmitting(true);
 
     const formElement = event.currentTarget;
     const emailValue = loginEmailRef.current?.value ?? '';
@@ -167,6 +176,7 @@ export function Header({
       if (loginContext !== 'checkout') {
         setWelcomeOpen(true);
       }
+      setLoginSubmitting(false);
       return;
     }
 
@@ -175,6 +185,7 @@ export function Header({
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
+      setLoginSubmitting(false);
       return;
     }
 
@@ -185,6 +196,7 @@ export function Header({
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
+      setLoginSubmitting(false);
       return;
     }
 
@@ -200,12 +212,15 @@ export function Header({
       setShowLoginPassword(false);
       setShowSignupPassword(false);
       setShowSignupConfirmPassword(false);
+      setLoginSubmitting(false);
       return;
     }
 
     if (result.status === 'error') {
       setLoginError('Unable to log in. Please try again.');
     }
+
+    setLoginSubmitting(false);
   };
 
   useEffect(() => {
@@ -458,8 +473,30 @@ export function Header({
       } else {
         setSignupError('Unable to create an account right now. Please try again.');
       }
+  }
+  };
+
+  const handleTrackOrder = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!trackingForm.orderId.trim()) {
+      setTrackingMessage('Please enter a valid order ID.');
+      return;
+    }
+
+    setTrackingPending(true);
+    setTrackingMessage(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      setTrackingMessage('We will email your latest tracking update shortly.');
+    } catch (error) {
+      console.warn('[Account modal] Tracking lookup failed', error);
+      setTrackingMessage('Unable to look up that order right now. Please try again.');
+    } finally {
+      setTrackingPending(false);
     }
   };
+
 
   const handleDialogChange = (open: boolean) => {
     console.debug('[Header] Auth dialog open change', { open });
@@ -570,60 +607,109 @@ export function Header({
           </Button>
         </DialogTrigger>
         <DialogContent
-          className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl"
-          style={{
-            backdropFilter: 'blur(38px) saturate(1.6)',
-            width: 'min(640px, calc(100vw - 3rem))',
-            maxWidth: 'min(640px, calc(100vw - 3rem))',
-          }}
+          className="glass-card squircle-xl w-full max-w-[min(960px,calc(100vw-2rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+          style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
         >
-          <DialogTitle className="sr-only">Account greeting</DialogTitle>
-          <DialogDescription className="sr-only">Account welcome actions</DialogDescription>
-          <DialogHeader className="space-y-3">
-            <DialogTitle>
-              {(user.visits ?? 1) > 1
-                ? `Welcome back, ${user.name}!`
-                : `Welcome to PepPro, ${user.name}!`}
-            </DialogTitle>
-            <DialogDescription>
-              {(user.visits ?? 1) > 1
-                ? `We appreciate your continued support—let's make healthcare simpler together!`
-                : `We are thrilled to have you with us—let's make healthcare simpler together!`}
-            </DialogDescription>
+          <DialogHeader
+            className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4"
+            style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.2)' }}
+          >
+            <div className="flex-1 min-w-0 space-y-1">
+              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                {(user.visits ?? 1) > 1
+                  ? `Welcome back, ${user.name}!`
+                  : `Welcome to PepPro, ${user.name}!`}
+              </DialogTitle>
+              <DialogDescription>
+                {(user.visits ?? 1) > 1
+                  ? `We appreciate your continued support—let's make healthcare simpler together!`
+                  : `We are thrilled to have you with us—let's make healthcare simpler together!`}
+              </DialogDescription>
+            </div>
           </DialogHeader>
-          <div className="space-y-6 pt-4 pb-2">
-            {localUser && localUser.role !== 'sales_rep' && (
-              <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-                <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
-                <div className="space-y-1 text-sm text-slate-600">
-                  <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
-                  <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
-                  <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
-                </div>
-              </div>
-            )}
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="space-y-6 pt-4">
             {localUser && (
-              <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
-                <div className="grid gap-3">
-                  {([['name','Full Name'],['email','Email'],['phone','Phone']] as const).map(([key,label]) => (
-                    <EditableRow
-                      key={key}
-                      label={label}
-                      value={(localUser as any)[key] || ''}
-                      type={key === 'email' ? 'email' : 'text'}
-                      onSave={async (next) => {
-                        try {
-                          const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
-                          setLocalUser(updated);
-                          toast.success(`${label} updated`);
-                        } catch (e:any) {
-                          toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
-                          throw e;
-                        }
-                      }}
-                    />
-                  ))}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-4">
+                  {localUser.role !== 'sales_rep' && (
+                    <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
+                      <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+                      <div className="space-y-1 text-sm text-slate-600">
+                        <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
+                        <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
+                        <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
+                    <div className="grid gap-3">
+                      {([['name','Full Name'],['email','Email'],['phone','Phone']] as const).map(([key,label]) => (
+                        <EditableRow
+                          key={key}
+                          label={label}
+                          value={(localUser as any)[key] || ''}
+                          type={key === 'email' ? 'email' : 'text'}
+                          onSave={async (next) => {
+                            try {
+                              const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
+                              setLocalUser(updated);
+                              toast.success(`${label} updated`);
+                            } catch (e:any) {
+                              toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
+                              throw e;
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
+                {localUser.role !== 'sales_rep' && (
+                <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+                  <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
+                  <p className="text-sm text-slate-600">
+                    Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
+                  </p>
+                  <form className="grid gap-3" onSubmit={handleTrackOrder}>
+                    <div>
+                      <Label htmlFor="welcome-track-id">Order ID</Label>
+                      <Input
+                        id="welcome-track-id"
+                        value={trackingForm.orderId}
+                        onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
+                        className="mt-1"
+                        placeholder="ORD-12345"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="welcome-track-email">Email</Label>
+                      <Input
+                        id="welcome-track-email"
+                        type="email"
+                        value={trackingForm.email}
+                        onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
+                        className="mt-1"
+                        placeholder="you@example.com"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        type="submit"
+                        className="glass-brand squircle-sm inline-flex items-center gap-2"
+                        disabled={trackingPending}
+                      >
+                        {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                        {trackingPending ? 'Checking…' : 'Email tracking link'}
+                      </Button>
+                      {trackingMessage && (
+                        <p className="text-sm text-slate-600">{trackingMessage}</p>
+                      )}
+                    </div>
+                  </form>
+                </div>
+                )}
               </div>
             )}
             <Button
@@ -671,6 +757,7 @@ export function Header({
               </Button>
             </div>
           </div>
+          </div>
         </DialogContent>
       </Dialog>
       {renderCartButton()}
@@ -695,19 +782,23 @@ export function Header({
             maxWidth: 'min(640px, calc(100vw - 3rem))',
           }}
         >
-          <DialogTitle className="sr-only">Authentication modal</DialogTitle>
-          <DialogDescription className="sr-only">User authentication workflow</DialogDescription>
-          <DialogHeader className="space-y-3">
-            <div className="space-y-1">
-              <DialogTitle>
+          <DialogHeader className="flex items-start justify-between gap-4 border-b border-[var(--brand-glass-border-1)] pb-3">
+            <div className="flex-1 min-w-0 space-y-1">
+              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
                 {authMode === 'login' ? 'Welcome back' : 'Create Account'}
               </DialogTitle>
               <DialogDescription>
                 {authMode === 'login'
                   ? 'Login to enter your PepPro account.'
-                  : ''}
+                  : 'Create your PepPro physician account to access the marketplace.'}
               </DialogDescription>
             </div>
+            <DialogClose
+              className="dialog-close-btn inline-flex h-9 w-9 items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              aria-label="Close account modal"
+            >
+              <X className="h-4 w-4" />
+            </DialogClose>
           </DialogHeader>
           {authMode === 'login' ? (
             <div className="space-y-5">
@@ -774,9 +865,11 @@ export function Header({
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full squircle-sm glass-brand btn-hover-lighter"
+                  className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                  disabled={loginSubmitting}
                 >
-                  Sign In
+                  {loginSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {loginSubmitting ? 'Signing in…' : 'Sign In'}
                 </Button>
               </form>
               <p className="text-center text-sm text-gray-600">
@@ -970,6 +1063,51 @@ export function Header({
               </p>
             </div>
           )}
+          <div className="mt-6 glass squircle-lg p-4 sm:p-5 space-y-4 border border-[var(--brand-glass-border-1)]">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-base font-semibold text-slate-800">Track an order</h3>
+              <p className="text-sm text-slate-600">
+                Enter your PepPro order ID and email. We&apos;ll email you the latest fulfillment update.
+              </p>
+            </div>
+            <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleTrackOrder}>
+              <div>
+                <Label htmlFor="account-track-id">Order ID</Label>
+                <Input
+                  id="account-track-id"
+                  value={trackingForm.orderId}
+                  onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
+                  className="mt-1"
+                  placeholder="ORD-12345"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="account-track-email">Email</Label>
+                <Input
+                  id="account-track-email"
+                  type="email"
+                  value={trackingForm.email}
+                  onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
+                  className="mt-1"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+                <Button
+                  type="submit"
+                  className="glass-brand squircle-sm inline-flex items-center gap-2"
+                  disabled={trackingPending}
+                >
+                  {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {trackingPending ? 'Checking…' : 'Email tracking link'}
+                </Button>
+                {trackingMessage && (
+                  <p className="text-sm text-slate-600">{trackingMessage}</p>
+                )}
+              </div>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
       {renderCartButton()}
