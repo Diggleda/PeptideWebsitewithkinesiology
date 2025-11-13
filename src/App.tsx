@@ -10,7 +10,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint } from 'lucide-react';
+import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
 import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
@@ -118,6 +118,53 @@ interface PeptideNewsItem {
 
 const WOO_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
+
+const normalizeHumanName = (value: string) =>
+  (value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const HONORIFIC_TOKENS = new Set(['mr', 'mrs', 'ms', 'mx', 'dr', 'prof', 'sir', 'madam']);
+const SUFFIX_TOKENS = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+
+const tokenizeName = (value: string) =>
+  normalizeHumanName(value)
+    .split(' ')
+    .map((token) => token.replace(/[.,]/g, ''))
+    .filter(
+      (token) =>
+        token &&
+        !HONORIFIC_TOKENS.has(token) &&
+        !SUFFIX_TOKENS.has(token),
+    );
+
+const namesRoughlyMatch = (a: string, b: string) => {
+  const tokensA = tokenizeName(a);
+  const tokensB = tokenizeName(b);
+  if (!tokensA.length || !tokensB.length) {
+    return false;
+  }
+  if (tokensA.join(' ') === tokensB.join(' ')) {
+    return true;
+  }
+  const firstA = tokensA[0];
+  const lastA = tokensA[tokensA.length - 1];
+  const firstB = tokensB[0];
+  const lastB = tokensB[tokensB.length - 1];
+  if (!firstA || !lastA || !firstB || !lastB) {
+    return false;
+  }
+  if (firstA !== firstB || lastA !== lastB) {
+    return false;
+  }
+  const middleA = tokensA.slice(1, -1).join(' ');
+  const middleB = tokensB.slice(1, -1).join(' ');
+  if (!middleA || !middleB) {
+    return true;
+  }
+  return middleA === middleB;
+};
 
 const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23B7D8F9'/%3E%3Cstop offset='100%25' stop-color='%2395C5F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='16' fill='url(%23grad)'/%3E%3Cpath d='M35 80l15-18 12 14 11-12 12 16' stroke='%23ffffff' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='44' cy='43' r='9' fill='none' stroke='%23ffffff' stroke-width='5'/%3E%3C/svg%3E";
@@ -606,6 +653,8 @@ export default function App() {
   const [landingAuthMode, setLandingAuthMode] = useState<'login' | 'signup'>('login');
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
+  const [infoFocusActive, setInfoFocusActive] = useState(false);
+  const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
   const prevUserRef = useRef<User | null>(null);
   const [showLandingLoginPassword, setShowLandingLoginPassword] = useState(false);
   const [showLandingSignupPassword, setShowLandingSignupPassword] = useState(false);
@@ -623,6 +672,7 @@ export default function App() {
   });
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
+  const [landingLoginPending, setLandingLoginPending] = useState(false);
   const [enablePasskeyPending, setEnablePasskeyPending] = useState(false);
   const [enablePasskeyError, setEnablePasskeyError] = useState('');
   const passkeyAutoRegisterAttemptedRef = useRef(false);
@@ -671,9 +721,27 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (postLoginHold && user && shouldAnimateInfoFocus) {
+      setInfoFocusActive(true);
+      const timeoutId = window.setTimeout(() => {
+        setInfoFocusActive(false);
+        setShouldAnimateInfoFocus(false);
+      }, 1500);
+      return () => {
+        window.clearTimeout(timeoutId);
+        setInfoFocusActive(false);
+      };
+    }
+    if (!shouldAnimateInfoFocus) {
+      setInfoFocusActive(false);
+    }
+  }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
+
   const applyLoginSuccessState = useCallback((nextUser: User) => {
     setUser(nextUser);
     setPostLoginHold(true);
+    setShouldAnimateInfoFocus(true);
     const isReturning = (nextUser.visits ?? 1) > 1;
     setIsReturningUser(isReturning);
     setLoginContext(null);
@@ -804,6 +872,7 @@ export default function App() {
   const [landingSignupError, setLandingSignupError] = useState('');
   const [landingNpiStatus, setLandingNpiStatus] = useState<'idle' | 'checking' | 'verified' | 'rejected'>('idle');
   const [landingNpiMessage, setLandingNpiMessage] = useState('');
+  const landingNpiRecordRef = useRef<{ name?: string | null; verifiedNpiNumber?: string } | null>(null);
   const landingNpiCheckIdRef = useRef(0);
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
@@ -1556,6 +1625,7 @@ useEffect(() => {
     landingNpiCheckIdRef.current += 1;
     setLandingNpiStatus('idle');
     setLandingNpiMessage('');
+    landingNpiRecordRef.current = null;
   }, []);
 
   const handleLandingNpiInputChange = useCallback((rawValue: string) => {
@@ -1565,6 +1635,7 @@ useEffect(() => {
       landingNpiCheckIdRef.current += 1;
       setLandingNpiStatus('idle');
       setLandingNpiMessage('');
+      landingNpiRecordRef.current = null;
       return;
     }
 
@@ -1575,11 +1646,32 @@ useEffect(() => {
     setLandingNpiMessage('');
 
     authAPI.verifyNpi(digits)
-      .then(() => {
+      .then((record: any) => {
         if (landingNpiCheckIdRef.current !== checkId) {
           return;
         }
         console.debug('[NPI] Verified successfully', { npiNumber: digits });
+        const derivedName = (() => {
+          if (record?.name && typeof record.name === 'string') {
+            return record.name.trim();
+          }
+          const basic = record?.raw?.basic;
+          if (basic) {
+            const parts = [basic.first_name, basic.middle_name, basic.last_name]
+              .map((part: string | undefined) => part?.trim())
+              .filter(Boolean);
+            if (parts.length) {
+              return parts.join(' ');
+            }
+          }
+          return null;
+        })();
+        const resolvedRecord = record ?? {};
+        landingNpiRecordRef.current = {
+          ...resolvedRecord,
+          name: derivedName ?? (typeof resolvedRecord.name === 'string' ? resolvedRecord.name : null),
+          verifiedNpiNumber: digits,
+        };
         setLandingNpiStatus('verified');
         setLandingNpiMessage('NPI verified with the CMS registry.');
       })
@@ -1591,6 +1683,7 @@ useEffect(() => {
         const message = describeNpiErrorMessage(error?.message);
         setLandingNpiStatus('rejected');
         setLandingNpiMessage(message);
+        landingNpiRecordRef.current = null;
       });
   }, []);
 
@@ -1634,6 +1727,16 @@ useEffect(() => {
       const normalizedNpi = (details.npiNumber || '').replace(/\D/g, '');
       if (normalizedNpi && !/^\d{10}$/.test(normalizedNpi)) {
         return { status: 'invalid_npi' };
+      }
+
+      if (normalizedNpi) {
+        const verifiedRecord = landingNpiRecordRef.current;
+        if (!verifiedRecord || verifiedRecord.verifiedNpiNumber !== normalizedNpi) {
+          return { status: 'error', message: 'Please verify your NPI before continuing.' };
+        }
+        if (verifiedRecord.name && !namesRoughlyMatch(details.name, verifiedRecord.name)) {
+          return { status: 'error', message: 'Ensure your name is exactly as stated on your NPI registry.' };
+        }
       }
 
       const user = await authAPI.register({
@@ -1693,6 +1796,9 @@ useEffect(() => {
       if (message === 'NPI_NOT_FOUND') {
         return { status: 'npi_not_found' };
       }
+      if (message === 'NPI_NAME_MISMATCH') {
+        return { status: 'error', message: 'Ensure your name is exactly as stated on your NPI registry.' };
+      }
       if (message === 'NPI_ALREADY_REGISTERED') {
         return { status: 'npi_already_registered' };
       }
@@ -1712,6 +1818,7 @@ useEffect(() => {
     setIsReturningUser(false);
     setCheckoutOpen(false);
     setShouldReopenCheckout(false);
+    setShouldAnimateInfoFocus(false);
     setDoctorSummary(null);
     setDoctorReferrals([]);
     setSalesRepDashboard(null);
@@ -2350,8 +2457,8 @@ const renderProductSection = () => (
 
     {/* Products Grid */}
     <div className="w-full min-w-0 flex-1">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           <h2>Products</h2>
           <Badge variant="outline" className="squircle-sm glass">
             {filteredProducts.length} items
@@ -2373,38 +2480,40 @@ const renderProductSection = () => (
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            aria-pressed={viewMode === 'grid'}
-            onClick={() => setViewMode('grid')}
-            className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-              viewMode === 'grid'
-                ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-            }`}
-          >
-            <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setViewMode('list')}
-            aria-pressed={viewMode === 'list'}
-            className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-              viewMode === 'list'
-                ? 'h-14 w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                : 'h-8.5 w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-            }`}
-          >
-            <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
-          </Button>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-end">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => setViewMode('grid')}
+              className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+                viewMode === 'grid'
+                  ? 'h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                  : 'h-10 w-10 sm:h-8.5 sm:w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+              }`}
+            >
+              <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setViewMode('list')}
+              aria-pressed={viewMode === 'list'}
+              className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
+                viewMode === 'list'
+                  ? 'h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
+                  : 'h-10 w-10 sm:h-8.5 sm:w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
+              }`}
+            >
+              <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
+            </Button>
+          </div>
 
           {totalCartItems > 0 && (
             <Button
               variant="ghost"
               onClick={() => setCheckoutOpen(true)}
               ref={checkoutButtonRef}
-              className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+              className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center"
             >
               <ShoppingCart className="w-4 h-4 mr-2" />
               Checkout ({totalCartItems})
@@ -2415,7 +2524,7 @@ const renderProductSection = () => (
 
       {filteredProducts.length > 0 ? (
         <div
-          className={`grid gap-6 w-full ${
+          className={`grid gap-6 w-full pr-4 ${
             viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
           }`}
         >
@@ -2425,6 +2534,7 @@ const renderProductSection = () => (
               <ProductCard
                 key={product.id}
                 product={cardProduct}
+                layout={viewMode}
                 onAddToCart={(productId, variationId, qty) =>
                   handleAddToCart(productId, qty, undefined, variationId)}
               />
@@ -2775,6 +2885,7 @@ const renderSalesRepDashboard = () => {
           WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.05) 50%, rgba(0,0,0,0) 100%)'
         }}
       />
+      {infoFocusActive && postLoginHold && user && <div className="info-focus-overlay" aria-hidden="true" />}
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Header - Only show when logged in */}
         {user && !postLoginHold && (
@@ -2806,12 +2917,22 @@ const renderSalesRepDashboard = () => {
               {isDesktopLandingLayout ? (
                 <div className="flex flex-row items-stretch justify-between gap-4 lg:gap-6 mb-8">
                   <div
-                    className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex items-center justify-center flex-1 ${
+                    className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex items-center justify-center flex-1 info-highlight-card ${infoFocusActive ? 'info-focus-active' : ''} ${
                       showWelcome ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
                     }`}
-                    style={{ backdropFilter: 'blur(20px) saturate(1.4)' }}
+                    style={{
+                      backdropFilter: 'blur(20px) saturate(1.4)',
+                      minHeight: 'min(140px, 12.5vh)',
+                    }}
                   >
-                    <p className="text-2xl lg:text-3xl font-semibold text-[rgb(95,179,249)] text-center">
+                    <p
+                      className={`font-semibold text-[rgb(95,179,249)] text-center shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
+                      style={{
+                        fontSize: infoFocusActive ? 'clamp(0.94rem, 1.65vw, 1.65rem)' : 'clamp(0.76rem, 1.22vw, 1.22rem)',
+                        lineHeight: 1.15,
+                        transition: 'font-size 800ms ease',
+                      }}
+                    >
                       Welcome{user.visits && user.visits > 1 ? ' back' : ''}, {user.name}!
                     </p>
                   </div>
@@ -2833,18 +2954,29 @@ const renderSalesRepDashboard = () => {
                     </div>
                   </div>
 
-                  {quoteOfTheDay && (
-                    <div
-                      className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
-                        showQuote ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
-                      }`}
-                      style={{ backdropFilter: 'blur(20px) saturate(1.4)' }}
-                    >
+                  <div
+                    className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
+                      quoteOfTheDay ? (showQuote ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4') : 'opacity-100 translate-y-0'
+                    }`}
+                    style={{
+                      backdropFilter: 'blur(20px) saturate(1.4)',
+                      minHeight: 'min(140px, 12.5vh)',
+                    }}
+                  >
+                    {quoteOfTheDay ? (
                       <p className="text-base lg:text-lg italic text-gray-700 text-center">
                         "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                       </p>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="w-full flex flex-col items-center gap-4" aria-live="polite">
+                        <div className="news-loading-card flex flex-col items-center gap-3 w-full max-w-md">
+                          <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
+                          <div className="news-loading-line news-loading-shimmer w-1/2" aria-hidden="true" />
+                        </div>
+                        <p className="text-xs text-slate-500">Loading today&apos;s quote…</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-6 mb-8">
@@ -2865,25 +2997,41 @@ const renderSalesRepDashboard = () => {
                     </div>
                   </div>
                   <div
-                    className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full ${
+                    className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? 'info-focus-active' : ''} ${
                       showWelcome ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
                     }`}
-                    style={{ backdropFilter: 'blur(20px) saturate(1.4)' }}
+                    style={{
+                      backdropFilter: 'blur(20px) saturate(1.4)',
+                      minHeight: 'min(140px, 20vh)',
+                    }}
                   >
-                    <p className="text-center text-xl font-semibold text-[rgb(95,179,249)]">
+                    <p
+                      className={`text-center font-semibold text-[rgb(95,179,249)] shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
+                      style={{
+                        fontSize: infoFocusActive ? 'clamp(1.32rem, 4.9vw, 1.9rem)' : 'clamp(0.8rem, 2.94vw, 1.14rem)',
+                        lineHeight: 1.2,
+                        transition: 'font-size 800ms ease',
+                      }}
+                    >
                       Welcome{user.visits && user.visits > 1 ? ' back' : ''}, {user.name}!
                     </p>
-                    {quoteOfTheDay && (
-                      <div
-                        className={`mt-5 rounded-lg bg-white/65 px-4 py-3 text-center shadow-inner transition-opacity duration-500 ${
-                          showQuote ? 'opacity-100' : 'opacity-0'
-                        }`}
-                      >
+                    <div
+                      className={`mt-5 rounded-lg bg-white/65 px-4 py-3 text-center shadow-inner transition-opacity duration-500 ${
+                        quoteOfTheDay ? (showQuote ? 'opacity-100' : 'opacity-0') : 'opacity-100'
+                      }`}
+                    >
+                      {quoteOfTheDay ? (
                         <p className="text-sm italic text-gray-700">
                           "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                         </p>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
+                          <div className="news-loading-line news-loading-shimmer w-1/2" aria-hidden="true" />
+                          <p className="text-xs text-slate-500">Loading today&apos;s quote…</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -3042,17 +3190,27 @@ const renderSalesRepDashboard = () => {
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
-                    {/* Passkey registration now handled automatically after login when supported */}
+                    {/* Regional contact info for doctors */}
                     {user.role !== 'sales_rep' && (
                       <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-                        <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
+                        <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator anytime.</p>
                         <div className="space-y-1 text-sm text-slate-600">
                           <p><span className="font-semibold">Name:</span> {user.salesRep?.name || 'N/A'}</p>
-                          <p><span className="font-semibold">Email:</span> {user.salesRep?.email || 'N/A'}</p>
+                          <p>
+                            <span className="font-semibold">Email:</span>{' '}
+                            {user.salesRep?.email ? (
+                              <a href={`mailto:${user.salesRep.email}`} className="text-[rgb(95,179,249)] hover:underline">
+                                {user.salesRep.email}
+                              </a>
+                            ) : (
+                              'N/A'
+                            )}
+                          </p>
                           <p><span className="font-semibold">Phone:</span> {user.salesRep?.phone || 'N/A'}</p>
                         </div>
                       </div>
                     )}
+                    {/* Passkey registration now handled automatically after login when supported */}
                     <div className="relative flex flex-col gap-6 max-h-[70vh]">
                       <div className="flex-1 overflow-y-auto pr-1 space-y-16">
                         {/* Removed: Customer experiences & referrals section */}
@@ -3135,13 +3293,28 @@ const renderSalesRepDashboard = () => {
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        if (landingLoginPending) {
+                          return;
+                        }
                         setLandingLoginError('');
-                        const fd = new FormData(e.currentTarget);
-                        const res = await handleLogin(fd.get('username') as string, fd.get('password') as string);
-                        if (res.status !== 'success') {
-                          if (res.status === 'invalid_password') setLandingLoginError('Incorrect password. Please try again.');
-                          else if (res.status === 'email_not_found') setLandingLoginError('We could not find that email.');
-                          else setLandingLoginError('Unable to log in. Please try again.');
+                        setLandingLoginPending(true);
+                        try {
+                          const fd = new FormData(e.currentTarget);
+                          const res = await handleLogin(fd.get('username') as string, fd.get('password') as string);
+                          if (res.status !== 'success') {
+                            if (res.status === 'invalid_password') {
+                              setLandingLoginError('Incorrect password. Please try again.');
+                            } else if (res.status === 'email_not_found') {
+                              setLandingLoginError('We could not find that email.');
+                            } else {
+                              setLandingLoginError('Unable to log in. Please try again.');
+                            }
+                          }
+                        } catch (error) {
+                          console.warn('[Landing Login] Failed', error);
+                          setLandingLoginError('Unable to log in. Please try again.');
+                        } finally {
+                          setLandingLoginPending(false);
                         }
                       }}
                       className="space-y-3"
@@ -3222,9 +3395,11 @@ const renderSalesRepDashboard = () => {
                       <Button
                         type="submit"
                         size="lg"
-                        className="w-full squircle-sm glass-brand btn-hover-lighter"
+                        className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                        disabled={landingLoginPending}
                       >
-                        Sign In
+                        {landingLoginPending && <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />}
+                        {landingLoginPending ? 'Signing in…' : 'Sign In'}
                       </Button>
                     </form>
                     <div className="text-center">
@@ -3281,9 +3456,13 @@ const renderSalesRepDashboard = () => {
                         } else if (res.status === 'npi_verification_failed') {
                           setLandingSignupError('We were unable to reach the CMS NPI registry. Please try again in a moment.');
                         } else if (res.status === 'error') {
-                          setLandingSignupError(res.message === 'PASSWORD_REQUIRED'
-                            ? 'Please create a secure password to access your account.'
-                            : 'Unable to create account. Please try again.');
+                          if (res.message === 'PASSWORD_REQUIRED') {
+                            setLandingSignupError('Please create a secure password to access your account.');
+                          } else if (res.message) {
+                            setLandingSignupError(res.message);
+                          } else {
+                            setLandingSignupError('Unable to create account. Please try again.');
+                          }
                         }
                       }}
                       className="space-y-4"
@@ -3471,7 +3650,7 @@ const renderSalesRepDashboard = () => {
 
           {/* Main Content */}
           {user && !postLoginHold && (
-            <main className="mx-auto px-4 sm:px-6 lg:px-10 py-12" style={{ marginTop: '2.4rem' }}>
+            <main className="w-full py-12 mobile-safe-area" style={{ marginTop: '2.4rem' }}>
               {user.role === 'sales_rep' ? renderSalesRepDashboard() : renderDoctorDashboard()}
               {renderProductSection()}
             </main>
@@ -3491,6 +3670,7 @@ const renderSalesRepDashboard = () => {
         onRemoveItem={handleRemoveCartItem}
         isAuthenticated={Boolean(user)}
         onRequireLogin={handleRequireLogin}
+        physicianName={user?.npiVerification?.name || user?.name || null}
       />
 
       <ProductDetailDialog

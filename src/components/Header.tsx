@@ -761,7 +761,7 @@ export function Header({
             style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.2)' }}
           >
             <div className="flex-1 min-w-0 space-y-3">
-              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)] welcome-greeting">
                 {(user.visits ?? 1) > 1
                   ? `Welcome back, ${user.name}!`
                   : `Welcome to PepPro, ${user.name}!`}
@@ -969,7 +969,7 @@ export function Header({
                   className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
                   disabled={loginSubmitting}
                 >
-                  {loginSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {loginSubmitting && <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />}
                   {loginSubmitting ? 'Signing in…' : 'Sign In'}
                 </Button>
               </form>
@@ -1215,6 +1215,10 @@ export function Header({
     </>
   );
 
+  const logoSizing = isLargeScreen
+    ? { maxWidth: '160px', maxHeight: '160px' }
+    : { maxWidth: 'min(150px, 42vw)', maxHeight: '64px' };
+
   return (
     <header
       ref={headerRef}
@@ -1222,11 +1226,11 @@ export function Header({
       className="w-full glass-strong border-b border-white/20 bg-white/70 supports-[backdrop-filter]:bg-white/40 backdrop-blur shadow-sm"
       style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9500 }}
     >
-      <div className="container mx-auto px-4 py-4">
+      <div className="w-full px-6 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
             {/* Logo */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
                   <img
@@ -1237,8 +1241,8 @@ export function Header({
                       display: 'block',
                       width: 'auto',
                       height: 'auto',
-                      maxWidth: '160px',
-                      maxHeight: '160px',
+                      maxWidth: logoSizing.maxWidth,
+                      maxHeight: logoSizing.maxHeight,
                       objectFit: 'contain'
                     }}
                   />
@@ -1259,7 +1263,7 @@ export function Header({
             )}
 
             {/* User Actions */}
-            <div className="flex items-center gap-2 md:gap-4">
+            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end">
               {authControls}
               {!isLargeScreen && (
                 <Button
