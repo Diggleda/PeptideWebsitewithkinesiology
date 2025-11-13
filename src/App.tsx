@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback, FormEvent, ReactNode } from 'react';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
-import { ProductCard, Product, ProductVariant, BulkPricingTier } from './components/ProductCard';
+import { ProductCard } from './components/ProductCard';
+import type { Product as CardProduct } from './components/ProductCard';
+import type { Product, ProductVariant, BulkPricingTier } from './types/product';
 import { loadLocalProductForCard } from './lib/localWooFixture';
 import { CategoryFilter } from './components/CategoryFilter';
 import { CheckoutModal } from './components/CheckoutModal';
@@ -82,6 +84,8 @@ interface WooVariation {
   attributes?: WooVariationAttribute[];
   description?: string | null;
   sku?: string | null;
+  meta_data?: WooMeta[];
+  tiered_pricing_fixed_rules?: Record<string, unknown> | null;
 }
 
 interface WooProduct {
@@ -293,6 +297,110 @@ const parseBulkPricingValue = (value: unknown): BulkPricingTier[] => {
   return [];
 };
 
+const toNumeric = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^\d.\-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeFixedRule = (min: unknown, unitPrice: unknown, basePrice: number): BulkPricingTier | null => {
+  const minQuantity = Number(min);
+  const price = toNumeric(unitPrice);
+  if (!Number.isFinite(minQuantity) || !price || !Number.isFinite(basePrice) || basePrice <= 0 || minQuantity <= 0) {
+    return null;
+  }
+  const discount = Math.max(0, Math.min(100, (1 - price / basePrice) * 100));
+  return {
+    minQuantity: Math.floor(minQuantity),
+    discountPercentage: Math.round(discount),
+  };
+};
+
+const parseFixedPriceRules = (value: unknown, basePrice: number): BulkPricingTier[] => {
+  if (!value || !Number.isFinite(basePrice) || basePrice <= 0) {
+    return [];
+  }
+
+  const entries: Array<{ min: unknown; price: unknown }> = [];
+  const collect = (min: unknown, price: unknown) => {
+    entries.push({ min, price });
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      if (typeof item === 'object' && item !== null) {
+        collect((item as any).quantity ?? (item as any).min ?? (item as any).minQuantity, (item as any).price ?? (item as any).value);
+      }
+    });
+  } else if (typeof value === 'object') {
+    Object.entries(value as Record<string, unknown>).forEach(([key, price]) => collect(key, price));
+  } else if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parseFixedPriceRules(parsed, basePrice);
+    } catch {
+      value.split(/[\n,;]/).forEach((token) => {
+        if (!token) return;
+        const parts = token.split(/[:=|-]/).map((part) => part.trim());
+        if (parts.length >= 2) {
+          collect(parts[0], parts[1]);
+        }
+      });
+    }
+  }
+
+  return entries
+    .map(({ min, price }) => normalizeFixedRule(min, price, basePrice))
+    .filter((tier): tier is BulkPricingTier => Boolean(tier))
+    .sort((a, b) => a.minQuantity - b.minQuantity);
+};
+
+const parsePepproTiersFromMeta = (meta: WooMeta[] | undefined, basePrice: number): BulkPricingTier[] => {
+  if (!Array.isArray(meta) || basePrice <= 0) {
+    return [];
+  }
+  const tiers: BulkPricingTier[] = [];
+  meta.forEach((entry) => {
+    const key = String(entry?.key || '');
+    if (!key.includes('peppro_tier') || key.includes('note')) {
+      return;
+    }
+    const qtyMatch = key.match(/(\d+)/);
+    const minQuantity = qtyMatch ? Number(qtyMatch[1]) : null;
+    const price = toNumeric(entry?.value);
+    if (!minQuantity || !price) {
+      return;
+    }
+    const tier = normalizeFixedRule(minQuantity, price, basePrice);
+    if (tier) {
+      tiers.push(tier);
+    }
+  });
+  return tiers.sort((a, b) => a.minQuantity - b.minQuantity);
+};
+
+const parseVariantBulkPricing = (variation: WooVariation, basePrice: number): BulkPricingTier[] => {
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    return [];
+  }
+  const fromProp = parseFixedPriceRules(variation.tiered_pricing_fixed_rules ?? null, basePrice);
+  if (fromProp.length > 0) {
+    return fromProp;
+  }
+  const meta = variation.meta_data ?? [];
+  const fixedRulesMeta = meta.find((entry) => entry?.key === '_fixed_price_rules')?.value;
+  const fromMeta = parseFixedPriceRules(fixedRulesMeta, basePrice);
+  if (fromMeta.length > 0) {
+    return fromMeta;
+  }
+  return parsePepproTiersFromMeta(meta as WooMeta[], basePrice);
+};
+
 const mapWooProductToProduct = (product: WooProduct, productVariations: WooVariation[] = []): Product => {
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
@@ -325,6 +433,13 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
           Boolean(attr && (attr.name || attr.value)),
       );
 
+  const bulkPricingMeta = product.meta_data?.find((meta) => {
+    const key = (meta?.key ?? '').toString().toLowerCase();
+    return BULK_META_KEYS.includes(key);
+  });
+  const parentBulkPricing = bulkPricingMeta ? parseBulkPricingValue(bulkPricingMeta.value) : [];
+  let variantDerivedBulkPricing: BulkPricingTier[] = [];
+
   const variantList: ProductVariant[] = (productVariations ?? [])
     .map((variation) => {
       const parsedVariantPrice = parsePrice(variation.price) ?? parsePrice(variation.regular_price);
@@ -339,6 +454,10 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
             ? variation.sku
             : `Variant ${variation.id}`;
       const variantId = `woo-variation-${variation.id}`;
+      const variantBulk = parseVariantBulkPricing(variation, price);
+      if (!variantDerivedBulkPricing.length && variantBulk.length) {
+        variantDerivedBulkPricing = variantBulk;
+      }
       return {
         id: variantId,
         label,
@@ -364,11 +483,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
   const originalPrice = !hasVariants && baseOriginalPrice && baseOriginalPrice > price ? baseOriginalPrice : undefined;
   const cleanedDescription = stripHtml(product.short_description || product.description);
   const manufacturerMeta = product.meta_data?.find((meta) => meta?.key === 'manufacturer')?.value;
-  const bulkPricingMeta = product.meta_data?.find((meta) => {
-    const key = (meta?.key ?? '').toString().toLowerCase();
-    return BULK_META_KEYS.includes(key);
-  });
-  const bulkPricingTiers = bulkPricingMeta ? parseBulkPricingValue(bulkPricingMeta.value) : [];
+  const productBulkPricing = parentBulkPricing.length > 0 ? parentBulkPricing : variantDerivedBulkPricing;
   const variantImages = variantList.map((variant) => variant.image).filter((src): src is string => Boolean(src));
   const combinedImages = [...variantImages, ...imageSources].filter(
     (src, index, self) => Boolean(src) && self.indexOf(src) === index,
@@ -414,7 +529,32 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
     hasVariants,
     defaultVariantId,
     variantSummary,
-    bulkPricingTiers: bulkPricingTiers.length > 0 ? bulkPricingTiers : undefined,
+    bulkPricingTiers: productBulkPricing.length > 0 ? productBulkPricing : undefined,
+  };
+};
+
+const toCardProduct = (product: Product): CardProduct => {
+  const variations = (product.variants && product.variants.length > 0)
+    ? product.variants.map((variant) => ({
+        id: variant.id,
+        strength: variant.label || variant.attributes.map((attr) => attr.value).join(' • ') || 'Option',
+        basePrice: variant.price,
+      }))
+    : [{
+        id: product.id,
+        strength: product.dosage || 'Standard',
+        basePrice: product.price,
+      }];
+
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    image: product.image,
+    inStock: product.inStock,
+    manufacturer: product.manufacturer,
+    variations,
+    bulkPricingTiers: product.bulkPricingTiers ?? [],
   };
 };
 
@@ -2279,15 +2419,17 @@ const renderProductSection = () => (
             viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
           }`}
         >
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onAddToCart={handleAddToCart}
-              onViewDetails={handleViewProduct}
-              viewMode={viewMode}
-            />
-          ))}
+          {filteredProducts.map((product) => {
+            const cardProduct = toCardProduct(product);
+            return (
+              <ProductCard
+                key={product.id}
+                product={cardProduct}
+                onAddToCart={(productId, variationId, qty) =>
+                  handleAddToCart(productId, qty, undefined, variationId)}
+              />
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12">

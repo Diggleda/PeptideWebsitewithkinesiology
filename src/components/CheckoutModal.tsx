@@ -6,7 +6,7 @@ import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
 import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
-import { Product, ProductVariant } from './ProductCard';
+import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
@@ -44,9 +44,40 @@ export function CheckoutModal({
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
+    const basePrice = variant?.price ?? product.price;
+    const tiers = product.bulkPricingTiers ?? [];
+    if (!tiers.length) {
+      return basePrice;
+    }
+    const applicable = [...tiers]
+      .sort((a, b) => b.minQuantity - a.minQuantity)
+      .find((tier) => quantity >= tier.minQuantity);
+    if (!applicable) {
+      return basePrice;
+    }
+    return basePrice * (1 - applicable.discountPercentage / 100);
+  };
+
+  const getVisibleBulkTiers = (product: Product, quantity: number) => {
+    const tiers = product.bulkPricingTiers ?? [];
+    if (!tiers.length) {
+      return [];
+    }
+    const sorted = [...tiers].sort((a, b) => a.minQuantity - b.minQuantity);
+    const currentIndex = sorted.findIndex((tier) => quantity < tier.minQuantity);
+    let start = currentIndex === -1 ? Math.max(0, sorted.length - 5) : Math.max(0, currentIndex - 2);
+    let visible = sorted.slice(start, start + 5);
+    if (visible.length < 5 && start > 0) {
+      start = Math.max(0, start - (5 - visible.length));
+      visible = sorted.slice(start, start + 5);
+    }
+    return visible;
+  };
+
   const subtotal = cartItems.reduce((sum, item) => {
-    const unitPrice = item.variant?.price ?? item.product.price;
-    return sum + (unitPrice * item.quantity);
+    const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
+    return sum + unitPrice * item.quantity;
   }, 0);
   const total = subtotal;
   const canCheckout = isAuthenticated;
@@ -209,19 +240,21 @@ export function CheckoutModal({
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
+                <div className="grid gap-4 lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
                     : baseImages;
-                  const unitPrice = item.variant?.price ?? item.product.price;
+                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
                   const lineTotal = unitPrice * item.quantity;
+                  const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
                   return (
-                    <Card key={item.id} className="glass squircle-sm">
+                    <Card key={item.id} className="glass squircle-sm h-full">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-center gap-4">
-                            <div className="w-24 h-24 flex-shrink-0">
+                            <div className="flex-shrink-0 h-full w-[72px]">
                               <ProductImageCarousel
                                 images={carouselImages}
                                 alt={item.product.name}
@@ -239,7 +272,9 @@ export function CheckoutModal({
                                 <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
                               )}
                               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                <span className="text-green-600 font-bold">${unitPrice.toFixed(2)}</span>
+                                <span className="text-green-600 font-bold">
+                                  ${unitPrice.toFixed(2)}
+                                </span>
                                 <div className="flex items-center gap-2">
                                   <Button
                                     type="button"
@@ -270,6 +305,36 @@ export function CheckoutModal({
                                   </Button>
                                 </div>
                               </div>
+                              {visibleTiers.length > 0 && (
+                                <div className="mt-3 glass-card squircle-sm p-2 text-xs space-y-1 border border-[var(--brand-glass-border-2)]">
+                                  <div className="flex items-center justify-between text-slate-600">
+                                    <span>Bulk Pricing</span>
+                                    <span>
+                                      {item.product.bulkPricingTiers?.length ?? 0} tier{(item.product.bulkPricingTiers?.length ?? 0) === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    {visibleTiers.map((tier) => (
+                                      <div
+                                        key={`${tier.minQuantity}-${tier.discountPercentage}`}
+                                        className={`flex items-center justify-between ${
+                                          item.quantity >= tier.minQuantity
+                                            ? 'text-green-600 font-semibold'
+                                            : 'text-slate-600'
+                                        }`}
+                                      >
+                                        <span>Buy {tier.minQuantity}+</span>
+                                        <span>Save {tier.discountPercentage}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {item.quantity < visibleTiers[visibleTiers.length - 1].minQuantity && (
+                                    <p className="text-[rgb(95,179,249)] font-medium">
+                                      Buy {visibleTiers[visibleTiers.length - 1].minQuantity - item.quantity} more to save {visibleTiers[visibleTiers.length - 1].discountPercentage}%
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                               {item.note && (
                                 <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
                               )}
@@ -293,6 +358,7 @@ export function CheckoutModal({
                     </Card>
                   );
                 })}
+                </div>
               </div>
 
               {/* Referral Code Section removed */}

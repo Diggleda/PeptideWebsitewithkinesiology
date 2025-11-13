@@ -1,10 +1,10 @@
-import type { Product, ProductVariant, BulkPricingTier } from '../components/ProductCard';
+import type { Product, ProductVariant, BulkPricingTier } from '../types/product';
 
 // Dev-only loader to map tmp/woo-product-211.json into ProductCard Product shape
 export async function loadLocalProductForCard(): Promise<Product | null> {
   try {
-    // @ts-ignore vite will serve this static file in dev
-    const data = await fetch('/tmp/woo-product-211.json', { cache: 'no-store' }).then((r) => r.json());
+    // Served from public/fixtures in dev
+    const data = await fetch('/fixtures/woo-product-211.json', { cache: 'no-store' }).then((r) => r.json());
     const list = Array.isArray(data) ? data : [];
     const p = list[0];
     if (!p) return null;
@@ -80,4 +80,3 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
     return null;
   }
 }
-

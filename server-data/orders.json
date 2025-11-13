@@ -16,5 +16,28 @@
     "referrerBonus": null,
     "status": "pending",
     "createdAt": "2025-10-13T19:03:31.429Z"
+  },
+  {
+    "id": "1762992959938",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 1,
+        "note": null
+      }
+    ],
+    "total": 164.92,
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-11-13T00:15:59.938Z",
+    "integrations": {
+      "wooCommerce": "pending",
+      "shipEngine": "skipped"
+    }
   }
 ]

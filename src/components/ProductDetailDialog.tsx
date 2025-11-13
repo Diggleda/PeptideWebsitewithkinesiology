@@ -9,7 +9,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Product } from './ProductCard';
+import type { Product } from '../types/product';
 import { Minus, Plus, ShoppingCart, Package, Pill, Building2, CheckCircle2, AlertCircle, Tag } from 'lucide-react';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import { Badge } from './ui/badge';
