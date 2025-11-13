@@ -522,7 +522,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
       : product.sku
         ? `SKU ${product.sku}`
         : 'See details',
-    manufacturer: stripHtml(typeof manufacturerMeta === 'string' ? manufacturerMeta : '') || 'WooCommerce Catalog',
+    manufacturer: stripHtml(typeof manufacturerMeta === 'string' ? manufacturerMeta : '') || '',
     type: product.type ?? 'General',
     description: cleanedDescription || undefined,
     variants: hasVariants ? variantList : undefined,
@@ -1814,14 +1814,15 @@ useEffect(() => {
       return;
     }
 
-    const items = cartItems.map(({ id, product, quantity, note, variant }) => ({
+    const items = cartItems.map(({ id, product, quantity, note, variant }, index) => ({
       cartItemId: id,
       productId: product.id,
       variantId: variant?.id ?? null,
       name: variant ? `${product.name} — ${variant.label}` : product.name,
       price: variant?.price ?? product.price,
       quantity,
-      note: note ?? null
+      note: note ?? null,
+      position: index + 1,
     }));
 
     const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);

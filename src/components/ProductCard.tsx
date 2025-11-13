@@ -113,13 +113,18 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
         
         <div className="p-4 space-y-3">
           <div className="space-y-1">
-            <Badge variant="outline" className="text-xs squircle-sm max-w-full whitespace-normal break-words">
+            <Badge
+              variant="outline"
+              className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug"
+            >
               {product.category}
             </Badge>
             <h3 className="line-clamp-2 text-slate-900">
               {product.name}
             </h3>
-            <p className="text-xs text-gray-500">{product.manufacturer}</p>
+            {product.manufacturer && (
+              <p className="text-xs text-gray-500">{product.manufacturer}</p>
+            )}
           </div>
 
           {/* Variation Selector */}
@@ -129,13 +134,17 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
               <Select 
                 value={selectedVariation.id} 
                 onValueChange={handleVariationChange}
-                >
-                  <SelectTrigger className="squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner focus:ring-[rgb(95,179,249)]">
-                    <SelectValue placeholder="Select strength" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {product.variations.map((variation) => (
-                    <SelectItem key={variation.id} value={variation.id}>
+              >
+                <SelectTrigger className="squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner focus:ring-[rgb(95,179,249)] focus:ring-2 transition-all">
+                  <SelectValue placeholder="Select strength" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl border border-[var(--brand-glass-border-2)] bg-white/95 shadow-xl">
+                  {product.variations.map((variation) => (
+                    <SelectItem
+                      key={variation.id}
+                      value={variation.id}
+                      className="rounded-xl px-3 py-2 text-sm focus:bg-[rgba(95,179,249,0.08)] focus:text-[rgb(95,179,249)] data-[state=checked]:text-[rgb(95,179,249)]"
+                    >
                       {variation.strength}
                     </SelectItem>
                   ))}
