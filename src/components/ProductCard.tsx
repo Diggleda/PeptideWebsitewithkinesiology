@@ -113,8 +113,10 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
         
         <div className="p-4 space-y-3">
           <div className="space-y-1">
-            <Badge variant="outline" className="text-xs squircle-sm max-w-full truncate">{product.category}</Badge>
-            <h3 className="line-clamp-2 group-hover:text-blue-600 transition-colors">
+            <Badge variant="outline" className="text-xs squircle-sm max-w-full whitespace-normal break-words">
+              {product.category}
+            </Badge>
+            <h3 className="line-clamp-2 text-slate-900">
               {product.name}
             </h3>
             <p className="text-xs text-gray-500">{product.manufacturer}</p>

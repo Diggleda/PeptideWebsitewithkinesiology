@@ -254,7 +254,7 @@ export function CheckoutModal({
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-center gap-4">
-                            <div className="flex-shrink-0 h-full w-[72px]">
+                            <div className="flex-shrink-0 h-full w-[72px] max-w-[25%]">
                               <ProductImageCarousel
                                 images={carouselImages}
                                 alt={item.product.name}
