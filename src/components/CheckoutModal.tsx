@@ -28,6 +28,7 @@ interface CheckoutModalProps {
   onRemoveItem: (cartItemId: string) => void;
   isAuthenticated: boolean;
   onRequireLogin: () => void;
+  physicianName?: string | null;
 }
 
 export function CheckoutModal({
@@ -38,12 +39,14 @@ export function CheckoutModal({
   onUpdateItemQuantity,
   onRemoveItem,
   isAuthenticated,
-  onRequireLogin
+  onRequireLogin,
+  physicianName,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
     const basePrice = variant?.price ?? product.price;
@@ -81,10 +84,8 @@ export function CheckoutModal({
     return sum + unitPrice * item.quantity;
   }, 0);
   const total = subtotal;
-  const canCheckout = isAuthenticated;
-  const checkoutButtonLabel = canCheckout
-    ? (isProcessing ? 'Processing order...' : `Complete Purchase (${total.toFixed(2)})`)
-    : 'Login to complete purchase';
+  const canCheckout = termsAccepted;
+  const checkoutButtonLabel = isProcessing ? 'Processing order...' : `Complete Purchase (${total.toFixed(2)})`;
 
   // No-op referral handling removed
 
@@ -109,10 +110,7 @@ export function CheckoutModal({
   };
 
   const handlePrimaryAction = async () => {
-    if (!canCheckout) {
-      // toast.info('Please log in to complete your purchase.');
-      console.debug('[CheckoutModal] Require login from checkout button');
-      onRequireLogin();
+    if (!termsAccepted) {
       return;
     }
     if (isProcessing) {
@@ -175,6 +173,7 @@ export function CheckoutModal({
       setQuantityInputs({});
       setIsProcessing(false);
       setBulkOpenMap({});
+      setTermsAccepted(false);
     }
   }, [isOpen]);
 
@@ -260,13 +259,28 @@ export function CheckoutModal({
                     : baseImages;
                   const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
                   const lineTotal = unitPrice * item.quantity;
+                  const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
+                  const upcomingTier = allTiers.find((tier) => item.quantity < tier.minQuantity) || null;
                   const isBulkOpen = bulkOpenMap[item.id] ?? false;
                   return (
                     <Card key={item.id} className="glass squircle-sm h-full">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-center gap-4">
+                      <CardContent className="p-4 relative">
+                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[150px] text-right">
+                          <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="text-red-500 hover:text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Remove item</span>
+                          </Button>
+                        </div>
+                        <div className="flex items-start gap-4 pr-[180px]">
+                          <div className="flex items-center gap-4 flex-grow">
                             <div
                               className="flex-shrink-0 self-stretch"
                               style={{ flexBasis: '25%', maxWidth: '25%' }}
@@ -364,11 +378,9 @@ export function CheckoutModal({
                                           </div>
                                         ))}
                                       </div>
-                                      {item.quantity < visibleTiers[visibleTiers.length - 1].minQuantity && (
+                                      {upcomingTier && (
                                         <p className="text-xs text-[rgb(95,179,249)] font-medium">
-                                          Buy{' '}
-                                          {visibleTiers[visibleTiers.length - 1].minQuantity - item.quantity} more to
-                                          save {visibleTiers[visibleTiers.length - 1].discountPercentage}%
+                                          Buy {upcomingTier.minQuantity - item.quantity} more to save {upcomingTier.discountPercentage}%
                                         </p>
                                       )}
                                     </>
@@ -379,19 +391,6 @@ export function CheckoutModal({
                                 <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
                               )}
                             </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-3">
-                            <p className="font-bold">${lineTotal.toFixed(2)}</p>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemoveItem(item.id)}
-                              className="text-red-500 hover:text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Remove item</span>
-                            </Button>
                           </div>
                         </div>
                       </CardContent>
@@ -454,6 +453,22 @@ export function CheckoutModal({
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="flex items-start gap-3 pt-2">
+                <input
+                  type="checkbox"
+                  id="physician-terms"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
+                  checked={termsAccepted}
+                  onChange={(event) => setTermsAccepted(event.target.checked)}
+                />
+                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug">
+                  I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro's{' '}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[rgb(95,179,249)] underline">Terms of Service</a>
+                  {' '}and{' '}
+                  <a href="/shipping" target="_blank" rel="noopener noreferrer" className="text-[rgb(95,179,249)] underline">Shipping Policy</a>.
+                </label>
               </div>
 
               {/* Order Total */}

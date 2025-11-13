@@ -35,18 +35,23 @@ function DialogClose({
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
+>(({ className, style, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-[9999] backdrop-blur-xl transition-opacity duration-[1200ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+      "fixed inset-x-0 bottom-0 z-[9999] backdrop-blur-xl transition-opacity duration-[1200ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
       className,
     )}
     style={{
       backdropFilter: 'blur(4px) saturate(1.2)',
       WebkitBackdropFilter: 'blur(4px) saturate(1.2)',
       willChange: 'opacity',
+      top: 'var(--modal-header-offset, 6rem)',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      ...style,
     }}
     {...props}
   />
@@ -58,7 +63,14 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, style, ...props }, ref) => (
   <DialogPortal data-slot="dialog-portal">
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-8">
+    <div
+      className="fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+      style={{
+        top: 'var(--modal-header-offset, 6rem)',
+        left: 0,
+        right: 0,
+      }}
+    >
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
@@ -73,8 +85,8 @@ const DialogContent = React.forwardRef<
           backdropFilter: 'blur(16px) saturate(1.45)',
           WebkitBackdropFilter: 'blur(16px) saturate(1.45)',
           // Leave room for the sticky header when positioning + sizing the modal
-          maxHeight: 'calc(100vh - (var(--modal-header-offset, 6rem) + 2.5rem))',
-          margin: 'calc(var(--modal-header-offset, 6rem) + 1rem) auto 1.5rem',
+          maxHeight: 'calc(100vh - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))',
+          margin: 'clamp(0.5rem, 3vh, 2rem) auto 1.5rem',
           willChange: 'opacity, transform',
           ...style,
         }}

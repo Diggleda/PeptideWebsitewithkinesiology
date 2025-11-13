@@ -289,7 +289,7 @@ export function CategoryFilter({
       }}
     >
       <CardHeader>
-        <CardTitle className="flex items-center justify-between">
+        <CardTitle className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <div className="flex items-center gap-2 truncate">
               <Filter className="w-5 h-5 flex-shrink-0" />
@@ -308,7 +308,7 @@ export function CategoryFilter({
             variant="ghost"
             size="sm"
             onClick={clearFilters}
-            className={`${activeFiltersCount > 0 ? '' : 'opacity-0 pointer-events-none'} whitespace-nowrap`}
+            className={`${activeFiltersCount > 0 ? '' : 'opacity-0 pointer-events-none'} whitespace-nowrap text-sm px-3 py-1`}
           >
             Clear All
           </Button>
@@ -320,14 +320,14 @@ export function CategoryFilter({
           <Label>Categories</Label>
           <div className="space-y-2">
             {categories.map((category) => (
-              <div key={category} className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+              <div key={category} className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center space-x-2 min-w-0">
                   <Checkbox
                     id={`category-${category}`}
                     checked={filters.categories.includes(category)}
                     onCheckedChange={() => toggleCategory(category)}
                   />
-                  <Label htmlFor={`category-${category}`} className="text-sm cursor-pointer">
+                  <Label htmlFor={`category-${category}`} className="text-sm cursor-pointer break-words">
                     {category}
                   </Label>
                 </div>
@@ -343,14 +343,14 @@ export function CategoryFilter({
           <Label>Type</Label>
           <div className="space-y-2">
             {types.map((type) => (
-              <div key={type} className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+              <div key={type} className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center space-x-2 min-w-0">
                   <Checkbox
                     id={`type-${type}`}
                     checked={filters.types.includes(type)}
                     onCheckedChange={() => toggleType(type)}
                   />
-                  <Label htmlFor={`type-${type}`} className="text-sm cursor-pointer">
+                  <Label htmlFor={`type-${type}`} className="text-sm cursor-pointer break-words">
                     {type}
                   </Label>
                 </div>

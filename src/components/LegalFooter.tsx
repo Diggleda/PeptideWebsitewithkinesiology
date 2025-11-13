@@ -445,27 +445,27 @@ export function LegalFooter() {
   return (
     <>
       <footer className="relative z-10 mt-24 glass-strong">
-        <div className="w-full px-2 pt-16 pb-12">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+        <div className="w-full px-4 sm:px-8 pt-12 pb-10">
+          <div className="grid grid-cols-1 gap-8 items-start text-center lg:text-left lg:grid-cols-3">
             {/* Disclaimer - Left Third */}
-            <div className="text-justify flex items-center">
-              <p className="text-xs text-slate-500 leading-relaxed">
+            <div className="flex items-center justify-center lg:justify-start">
+              <p className="text-xs text-slate-500 leading-relaxed text-left sm:text-justify max-w-xl">
                 PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
               </p>
             </div>
 
             {/* Center Content - Middle Third */}
-            <div className="flex flex-col items-center text-center">
+            <div className="flex flex-col items-center text-center gap-3">
               <div className="space-y-1 text-sm text-slate-600">
                 <p>Advancing research-grade peptide access with care and compliance.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
               </div>
-              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-[rgb(95,179,249)]">
+              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center gap-3 text-sm font-medium text-[rgb(95,179,249)]">
                 {legalLinks.map((link) => (
                   <button
                     key={link.key}
                     type="button"
-                    className="cursor-pointer rounded-full px-4 py-2 pb-3 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
+                    className="cursor-pointer rounded-full px-3 py-1.5 transform transition duration-200 hover:-translate-y-0.5 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)] btn-hover-lighter"
                     onClick={() => handleLinkClick(link.key)}
                   >
                     {link.label}
@@ -475,7 +475,7 @@ export function LegalFooter() {
             </div>
 
             {/* Empty Right Third */}
-            <div></div>
+            <div className="hidden lg:block" aria-hidden="true"></div>
           </div>
         </div>
       </footer>

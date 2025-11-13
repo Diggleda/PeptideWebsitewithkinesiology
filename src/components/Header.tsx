@@ -60,7 +60,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [accountTab, setAccountTab] = useState<'info' | 'orders'>('info');
+  const [accountTab, setAccountTab] = useState<'contact' | 'orders'>('contact');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
   const referralCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,7 +137,7 @@ export function Header({
   }, [loginOpen, authMode, applyPendingLoginPrefill]);
   useEffect(() => {
     if (welcomeOpen) {
-      setAccountTab('info');
+      setAccountTab('contact');
     }
   }, [welcomeOpen]);
   const headerDisplayName = localUser
@@ -635,7 +635,7 @@ export function Header({
   );
 
   const accountHeaderTabs = [
-    { id: 'info', label: 'Info', Icon: Info },
+    { id: 'contact', label: 'Contact', Icon: Info },
     { id: 'orders', label: 'Orders', Icon: Package },
   ] as const;
 
@@ -730,7 +730,7 @@ export function Header({
     )
   ) : null;
 
-  const activeAccountPanel = accountTab === 'info' ? accountInfoPanel : accountOrdersPanel;
+  const activeAccountPanel = accountTab === 'contact' ? accountInfoPanel : accountOrdersPanel;
 
   const authControls = user ? (
     <>

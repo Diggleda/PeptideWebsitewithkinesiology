@@ -20,6 +20,53 @@ const sanitizeUser = (user) => {
   };
 };
 
+const normalizeHumanName = (value = '') =>
+  String(value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const HONORIFIC_TOKENS = new Set(['mr', 'mrs', 'ms', 'mx', 'dr', 'prof', 'sir', 'madam']);
+const SUFFIX_TOKENS = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+
+const tokenizeName = (value = '') =>
+  normalizeHumanName(value)
+    .split(' ')
+    .map((token) => token.replace(/[.,]/g, ''))
+    .filter(
+      (token) =>
+        token &&
+        !HONORIFIC_TOKENS.has(token) &&
+        !SUFFIX_TOKENS.has(token),
+    );
+
+const namesRoughlyMatch = (a = '', b = '') => {
+  const tokensA = tokenizeName(a);
+  const tokensB = tokenizeName(b);
+  if (!tokensA.length || !tokensB.length) {
+    return false;
+  }
+  if (tokensA.join(' ') === tokensB.join(' ')) {
+    return true;
+  }
+  const firstA = tokensA[0];
+  const lastA = tokensA[tokensA.length - 1];
+  const firstB = tokensB[0];
+  const lastB = tokensB[tokensB.length - 1];
+  if (!firstA || !lastA || !firstB || !lastB) {
+    return false;
+  }
+  if (firstA !== firstB || lastA !== lastB) {
+    return false;
+  }
+  const middleA = tokensA.slice(1, -1).join(' ');
+  const middleB = tokensB.slice(1, -1).join(' ');
+  if (!middleA || !middleB) {
+    return true;
+  }
+  return middleA === middleB;
+};
+
 const createAuthToken = (payload) => jwt.sign(payload, env.jwtSecret, { expiresIn: '7d' });
 
 const comparePassword = async (plainText, hashed) => {
@@ -82,6 +129,12 @@ const register = async ({
   const npiVerification = hasValidNpi
     ? await verifyDoctorNpi(normalizedNpi)
     : null;
+
+  if (!isSalesRepEmail && npiVerification?.name) {
+    if (!namesRoughlyMatch(name, npiVerification.name)) {
+      throw createError('NPI_NAME_MISMATCH', 422);
+    }
+  }
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const now = new Date().toISOString();

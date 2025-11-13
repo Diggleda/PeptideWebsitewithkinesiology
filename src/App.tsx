@@ -742,6 +742,7 @@ export default function App() {
     setUser(nextUser);
     setPostLoginHold(true);
     setShouldAnimateInfoFocus(true);
+    setInfoFocusActive(true);
     const isReturning = (nextUser.visits ?? 1) > 1;
     setIsReturningUser(isReturning);
     setLoginContext(null);
