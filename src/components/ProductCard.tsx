@@ -39,6 +39,7 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
     product.variations?.[0] || { id: 'default', strength: 'Standard', basePrice: 0 }
   );
   const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState('1');
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const bulkTiers = product.bulkPricingTiers ?? [];
@@ -85,6 +86,7 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   const handleQuantityChange = (delta: number) => {
     const newQuantity = Math.max(1, quantity + delta);
     setQuantity(newQuantity);
+    setQuantityInput(String(newQuantity));
     setBulkOpen(true);
   };
 
@@ -168,14 +170,26 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
               </Button>
               <div className="flex-1 text-center px-3 py-1 glass-card squircle-sm">
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   min={1}
-                  value={quantity}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setQuantity(Number.isNaN(next) ? 1 : Math.max(1, next));
-                  setBulkOpen(true);
-                }}
+                  value={quantityInput}
+                  onChange={(event) => {
+                    const digits = event.target.value.replace(/[^0-9]/g, '');
+                    setQuantityInput(digits);
+                    if (digits) {
+                      const next = Math.max(1, Number(digits));
+                      setQuantity(next);
+                    }
+                    setBulkOpen(true);
+                  }}
+                  onBlur={() => {
+                    if (!quantityInput) {
+                      setQuantity(1);
+                      setQuantityInput('1');
+                    }
+                  }}
                   className="h-auto border-none bg-transparent text-center text-base font-semibold focus-visible:ring-0 focus-visible:outline-none"
                 />
               </div>
@@ -249,6 +263,7 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
           onClick={() => {
             onAddToCart(product.id, selectedVariation.id, quantity);
             setQuantity(1);
+            setQuantityInput('1');
             setBulkOpen(false);
           }}
           disabled={!product.inStock}

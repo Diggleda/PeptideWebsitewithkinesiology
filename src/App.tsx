@@ -1332,17 +1332,16 @@ useEffect(() => {
   useEffect(() => {
     setFilters((prev) => {
       const nextCategories = prev.categories.filter((category) => catalogCategories.includes(category));
-      const nextTypes = prev.types.filter((type) => catalogTypes.includes(type));
-      if (nextCategories.length === prev.categories.length && nextTypes.length === prev.types.length) {
+      if (nextCategories.length === prev.categories.length && prev.types.length === 0) {
         return prev;
       }
       return {
         ...prev,
         categories: nextCategories,
-        types: nextTypes,
+        types: [],
       };
     });
-  }, [catalogCategories, catalogTypes]);
+  }, [catalogCategories]);
 
   useEffect(() => {
     if (!user) {
@@ -2341,11 +2340,11 @@ const renderProductSection = () => (
     >
       <CategoryFilter
         categories={catalogCategories}
-        types={catalogTypes}
+        types={[]}
         filters={filters}
         onFiltersChange={setFilters}
         productCounts={productCounts}
-        typeCounts={typeCounts}
+        typeCounts={{}}
       />
     </div>
 
@@ -2708,14 +2707,6 @@ const renderSalesRepDashboard = () => {
     });
     return counts;
   }, [catalogProducts, catalogCategories]);
-
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    catalogTypes.forEach(type => {
-      counts[type] = catalogProducts.filter(product => product.type === type).length;
-    });
-    return counts;
-  }, [catalogProducts, catalogTypes]);
 
   // Add springy scroll effect to filter sidebar on large screens - DISABLED FOR TESTING
   // useEffect(() => {

@@ -43,6 +43,7 @@ export function CheckoutModal({
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
 
   const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
     const basePrice = variant?.price ?? product.price;
@@ -131,12 +132,14 @@ export function CheckoutModal({
     const next = Math.min(999, currentQuantity + 1);
     setQuantityInputs((prev) => ({ ...prev, [cartItemId]: String(next) }));
     onUpdateItemQuantity(cartItemId, next);
+    setBulkOpenMap((prev) => ({ ...prev, [cartItemId]: true }));
   };
 
   const handleDecreaseQuantity = (cartItemId: string, currentQuantity: number) => {
     const next = Math.max(1, currentQuantity - 1);
     setQuantityInputs((prev) => ({ ...prev, [cartItemId]: String(next) }));
     onUpdateItemQuantity(cartItemId, next);
+    setBulkOpenMap((prev) => ({ ...prev, [cartItemId]: true }));
   };
 
   const handleQuantityInputChange = (cartItemId: string, value: string) => {
@@ -145,6 +148,7 @@ export function CheckoutModal({
     if (digits) {
       const normalized = Math.max(1, Math.min(999, parseInt(digits, 10)));
       onUpdateItemQuantity(cartItemId, normalized);
+      setBulkOpenMap((prev) => ({ ...prev, [cartItemId]: true }));
     }
   };
 
@@ -170,6 +174,7 @@ export function CheckoutModal({
       // referral fields removed
       setQuantityInputs({});
       setIsProcessing(false);
+      setBulkOpenMap({});
     }
   }, [isOpen]);
 
@@ -179,11 +184,18 @@ export function CheckoutModal({
       return;
     }
 
-    const next: Record<string, string> = {};
+    const nextInputs: Record<string, string> = {};
     cartItems.forEach((item) => {
-      next[item.id] = String(item.quantity);
+      nextInputs[item.id] = String(item.quantity);
     });
-    setQuantityInputs(next);
+    setQuantityInputs(nextInputs);
+    setBulkOpenMap((prev) => {
+      const next: Record<string, boolean> = {};
+      cartItems.forEach((item) => {
+        next[item.id] = prev[item.id] ?? false;
+      });
+      return next;
+    });
   }, [cartItems]);
 
   const isCartEmpty = cartItems.length === 0;
@@ -241,7 +253,7 @@ export function CheckoutModal({
               <div className="space-y-4">
                 <h3>Order Summary</h3>
                 <div className="grid gap-4 lg:grid-cols-2 auto-rows-fr">
-                {cartItems.map((item) => {
+                {cartItems.map((item, index) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
@@ -249,12 +261,16 @@ export function CheckoutModal({
                   const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
                   const lineTotal = unitPrice * item.quantity;
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
+                  const isBulkOpen = bulkOpenMap[item.id] ?? false;
                   return (
                     <Card key={item.id} className="glass squircle-sm h-full">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-center gap-4">
-                            <div className="flex-shrink-0 h-full w-[72px] max-w-[25%]">
+                            <div
+                              className="flex-shrink-0 self-stretch"
+                              style={{ flexBasis: '25%', maxWidth: '25%' }}
+                            >
                               <ProductImageCarousel
                                 images={carouselImages}
                                 alt={item.product.name}
@@ -266,7 +282,7 @@ export function CheckoutModal({
                               />
                             </div>
                             <div>
-                              <h4 className="line-clamp-1">{item.product.name}</h4>
+                              <h4 className="line-clamp-1">#{index + 1} — {item.product.name}</h4>
                               <p className="text-sm text-gray-600">{item.product.dosage}</p>
                               {item.variant && (
                                 <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
@@ -306,32 +322,56 @@ export function CheckoutModal({
                                 </div>
                               </div>
                               {visibleTiers.length > 0 && (
-                                <div className="mt-3 glass-card squircle-sm p-2 text-xs space-y-1 border border-[var(--brand-glass-border-2)]">
-                                  <div className="flex items-center justify-between text-slate-600">
-                                    <span>Bulk Pricing</span>
-                                    <span>
-                                      {item.product.bulkPricingTiers?.length ?? 0} tier{(item.product.bulkPricingTiers?.length ?? 0) === 1 ? '' : 's'}
+                                <div className="mt-3 glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center justify-between text-xs font-semibold text-slate-700"
+                                    onClick={() =>
+                                      setBulkOpenMap((prev) => ({ ...prev, [item.id]: !isBulkOpen }))
+                                    }
+                                  >
+                                    <span className="tracking-wide uppercase text-[0.65rem]">Bulk Pricing</span>
+                                    <span className="text-[rgb(95,179,249)] text-[0.65rem]">
+                                      {isBulkOpen ? 'Hide' : 'Show'}
                                     </span>
-                                  </div>
-                                  <div className="space-y-0.5">
-                                    {visibleTiers.map((tier) => (
-                                      <div
-                                        key={`${tier.minQuantity}-${tier.discountPercentage}`}
-                                        className={`flex items-center justify-between ${
-                                          item.quantity >= tier.minQuantity
-                                            ? 'text-green-600 font-semibold'
-                                            : 'text-slate-600'
-                                        }`}
-                                      >
-                                        <span>Buy {tier.minQuantity}+</span>
-                                        <span>Save {tier.discountPercentage}%</span>
+                                  </button>
+                                  {isBulkOpen && (
+                                    <>
+                                      <div className="space-y-1.5 pt-1">
+                                        {visibleTiers.map((tier) => (
+                                          <div
+                                            key={`${tier.minQuantity}-${tier.discountPercentage}`}
+                                            className="flex items-center justify-between rounded-md px-2 py-1 text-[0.8rem]"
+                                          >
+                                            <span
+                                              className={
+                                                item.quantity >= tier.minQuantity
+                                                  ? 'text-green-600 font-semibold'
+                                                  : 'text-slate-600'
+                                              }
+                                            >
+                                              Buy {tier.minQuantity}+
+                                            </span>
+                                            <span
+                                              className={`tabular-nums ${
+                                                item.quantity >= tier.minQuantity
+                                                  ? 'text-green-600 font-semibold'
+                                                  : 'text-slate-600'
+                                              }`}
+                                            >
+                                              Save {tier.discountPercentage}%
+                                            </span>
+                                          </div>
+                                        ))}
                                       </div>
-                                    ))}
-                                  </div>
-                                  {item.quantity < visibleTiers[visibleTiers.length - 1].minQuantity && (
-                                    <p className="text-[rgb(95,179,249)] font-medium">
-                                      Buy {visibleTiers[visibleTiers.length - 1].minQuantity - item.quantity} more to save {visibleTiers[visibleTiers.length - 1].discountPercentage}%
-                                    </p>
+                                      {item.quantity < visibleTiers[visibleTiers.length - 1].minQuantity && (
+                                        <p className="text-xs text-[rgb(95,179,249)] font-medium">
+                                          Buy{' '}
+                                          {visibleTiers[visibleTiers.length - 1].minQuantity - item.quantity} more to
+                                          save {visibleTiers[visibleTiers.length - 1].discountPercentage}%
+                                        </p>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               )}
@@ -371,6 +411,10 @@ export function CheckoutModal({
                     <Label htmlFor="cardNumber">Card Number</Label>
                     <Input
                       id="cardNumber"
+                      name="cc-number"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="cc-number"
                       placeholder="1234 5678 9012 3456"
                       className="squircle-sm mt-1 bg-slate-50 border-2"
                     />
@@ -380,6 +424,8 @@ export function CheckoutModal({
                       <Label htmlFor="expiry">Expiry Date</Label>
                       <Input
                         id="expiry"
+                        name="cc-exp"
+                        autoComplete="cc-exp"
                         placeholder="MM/YY"
                         className="squircle-sm mt-1 bg-slate-50 border-2"
                       />
@@ -388,6 +434,10 @@ export function CheckoutModal({
                       <Label htmlFor="cvv">CVV</Label>
                       <Input
                         id="cvv"
+                        name="cc-csc"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="cc-csc"
                         placeholder="123"
                         className="squircle-sm mt-1 bg-slate-50 border-2"
                       />
@@ -397,6 +447,8 @@ export function CheckoutModal({
                     <Label htmlFor="name">Cardholder Name</Label>
                     <Input
                       id="name"
+                      name="cc-name"
+                      autoComplete="cc-name"
                       placeholder="John Doe"
                       className="squircle-sm mt-1 bg-slate-50 border-2"
                     />
