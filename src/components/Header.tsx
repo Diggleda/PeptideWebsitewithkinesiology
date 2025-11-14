@@ -712,7 +712,13 @@ export function Header({
               className="glass-brand squircle-sm inline-flex items-center gap-2"
               disabled={trackingPending}
             >
-              {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {trackingPending && (
+                <Loader2
+                  className="h-4 w-4 animate-spin text-current shrink-0"
+                  aria-hidden="true"
+                  style={{ transformOrigin: 'center center' }}
+                />
+              )}
               {trackingPending ? 'Checking…' : 'Email tracking link'}
             </Button>
             {trackingMessage && (
@@ -969,7 +975,13 @@ export function Header({
                   className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
                   disabled={loginSubmitting}
                 >
-                  {loginSubmitting && <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />}
+                  {loginSubmitting && (
+                    <Loader2
+                      className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                      aria-hidden="true"
+                      style={{ transformOrigin: 'center center' }}
+                    />
+                  )}
                   {loginSubmitting ? 'Signing in…' : 'Sign In'}
                 </Button>
               </form>
@@ -1200,7 +1212,13 @@ export function Header({
                   className="glass-brand squircle-sm inline-flex items-center gap-2"
                   disabled={trackingPending}
                 >
-                  {trackingPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {trackingPending && (
+                    <Loader2
+                      className="h-4 w-4 animate-spin text-current shrink-0"
+                      aria-hidden="true"
+                      style={{ transformOrigin: 'center center' }}
+                    />
+                  )}
                   {trackingPending ? 'Checking…' : 'Email tracking link'}
                 </Button>
                 {trackingMessage && (

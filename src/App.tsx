@@ -93,6 +93,7 @@ interface WooProduct {
   name: string;
   price?: string;
   regular_price?: string;
+  price_html?: string;
   images?: WooImage[];
   categories?: WooCategory[];
   stock_status?: string;
@@ -453,6 +454,24 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
     .map((image) => image?.src)
     .filter((src): src is string => Boolean(src));
   const categoryName = product.categories?.[0]?.name ?? 'WooCommerce';
+  const subscriptionMetaFlag = (product.meta_data ?? []).some((meta) => {
+    const key = (meta?.key ?? '').toString().toLowerCase();
+    const value = typeof meta?.value === 'string' ? meta.value.toLowerCase() : '';
+    return key.includes('subscription') || value.includes('subscription');
+  });
+  const priceHtml = (product.price_html ?? '').toLowerCase();
+  const categorySubscription = (product.categories ?? []).some((cat) =>
+    (cat?.name ?? '').toLowerCase().includes('subscription'),
+  );
+  const descriptionText = `${product.description ?? ''} ${product.short_description ?? ''}`.toLowerCase();
+  const isSubscriptionProduct =
+    subscriptionMetaFlag ||
+    priceHtml.includes('subscription') ||
+    priceHtml.includes('/ month') ||
+    (product.type ?? '').toLowerCase().includes('subscription') ||
+    (product.name ?? '').toLowerCase().includes('subscription') ||
+    categorySubscription ||
+    descriptionText.includes('subscription');
 
   const parsePrice = (value?: string) => {
     if (value === undefined || value === null || value === '') {
@@ -571,6 +590,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
         : 'See details',
     manufacturer: stripHtml(typeof manufacturerMeta === 'string' ? manufacturerMeta : '') || '',
     type: product.type ?? 'General',
+    isSubscription: isSubscriptionProduct,
     description: cleanedDescription || undefined,
     variants: hasVariants ? variantList : undefined,
     hasVariants,
@@ -934,6 +954,7 @@ const settleNewsLoading = useCallback((startedAt: number) => {
   const [quoteOfTheDay, setQuoteOfTheDay] = useState<{ text: string; author: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
+  const [quoteLoading, setQuoteLoading] = useState(false);
   const [referralSearchTerm, setReferralSearchTerm] = useState('');
   const [referralSortOrder, setReferralSortOrder] = useState<'desc' | 'asc'>('desc');
   const [isDesktopLandingLayout, setIsDesktopLandingLayout] = useState<boolean>(() => {
@@ -941,7 +962,7 @@ const settleNewsLoading = useCallback((startedAt: number) => {
     return window.innerWidth >= 1024;
   });
 
-  const filteredDoctorReferrals = useMemo(() => {
+const filteredDoctorReferrals = useMemo(() => {
     const normalizedQuery = referralSearchTerm.trim().toLowerCase();
     const sorted = [...doctorReferrals].sort((a, b) => {
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -1359,31 +1380,54 @@ useEffect(() => {
     };
 }, []);
 
-  // Load quote and trigger sequenced appearance when user logs in
+  // Prepare welcome animation on login
   useEffect(() => {
     if (!user) {
       setShowWelcome(false);
       setShowQuote(false);
       setQuoteOfTheDay(null);
+      setQuoteLoading(false);
+      return;
+    }
+    setShowWelcome(false);
+    setShowQuote(false);
+    setQuoteOfTheDay(null);
+    setQuoteLoading(true);
+    const timer = window.setTimeout(() => setShowWelcome(true), 250);
+    return () => window.clearTimeout(timer);
+  }, [user]);
+
+  // Load quote only after welcome animation completes
+  useEffect(() => {
+    if (!user || !showWelcome || infoFocusActive || showQuote) {
       return;
     }
 
-    const loadQuoteAndAnimate = async () => {
+    let cancelled = false;
+    const loadQuote = async () => {
       try {
         const quote = await quotesAPI.getQuoteOfTheDay();
-        setQuoteOfTheDay(quote);
+        if (!cancelled) {
+          setQuoteOfTheDay(quote);
+        }
       } catch (error) {
         console.warn('[Quotes] Failed to load quote of the day', error);
-        setQuoteOfTheDay({ text: 'Excellence is not a skill, it\'s an attitude.', author: 'Ralph Marston' });
+        if (!cancelled) {
+          setQuoteOfTheDay({ text: "Excellence is not a skill, it's an attitude.", author: 'Ralph Marston' });
+        }
+      } finally {
+        if (!cancelled) {
+          setQuoteLoading(false);
+          setShowQuote(true);
+        }
       }
-
-      // Sequenced appearance
-      setTimeout(() => setShowWelcome(true), 300);
-      setTimeout(() => setShowQuote(true), 600);
     };
 
-    loadQuoteAndAnimate();
-  }, [user]);
+    loadQuote();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, showWelcome, infoFocusActive, showQuote]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2777,10 +2821,31 @@ const renderSalesRepDashboard = () => {
   };
 
   // Filter and search products
-  const filteredProducts = useMemo(() => {
-    let filtered = catalogProducts;
+  const filteredProductCatalog = useMemo(
+    () =>
+      catalogProducts.filter((product) => {
+        if (product.isSubscription) {
+          return false;
+        }
+        const type = product.type?.toLowerCase() || '';
+        const name = product.name?.toLowerCase() || '';
+        const category = product.category?.toLowerCase() || '';
+        const manufacturer = product.manufacturer?.toLowerCase() || '';
+        const sku = product.description?.toLowerCase() || '';
+        return !(
+          type.includes('subscription') ||
+          name.includes('subscription') ||
+          category.includes('subscription') ||
+          manufacturer.includes('subscription') ||
+          sku.includes('subscription')
+        );
+      }),
+    [catalogProducts],
+  );
 
-    // Search filter
+  const filteredProducts = useMemo(() => {
+    let filtered = filteredProductCatalog;
+
     if (searchQuery) {
       filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -2790,34 +2855,29 @@ const renderSalesRepDashboard = () => {
       );
     }
 
-    // Category filter
     if (filters.categories.length > 0) {
-      filtered = filtered.filter(product =>
-        filters.categories.includes(product.category)
-      );
+      filtered = filtered.filter(product => filters.categories.includes(product.category));
     }
 
-    // Stock filter
     if (filters.inStockOnly) {
       filtered = filtered.filter(product => product.inStock);
     }
 
-    // Type filter
     if (filters.types.length > 0) {
       filtered = filtered.filter(product => product.type && filters.types.includes(product.type));
     }
 
     return filtered;
-  }, [catalogProducts, searchQuery, filters]);
+  }, [filteredProductCatalog, searchQuery, filters]);
 
   // Get product counts by category
   const productCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     catalogCategories.forEach(category => {
-      counts[category] = catalogProducts.filter(product => product.category === category).length;
+      counts[category] = filteredProductCatalog.filter(product => product.category === category).length;
     });
     return counts;
-  }, [catalogProducts, catalogCategories]);
+  }, [filteredProductCatalog, catalogCategories]);
 
   // Add springy scroll effect to filter sidebar on large screens - DISABLED FOR TESTING
   // useEffect(() => {
@@ -2853,8 +2913,8 @@ const renderSalesRepDashboard = () => {
   //   return () => window.removeEventListener('scroll', handleScroll);
   // }, []);
 
-  // Get featured products
-  const featuredProducts = catalogProducts.slice(0, 4);
+  const featuredProducts = filteredProductCatalog.slice(0, 4);
+  const quoteReady = showQuote && Boolean(quoteOfTheDay);
 
   const totalCartItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const shouldShowHeaderCartIcon = totalCartItems > 0 && !isCheckoutButtonVisible;
@@ -2957,25 +3017,27 @@ const renderSalesRepDashboard = () => {
 
                   <div
                     className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
-                      quoteOfTheDay ? (showQuote ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4') : 'opacity-100 translate-y-0'
+                      showWelcome ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
                     }`}
                     style={{
                       backdropFilter: 'blur(20px) saturate(1.4)',
                       minHeight: 'min(140px, 12.5vh)',
                     }}
+                    aria-live="polite"
                   >
-                    {quoteOfTheDay ? (
-                      <p className="text-base lg:text-lg italic text-gray-700 text-center">
-                        "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
-                      </p>
-                    ) : (
-                      <div className="w-full flex flex-col items-center gap-4" aria-live="polite">
+                    {quoteLoading && !quoteReady && (
+                      <div className="w-full flex flex-col items-center gap-4">
                         <div className="news-loading-card flex flex-col items-center gap-3 w-full max-w-md">
                           <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
                           <div className="news-loading-line news-loading-shimmer w-1/2" aria-hidden="true" />
                         </div>
                         <p className="text-xs text-slate-500">Loading today&apos;s quote…</p>
                       </div>
+                    )}
+                    {quoteReady && quoteOfTheDay && (
+                      <p className="text-base lg:text-lg italic text-gray-700 text-center">
+                        "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -3000,37 +3062,34 @@ const renderSalesRepDashboard = () => {
                   <div
                     className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? 'info-focus-active' : ''} ${
                       showWelcome ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
-                    }`}
+                    } flex flex-col items-center text-center gap-3 ${quoteReady && quoteOfTheDay ? '' : 'justify-center'}`}
                     style={{
                       backdropFilter: 'blur(20px) saturate(1.4)',
-                      minHeight: 'min(140px, 20vh)',
+                      minHeight: quoteReady && quoteOfTheDay ? 'auto' : 'min(140px, 20vh)',
                     }}
                   >
                     <p
                       className={`text-center font-semibold text-[rgb(95,179,249)] shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
                       style={{
-                        fontSize: infoFocusActive ? 'clamp(1.32rem, 4.9vw, 1.9rem)' : 'clamp(0.8rem, 2.94vw, 1.14rem)',
+                        fontSize: quoteReady && quoteOfTheDay ? 'clamp(1rem, 3.2vw, 1.6rem)' : 'clamp(1.32rem, 4.9vw, 1.9rem)',
                         lineHeight: 1.2,
-                        transition: 'font-size 800ms ease',
+                        transform: quoteReady && quoteOfTheDay ? 'translateY(-8px)' : 'translateY(0)',
+                        transition: 'font-size 600ms ease, transform 600ms ease',
                       }}
                     >
                       Welcome{user.visits && user.visits > 1 ? ' back' : ''}, {user.name}!
                     </p>
-                    <div
-                      className={`mt-5 rounded-lg bg-white/65 px-4 py-3 text-center shadow-inner transition-opacity duration-500 ${
-                        quoteOfTheDay ? (showQuote ? 'opacity-100' : 'opacity-0') : 'opacity-100'
-                      }`}
-                    >
-                      {quoteOfTheDay ? (
+                    <div className="w-full rounded-lg bg-white/65 px-4 py-3 text-center shadow-inner transition-opacity duration-500" aria-live="polite">
+                      {!quoteReady && (
+                        <div className="flex flex-col items-center gap-2 w-full">
+                          <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
+                          <div className="news-loading-line news-loading-shimmer w-2/3" aria-hidden="true" />
+                        </div>
+                      )}
+                      {quoteReady && quoteOfTheDay && (
                         <p className="text-sm italic text-gray-700">
                           "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                         </p>
-                      ) : (
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
-                          <div className="news-loading-line news-loading-shimmer w-1/2" aria-hidden="true" />
-                          <p className="text-xs text-slate-500">Loading today&apos;s quote…</p>
-                        </div>
                       )}
                     </div>
                   </div>
@@ -3399,7 +3458,13 @@ const renderSalesRepDashboard = () => {
                         className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
                         disabled={landingLoginPending}
                       >
-                        {landingLoginPending && <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />}
+                        {landingLoginPending && (
+                          <Loader2
+                            className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                            aria-hidden="true"
+                            style={{ transformOrigin: 'center center' }}
+                          />
+                        )}
                         {landingLoginPending ? 'Signing in…' : 'Sign In'}
                       </Button>
                     </form>

@@ -35,6 +35,7 @@ export interface Product {
   dosage: string;
   manufacturer: string;
   type?: string;
+  isSubscription?: boolean;
   description?: string;
   variants?: ProductVariant[];
   hasVariants?: boolean;
