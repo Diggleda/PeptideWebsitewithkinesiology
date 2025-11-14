@@ -95,13 +95,15 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
 
   const quantityButtonClasses = `h-8 w-8 squircle-sm ${isListLayout ? 'bg-slate-50 border-2' : ''}`;
 
+  const categoryLabel = product.category?.trim() || 'PepPro Catalog';
+
   const productMeta = (
     <>
       <Badge
         variant="outline"
         className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug"
       >
-        {product.category}
+        {categoryLabel}
       </Badge>
       <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}

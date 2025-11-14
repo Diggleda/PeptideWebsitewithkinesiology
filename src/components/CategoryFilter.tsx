@@ -8,26 +8,21 @@ import { Filter } from 'lucide-react';
 
 interface FilterState {
   categories: string[];
-  types: string[];
   inStockOnly: boolean;
 }
 
 interface CategoryFilterProps {
   categories: string[];
-  types: string[];
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
   productCounts: Record<string, number>;
-  typeCounts: Record<string, number>;
 }
 
 export function CategoryFilter({
   categories,
-  types,
   filters,
   onFiltersChange,
   productCounts,
-  typeCounts,
 }: CategoryFilterProps) {
   const toggleCategory = (category: string) => {
     const categoriesSet = new Set(filters.categories);
@@ -35,23 +30,15 @@ export function CategoryFilter({
     onFiltersChange({ ...filters, categories: Array.from(categoriesSet) });
   };
 
-  const toggleType = (type: string) => {
-    const typesSet = new Set(filters.types);
-    typesSet.has(type) ? typesSet.delete(type) : typesSet.add(type);
-    onFiltersChange({ ...filters, types: Array.from(typesSet) });
-  };
-
   const clearFilters = () => {
     onFiltersChange({
       categories: [],
-      types: [],
       inStockOnly: false,
     });
   };
 
   const activeFiltersCount =
     filters.categories.length +
-    filters.types.length +
     (filters.inStockOnly ? 1 : 0);
 
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -333,29 +320,6 @@ export function CategoryFilter({
                 </div>
                 <Badge variant="outline" className="text-xs squircle-sm">
                   {productCounts[category] || 0}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <Label>Type</Label>
-          <div className="space-y-2">
-            {types.map((type) => (
-              <div key={type} className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center space-x-2 min-w-0">
-                  <Checkbox
-                    id={`type-${type}`}
-                    checked={filters.types.includes(type)}
-                    onCheckedChange={() => toggleType(type)}
-                  />
-                  <Label htmlFor={`type-${type}`} className="text-sm cursor-pointer break-words">
-                    {type}
-                  </Label>
-                </div>
-                <Badge variant="outline" className="text-xs squircle-sm">
-                  {typeCounts[type] || 0}
                 </Badge>
               </div>
             ))}

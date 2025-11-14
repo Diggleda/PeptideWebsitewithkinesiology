@@ -453,7 +453,8 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
     .filter((src): src is string => Boolean(src));
-  const categoryName = product.categories?.[0]?.name ?? 'WooCommerce';
+  const rawCategoryName = product.categories?.[0]?.name?.trim() ?? '';
+  const categoryName = rawCategoryName && !rawCategoryName.toLowerCase().includes('subscription') ? rawCategoryName : '';
   const subscriptionMetaFlag = (product.meta_data ?? []).some((meta) => {
     const key = (meta?.key ?? '').toString().toLowerCase();
     const value = typeof meta?.value === 'string' ? meta.value.toLowerCase() : '';
@@ -1279,10 +1280,22 @@ const filteredDoctorReferrals = useMemo(() => {
         if (mappedProducts.length > 0) {
           setCatalogProducts(mappedProducts);
           const categoriesFromProducts = Array.from(
-            new Set(mappedProducts.map((product) => product.category).filter(Boolean)),
+            new Set(
+              mappedProducts
+                .map((product) => product.category)
+                .filter(
+                  (category): category is string =>
+                    Boolean(category) && !category.toLowerCase().includes('subscription'),
+                ),
+            ),
           );
           const categoryNamesFromApi = Array.isArray(wooCategories)
-            ? wooCategories.map((category) => category?.name).filter((name): name is string => Boolean(name))
+            ? wooCategories
+                .map((category) => category?.name?.trim())
+                .filter(
+                  (name): name is string =>
+                    Boolean(name) && !name.toLowerCase().includes('subscription'),
+                )
             : [];
           const nextCategories =
             categoriesFromProducts.length > 0
@@ -1298,8 +1311,11 @@ const filteredDoctorReferrals = useMemo(() => {
           setCatalogTypes(typesFromProducts);
         } else if (Array.isArray(wooCategories) && wooCategories.length > 0) {
           const categoryNames = wooCategories
-            .map((category) => category?.name)
-            .filter((name): name is string => Boolean(name));
+            .map((category) => category?.name?.trim())
+            .filter(
+              (name): name is string =>
+                Boolean(name) && !name.toLowerCase().includes('subscription'),
+            );
           if (categoryNames.length > 0) {
             setCatalogCategories(categoryNames);
           }
