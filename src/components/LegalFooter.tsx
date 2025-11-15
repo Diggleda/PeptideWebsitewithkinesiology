@@ -459,6 +459,7 @@ export function LegalFooter() {
               <div className="space-y-1 text-sm text-slate-600">
                 <p>Advancing research-grade peptide access with care and compliance.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
+                <p className="text-xs text-slate-500"> This website design is guided by kinesiology for the highest good.</p>
               </div>
               <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center gap-3 text-sm font-medium text-[rgb(95,179,249)]">
                 {legalLinks.map((link) => (

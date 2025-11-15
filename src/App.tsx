@@ -46,6 +46,11 @@ interface User {
   } | null;
   referrerDoctorId?: string | null;
   phone?: string | null;
+  officeAddressLine1?: string | null;
+  officeAddressLine2?: string | null;
+  officeCity?: string | null;
+  officeState?: string | null;
+  officePostalCode?: string | null;
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
@@ -669,6 +674,7 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
   const [loginPromptToken, setLoginPromptToken] = useState(0);
+  const apiWarmupInFlight = useRef(false);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<'checkout' | null>(null);
   const [landingAuthMode, setLandingAuthMode] = useState<'login' | 'signup'>('login');
@@ -741,6 +747,44 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimeoutId: number | null = null;
+    const warmApi = async () => {
+      if (apiWarmupInFlight.current || cancelled) {
+        return;
+      }
+      apiWarmupInFlight.current = true;
+      try {
+        await checkServerHealth();
+        console.debug('[Health] API warmup complete');
+      } catch (error) {
+        console.warn('[Health] API warmup failed', error);
+        if (!cancelled) {
+          apiWarmupInFlight.current = false;
+          retryTimeoutId = window.setTimeout(warmApi, 1200);
+        }
+        return;
+      }
+      apiWarmupInFlight.current = false;
+    };
+    warmApi();
+    return () => {
+      cancelled = true;
+      if (retryTimeoutId !== null) {
+        window.clearTimeout(retryTimeoutId);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user && loginPromptToken > 0) {
+      checkServerHealth().catch((error) => {
+        console.warn('[Health] Login prompt warmup failed', error);
+      });
+    }
+  }, [loginPromptToken, user]);
 
   useEffect(() => {
     if (postLoginHold && user && shouldAnimateInfoFocus) {
@@ -2981,6 +3025,7 @@ const renderSalesRepDashboard = () => {
               console.log('[App] onShowInfo called, setting postLoginHold to true');
               setPostLoginHold(true);
             }}
+            onUserUpdated={(next) => setUser(next as User)}
           />
         )}
 

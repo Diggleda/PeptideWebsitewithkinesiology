@@ -10,8 +10,39 @@ import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 
+interface HeaderUserSalesRep {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
+type DirectShippingField =
+  | 'officeAddressLine1'
+  | 'officeAddressLine2'
+  | 'officeCity'
+  | 'officeState'
+  | 'officePostalCode';
+
+interface HeaderUser {
+  id?: string;
+  name: string;
+  role?: string | null;
+  referralCode?: string | null;
+  visits?: number;
+  hasPasskeys?: boolean;
+  email?: string | null;
+  phone?: string | null;
+  salesRep?: HeaderUserSalesRep | null;
+  officeAddressLine1?: string | null;
+  officeAddressLine2?: string | null;
+  officeCity?: string | null;
+  officeState?: string | null;
+  officePostalCode?: string | null;
+}
+
 interface HeaderProps {
-  user: { name: string; role?: string | null; referralCode?: string | null; visits?: number; hasPasskeys?: boolean } | null;
+  user: HeaderUser | null;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout: () => void;
   cartItems: number;
@@ -28,6 +59,7 @@ interface HeaderProps {
   loginContext?: 'checkout' | null;
   showCartIconFallback?: boolean;
   onShowInfo?: () => void;
+  onUserUpdated?: (user: HeaderUser) => void;
 }
 
 export function Header({
@@ -42,6 +74,7 @@ export function Header({
   loginContext = null,
   showCartIconFallback = false,
   onShowInfo,
+  onUserUpdated,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -60,7 +93,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [accountTab, setAccountTab] = useState<'contact' | 'orders'>('contact');
+  const [accountTab, setAccountTab] = useState<'details' | 'orders'>('details');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
   const referralCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,7 +106,7 @@ export function Header({
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
-  const [localUser, setLocalUser] = useState(user);
+  const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
@@ -137,7 +170,7 @@ export function Header({
   }, [loginOpen, authMode, applyPendingLoginPrefill]);
   useEffect(() => {
     if (welcomeOpen) {
-      setAccountTab('contact');
+      setAccountTab('details');
     }
   }, [welcomeOpen]);
   const headerDisplayName = localUser
@@ -635,9 +668,67 @@ export function Header({
   );
 
   const accountHeaderTabs = [
-    { id: 'contact', label: 'Contact', Icon: Info },
+    { id: 'details', label: 'Details', Icon: Info },
     { id: 'orders', label: 'Orders', Icon: Package },
   ] as const;
+
+  const saveProfileField = useCallback(
+    async (label: string, payload: Record<string, string | null>) => {
+      try {
+        const api = await import('../services/api');
+        const updated = await api.authAPI.updateMe(payload);
+
+        const normalizedPayload = Object.fromEntries(
+          Object.entries(payload).map(([key, value]) => {
+            if (typeof value === 'string') {
+              const trimmed = value.trim();
+              return [key, trimmed.length > 0 ? trimmed : null];
+            }
+            return [key, value];
+          }),
+        );
+
+        const nextUserState: HeaderUser = {
+          ...(localUser || {}),
+          ...(updated || {}),
+        };
+
+        Object.entries(normalizedPayload).forEach(([key, value]) => {
+          const serverValue = updated ? (updated as Record<string, unknown>)[key] : undefined;
+          const shouldUsePayload =
+            serverValue === undefined
+            || serverValue === null
+            || (typeof serverValue === 'string' && serverValue.trim().length === 0);
+
+          if (shouldUsePayload) {
+            (nextUserState as Record<string, unknown>)[key] = value;
+          }
+        });
+
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
+        toast.success(`${label} updated`);
+      } catch (error: any) {
+        toast.error(error?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
+        throw error;
+      }
+    },
+    [setLocalUser, onUserUpdated, localUser],
+  );
+
+  const identityFields: Array<{ key: 'name' | 'email' | 'phone'; label: string; type?: string; autoComplete?: string }> = [
+    { key: 'name', label: 'Full Name', autoComplete: 'name' },
+    { key: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
+    { key: 'phone', label: 'Phone', autoComplete: 'tel' },
+  ];
+
+  const directShippingFields: Array<{ key: DirectShippingField; label: string; type?: string; autoComplete?: string }> = [
+    { key: 'officeAddressLine1', label: 'Street', autoComplete: 'shipping address-line1' },
+    { key: 'officeAddressLine2', label: 'Suite / Unit', autoComplete: 'shipping address-line2' },
+    { key: 'officeCity', label: 'City', autoComplete: 'shipping address-level2' },
+    { key: 'officeState', label: 'State', autoComplete: 'shipping address-level1' },
+    { key: 'officePostalCode', label: 'Postal Code', autoComplete: 'shipping postal-code' },
+  ];
 
   const accountInfoPanel = localUser ? (
     <div className="space-y-4">
@@ -651,23 +742,37 @@ export function Header({
           </div>
         </div>
       )}
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
-        <div className="grid gap-3">
-          {([['name', 'Full Name'], ['email', 'Email'], ['phone', 'Phone']] as const).map(([key, label]) => (
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-1">
+        <h3 className="text-base font-semibold text-slate-800">Account Details</h3>
+        <div className="grid gap-3 pt-2">
+          {identityFields.map(({ key, label, type, autoComplete }) => (
             <EditableRow
               key={key}
               label={label}
-              value={(localUser as any)[key] || ''}
-              type={key === 'email' ? 'email' : 'text'}
+              value={(localUser?.[key] as string | null) || ''}
+              type={type || 'text'}
+              autoComplete={autoComplete}
               onSave={async (next) => {
-                try {
-                  const updated = await (await import('../services/api')).authAPI.updateMe({ [key]: next } as any);
-                  setLocalUser(updated);
-                  toast.success(`${label} updated`);
-                } catch (e: any) {
-                  toast.error(e?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
-                  throw e;
-                }
+                await saveProfileField(label, { [key]: next });
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-800">Direct Shipping</h3>
+          <p className="text-sm text-slate-600">Use your office address for cold-chain deliveries and samples.</p>
+        </div>
+        <div className="grid gap-3">
+          {directShippingFields.map(({ key, label, autoComplete }) => (
+            <EditableRow
+              key={key}
+              label={label}
+              value={(localUser?.[key] as string | null) || ''}
+              autoComplete={autoComplete}
+              onSave={async (next) => {
+                await saveProfileField(label, { [key]: next });
               }}
             />
           ))}
@@ -736,7 +841,7 @@ export function Header({
     )
   ) : null;
 
-  const activeAccountPanel = accountTab === 'contact' ? accountInfoPanel : accountOrdersPanel;
+  const activeAccountPanel = accountTab === 'details' ? accountInfoPanel : accountOrdersPanel;
 
   const authControls = user ? (
     <>
@@ -767,14 +872,12 @@ export function Header({
             style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.2)' }}
           >
             <div className="flex-1 min-w-0 space-y-3">
-              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)] welcome-greeting">
-                {(user.visits ?? 1) > 1
-                  ? `Welcome back, ${user.name}!`
-                  : `Welcome to PepPro, ${user.name}!`}
+              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                {user.name}
               </DialogTitle>
               <DialogDescription>
                 {(user.visits ?? 1) > 1
-                  ? `We appreciate your continued support—let's make healthcare simpler together!`
+                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! Your can manage your account details and orders below.`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
               <div className="relative flex items-center gap-4 pb-2" ref={tabsContainerRef}>
@@ -816,7 +919,7 @@ export function Header({
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  console.log('[Header] How does this work clicked', { onShowInfo: !!onShowInfo });
+                  console.log('[Header] Home clicked', { onShowInfo: !!onShowInfo });
                   setWelcomeOpen(false);
                   // Delay the onShowInfo call slightly to ensure modal closes first
                   setTimeout(() => {
@@ -832,7 +935,7 @@ export function Header({
                     '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
                 }}
               >
-                How does this work?
+                Home
               </Button>
               <div className="flex flex-row gap-3 pt-2 pb-1">
                 <Button
@@ -1318,7 +1421,19 @@ export function Header({
   );
 }
 
-function EditableRow({ label, value, type = 'text', onSave }: { label: string; value: string; type?: string; onSave: (next: string) => Promise<void> | void }) {
+function EditableRow({
+  label,
+  value,
+  type = 'text',
+  autoComplete,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  autoComplete?: string;
+  onSave: (next: string) => Promise<void> | void;
+}) {
   const [editing, setEditing] = useState(false);
   const [next, setNext] = useState(value);
   useEffect(() => setNext(value), [value]);
@@ -1332,6 +1447,7 @@ function EditableRow({ label, value, type = 'text', onSave }: { label: string; v
             className="w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             value={next}
             type={type}
+            autoComplete={autoComplete}
             onChange={(e) => setNext(e.currentTarget.value)}
           />
         ) : (

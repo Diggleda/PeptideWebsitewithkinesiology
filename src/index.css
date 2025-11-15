@@ -2939,7 +2939,7 @@ html {
 /* Shared moving underline for account tabs */
 .account-tab-underline-indicator {
   position: absolute;
-  bottom: -6px;
+  bottom: -7px;
   height: 3px;
   background: rgb(95, 179, 249);
   border-radius: 9999px;

@@ -8,6 +8,25 @@ const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
 
+const DIRECT_SHIPPING_FIELDS = [
+  'officeAddressLine1',
+  'officeAddressLine2',
+  'officeCity',
+  'officeState',
+  'officePostalCode',
+];
+
+const normalizeOptionalString = (value) => {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    return String(value).trim() || null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const sanitizeUser = (user) => {
   const {
     password,
@@ -253,6 +272,12 @@ const updateProfile = async (userId, data) => {
     }
     next.email = data.email.trim();
   }
+
+  DIRECT_SHIPPING_FIELDS.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(data, field)) {
+      next[field] = normalizeOptionalString(data[field]);
+    }
+  });
 
   const updated = userRepository.update(next) || next;
 

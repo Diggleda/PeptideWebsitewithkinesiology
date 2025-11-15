@@ -95,6 +95,18 @@ const env = {
   },
 };
 
+env.mysql = {
+  enabled: process.env.MYSQL_ENABLED === 'true',
+  host: process.env.MYSQL_HOST || '127.0.0.1',
+  port: toNumber(process.env.MYSQL_PORT, 3306),
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD || '',
+  database: process.env.MYSQL_DATABASE || 'peppro',
+  connectionLimit: toNumber(process.env.MYSQL_CONNECTION_LIMIT, 8),
+  ssl: process.env.MYSQL_SSL === 'true',
+  timezone: process.env.MYSQL_TIMEZONE || 'Z',
+};
+
 const isProduction = env.nodeEnv === 'production';
 
 module.exports = {

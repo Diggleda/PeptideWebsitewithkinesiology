@@ -117,6 +117,17 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   return response.text();
 };
 
+export type UpdateProfilePayload = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  officeAddressLine1?: string | null;
+  officeAddressLine2?: string | null;
+  officeCity?: string | null;
+  officeState?: string | null;
+  officePostalCode?: string | null;
+};
+
 // Auth API
 export const authAPI = {
   register: async (input: {
@@ -192,7 +203,7 @@ export const authAPI = {
     }
   },
 
-  updateMe: async (payload: { name?: string; email?: string; phone?: string }) => {
+  updateMe: async (payload: UpdateProfilePayload) => {
     return fetchWithAuth(`${API_BASE_URL}/auth/me`, {
       method: 'PUT',
       body: JSON.stringify(payload),

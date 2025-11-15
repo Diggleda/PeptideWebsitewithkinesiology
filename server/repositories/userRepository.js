@@ -1,10 +1,73 @@
 const { userStore } = require('../storage');
+const mysqlClient = require('../database/mysqlClient');
+const { logger } = require('../config/logger');
 
 const normalizeNpiNumber = (value) => {
   if (!value) {
     return '';
   }
   return String(value).replace(/[^0-9]/g, '').slice(0, 10);
+};
+
+const DIRECT_SHIPPING_FIELDS = [
+  'officeAddressLine1',
+  'officeAddressLine2',
+  'officeCity',
+  'officeState',
+  'officePostalCode',
+];
+
+const normalizeOptionalString = (value) => {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    return String(value).trim() || null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const syncDirectShippingToSql = (user) => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const params = {
+    id: user.id,
+    addressLine1: user.officeAddressLine1,
+    addressLine2: user.officeAddressLine2,
+    city: user.officeCity,
+    state: user.officeState,
+    postalCode: user.officePostalCode,
+  };
+  mysqlClient
+    .execute(
+      `
+        UPDATE users
+        SET
+          office_address_line1 = :addressLine1,
+          office_address_line2 = :addressLine2,
+          office_city = :city,
+          office_state = :state,
+          office_postal_code = :postalCode
+        WHERE id = :id
+      `,
+      params,
+    )
+    .then((result) => {
+      if (!result || result.affectedRows === 0) {
+        logger.warn(
+          { userId: user.id },
+          'No rows updated while syncing direct shipping info to MySQL',
+        );
+      }
+    })
+    .catch((error) => {
+      logger.error(
+        { err: error, userId: user.id },
+        'Failed to sync direct shipping info to MySQL',
+      );
+    });
 };
 
 const ensureUserDefaults = (user) => {
@@ -41,6 +104,13 @@ const ensureUserDefaults = (user) => {
   if (!Array.isArray(normalized.passkeys)) {
     normalized.passkeys = [];
   }
+  DIRECT_SHIPPING_FIELDS.forEach((field) => {
+    if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
+      normalized[field] = null;
+    } else {
+      normalized[field] = normalizeOptionalString(normalized[field]);
+    }
+  });
   return normalized;
 };
 
@@ -101,6 +171,7 @@ const insert = (user) => {
   const candidate = ensureUserDefaults(user);
   users.push(candidate);
   saveUsers(users);
+  syncDirectShippingToSql(candidate);
   return candidate;
 };
 
@@ -112,6 +183,7 @@ const update = (user) => {
   }
   users[index] = ensureUserDefaults({ ...users[index], ...user });
   saveUsers(users);
+  syncDirectShippingToSql(users[index]);
   return users[index];
 };
 
