@@ -3062,7 +3062,7 @@ const renderSalesRepDashboard = () => {
                   <div className="flex-shrink-0 px-6 lg:px-8">
                     <div className="brand-logo brand-logo--landing">
                       <img
-                        src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                        src="/Peppro_fulllogo.png"
                         alt="PepPro"
                         style={{
                           display: 'block',
@@ -3107,7 +3107,7 @@ const renderSalesRepDashboard = () => {
                   <div className="flex justify-center px-4">
                     <div className="brand-logo brand-logo--landing">
                       <img
-                        src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                        src="/Peppro_fulllogo.png"
                         alt="PepPro"
                         style={{
                           display: 'block',
@@ -3163,7 +3163,7 @@ const renderSalesRepDashboard = () => {
             }`}>
               <div className="brand-logo brand-logo--landing">
                 <img
-                  src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                  src="/Peppro_fulllogo.png"
                   alt="PepPro"
                   style={{
                     display: 'block',

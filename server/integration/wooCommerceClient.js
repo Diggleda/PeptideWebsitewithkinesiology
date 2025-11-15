@@ -110,13 +110,13 @@ const buildOrderPayload = ({ order, customer }) => ({
   set_paid: false,
   line_items: buildLineItems(order.items || []),
   meta_data: [
-    { key: 'protixa_order_id', value: order.id },
-    { key: 'protixa_total', value: order.total },
-    { key: 'protixa_created_at', value: order.createdAt },
+    { key: 'peppro_order_id', value: order.id },
+    { key: 'peppro_total', value: order.total },
+    { key: 'peppro_created_at', value: order.createdAt },
   ],
   billing: {
-    first_name: customer.name || 'Protixa',
-    email: customer.email || 'orders@protixa.example',
+    first_name: customer.name || 'PepPro',
+    email: customer.email || 'orders@peppro.example',
   },
 });
 

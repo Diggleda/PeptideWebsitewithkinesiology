@@ -86,7 +86,7 @@ const env = {
   },
   passkeys: {
     rpId: process.env.PASSKEY_RP_ID || '',
-    rpName: process.env.PASSKEY_RP_NAME || 'PepPro Marketplace',
+    rpName: process.env.PASSKEY_RP_NAME || 'PepPro',
     origins: parseList(process.env.PASSKEY_ALLOWED_ORIGINS || ''),
   },
   quotes: {

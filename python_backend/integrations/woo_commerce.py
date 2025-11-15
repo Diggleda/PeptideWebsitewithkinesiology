@@ -69,13 +69,13 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "line_items": build_line_items(order.get("items")),
         "fee_lines": fee_lines,
         "meta_data": [
-            {"key": "protixa_order_id", "value": order.get("id")},
-            {"key": "protixa_total", "value": order.get("total")},
-            {"key": "protixa_created_at", "value": order.get("createdAt")},
+            {"key": "peppro_order_id", "value": order.get("id")},
+            {"key": "peppro_total", "value": order.get("total")},
+            {"key": "peppro_created_at", "value": order.get("createdAt")},
         ],
         "billing": {
-            "first_name": customer.get("name") or "Protixa",
-            "email": customer.get("email") or "orders@protixa.example",
+            "first_name": customer.get("name") or "PepPro",
+            "email": customer.get("email") or "orders@peppro.example",
         },
     }
 

@@ -17,7 +17,7 @@ from ..repositories import (
 )
 
 
-LOGGER = logging.getLogger("protixa.migrate")
+LOGGER = logging.getLogger("peppro.migrate")
 
 
 def _ensure_mysql_enabled(config) -> None:

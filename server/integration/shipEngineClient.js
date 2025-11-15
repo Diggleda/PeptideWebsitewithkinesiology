@@ -23,7 +23,7 @@ const buildShipmentPayload = ({ order, customer }) => {
   return {
     service_code: env.shipEngine.defaultServiceCode || 'usps_priority_mail',
     ship_to: {
-      name: customer.name || 'Protixa Customer',
+      name: customer.name || 'PepPro Customer',
       phone: customer.phone || '',
       email: customer.email || '',
       address_line1: order.shippingAddress.addressLine1,
@@ -34,7 +34,7 @@ const buildShipmentPayload = ({ order, customer }) => {
       country_code: order.shippingAddress.country || 'US',
     },
     ship_from: {
-      name: env.shipEngine.shipFromName || 'Protixa Fulfillment',
+      name: env.shipEngine.shipFromName || 'PepPro Fulfillment',
       address_line1: env.shipEngine.shipFromAddress1 || '',
       address_line2: env.shipEngine.shipFromAddress2 || '',
       city_locality: env.shipEngine.shipFromCity || '',

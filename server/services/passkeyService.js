@@ -11,7 +11,7 @@ const { env } = require('../config/env');
 const { sanitizeUser, createAuthToken } = require('./authService');
 
 const rpID = (env.passkeys?.rpId || '').trim() || 'localhost';
-const rpName = (env.passkeys?.rpName || '').trim() || 'PepPro Marketplace';
+const rpName = (env.passkeys?.rpName || '').trim() || 'PepPro';
 const expectedOrigins = (env.passkeys?.origins?.length ? env.passkeys.origins : [])
   .concat([
     'http://localhost:5173',

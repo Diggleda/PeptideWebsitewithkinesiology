@@ -1,4 +1,4 @@
-## Protixa Python Backend
+## PepPro Python Backend
 
 This directory hosts the new Flask-based backend that mirrors the capabilities
 of the original Node/Express service.  The app uses a modular structure so it

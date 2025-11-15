@@ -15,7 +15,7 @@ const getHealth = (_req, res) => {
 const getHelp = (_req, res) => {
   const payload = {
     ok: true,
-    service: 'Protixa Backend',
+    service: 'PepPro Backend',
     build: env.backendBuild,
     integrations: {
       wooCommerce: {

@@ -30,7 +30,7 @@ def help_endpoint():
         config = get_config()
         return {
             "ok": True,
-            "service": "Protixa Backend",
+            "service": "PepPro Backend",
             "build": config.backend_build,
             "integrations": {
                 "wooCommerce": {"configured": woo_commerce.is_configured()},

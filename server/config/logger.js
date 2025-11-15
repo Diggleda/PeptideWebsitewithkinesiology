@@ -2,7 +2,7 @@ const pino = require('pino');
 const { env, isProduction } = require('./env');
 
 const logger = pino({
-  name: 'protixa-backend',
+  name: 'peppro-backend',
   level: env.logLevel,
   transport: isProduction
     ? undefined

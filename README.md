@@ -1,6 +1,6 @@
-# Physicians Choice
+# PepPro
 
-Protixa's Physicians Choice platform is a Vite + React front end paired with an Express backend designed to run on GoDaddy (Node.js hosting) while brokering orders through WooCommerce and ShipEngine.
+PepPro is a Vite + React front end paired with an Express backend designed to run on GoDaddy (Node.js hosting) while brokering orders through WooCommerce and ShipEngine.
 
 ## Project Layout
 

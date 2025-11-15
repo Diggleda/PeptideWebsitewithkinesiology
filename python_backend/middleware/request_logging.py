@@ -14,7 +14,7 @@ def init_request_logging(app: Flask) -> None:
     """
     Attach basic request/response logging for API routes.
     """
-    logger = logging.getLogger("protixa.http")
+    logger = logging.getLogger("peppro.http")
 
     @app.before_request
     def _log_start() -> None:  # type: ignore[return-value]

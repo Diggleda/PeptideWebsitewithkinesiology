@@ -42,7 +42,7 @@ def build_shipment_payload(order: Dict, customer: Dict) -> Optional[Dict]:
     return {
         "service_code": config.ship_engine.get("default_service_code") or "usps_priority_mail",
         "ship_to": {
-            "name": customer.get("name") or "Protixa Customer",
+            "name": customer.get("name") or "PepPro Customer",
             "phone": customer.get("phone") or "",
             "email": customer.get("email") or "",
             "address_line1": shipping.get("addressLine1"),
@@ -53,7 +53,7 @@ def build_shipment_payload(order: Dict, customer: Dict) -> Optional[Dict]:
             "country_code": shipping.get("country") or "US",
         },
         "ship_from": {
-            "name": config.ship_engine.get("ship_from_name") or "Protixa Fulfillment",
+            "name": config.ship_engine.get("ship_from_name") or "PepPro Fulfillment",
             "address_line1": config.ship_engine.get("ship_from_address1") or "",
             "address_line2": config.ship_engine.get("ship_from_address2") or "",
             "city_locality": config.ship_engine.get("ship_from_city") or "",

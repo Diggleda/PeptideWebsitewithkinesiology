@@ -22,7 +22,12 @@
     "npiStatus": null,
     "npiCheckError": null,
     "npiVerification": null,
-    "passkeys": []
+    "passkeys": [],
+    "officeAddressLine1": null,
+    "officeAddressLine2": null,
+    "officeCity": null,
+    "officeState": null,
+    "officePostalCode": null
   },
   {
     "id": "1759372218770",
@@ -32,9 +37,9 @@
     "referralCode": "ZMJN9Y",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 333,
+    "visits": 334,
     "createdAt": "2025-10-02T02:30:18.770Z",
-    "lastLoginAt": "2025-11-14T18:49:15.483Z",
+    "lastLoginAt": "2025-11-15T16:36:27.398Z",
     "role": "doctor",
     "status": "active",
     "salesRepId": null,
@@ -47,7 +52,12 @@
     "npiStatus": null,
     "npiCheckError": null,
     "npiVerification": null,
-    "passkeys": []
+    "passkeys": [],
+    "officeAddressLine1": null,
+    "officeAddressLine2": null,
+    "officeCity": null,
+    "officeState": null,
+    "officePostalCode": null
   },
   {
     "id": "1759414542687",
@@ -72,7 +82,12 @@
     "npiStatus": null,
     "npiCheckError": null,
     "npiVerification": null,
-    "passkeys": []
+    "passkeys": [],
+    "officeAddressLine1": null,
+    "officeAddressLine2": null,
+    "officeCity": null,
+    "officeState": null,
+    "officePostalCode": null
   },
   {
     "id": "1759719202075",
@@ -97,7 +112,12 @@
     "npiStatus": null,
     "npiCheckError": null,
     "npiVerification": null,
-    "passkeys": []
+    "passkeys": [],
+    "officeAddressLine1": null,
+    "officeAddressLine2": null,
+    "officeCity": null,
+    "officeState": null,
+    "officePostalCode": null
   },
   {
     "id": "1763001291646",
@@ -121,6 +141,11 @@
       "primaryTaxonomy": "Social Worker, Clinical",
       "organizationName": null
     },
-    "passkeys": []
+    "passkeys": [],
+    "officeAddressLine1": null,
+    "officeAddressLine2": null,
+    "officeCity": null,
+    "officeState": null,
+    "officePostalCode": null
   }
 ]

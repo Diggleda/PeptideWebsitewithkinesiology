@@ -14,7 +14,7 @@ const start = async () => {
     server.listen(env.port, () => {
       logger.info(
         {
-          service: 'protixa-backend',
+          service: 'peppro-backend',
           port: env.port,
           nodeEnv: env.nodeEnv,
         },

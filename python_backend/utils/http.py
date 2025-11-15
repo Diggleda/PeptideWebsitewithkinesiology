@@ -22,7 +22,7 @@ def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
     except Exception as exc:  # pragma: no cover - error paths
         import logging
 
-        logger = logging.getLogger("protixa.api")
+        logger = logging.getLogger("peppro.api")
         logger.exception(
             "Unhandled API error",
             extra={"method": request.method, "path": request.path, "status": getattr(exc, "status", 500)},

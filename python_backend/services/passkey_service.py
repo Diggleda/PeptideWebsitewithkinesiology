@@ -300,7 +300,7 @@ def _resolve_rp_id(rp_id_hint: Optional[str]) -> str:
 
 def _rp_name() -> str:
     config = get_config()
-    return (config.passkeys.get("rp_name") or "PepPro Marketplace").strip() or "PepPro Marketplace"
+    return (config.passkeys.get("rp_name") or "PepPro").strip() or "PepPro"
 
 
 def _expected_origin(pending_origin: Optional[str], request_origin: Optional[str]) -> List[str]:

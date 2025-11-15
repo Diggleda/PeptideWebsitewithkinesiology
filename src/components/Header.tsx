@@ -1000,7 +1000,7 @@ export function Header({
               <DialogDescription>
                 {authMode === 'login'
                   ? 'Login to enter your PepPro account.'
-                  : 'Create your PepPro physician account to access the marketplace.'}
+                  : 'Create your PepPro physician account to access PepPro.'}
               </DialogDescription>
             </div>
             <DialogClose
@@ -1355,7 +1355,7 @@ export function Header({
               <div className="flex items-center gap-3">
                 <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
                   <img
-                    src="/Peppro_FullLogo_Transparent_NoBuffer.png"
+                    src="/Peppro_fulllogo.png"
                     alt="PepPro logo"
                     className="relative z-[1] flex-shrink-0"
                     style={{

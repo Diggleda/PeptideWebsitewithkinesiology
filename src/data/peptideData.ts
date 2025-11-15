@@ -94,7 +94,7 @@ const toPeptideProduct = (raw: RawPeptide, index: number): Product => {
     inStock: true,
     prescription: raw.type === 'Injectables',
     dosage: raw.dosage,
-    manufacturer: 'Protixa in San Diego, CA',
+    manufacturer: 'PepPro in San Diego, CA',
     type: raw.type,
     description: raw.description,
   };
