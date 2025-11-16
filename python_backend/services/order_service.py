@@ -116,6 +116,8 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
         "stripe": integrations.get("stripe", {}).get("status"),
         "shipEngine": integrations.get("shipEngine", {}).get("status"),
     }
+    if integrations.get("stripe", {}).get("paymentIntentId"):
+        order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
     order_repository.update(order)
 
     message = None

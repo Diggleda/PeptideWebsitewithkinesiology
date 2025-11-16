@@ -788,6 +788,14 @@ export default function App() {
     const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
     return key ? loadStripe(key) : null;
   }, []);
+  const stripeIsTestMode = useMemo(() => {
+    const explicitMode = (import.meta.env.VITE_STRIPE_MODE || import.meta.env.STRIPE_MODE || '').toLowerCase();
+    if (explicitMode === 'test') {
+      return true;
+    }
+    const pk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+    return pk.startsWith('pk_test');
+  }, []);
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
   const [landingLoginPending, setLandingLoginPending] = useState(false);
@@ -2214,27 +2222,7 @@ useEffect(() => {
 
     try {
       const response = await ordersAPI.create(items, total, referralCode);
-      setCartItems([]);
       await loadAccountOrders().catch(() => undefined);
-      const wooResponse = response?.integrations?.wooCommerce?.response;
-      const paymentUrl = wooResponse?.payment_url || wooResponse?.paymentUrl || null;
-      const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
-      const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
-      if (!paymentUrl) {
-        const requestToken = Date.now();
-        console.debug('[Checkout] Success (no redirect)', { orderId: response?.id, total, requestToken });
-        setAccountModalRequest({ tab: 'orders', open: true, token: requestToken });
-        setTimeout(() => {
-          console.debug('[Checkout] Clearing account modal request', { requestToken });
-          setAccountModalRequest((prev) => (prev && prev.token === requestToken ? null : prev));
-        }, 2500);
-      } else if (wooRedirectEnabled) {
-        console.debug('[Checkout] Success (redirecting to Woo payment)', { paymentUrl });
-      } else if (stripeOnsiteEnabled) {
-        console.debug('[Checkout] Success (Stripe onsite enabled, skipping Woo redirect)', { paymentUrl });
-      } else {
-        console.debug('[Checkout] Success (Woo paymentUrl suppressed; onsite Stripe disabled)', { paymentUrl });
-      }
       return response;
     } catch (error: any) {
       console.error('[Checkout] Failed', { error });
@@ -2757,6 +2745,11 @@ const renderProductSection = () => (
           <Badge variant="outline" className="squircle-sm glass">
             {filteredProducts.length} items
           </Badge>
+          {stripeIsTestMode && (
+            <Badge variant="outline" className="squircle-sm glass bg-green-100 text-green-700 border-green-200">
+              Stripe Test Mode
+            </Badge>
+          )}
           {searchQuery && (
             <Badge variant="outline" className="squircle-sm">
               Search: "{searchQuery}"
@@ -3990,6 +3983,14 @@ const renderSalesRepDashboard = () => {
             onClose={() => setCheckoutOpen(false)}
             cartItems={cartItems}
             onCheckout={handleCheckout}
+            onClearCart={() => setCartItems([])}
+            onPaymentSuccess={() => {
+              const requestToken = Date.now();
+              setAccountModalRequest({ tab: 'orders', open: true, token: requestToken });
+              setTimeout(() => {
+                setAccountModalRequest((prev) => (prev && prev.token === requestToken ? null : prev));
+              }, 2500);
+            }}
             onUpdateItemQuantity={handleUpdateCartItemQuantity}
             onRemoveItem={handleRemoveCartItem}
             isAuthenticated={Boolean(user)}
@@ -4005,6 +4006,14 @@ const renderSalesRepDashboard = () => {
           onClose={() => setCheckoutOpen(false)}
           cartItems={cartItems}
           onCheckout={handleCheckout}
+          onClearCart={() => setCartItems([])}
+          onPaymentSuccess={() => {
+            const requestToken = Date.now();
+            setAccountModalRequest({ tab: 'orders', open: true, token: requestToken });
+            setTimeout(() => {
+              setAccountModalRequest((prev) => (prev && prev.token === requestToken ? null : prev));
+            }, 2500);
+          }}
           onUpdateItemQuantity={handleUpdateCartItemQuantity}
           onRemoveItem={handleRemoveCartItem}
           isAuthenticated={Boolean(user)}

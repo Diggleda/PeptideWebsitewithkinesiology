@@ -34,6 +34,15 @@ const createApp = () => {
 
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
 
+  // Handle CORS preflight for all API routes without redirecting.
+  app.options('*', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization');
+    res.status(204).end();
+  });
+
   app.use((req, res, next) => {
     logger.debug({ method: req.method, path: req.path }, 'Incoming request');
     next();

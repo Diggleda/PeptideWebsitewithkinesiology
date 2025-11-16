@@ -271,14 +271,23 @@ export const authAPI = {
 // Orders API
 export const ordersAPI = {
   create: async (items: any[], total: number, referralCode?: string) => {
-    return fetchWithAuth(`${API_BASE_URL}/orders`, {
+    return fetchWithAuth(`${API_BASE_URL}/orders/`, {
       method: 'POST',
       body: JSON.stringify({ items, total, referralCode }),
     });
   },
 
   getAll: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/orders`);
+    return fetchWithAuth(`${API_BASE_URL}/orders/`);
+  },
+};
+
+export const paymentsAPI = {
+  confirmStripeIntent: async (paymentIntentId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/payments/stripe/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ paymentIntentId }),
+    });
   },
 };
 

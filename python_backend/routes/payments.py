@@ -27,6 +27,16 @@ def create_intent():
     return handle_action(lambda: stripe_payments.create_payment_intent(order))
 
 
+@blueprint.post("/stripe/confirm")
+@require_auth
+def confirm_intent():
+    payload = request.get_json(force=True, silent=True) or {}
+    payment_intent_id = payload.get("paymentIntentId")
+    if not payment_intent_id:
+        return {"error": "paymentIntentId is required"}, 400
+    return handle_action(lambda: stripe_payments.finalize_payment_intent(payment_intent_id))
+
+
 @blueprint.post("/stripe/webhook")
 def handle_stripe_webhook():
     payload = request.get_data()

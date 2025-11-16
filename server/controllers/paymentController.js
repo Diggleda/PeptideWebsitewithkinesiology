@@ -22,6 +22,19 @@ const createIntent = async (req, res, next) => {
   }
 };
 
+const confirmIntent = async (req, res, next) => {
+  try {
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId) {
+      return res.status(400).json({ error: 'paymentIntentId is required' });
+    }
+    const result = await paymentService.finalizePaymentIntent({ paymentIntentId });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const handleStripeWebhook = async (req, res, next) => {
   try {
     const rawPayload = Buffer.isBuffer(req.body)
@@ -40,5 +53,6 @@ const handleStripeWebhook = async (req, res, next) => {
 
 module.exports = {
   createIntent,
+  confirmIntent,
   handleStripeWebhook,
 };

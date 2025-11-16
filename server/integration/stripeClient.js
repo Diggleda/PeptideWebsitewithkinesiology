@@ -21,6 +21,16 @@ const getClient = () => {
 
 const isConfigured = () => Boolean(env.stripe.onsiteEnabled && env.stripe.secretKey);
 
+const retrievePaymentIntent = async (paymentIntentId) => {
+  if (!isConfigured()) {
+    const error = new Error('Stripe is not configured');
+    error.status = 503;
+    throw error;
+  }
+  const stripe = getClient();
+  return stripe.paymentIntents.retrieve(paymentIntentId);
+};
+
 const createPaymentIntent = async ({ order, wooOrderId, customer }) => {
   if (!isConfigured()) {
     return { status: 'skipped', reason: 'stripe_disabled' };
@@ -72,4 +82,5 @@ module.exports = {
   isConfigured,
   createPaymentIntent,
   constructEvent,
+  retrievePaymentIntent,
 };

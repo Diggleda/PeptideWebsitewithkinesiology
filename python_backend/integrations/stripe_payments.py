@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover - optional dependency
     stripe = None
 
 from ..services import get_config
+from ..repositories import order_repository
 
 
 class StripeIntegrationError(RuntimeError):
@@ -73,3 +74,37 @@ def parse_webhook(payload: bytes, signature: Optional[str]) -> Dict[str, Any]:
     except Exception as exc:  # pragma: no cover - signature/parse error
         logger.warning("Stripe webhook parse failed", exc_info=True)
         raise StripeIntegrationError("Invalid Stripe webhook", status=400) from exc
+
+
+def retrieve_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
+    config = get_config()
+    if not config.stripe.get("onsite_enabled"):
+        return {"status": "skipped", "reason": "stripe_disabled"}
+    if not config.stripe.get("secret_key"):
+        raise StripeIntegrationError("Stripe not configured", status=500)
+    if stripe is None:
+        raise StripeIntegrationError("Stripe SDK not installed", status=500)
+
+    stripe.api_key = config.stripe.get("secret_key")
+    try:
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        return {"status": intent.get("status"), "intent": intent}
+    except Exception as exc:
+        logger.error("Stripe PaymentIntent retrieve failed", exc_info=True, extra={"paymentIntentId": payment_intent_id})
+        raise StripeIntegrationError("Stripe PaymentIntent retrieve failed", status=500, response=getattr(exc, "json_body", None))
+
+
+def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
+    result = retrieve_payment_intent(payment_intent_id)
+    intent = result.get("intent") or {}
+    metadata = intent.get("metadata") or {}
+    order_id = metadata.get("peppro_order_id")
+
+    if order_id:
+        order = order_repository.find_by_id(order_id)
+        if order:
+            order["paymentIntentId"] = payment_intent_id
+            order["status"] = "paid" if intent.get("status") == "succeeded" else order.get("status", "pending")
+            order_repository.update(order)
+
+    return {"status": result.get("status"), "paymentIntentId": payment_intent_id, "orderId": order_id}

@@ -9,6 +9,7 @@ import { Card, CardContent } from './ui/card';
 import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
+import { paymentsAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 
@@ -44,6 +45,8 @@ interface CheckoutModalProps {
   onClose: () => void;
   cartItems: CartItem[];
   onCheckout: (referralCode?: string) => Promise<CheckoutResult | void> | CheckoutResult | void;
+  onClearCart?: () => void;
+  onPaymentSuccess?: () => void;
   onUpdateItemQuantity: (cartItemId: string, quantity: number) => void;
   onRemoveItem: (cartItemId: string) => void;
   isAuthenticated: boolean;
@@ -96,6 +99,8 @@ export function CheckoutModal({
   physicianName,
   customerEmail,
   customerName,
+  onClearCart,
+  onPaymentSuccess,
 }: CheckoutModalProps) {
   const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
   const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
@@ -233,6 +238,12 @@ export function CheckoutModal({
       setCheckoutStatusMessage(successMessage);
       toast.success(successMessage);
       console.debug('[CheckoutModal] Checkout success');
+      if (onClearCart) {
+        onClearCart();
+      }
+      if (onPaymentSuccess) {
+        onPaymentSuccess();
+      }
       if (checkoutStatusTimer.current) {
         clearTimeout(checkoutStatusTimer.current);
       }
@@ -246,10 +257,15 @@ export function CheckoutModal({
       }, paymentUrl && wooRedirectEnabled && !shouldUseStripe ? 600 : 1800);
       if (paymentUrl && wooRedirectEnabled && !shouldUseStripe) {
         toast.info('Redirecting to WooCommerce to complete payment…');
-      } else if (stripeOnsiteEnabled) {
-        toast.info('Stripe onsite checkout enabled. Complete payment in-page.');
       }
-    } catch (error: any) {
+        if (stripeIntentId) {
+          try {
+            await paymentsAPI.confirmStripeIntent(stripeIntentId);
+          } catch (confirmError) {
+            console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
+          }
+        }
+      } catch (error: any) {
       console.warn('[CheckoutModal] Checkout handler threw', error);
       const message = typeof error?.message === 'string' && error.message.trim().length > 0
         ? error.message

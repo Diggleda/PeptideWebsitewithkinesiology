@@ -764,5 +764,425 @@
         "reason": "not_configured"
       }
     }
+  },
+  {
+    "id": "1763321979058",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-215",
+        "productId": "woo-211",
+        "variantId": "woo-variation-215",
+        "name": "GLP-1 (Sema) — 5mg",
+        "price": 80.39,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 80.39,
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-11-16T19:39:39.058Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "GLP-1 (Sema) — 5mg",
+              "sku": "woo-211",
+              "quantity": 1,
+              "total": "80.39",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763321979058"
+            },
+            {
+              "key": "peppro_total",
+              "value": 80.39
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-16T19:39:39.058Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 304,
+          "number": "304",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/304/?pay_for_order=true&key=wc_order_RlPJh5fEwtc7v",
+          "order_key": "wc_order_RlPJh5fEwtc7v"
+        }
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    }
+  },
+  {
+    "id": "1763322461093",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 164.92,
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-11-16T19:47:41.093Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 1,
+              "total": "164.92",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763322461093"
+            },
+            {
+              "key": "peppro_total",
+              "value": 164.92
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-16T19:47:41.093Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 305,
+          "number": "305",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/305/?pay_for_order=true&key=wc_order_deu4u4pAmGEKe",
+          "order_key": "wc_order_deu4u4pAmGEKe"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUBvILdQwKDgAgZ1HY8Hnv3_secret_vjDidIIsf5Qv3g0fY1OWM9B5N",
+        "paymentIntentId": "pi_3SUBvILdQwKDgAgZ1HY8Hnv3"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": 305,
+    "paymentIntentId": "pi_3SUBvILdQwKDgAgZ1HY8Hnv3"
+  },
+  {
+    "id": "1763322528498",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 164.92,
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-11-16T19:48:48.498Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 1,
+              "total": "164.92",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763322528498"
+            },
+            {
+              "key": "peppro_total",
+              "value": 164.92
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-16T19:48:48.498Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 306,
+          "number": "306",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/306/?pay_for_order=true&key=wc_order_kuEhEmcGgE4oF",
+          "order_key": "wc_order_kuEhEmcGgE4oF"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUBwNLdQwKDgAgZ02vhf9mT_secret_bFaRfiKHIkUjJukJzAGBjAzRI",
+        "paymentIntentId": "pi_3SUBwNLdQwKDgAgZ02vhf9mT"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": 306,
+    "paymentIntentId": "pi_3SUBwNLdQwKDgAgZ02vhf9mT"
+  },
+  {
+    "id": "1763322669582",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 2,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 329.84,
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-11-16T19:51:09.582Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 2,
+              "total": "329.84",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763322669582"
+            },
+            {
+              "key": "peppro_total",
+              "value": 329.84
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-16T19:51:09.582Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 307,
+          "number": "307",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/307/?pay_for_order=true&key=wc_order_hsgVPp9zrWPq1",
+          "order_key": "wc_order_hsgVPp9zrWPq1"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUByeLdQwKDgAgZ1aoxm1c8_secret_Lx8KDIaBB3k8GJ9TDJvAkNxgQ",
+        "paymentIntentId": "pi_3SUByeLdQwKDgAgZ1aoxm1c8"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": 307,
+    "paymentIntentId": "pi_3SUByeLdQwKDgAgZ1aoxm1c8"
+  },
+  {
+    "id": "1763323194172",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-256::woo-variation-260",
+        "productId": "woo-256",
+        "variantId": "woo-variation-260",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+        "price": 273.18,
+        "quantity": 2,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 546.36,
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-16T19:59:54.172Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+              "sku": "woo-256",
+              "quantity": 2,
+              "total": "546.36",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763323194172"
+            },
+            {
+              "key": "peppro_total",
+              "value": 546.36
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-16T19:59:54.172Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 308,
+          "number": "308",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/308/?pay_for_order=true&key=wc_order_hLaR6eqOraKkE",
+          "order_key": "wc_order_hLaR6eqOraKkE"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUC76LdQwKDgAgZ298LufOg_secret_LbxvsDKolA2lCecIcOkyFUsmu",
+        "paymentIntentId": "pi_3SUC76LdQwKDgAgZ298LufOg",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-16T20:00:09.259Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": "308",
+    "paymentIntentId": "pi_3SUC76LdQwKDgAgZ298LufOg"
   }
 ]
