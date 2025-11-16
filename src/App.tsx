@@ -178,10 +178,23 @@ const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
     .filter((line) => line.name);
 };
 
-const normalizeAccountOrdersResponse = (payload: any): AccountOrderSummary[] => {
+const normalizeAccountOrdersResponse = (
+  payload: any,
+  options?: { includeCanceled?: boolean },
+): AccountOrderSummary[] => {
+  const includeCanceled = options?.includeCanceled ?? false;
   const result: AccountOrderSummary[] = [];
+  const shouldIncludeStatus = (status?: string | null) => {
+    if (!status) return true;
+    const normalized = String(status).trim().toLowerCase();
+    if (normalized === 'trash') {
+      return includeCanceled;
+    }
+    return true;
+  };
+
   if (payload && Array.isArray(payload.woo)) {
-    payload.woo.forEach((order: any) => {
+    payload.woo.filter((order: any) => shouldIncludeStatus(order?.status)).forEach((order: any) => {
       const identifier = order?.id
         ? String(order.id)
         : order?.number
@@ -190,13 +203,33 @@ const normalizeAccountOrdersResponse = (payload: any): AccountOrderSummary[] => 
       result.push({
         id: identifier,
         number: order?.number || identifier,
-        status: order?.status || 'pending',
+        status: order?.status === 'trash' ? 'canceled' : order?.status || 'pending',
         currency: order?.currency || 'USD',
         total: coerceNumber(order?.total) ?? null,
         createdAt: order?.createdAt || order?.dateCreated || order?.date_created || null,
         updatedAt: order?.updatedAt || order?.dateModified || order?.date_modified || null,
         source: 'woocommerce',
         lineItems: toOrderLineItems(order?.lineItems),
+        integrations: order?.integrations || null,
+        paymentMethod: order?.paymentMethod || null,
+        integrationDetails: order?.integrationDetails || null,
+      });
+    });
+  }
+
+  if (payload && Array.isArray(payload.local)) {
+    payload.local.filter((order: any) => shouldIncludeStatus(order?.status)).forEach((order: any) => {
+      const identifier = order?.id ? String(order.id) : `local-${Math.random().toString(36).slice(2, 10)}`;
+      result.push({
+        id: identifier,
+        number: order?.number || identifier,
+        status: order?.status === 'trash' ? 'canceled' : order?.status || 'pending',
+        currency: order?.currency || 'USD',
+        total: coerceNumber(order?.total) ?? null,
+        createdAt: order?.createdAt || null,
+        updatedAt: order?.updatedAt || null,
+        source: 'peppro',
+        lineItems: toOrderLineItems(order?.items),
         integrations: order?.integrations || null,
         paymentMethod: order?.paymentMethod || null,
         integrationDetails: order?.integrationDetails || null,
@@ -742,7 +775,7 @@ const fetchProductVariations = async (products: WooProduct[]): Promise<Map<numbe
             variationMap.set(nextProduct.id, []);
           }
         } catch (error) {
-          console.warn('[WooCommerce] Failed to load variations', { productId: nextProduct.id, error });
+      console.warn('[Catalog] Failed to load variations', { productId: nextProduct.id, error });
         }
       }
     })(),
@@ -806,6 +839,7 @@ export default function App() {
   const [accountOrdersLoading, setAccountOrdersLoading] = useState(false);
   const [accountOrdersError, setAccountOrdersError] = useState<string | null>(null);
   const [accountOrdersSyncedAt, setAccountOrdersSyncedAt] = useState<string | null>(null);
+  const [showCanceledOrders, setShowCanceledOrders] = useState(false);
   const [accountModalRequest, setAccountModalRequest] = useState<{ tab: 'details' | 'orders'; open?: boolean; token: number } | null>(null);
   const triggerLandingCredentialAutofill = useCallback(async () => {
     if (landingCredentialAutofillInFlight.current) {
@@ -827,7 +861,8 @@ export default function App() {
     }
   }, []);
 
-  const loadAccountOrders = useCallback(async () => {
+  const loadAccountOrders = useCallback(async (options?: { includeCanceled?: boolean }) => {
+    const includeCanceled = options?.includeCanceled ?? showCanceledOrders;
     if (!user?.id) {
       setAccountOrders([]);
       setAccountOrdersSyncedAt(null);
@@ -838,7 +873,7 @@ export default function App() {
     setAccountOrdersError(null);
     try {
       const response = await ordersAPI.getAll();
-      const normalized = normalizeAccountOrdersResponse(response);
+      const normalized = normalizeAccountOrdersResponse(response, { includeCanceled });
       setAccountOrders(normalized);
       const fetchedAt =
         response && typeof response === 'object' && (response as any).fetchedAt
@@ -858,7 +893,16 @@ export default function App() {
     } finally {
       setAccountOrdersLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, showCanceledOrders]);
+
+  const toggleShowCanceledOrders = useCallback(() => {
+    setShowCanceledOrders((prev) => {
+      const next = !prev;
+      // Re-fetch with the updated includeCanceled flag so the UI reflects the toggle immediately.
+      void loadAccountOrders({ includeCanceled: next }).catch(() => undefined);
+      return next;
+    });
+  }, [loadAccountOrders]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1548,7 +1592,7 @@ const filteredDoctorReferrals = useMemo(() => {
         }
       } catch (error) {
         if (!cancelled) {
-          console.warn('[WooCommerce] Catalog fetch failed', error);
+      console.warn('[Catalog] Catalog fetch failed', error);
           // Per preference: keep catalog empty when Woo is not available.
           setCatalogProducts([]);
           setCatalogCategories([]);
@@ -3213,6 +3257,8 @@ const renderSalesRepDashboard = () => {
             accountOrdersError={accountOrdersError}
             ordersLastSyncedAt={accountOrdersSyncedAt}
             onRefreshOrders={loadAccountOrders}
+            showCanceledOrders={showCanceledOrders}
+            onToggleShowCanceled={toggleShowCanceledOrders}
             accountModalRequest={accountModalRequest}
           />
         )}

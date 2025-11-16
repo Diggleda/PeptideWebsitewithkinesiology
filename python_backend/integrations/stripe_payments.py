@@ -44,6 +44,10 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         "peppro_order_id": order.get("id"),
         "user_id": order.get("userId"),
     }
+    if order.get("wooOrderId"):
+        metadata["woo_order_id"] = order.get("wooOrderId")
+    if order.get("wooOrderKey"):
+        metadata["woo_order_key"] = order.get("wooOrderKey")
 
     try:
         intent = stripe.PaymentIntent.create(

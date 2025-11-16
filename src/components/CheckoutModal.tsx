@@ -256,7 +256,8 @@ export function CheckoutModal({
         }
       }, paymentUrl && wooRedirectEnabled && !shouldUseStripe ? 600 : 1800);
       if (paymentUrl && wooRedirectEnabled && !shouldUseStripe) {
-        toast.info('Redirecting to WooCommerce to complete payment…');
+        // Redirect to store checkout only when explicitly enabled.
+        toast.info('Redirecting to complete payment…');
       }
         if (stripeIntentId) {
           try {

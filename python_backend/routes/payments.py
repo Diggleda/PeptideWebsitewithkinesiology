@@ -4,7 +4,7 @@ import json
 
 from flask import Blueprint, request
 
-from ..integrations import stripe_payments
+from ..integrations import stripe_payments, payment_webhook
 from ..middleware.auth import require_auth
 from ..utils.http import handle_action
 
@@ -45,9 +45,9 @@ def handle_stripe_webhook():
         event = stripe_payments.parse_webhook(payload, sig_header)
     except stripe_payments.StripeIntegrationError as exc:
         return {"error": str(exc)}, getattr(exc, "status", 400)
-    # Placeholder: in a full implementation, update Woo order/payment state based on event["type"].
     try:
         event_json = event if isinstance(event, dict) else json.loads(str(event))
     except Exception:
         event_json = {"type": "unknown"}
-    return {"received": True, "type": event_json.get("type")}
+    result = payment_webhook.handle_event(event_json if isinstance(event_json, dict) else {})
+    return {"received": True, "type": event_json.get("type"), "result": result}

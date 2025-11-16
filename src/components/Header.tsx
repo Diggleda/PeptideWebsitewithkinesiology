@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, RefreshCw } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -87,6 +87,8 @@ interface HeaderProps {
   ordersLastSyncedAt?: string | null;
   onRefreshOrders?: () => void;
   accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number } | null;
+  showCanceledOrders?: boolean;
+  onToggleShowCanceled?: () => void;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -111,6 +113,8 @@ const formatCurrency = (amount?: number | null, currency = 'USD') => {
 
 const humanizeOrderStatus = (status?: string | null) => {
   if (!status) return 'Pending';
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'trash') return 'Canceled';
   return status
     .split(/[_\s]+/)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
@@ -136,6 +140,8 @@ export function Header({
   ordersLastSyncedAt,
   onRefreshOrders,
   accountModalRequest = null,
+  showCanceledOrders = false,
+  onToggleShowCanceled,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -421,6 +427,18 @@ export function Header({
       setWelcomeOpen(false);
     }
   }, [user]);
+
+  // Auto-refresh orders when the orders tab is open
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
+      return undefined;
+    }
+    onRefreshOrders();
+    const intervalId = window.setInterval(() => {
+      onRefreshOrders();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [welcomeOpen, accountTab, onRefreshOrders, user]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -861,6 +879,16 @@ export function Header({
   ) : null;
 
   const renderOrdersList = () => {
+    const visibleOrders = Array.isArray(accountOrders)
+      ? accountOrders.filter((order) => {
+        if (showCanceledOrders) {
+          return true;
+        }
+        const status = order.status ? String(order.status).trim().toLowerCase() : '';
+        return status !== 'canceled' && status !== 'trash';
+      })
+      : [];
+
     if (accountOrdersLoading) {
       return (
         <div className="flex items-center justify-center py-6 text-slate-600 text-sm gap-2">
@@ -870,7 +898,7 @@ export function Header({
       );
     }
 
-    if (!accountOrders?.length) {
+    if (!visibleOrders.length) {
       return (
         <div className="text-sm text-slate-600 text-center py-6">
           No recent orders found for this account.
@@ -880,7 +908,7 @@ export function Header({
 
     return (
       <ul className="space-y-3">
-        {accountOrders.map((order) => (
+        {visibleOrders.map((order) => (
           <li
             key={`${order.source}-${order.id}`}
             className="rounded-lg border border-[var(--brand-glass-border-2)] bg-white/60 px-4 py-3 shadow-sm"
@@ -904,7 +932,7 @@ export function Header({
                   <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
                     {order.integrationDetails.wooCommerce && (
                       <p>
-                        WooCommerce:&nbsp;
+                        Store:&nbsp;
                         {humanizeOrderStatus(order.integrationDetails.wooCommerce.status || order.integrations?.wooCommerce)}
                         {order.integrationDetails.wooCommerce.reason
                           ? ` (${order.integrationDetails.wooCommerce.reason.replace(/_/g, ' ')})`
@@ -934,7 +962,7 @@ export function Header({
                   {humanizeOrderStatus(order.status)}
                 </span>
                 <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.12)] px-2 py-0.5 text-xs font-medium text-[rgb(28,109,173)]">
-                  {order.source === 'woocommerce' ? 'WooCommerce' : 'PepPro'}
+                  {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
                 </span>
               </div>
             </div>
@@ -951,27 +979,27 @@ export function Header({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-800">Recent Orders</h3>
-              <p className="text-sm text-slate-600">
-                Automatically synced from WooCommerce and your PepPro account.
-              </p>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onToggleShowCanceled?.()}
+                className="glass squircle-sm"
+              >
+                {showCanceledOrders ? (
+                  <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+                )}
+                {showCanceledOrders ? 'Hide canceled' : 'Show canceled'}
+              </Button>
               {ordersLastSyncedAt && (
                 <span className="text-xs text-slate-500">
                   Synced {formatOrderDate(ordersLastSyncedAt)}
                 </span>
               )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="squircle-sm border border-[var(--brand-glass-border-2)]"
-                onClick={() => onRefreshOrders?.()}
-                disabled={accountOrdersLoading || !onRefreshOrders}
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${accountOrdersLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
             </div>
           </div>
           {accountOrdersError && (

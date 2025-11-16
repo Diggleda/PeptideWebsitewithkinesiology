@@ -138,8 +138,54 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
             "number": body.get("number"),
             "status": body.get("status"),
             "paymentUrl": payment_url,
+            "orderKey": body.get("order_key") or body.get("key"),
+            "payForOrderUrl": payment_url,
         },
     }
+
+
+def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    woo_order_id = details.get("woo_order_id") or details.get("wooOrderId") or details.get("id")
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
+    meta = []
+    if details.get("payment_intent_id"):
+        meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
+    if details.get("order_key"):
+        meta.append({"key": "order_key", "value": details.get("order_key")})
+    try:
+        response = requests.put(
+            url,
+            json={
+                "status": "processing",
+                "set_paid": True,
+                "payment_method": "stripe",
+                "payment_method_title": "Stripe Onsite",
+                "meta_data": meta,
+            },
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=10,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {"status": "success", "response": {"id": body.get("id"), "status": body.get("status")}}
+    except requests.RequestException as exc:
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("Failed to mark Woo order paid", exc_info=True, extra={"wooOrderId": woo_order_id})
+        raise IntegrationError("Failed to mark Woo order paid", response=data) from exc
 
 
 # ---- Catalog proxy helpers -------------------------------------------------
@@ -235,3 +281,62 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
         err = IntegrationError("WooCommerce catalog request failed", response=data)
         setattr(err, "status", getattr(exc.response, "status_code", 502) if exc.response else 502)
         raise err
+
+
+def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
+    """Map Woo order JSON to a lightweight summary for the API."""
+    def _num(val: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(val)
+        except Exception:
+            return fallback
+
+    return {
+        "id": str(order.get("id") or ""),
+        "number": str(order.get("number") or order.get("id") or ""),
+        "status": order.get("status"),
+        "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
+        "currency": order.get("currency") or "USD",
+        "paymentMethod": order.get("payment_method_title") or order.get("payment_method"),
+        "createdAt": order.get("date_created") or order.get("date_created_gmt"),
+        "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
+        "billingEmail": (order.get("billing") or {}).get("email"),
+        "source": "woocommerce",
+        "lineItems": [
+            {
+                "id": item.get("id"),
+                "productId": item.get("product_id"),
+                "variationId": item.get("variation_id"),
+                "name": item.get("name"),
+                "quantity": _num(item.get("quantity"), 0),
+                "total": _num(item.get("total"), 0.0),
+                "sku": item.get("sku"),
+            }
+            for item in order.get("line_items") or []
+        ],
+    }
+
+
+def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
+    if not email or not is_configured():
+        return []
+    trimmed = email.strip().lower()
+    if not trimmed:
+        return []
+
+    size = max(1, min(per_page, 50))
+    try:
+        response = fetch_catalog("orders", {"per_page": size, "orderby": "date", "order": "desc"})
+        payload = response if isinstance(response, list) else []
+        return [
+            _map_woo_order_summary(order)
+            for order in payload
+            if isinstance(order, dict)
+            and isinstance((order.get("billing") or {}).get("email"), str)
+            and (order.get("billing") or {}).get("email").strip().lower() == trimmed
+        ]
+    except IntegrationError:
+        raise
+    except Exception as exc:
+        logger.error("Failed to fetch WooCommerce orders by email", exc_info=True, extra={"email": email})
+        raise IntegrationError("WooCommerce order lookup failed")

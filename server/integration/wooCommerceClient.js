@@ -106,9 +106,7 @@ const buildLineItems = (items) => items.map((item) => ({
 const buildOrderPayload = ({ order, customer }) => ({
   status: 'pending',
   created_via: 'peppro_app',
-  customer_note: order.referralCode
-    ? `Referral code used: ${order.referralCode}`
-    : '',
+  customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
   set_paid: false,
   line_items: buildLineItems(order.items || []),
   meta_data: [
@@ -116,6 +114,10 @@ const buildOrderPayload = ({ order, customer }) => ({
     { key: 'peppro_total', value: order.total },
     { key: 'peppro_created_at', value: order.createdAt },
     { key: 'peppro_origin', value: 'PepPro Web Checkout' },
+    // Attempt to keep WooCommerce order number aligned with PepPro order id for easier tracking.
+    { key: '_order_number', value: order.id },
+    { key: '_order_number_formatted', value: order.id },
+    { key: 'peppro_display_order_id', value: order.id },
   ],
   billing: {
     first_name: customer.name || 'PepPro',
@@ -206,22 +208,36 @@ const sanitizeWooLineItems = (items = []) => {
   }));
 };
 
-const mapWooOrderSummary = (order) => ({
-  id: order?.id ? String(order.id) : crypto.randomUUID(),
-  number: typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null),
-  status: order?.status || 'pending',
-  currency: order?.currency || 'USD',
-  total: normalizeNumber(order?.total, normalizeNumber(order?.total_ex_tax)),
-  totalTax: normalizeNumber(order?.total_tax),
-  shippingTotal: normalizeNumber(order?.shipping_total),
-  paymentMethod: order?.payment_method_title || order?.payment_method || null,
-  createdAt: order?.date_created || order?.date_created_gmt || null,
-  updatedAt: order?.date_modified || order?.date_modified_gmt || null,
-  billingName: formatBillingName(order?.billing),
-  billingEmail: order?.billing?.email || null,
-  source: 'woocommerce',
-  lineItems: sanitizeWooLineItems(order?.line_items),
-});
+const mapWooOrderSummary = (order) => {
+  const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
+  const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
+  const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
+  const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
+
+  return {
+    id: order?.id ? String(order.id) : crypto.randomUUID(),
+    number: pepproOrderId || wooNumber,
+    status: order?.status || 'pending',
+    currency: order?.currency || 'USD',
+    total: normalizeNumber(order?.total, normalizeNumber(order?.total_ex_tax)),
+    totalTax: normalizeNumber(order?.total_tax),
+    shippingTotal: normalizeNumber(order?.shipping_total),
+    paymentMethod: order?.payment_method_title || order?.payment_method || null,
+    createdAt: order?.date_created || order?.date_created_gmt || null,
+    updatedAt: order?.date_modified || order?.date_modified_gmt || null,
+    billingName: formatBillingName(order?.billing),
+    billingEmail: order?.billing?.email || null,
+    source: 'woocommerce',
+    lineItems: sanitizeWooLineItems(order?.line_items),
+    integrationDetails: {
+      wooCommerce: {
+        wooOrderNumber: wooNumber,
+        pepproOrderId,
+        status: order?.status || 'pending',
+      },
+    },
+  };
+};
 
 const fetchOrdersByEmail = async (email, { perPage = 10 } = {}) => {
   if (!email || !isConfigured()) {

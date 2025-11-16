@@ -77,6 +77,10 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
 
     try:
         integrations["wooCommerce"] = woo_commerce.forward_order(order, user)
+        woo_resp = integrations["wooCommerce"]
+        if woo_resp.get("status") == "success":
+            order["wooOrderId"] = woo_resp.get("response", {}).get("id")
+            order["wooOrderKey"] = woo_resp.get("response", {}).get("orderKey")
         # On successful Woo order creation, finalize referral credit deduction
         if order.get("appliedReferralCredit"):
             try:
@@ -137,7 +141,24 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
 
 
 def get_orders_for_user(user_id: str):
-    return order_repository.find_by_user_id(user_id)
+    user = user_repository.find_by_id(user_id)
+    local_orders = order_repository.find_by_user_id(user_id)
+
+    woo_orders = []
+    woo_error = None
+    if user and user.get("email"):
+        try:
+            woo_orders = woo_commerce.fetch_orders_by_email(user.get("email"), per_page=15)
+        except Exception as exc:
+            logger.error("Failed to fetch WooCommerce orders for user", exc_info=True, extra={"userId": user_id})
+            woo_error = getattr(exc, "response", None) or {"message": str(exc)}
+
+    return {
+        "local": local_orders,
+        "woo": woo_orders,
+        "fetchedAt": datetime.now(timezone.utc).isoformat(),
+        "wooError": woo_error,
+    }
 
 
 def _service_error(message: str, status: int) -> Exception:
