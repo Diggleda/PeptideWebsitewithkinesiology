@@ -14,9 +14,9 @@ const createOrder = async (req, res, next) => {
   }
 };
 
-const getOrders = (req, res, next) => {
+const getOrders = async (req, res, next) => {
   try {
-    const orders = orderService.getOrdersForUser(req.user.id);
+    const orders = await orderService.getOrdersForUser(req.user.id);
     res.json(orders);
   } catch (error) {
     next(error);

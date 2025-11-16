@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -41,6 +41,27 @@ interface HeaderUser {
   officePostalCode?: string | null;
 }
 
+interface AccountOrderLineItem {
+  id?: string | null;
+  name?: string | null;
+  quantity?: number | null;
+  total?: number | null;
+}
+
+interface AccountOrderSummary {
+  id: string;
+  number?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  total?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  source: 'local' | 'woocommerce';
+  lineItems?: AccountOrderLineItem[];
+  integrations?: Record<string, string | null> | null;
+  paymentMethod?: string | null;
+}
+
 interface HeaderProps {
   user: HeaderUser | null;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
@@ -60,7 +81,41 @@ interface HeaderProps {
   showCartIconFallback?: boolean;
   onShowInfo?: () => void;
   onUserUpdated?: (user: HeaderUser) => void;
+  accountOrders?: AccountOrderSummary[];
+  accountOrdersLoading?: boolean;
+  accountOrdersError?: string | null;
+  ordersLastSyncedAt?: string | null;
+  onRefreshOrders?: () => void;
+  accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number } | null;
 }
+
+const formatOrderDate = (value?: string | null) => {
+  if (!value) return 'Pending';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatCurrency = (amount?: number | null, currency = 'USD') => {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) {
+    return '—';
+  }
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+};
+
+const humanizeOrderStatus = (status?: string | null) => {
+  if (!status) return 'Pending';
+  return status
+    .split(/[_\s]+/)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+};
 
 export function Header({
   user,
@@ -75,6 +130,12 @@ export function Header({
   showCartIconFallback = false,
   onShowInfo,
   onUserUpdated,
+  accountOrders = [],
+  accountOrdersLoading = false,
+  accountOrdersError = null,
+  ordersLastSyncedAt,
+  onRefreshOrders,
+  accountModalRequest = null,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -111,6 +172,8 @@ export function Header({
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
+  const credentialAutofillRequestInFlight = useRef(false);
+  const accountModalRequestTokenRef = useRef<number | null>(null);
   const applyPendingLoginPrefill = useCallback(() => {
     const pending = pendingLoginPrefill.current;
     if (pending.email !== undefined && loginEmailRef.current) {
@@ -134,7 +197,6 @@ export function Header({
     },
     [applyPendingLoginPrefill]
   );
-  const credentialAutofillRequestInFlight = useRef(false);
   const triggerCredentialAutofill = useCallback(async () => {
     if (credentialAutofillRequestInFlight.current) {
       return;
@@ -158,6 +220,23 @@ export function Header({
     }
     void triggerCredentialAutofill();
   }, [triggerCredentialAutofill, loginOpen, authMode]);
+
+  useEffect(() => {
+    if (!accountModalRequest) {
+      return;
+    }
+    if (accountModalRequest.token && accountModalRequest.token === accountModalRequestTokenRef.current) {
+      return;
+    }
+    accountModalRequestTokenRef.current = accountModalRequest.token ?? Date.now();
+    console.debug('[Header] Processing account modal request', accountModalRequest);
+    if (accountModalRequest.tab) {
+      setAccountTab(accountModalRequest.tab);
+    }
+    if (accountModalRequest.open) {
+      setWelcomeOpen(true);
+    }
+  }, [accountModalRequest]);
   useEffect(() => { setLocalUser(user); }, [user]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {
@@ -169,7 +248,7 @@ export function Header({
     return () => cancelAnimationFrame(raf);
   }, [loginOpen, authMode, applyPendingLoginPrefill]);
   useEffect(() => {
-    if (welcomeOpen) {
+    if (!welcomeOpen) {
       setAccountTab('details');
     }
   }, [welcomeOpen]);
@@ -781,56 +860,177 @@ export function Header({
     </div>
   ) : null;
 
+  const renderOrdersList = () => {
+    if (accountOrdersLoading) {
+      return (
+        <div className="flex items-center justify-center py-6 text-slate-600 text-sm gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Fetching orders…
+        </div>
+      );
+    }
+
+    if (!accountOrders?.length) {
+      return (
+        <div className="text-sm text-slate-600 text-center py-6">
+          No recent orders found for this account.
+        </div>
+      );
+    }
+
+    return (
+      <ul className="space-y-3">
+        {accountOrders.map((order) => (
+          <li
+            key={`${order.source}-${order.id}`}
+            className="rounded-lg border border-[var(--brand-glass-border-2)] bg-white/60 px-4 py-3 shadow-sm"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Order #{order.number || order.id}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Placed {formatOrderDate(order.createdAt)}
+                </p>
+                {order.lineItems && order.lineItems.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-600 line-clamp-2">
+                    {order.lineItems
+                      .map((line) => `${line.name || 'Item'}${line.quantity ? ` × ${line.quantity}` : ''}`)
+                      .join(' • ')}
+                  </p>
+                )}
+                {order.integrationDetails && (
+                  <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+                    {order.integrationDetails.wooCommerce && (
+                      <p>
+                        WooCommerce:&nbsp;
+                        {humanizeOrderStatus(order.integrationDetails.wooCommerce.status || order.integrations?.wooCommerce)}
+                        {order.integrationDetails.wooCommerce.reason
+                          ? ` (${order.integrationDetails.wooCommerce.reason.replace(/_/g, ' ')})`
+                          : ''}
+                        {order.integrationDetails.wooCommerce.draftId
+                          ? ` · Draft ${String(order.integrationDetails.wooCommerce.draftId).slice(0, 8)}`
+                          : ''}
+                      </p>
+                    )}
+                    {order.integrationDetails.shipEngine && (
+                      <p>
+                        ShipEngine:&nbsp;
+                        {humanizeOrderStatus(order.integrationDetails.shipEngine.status || order.integrations?.shipEngine)}
+                        {order.integrationDetails.shipEngine.reason
+                          ? ` (${order.integrationDetails.shipEngine.reason.replace(/_/g, ' ')})`
+                          : ''}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                <span className="text-sm font-semibold text-slate-800">
+                  {formatCurrency(order.total ?? null, order.currency || 'USD')}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                  {humanizeOrderStatus(order.status)}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.12)] px-2 py-0.5 text-xs font-medium text-[rgb(28,109,173)]">
+                  {order.source === 'woocommerce' ? 'WooCommerce' : 'PepPro'}
+                </span>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
   const accountOrdersPanel = localUser ? (
     localUser.role !== 'sales_rep' ? (
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-        <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
-        <p className="text-sm text-slate-600">
-          Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
-        </p>
-        <form className="grid gap-3" onSubmit={handleTrackOrder}>
-          <div>
-            <Label htmlFor="welcome-track-id">Order ID</Label>
-            <Input
-              id="welcome-track-id"
-              value={trackingForm.orderId}
-              onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
-              className="mt-1"
-              placeholder="ORD-12345"
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="welcome-track-email">Email</Label>
-            <Input
-              id="welcome-track-email"
-              type="email"
-              value={trackingForm.email}
-              onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
-              className="mt-1"
-              placeholder="you@example.com"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="submit"
-              className="glass-brand squircle-sm inline-flex items-center gap-2"
-              disabled={trackingPending}
-            >
-              {trackingPending && (
-                <Loader2
-                  className="h-4 w-4 animate-spin text-current shrink-0"
-                  aria-hidden="true"
-                  style={{ transformOrigin: 'center center' }}
-                />
+      <div className="space-y-4">
+        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-800">Recent Orders</h3>
+              <p className="text-sm text-slate-600">
+                Automatically synced from WooCommerce and your PepPro account.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {ordersLastSyncedAt && (
+                <span className="text-xs text-slate-500">
+                  Synced {formatOrderDate(ordersLastSyncedAt)}
+                </span>
               )}
-              {trackingPending ? 'Checking…' : 'Email tracking link'}
-            </Button>
-            {trackingMessage && (
-              <p className="text-sm text-slate-600">{trackingMessage}</p>
-            )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="squircle-sm border border-[var(--brand-glass-border-2)]"
+                onClick={() => onRefreshOrders?.()}
+                disabled={accountOrdersLoading || !onRefreshOrders}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${accountOrdersLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
-        </form>
+          {accountOrdersError && (
+            <p className="text-xs text-red-500">
+              {accountOrdersError}
+            </p>
+          )}
+          {renderOrdersList()}
+        </div>
+
+        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+          <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
+          <p className="text-sm text-slate-600">
+            Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
+          </p>
+          <form className="grid gap-3" onSubmit={handleTrackOrder}>
+            <div>
+              <Label htmlFor="welcome-track-id">Order ID</Label>
+              <Input
+                id="welcome-track-id"
+                value={trackingForm.orderId}
+                onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
+                className="mt-1"
+                placeholder="ORD-12345"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="welcome-track-email">Email</Label>
+              <Input
+                id="welcome-track-email"
+                type="email"
+                value={trackingForm.email}
+                onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
+                className="mt-1"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="submit"
+                className="glass-brand squircle-sm inline-flex items-center gap-2"
+                disabled={trackingPending}
+              >
+                {trackingPending && (
+                  <Loader2
+                    className="h-4 w-4 animate-spin text-current shrink-0"
+                    aria-hidden="true"
+                    style={{ transformOrigin: 'center center' }}
+                  />
+                )}
+                {trackingPending ? 'Checking…' : 'Email tracking link'}
+              </Button>
+              {trackingMessage && (
+                <p className="text-sm text-slate-600">{trackingMessage}</p>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
     ) : (
       <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">

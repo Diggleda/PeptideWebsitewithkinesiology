@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from ..repositories import order_repository, user_repository
-from ..integrations import ship_engine, woo_commerce
+from ..integrations import ship_engine, stripe_payments, woo_commerce
 from . import referral_service
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,16 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
         }
 
     try:
+        integrations["stripe"] = stripe_payments.create_payment_intent(order)
+    except Exception as exc:  # pragma: no cover - network error path
+        logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+        integrations["stripe"] = {
+            "status": "error",
+            "message": str(exc),
+            "details": getattr(exc, "response", None),
+        }
+
+    try:
         integrations["shipEngine"] = ship_engine.forward_shipment(order, user)
     except Exception as exc:  # pragma: no cover - network error path
         logger.error("ShipEngine integration failed", exc_info=True, extra={"orderId": order["id"]})
@@ -103,6 +113,7 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
 
     order["integrations"] = {
         "wooCommerce": integrations.get("wooCommerce", {}).get("status"),
+        "stripe": integrations.get("stripe", {}).get("status"),
         "shipEngine": integrations.get("shipEngine", {}).get("status"),
     }
     order_repository.update(order)

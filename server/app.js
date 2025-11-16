@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { router: paymentRoutes, handleStripeWebhook } = require('./routes/paymentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const systemRoutes = require('./routes/systemRoutes');
@@ -28,6 +29,9 @@ const createApp = () => {
     app.use(cors());
   }
 
+  // Stripe webhook needs the raw body for signature verification.
+  app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
+
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
 
   app.use((req, res, next) => {
@@ -37,6 +41,7 @@ const createApp = () => {
 
   app.use('/api/auth', authRoutes);
   app.use('/api/orders', orderRoutes);
+  app.use('/api/payments', paymentRoutes);
   app.use('/api/woo', wooRoutes);
   app.use('/api/quotes', quotesRoutes);
   app.use('/api/news', newsRoutes);

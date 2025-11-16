@@ -66,6 +66,7 @@ class AppConfig:
     log_level: str
     woo_commerce: Dict[str, Any]
     ship_engine: Dict[str, Any]
+    stripe: Dict[str, Any]
     referral: Dict[str, Any]
     encryption: Dict[str, Any]
     mysql: Dict[str, Any]
@@ -118,6 +119,12 @@ def load_config() -> AppConfig:
             "ship_from_postal_code": os.environ.get("SHIPENGINE_SHIP_FROM_POSTAL", ""),
             "ship_from_country": os.environ.get("SHIPENGINE_SHIP_FROM_COUNTRY", "US"),
             "auto_create_labels": os.environ.get("SHIPENGINE_AUTO_CREATE_LABELS", "").lower() == "true",
+        },
+        stripe={
+            "onsite_enabled": os.environ.get("STRIPE_ONSITE_ENABLED", "").lower() == "true",
+            "secret_key": _s(os.environ.get("STRIPE_SECRET_KEY")),
+            "webhook_secret": _s(os.environ.get("STRIPE_WEBHOOK_SECRET")),
+            "mode": _s(os.environ.get("STRIPE_MODE") or "test"),
         },
         referral={
             "fixed_credit_amount": _to_float(os.environ.get("REFERRAL_FIRST_ORDER_CREDIT"), 250.0),

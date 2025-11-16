@@ -2338,6 +2338,9 @@ body {
 
 .animate-spin-slow {
   animation: spin-slow 0.42s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+  will-change: transform;
 }
 
 @keyframes welcome-fade-up {

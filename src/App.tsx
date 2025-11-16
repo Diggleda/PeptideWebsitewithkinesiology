@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback, FormEvent, ReactNode } from 'react';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
 import { ProductCard } from './components/ProductCard';
@@ -122,8 +124,92 @@ interface PeptideNewsItem {
   date?: string;
 }
 
+interface AccountOrderLineItem {
+  id?: string | null;
+  name?: string | null;
+  quantity?: number | null;
+  total?: number | null;
+  price?: number | null;
+}
+
+interface AccountOrderSummary {
+  id: string;
+  number?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  total?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  source: 'local' | 'woocommerce';
+  lineItems?: AccountOrderLineItem[];
+  integrations?: Record<string, string | null> | null;
+  paymentMethod?: string | null;
+  integrationDetails?: Record<string, any> | null;
+}
+
 const WOO_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
+
+const coerceNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item) => {
+      const quantity = coerceNumber(item?.quantity);
+      const price = coerceNumber(item?.price);
+      const total = coerceNumber(item?.total) ?? (price && quantity ? price * quantity : undefined);
+      return {
+        id: item?.id ? String(item.id) : undefined,
+        name: typeof item?.name === 'string' ? item.name : null,
+        quantity: quantity ?? null,
+        total: total ?? null,
+        price: price ?? null,
+      };
+    })
+    .filter((line) => line.name);
+};
+
+const normalizeAccountOrdersResponse = (payload: any): AccountOrderSummary[] => {
+  const result: AccountOrderSummary[] = [];
+  if (payload && Array.isArray(payload.woo)) {
+    payload.woo.forEach((order: any) => {
+      const identifier = order?.id
+        ? String(order.id)
+        : order?.number
+          ? `woo-${order.number}`
+          : `woo-${Math.random().toString(36).slice(2, 10)}`;
+      result.push({
+        id: identifier,
+        number: order?.number || identifier,
+        status: order?.status || 'pending',
+        currency: order?.currency || 'USD',
+        total: coerceNumber(order?.total) ?? null,
+        createdAt: order?.createdAt || order?.dateCreated || order?.date_created || null,
+        updatedAt: order?.updatedAt || order?.dateModified || order?.date_modified || null,
+        source: 'woocommerce',
+        lineItems: toOrderLineItems(order?.lineItems),
+        integrations: order?.integrations || null,
+        paymentMethod: order?.paymentMethod || null,
+        integrationDetails: order?.integrationDetails || null,
+      });
+    });
+  }
+
+  return result.sort((a, b) => {
+    const tsA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tsB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tsB - tsA;
+  });
+};
 
 const normalizeHumanName = (value: string) =>
   (value || '')
@@ -176,6 +262,7 @@ const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23B7D8F9'/%3E%3Cstop offset='100%25' stop-color='%2395C5F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='16' fill='url(%23grad)'/%3E%3Cpath d='M35 80l15-18 12 14 11-12 12 16' stroke='%23ffffff' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='44' cy='43' r='9' fill='none' stroke='%23ffffff' stroke-width='5'/%3E%3C/svg%3E";
 
 const MIN_NEWS_LOADING_MS = 600;
+const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
 
 const SALES_REP_STATUS_ORDER = [
   'pending',
@@ -697,12 +784,21 @@ export default function App() {
     conditional: false,
     checked: false,
   });
+  const stripePromise = useMemo(() => {
+    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+    return key ? loadStripe(key) : null;
+  }, []);
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
   const [landingLoginPending, setLandingLoginPending] = useState(false);
   const [enablePasskeyPending, setEnablePasskeyPending] = useState(false);
   const [enablePasskeyError, setEnablePasskeyError] = useState('');
   const passkeyAutoRegisterAttemptedRef = useRef(false);
+  const [accountOrders, setAccountOrders] = useState<AccountOrderSummary[]>([]);
+  const [accountOrdersLoading, setAccountOrdersLoading] = useState(false);
+  const [accountOrdersError, setAccountOrdersError] = useState<string | null>(null);
+  const [accountOrdersSyncedAt, setAccountOrdersSyncedAt] = useState<string | null>(null);
+  const [accountModalRequest, setAccountModalRequest] = useState<{ tab: 'details' | 'orders'; open?: boolean; token: number } | null>(null);
   const triggerLandingCredentialAutofill = useCallback(async () => {
     if (landingCredentialAutofillInFlight.current) {
       return;
@@ -722,6 +818,39 @@ export default function App() {
       landingCredentialAutofillInFlight.current = false;
     }
   }, []);
+
+  const loadAccountOrders = useCallback(async () => {
+    if (!user?.id) {
+      setAccountOrders([]);
+      setAccountOrdersSyncedAt(null);
+      setAccountOrdersError(null);
+      return [];
+    }
+    setAccountOrdersLoading(true);
+    setAccountOrdersError(null);
+    try {
+      const response = await ordersAPI.getAll();
+      const normalized = normalizeAccountOrdersResponse(response);
+      setAccountOrders(normalized);
+      const fetchedAt =
+        response && typeof response === 'object' && (response as any).fetchedAt
+          ? (response as any).fetchedAt
+          : new Date().toISOString();
+      setAccountOrdersSyncedAt(typeof fetchedAt === 'string' ? fetchedAt : new Date().toISOString());
+      const wooErrorMessage =
+        response && typeof response === 'object' && (response as any).wooError
+          ? (response as any).wooError.message || null
+          : null;
+      setAccountOrdersError(wooErrorMessage);
+      return normalized;
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : 'Unable to load orders.';
+      setAccountOrdersError(message);
+      throw error;
+    } finally {
+      setAccountOrdersLoading(false);
+    }
+  }, [user?.id]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -747,6 +876,16 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setAccountOrders([]);
+      setAccountOrdersSyncedAt(null);
+      setAccountOrdersError(null);
+      return;
+    }
+    loadAccountOrders();
+  }, [user?.id, loadAccountOrders]);
 
   useEffect(() => {
     let cancelled = false;
@@ -785,6 +924,41 @@ export default function App() {
       });
     }
   }, [loginPromptToken, user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    if (user) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const sendKeepAlive = async () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        await checkServerHealth();
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[Health] Keep-alive ping failed', error);
+        }
+      }
+    };
+
+    sendKeepAlive();
+    const intervalId = window.setInterval(() => {
+      void sendKeepAlive();
+    }, LOGIN_KEEPALIVE_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (postLoginHold && user && shouldAnimateInfoFocus) {
@@ -2041,18 +2215,33 @@ useEffect(() => {
     try {
       const response = await ordersAPI.create(items, total, referralCode);
       setCartItems([]);
-      // toast.success('Order placed successfully!');
-      // if (response?.message) {
-      //   toast.info(response.message);
-      // }
-      console.debug('[Checkout] Success', { orderId: response?.id, total });
+      await loadAccountOrders().catch(() => undefined);
+      const wooResponse = response?.integrations?.wooCommerce?.response;
+      const paymentUrl = wooResponse?.payment_url || wooResponse?.paymentUrl || null;
+      const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
+      const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
+      if (!paymentUrl) {
+        const requestToken = Date.now();
+        console.debug('[Checkout] Success (no redirect)', { orderId: response?.id, total, requestToken });
+        setAccountModalRequest({ tab: 'orders', open: true, token: requestToken });
+        setTimeout(() => {
+          console.debug('[Checkout] Clearing account modal request', { requestToken });
+          setAccountModalRequest((prev) => (prev && prev.token === requestToken ? null : prev));
+        }, 2500);
+      } else if (wooRedirectEnabled) {
+        console.debug('[Checkout] Success (redirecting to Woo payment)', { paymentUrl });
+      } else if (stripeOnsiteEnabled) {
+        console.debug('[Checkout] Success (Stripe onsite enabled, skipping Woo redirect)', { paymentUrl });
+      } else {
+        console.debug('[Checkout] Success (Woo paymentUrl suppressed; onsite Stripe disabled)', { paymentUrl });
+      }
+      return response;
     } catch (error: any) {
       console.error('[Checkout] Failed', { error });
       const message = error?.message === 'Request failed'
         ? 'Unable to complete purchase. Please try again.'
         : error?.message ?? 'Unable to complete purchase. Please try again.';
-      // toast.error(message);
-      throw error;
+      throw new Error(message);
     }
   };
 
@@ -3026,6 +3215,12 @@ const renderSalesRepDashboard = () => {
               setPostLoginHold(true);
             }}
             onUserUpdated={(next) => setUser(next as User)}
+            accountOrders={accountOrders}
+            accountOrdersLoading={accountOrdersLoading}
+            accountOrdersError={accountOrdersError}
+            ordersLastSyncedAt={accountOrdersSyncedAt}
+            onRefreshOrders={loadAccountOrders}
+            accountModalRequest={accountModalRequest}
           />
         )}
 
@@ -3788,17 +3983,37 @@ const renderSalesRepDashboard = () => {
       </div>
 
       {/* Checkout Modal */}
-      <CheckoutModal
-        isOpen={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        cartItems={cartItems}
-        onCheckout={handleCheckout}
-        onUpdateItemQuantity={handleUpdateCartItemQuantity}
-        onRemoveItem={handleRemoveCartItem}
-        isAuthenticated={Boolean(user)}
-        onRequireLogin={handleRequireLogin}
-        physicianName={user?.npiVerification?.name || user?.name || null}
-      />
+      {stripePromise ? (
+        <Elements stripe={stripePromise}>
+          <CheckoutModal
+            isOpen={checkoutOpen}
+            onClose={() => setCheckoutOpen(false)}
+            cartItems={cartItems}
+            onCheckout={handleCheckout}
+            onUpdateItemQuantity={handleUpdateCartItemQuantity}
+            onRemoveItem={handleRemoveCartItem}
+            isAuthenticated={Boolean(user)}
+            onRequireLogin={handleRequireLogin}
+            physicianName={user?.npiVerification?.name || user?.name || null}
+            customerEmail={user?.email || null}
+            customerName={user?.name || null}
+          />
+        </Elements>
+      ) : (
+        <CheckoutModal
+          isOpen={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          cartItems={cartItems}
+          onCheckout={handleCheckout}
+          onUpdateItemQuantity={handleUpdateCartItemQuantity}
+          onRemoveItem={handleRemoveCartItem}
+          isAuthenticated={Boolean(user)}
+          onRequireLogin={handleRequireLogin}
+          physicianName={user?.npiVerification?.name || user?.name || null}
+          customerEmail={user?.email || null}
+          customerName={user?.name || null}
+        />
+      )}
 
       <ProductDetailDialog
         product={selectedProduct}

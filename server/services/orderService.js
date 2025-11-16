@@ -3,9 +3,32 @@ const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
+const paymentService = require('./paymentService');
 const { logger } = require('../config/logger');
 
 const sanitizeOrder = (order) => ({ ...order });
+
+const buildLocalOrderSummary = (order) => ({
+  id: order.id,
+  number: order.id,
+  status: order.status,
+  total: order.total,
+  currency: 'USD',
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt || order.createdAt,
+  referralCode: order.referralCode || null,
+  source: 'local',
+  lineItems: (order.items || []).map((item) => ({
+    id: item.cartItemId || item.productId || item.id || `${order.id}-${item.name}`,
+    name: item.name,
+    quantity: item.quantity,
+    price: item.price,
+    total: Number(item.price || 0) * Number(item.quantity || 0),
+  })),
+  integrations: order.integrations || null,
+  referrerBonus: order.referrerBonus || null,
+  integrationDetails: order.integrationDetails || null,
+});
 
 const validateItems = (items) => Array.isArray(items)
   && items.length > 0
@@ -91,6 +114,23 @@ const createOrder = async ({ userId, items, total, referralCode }) => {
     };
   }
 
+  const wooOrderId = integrations.wooCommerce?.response?.id || null;
+
+  try {
+    integrations.stripe = await paymentService.createStripePayment({
+      order,
+      customer: user,
+      wooOrderId,
+    });
+  } catch (error) {
+    logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
+    integrations.stripe = {
+      status: 'error',
+      message: error.message,
+      details: serializeCause(error.cause),
+    };
+  }
+
   try {
     integrations.shipEngine = await shipEngineClient.forwardShipment({
       order,
@@ -107,8 +147,16 @@ const createOrder = async ({ userId, items, total, referralCode }) => {
 
   order.integrations = {
     wooCommerce: integrations.wooCommerce?.status,
+    stripe: integrations.stripe?.status,
     shipEngine: integrations.shipEngine?.status,
   };
+  order.integrationDetails = integrations;
+  if (wooOrderId) {
+    order.wooOrderId = wooOrderId;
+  }
+  if (integrations.stripe?.paymentIntentId) {
+    order.paymentIntentId = integrations.stripe.paymentIntentId;
+  }
   orderRepository.update(order);
 
   return {
@@ -121,9 +169,32 @@ const createOrder = async ({ userId, items, total, referralCode }) => {
   };
 };
 
-const getOrdersForUser = (userId) => {
+const getOrdersForUser = async (userId) => {
+  const user = userRepository.findById(userId);
   const orders = orderRepository.findByUserId(userId);
-  return orders.map(sanitizeOrder);
+  const localSummaries = orders.map(buildLocalOrderSummary);
+
+  let wooOrders = [];
+  let wooError = null;
+
+  if (user?.email) {
+    try {
+      wooOrders = await wooCommerceClient.fetchOrdersByEmail(user.email, { perPage: 15 });
+    } catch (error) {
+      logger.error({ err: error, userId }, 'Failed to fetch WooCommerce orders for user');
+      wooError = {
+        message: error?.message || 'WooCommerce order lookup failed',
+        status: error?.status || null,
+      };
+    }
+  }
+
+  return {
+    local: localSummaries,
+    woo: wooOrders,
+    fetchedAt: new Date().toISOString(),
+    wooError,
+  };
 };
 
 module.exports = {

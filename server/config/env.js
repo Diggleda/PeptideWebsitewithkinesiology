@@ -93,6 +93,13 @@ const env = {
     sourceUrl: process.env.QUOTES_SOURCE_URL || 'https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php',
     secret: process.env.QUOTES_WEBHOOK_SECRET || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
   },
+  stripe: {
+    onsiteEnabled: process.env.STRIPE_ONSITE_ENABLED === 'true',
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    mode: process.env.STRIPE_MODE || 'test',
+    publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+  },
 };
 
 env.mysql = {

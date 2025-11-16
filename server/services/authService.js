@@ -5,6 +5,7 @@ const referralService = require('./referralService');
 const salesRepRepository = require('../repositories/salesRepRepository');
 const { env } = require('../config/env');
 const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
+const { logger } = require('../config/logger');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
 
@@ -15,6 +16,50 @@ const DIRECT_SHIPPING_FIELDS = [
   'officeState',
   'officePostalCode',
 ];
+
+const supportsHrtimeBigint = typeof process.hrtime === 'function'
+  && typeof process.hrtime.bigint === 'function';
+
+const startTimer = () => (supportsHrtimeBigint
+  ? process.hrtime.bigint()
+  : process.hrtime());
+
+const elapsedMs = (start) => {
+  if (supportsHrtimeBigint && typeof start === 'bigint') {
+    return Number(process.hrtime.bigint() - start) / 1e6;
+  }
+  const diff = process.hrtime(start);
+  return (diff[0] * 1e3) + (diff[1] / 1e6);
+};
+
+const formatMs = (value) => Math.round(value * 100) / 100;
+
+const maskEmailForLog = (value) => {
+  if (typeof value !== 'string') {
+    return 'unknown';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 'unknown';
+  }
+  const [local, domain] = trimmed.split('@');
+  if (!domain) {
+    if (local.length <= 1) {
+      return `${local || '*'}***`;
+    }
+    if (local.length === 2) {
+      return `${local[0]}*`;
+    }
+    return `${local.slice(0, 2)}***`;
+  }
+  if (local.length <= 1) {
+    return `*@${domain}`;
+  }
+  if (local.length === 2) {
+    return `${local[0]}*@${domain}`;
+  }
+  return `${local.slice(0, 2)}***@${domain}`;
+};
 
 const normalizeOptionalString = (value) => {
   if (value == null) {
@@ -204,31 +249,63 @@ const login = async ({ email, password }) => {
     throw error;
   }
 
+  const maskedEmail = maskEmailForLog(email);
+  const totalStart = startTimer();
+  const lookupStart = startTimer();
   const user = userRepository.findByEmail(email);
+  const lookupMs = elapsedMs(lookupStart);
+
   if (!user) {
+    logger.warn(
+      { email: maskedEmail, lookupMs: formatMs(lookupMs) },
+      'AuthService login email lookup failed',
+    );
     const error = new Error('EMAIL_NOT_FOUND');
     error.status = 404;
     throw error;
   }
 
+  const passwordStart = startTimer();
   const validPassword = await comparePassword(password, user.password);
+  const passwordMs = elapsedMs(passwordStart);
+
   if (!validPassword) {
+    logger.warn(
+      { email: maskedEmail, passwordMs: formatMs(passwordMs) },
+      'AuthService login invalid password',
+    );
     const error = new Error('INVALID_PASSWORD');
     error.status = 401;
     throw error;
   }
 
+  const persistStart = startTimer();
   const updated = userRepository.update({
     ...user,
     visits: (user.visits || 1) + 1,
     lastLoginAt: new Date().toISOString(),
   });
+  const persistMs = elapsedMs(persistStart);
 
   const token = createAuthToken({ id: user.id, email: user.email });
+  const totalMs = elapsedMs(totalStart);
+  const sanitizedUser = sanitizeUser(updated || user);
+
+  logger.debug(
+    {
+      email: maskedEmail,
+      userId: sanitizedUser.id,
+      lookupMs: formatMs(lookupMs),
+      passwordMs: formatMs(passwordMs),
+      persistMs: formatMs(persistMs),
+      totalMs: formatMs(totalMs),
+    },
+    'AuthService login timings',
+  );
 
   return {
     token,
-    user: sanitizeUser(updated || user),
+    user: sanitizedUser,
   };
 };
 
