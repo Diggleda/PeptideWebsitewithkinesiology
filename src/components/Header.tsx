@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Download, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -46,6 +46,8 @@ interface AccountOrderLineItem {
   name?: string | null;
   quantity?: number | null;
   total?: number | null;
+  price?: number | null;
+  sku?: string | null;
 }
 
 interface AccountOrderSummary {
@@ -175,6 +177,8 @@ export function Header({
   const headerRef = useRef<HTMLElement | null>(null);
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
+  const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
@@ -428,6 +432,18 @@ export function Header({
     }
   }, [user]);
 
+  // Preserve last known orders so UI doesn't clear while refresh runs in background
+  useEffect(() => {
+    const incoming = Array.isArray(accountOrders) ? accountOrders : [];
+    if (incoming.length > 0) {
+      setCachedAccountOrders(incoming);
+      return;
+    }
+    if (!accountOrdersLoading) {
+      setCachedAccountOrders(incoming);
+    }
+  }, [accountOrders, accountOrdersLoading]);
+
   // Auto-refresh orders when the orders tab is open
   useEffect(() => {
     if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
@@ -436,7 +452,7 @@ export function Header({
     onRefreshOrders();
     const intervalId = window.setInterval(() => {
       onRefreshOrders();
-    }, 5000);
+    }, 10000);
     return () => window.clearInterval(intervalId);
   }, [welcomeOpen, accountTab, onRefreshOrders, user]);
 
@@ -879,189 +895,223 @@ export function Header({
   ) : null;
 
   const renderOrdersList = () => {
-    const visibleOrders = Array.isArray(accountOrders)
-      ? accountOrders.filter((order) => {
+    const visibleOrders = cachedAccountOrders
+      .filter((order) => order.source === 'woocommerce')
+      .filter((order) => {
         if (showCanceledOrders) {
           return true;
         }
         const status = order.status ? String(order.status).trim().toLowerCase() : '';
         return status !== 'canceled' && status !== 'trash';
-      })
-      : [];
-
-    if (accountOrdersLoading) {
-      return (
-        <div className="flex items-center justify-center py-6 text-slate-600 text-sm gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Fetching orders…
-        </div>
-      );
-    }
+      });
 
     if (!visibleOrders.length) {
       return (
-        <div className="text-sm text-slate-600 text-center py-6">
-          No recent orders found for this account.
+        <div className="text-center py-12">
+          <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] inline-block">
+            <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
+            <p className="text-sm font-medium text-slate-700 mb-1">No orders found</p>
+            <p className="text-xs text-slate-500">Your recent orders will appear here</p>
+          </div>
         </div>
       );
     }
 
     return (
-      <ul className="space-y-3">
-        {visibleOrders.map((order) => (
-          <li
-            key={`${order.source}-${order.id}`}
-            className="rounded-lg border border-[var(--brand-glass-border-2)] bg-white/60 px-4 py-3 shadow-sm"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">
-                  Order #{order.number || order.id}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Placed {formatOrderDate(order.createdAt)}
-                </p>
+      <div className="space-y-4">
+        {visibleOrders.map((order) => {
+          const status = humanizeOrderStatus(order.status);
+          const statusNormalized = (order.status || '').toLowerCase();
+          const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
+          const isCompleted = statusNormalized.includes('complete');
+          const isProcessing = statusNormalized.includes('processing');
+          
+          return (
+            <div
+              key={`${order.source}-${order.id}`}
+              className="glass-card squircle-lg border border-[rgba(95,179,249,0.6)] overflow-hidden shadow-[0_12px_40px_-20px_rgba(95,179,249,0.5),0_10px_30px_-24px_rgba(15,23,42,0.35)] transition-all duration-300"
+            >
+              {/* Order Header */}
+              <div className="px-6 py-5 border-b border-[rgba(95,179,249,0.12)] bg-gradient-to-r from-[rgba(95,179,249,0.05)] to-transparent">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                      isCompleted ? 'bg-green-100' : 
+                      isCanceled ? 'bg-red-100' : 
+                      isProcessing ? 'bg-blue-100' : 'bg-slate-100'
+                    }`}>
+                      <Package className={`h-5 w-5 ${
+                        isCompleted ? 'text-green-600' : 
+                        isCanceled ? 'text-red-600' : 
+                        isProcessing ? 'text-blue-600' : 'text-slate-600'
+                      }`} />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-900">
+                        Order #{order.number || order.id}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {formatOrderDate(order.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge 
+                      variant="outline" 
+                      className={`squircle-sm ${
+                        isCompleted ? 'bg-green-50 text-green-700 border-green-200' : 
+                        isCanceled ? 'bg-red-50 text-red-700 border-red-200' : 
+                        isProcessing ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                        'bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {status}
+                    </Badge>
+                    <Badge variant="outline" className="squircle-sm bg-[rgba(95,179,249,0.08)] text-[rgb(28,109,173)] border-[rgba(95,179,249,0.2)]">
+                      {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Body */}
+              <div className="px-6 py-5">
+                {/* Items Summary */}
                 {order.lineItems && order.lineItems.length > 0 && (
-                  <p className="mt-1 text-xs text-slate-600 line-clamp-2">
-                    {order.lineItems
-                      .map((line) => `${line.name || 'Item'}${line.quantity ? ` × ${line.quantity}` : ''}`)
-                      .join(' • ')}
-                  </p>
-                )}
-                {order.integrationDetails && (
-                  <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
-                    {order.integrationDetails.wooCommerce && (
-                      <p>
-                        Store:&nbsp;
-                        {humanizeOrderStatus(order.integrationDetails.wooCommerce.status || order.integrations?.wooCommerce)}
-                        {order.integrationDetails.wooCommerce.reason
-                          ? ` (${order.integrationDetails.wooCommerce.reason.replace(/_/g, ' ')})`
-                          : ''}
-                        {order.integrationDetails.wooCommerce.draftId
-                          ? ` · Draft ${String(order.integrationDetails.wooCommerce.draftId).slice(0, 8)}`
-                          : ''}
-                      </p>
-                    )}
-                    {order.integrationDetails.shipEngine && (
-                      <p>
-                        ShipEngine:&nbsp;
-                        {humanizeOrderStatus(order.integrationDetails.shipEngine.status || order.integrations?.shipEngine)}
-                        {order.integrationDetails.shipEngine.reason
-                          ? ` (${order.integrationDetails.shipEngine.reason.replace(/_/g, ' ')})`
-                          : ''}
-                      </p>
-                    )}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-medium">Items</p>
+                    <div className="space-y-1.5">
+                      {order.lineItems.slice(0, 3).map((line, idx) => (
+                        <div key={line.id || idx} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-700">
+                            {line.name || 'Item'} {line.quantity && <span className="text-slate-500">× {line.quantity}</span>}
+                          </span>
+                          <span className="font-medium text-slate-900">
+                            {formatCurrency(line.total ?? line.price ?? null, order.currency || 'USD')}
+                          </span>
+                        </div>
+                      ))}
+                      {order.lineItems.length > 3 && (
+                        <p className="text-xs text-slate-500 italic">
+                          +{order.lineItems.length - 3} more item{order.lineItems.length - 3 !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 justify-end">
-                <span className="text-sm font-semibold text-slate-800">
-                  {formatCurrency(order.total ?? null, order.currency || 'USD')}
-                </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                  {humanizeOrderStatus(order.status)}
-                </span>
-                <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.12)] px-2 py-0.5 text-xs font-medium text-[rgb(28,109,173)]">
-                  {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
-                </span>
+
+                {/* Total and Actions */}
+                <div className="flex items-center justify-between pt-4 border-t border-[var(--brand-glass-border-1)]">
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">Order Total</p>
+                    <p className="text-lg font-bold text-slate-900">
+                      {formatCurrency(order.total ?? null, order.currency || 'USD')}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="squircle-sm bg-slate-100/90 text-slate-800 border-slate-300 hover:bg-slate-200"
+                    onClick={() => setSelectedOrder(order)}
+                  >
+                    View Details
+                  </Button>
+                </div>
               </div>
             </div>
-          </li>
-        ))}
-      </ul>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderOrderDetails = () => {
+    if (!selectedOrder) return null;
+
+    return (
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] p-6 text-center space-y-4">
+        <p className="text-sm text-slate-700">
+          Order detail redesign in progress for Order #{selectedOrder.number || selectedOrder.id}.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="squircle-sm glass btn-hover-lighter"
+          onClick={() => setSelectedOrder(null)}
+        >
+          ← Back to orders
+        </Button>
+      </div>
     );
   };
 
   const accountOrdersPanel = localUser ? (
     localUser.role !== 'sales_rep' ? (
       <div className="space-y-4">
-        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-4">
+        {/* Header Section */}
+        <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-slate-800">Recent Orders</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Order History</h3>
+              <p className="text-sm text-slate-600 mt-1">Track and manage your purchases</p>
             </div>
             <div className="flex items-center gap-2">
+              {ordersLastSyncedAt && (
+                <span className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)]">
+                  Updated {formatOrderDate(ordersLastSyncedAt)}
+                </span>
+              )}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onToggleShowCanceled?.()}
-                className="glass squircle-sm"
+                className="glass squircle-sm btn-hover-lighter"
               >
                 {showCanceledOrders ? (
-                  <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <>
+                    <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Hide canceled
+                  </>
                 ) : (
-                  <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <>
+                    <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Show canceled
+                  </>
                 )}
-                {showCanceledOrders ? 'Hide canceled' : 'Show canceled'}
               </Button>
-              {ordersLastSyncedAt && (
-                <span className="text-xs text-slate-500">
-                  Synced {formatOrderDate(ordersLastSyncedAt)}
-                </span>
-              )}
             </div>
           </div>
-          {accountOrdersError && (
-            <p className="text-xs text-red-500">
-              {accountOrdersError}
-            </p>
-          )}
-          {renderOrdersList()}
-        </div>
 
-        <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-          <h3 className="text-base font-semibold text-slate-800">Order Tracking</h3>
-          <p className="text-sm text-slate-600">
-            Enter an order ID and email address. We&apos;ll send the latest fulfillment update to your inbox.
-          </p>
-          <form className="grid gap-3" onSubmit={handleTrackOrder}>
-            <div>
-              <Label htmlFor="welcome-track-id">Order ID</Label>
-              <Input
-                id="welcome-track-id"
-                value={trackingForm.orderId}
-                onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
-                className="mt-1"
-                placeholder="ORD-12345"
-                required
-              />
+          {accountOrdersError && (
+            <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/50">
+              <p className="text-sm text-red-700 font-medium">{accountOrdersError}</p>
             </div>
-            <div>
-              <Label htmlFor="welcome-track-email">Email</Label>
-              <Input
-                id="welcome-track-email"
-                type="email"
-                value={trackingForm.email}
-                onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
-                className="mt-1"
-                placeholder="you@example.com"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="submit"
-                className="glass-brand squircle-sm inline-flex items-center gap-2"
-                disabled={trackingPending}
-              >
-                {trackingPending && (
-                  <Loader2
-                    className="h-4 w-4 animate-spin text-current shrink-0"
-                    aria-hidden="true"
-                    style={{ transformOrigin: 'center center' }}
-                  />
-                )}
-                {trackingPending ? 'Checking…' : 'Email tracking link'}
-              </Button>
-              {trackingMessage && (
-                <p className="text-sm text-slate-600">{trackingMessage}</p>
-              )}
-            </div>
-          </form>
-        </div>
+          )}
+
+        {accountOrdersLoading && !cachedAccountOrders.length && (
+          <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(95,179,249)]" />
+            <p className="text-sm text-slate-600">Loading your orders...</p>
+          </div>
+        )}
+      </div>
+
+      {/* Orders Content */}
+      <div className="relative">
+        {accountOrdersLoading && cachedAccountOrders.length > 0 && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
+            <Loader2 className="h-6 w-6 animate-spin text-[rgb(95,179,249)]" />
+          </div>
+        )}
+        {selectedOrder ? renderOrderDetails() : renderOrdersList()}
+      </div>
       </div>
     ) : (
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)]">
+      <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
+        <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
+        <p className="text-sm font-medium text-slate-700 mb-1">Sales Rep View</p>
         <p className="text-sm text-slate-600">
           Order history and tracking details for your sales rep profile will appear here soon.
         </p>
@@ -1307,10 +1357,10 @@ export function Header({
                   disabled={loginSubmitting}
                 >
                   {loginSubmitting && (
-                    <Loader2
-                      className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                      <Loader2
+                        className="h-4 w-4 animate-spin-slow text-white shrink-0"
                       aria-hidden="true"
-                      style={{ transformOrigin: 'center center' }}
+                      style={{ transformOrigin: 'center center', transform: 'translateZ(0)' }}
                     />
                   )}
                   {loginSubmitting ? 'Signing in…' : 'Sign In'}

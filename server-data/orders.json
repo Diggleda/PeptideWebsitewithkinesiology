@@ -1184,5 +1184,110 @@
     },
     "wooOrderId": "308",
     "paymentIntentId": "pi_3SUC76LdQwKDgAgZ298LufOg"
+  },
+  {
+    "id": "1763350409212",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-256::woo-variation-260",
+        "productId": "woo-256",
+        "variantId": "woo-variation-260",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+        "price": 273.18,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      },
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 1,
+        "note": null,
+        "position": 2
+      }
+    ],
+    "total": 438.1,
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-17T03:33:29.212Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+              "sku": "woo-256",
+              "quantity": 1,
+              "total": "273.18",
+              "meta_data": []
+            },
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 1,
+              "total": "164.92",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763350409212"
+            },
+            {
+              "key": "peppro_total",
+              "value": 438.1
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-17T03:33:29.212Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 316,
+          "number": "316",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/316/?pay_for_order=true&key=wc_order_hpaD7N52h5cXP",
+          "order_key": "wc_order_hpaD7N52h5cXP"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUJC4LdQwKDgAgZ0ca57ULc_secret_LiVNtX6wGGBHchHoEXdyHykWC",
+        "paymentIntentId": "pi_3SUJC4LdQwKDgAgZ0ca57ULc",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-17T03:33:45.084Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": "316",
+    "paymentIntentId": "pi_3SUJC4LdQwKDgAgZ0ca57ULc"
   }
 ]

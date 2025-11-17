@@ -2327,20 +2327,30 @@ body {
   text-shadow: none;
 }
 
-@keyframes spin-slow {
+@keyframes spin-stable {
   from {
-    transform: rotate(0deg);
+    transform: rotate(0deg) translateZ(0);
   }
   to {
-    transform: rotate(360deg);
+    transform: rotate(360deg) translateZ(0);
   }
 }
 
 .animate-spin-slow {
-  animation: spin-slow 0.42s linear infinite;
-  transform-origin: center;
-  transform-box: fill-box;
+  animation: spin-stable 0.9s linear infinite;
+  transform-origin: center center;
   will-change: transform;
+}
+
+.orders-inline-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(51, 65, 85, 0.28);
+  border-top-color: rgba(51, 65, 85, 0.85);
+  border-radius: 9999px;
+  animation: spin-stable 0.9s linear infinite;
+  transform: translateZ(0);
 }
 
 @keyframes welcome-fade-up {

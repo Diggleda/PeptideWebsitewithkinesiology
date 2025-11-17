@@ -130,6 +130,7 @@ interface AccountOrderLineItem {
   quantity?: number | null;
   total?: number | null;
   price?: number | null;
+  sku?: string | null;
 }
 
 interface AccountOrderSummary {
@@ -173,6 +174,7 @@ const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
         quantity: quantity ?? null,
         total: total ?? null,
         price: price ?? null,
+        sku: typeof item?.sku === 'string' && item.sku.trim().length > 0 ? item.sku.trim() : null,
       };
     })
     .filter((line) => line.name);
@@ -1225,6 +1227,7 @@ const settleNewsLoading = useCallback((startedAt: number) => {
   const [quoteOfTheDay, setQuoteOfTheDay] = useState<{ text: string; author: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
+  const welcomeShownRef = useRef(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [referralSearchTerm, setReferralSearchTerm] = useState('');
   const [referralSortOrder, setReferralSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -1666,15 +1669,24 @@ useEffect(() => {
     };
 }, []);
 
-  // Prepare welcome animation on login
+  // Prepare welcome animation only on fresh sign-in
   useEffect(() => {
     if (!user) {
       setShowWelcome(false);
       setShowQuote(false);
       setQuoteOfTheDay(null);
       setQuoteLoading(false);
+      welcomeShownRef.current = false;
       return;
     }
+
+    // Avoid replaying the welcome animation when simply returning
+    // to the info screen or when the user object is updated.
+    if (welcomeShownRef.current) {
+      return;
+    }
+
+    welcomeShownRef.current = true;
     setShowWelcome(false);
     setShowQuote(false);
     setQuoteOfTheDay(null);
@@ -3757,7 +3769,7 @@ const renderSalesRepDashboard = () => {
                           <Loader2
                             className="h-4 w-4 animate-spin-slow text-white shrink-0"
                             aria-hidden="true"
-                            style={{ transformOrigin: 'center center' }}
+                            style={{ transformOrigin: 'center center', transform: 'translateZ(0)' }}
                           />
                         )}
                         {landingLoginPending ? 'Signing in…' : 'Sign In'}

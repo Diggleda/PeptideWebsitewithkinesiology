@@ -35,7 +35,8 @@ const createApp = () => {
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
 
   // Handle CORS preflight for all API routes without redirecting.
-  app.options('*', (req, res) => {
+  // Express 5 disallows plain "*" path strings; use a regex matcher instead.
+  app.options(/.*/, (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
