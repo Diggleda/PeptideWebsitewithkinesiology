@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Download, RotateCcw } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Users } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -91,6 +91,7 @@ interface HeaderProps {
   accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number } | null;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
+  onBuyOrderAgain?: (order: AccountOrderSummary) => void;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -123,6 +124,18 @@ const humanizeOrderStatus = (status?: string | null) => {
     .join(' ');
 };
 
+const formatRelativeMinutes = (value?: string | null) => {
+  if (!value) return 'Updated a few moments ago';
+  const date = new Date(value);
+  const now = Date.now();
+  const target = date.getTime();
+  if (Number.isNaN(target)) return `Updated ${value}`;
+  const diffMs = Math.max(0, now - target);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes <= 1) return 'Updated a few moments ago';
+  return `Updated ${minutes} min ago`;
+};
+
 export function Header({
   user,
   onLogin,
@@ -144,6 +157,7 @@ export function Header({
   accountModalRequest = null,
   showCanceledOrders = false,
   onToggleShowCanceled,
+  onBuyOrderAgain,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -162,7 +176,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [accountTab, setAccountTab] = useState<'details' | 'orders'>('details');
+  const [accountTab, setAccountTab] = useState<'details' | 'orders' | 'research'>('details');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
   const referralCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -783,6 +797,7 @@ export function Header({
   const accountHeaderTabs = [
     { id: 'details', label: 'Details', Icon: Info },
     { id: 'orders', label: 'Orders', Icon: Package },
+    { id: 'research', label: 'Research', Icon: Users },
   ] as const;
 
   const saveProfileField = useCallback(
@@ -894,6 +909,15 @@ export function Header({
     </div>
   ) : null;
 
+  const researchPanel = (
+    <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">
+      <h3 className="text-base font-semibold text-slate-800">Research</h3>
+      <p className="text-sm text-slate-600">
+        This section is currently under construction. Soon you&apos;ll be able to access PepPro research tools and resources here.
+      </p>
+    </div>
+  );
+
   const renderOrdersList = () => {
     const visibleOrders = cachedAccountOrders
       .filter((order) => order.source === 'woocommerce')
@@ -918,107 +942,122 @@ export function Header({
     }
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 pb-4">
         {visibleOrders.map((order) => {
           const status = humanizeOrderStatus(order.status);
           const statusNormalized = (order.status || '').toLowerCase();
           const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
-          const isCompleted = statusNormalized.includes('complete');
           const isProcessing = statusNormalized.includes('processing');
+          const orderNumberLabel = order.number ? `Order #${order.number}` : order.id ? `Order #${order.id}` : 'Order';
+          const itemCount = order.lineItems?.length ?? 0;
+          const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
           
           return (
             <div
               key={`${order.source}-${order.id}`}
-              className="glass-card squircle-lg border-[2px] border-[rgba(95,179,249,0.9)] overflow-hidden shadow-[0_12px_40px_-20px_rgba(95,179,249,0.5),0_10px_30px_-24px_rgba(15,23,42,0.35)] transition-all duration-300"
-              style={{ boxShadow: '0 12px 40px -18px rgba(95,179,249,0.45), 0 10px 30px -24px rgba(15,23,42,0.38), 0 0 0 1px rgba(95,179,249,0.28)' }}
+              className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden"
             >
               {/* Order Header */}
-              <div className="px-6 py-5 border-b border-[rgba(95,179,249,0.12)] bg-gradient-to-r from-[rgba(95,179,249,0.05)] to-transparent">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                      isCompleted ? 'bg-green-100' : 
-                      isCanceled ? 'bg-red-100' : 
-                      isProcessing ? 'bg-blue-100' : 'bg-slate-100'
-                    }`}>
-                      <Package className={`h-5 w-5 ${
-                        isCompleted ? 'text-green-600' : 
-                        isCanceled ? 'text-red-600' : 
-                        isProcessing ? 'text-blue-600' : 'text-slate-600'
-                      }`} />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-slate-900">
-                        Order #{order.number || order.id}
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {formatOrderDate(order.createdAt)}
-                      </p>
-                    </div>
+              <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9] flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-8 text-sm text-slate-700">
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Order placed</p>
+                    <p className="text-sm font-semibold text-slate-900">{formatOrderDate(order.createdAt)}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge 
-                      variant="outline" 
-                      className={`squircle-sm ${
-                        isCompleted ? 'bg-green-50 text-green-700 border-green-200' : 
-                        isCanceled ? 'bg-red-50 text-red-700 border-red-200' : 
-                        isProcessing ? 'bg-blue-50 text-blue-700 border-blue-200' : 
-                        'bg-slate-50 text-slate-700 border-slate-200'
-                      }`}
-                    >
-                      {status}
-                    </Badge>
-                    <Badge variant="outline" className="squircle-sm bg-[rgba(95,179,249,0.08)] text-[rgb(28,109,173)] border-[rgba(95,179,249,0.2)]">
-                      {order.source === 'woocommerce' ? 'Store' : 'PepPro'}
-                    </Badge>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {formatCurrency(order.total ?? null, order.currency || 'USD')}
+                    </p>
                   </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
+                    <p className="text-sm font-semibold text-slate-900">{status}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <button
+                    type="button"
+                    className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                    onClick={() => setSelectedOrder(order)}
+                  >
+                    View order details
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                    onClick={() => {
+                      const integrations = order.integrations || (order as any).integrationDetails;
+                      const wooIntegration = (integrations as any)?.wooCommerce;
+                      if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                  >
+                    View invoice
+                  </button>
                 </div>
               </div>
 
               {/* Order Body */}
-              <div className="px-6 py-5">
-                {/* Items Summary */}
-                {order.lineItems && order.lineItems.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs uppercase tracking-wider text-slate-500 mb-2 font-medium">Items</p>
-                    <div className="space-y-1.5">
-                      {order.lineItems.slice(0, 3).map((line, idx) => (
-                        <div key={line.id || idx} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-700">
-                            {line.name || 'Item'} {line.quantity && <span className="text-slate-500">× {line.quantity}</span>}
-                          </span>
-                          <span className="font-medium text-slate-900">
-                            {formatCurrency(line.total ?? line.price ?? null, order.currency || 'USD')}
-                          </span>
-                        </div>
-                      ))}
-                      {order.lineItems.length > 3 && (
-                        <p className="text-xs text-slate-500 italic">
-                          +{order.lineItems.length - 3} more item{order.lineItems.length - 3 !== 1 ? 's' : ''}
-                        </p>
+              <div className="px-6 py-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-base font-bold text-slate-900">
+                      <span className="mr-2">{orderNumberLabel}</span>
+                      {showItemCount && (
+                        <span className="text-slate-700 font-semibold">
+                          {itemCount} item{itemCount !== 1 ? 's' : ''}
+                        </span>
                       )}
                     </div>
-                  </div>
-                )}
-
-                {/* Total and Actions */}
-                <div className="flex items-center justify-between pt-4 border-t border-[var(--brand-glass-border-1)]">
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">Order Total</p>
-                    <p className="text-lg font-bold text-slate-900">
-                      {formatCurrency(order.total ?? null, order.currency || 'USD')}
-                    </p>
                   </div>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="squircle-sm bg-slate-100/90 text-slate-800 border-slate-300 hover:bg-slate-200"
-                    onClick={() => setSelectedOrder(order)}
+                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 min-w-[10rem] justify-center font-semibold mt-2 gap-2"
+                    onClick={() => {
+                      if (onBuyOrderAgain) {
+                        onBuyOrderAgain(order);
+                      } else {
+                        setSelectedOrder(order);
+                      }
+                    }}
                   >
-                    View Details
+                    <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+                    Buy it again
                   </Button>
                 </div>
+
+                {order.lineItems && order.lineItems.length > 0 && (
+                  <div className="space-y-3">
+                    {order.lineItems.map((line, idx) => (
+                      <div key={line.id || `${line.sku}-${idx}`} className="flex items-start gap-4 mb-4">
+                        <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                          {(line as any).image ? (
+                            <img
+                              src={(line as any).image as string}
+                              alt={line.name || 'Item thumbnail'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <Package className="h-6 w-6" />
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
+                            {line.name || 'Item'}
+                          </p>
+                          <p className="text-sm text-slate-700">
+                            Qty: {line.quantity ?? '—'} • {formatCurrency(line.total ?? line.price ?? null, order.currency || 'USD')}
+                          </p>
+                          {line.sku && <p className="text-xs text-slate-500">SKU: {line.sku}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
               </div>
             </div>
           );
@@ -1053,14 +1092,11 @@ export function Header({
         {/* Header Section */}
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Order History</h3>
-              <p className="text-sm text-slate-600 mt-1">Track and manage your purchases</p>
-            </div>
+            <div className="flex-1 min-w-[1px]" />
             <div className="flex items-center gap-2">
               {ordersLastSyncedAt && (
                 <span className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)]">
-                  Updated {formatOrderDate(ordersLastSyncedAt)}
+                  {formatRelativeMinutes(ordersLastSyncedAt)}
                 </span>
               )}
               <Button
@@ -1068,7 +1104,7 @@ export function Header({
                 variant="outline"
                 size="sm"
                 onClick={() => onToggleShowCanceled?.()}
-                className="glass squircle-sm btn-hover-lighter"
+                className="glass squircle-sm btn-hover-lighter border border-[rgb(95,179,249)] bg-white text-slate-900 shadow-[0_8px_18px_rgba(95,179,249,0.14)] my-0 h-7 py-0 leading-none gap-1"
               >
                 {showCanceledOrders ? (
                   <>
@@ -1101,11 +1137,6 @@ export function Header({
 
       {/* Orders Content */}
       <div className="relative">
-        {accountOrdersLoading && cachedAccountOrders.length > 0 && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
-            <Loader2 className="h-6 w-6 animate-spin text-[rgb(95,179,249)]" />
-          </div>
-        )}
         {selectedOrder ? renderOrderDetails() : renderOrdersList()}
       </div>
       </div>
@@ -1120,7 +1151,12 @@ export function Header({
     )
   ) : null;
 
-  const activeAccountPanel = accountTab === 'details' ? accountInfoPanel : accountOrdersPanel;
+  const activeAccountPanel =
+    accountTab === 'details'
+      ? accountInfoPanel
+      : accountTab === 'orders'
+        ? accountOrdersPanel
+        : researchPanel;
 
   const authControls = user ? (
     <>
@@ -1144,16 +1180,35 @@ export function Header({
         </DialogTrigger>
         <DialogContent
           className="glass-card squircle-xl w-full max-w-[min(960px,calc(100vw-2rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-          style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+          style={{ backdropFilter: 'blur(38px) saturate(1.6)', boxShadow: '0 30px 90px -40px rgba(15,23,42,0.45), 0 20px 60px -50px rgba(95,179,249,0.35)' }}
         >
           <DialogHeader
             className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4"
-            style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.2)' }}
+            style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
           >
             <div className="flex-1 min-w-0 space-y-3">
-              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
-                {user.name}
-              </DialogTitle>
+              <div className="flex items-center gap-3 flex-wrap">
+                <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                  {user.name}
+                </DialogTitle>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="header-home-button squircle-sm text-slate-900 gap-2"
+                    onClick={() => {
+                      setWelcomeOpen(false);
+                      setTimeout(() => {
+                        if (onShowInfo) {
+                          onShowInfo();
+                        }
+                      }, 100);
+                    }}
+                  >
+                  <Home className="h-5 w-5 text-[rgb(95,179,249)]" aria-hidden="true" />
+                  Home
+                </Button>
+              </div>
               <DialogDescription>
                 {(user.visits ?? 1) > 1
                   ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! Your can manage your account details and orders below.`
@@ -1194,51 +1249,19 @@ export function Header({
                   Loading account details...
                 </div>
               )}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  console.log('[Header] Home clicked', { onShowInfo: !!onShowInfo });
-                  setWelcomeOpen(false);
-                  // Delay the onShowInfo call slightly to ensure modal closes first
-                  setTimeout(() => {
-                    if (onShowInfo) {
-                      console.log('[Header] Calling onShowInfo after modal close');
-                      onShowInfo();
-                    }
-                  }, 100);
-                }}
-                className="squircle-sm glass btn-hover-lighter w-full"
-                style={{
-                  boxShadow:
-                    '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
-                }}
-              >
-                Home
-              </Button>
-              <div className="flex flex-row gap-3 pt-2 pb-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onLogout}
-                  className="squircle-sm glass btn-hover-lighter flex-1"
-                  style={{
-                    boxShadow:
-                      '0 2px 6px -1px rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.06), inset 0 1px rgba(255,255,255,0.5)'
-                  }}
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setWelcomeOpen(false)}
-                  className="squircle-sm glass-brand btn-hover-lighter flex-1"
-                >
-                  Continue
-                </Button>
-              </div>
             </div>
+          </div>
+          <div className="border-t border-[var(--brand-glass-border-1)] px-6 py-4 flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="btn-no-hover header-logout-button squircle-sm glass bg-white text-slate-900 border-0"
+              onClick={onLogout}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

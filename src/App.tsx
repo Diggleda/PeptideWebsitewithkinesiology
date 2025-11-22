@@ -6,7 +6,6 @@ import { FeaturedSection } from './components/FeaturedSection';
 import { ProductCard } from './components/ProductCard';
 import type { Product as CardProduct } from './components/ProductCard';
 import type { Product, ProductVariant, BulkPricingTier } from './types/product';
-import { loadLocalProductForCard } from './lib/localWooFixture';
 import { CategoryFilter } from './components/CategoryFilter';
 import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
@@ -298,6 +297,7 @@ const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
 
 const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
+const CATALOG_RETRY_DELAY_MS = 4000;
 
 const SALES_REP_STATUS_ORDER = [
   'pending',
@@ -1200,29 +1200,30 @@ export default function App() {
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
-const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
-const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
-const [peptideNewsUpdatedAt, setPeptideNewsUpdatedAt] = useState<Date | null>(null);
-const newsLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-const beginNewsLoading = useCallback(() => {
-  if (newsLoadingTimeoutRef.current) {
-    clearTimeout(newsLoadingTimeoutRef.current);
-    newsLoadingTimeoutRef.current = null;
-  }
-  setPeptideNewsLoading(true);
-}, []);
-const settleNewsLoading = useCallback((startedAt: number) => {
-  const elapsed = Date.now() - startedAt;
-  const remaining = Math.max(0, MIN_NEWS_LOADING_MS - elapsed);
-  if (newsLoadingTimeoutRef.current) {
-    clearTimeout(newsLoadingTimeoutRef.current);
-  }
-  newsLoadingTimeoutRef.current = window.setTimeout(() => {
-    setPeptideNewsLoading(false);
-    newsLoadingTimeoutRef.current = null;
-  }, remaining);
-}, []);
+  const catalogRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
+  const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
+  const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
+  const [peptideNewsUpdatedAt, setPeptideNewsUpdatedAt] = useState<Date | null>(null);
+  const newsLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginNewsLoading = useCallback(() => {
+    if (newsLoadingTimeoutRef.current) {
+      clearTimeout(newsLoadingTimeoutRef.current);
+      newsLoadingTimeoutRef.current = null;
+    }
+    setPeptideNewsLoading(true);
+  }, []);
+  const settleNewsLoading = useCallback((startedAt: number) => {
+    const elapsed = Date.now() - startedAt;
+    const remaining = Math.max(0, MIN_NEWS_LOADING_MS - elapsed);
+    if (newsLoadingTimeoutRef.current) {
+      clearTimeout(newsLoadingTimeoutRef.current);
+    }
+    newsLoadingTimeoutRef.current = window.setTimeout(() => {
+      setPeptideNewsLoading(false);
+      newsLoadingTimeoutRef.current = null;
+    }, remaining);
+  }, []);
   const [isReferralSectionExpanded, setIsReferralSectionExpanded] = useState(false);
   const [quoteOfTheDay, setQuoteOfTheDay] = useState<{ text: string; author: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -1501,27 +1502,26 @@ const filteredDoctorReferrals = useMemo(() => {
   }, []);
 
   useEffect(() => {
-    // Dev-only: Load a local Woo fixture for testing ProductCard if flag set
-    const useFixture = (import.meta as any).env?.VITE_USE_LOCAL_WOO_FIXTURE === 'true';
-    if (useFixture) {
-      (async () => {
-        const fixture = await loadLocalProductForCard();
-        if (fixture) {
-          setCatalogProducts([fixture as any]);
-          setCatalogCategories([fixture.category]);
-          setCatalogTypes(['variable']);
-        }
-      })();
-    }
-  }, []);
-
-  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
 
     let cancelled = false;
-    const loadCatalog = async () => {
+    const scheduleRetry = () => {
+      if (catalogRetryTimeoutRef.current) {
+        window.clearTimeout(catalogRetryTimeoutRef.current);
+      }
+      catalogRetryTimeoutRef.current = window.setTimeout(() => {
+        void loadCatalog();
+      }, CATALOG_RETRY_DELAY_MS);
+    };
+
+    async function loadCatalog() {
+      if (cancelled) {
+        return;
+      }
+
+      catalogRetryTimeoutRef.current = null;
       setCatalogLoading(true);
       setCatalogError(null);
       try {
@@ -1582,7 +1582,11 @@ const filteredDoctorReferrals = useMemo(() => {
             new Set(mappedProducts.map((product) => product.type).filter(Boolean)),
           ) as string[];
           setCatalogTypes(typesFromProducts);
-        } else if (Array.isArray(wooCategories) && wooCategories.length > 0) {
+          setCatalogLoading(false);
+          return;
+        }
+
+        if (Array.isArray(wooCategories) && wooCategories.length > 0) {
           const categoryNames = wooCategories
             .map((category) => category?.name?.trim())
             .filter(
@@ -1593,35 +1597,36 @@ const filteredDoctorReferrals = useMemo(() => {
             setCatalogCategories(categoryNames);
           }
         }
+
+        scheduleRetry();
       } catch (error) {
         if (!cancelled) {
-      console.warn('[Catalog] Catalog fetch failed', error);
-          // Per preference: keep catalog empty when Woo is not available.
+          console.warn('[Catalog] Catalog fetch failed', error);
           setCatalogProducts([]);
           setCatalogCategories([]);
           setCatalogTypes([]);
           setCatalogError(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setCatalogLoading(false);
+          scheduleRetry();
         }
       }
-    };
+    }
 
-    loadCatalog();
+    void loadCatalog();
 
     return () => {
       cancelled = true;
+      if (catalogRetryTimeoutRef.current) {
+        window.clearTimeout(catalogRetryTimeoutRef.current);
+      }
     };
   }, []);
 
-useEffect(() => {
-  let cancelled = false;
-  const loadPeptideNews = async () => {
-    beginNewsLoading();
-    setPeptideNewsError(null);
-    const startedAt = Date.now();
+  useEffect(() => {
+    let cancelled = false;
+    const loadPeptideNews = async () => {
+      beginNewsLoading();
+      setPeptideNewsError(null);
+      const startedAt = Date.now();
 
       try {
         const data = await newsAPI.getPeptideHeadlines();
@@ -1660,14 +1665,14 @@ useEffect(() => {
           settleNewsLoading(startedAt);
         }
       }
-  };
+    };
 
     loadPeptideNews();
 
     return () => {
       cancelled = true;
     };
-}, []);
+  }, []);
 
   // Prepare welcome animation only on fresh sign-in
   useEffect(() => {
@@ -1933,16 +1938,13 @@ useEffect(() => {
       const isServerError = statusCode !== null && statusCode >= 500;
 
       if (attempt === 0 && (isNetworkError || isServerError)) {
-        console.warn('[Auth] Transient login failure detected, warming API then retrying', { email, statusCode, message });
-        try {
-          await Promise.race([
-            checkServerHealth(),
-            new Promise((resolve) => setTimeout(resolve, 1000))
-          ]);
-        } catch {
-          // ignore health check failures, we'll still retry once
-        }
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        console.warn('[Auth] Transient login failure detected, retrying immediately after health ping', {
+          email,
+          statusCode,
+          message,
+        });
+        // Fire-and-forget a health ping to wake cold starts, but don't block the retry.
+        void checkServerHealth().catch(() => undefined);
         return loginWithRetry(email, password, attempt + 1);
       }
 
@@ -2216,6 +2218,137 @@ useEffect(() => {
     console.debug('[Cart] Add to cart success', { productId, variantId: resolvedVariant?.id, quantity: quantityToAdd });
   };
 
+  const handleBuyOrderAgain = (order: AccountOrderSummary) => {
+    if (!order?.lineItems || order.lineItems.length === 0) {
+      console.debug('[Cart] Buy again ignored, no line items', { orderId: order?.id });
+      return;
+    }
+
+    const nextCart: CartItem[] = [];
+    const addOrMergeCartItem = (product: Product, variant: ProductVariant | null, quantity: number) => {
+      const cartItemId = buildCartItemId(product.id, variant?.id ?? null);
+      const existing = nextCart.find((item) => item.id === cartItemId);
+      if (existing) {
+        existing.quantity += quantity;
+        return;
+      }
+      nextCart.push({
+        id: cartItemId,
+        product,
+        quantity,
+        variant: variant ?? undefined,
+      });
+    };
+
+    for (const line of order.lineItems) {
+      const qty = Math.max(1, Math.floor(line.quantity ?? 1));
+      const sku = (line.sku ?? '').trim();
+      const rawName = (line.name ?? '').trim();
+      const normalizedName = rawName.toLowerCase();
+      let matchedProduct: Product | undefined;
+      let matchedVariant: ProductVariant | null = null;
+
+      if (sku) {
+        for (const product of catalogProducts) {
+          const variant = product.variants?.find((v) => v.sku && v.sku.trim() === sku);
+          if (variant) {
+            matchedProduct = product;
+            matchedVariant = variant;
+            break;
+          }
+        }
+      }
+
+      // Fallback: match based on name, handling patterns like
+      // "Product Name — 40mg" where base name matches product and
+      // trailing segment matches variant label/attributes.
+      if (!matchedProduct && normalizedName) {
+        let baseNameRaw = rawName;
+        let variantLabelRaw: string | null = null;
+        const separatorMatch = rawName.match(/\s[–—-]\s/);
+        if (separatorMatch && typeof separatorMatch.index === 'number') {
+          const idx = separatorMatch.index;
+          baseNameRaw = rawName.slice(0, idx).trim();
+          variantLabelRaw = rawName.slice(idx + separatorMatch[0].length).trim();
+        }
+        const baseName = baseNameRaw.toLowerCase();
+        const variantLabel = variantLabelRaw ? variantLabelRaw.toLowerCase() : null;
+
+        // Exact match on full name first.
+        matchedProduct = catalogProducts.find(
+          (product) => product.name.trim().toLowerCase() === normalizedName,
+        );
+
+        // Then exact match on base name.
+        if (!matchedProduct && baseName) {
+          matchedProduct = catalogProducts.find(
+            (product) => product.name.trim().toLowerCase() === baseName,
+          );
+        }
+
+        // Finally, prefix match on base name (to tolerate minor differences).
+        if (!matchedProduct && baseName) {
+          matchedProduct = catalogProducts.find(
+            (product) => product.name.trim().toLowerCase().startsWith(baseName),
+          );
+        }
+
+        if (matchedProduct && variantLabel && matchedProduct.variants && matchedProduct.variants.length > 0) {
+          const variants = matchedProduct.variants;
+          const normalizedLabel = variantLabel;
+          // 1) Exact label match.
+          matchedVariant =
+            variants.find(
+              (v) => v.label.trim().toLowerCase() === normalizedLabel,
+            ) ??
+            // 2) Label contains the variant text.
+            variants.find(
+              (v) => v.label.trim().toLowerCase().includes(normalizedLabel),
+            ) ??
+            // 3) Any attribute value matches/contains the variant text.
+            variants.find((v) =>
+              (v.attributes ?? []).some((attr) =>
+                attr.value.trim().toLowerCase() === normalizedLabel ||
+                attr.value.trim().toLowerCase().includes(normalizedLabel),
+              ),
+            ) ??
+            null;
+        }
+      }
+
+      // If we still don't have a product match, skip this line.
+      if (!matchedProduct) {
+        console.debug('[Cart] Buy again line skipped, no product match', { sku, name: line.name });
+        continue;
+      }
+
+      // If product has variants but none matched, fall back to a sensible default.
+      if (!matchedVariant && matchedProduct.variants && matchedProduct.variants.length > 0) {
+        matchedVariant =
+          matchedProduct.variants.find((variant) => variant.inStock) ??
+          matchedProduct.variants[0] ??
+          null;
+      }
+
+      addOrMergeCartItem(matchedProduct, matchedVariant, qty);
+    }
+
+    if (nextCart.length === 0) {
+      console.debug('[Cart] Buy again produced empty cart', { orderId: order.id });
+      return;
+    }
+
+    console.debug('[Cart] Buy again cart rebuilt', { orderId: order.id, items: nextCart.length });
+    setCartItems(nextCart);
+    setCheckoutOpen(true);
+    toast('Order loaded into a new cart.', {
+      style: {
+        backgroundColor: 'rgb(95,179,249)',
+        color: '#ffffff',
+      },
+    });
+  };
+
   const handleRefreshNews = async () => {
     beginNewsLoading();
     setPeptideNewsError(null);
@@ -2256,8 +2389,12 @@ useEffect(() => {
     setSearchQuery(query);
   };
 
-  const handleCheckout = async (referralCode?: string) => {
-    console.debug('[Checkout] Attempt', { items: cartItems.length, referralCode });
+  const handleCheckout = async (shipping?: {
+    shippingAddress: any;
+    shippingRate: any;
+    shippingTotal: number;
+  }) => {
+    console.debug('[Checkout] Attempt', { items: cartItems.length, shipping });
     if (cartItems.length === 0) {
       // toast.error('Your cart is empty');
       return;
@@ -2274,10 +2411,15 @@ useEffect(() => {
       position: index + 1,
     }));
 
-    const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const itemTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const total = itemTotal + (shipping?.shippingTotal || 0);
 
     try {
-      const response = await ordersAPI.create(items, total, referralCode);
+      const response = await ordersAPI.create(items, total, undefined, {
+        address: shipping?.shippingAddress,
+        estimate: shipping?.shippingRate,
+        shippingTotal: shipping?.shippingTotal ?? null,
+      });
       await loadAccountOrders().catch(() => undefined);
       return response;
     } catch (error: any) {
@@ -3272,6 +3414,7 @@ const renderSalesRepDashboard = () => {
             showCanceledOrders={showCanceledOrders}
             onToggleShowCanceled={toggleShowCanceledOrders}
             accountModalRequest={accountModalRequest}
+            onBuyOrderAgain={handleBuyOrderAgain}
           />
         )}
 
@@ -3296,6 +3439,7 @@ const renderSalesRepDashboard = () => {
                     <p
                       className={`font-semibold text-[rgb(95,179,249)] text-center shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
                       style={{
+                        color: 'rgb(95,179,249)',
                         fontSize: infoFocusActive ? 'clamp(0.94rem, 1.65vw, 1.65rem)' : 'clamp(0.76rem, 1.22vw, 1.22rem)',
                         lineHeight: 1.15,
                         transition: 'font-size 800ms ease',
@@ -3342,7 +3486,12 @@ const renderSalesRepDashboard = () => {
                       </div>
                     )}
                     {quoteReady && quoteOfTheDay && (
-                      <p className="text-base lg:text-lg italic text-gray-700 text-center">
+                      <p
+                        className="px-4 sm:px-6 italic text-gray-700 text-center leading-snug break-words"
+                        style={{
+                          fontSize: 'clamp(0.8rem, 2.6vw, 1.05rem)',
+                        }}
+                      >
                         "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                       </p>
                     )}
@@ -3369,7 +3518,7 @@ const renderSalesRepDashboard = () => {
                   <div
                     className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? 'info-focus-active' : ''} ${
                       showWelcome ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
-                    } flex flex-col items-center text-center gap-3 ${quoteReady && quoteOfTheDay ? '' : 'justify-center'}`}
+                    } flex flex-col items-center text-center justify-center sm:justify-start`}
                     style={{
                       backdropFilter: 'blur(20px) saturate(1.4)',
                       minHeight: quoteReady && quoteOfTheDay ? 'auto' : 'min(140px, 20vh)',
@@ -3378,6 +3527,7 @@ const renderSalesRepDashboard = () => {
                     <p
                       className={`text-center font-semibold text-[rgb(95,179,249)] shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
                       style={{
+                        color: 'rgb(95,179,249)',
                         fontSize: quoteReady && quoteOfTheDay ? 'clamp(1rem, 3.2vw, 1.6rem)' : 'clamp(1.32rem, 4.9vw, 1.9rem)',
                         lineHeight: 1.2,
                         transform: quoteReady && quoteOfTheDay ? 'translateY(-8px)' : 'translateY(0)',
@@ -3386,7 +3536,7 @@ const renderSalesRepDashboard = () => {
                     >
                       Welcome{user.visits && user.visits > 1 ? ' back' : ''}, {user.name}!
                     </p>
-                    <div className="w-full rounded-lg bg-white/65 px-4 py-3 text-center shadow-inner transition-opacity duration-500" aria-live="polite">
+                    <div className="w-full rounded-lg bg-white/65 px-3 pt-0 pb-2 sm:px-4 sm:py-2 text-center shadow-inner transition-opacity duration-500" aria-live="polite">
                       {!quoteReady && (
                         <div className="flex flex-col items-center gap-2 w-full">
                           <div className="news-loading-line news-loading-shimmer w-3/4" aria-hidden="true" />
@@ -3394,7 +3544,12 @@ const renderSalesRepDashboard = () => {
                         </div>
                       )}
                       {quoteReady && quoteOfTheDay && (
-                        <p className="text-sm italic text-gray-700">
+                        <p
+                          className="px-4 sm:px-6 italic text-gray-700 leading-snug break-words"
+                          style={{
+                            fontSize: 'clamp(0.8rem, 2.4vw, 0.95rem)',
+                          }}
+                        >
                           "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                         </p>
                       )}
@@ -4056,6 +4211,19 @@ const renderSalesRepDashboard = () => {
             physicianName={user?.npiVerification?.name || user?.name || null}
             customerEmail={user?.email || null}
             customerName={user?.name || null}
+            defaultShippingAddress={
+              user
+                ? {
+                  name: user.name,
+                  addressLine1: user.officeAddressLine1,
+                  addressLine2: user.officeAddressLine2,
+                  city: user.officeCity,
+                  state: user.officeState,
+                  postalCode: user.officePostalCode,
+                  country: 'US',
+                }
+                : undefined
+            }
           />
         </Elements>
       ) : (
@@ -4079,6 +4247,19 @@ const renderSalesRepDashboard = () => {
           physicianName={user?.npiVerification?.name || user?.name || null}
           customerEmail={user?.email || null}
           customerName={user?.name || null}
+          defaultShippingAddress={
+            user
+              ? {
+                name: user.name,
+                addressLine1: user.officeAddressLine1,
+                addressLine2: user.officeAddressLine2,
+                city: user.officeCity,
+                state: user.officeState,
+                postalCode: user.officePostalCode,
+                country: 'US',
+              }
+              : undefined
+          }
         />
       )}
 
