@@ -1289,5 +1289,221 @@
     },
     "wooOrderId": "316",
     "paymentIntentId": "pi_3SUJC4LdQwKDgAgZ0ca57ULc"
+  },
+  {
+    "id": "1763353078248",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-256::woo-variation-260",
+        "productId": "woo-256",
+        "variantId": "woo-variation-260",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+        "price": 273.18,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 273.18,
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-17T04:17:58.248Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+              "sku": "woo-256",
+              "quantity": 1,
+              "total": "273.18",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763353078248"
+            },
+            {
+              "key": "peppro_total",
+              "value": 273.18
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-17T04:17:58.248Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 317,
+          "number": "317",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/317/?pay_for_order=true&key=wc_order_4ldzNI5DWuA2I",
+          "order_key": "wc_order_4ldzNI5DWuA2I"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SUJt7LdQwKDgAgZ3Ubb1GHu_secret_13Sm3WanHtQfrWMyPcHJtBS5k",
+        "paymentIntentId": "pi_3SUJt7LdQwKDgAgZ3Ubb1GHu",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-17T04:18:13.603Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": "317",
+    "paymentIntentId": "pi_3SUJt7LdQwKDgAgZ3Ubb1GHu"
+  },
+  {
+    "id": "1763518701407",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-256::woo-variation-260",
+        "productId": "woo-256",
+        "variantId": "woo-variation-260",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+        "price": 273.18,
+        "quantity": 12,
+        "note": null,
+        "position": 1
+      },
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 1,
+        "note": null,
+        "position": 2
+      }
+    ],
+    "total": 3443.08,
+    "shippingTotal": 0,
+    "shippingEstimate": null,
+    "shippingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "addressLine1": "6330 S County line rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "Illinois",
+      "postalCode": "60527",
+      "country": "US"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-19T02:18:21.407Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1763518701407",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) — 40mg",
+              "sku": "woo-256",
+              "quantity": 12,
+              "total": "3278.16",
+              "meta_data": []
+            },
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 1,
+              "total": "164.92",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763518701407"
+            },
+            {
+              "key": "peppro_total",
+              "value": 3443.08
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-19T02:18:21.407Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1763518701407"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1763518701407"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1763518701407"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 321,
+          "number": "321",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/321/?pay_for_order=true&key=wc_order_MltjUJ7ZT28I0",
+          "order_key": "wc_order_MltjUJ7ZT28I0"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SV0ySLdQwKDgAgZ1BMnSKkz_secret_84g466csAHwXIzFNfIXJtlGzP",
+        "paymentIntentId": "pi_3SV0ySLdQwKDgAgZ1BMnSKkz",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-19T02:18:36.726Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": "321",
+    "paymentIntentId": "pi_3SV0ySLdQwKDgAgZ1BMnSKkz"
   }
 ]

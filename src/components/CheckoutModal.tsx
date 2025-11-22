@@ -9,7 +9,7 @@ import { Card, CardContent } from './ui/card';
 import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
-import { paymentsAPI } from '../services/api';
+import { paymentsAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 
@@ -40,11 +40,35 @@ interface CartItem {
   variant?: ProductVariant | null;
 }
 
+type ShippingAddress = {
+  name?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+};
+
+type ShippingRate = {
+  carrierId: string | null;
+  serviceCode: string | null;
+  serviceType: string | null;
+  estimatedDeliveryDays: number | null;
+  deliveryDateGuaranteed: string | null;
+  rate: number | null;
+  currency: string | null;
+};
+
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
-  onCheckout: (referralCode?: string) => Promise<CheckoutResult | void> | CheckoutResult | void;
+  onCheckout: (payload: {
+    shippingAddress: ShippingAddress;
+    shippingRate: ShippingRate | null;
+    shippingTotal: number;
+  }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
   onUpdateItemQuantity: (cartItemId: string, quantity: number) => void;
@@ -54,6 +78,7 @@ interface CheckoutModalProps {
   physicianName?: string | null;
   customerEmail?: string | null;
   customerName?: string | null;
+  defaultShippingAddress?: ShippingAddress | null;
 }
 
 const formatCardNumber = (value: string) =>
@@ -101,6 +126,7 @@ export function CheckoutModal({
   customerName,
   onClearCart,
   onPaymentSuccess,
+  defaultShippingAddress,
 }: CheckoutModalProps) {
   const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
   const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
@@ -120,6 +146,19 @@ export function CheckoutModal({
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
   const checkoutStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
+    name: defaultShippingAddress?.name || physicianName || customerName || '',
+    addressLine1: defaultShippingAddress?.addressLine1 || '',
+    addressLine2: defaultShippingAddress?.addressLine2 || '',
+    city: defaultShippingAddress?.city || '',
+    state: defaultShippingAddress?.state || '',
+    postalCode: defaultShippingAddress?.postalCode || '',
+    country: defaultShippingAddress?.country || 'US',
+  });
+  const [shippingRates, setShippingRates] = useState<ShippingRate[] | null>(null);
+  const [shippingRateError, setShippingRateError] = useState<string | null>(null);
+  const [selectedRateIndex, setSelectedRateIndex] = useState<number | null>(null);
+  const [isFetchingRates, setIsFetchingRates] = useState(false);
 
   const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
     const basePrice = variant?.price ?? product.price;
@@ -156,7 +195,11 @@ export function CheckoutModal({
     const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
     return sum + unitPrice * item.quantity;
   }, 0);
-  const total = subtotal;
+  const shippingCost = selectedRateIndex != null && shippingRates?.[selectedRateIndex]?.rate
+    ? Number(shippingRates[selectedRateIndex].rate) || 0
+    : 0;
+  const taxAmount = 0;
+  const total = subtotal + shippingCost;
   const isPaymentValid = stripeReady
     ? cardholderName.trim().length >= 2
     : Boolean(
@@ -165,6 +208,7 @@ export function CheckoutModal({
       && isValidCvv(cvv)
       && cardholderName.trim().length >= 2,
     );
+  // Temporarily allow checkout without requiring a selected shipping rate.
   const meetsCheckoutRequirements = termsAccepted && isPaymentValid;
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
   let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
@@ -178,6 +222,34 @@ export function CheckoutModal({
 
   // No-op referral handling removed
 
+  const handleGetRates = async () => {
+    setShippingRateError(null);
+    setIsFetchingRates(true);
+    try {
+      const payload = {
+        shippingAddress,
+        items: cartItems.map((item) => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          weightOz: (item.product as any)?.weightOz ?? item.variant?.weightOz ?? null,
+        })),
+      };
+      const response = await shippingAPI.getRates(payload);
+      const rates = Array.isArray(response?.rates) ? response.rates : [];
+      setShippingRates(rates);
+      setSelectedRateIndex(rates.length > 0 ? 0 : null);
+      if (!rates.length) {
+        setShippingRateError('No shipping rates available for this address.');
+      }
+    } catch (error: any) {
+      const message = error?.message || 'Unable to fetch shipping rates. Please check the address.';
+      setShippingRateError(message);
+      toast.error(message);
+    } finally {
+      setIsFetchingRates(false);
+    }
+  };
+
   const handleCheckout = async () => {
     console.debug('[CheckoutModal] Checkout start', {
       total,
@@ -190,7 +262,11 @@ export function CheckoutModal({
     });
     setIsProcessing(true);
     try {
-      const result = await onCheckout(undefined);
+      const result = await onCheckout({
+        shippingAddress,
+        shippingRate: selectedRateIndex != null && shippingRates ? shippingRates[selectedRateIndex] : null,
+        shippingTotal: shippingCost,
+      });
       const stripeInfo = result && typeof result === 'object'
         ? result?.integrations?.stripe
         : null;
@@ -355,12 +431,37 @@ export function CheckoutModal({
       setCardholderName('');
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
+      setShippingRates(null);
+      setSelectedRateIndex(null);
+      setShippingRateError(null);
+      setShippingAddress({
+        name: defaultShippingAddress?.name || physicianName || customerName || '',
+        addressLine1: defaultShippingAddress?.addressLine1 || '',
+        addressLine2: defaultShippingAddress?.addressLine2 || '',
+        city: defaultShippingAddress?.city || '',
+        state: defaultShippingAddress?.state || '',
+        postalCode: defaultShippingAddress?.postalCode || '',
+        country: defaultShippingAddress?.country || 'US',
+      });
       if (checkoutStatusTimer.current) {
         clearTimeout(checkoutStatusTimer.current);
         checkoutStatusTimer.current = null;
       }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    setShippingAddress((prev) => ({
+      ...prev,
+      name: defaultShippingAddress?.name || physicianName || customerName || prev.name || '',
+      addressLine1: defaultShippingAddress?.addressLine1 ?? prev.addressLine1 ?? '',
+      addressLine2: defaultShippingAddress?.addressLine2 ?? prev.addressLine2 ?? '',
+      city: defaultShippingAddress?.city ?? prev.city ?? '',
+      state: defaultShippingAddress?.state ?? prev.state ?? '',
+      postalCode: defaultShippingAddress?.postalCode ?? prev.postalCode ?? '',
+      country: defaultShippingAddress?.country ?? prev.country ?? 'US',
+    }));
+  }, [defaultShippingAddress, physicianName, customerName]);
 
   useEffect(() => {
     if (cartItems.length === 0) {
@@ -384,6 +485,10 @@ export function CheckoutModal({
 
   const isCartEmpty = cartItems.length === 0;
 
+  if (isCartEmpty) {
+    return null;
+  }
+
   return (
     <Dialog
       open={isOpen}
@@ -404,9 +509,7 @@ export function CheckoutModal({
               <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
                 Checkout
               </DialogTitle>
-              {!isCartEmpty && (
-                <DialogDescription>Review your order and complete your purchase</DialogDescription>
-              )}
+              <DialogDescription>Review your order and complete your purchase</DialogDescription>
             </div>
             <DialogClose className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               aria-label="Close checkout"
@@ -418,20 +521,6 @@ export function CheckoutModal({
 
         <div className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="space-y-6 pt-6">
-          {isCartEmpty ? (
-            <div className="flex flex-col items-center justify-center py-14 space-y-6 text-center">
-              <div className="flex items-center gap-3 text-slate-600">
-                <ShoppingCart className="h-6 w-6 text-[rgb(95,179,249)]" />
-                <span className="text-base font-medium text-slate-700">Your cart is empty</span>
-              </div>
-              <Button
-                onClick={onClose}
-                className="squircle-sm glass-brand btn-hover-lighter px-6"
-              >
-                Continue Shopping
-              </Button>
-            </div>
-          ) : (
             <>
               {/* Cart Items */}
               <div className="space-y-4">
@@ -585,7 +674,131 @@ export function CheckoutModal({
                 </div>
               </div>
 
-              {/* Referral Code Section removed */}
+              {/* Shipping */}
+              <div className="space-y-4">
+                <h3>Shipping Address</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-name">Recipient Name</Label>
+                    <Input
+                      id="ship-name"
+                      placeholder="Full name"
+                      value={shippingAddress.name || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, name: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-line1">Address Line 1</Label>
+                    <Input
+                      id="ship-line1"
+                      placeholder="Street address"
+                      value={shippingAddress.addressLine1 || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-line2">Address Line 2</Label>
+                    <Input
+                      id="ship-line2"
+                      placeholder="Apt, suite, etc. (optional)"
+                      value={shippingAddress.addressLine2 || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine2: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-city">City</Label>
+                    <Input
+                      id="ship-city"
+                      placeholder="City"
+                      value={shippingAddress.city || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, city: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-state">State</Label>
+                    <Input
+                      id="ship-state"
+                      placeholder="State"
+                      value={shippingAddress.state || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, state: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-postal">Postal Code</Label>
+                    <Input
+                      id="ship-postal"
+                      placeholder="ZIP / Postal code"
+                      value={shippingAddress.postalCode || ''}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, postalCode: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="ship-country">Country</Label>
+                    <Input
+                      id="ship-country"
+                      placeholder="Country"
+                      value={shippingAddress.country || 'US'}
+                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, country: e.target.value }))}
+                      className="squircle-sm bg-slate-50 border-2"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleGetRates}
+                    disabled={isFetchingRates || cartItems.length === 0}
+                    className="squircle-sm"
+                  >
+                    {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
+                  </Button>
+                  {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
+                </div>
+                {shippingRates && shippingRates.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
+                    <div className="space-y-2">
+                      {shippingRates.map((rate, index) => (
+                        <label
+                          key={`${rate.serviceCode}-${index}`}
+                          className="flex items-center justify-between rounded-md border p-3 cursor-pointer hover:border-[rgb(95,179,249)]"
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="radio"
+                              name="shipping-rate"
+                              checked={selectedRateIndex === index}
+                              onChange={() => setSelectedRateIndex(index)}
+                            />
+                            <div>
+                              <p className="font-medium">
+                                {rate.serviceType || rate.serviceCode || 'Service'} – ${Number(rate.rate || 0).toFixed(2)}
+                              </p>
+                              {rate.estimatedDeliveryDays != null && (
+                                <p className="text-xs text-slate-600">
+                                  Est. {rate.estimatedDeliveryDays} business day{rate.estimatedDeliveryDays === 1 ? '' : 's'}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right text-sm text-slate-600">
+                            {rate.deliveryDateGuaranteed && (
+                              <p>Guaranteed by {new Date(rate.deliveryDateGuaranteed).toLocaleDateString()}</p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Payment Form */}
               <div className="space-y-5">
@@ -718,6 +931,14 @@ export function CheckoutModal({
                   <span>Subtotal:</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
+                <div className="flex justify-between text-sm text-slate-700">
+                  <span>Shipping:</span>
+                  <span>${shippingCost.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-700">
+                  <span>Tax:</span>
+                  <span>${taxAmount.toFixed(2)}</span>
+                </div>
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span>Total:</span>
@@ -742,7 +963,6 @@ export function CheckoutModal({
                 </Button>
               </div>
             </>
-          )}
           </div>
         </div>
       </DialogContent>

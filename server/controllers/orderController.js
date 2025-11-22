@@ -6,6 +6,9 @@ const createOrder = async (req, res, next) => {
       userId: req.user.id,
       items: req.body.items,
       total: req.body.total,
+      shippingAddress: req.body.shippingAddress,
+      shippingEstimate: req.body.shippingEstimate,
+      shippingTotal: req.body.shippingTotal,
       referralCode: req.body.referralCode,
     });
     res.json(result);

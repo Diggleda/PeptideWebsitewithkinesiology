@@ -101,7 +101,7 @@ const renderOrderDetails = () => {
               type="button"
               size="sm"
               onClick={handleOrderAgain}
-              className="squircle-sm bg-[rgb(95,179,249)] hover:bg-[rgb(75,159,229)] text-white"
+              className="squircle-sm mt-2 border border-[rgb(95,179,249)] text-slate-900 hover:bg-[rgba(95,179,249,0.08)]"
             >
               <RotateCcw className="h-4 w-4 mr-1.5" />
               Order Again

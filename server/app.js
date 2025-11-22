@@ -8,6 +8,7 @@ const systemRoutes = require('./routes/systemRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const wooRoutes = require('./routes/wooRoutes');
 const quotesRoutes = require('./routes/quotesRoutes');
+const shippingRoutes = require('./routes/shippingRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 
@@ -52,6 +53,7 @@ const createApp = () => {
   app.use('/api/auth', authRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/payments', paymentRoutes);
+  app.use('/api/shipping', shippingRoutes);
   app.use('/api/woo', wooRoutes);
   app.use('/api/quotes', quotesRoutes);
   app.use('/api/news', newsRoutes);

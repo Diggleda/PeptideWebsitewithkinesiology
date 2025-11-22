@@ -3440,7 +3440,7 @@ const renderSalesRepDashboard = () => {
                       className={`font-semibold text-[rgb(95,179,249)] text-center shimmer-text ${infoFocusActive ? 'is-shimmering' : 'shimmer-text--cooldown'}`}
                       style={{
                         color: 'rgb(95,179,249)',
-                        fontSize: infoFocusActive ? 'clamp(0.94rem, 1.65vw, 1.65rem)' : 'clamp(0.76rem, 1.22vw, 1.22rem)',
+                        fontSize: infoFocusActive ? 'clamp(1.1rem, 2vw, 2rem)' : 'clamp(1rem, 1.6vw, 1.75rem)',
                         lineHeight: 1.15,
                         transition: 'font-size 800ms ease',
                       }}

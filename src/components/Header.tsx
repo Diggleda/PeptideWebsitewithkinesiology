@@ -913,7 +913,7 @@ export function Header({
     <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
-        This section is currently under construction. Soon you&apos;ll be able to access PepPro research tools and resources here.
+        This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the PepPro network of physicians.
       </p>
     </div>
   );
@@ -1175,7 +1175,7 @@ export function Header({
             aria-expanded={welcomeOpen}
           >
             <User className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden sm:inline ml-3">{headerDisplayName}</span>
+            <span className="hidden sm:inline ml-3 text-white">{headerDisplayName}</span>
           </Button>
         </DialogTrigger>
         <DialogContent
@@ -1188,9 +1188,12 @@ export function Header({
           >
             <div className="flex-1 min-w-0 space-y-3">
               <div className="flex items-center gap-3 flex-wrap">
-                <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                <DialogTitle className="text-xl font-semibold header-user-name">
                   {user.name}
                 </DialogTitle>
+                <span aria-hidden="true" className="text-slate-300">
+                  |
+                </span>
                   <Button
                     type="button"
                     variant="outline"

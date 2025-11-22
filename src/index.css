@@ -2430,6 +2430,16 @@ body {
   transition: transform 0.4s ease, box-shadow 0.4s ease;
 }
 
+.info-highlight-card > p + div {
+  margin-top: 0;
+}
+
+@media (min-width: 640px) {
+  .info-highlight-card > p + div {
+    margin-top: 0;
+  }
+}
+
 .info-focus-overlay + .relative .info-highlight-card,
 .info-highlight-card.info-focus-active {
   box-shadow: 0 30px 60px -40px rgba(95, 179, 249, 0.9);
@@ -3426,18 +3436,28 @@ html {
   box-shadow: none;
   border-width: 2px;
   border-color: transparent;
-  background-color: #ffffff;
+  background-color: transparent;
   color: rgb(95, 179, 249);
 }
 
 .header-home-button:hover,
 .header-home-button:focus-visible {
   box-shadow: none;
-  background-color: #ffffff;
+  background-color: transparent;
   color: rgb(95, 179, 249);
   border-color: rgb(95, 179, 249);
   filter: none !important;
   transform: none !important;
+}
+
+.header-home-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Header user name brand color */
+.header-user-name {
+  color: rgb(95, 179, 249);
 }
 
 /* Account order list cards */

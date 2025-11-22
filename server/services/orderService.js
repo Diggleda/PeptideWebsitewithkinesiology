@@ -51,7 +51,15 @@ const serializeCause = (cause) => {
   }
 };
 
-const createOrder = async ({ userId, items, total, referralCode }) => {
+const createOrder = async ({
+  userId,
+  items,
+  total,
+  referralCode,
+  shippingAddress,
+  shippingEstimate,
+  shippingTotal,
+}) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
     error.status = 400;
@@ -77,6 +85,9 @@ const createOrder = async ({ userId, items, total, referralCode }) => {
     userId,
     items,
     total,
+    shippingTotal: typeof shippingTotal === 'number' && Number.isFinite(shippingTotal) ? shippingTotal : null,
+    shippingEstimate: shippingEstimate || null,
+    shippingAddress: shippingAddress || null,
     referralCode: referralCode || null,
     status: 'pending',
     createdAt: now,

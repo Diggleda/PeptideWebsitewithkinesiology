@@ -270,15 +270,35 @@ export const authAPI = {
 
 // Orders API
 export const ordersAPI = {
-  create: async (items: any[], total: number, referralCode?: string) => {
+  create: async (items: any[], total: number, referralCode?: string, shipping?: {
+    address?: any;
+    estimate?: any;
+    shippingTotal?: number | null;
+  }) => {
     return fetchWithAuth(`${API_BASE_URL}/orders/`, {
       method: 'POST',
-      body: JSON.stringify({ items, total, referralCode }),
+      body: JSON.stringify({
+        items,
+        total,
+        referralCode,
+        shippingAddress: shipping?.address,
+        shippingEstimate: shipping?.estimate,
+        shippingTotal: shipping?.shippingTotal ?? null,
+      }),
     });
   },
 
   getAll: async () => {
     return fetchWithAuth(`${API_BASE_URL}/orders/`);
+  },
+};
+
+export const shippingAPI = {
+  getRates: async (payload: { shippingAddress: any; items: any[] }) => {
+    return fetchWithAuth(`${API_BASE_URL}/shipping/rates`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };
 
