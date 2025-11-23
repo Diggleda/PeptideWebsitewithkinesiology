@@ -10,6 +10,7 @@ const createOrder = async (req, res, next) => {
       shippingEstimate: req.body.shippingEstimate,
       shippingTotal: req.body.shippingTotal,
       referralCode: req.body.referralCode,
+      physicianCertification: req.body.physicianCertification === true,
     });
     res.json(result);
   } catch (error) {

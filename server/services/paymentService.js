@@ -3,6 +3,63 @@ const wooCommerceClient = require('../integration/wooCommerceClient');
 const stripeClient = require('../integration/stripeClient');
 const { logger } = require('../config/logger');
 
+const titleCase = (value) => {
+  if (!value) {
+    return null;
+  }
+  const spaced = String(value).replace(/[_-]+/g, ' ').trim();
+  if (!spaced) {
+    return null;
+  }
+  return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const extractCardSummary = (intent) => {
+  const charges = intent?.charges?.data;
+  if (!Array.isArray(charges) || charges.length === 0) {
+    return null;
+  }
+  const charge = charges[charges.length - 1];
+  if (!charge?.payment_method_details) {
+    return null;
+  }
+  const details = charge.payment_method_details.card
+    || charge.payment_method_details.card_present
+    || charge.payment_method_details.card_swipe
+    || charge.payment_method_details.klarna
+    || null;
+  if (!details) {
+    return null;
+  }
+  const brand = titleCase(details.brand || details.card_brand || details.network || null);
+  const last4 = details.last4 || details.card_last4 || details.number_last4 || null;
+  if (!last4) {
+    return null;
+  }
+  return {
+    brand: brand || 'Card',
+    last4,
+  };
+};
+
+const applyCardSummaryToOrder = ({ order, cardSummary, stripeData }) => {
+  if (!cardSummary) {
+    return {
+      paymentMethod: order.paymentMethod || null,
+      stripeMeta: stripeData,
+    };
+  }
+  const label = `${cardSummary.brand || 'Card'} •••• ${cardSummary.last4}`;
+  return {
+    paymentMethod: label,
+    stripeMeta: {
+      ...(stripeData || {}),
+      cardBrand: cardSummary.brand,
+      cardLast4: cardSummary.last4,
+    },
+  };
+};
+
 const createStripePayment = async ({ order, customer, wooOrderId }) => stripeClient.createPaymentIntent({
   order,
   wooOrderId,
@@ -28,19 +85,28 @@ const finalizePaymentIntent = async ({ paymentIntentId }) => {
   }
 
   if (order) {
+    const cardSummary = extractCardSummary(intent);
+    const { paymentMethod, stripeMeta } = applyCardSummaryToOrder({
+      order,
+      cardSummary,
+      stripeData: {
+        ...(order.integrationDetails?.stripe || {}),
+        eventType: intent?.status,
+        paymentIntentId,
+        lastSyncAt: new Date().toISOString(),
+        wooUpdate,
+      },
+    });
     const updated = {
       ...order,
       status: intent?.status === 'succeeded' ? 'paid' : order.status,
       paymentIntentId,
       wooOrderId: wooOrderId || order.wooOrderId,
+      paymentMethod: paymentMethod || order.paymentMethod || 'Card on file',
       integrationDetails: {
         ...(order.integrationDetails || {}),
         stripe: {
-          ...(order.integrationDetails?.stripe || {}),
-          eventType: intent?.status,
-          paymentIntentId,
-          lastSyncAt: new Date().toISOString(),
-          wooUpdate,
+          ...stripeMeta,
         },
       },
       integrations: {
@@ -80,18 +146,27 @@ const handleStripeWebhook = async ({ payload, signature }) => {
     }
 
     if (order) {
+      const cardSummary = extractCardSummary(intent);
+      const { paymentMethod, stripeMeta } = applyCardSummaryToOrder({
+        order,
+        cardSummary,
+        stripeData: {
+          ...(order.integrationDetails?.stripe || {}),
+          eventType: event.type,
+          paymentIntentId: intent.id,
+          lastWebhookAt: new Date().toISOString(),
+          wooUpdate,
+        },
+      });
       const updated = {
         ...order,
         status: 'paid',
         paymentIntentId: intent.id,
+        paymentMethod: paymentMethod || order.paymentMethod || 'Card on file',
         integrationDetails: {
           ...(order.integrationDetails || {}),
           stripe: {
-            ...(order.integrationDetails?.stripe || {}),
-            eventType: event.type,
-            paymentIntentId: intent.id,
-            lastWebhookAt: new Date().toISOString(),
-            wooUpdate,
+            ...stripeMeta,
           },
         },
         integrations: {

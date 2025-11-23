@@ -50,6 +50,29 @@ interface AccountOrderLineItem {
   sku?: string | null;
 }
 
+interface AccountOrderAddress {
+  name?: string | null;
+  company?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+interface AccountShippingEstimate {
+  carrierId?: string | null;
+  serviceCode?: string | null;
+  serviceType?: string | null;
+  estimatedDeliveryDays?: number | null;
+  deliveryDateGuaranteed?: string | null;
+  rate?: number | null;
+  currency?: string | null;
+}
+
 interface AccountOrderSummary {
   id: string;
   number?: string | null;
@@ -58,10 +81,15 @@ interface AccountOrderSummary {
   total?: number | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  source: 'local' | 'woocommerce';
+  source: 'local' | 'woocommerce' | 'peppro';
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
+  shippingAddress?: AccountOrderAddress | null;
+  billingAddress?: AccountOrderAddress | null;
+  shippingEstimate?: AccountShippingEstimate | null;
+  shippingTotal?: number | null;
+  physicianCertified?: boolean | null;
 }
 
 interface HeaderProps {
@@ -112,6 +140,69 @@ const formatCurrency = (amount?: number | null, currency = 'USD') => {
   } catch {
     return `$${amount.toFixed(2)}`;
   }
+};
+
+const titleCase = (value?: string | null) => {
+  if (!value) return null;
+  const spaced = value.replace(/[_-]+/g, ' ').trim();
+  if (!spaced) return null;
+  return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatExpectedDelivery = (order: AccountOrderSummary) => {
+  const estimate = order.shippingEstimate;
+  if (!estimate) {
+    return null;
+  }
+  if (estimate.deliveryDateGuaranteed) {
+    const date = new Date(estimate.deliveryDateGuaranteed);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  }
+  if (estimate.estimatedDeliveryDays && Number.isFinite(estimate.estimatedDeliveryDays)) {
+    const baseDate = order.createdAt ? new Date(order.createdAt) : new Date();
+    if (!Number.isNaN(baseDate.getTime())) {
+      const projected = new Date(baseDate.getTime());
+      projected.setDate(projected.getDate() + Number(estimate.estimatedDeliveryDays));
+      return projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  }
+  return null;
+};
+
+const formatShippingMethod = (estimate?: AccountShippingEstimate | null) => {
+  if (!estimate) {
+    return null;
+  }
+  return titleCase(estimate.serviceType || estimate.serviceCode) || null;
+};
+
+const renderAddressLines = (address?: AccountOrderAddress | null) => {
+  if (!address) {
+    return <p className="text-sm text-slate-500">No address available.</p>;
+  }
+  const lines = [
+    address.name,
+    address.company,
+    [address.addressLine1, address.addressLine2].filter(Boolean).join(' ').trim() || null,
+    [address.city, address.state, address.postalCode].filter(Boolean).join(', ').replace(/, ,/g, ', ').replace(/^,/, '').trim() || null,
+    address.country,
+    address.phone ? `Phone: ${address.phone}` : null,
+    address.email ? `Email: ${address.email}` : null,
+  ].filter((line) => typeof line === 'string' && line.trim().length > 0);
+
+  if (!lines.length) {
+    return <p className="text-sm text-slate-500">No address available.</p>;
+  }
+
+  return (
+    <div className="text-sm text-slate-700 space-y-1 text-left">
+      {lines.map((line, index) => (
+        <p key={`${line}-${index}`}>{line}</p>
+      ))}
+    </div>
+  );
 };
 
 const humanizeOrderStatus = (status?: string | null) => {
@@ -951,6 +1042,7 @@ export function Header({
           const orderNumberLabel = order.number ? `Order #${order.number}` : order.id ? `Order #${order.id}` : 'Order';
           const itemCount = order.lineItems?.length ?? 0;
           const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
+          const expectedDelivery = formatExpectedDelivery(order);
           
           return (
             <div
@@ -974,6 +1066,12 @@ export function Header({
                     <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
                     <p className="text-sm font-semibold text-slate-900">{status}</p>
                   </div>
+                  {expectedDelivery && (
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
+                      <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <button
@@ -1068,20 +1166,130 @@ export function Header({
 
   const renderOrderDetails = () => {
     if (!selectedOrder) return null;
+    const expectedDelivery = formatExpectedDelivery(selectedOrder);
+    const shippingMethod = formatShippingMethod(selectedOrder.shippingEstimate);
+    const lineItems = selectedOrder.lineItems || [];
+    const stripeMeta = (selectedOrder.integrationDetails as any)?.stripe || {};
+    const paymentDisplay = (() => {
+      const raw = selectedOrder.paymentMethod || null;
+      if (raw && !/stripe onsite/i.test(raw)) {
+        return raw;
+      }
+      if (stripeMeta?.cardLast4) {
+        return `${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`;
+      }
+      return raw;
+    })();
 
     return (
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] p-6 text-center space-y-4">
-        <p className="text-sm text-slate-700">
-          Order detail redesign in progress for Order #{selectedOrder.number || selectedOrder.id}.
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="squircle-sm glass btn-hover-lighter"
-          onClick={() => setSelectedOrder(null)}
-        >
-          ← Back to orders
-        </Button>
+      <div className="space-y-6">
+        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden">
+          <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9] flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1 text-left">
+              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Order</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {selectedOrder.number ? `Order #${selectedOrder.number}` : selectedOrder.id}
+              </p>
+            </div>
+            <div className="space-y-1 text-right">
+              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Status</p>
+              <p className="text-base font-semibold text-slate-900">{humanizeOrderStatus(selectedOrder.status)}</p>
+            </div>
+          </div>
+          <div className="px-6 py-5 grid gap-4 md:grid-cols-3 text-sm text-slate-700">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Placed</p>
+              <p className="text-sm font-semibold text-slate-900">{formatOrderDate(selectedOrder.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
+              <p className="text-sm font-semibold text-slate-900">
+                {formatCurrency(selectedOrder.total ?? null, selectedOrder.currency || 'USD')}
+              </p>
+            </div>
+            {expectedDelivery && (
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
+                <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-3 text-left">
+            <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
+            {renderAddressLines(selectedOrder.shippingAddress)}
+            <div className="text-sm text-slate-700 space-y-1">
+              {shippingMethod && (
+                <p>
+                  <span className="font-semibold">Service:</span> {shippingMethod}
+                </p>
+              )}
+              {typeof selectedOrder.shippingTotal === 'number' && (
+                <p>
+                  <span className="font-semibold">Shipping:</span>{' '}
+                  {formatCurrency(selectedOrder.shippingTotal, selectedOrder.currency || 'USD')}
+                </p>
+              )}
+              {expectedDelivery && (
+                <p>
+                  <span className="font-semibold">Expected:</span> {expectedDelivery}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-3 text-left">
+            <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
+            {renderAddressLines(selectedOrder.billingAddress || selectedOrder.shippingAddress)}
+            <div className="text-sm text-slate-700 space-y-1">
+              {paymentDisplay && (
+                <p>
+                  <span className="font-semibold">Payment:</span> {paymentDisplay}
+                </p>
+              )}
+              {selectedOrder.physicianCertified && (
+                <p className="text-green-700 font-semibold">Physician certification acknowledged</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-4 text-left">
+          <h4 className="text-base font-semibold text-slate-900">Items</h4>
+          {lineItems.length > 0 ? (
+            <div className="space-y-4">
+              {lineItems.map((line, idx) => (
+                <div key={line.id || `${line.sku}-${idx}`} className="flex items-start justify-between text-sm">
+                  <div className="flex-1 pr-4">
+                    <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
+                    <p className="text-slate-600">
+                      Qty: {line.quantity ?? '—'}
+                      {line.sku ? ` • SKU: ${line.sku}` : ''}
+                    </p>
+                  </div>
+                  <p className="font-semibold text-slate-900">
+                    {formatCurrency(line.total ?? line.price ?? null, selectedOrder.currency || 'USD')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">No line items available for this order.</p>
+          )}
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle-sm glass btn-hover-lighter"
+            onClick={() => setSelectedOrder(null)}
+          >
+            ← Back to orders
+          </Button>
+        </div>
       </div>
     );
   };
@@ -1127,12 +1335,6 @@ export function Header({
             </div>
           )}
 
-        {accountOrdersLoading && !cachedAccountOrders.length && (
-          <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-[rgb(95,179,249)]" />
-            <p className="text-sm text-slate-600">Loading your orders...</p>
-          </div>
-        )}
       </div>
 
       {/* Orders Content */}

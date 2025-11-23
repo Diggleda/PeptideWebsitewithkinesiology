@@ -132,6 +132,29 @@ interface AccountOrderLineItem {
   sku?: string | null;
 }
 
+interface AccountOrderAddress {
+  name?: string | null;
+  company?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+interface AccountShippingEstimate {
+  carrierId?: string | null;
+  serviceCode?: string | null;
+  serviceType?: string | null;
+  estimatedDeliveryDays?: number | null;
+  deliveryDateGuaranteed?: string | null;
+  rate?: number | null;
+  currency?: string | null;
+}
+
 interface AccountOrderSummary {
   id: string;
   number?: string | null;
@@ -140,11 +163,16 @@ interface AccountOrderSummary {
   total?: number | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  source: 'local' | 'woocommerce';
+  source: 'local' | 'woocommerce' | 'peppro';
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
   integrationDetails?: Record<string, any> | null;
+  shippingAddress?: AccountOrderAddress | null;
+  billingAddress?: AccountOrderAddress | null;
+  shippingEstimate?: AccountShippingEstimate | null;
+  shippingTotal?: number | null;
+  physicianCertified?: boolean | null;
 }
 
 const WOO_PLACEHOLDER_IMAGE =
@@ -177,6 +205,55 @@ const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
       };
     })
     .filter((line) => line.name);
+};
+
+const normalizeStringField = (value: unknown) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
+  if (!address || typeof address !== 'object') {
+    return null;
+  }
+  const first = normalizeStringField(address.first_name) || normalizeStringField(address.firstName);
+  const last = normalizeStringField(address.last_name) || normalizeStringField(address.lastName);
+  const fallbackName = [first, last].filter(Boolean).join(' ').trim() || null;
+
+  return {
+    name: normalizeStringField(address.name) || fallbackName,
+    company: normalizeStringField(address.company),
+    addressLine1: normalizeStringField(address.addressLine1) || normalizeStringField(address.address_1),
+    addressLine2: normalizeStringField(address.addressLine2) || normalizeStringField(address.address_2),
+    city: normalizeStringField(address.city),
+    state: normalizeStringField(address.state),
+    postalCode: normalizeStringField(address.postalCode) || normalizeStringField(address.postcode),
+    country: normalizeStringField(address.country),
+    phone: normalizeStringField(address.phone),
+    email: normalizeStringField(address.email),
+  };
+};
+
+const normalizeShippingEstimateField = (estimate: any): AccountShippingEstimate | null => {
+  if (!estimate || typeof estimate !== 'object') {
+    return null;
+  }
+  const normalized = {
+    carrierId: estimate.carrierId || estimate.carrier_id || null,
+    serviceCode: estimate.serviceCode || estimate.service_code || null,
+    serviceType: estimate.serviceType || estimate.service_code || null,
+    estimatedDeliveryDays: Number.isFinite(Number(estimate.estimatedDeliveryDays))
+      ? Number(estimate.estimatedDeliveryDays)
+      : null,
+    deliveryDateGuaranteed: estimate.deliveryDateGuaranteed || estimate.delivery_date || null,
+    rate: coerceNumber(estimate.rate) ?? null,
+    currency: typeof estimate.currency === 'string' ? estimate.currency : null,
+  };
+  const hasData = Object.values(normalized).some((value) => value !== null && value !== undefined);
+  return hasData ? normalized : null;
 };
 
 const normalizeAccountOrdersResponse = (
@@ -214,6 +291,11 @@ const normalizeAccountOrdersResponse = (
         integrations: order?.integrations || null,
         paymentMethod: order?.paymentMethod || null,
         integrationDetails: order?.integrationDetails || null,
+        shippingAddress: sanitizeOrderAddress(order?.shippingAddress || order?.shipping),
+        billingAddress: sanitizeOrderAddress(order?.billingAddress || order?.billing),
+        shippingEstimate: normalizeShippingEstimateField(order?.shippingEstimate),
+        shippingTotal: coerceNumber(order?.shippingTotal ?? order?.shipping_total) ?? null,
+        physicianCertified: order?.physicianCertified === true,
       });
     });
   }
@@ -234,6 +316,11 @@ const normalizeAccountOrdersResponse = (
         integrations: order?.integrations || null,
         paymentMethod: order?.paymentMethod || null,
         integrationDetails: order?.integrationDetails || null,
+        shippingAddress: sanitizeOrderAddress(order?.shippingAddress),
+        billingAddress: sanitizeOrderAddress(order?.billingAddress),
+        shippingEstimate: normalizeShippingEstimateField(order?.shippingEstimate),
+        shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
+        physicianCertified: order?.physicianCertified === true,
       });
     });
   }
@@ -576,6 +663,14 @@ const parseVariantBulkPricing = (variation: WooVariation, basePrice: number): Bu
   return parsePepproTiersFromMeta(meta as WooMeta[], basePrice);
 };
 
+const parseWeightOz = (value?: string | null) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
 const mapWooProductToProduct = (product: WooProduct, productVariations: WooVariation[] = []): Product => {
   const imageSources = (product.images ?? [])
     .map((image) => image?.src)
@@ -634,6 +729,8 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
   const parentBulkPricing = bulkPricingMeta ? parseBulkPricingValue(bulkPricingMeta.value) : [];
   let variantDerivedBulkPricing: BulkPricingTier[] = [];
 
+  const baseProductWeight = parseWeightOz(product.weight);
+
   const variantList: ProductVariant[] = (productVariations ?? [])
     .map((variation) => {
       const parsedVariantPrice = parsePrice(variation.price) ?? parsePrice(variation.regular_price);
@@ -652,6 +749,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
       if (!variantDerivedBulkPricing.length && variantBulk.length) {
         variantDerivedBulkPricing = variantBulk;
       }
+      const weightOz = parseWeightOz(variation.weight) ?? baseProductWeight ?? null;
       return {
         id: variantId,
         label,
@@ -662,6 +760,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
         attributes,
         image: variation.image?.src ?? undefined,
         description: stripHtml(variation.description ?? '') || undefined,
+        weightOz,
       };
     })
     .filter((variant): variant is ProductVariant => Number.isFinite(variant.price));
@@ -720,6 +819,7 @@ const mapWooProductToProduct = (product: WooProduct, productVariations: WooVaria
     type: product.type ?? 'General',
     isSubscription: isSubscriptionProduct,
     description: cleanedDescription || undefined,
+    weightOz: baseProductWeight ?? null,
     variants: hasVariants ? variantList : undefined,
     hasVariants,
     defaultVariantId,
@@ -734,11 +834,15 @@ const toCardProduct = (product: Product): CardProduct => {
         id: variant.id,
         strength: variant.label || variant.attributes.map((attr) => attr.value).join(' • ') || 'Option',
         basePrice: variant.price,
+        image: variant.image,
+        weightOz: variant.weightOz ?? null,
       }))
     : [{
         id: product.id,
         strength: product.dosage || 'Standard',
         basePrice: product.price,
+        image: product.image,
+        weightOz: product.weightOz ?? null,
       }];
 
   return {
@@ -746,8 +850,10 @@ const toCardProduct = (product: Product): CardProduct => {
     name: product.name,
     category: product.category,
     image: product.image,
+    images: product.images,
     inStock: product.inStock,
     manufacturer: product.manufacturer,
+    weightOz: product.weightOz ?? null,
     variations,
     bulkPricingTiers: product.bulkPricingTiers ?? [],
   };
@@ -2389,12 +2495,13 @@ const filteredDoctorReferrals = useMemo(() => {
     setSearchQuery(query);
   };
 
-  const handleCheckout = async (shipping?: {
+  const handleCheckout = async (options?: {
     shippingAddress: any;
     shippingRate: any;
     shippingTotal: number;
+    physicianCertificationAccepted?: boolean;
   }) => {
-    console.debug('[Checkout] Attempt', { items: cartItems.length, shipping });
+    console.debug('[Checkout] Attempt', { items: cartItems.length, shipping: options });
     if (cartItems.length === 0) {
       // toast.error('Your cart is empty');
       return;
@@ -2412,14 +2519,22 @@ const filteredDoctorReferrals = useMemo(() => {
     }));
 
     const itemTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const total = itemTotal + (shipping?.shippingTotal || 0);
+    const total = itemTotal + (options?.shippingTotal || 0);
 
     try {
-      const response = await ordersAPI.create(items, total, undefined, {
-        address: shipping?.shippingAddress,
-        estimate: shipping?.shippingRate,
-        shippingTotal: shipping?.shippingTotal ?? null,
-      });
+      const response = await ordersAPI.create(
+        items,
+        total,
+        undefined,
+        {
+          address: options?.shippingAddress,
+          estimate: options?.shippingRate,
+          shippingTotal: options?.shippingTotal ?? null,
+        },
+        {
+          physicianCertification: options?.physicianCertificationAccepted === true,
+        },
+      );
       await loadAccountOrders().catch(() => undefined);
       return response;
     } catch (error: any) {

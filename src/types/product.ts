@@ -13,6 +13,7 @@ export interface ProductVariant {
   attributes: ProductVariantAttribute[];
   image?: string;
   description?: string;
+  weightOz?: number | null;
 }
 
 export interface BulkPricingTier {
@@ -37,6 +38,7 @@ export interface Product {
   type?: string;
   isSubscription?: boolean;
   description?: string;
+  weightOz?: number | null;
   variants?: ProductVariant[];
   hasVariants?: boolean;
   defaultVariantId?: string;

@@ -11,6 +11,7 @@ export interface ProductVariation {
   id: string;
   strength: string; // e.g., "10mg", "20mg", "50mg"
   basePrice: number;
+  image?: string;
 }
 
 export interface BulkPricingTier {
@@ -23,6 +24,7 @@ export interface Product {
   name: string;
   category: string;
   image: string;
+  images?: string[];
   inStock: boolean;
   manufacturer: string;
   variations: ProductVariation[];
@@ -109,6 +111,18 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}
     </>
   );
+
+  const galleryImages = useMemo(() => {
+    const baseImages = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image];
+    if (selectedVariation?.image) {
+      return [selectedVariation.image, ...baseImages].filter(
+        (src, index, arr) => Boolean(src) && arr.indexOf(src) === index,
+      );
+    }
+    return baseImages;
+  }, [product.images, product.image, selectedVariation?.image]);
+
+  const primaryImage = galleryImages[0] || product.image;
 
   const variationSelector =
     product.variations && product.variations.length > 0 ? (
@@ -261,6 +275,8 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
     </Button>
   );
 
+  const baseImageFrameClass = `product-image-frame${isListLayout ? '' : ' product-image-frame--flush'}`;
+
   if (isListLayout) {
     const variationCount = product.variations?.length ?? 0;
     const variationSummary =
@@ -271,15 +287,15 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
       <Card className="glass squircle-sm overflow-hidden">
         <CardContent className="p-0">
           <div className="flex flex-col gap-6 px-5 py-6 lg:flex-row lg:items-center lg:gap-8">
-            <div className="flex w-full max-w-full flex-shrink-0 items-center justify-center rounded-2xl bg-white/85 p-4 shadow-inner lg:w-64">
-              <div className="relative w-full max-w-[220px]">
+            <div className="flex w-full max-w-full flex-shrink-0 items-center justify-center lg:w-64">
+              <div className={`${baseImageFrameClass} w-full max-w-[220px]`}>
                 <ImageWithFallback
-                  src={product.image}
+                  src={primaryImage}
                   alt={product.name}
-                  className="w-full object-contain drop-shadow-xl"
+                  className="product-image-frame__img drop-shadow"
                 />
                 {!product.inStock && (
-                  <div className="absolute inset-0 bg-gray-900/40 flex items-center justify-center rounded-2xl">
+                  <div className="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-gray-900/35">
                     <Badge variant="destructive" className="squircle-sm">
                       Out of Stock
                     </Badge>
@@ -366,14 +382,14 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
   return (
     <Card className="group overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
       <CardContent className="p-0">
-        <div className="relative aspect-square overflow-hidden">
+        <div className={baseImageFrameClass}>
           <ImageWithFallback
-            src={product.image}
+            src={primaryImage}
             alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="product-image-frame__img"
           />
           {!product.inStock && (
-            <div className="absolute inset-0 bg-gray-900/50 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-gray-900/35">
               <Badge variant="destructive" className="squircle-sm">
                 Out of Stock
               </Badge>

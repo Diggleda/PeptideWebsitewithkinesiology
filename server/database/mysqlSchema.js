@@ -22,6 +22,26 @@ const STATEMENTS = [
         ON DELETE CASCADE
     ) CHARACTER SET utf8mb4
   `,
+  `
+    CREATE TABLE IF NOT EXISTS peppro_orders (
+      id VARCHAR(64) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL,
+      woo_order_id BIGINT NULL,
+      shipstation_order_id VARCHAR(64) NULL,
+      total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      shipping_carrier VARCHAR(120) NULL,
+      shipping_service VARCHAR(120) NULL,
+      physician_certified TINYINT(1) NOT NULL DEFAULT 0,
+      status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      payload LONGTEXT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      INDEX idx_peppro_orders_user (user_id),
+      INDEX idx_peppro_orders_woo (woo_order_id),
+      INDEX idx_peppro_orders_shipstation (shipstation_order_id)
+    ) CHARACTER SET utf8mb4
+  `,
 ];
 
 const ensureSchema = async () => {

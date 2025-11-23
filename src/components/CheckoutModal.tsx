@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useLayoutEffect,
+} from 'react';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { Button } from './ui/button';
@@ -58,6 +64,39 @@ type ShippingRate = {
   deliveryDateGuaranteed: string | null;
   rate: number | null;
   currency: string | null;
+  addressFingerprint?: string | null;
+};
+
+const normalizeAddressField = (value?: string | null) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value).trim();
+};
+
+const isAddressComplete = (address: ShippingAddress) =>
+  Boolean(
+    normalizeAddressField(address.addressLine1)
+    && normalizeAddressField(address.city)
+    && normalizeAddressField(address.state)
+    && normalizeAddressField(address.postalCode)
+    && normalizeAddressField(address.country)
+  );
+
+const toTitleCase = (value: string) => value.replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatShippingServiceLabel = (rate: ShippingRate) => {
+  const rawLabel = rate.serviceType || rate.serviceCode || 'Service';
+  const cleaned = rawLabel.replace(/[_-]+/g, ' ').trim();
+  const titled = cleaned ? toTitleCase(cleaned) : 'Service';
+  if (rate.carrierId) {
+    const carrier = toTitleCase(rate.carrierId.replace(/[_-]+/g, ' ').trim());
+    return `${carrier} — ${titled}`;
+  }
+  return titled;
 };
 
 interface CheckoutModalProps {
@@ -68,6 +107,7 @@ interface CheckoutModalProps {
     shippingAddress: ShippingAddress;
     shippingRate: ShippingRate | null;
     shippingTotal: number;
+    physicianCertificationAccepted: boolean;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -146,6 +186,7 @@ export function CheckoutModal({
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
   const checkoutStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastQuotedAddressRef = useRef<string | null>(null);
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
     name: defaultShippingAddress?.name || physicianName || customerName || '',
     addressLine1: defaultShippingAddress?.addressLine1 || '',
@@ -159,6 +200,40 @@ export function CheckoutModal({
   const [shippingRateError, setShippingRateError] = useState<string | null>(null);
   const [selectedRateIndex, setSelectedRateIndex] = useState<number | null>(null);
   const [isFetchingRates, setIsFetchingRates] = useState(false);
+  const checkoutScrollRef = useRef<HTMLDivElement | null>(null);
+  const checkoutScrollPositionRef = useRef(0);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ open?: boolean }>;
+      setLegalModalOpen(Boolean(custom.detail?.open));
+    };
+    window.addEventListener('peppro:legal-state', handler);
+    return () => window.removeEventListener('peppro:legal-state', handler);
+  }, []);
+  const storeScrollPosition = useCallback(() => {
+    if (checkoutScrollRef.current) {
+      checkoutScrollPositionRef.current = checkoutScrollRef.current.scrollTop;
+    }
+  }, []);
+
+  const restoreScrollPosition = useCallback(() => {
+    if (checkoutScrollRef.current) {
+      checkoutScrollRef.current.scrollTop = checkoutScrollPositionRef.current;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!legalModalOpen) {
+      restoreScrollPosition();
+    }
+  }, [legalModalOpen, restoreScrollPosition]);
+
+  const openLegalDocument = useCallback((key: 'terms' | 'shipping') => {
+    storeScrollPosition();
+    window.dispatchEvent(new CustomEvent('peppro:open-legal', { detail: { key, preserveDialogs: true } }));
+  }, [storeScrollPosition]);
 
   const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
     const basePrice = variant?.price ?? product.price;
@@ -200,6 +275,17 @@ export function CheckoutModal({
     : 0;
   const taxAmount = 0;
   const total = subtotal + shippingCost;
+  const shippingAddressSignature = [
+    shippingAddress.addressLine1,
+    shippingAddress.addressLine2,
+    shippingAddress.city,
+    shippingAddress.state,
+    shippingAddress.postalCode,
+    shippingAddress.country,
+  ]
+    .map((value) => normalizeAddressField(value).toUpperCase())
+    .join('|');
+  const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = stripeReady
     ? cardholderName.trim().length >= 2
     : Boolean(
@@ -208,8 +294,8 @@ export function CheckoutModal({
       && isValidCvv(cvv)
       && cardholderName.trim().length >= 2,
     );
-  // Temporarily allow checkout without requiring a selected shipping rate.
-  const meetsCheckoutRequirements = termsAccepted && isPaymentValid;
+  const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
+  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate;
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
   let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
@@ -223,6 +309,12 @@ export function CheckoutModal({
   // No-op referral handling removed
 
   const handleGetRates = async () => {
+    if (!shippingAddressComplete) {
+      const message = 'Enter the full shipping address before requesting shipping rates.';
+      setShippingRateError(message);
+      toast.error(message);
+      return;
+    }
     setShippingRateError(null);
     setIsFetchingRates(true);
     try {
@@ -231,13 +323,14 @@ export function CheckoutModal({
         items: cartItems.map((item) => ({
           name: item.product.name,
           quantity: item.quantity,
-          weightOz: (item.product as any)?.weightOz ?? item.variant?.weightOz ?? null,
+          weightOz: item.variant?.weightOz ?? (item.product as any)?.weightOz ?? null,
         })),
       };
       const response = await shippingAPI.getRates(payload);
       const rates = Array.isArray(response?.rates) ? response.rates : [];
       setShippingRates(rates);
       setSelectedRateIndex(rates.length > 0 ? 0 : null);
+      lastQuotedAddressRef.current = rates.length > 0 ? shippingAddressSignature : null;
       if (!rates.length) {
         setShippingRateError('No shipping rates available for this address.');
       }
@@ -266,6 +359,7 @@ export function CheckoutModal({
         shippingAddress,
         shippingRate: selectedRateIndex != null && shippingRates ? shippingRates[selectedRateIndex] : null,
         shippingTotal: shippingCost,
+        physicianCertificationAccepted: termsAccepted,
       });
       const stripeInfo = result && typeof result === 'object'
         ? result?.integrations?.stripe
@@ -357,8 +451,12 @@ export function CheckoutModal({
   };
 
   const handlePrimaryAction = async () => {
-    if (!meetsCheckoutRequirements) {
+    if (!termsAccepted || !isPaymentValid) {
       toast.error('Enter valid payment details and accept the terms to continue.');
+      return;
+    }
+    if (!hasSelectedShippingRate) {
+      toast.error('Select a shipping option before completing your purchase.');
       return;
     }
     if (!isAuthenticated) {
@@ -483,6 +581,20 @@ export function CheckoutModal({
     });
   }, [cartItems]);
 
+  useEffect(() => {
+    if (!shippingRates || shippingRates.length === 0) {
+      lastQuotedAddressRef.current = null;
+      return;
+    }
+    if (lastQuotedAddressRef.current === shippingAddressSignature) {
+      return;
+    }
+    lastQuotedAddressRef.current = null;
+    setShippingRates(null);
+    setSelectedRateIndex(null);
+    setShippingRateError('Shipping address changed. Please fetch shipping rates again.');
+  }, [shippingAddressSignature, shippingRates]);
+
   const isCartEmpty = cartItems.length === 0;
 
   if (isCartEmpty) {
@@ -491,10 +603,15 @@ export function CheckoutModal({
 
   return (
     <Dialog
+      modal={!legalModalOpen}
       open={isOpen}
       onOpenChange={(open) => {
         console.debug('[CheckoutModal] Dialog open change', { open });
         if (!open) {
+          if (legalModalOpen) {
+            console.debug('[CheckoutModal] Close request blocked by legal modal');
+            return;
+          }
           onClose();
         }
       }}
@@ -502,6 +619,7 @@ export function CheckoutModal({
       <DialogContent
         className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
         style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+        data-legal-overlay={legalModalOpen ? 'true' : 'false'}
       >
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">
@@ -519,7 +637,7 @@ export function CheckoutModal({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-6" ref={checkoutScrollRef}>
           <div className="space-y-6 pt-6">
             <>
               {/* Cart Items */}
@@ -754,7 +872,7 @@ export function CheckoutModal({
                     type="button"
                     variant="secondary"
                     onClick={handleGetRates}
-                    disabled={isFetchingRates || cartItems.length === 0}
+                    disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
                     className="squircle-sm"
                   >
                     {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
@@ -764,38 +882,39 @@ export function CheckoutModal({
                 {shippingRates && shippingRates.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
-                    <div className="space-y-2">
+                    <select
+                      className="shipping-rate-select"
+                      value={selectedRateIndex != null ? String(selectedRateIndex) : ''}
+                      onChange={(event) => {
+                        const idx = event.target.value ? Number(event.target.value) : null;
+                        setSelectedRateIndex(idx);
+                      }}
+                    >
+                      <option value="" disabled>
+                        Choose a shipping option
+                      </option>
                       {shippingRates.map((rate, index) => (
-                        <label
-                          key={`${rate.serviceCode}-${index}`}
-                          className="flex items-center justify-between rounded-md border p-3 cursor-pointer hover:border-[rgb(95,179,249)]"
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="radio"
-                              name="shipping-rate"
-                              checked={selectedRateIndex === index}
-                              onChange={() => setSelectedRateIndex(index)}
-                            />
-                            <div>
-                              <p className="font-medium">
-                                {rate.serviceType || rate.serviceCode || 'Service'} – ${Number(rate.rate || 0).toFixed(2)}
-                              </p>
-                              {rate.estimatedDeliveryDays != null && (
-                                <p className="text-xs text-slate-600">
-                                  Est. {rate.estimatedDeliveryDays} business day{rate.estimatedDeliveryDays === 1 ? '' : 's'}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right text-sm text-slate-600">
-                            {rate.deliveryDateGuaranteed && (
-                              <p>Guaranteed by {new Date(rate.deliveryDateGuaranteed).toLocaleDateString()}</p>
-                            )}
-                          </div>
-                        </label>
+                        <option key={`${rate.serviceCode}-${index}`} value={index}>
+                          {formatShippingServiceLabel(rate)} — ${Number(rate.rate || 0).toFixed(2)}
+                        </option>
                       ))}
-                    </div>
+                    </select>
+                    {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
+                      <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        {shippingRates[selectedRateIndex].estimatedDeliveryDays != null && (
+                          <p>
+                            Est. {shippingRates[selectedRateIndex].estimatedDeliveryDays} business day
+                            {shippingRates[selectedRateIndex].estimatedDeliveryDays === 1 ? '' : 's'}
+                          </p>
+                        )}
+                        {shippingRates[selectedRateIndex].deliveryDateGuaranteed && (
+                          <p>
+                            Guaranteed by{' '}
+                            {new Date(shippingRates[selectedRateIndex].deliveryDateGuaranteed!).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -908,19 +1027,40 @@ export function CheckoutModal({
                 )}
               </div>
 
-              <div className="flex items-start gap-3 pt-2">
+              <div className="flex items-center gap-3 pt-2">
                 <input
                   type="checkbox"
                   id="physician-terms"
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
+                  className="brand-checkbox"
                   checked={termsAccepted}
                   onChange={(event) => setTermsAccepted(event.target.checked)}
                 />
-                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug">
+                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
                   I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro's{' '}
-                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[rgb(95,179,249)] underline">Terms of Service</a>
+                  <button
+                    type="button"
+                    className="legal-inline-link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openLegalDocument('terms');
+                    }}
+                  >
+                    Terms of Service
+                  </button>
                   {' '}and{' '}
-                  <a href="/shipping" target="_blank" rel="noopener noreferrer" className="text-[rgb(95,179,249)] underline">Shipping Policy</a>.
+                  <button
+                    type="button"
+                    className="legal-inline-link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openLegalDocument('shipping');
+                    }}
+                  >
+                    Shipping Policy
+                  </button>
+                  .
                 </label>
               </div>
 

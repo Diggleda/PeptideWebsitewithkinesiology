@@ -103,27 +103,67 @@ const buildLineItems = (items) => items.map((item) => ({
   meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
 }));
 
-const buildOrderPayload = ({ order, customer }) => ({
-  status: 'pending',
-  created_via: 'peppro_app',
-  customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
-  set_paid: false,
-  line_items: buildLineItems(order.items || []),
-  meta_data: [
+const buildOrderPayload = ({ order, customer }) => {
+  const shippingAddress = order.shippingAddress || null;
+  const shippingTotal = typeof order.shippingTotal === 'number' && Number.isFinite(order.shippingTotal)
+    ? Number(order.shippingTotal)
+    : 0;
+
+  const metaData = [
     { key: 'peppro_order_id', value: order.id },
     { key: 'peppro_total', value: order.total },
     { key: 'peppro_created_at', value: order.createdAt },
     { key: 'peppro_origin', value: 'PepPro Web Checkout' },
-    // Attempt to keep WooCommerce order number aligned with PepPro order id for easier tracking.
     { key: '_order_number', value: order.id },
     { key: '_order_number_formatted', value: order.id },
     { key: 'peppro_display_order_id', value: order.id },
-  ],
-  billing: {
-    first_name: customer.name || 'PepPro',
-    email: customer.email || 'orders@peppro.example',
-  },
-});
+  ];
+
+  if (shippingTotal > 0) {
+    metaData.push({ key: 'peppro_shipping_total', value: shippingTotal });
+  }
+
+  if (order.shippingEstimate) {
+    metaData.push({ key: 'peppro_shipping_estimate', value: JSON.stringify(order.shippingEstimate) });
+  }
+
+  const payload = {
+    status: 'pending',
+    created_via: 'peppro_app',
+    customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
+    set_paid: false,
+    line_items: buildLineItems(order.items || []),
+    meta_data: metaData,
+    billing: {
+      first_name: customer.name || 'PepPro',
+      email: customer.email || 'orders@peppro.example',
+    },
+  };
+
+  if (shippingAddress) {
+    payload.shipping = {
+      first_name: shippingAddress.name || customer.name || 'PepPro',
+      address_1: shippingAddress.addressLine1 || '',
+      address_2: shippingAddress.addressLine2 || '',
+      city: shippingAddress.city || '',
+      state: shippingAddress.state || '',
+      postcode: shippingAddress.postalCode || '',
+      country: shippingAddress.country || 'US',
+    };
+  }
+
+  if (shippingTotal > 0) {
+    payload.shipping_lines = [
+      {
+        method_id: 'peppro_shipstation',
+        method_title: 'PepPro Shipping',
+        total: shippingTotal.toFixed(2),
+      },
+    ];
+  }
+
+  return payload;
+};
 
 const createDraftId = () => {
   if (typeof crypto.randomUUID === 'function') {
@@ -208,11 +248,63 @@ const sanitizeWooLineItems = (items = []) => {
   }));
 };
 
+const mapWooAddress = (address = {}) => {
+  if (!address || typeof address !== 'object') {
+    return null;
+  }
+  const first = typeof address.first_name === 'string' ? address.first_name.trim() : '';
+  const last = typeof address.last_name === 'string' ? address.last_name.trim() : '';
+  const fullName = [first, last].filter(Boolean).join(' ').trim() || null;
+  return {
+    name: fullName,
+    company: typeof address.company === 'string' ? address.company : null,
+    addressLine1: typeof address.address_1 === 'string' ? address.address_1 : null,
+    addressLine2: typeof address.address_2 === 'string' ? address.address_2 : null,
+    city: typeof address.city === 'string' ? address.city : null,
+    state: typeof address.state === 'string' ? address.state : null,
+    postalCode: typeof address.postcode === 'string' ? address.postcode : null,
+    country: typeof address.country === 'string' ? address.country : null,
+    phone: typeof address.phone === 'string' ? address.phone : null,
+    email: typeof address.email === 'string' ? address.email : null,
+  };
+};
+
+const parseShippingEstimateMeta = (metaData = []) => {
+  const entry = metaData.find((meta) => meta?.key === 'peppro_shipping_estimate');
+  if (!entry || entry.value === undefined || entry.value === null) {
+    return null;
+  }
+  let value = entry.value;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to parse shipping estimate metadata');
+      return null;
+    }
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return {
+    carrierId: value.carrierId || value.carrier_id || null,
+    serviceCode: value.serviceCode || value.service_code || null,
+    serviceType: value.serviceType || value.service_code || null,
+    estimatedDeliveryDays: Number.isFinite(Number(value.estimatedDeliveryDays))
+      ? Number(value.estimatedDeliveryDays)
+      : null,
+    deliveryDateGuaranteed: value.deliveryDateGuaranteed || value.delivery_date || null,
+    rate: Number.isFinite(Number(value.rate)) ? Number(value.rate) : null,
+    currency: value.currency || 'USD',
+  };
+};
+
 const mapWooOrderSummary = (order) => {
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
   const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
+  const shippingEstimate = parseShippingEstimateMeta(metaData);
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
@@ -229,6 +321,10 @@ const mapWooOrderSummary = (order) => {
     billingEmail: order?.billing?.email || null,
     source: 'woocommerce',
     lineItems: sanitizeWooLineItems(order?.line_items),
+    shippingAddress: mapWooAddress(order?.shipping),
+    billingAddress: mapWooAddress(order?.billing),
+    shippingEstimate,
+    shippingTotal: normalizeNumber(order?.shipping_total),
     integrationDetails: {
       wooCommerce: {
         wooOrderNumber: wooNumber,
@@ -311,6 +407,57 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   }
 };
 
+const findProductBySku = async (sku) => {
+  if (!sku || !isConfigured()) {
+    return null;
+  }
+  try {
+    const client = getClient();
+    const response = await client.get('/products', {
+      params: {
+        sku,
+        per_page: 1,
+      },
+    });
+    const products = Array.isArray(response.data) ? response.data : [];
+    return products[0] || null;
+  } catch (error) {
+    logger.error({ err: error, sku }, 'Failed to fetch WooCommerce product by SKU');
+    const integrationError = new Error('WooCommerce product lookup failed');
+    integrationError.status = error.response?.status ?? 502;
+    integrationError.cause = error.response?.data || error;
+    throw integrationError;
+  }
+};
+
+const updateProductInventory = async (productId, { stock_quantity: stockQuantity }) => {
+  if (!productId || !isConfigured()) {
+    return { status: 'skipped', reason: 'not_configured' };
+  }
+
+  try {
+    const client = getClient();
+    const payload = {
+      manage_stock: true,
+      stock_quantity: Number.isFinite(stockQuantity) ? Number(stockQuantity) : null,
+    };
+    const response = await client.put(`/products/${productId}`, payload);
+    return {
+      status: 'success',
+      response: {
+        id: response.data?.id,
+        stock_quantity: response.data?.stock_quantity,
+      },
+    };
+  } catch (error) {
+    logger.error({ err: error, productId }, 'Failed to update WooCommerce inventory');
+    const integrationError = new Error('WooCommerce inventory update failed');
+    integrationError.status = error.response?.status ?? 502;
+    integrationError.cause = error.response?.data || error;
+    throw integrationError;
+  }
+};
+
 module.exports = {
   isConfigured,
   forwardOrder,
@@ -345,4 +492,6 @@ module.exports = {
   fetchOrdersByEmail,
   mapWooOrderSummary,
   markOrderPaid,
+  findProductBySku,
+  updateProductInventory,
 };

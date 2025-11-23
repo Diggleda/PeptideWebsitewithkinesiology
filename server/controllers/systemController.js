@@ -2,6 +2,7 @@ const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
+const shipStationClient = require('../integration/shipStationClient');
 
 const getHealth = (_req, res) => {
   res.json({
@@ -23,6 +24,12 @@ const getHelp = (_req, res) => {
       },
       shipEngine: {
         configured: shipEngineClient.isConfigured(),
+      },
+      shipStation: {
+        configured: shipStationClient.isConfigured(),
+      },
+      mysql: {
+        enabled: env.mysql?.enabled === true,
       },
     },
     endpoints: [

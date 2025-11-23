@@ -2,22 +2,29 @@ const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
 
-// Resolve the env file to load. Priority:
-// 1) DOTENV_CONFIG_PATH if provided
-// 2) .env.production when NODE_ENV=production and file exists
-// 3) .env as default
-let envFile = process.env.DOTENV_CONFIG_PATH
-  ? path.resolve(process.env.DOTENV_CONFIG_PATH)
-  : path.join(process.cwd(), '.env');
+const loadEnvFile = (filePath, { override } = {}) => {
+  if (!filePath) {
+    return false;
+  }
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved)) {
+    return false;
+  }
+  dotenv.config({ path: resolved, override });
+  return true;
+};
 
-if (!process.env.DOTENV_CONFIG_PATH && (process.env.NODE_ENV === 'production')) {
-  const prodPath = path.join(process.cwd(), '.env.production');
-  if (fs.existsSync(prodPath)) {
-    envFile = prodPath;
+if (process.env.DOTENV_CONFIG_PATH) {
+  loadEnvFile(process.env.DOTENV_CONFIG_PATH, { override: true });
+} else {
+  // Always load .env as the baseline configuration
+  loadEnvFile(path.join(process.cwd(), '.env'));
+
+  // When running in production, allow .env.production to override only the specific keys it defines.
+  if (process.env.NODE_ENV === 'production') {
+    loadEnvFile(path.join(process.cwd(), '.env.production'), { override: true });
   }
 }
-
-dotenv.config({ path: envFile });
 
 const toNumber = (value, fallback) => {
   if (value === undefined || value === null || value === '') {
@@ -99,6 +106,26 @@ const env = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
     mode: process.env.STRIPE_MODE || 'test',
     publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+  },
+  shipStation: {
+    // V2 bearer token support; fall back to legacy key/secret if provided
+    apiToken: process.env.SHIPSTATION_API_TOKEN || process.env.SHIPSTATION_PRODUCTION_KEY || '',
+    apiKey: process.env.SHIPSTATION_API_KEY || '',
+    apiSecret: process.env.SHIPSTATION_API_SECRET || '',
+    carrierCode: process.env.SHIPSTATION_CARRIER_CODE || '',
+    serviceCode: process.env.SHIPSTATION_SERVICE_CODE || '',
+    packageCode: process.env.SHIPSTATION_PACKAGE_CODE || 'package',
+    shipFrom: {
+      name: process.env.SHIPSTATION_SHIP_FROM_NAME || '',
+      company: process.env.SHIPSTATION_SHIP_FROM_COMPANY || '',
+      addressLine1: process.env.SHIPSTATION_SHIP_FROM_ADDRESS1 || '',
+      addressLine2: process.env.SHIPSTATION_SHIP_FROM_ADDRESS2 || '',
+      city: process.env.SHIPSTATION_SHIP_FROM_CITY || '',
+      state: process.env.SHIPSTATION_SHIP_FROM_STATE || '',
+      postalCode: process.env.SHIPSTATION_SHIP_FROM_POSTAL || '',
+      countryCode: process.env.SHIPSTATION_SHIP_FROM_COUNTRY || 'US',
+      phone: process.env.SHIPSTATION_SHIP_FROM_PHONE || '',
+    },
   },
 };
 

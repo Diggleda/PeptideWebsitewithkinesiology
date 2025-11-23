@@ -1505,5 +1505,286 @@
     },
     "wooOrderId": "321",
     "paymentIntentId": "pi_3SV0ySLdQwKDgAgZ1BMnSKkz"
+  },
+  {
+    "id": "1763833110434",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-211::woo-variation-217",
+        "productId": "woo-211",
+        "variantId": "woo-variation-217",
+        "name": "GLP-1 (Sema) — 20mg",
+        "price": 164.92,
+        "quantity": 4,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 659.68,
+    "shippingTotal": 0,
+    "shippingEstimate": null,
+    "shippingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "Illinois",
+      "postalCode": "60527",
+      "country": "US"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-22T17:38:30.434Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1763833110434",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "GLP-1 (Sema) — 20mg",
+              "sku": "woo-211",
+              "quantity": 4,
+              "total": "659.68",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763833110434"
+            },
+            {
+              "key": "peppro_total",
+              "value": 659.68
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-22T17:38:30.434Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1763833110434"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1763833110434"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1763833110434"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          }
+        },
+        "response": {
+          "id": 326,
+          "number": "326",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/326/?pay_for_order=true&key=wc_order_Sec1HqmBBL6IX",
+          "order_key": "wc_order_Sec1HqmBBL6IX"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SWKlXLdQwKDgAgZ0I5EWELR_secret_f4Yvex9GFt5595U4tb96RZIlH",
+        "paymentIntentId": "pi_3SWKlXLdQwKDgAgZ0I5EWELR",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-22T17:38:43.942Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "not_configured"
+      }
+    },
+    "wooOrderId": "326",
+    "paymentIntentId": "pi_3SWKlXLdQwKDgAgZ0I5EWELR"
+  },
+  {
+    "id": "1763873047827",
+    "userId": "1759372218770",
+    "items": [
+      {
+        "cartItemId": "woo-397::woo-variation-400",
+        "productId": "woo-397",
+        "variantId": "woo-variation-400",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) V — 40mg",
+        "price": 272.29,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 318.44,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-23T04:44:07.827Z",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1763873047827",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) V — 40mg",
+              "sku": "woo-397",
+              "quantity": 1,
+              "total": "272.29",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1763873047827"
+            },
+            {
+              "key": "peppro_total",
+              "value": 318.44
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-23T04:44:07.827Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1763873047827"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1763873047827"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1763873047827"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "diggleda@icloud.com"
+          },
+          "shipping": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_shipstation",
+              "method_title": "PepPro Shipping",
+              "total": "46.15"
+            }
+          ]
+        },
+        "response": {
+          "id": 423,
+          "number": "423",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/423/?pay_for_order=true&key=wc_order_NRBaWr4Y3mEOv",
+          "order_key": "wc_order_NRBaWr4Y3mEOv"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SWV9iLdQwKDgAgZ2dNuChLb_secret_j87dnZ7cCdvEQPucAT1hK6OEJ",
+        "paymentIntentId": "pi_3SWV9iLdQwKDgAgZ2dNuChLb",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-23T04:44:22.204Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "woo-397",
+            "status": "shipstation_not_found"
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "423",
+    "paymentIntentId": "pi_3SWV9iLdQwKDgAgZ2dNuChLb"
   }
 ]

@@ -106,7 +106,7 @@ export function ProductImageCarousel({
           {normalizedImages.map((imageSource, index) => (
             <div
               key={`${imageSource}-${index}`}
-              className="product-image-frame flex h-full w-full flex-shrink-0 items-center justify-center bg-transparent"
+              className="product-image-frame flex h-full w-full flex-shrink-0 items-center justify-center"
             >
               <ImageWithFallback
                 src={imageSource}

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react@0.487.0';
 import clsx from 'clsx';
@@ -389,9 +396,11 @@ export function LegalFooter() {
     [],
   );
 
-  const handleLinkClick = (key: LegalDocumentKey) => {
+  const handleLinkClick = useCallback((key: LegalDocumentKey, options: { preserveDialogs?: boolean } = {}) => {
     console.debug('[LegalFooter] Link clicked', { key });
-    window.dispatchEvent(new Event('peppro:close-dialogs'));
+    if (!options.preserveDialogs) {
+      window.dispatchEvent(new Event('peppro:close-dialogs'));
+    }
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -399,7 +408,7 @@ export function LegalFooter() {
     setIsClosing(false);
     setIsVisible(false);
     setActiveDocument(key);
-  };
+  }, []);
 
   const handleClose = () => {
     console.debug('[LegalFooter] Close requested', { activeDocument });
@@ -424,6 +433,19 @@ export function LegalFooter() {
   }, []);
 
   useEffect(() => {
+    const handleExternalOpen = (event: Event) => {
+      const custom = event as CustomEvent<{ key?: LegalDocumentKey; preserveDialogs?: boolean }>;
+      const key = custom.detail?.key;
+      if (!key) {
+        return;
+      }
+      handleLinkClick(key, { preserveDialogs: Boolean(custom.detail?.preserveDialogs) });
+    };
+    window.addEventListener('peppro:open-legal', handleExternalOpen);
+    return () => window.removeEventListener('peppro:open-legal', handleExternalOpen);
+  }, [handleLinkClick]);
+
+  useEffect(() => {
     if (selectedDocument && !isClosing) {
       const raf = requestAnimationFrame(() => setIsVisible(true));
       return () => cancelAnimationFrame(raf);
@@ -434,11 +456,30 @@ export function LegalFooter() {
     return undefined;
   }, [selectedDocument, isClosing, isVisible]);
 
+  useEffect(() => {
+    const open = Boolean(selectedDocument);
+    window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open } }));
+    return () => {
+      if (open) {
+        window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: false } }));
+      }
+    };
+  }, [selectedDocument]);
+
   useEffect(() => () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: Boolean(selectedDocument) } }));
+    return () => {
+      if (selectedDocument) {
+        window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: false } }));
+      }
+    };
+  }, [selectedDocument]);
 
   const shouldBlurBackground = isVisible || isClosing;
 
