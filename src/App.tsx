@@ -11,7 +11,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { Grid, List, ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint, Loader2 } from 'lucide-react';
+import { ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
 import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
@@ -898,7 +898,6 @@ export default function App() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
   const [loginPromptToken, setLoginPromptToken] = useState(0);
@@ -2762,7 +2761,7 @@ const renderDoctorDashboard = () => {
         opacity: isReferralSectionExpanded ? 1 : 0,
       }}
     >
-      <div className="px-16 pb-8 space-y-8 squircle-xl" style={{ padding: '1rem 1rem 1rem' }}>
+      <div className="px-4 sm:px-8 lg:px-16 pb-8 space-y-8 squircle-xl" style={{ padding: '1rem 1rem 1rem' }}>
         {referralDataError && (
           <div className="px-4 py-3 text-sm text-red-700">
             <div className="flex items-center justify-center gap-2">
@@ -2774,8 +2773,8 @@ const renderDoctorDashboard = () => {
           </div>
         )}
 
-        <div className="glass squircle-lg p-8 ml-5 mr-5 shadow-sm space-y-6">
-          <form className="glass-strong squircle-md p-6 space-y-3" onSubmit={handleSubmitReferral}>
+        <div className="glass squircle-lg p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-6">
+          <form className="glass-strong squircle-md p-3 sm:p-5 space-y-3 w-full" onSubmit={handleSubmitReferral}>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs font-medium text-slate-700" htmlFor="referral-contact-name">Colleague Name *</label>
@@ -2819,8 +2818,8 @@ const renderDoctorDashboard = () => {
               </div>
             </div>
             <div className="pt-1 flex w-full justify-end">
-              <div className="inline-flex flex-wrap items-center justify-end gap-3 text-right sm:flex-nowrap">
-                <p className="text-sm text-slate-600 max-w-[24ch] sm:max-w-[26ch]">
+              <div className="inline-flex flex-col items-start gap-3 text-left sm:flex-nowrap sm:flex-row sm:items-center sm:justify-end sm:text-right">
+                <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
                   Your regional administrator will credit you $50 each time your new referee has completed their first checkout.
                 </p>
                 <Button
@@ -2840,8 +2839,8 @@ const renderDoctorDashboard = () => {
           </form>
         </div>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-2">
-          <div className="glass squircle-lg p-8 shadow-sm space-y-6">
+        <div className="mt-8 grid gap-6 md:grid-cols-2 w-full max-w-none px-1 sm:px-5">
+          <div className="glass squircle-lg p-8 shadow-sm space-y-6 w-full max-w-none">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center squircle-sm bg-emerald-100">
@@ -2951,7 +2950,7 @@ const renderDoctorDashboard = () => {
           )}
           </div>
 
-          <div className="glass squircle-lg p-8 shadow-sm min-w-0 space-y-6">
+          <div className="glass squircle-lg p-8 shadow-sm min-w-0 space-y-6 w-full max-w-none">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center squircle-sm bg-amber-100">
@@ -2959,7 +2958,7 @@ const renderDoctorDashboard = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-base font-semibold text-slate-800">Recent Credit Activity</h3>
+              <h3 className="text-base font-semibold text-slate-800">Credit Activity</h3>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
@@ -3033,8 +3032,28 @@ const renderDoctorDashboard = () => {
   );
 };
 
-const renderProductSection = () => (
-  <div className="products-layout mt-24">
+const renderProductSection = () => {
+  const formattedSearch = searchQuery.trim();
+  const itemLabel = filteredProducts.length === 1 ? '1 item' : `${filteredProducts.length} items`;
+  const statusChips: { key: string; label: string; tone?: 'info' | 'warn' | 'error' }[] = [
+    { key: 'count', label: itemLabel },
+  ];
+
+  if (formattedSearch.length > 0) {
+    statusChips.push({ key: 'search', label: `Search • “${formattedSearch}”` });
+  }
+  if (stripeIsTestMode) {
+    statusChips.push({ key: 'stripe', label: 'Stripe test mode' });
+  }
+  if (catalogLoading) {
+    statusChips.push({ key: 'loading', label: 'loading-icon' });
+  }
+  if (catalogError) {
+    statusChips.push({ key: 'error', label: 'Woo sync issue' });
+  }
+
+  return (
+    <div className="products-layout mt-24">
     {/* Filters Sidebar */}
     <div
       ref={filterSidebarRef}
@@ -3054,60 +3073,27 @@ const renderProductSection = () => (
     <div className="w-full min-w-0 flex-1">
       <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 mb-6">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          <h2>Products</h2>
-          <Badge variant="outline" className="squircle-sm glass">
-            {filteredProducts.length} items
-          </Badge>
-          {stripeIsTestMode && (
-            <Badge variant="outline" className="squircle-sm glass bg-green-100 text-green-700 border-green-200">
-              Stripe Test Mode
-            </Badge>
-          )}
-          {searchQuery && (
-            <Badge variant="outline" className="squircle-sm">
-              Search: "{searchQuery}"
-            </Badge>
-          )}
-          {catalogLoading && (
-            <Badge variant="outline" className="squircle-sm glass">
-              Syncing…
-            </Badge>
-          )}
-          {catalogError && (
-            <Badge variant="destructive" className="squircle-sm">
-              Woo sync issue
-            </Badge>
-          )}
+          <h2 className="mr-1">Products</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {statusChips.map((chip) => {
+              const isSpinner = chip.label === 'loading-icon';
+              return (
+                <span
+                  key={chip.key}
+                  className={`filter-chip glass-card${chip.tone ? ` filter-chip--${chip.tone}` : ''}`}
+                >
+                  {isSpinner ? (
+                    <RefreshCw className="h-3 w-3.1 text-[rgb(30,41,59)]" aria-hidden="true" />
+                  ) : (
+                    <span className="whitespace-nowrap">{chip.label}</span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-end">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Button
-              variant="outline"
-              aria-pressed={viewMode === 'grid'}
-              onClick={() => setViewMode('grid')}
-              className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                viewMode === 'grid'
-                  ? 'h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                  : 'h-10 w-10 sm:h-8.5 sm:w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-              }`}
-            >
-              <Grid className={`transition-transform duration-300 ${viewMode === 'grid' ? 'scale-110' : 'scale-95'}`} />
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setViewMode('list')}
-              aria-pressed={viewMode === 'list'}
-              className={`squircle-sm transition-all duration-300 ease-out flex items-center justify-center ${
-                viewMode === 'list'
-                  ? 'h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/60 glass shadow-[0_24px_60px_-36px_rgba(95,179,249,0.45)] text-[rgb(95,179,249)]'
-                  : 'h-10 w-10 sm:h-8.5 sm:w-8.5 opacity-70 glass shadow-[0_6px_16px_-14px_rgba(95,179,249,0.25)] text-[rgb(95,179,249)]'
-              }`}
-            >
-              <List className={`transition-transform duration-300 ${viewMode === 'list' ? 'scale-110' : 'scale-95'}`} />
-            </Button>
-          </div>
-
           {totalCartItems > 0 && (
             <Button
               variant="ghost"
@@ -3123,18 +3109,13 @@ const renderProductSection = () => (
       </div>
 
       {filteredProducts.length > 0 ? (
-        <div
-          className={`grid gap-6 w-full pr-4 ${
-            viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
-          }`}
-        >
+        <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
           {filteredProducts.map((product) => {
             const cardProduct = toCardProduct(product);
             return (
               <ProductCard
                 key={product.id}
                 product={cardProduct}
-                layout={viewMode}
                 onAddToCart={(productId, variationId, qty) =>
                   handleAddToCart(productId, qty, undefined, variationId)}
               />
@@ -3144,14 +3125,17 @@ const renderProductSection = () => (
       ) : (
         <div className="text-center py-12">
           <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
-            <h3 className="mb-2">No products found</h3>
-            <p className="text-gray-600">Try adjusting your filters or search terms.</p>
+            <h3 className="mb-2">{catalogLoading ? 'Fetching products…' : 'No products found'}</h3>
+            <p className="text-gray-600">
+              {catalogLoading ? 'Please wait while we load the catalog.' : 'Try adjusting your filters or search terms.'}
+            </p>
           </div>
         </div>
       )}
     </div>
   </div>
-);
+  );
+};
 
 const renderSalesRepDashboard = () => {
   if (!user || user.role !== 'sales_rep') {
@@ -3734,7 +3718,7 @@ const renderSalesRepDashboard = () => {
                         href="https://www.nature.com/subjects/peptides"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs font-semibold uppercase tracking-wide text-[rgb(95,179,249)] hover:underline"
+                        className="text-xs font-semibold uppercase tracking-wide text-[rgb(95,179,249)] hover:underline underline-offset-4"
                       >
                         View All
                       </a>
@@ -3779,7 +3763,7 @@ const renderSalesRepDashboard = () => {
                                       href={item.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-[rgb(95,179,249)] font-semibold hover:underline"
+                                      className="text-[rgb(95,179,249)] font-semibold hover:underline underline-offset-4"
                                       aria-label={`${item.date ? formatNewsDate(item.date) + ' — ' : ''}${item.title}`}
                                     >
                                       {item.date && (
@@ -3805,7 +3789,7 @@ const renderSalesRepDashboard = () => {
                               href="https://www.nature.com/subjects/peptides"
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="font-semibold text-[rgb(95,179,249)] hover:underline"
+                              className="font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4"
                             >
                               Nature.com – Peptide Subject
                             </a>

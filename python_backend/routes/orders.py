@@ -18,8 +18,12 @@ def create_order():
     referral_code = payload.get("referralCode")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
-    shipping_rate = payload.get("shippingRate")
-    physician_certified = bool(payload.get("physicianCertificationAccepted"))
+    # Support both keys from frontend/backends
+    shipping_rate = payload.get("shippingRate") or payload.get("shippingEstimate")
+    physician_certified = bool(
+        payload.get("physicianCertificationAccepted")
+        or payload.get("physicianCertification")
+    )
     user_id = g.current_user.get("id")
     return handle_action(
         lambda: order_service.create_order(

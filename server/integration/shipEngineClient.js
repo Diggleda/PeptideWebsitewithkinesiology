@@ -31,6 +31,14 @@ const normalizeWeightOz = (items = []) => {
   return total > 0 ? total : 16;
 };
 
+const resolveTotalWeightOz = (items = [], totalWeightOz) => {
+  const parsed = Number(totalWeightOz);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return normalizeWeightOz(items);
+};
+
 const buildShipmentPayload = ({ order, customer }) => {
   if (!hasShippingAddress(order)) {
     return null;
@@ -118,7 +126,7 @@ const forwardShipment = async ({ order, customer }) => {
   }
 };
 
-const estimateRates = async ({ shippingAddress, items }) => {
+const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
   if (!isConfigured()) {
     const error = new Error('ShipEngine is not configured');
     error.status = 503;
@@ -135,7 +143,7 @@ const estimateRates = async ({ shippingAddress, items }) => {
     throw error;
   }
 
-  const weightOz = normalizeWeightOz(items || []);
+  const weightOz = resolveTotalWeightOz(items || [], totalWeightOz);
   const payload = {
     carrier_ids: env.shipEngine.defaultCarrierId ? [env.shipEngine.defaultCarrierId] : undefined,
     service_code: env.shipEngine.defaultServiceCode || undefined,

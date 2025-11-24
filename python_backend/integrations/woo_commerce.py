@@ -31,21 +31,39 @@ def is_configured() -> bool:
     return bool(store and ck and cs)
 
 
+def _parse_woo_id(raw):
+    if raw is None:
+        return None
+    try:
+        # Accept formats like "woo-392" or "392"
+        s = str(raw)
+        if s.startswith("woo-"):
+            s = s.split("-", 1)[1]
+        return int(s)
+    except Exception:
+        return None
+
+
 def build_line_items(items):
     line_items = []
     for item in items or []:
         quantity = item.get("quantity", 0)
         price = item.get("price", 0)
         total = f"{float(price) * float(quantity):.2f}"
-        line_items.append(
-            {
-                "name": item.get("name"),
-                "sku": item.get("productId"),
-                "quantity": quantity,
-                "total": total,
-                "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
-            }
-        )
+        product_id = _parse_woo_id(item.get("productId"))
+        variation_id = _parse_woo_id(item.get("variantId"))
+        line = {
+            "name": item.get("name"),
+            "sku": item.get("productId"),
+            "product_id": product_id,
+            "quantity": quantity,
+            "total": total,
+            "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
+        }
+        # Woo rejects null variation_id; include only when we have a number.
+        if variation_id is not None:
+            line["variation_id"] = variation_id
+        line_items.append(line)
     return line_items
 
 
@@ -62,21 +80,62 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             }
         )
 
+    shipping_total = float(order.get("shippingTotal") or 0) or 0.0
+    shipping_lines = []
+    shipping_estimate = order.get("shippingEstimate") or {}
+    method_code = shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate"
+    method_title = shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping"
+    shipping_lines.append(
+        {
+            "method_id": method_code,
+            "method_title": method_title,
+            "total": f"{shipping_total:.2f}",
+        }
+    )
+
+    address = order.get("shippingAddress") or {}
+    billing_address = {
+        "first_name": customer.get("name") or "PepPro",
+        "last_name": "",
+        "email": customer.get("email") or "orders@peppro.example",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+    shipping_address = {
+        "first_name": address.get("name") or customer.get("name") or "PepPro",
+        "last_name": "",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+
     return {
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
         "line_items": build_line_items(order.get("items")),
         "fee_lines": fee_lines,
+        "shipping_lines": shipping_lines,
         "meta_data": [
             {"key": "peppro_order_id", "value": order.get("id")},
             {"key": "peppro_total", "value": order.get("total")},
             {"key": "peppro_created_at", "value": order.get("createdAt")},
+            {"key": "peppro_shipping_total", "value": shipping_total},
+            {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
+            {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},
+            {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
         ],
-        "billing": {
-            "first_name": customer.get("name") or "PepPro",
-            "email": customer.get("email") or "orders@peppro.example",
-        },
+        "billing": billing_address,
+        "shipping": shipping_address,
     }
 
 
@@ -109,13 +168,47 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
         response.raise_for_status()
     except requests.RequestException as exc:
         data = None
+        response_text = None
         if exc.response is not None:
             try:
                 data = exc.response.json()
             except Exception:  # pragma: no cover - best effort
                 data = exc.response.text
-        logger.error("Failed to create WooCommerce order", exc_info=True, extra={"orderId": order.get("id")})
-        raise IntegrationError("WooCommerce order creation failed", response=data) from exc
+            try:
+                response_text = exc.response.text
+            except Exception:
+                response_text = None
+        status_code = getattr(exc.response, "status_code", None)
+        # Emit a verbose log line so cPanel / Passenger logs show the payload and Woo response.
+        logger.error(
+            "Failed to create WooCommerce order | orderId=%s status=%s woo_response_json=%s woo_response_text=%s woo_payload=%s",
+            order.get("id"),
+            status_code,
+            data,
+            response_text,
+            payload,
+            exc_info=True,
+        )
+        # Also log a plain string without structured placeholders in case the host logging formatter drops extras.
+        try:
+            logger.error(
+                "WooCommerce 400 detail: status=%s json=%s text=%s payload=%s",
+                status_code,
+                data,
+                response_text,
+                payload,
+            )
+        except Exception:
+            pass
+        # And force a stdout/stderr line to survive any logging config quirks on cPanel/Passenger.
+        try:
+            print(
+                f"WOO_COMMERCE_ERROR status={status_code} json={data} text={response_text} payload={payload}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        raise IntegrationError("WooCommerce order creation failed", response=data or response_text) from exc
 
     body = response.json()
     # Attempt to derive a payment URL that will present WooCommerce checkout

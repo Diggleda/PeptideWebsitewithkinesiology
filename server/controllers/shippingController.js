@@ -6,6 +6,15 @@ const { logger } = require('../config/logger');
 const validateItems = (items) => Array.isArray(items)
   && items.every((item) => Number(item?.quantity) > 0);
 
+const calculateTotalWeightOz = (items = []) => items.reduce((sum, item) => {
+  const unitWeight = Number(item?.weightOz) || 0;
+  const quantity = Number(item?.quantity) || 0;
+  if (!Number.isFinite(unitWeight) || unitWeight <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+    return sum;
+  }
+  return sum + (unitWeight * quantity);
+}, 0);
+
 const getRates = async (req, res, next) => {
   try {
     const { shippingAddress, items } = req.body || {};
@@ -17,13 +26,22 @@ const getRates = async (req, res, next) => {
     }
 
     const normalizedAddress = ensureShippingAddress(shippingAddress);
+    const totalWeightOz = calculateTotalWeightOz(items || []);
 
     // Prefer ShipStation if configured; otherwise, fall back to ShipEngine.
     let rates;
     if (shipStationClient.isConfigured()) {
-      rates = await shipStationClient.estimateRates({ shippingAddress: normalizedAddress, items });
+      rates = await shipStationClient.estimateRates({
+        shippingAddress: normalizedAddress,
+        items,
+        totalWeightOz,
+      });
     } else if (shipEngineClient.isConfigured()) {
-      rates = await shipEngineClient.estimateRates({ shippingAddress: normalizedAddress, items });
+      rates = await shipEngineClient.estimateRates({
+        shippingAddress: normalizedAddress,
+        items,
+        totalWeightOz,
+      });
     } else {
       const error = new Error('Shipping is not configured');
       error.status = 503;

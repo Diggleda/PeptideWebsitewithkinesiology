@@ -19,6 +19,14 @@ const normalizeWeightOz = (items = []) => {
   return total > 0 ? total : 16; // default 1 lb
 };
 
+const resolveTotalWeightOz = (items = [], totalWeightOz) => {
+  const parsed = Number(totalWeightOz);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return normalizeWeightOz(items);
+};
+
 const buildShipTo = (shippingAddress = {}, customer = {}) => ({
   name: shippingAddress.name || customer.name || 'Customer',
   company: shippingAddress.company || customer.company || '',
@@ -151,7 +159,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
  * ShipStation rate estimation: create a temporary order and list rates.
  * We keep this minimal: single package, summed weight, caller provides items+address.
  */
-const estimateRates = async ({ shippingAddress, items }) => {
+const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
   if (!isConfigured()) {
     const error = new Error('ShipStation is not configured');
     error.status = 503;
@@ -164,7 +172,7 @@ const estimateRates = async ({ shippingAddress, items }) => {
     throw error;
   }
 
-  const weightOz = normalizeWeightOz(items || []);
+  const weightOz = resolveTotalWeightOz(items || [], totalWeightOz);
 
   const shipFrom = buildShipFrom();
   const payload = {

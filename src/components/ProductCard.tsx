@@ -34,10 +34,9 @@ export interface Product {
 interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string, variationId: string, quantity: number) => void;
-  layout?: 'grid' | 'list';
 }
 
-export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation>(
     product.variations?.[0] || { id: 'default', strength: 'Standard', basePrice: 0 },
   );
@@ -46,7 +45,7 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const bulkTiers = product.bulkPricingTiers ?? [];
-  const isListLayout = layout === 'list';
+  const quantityButtonClasses = 'h-8 w-8 squircle-sm';
 
   const calculatePrice = () => {
     if (bulkTiers.length === 0) {
@@ -95,8 +94,6 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
     }
   };
 
-  const quantityButtonClasses = `h-8 w-8 squircle-sm ${isListLayout ? 'bg-slate-50 border-2' : ''}`;
-
   const categoryLabel = product.category?.trim() || 'PepPro Catalog';
 
   const productMeta = (
@@ -126,7 +123,7 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
 
   const variationSelector =
     product.variations && product.variations.length > 0 ? (
-      <div className={isListLayout ? 'space-y-2 min-w-0' : 'space-y-1'}>
+      <div className="space-y-1">
         <label className="text-xs text-gray-600">Strength</label>
         <Select value={selectedVariation.id} onValueChange={handleVariationChange}>
           <SelectTrigger className="squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner focus:ring-[rgb(95,179,249)] focus:ring-2 transition-all">
@@ -137,7 +134,7 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
               <SelectItem
                 key={variation.id}
                 value={variation.id}
-                className="rounded-xl px-3 py-2 text-sm focus:bg-[rgba(95,179,249,0.08)] focus:text-[rgb(95,179,249)] data-[state=checked]:text-[rgb(95,179,249)]"
+                className="rounded-xl pl-10 pr-3 py-2 text-sm focus:bg-[rgba(95,179,249,0.08)] focus:text-[rgb(95,179,249)] data-[state=checked]:text-[rgb(95,179,249)]"
               >
                 {variation.strength}
               </SelectItem>
@@ -148,7 +145,7 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
     ) : null;
 
   const quantitySelector = (
-    <div className={isListLayout ? 'space-y-2 min-w-0' : 'space-y-1'}>
+    <div className="space-y-1">
       <label className="text-xs text-gray-600">Quantity</label>
       <div className="flex items-center gap-2 sm:gap-3">
         <Button
@@ -160,7 +157,7 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
         >
           <Minus className="h-3 w-3" />
         </Button>
-        <div className={`flex-1 text-center px-3 py-1 glass-card squircle-sm ${isListLayout ? 'bg-white/80' : ''}`}>
+        <div className="flex-1 text-center px-3 py-1 glass-card squircle-sm">
           <Input
             type="text"
             inputMode="numeric"
@@ -253,12 +250,6 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
     <div className="glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">{bulkContent}</div>
   ) : null;
 
-  const listBulkSection = bulkContent ? (
-    <div className="inline-flex w-full max-w-xl flex-col gap-2 rounded-[28px] border border-[var(--brand-glass-border-2)] bg-white/95 px-5 py-3 shadow-[0_18px_40px_-32px_rgba(95,179,249,0.75)]">
-      {bulkContent}
-    </div>
-  ) : null;
-
   const addToCartButton = (
     <Button
       onClick={() => {
@@ -268,116 +259,14 @@ export function ProductCard({ product, onAddToCart, layout = 'grid' }: ProductCa
         setBulkOpen(false);
       }}
       disabled={!product.inStock}
-      className={`squircle-sm glass-brand btn-hover-lighter ${isListLayout ? 'w-full md:w-auto' : 'w-full'}`}
+      className="squircle-sm glass-brand btn-hover-lighter w-full"
     >
       <ShoppingCart className="w-4 h-4 mr-2" />
       {product.inStock ? 'Add to Cart' : 'Out of Stock'}
     </Button>
   );
 
-  const baseImageFrameClass = `product-image-frame${isListLayout ? '' : ' product-image-frame--flush'}`;
-
-  if (isListLayout) {
-    const variationCount = product.variations?.length ?? 0;
-    const variationSummary =
-      variationCount > 0
-        ? `${variationCount} option${variationCount === 1 ? '' : 's'} available`
-        : product.manufacturer || 'Single option';
-    return (
-      <Card className="glass squircle-sm overflow-hidden">
-        <CardContent className="p-0">
-          <div className="flex flex-col gap-6 px-5 py-6 lg:flex-row lg:items-center lg:gap-8">
-            <div className="flex w-full max-w-full flex-shrink-0 items-center justify-center lg:w-64">
-              <div className={`${baseImageFrameClass} w-full max-w-[220px]`}>
-                <ImageWithFallback
-                  src={primaryImage}
-                  alt={product.name}
-                  className="product-image-frame__img drop-shadow"
-                />
-                {!product.inStock && (
-                  <div className="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-gray-900/35">
-                    <Badge variant="destructive" className="squircle-sm">
-                      Out of Stock
-                    </Badge>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-1 flex-col gap-4 min-w-0">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-slate-900">{product.name}</h3>
-                <p className="text-sm text-slate-500">{variationSummary}</p>
-                {selectedVariation && (
-                  <p className="text-xs text-slate-500">
-                    Variant:&nbsp;
-                    <span className="font-medium text-slate-700">{selectedVariation.strength}</span>
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 rounded-full border border-[var(--brand-glass-border-2)] bg-white/90 px-4 py-2 shadow-[0_20px_45px_-35px_rgba(95,179,249,0.65)]">
-                <span className="text-xl font-semibold text-green-600">${currentUnitPrice.toFixed(2)}</span>
-                <div className="flex items-center gap-1 rounded-full bg-white px-3 py-1 shadow-inner">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-full hover:bg-slate-100"
-                    onClick={() => handleQuantityChange(-1)}
-                    disabled={quantity <= 1}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    min={1}
-                    value={quantityInput}
-                    onChange={(event) => {
-                      const digits = event.target.value.replace(/[^0-9]/g, '');
-                      setQuantityInput(digits);
-                      if (digits) {
-                        const next = Math.max(1, Number(digits));
-                        setQuantity(next);
-                      }
-                      setBulkOpen(true);
-                    }}
-                    onBlur={() => {
-                      if (!quantityInput) {
-                        setQuantity(1);
-                        setQuantityInput('1');
-                      }
-                    }}
-                    className="h-8 w-12 border-none bg-transparent text-center text-base font-semibold focus-visible:ring-0 focus-visible:outline-none"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-full hover:bg-slate-100"
-                    onClick={() => handleQuantityChange(1)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {variationSelector && <div className="max-w-sm">{variationSelector}</div>}
-              {listBulkSection}
-            </div>
-
-            <div className="flex w-full flex-col items-end gap-3 lg:w-auto">
-              <div className="w-full rounded-2xl border border-[var(--brand-glass-border-2)] bg-white/90 px-5 py-3 text-right shadow-[0_25px_55px_-35px_rgba(95,179,249,0.7)]">
-                <span className="text-xs text-gray-500 uppercase tracking-wide">Line Total</span>
-                <p className="text-2xl font-bold text-slate-900">${totalPrice.toFixed(2)}</p>
-              </div>
-              <div className="w-full lg:w-auto">{addToCartButton}</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const baseImageFrameClass = 'product-image-frame product-image-frame--flush';
 
   return (
     <Card className="group overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">

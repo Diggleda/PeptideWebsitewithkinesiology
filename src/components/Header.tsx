@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -426,121 +426,29 @@ export function Header({
     : '';
 
   // Account tab underline indicator (shared bar that moves to active tab)
-const tabsContainerRef = useRef<HTMLDivElement | null>(null);
-const isDraggingTabsRef = useRef(false);
-const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX: 0, scrollLeft: 0 });
+  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [indicatorLeft, setIndicatorLeft] = useState<number>(0);
   const [indicatorWidth, setIndicatorWidth] = useState<number>(0);
   const [indicatorOpacity, setIndicatorOpacity] = useState<number>(0);
+  const tabScrollDragStateRef = useRef<{ isDragging: boolean; startX: number; scrollLeft: number }>({
+    isDragging: false,
+    startX: 0,
+    scrollLeft: 0,
+  });
 
   const updateTabIndicator = useCallback(() => {
     const container = tabsContainerRef.current;
     if (!container) return;
     const activeBtn = container.querySelector<HTMLButtonElement>(`button[data-tab="${accountTab}"]`);
     if (!activeBtn) return;
-    const cRect = container.getBoundingClientRect();
-    const bRect = activeBtn.getBoundingClientRect();
     const inset = 8; // match left/right padding for a tidy fit
-    const left = Math.max(0, bRect.left - cRect.left + inset);
-    const width = Math.max(0, bRect.width - inset * 2);
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
     setIndicatorLeft(left);
     setIndicatorWidth(width);
     setIndicatorOpacity(1);
   }, [accountTab]);
-
-  const scrollTabs = useCallback((pageX: number) => {
-    const container = tabsContainerRef.current;
-    if (!container) {
-      return;
-    }
-    const { startX, scrollLeft } = dragPositionRef.current;
-    const x = pageX - container.offsetLeft;
-    container.scrollLeft = scrollLeft - (x - startX);
-  }, []);
-
-  const handleTabsDragMove = useCallback(
-    (event: MouseEvent) => {
-      if (!isDraggingTabsRef.current) {
-        return;
-      }
-      const container = tabsContainerRef.current;
-      if (!container) {
-        return;
-      }
-      event.preventDefault();
-      scrollTabs(event.pageX);
-    },
-    [scrollTabs],
-  );
-
-  const handleTabsTouchMove = useCallback(
-    (event: TouchEvent) => {
-      if (!isDraggingTabsRef.current) {
-        return;
-      }
-      const touch = event.touches[0];
-      if (!touch) {
-        return;
-      }
-      event.preventDefault();
-      scrollTabs(touch.pageX);
-    },
-    [scrollTabs],
-  );
-
-  const handleTabsDragEnd = useCallback(() => {
-    const container = tabsContainerRef.current;
-    if (container) {
-      container.classList.remove('cursor-grabbing');
-    }
-    document.body.style.userSelect = '';
-    isDraggingTabsRef.current = false;
-    window.removeEventListener('mousemove', handleTabsDragMove);
-    window.removeEventListener('mouseup', handleTabsDragEnd);
-    window.removeEventListener('touchmove', handleTabsTouchMove);
-    window.removeEventListener('touchend', handleTabsDragEnd);
-  }, [handleTabsDragMove, handleTabsTouchMove]);
-
-  const handleTabsDragStart = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (event.button !== 0) {
-        return;
-      }
-      const container = tabsContainerRef.current;
-      if (!container) {
-        return;
-      }
-      isDraggingTabsRef.current = true;
-      container.classList.add('cursor-grabbing');
-      document.body.style.userSelect = 'none';
-      dragPositionRef.current = {
-        startX: event.pageX - container.offsetLeft,
-        scrollLeft: container.scrollLeft,
-      };
-      window.addEventListener('mousemove', handleTabsDragMove);
-      window.addEventListener('mouseup', handleTabsDragEnd);
-    },
-    [handleTabsDragMove, handleTabsDragEnd],
-  );
-
-  const handleTabsTouchStart = useCallback(
-    (event: ReactTouchEvent<HTMLDivElement>) => {
-      const container = tabsContainerRef.current;
-      if (!container) {
-        return;
-      }
-      isDraggingTabsRef.current = true;
-      container.classList.add('cursor-grabbing');
-      document.body.style.userSelect = 'none';
-      dragPositionRef.current = {
-        startX: (event.touches[0]?.pageX ?? 0) - container.offsetLeft,
-        scrollLeft: container.scrollLeft,
-      };
-      window.addEventListener('touchmove', handleTabsTouchMove, { passive: false });
-      window.addEventListener('touchend', handleTabsDragEnd);
-    },
-    [handleTabsTouchMove, handleTabsDragEnd],
-  );
 
   useLayoutEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -554,6 +462,84 @@ const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX:
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [updateTabIndicator]);
+
+  useEffect(() => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateTabIndicator();
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [updateTabIndicator]);
+
+  const handleTabScrollMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    tabScrollDragStateRef.current.isDragging = true;
+    tabScrollDragStateRef.current.startX = event.clientX;
+    tabScrollDragStateRef.current.scrollLeft = container.scrollLeft;
+    container.classList.add('is-dragging');
+  };
+
+  const handleTabScrollMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    if (!tabScrollDragStateRef.current.isDragging) return;
+    event.preventDefault();
+    const deltaX = event.clientX - tabScrollDragStateRef.current.startX;
+    container.scrollLeft = tabScrollDragStateRef.current.scrollLeft - deltaX;
+  };
+
+  const endTabScrollDrag = () => {
+    const container = tabsContainerRef.current;
+    tabScrollDragStateRef.current.isDragging = false;
+    if (container) {
+      container.classList.remove('is-dragging');
+    }
+  };
+
+  const handleTabScrollMouseUp = () => {
+    endTabScrollDrag();
+  };
+
+  const handleTabScrollMouseLeave = () => {
+    endTabScrollDrag();
+  };
+
+  const handleTabScrollTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const container = tabsContainerRef.current;
+    if (!container || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    tabScrollDragStateRef.current.isDragging = true;
+    tabScrollDragStateRef.current.startX = touch.clientX;
+    tabScrollDragStateRef.current.scrollLeft = container.scrollLeft;
+  };
+
+  const handleTabScrollTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    if (!tabScrollDragStateRef.current.isDragging) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - tabScrollDragStateRef.current.startX;
+    container.scrollLeft = tabScrollDragStateRef.current.scrollLeft - deltaX;
+  };
+
+  const handleTabScrollTouchEnd = () => {
+    endTabScrollDrag();
+  };
+
+  const handleTabScrollWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+      container.scrollLeft += event.deltaY;
+      event.preventDefault();
+    }
+  };
 
   useEffect(() => {
     if (!welcomeOpen) return;
@@ -1264,22 +1250,6 @@ const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX:
                       <p className="text-sm text-slate-600 sm:hidden">{itemLabel}</p>
                     )}
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 sm:min-w-[10rem] justify-center font-semibold mt-2 sm:mt-0 gap-2 w-full sm:w-auto"
-                    onClick={() => {
-                      if (onBuyOrderAgain) {
-                        onBuyOrderAgain(order);
-                      } else {
-                        setSelectedOrder(order);
-                      }
-                    }}
-                  >
-                    <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-                    Buy it again
-                  </Button>
                 </div>
 
                 {order.lineItems && order.lineItems.length > 0 && (
@@ -1310,6 +1280,25 @@ const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX:
                     ))}
                   </div>
                 )}
+
+                <div className="pt-2 flex justify-start sm:justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 sm:min-w-[10rem] justify-center font-semibold mt-2 sm:mt-0 gap-2 w-full sm:w-auto"
+                    onClick={() => {
+                      if (onBuyOrderAgain) {
+                        onBuyOrderAgain(order);
+                      } else {
+                        setSelectedOrder(order);
+                      }
+                    }}
+                  >
+                    <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+                    Buy it again
+                  </Button>
+                </div>
 
               </div>
             </div>
@@ -1582,9 +1571,9 @@ const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX:
             className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4"
             style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
           >
-            <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                <DialogTitle className="text-xl font-semibold header-user-name">
+            <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">
+              <div className="flex items-center gap-3 flex-wrap min-w-0">
+                <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
                   {user.name}
                 </DialogTitle>
                 <span aria-hidden="true" className="text-slate-300">
@@ -1608,36 +1597,46 @@ const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX:
                   Home
                 </Button>
               </div>
-              <DialogDescription>
+              <DialogDescription className="account-header-description">
                 {(user.visits ?? 1) > 1
                   ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! Your can manage your account details and orders below.`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
-              <div
-                className="relative flex items-center gap-4 pb-2 overflow-x-auto no-scrollbar w-full cursor-grab account-tab-row"
-                ref={tabsContainerRef}
-                onMouseDown={handleTabsDragStart}
-                onTouchStart={handleTabsTouchStart}
-              >
-                {accountHeaderTabs.map((tab) => {
-                  const isActive = accountTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={clsx(
-                        'relative inline-flex items-center gap-2 px-3 pb-2 pt-1 text-sm font-semibold transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0',
-                        isActive && 'text-slate-900'
-                      )}
-                      data-tab={tab.id}
-                      aria-pressed={isActive}
-                      onClick={() => setAccountTab(tab.id)}
-                    >
-                      <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                      {tab.label}
-                    </button>
-                  );
-                })}
+              <div className="relative w-full">
+                <div
+                  className="w-full account-tab-scroll-container"
+                  ref={tabsContainerRef}
+                  onMouseDown={handleTabScrollMouseDown}
+                  onMouseMove={handleTabScrollMouseMove}
+                  onMouseUp={handleTabScrollMouseUp}
+                  onMouseLeave={handleTabScrollMouseLeave}
+                  onTouchStart={handleTabScrollTouchStart}
+                  onTouchMove={handleTabScrollTouchMove}
+                  onTouchEnd={handleTabScrollTouchEnd}
+                  onWheel={handleTabScrollWheel}
+                >
+                  <div className="flex items-center gap-4 pb-4 account-tab-row">
+                    {accountHeaderTabs.map((tab) => {
+                      const isActive = accountTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={clsx(
+                            'relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0',
+                            isActive && 'text-slate-900'
+                          )}
+                          data-tab={tab.id}
+                          aria-pressed={isActive}
+                          onClick={() => setAccountTab(tab.id)}
+                        >
+                          <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <span
                   aria-hidden="true"
                   className="account-tab-underline-indicator"

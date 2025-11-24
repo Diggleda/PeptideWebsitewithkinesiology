@@ -3065,29 +3065,42 @@ html {
   }
 }
 
+/* Account header layout: ensure content never forces a wider min-width than the dialog */
+.account-header-content {
+  max-width: 100%;
+}
+
+.account-header-description {
+  max-width: 100%;
+  word-break: break-word;
+}
+
 /* Shared moving underline for account tabs */
 .account-tab-underline-indicator {
   position: absolute;
-  bottom: 0;
-  height: 4px;
+  bottom: -6px;
+  height: 3px;
   background: rgb(95, 179, 249);
   border-radius: 9999px;
   box-shadow: 0 4px 12px rgba(95, 179, 249, 0.45);
   opacity: 0;
-  transition: left 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
+  transition: left 200ms cubic-bezier(0.22, 1, 0.36, 1), width 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
   pointer-events: none;
 }
 
 .account-tab-row {
   flex-wrap: nowrap;
   white-space: nowrap;
-  touch-action: pan-x;
+}
+
+.account-tab-scroll-container {
   overflow-x: auto;
   overflow-y: visible;
   max-width: 100%;
   min-width: 0;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  touch-action: pan-x;
 }
 
 .order-header-meta {
