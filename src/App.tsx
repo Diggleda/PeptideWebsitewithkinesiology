@@ -13,7 +13,7 @@ import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
-import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth } from './services/api';
+import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth, passwordResetAPI } from './services/api';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
 import { LegalFooter } from './components/LegalFooter';
 import { AuthActionResult } from './types/auth';
@@ -21,6 +21,7 @@ import { DoctorCreditSummary, ReferralRecord, SalesRepDashboard } from './types/
 import { listProducts, listCategories, listProductVariations } from './lib/wooClient';
 import { beginPasskeyAuthentication, beginPasskeyRegistration, detectConditionalPasskeySupport, detectPlatformPasskeySupport } from './lib/passkeys';
 import { requestStoredPasswordCredential, storePasswordCredential } from './lib/passwordCredential';
+import CreditManager from './components/admin/CreditManager';
 
 interface User {
   id: string;
@@ -177,6 +178,31 @@ interface AccountOrderSummary {
 
 const WOO_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
+
+const RESET_PASSWORD_ROUTE = '/reset-password';
+
+const normalizePathname = (pathname?: string | null) => {
+  if (!pathname) {
+    return '/';
+  }
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed || '/';
+};
+
+const isResetPasswordRoute = () =>
+  typeof window !== 'undefined' && normalizePathname(window.location.pathname) === RESET_PASSWORD_ROUTE;
+
+const readResetTokenFromLocation = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return new URLSearchParams(window.location.search).get('token');
+};
+
+const getInitialLandingMode = (): 'login' | 'signup' | 'forgot' | 'reset' =>
+  isResetPasswordRoute() ? 'reset' : 'login';
+
+const getInitialResetToken = () => (isResetPasswordRoute() ? readResetTokenFromLocation() : null);
 
 const coerceNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -904,7 +930,7 @@ export default function App() {
   const apiWarmupInFlight = useRef(false);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<'checkout' | null>(null);
-  const [landingAuthMode, setLandingAuthMode] = useState<'login' | 'signup'>('login');
+  const [landingAuthMode, setLandingAuthMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [infoFocusActive, setInfoFocusActive] = useState(false);
@@ -913,6 +939,19 @@ export default function App() {
   const [showLandingLoginPassword, setShowLandingLoginPassword] = useState(false);
   const [showLandingSignupPassword, setShowLandingSignupPassword] = useState(false);
   const [showLandingSignupConfirm, setShowLandingSignupConfirm] = useState(false);
+  const [passwordResetEmail, setPasswordResetEmail] = useState('');
+  const [passwordResetRequestPending, setPasswordResetRequestPending] = useState(false);
+  const [passwordResetRequestSuccess, setPasswordResetRequestSuccess] = useState(false);
+  const [passwordResetRequestError, setPasswordResetRequestError] = useState('');
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(getInitialResetToken);
+  const [resetPasswordPending, setResetPasswordPending] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState('');
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState('');
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetPasswordConfirmValue, setResetPasswordConfirmValue] = useState('');
+  const resetCompletionTimerRef = useRef<number | null>(null);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false);
   const checkoutButtonObserverRef = useRef<IntersectionObserver | null>(null);
   const [isCheckoutButtonVisible, setIsCheckoutButtonVisible] = useState(false);
   const filterSidebarRef = useRef<HTMLDivElement | null>(null);
@@ -965,6 +1004,62 @@ export default function App() {
       }
     } finally {
       landingCredentialAutofillInFlight.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleLocationSync = () => {
+      if (isResetPasswordRoute()) {
+        setLandingAuthMode('reset');
+        setResetPasswordToken(readResetTokenFromLocation());
+      }
+    };
+    window.addEventListener('popstate', handleLocationSync);
+    return () => window.removeEventListener('popstate', handleLocationSync);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!resetPasswordSuccess) {
+      if (resetCompletionTimerRef.current) {
+        window.clearTimeout(resetCompletionTimerRef.current);
+        resetCompletionTimerRef.current = null;
+      }
+      return;
+    }
+    const finalizeResetFlow = () => {
+      const origin = window.location.origin;
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'PASSWORD_RESET_COMPLETE' }, origin);
+        } catch (error) {
+          console.warn('[Auth] Unable to notify opener about password reset completion', error);
+        }
+        window.close();
+      } else {
+        window.location.replace('/');
+      }
+    };
+    resetCompletionTimerRef.current = window.setTimeout(finalizeResetFlow, 1500);
+    return () => {
+      if (resetCompletionTimerRef.current) {
+        window.clearTimeout(resetCompletionTimerRef.current);
+        resetCompletionTimerRef.current = null;
+      }
+    };
+  }, [resetPasswordSuccess]);
+
+  const clearResetRoute = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (isResetPasswordRoute()) {
+      window.history.replaceState({}, '', '/');
     }
   }, []);
 
@@ -2137,10 +2232,53 @@ const filteredDoctorReferrals = useMemo(() => {
       });
   }, []);
 
-  const updateLandingAuthMode = useCallback((mode: 'login' | 'signup') => {
-    setLandingAuthMode(mode);
-    resetLandingNpiState();
-  }, [resetLandingNpiState]);
+  const updateLandingAuthMode = useCallback((
+    mode: 'login' | 'signup' | 'forgot' | 'reset',
+  ) => {
+    setLandingAuthMode((previous) => {
+      if (previous === mode) {
+        return previous;
+      }
+      if (mode !== 'reset') {
+        clearResetRoute();
+        setResetPasswordToken(null);
+        setResetPasswordValue('');
+        setResetPasswordConfirmValue('');
+        setResetPasswordSuccess('');
+        setResetPasswordError('');
+      }
+      if (mode === 'signup') {
+        resetLandingNpiState();
+      } else {
+        setLandingSignupError('');
+      }
+      if (mode === 'login') {
+        setLandingLoginError('');
+        setShowLandingLoginPassword(false);
+        setShowLandingSignupPassword(false);
+        setShowLandingSignupConfirm(false);
+        setPasswordResetRequestError('');
+        setPasswordResetRequestSuccess(false);
+        setPasswordResetEmail('');
+      }
+      if (mode === 'forgot') {
+        setLandingLoginError('');
+        setPasswordResetRequestError('');
+        setPasswordResetRequestSuccess(false);
+        const fallbackEmail = landingLoginEmailRef.current?.value?.trim() || '';
+        setPasswordResetEmail((current) => current || fallbackEmail);
+      }
+      if (mode === 'reset') {
+        setLandingLoginError('');
+        setPasswordResetRequestError('');
+        setPasswordResetRequestSuccess(false);
+        setResetPasswordError('');
+        setResetPasswordSuccess('');
+        setResetPasswordToken((current) => current ?? readResetTokenFromLocation());
+      }
+      return mode;
+    });
+  }, [clearResetRoute, resetLandingNpiState]);
 
   const handleLogin = (email: string, password: string): Promise<AuthActionResult> => {
     return loginWithRetry(email, password, 0);
@@ -2256,6 +2394,79 @@ const filteredDoctorReferrals = useMemo(() => {
         return { status: 'npi_verification_failed', message };
       }
       return { status: 'error', message };
+    }
+  };
+
+  const handlePasswordResetRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (passwordResetRequestPending) {
+      return;
+    }
+    const email = passwordResetEmail.trim();
+    if (!email) {
+      setPasswordResetRequestError('Please enter the email associated with your account.');
+      return;
+    }
+    setPasswordResetRequestPending(true);
+    setPasswordResetRequestError('');
+    setPasswordResetRequestSuccess(false);
+    try {
+      await passwordResetAPI.request(email);
+      setPasswordResetRequestSuccess(true);
+    } catch (error: any) {
+      const status = typeof error?.status === 'number' ? error.status : null;
+      const message = status && status >= 500
+        ? 'Password reset service is temporarily unavailable. Please try again in a few minutes.'
+        : typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to send reset instructions. Please try again.';
+      setPasswordResetRequestError(message);
+      console.warn('[Auth] Password reset request failed', { status, error });
+    } finally {
+      setPasswordResetRequestPending(false);
+    }
+  };
+
+  const handlePasswordResetSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (resetPasswordPending) {
+      return;
+    }
+    setResetPasswordError('');
+    setResetPasswordSuccess('');
+    const password = resetPasswordValue.trim();
+    const confirmPassword = resetPasswordConfirmValue.trim();
+    if (!resetPasswordToken) {
+      setResetPasswordError('This reset link is invalid or has expired. Please request a new one.');
+      return;
+    }
+    if (!password) {
+      setResetPasswordError('Please enter a new password.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setResetPasswordError('Passwords do not match. Please confirm your new password.');
+      return;
+    }
+    setResetPasswordPending(true);
+    try {
+      await passwordResetAPI.reset(resetPasswordToken, password);
+      setResetPasswordSuccess('Your password has been updated. You can now sign in with your new credentials.');
+      setResetPasswordValue('');
+      setResetPasswordConfirmValue('');
+      setPasswordResetToken(null);
+      clearResetRoute();
+    } catch (error: any) {
+      const status = typeof error?.status === 'number' ? error.status : null;
+      const message = status && status >= 500
+        ? 'We could not verify your reset link because the service is unavailable. Please try again shortly.'
+        : typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to reset your password. Please request a new link.';
+      setResetPasswordError(message);
+      console.warn('[Auth] Password reset finalize failed', { status, error });
+    } finally {
+      setResetPasswordPending(false);
     }
   };
 
@@ -3332,6 +3543,10 @@ const renderSalesRepDashboard = () => {
             )}
           </div>
         </div>
+
+        <div className="mt-6">
+          <CreditManager />
+        </div>
       </div>
       <p className="text-xs text-slate-500/80 text-center italic">
         Send dashboard recommendations and ideas that will improve your productivity to{' '}
@@ -3920,8 +4135,8 @@ const renderSalesRepDashboard = () => {
                 className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl"
                 style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
               >
-                <div className={landingAuthMode === 'login' ? 'space-y-4' : 'space-y-6'}>
-                {landingAuthMode === 'login' ? (
+                <div className={landingAuthMode === 'signup' ? 'space-y-6' : 'space-y-4'}>
+                {landingAuthMode === 'login' && (
                   <>
                     <form
                       onSubmit={async (e) => {
@@ -4041,7 +4256,18 @@ const renderSalesRepDashboard = () => {
                         {landingLoginPending ? 'Signing in…' : 'Sign In'}
                       </Button>
                     </form>
-                    <div className="text-center">
+                    <div className="text-center space-y-1">
+                      <p className="text-sm text-gray-600">
+                        Forgot your password?{' '}
+                        <button
+                          type="button"
+                          onClick={() => updateLandingAuthMode('forgot')}
+                          className="font-semibold hover:underline btn-hover-lighter"
+                          style={{ color: 'rgb(95, 179, 249)' }}
+                        >
+                          Reset it
+                        </button>
+                      </p>
                       <p className="text-sm text-gray-600">
                         Have a referral code?{' '}
                         <button type="button" onClick={() => updateLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
@@ -4050,7 +4276,169 @@ const renderSalesRepDashboard = () => {
                       </p>
                     </div>
                   </>
-                ) : (
+                )}
+                {landingAuthMode === 'forgot' && (
+                  <>
+                    <div className="text-center space-y-2">
+                      <h1 className="text-2xl font-semibold">Reset your password</h1>
+                      <p className="text-sm text-gray-600">Enter the email associated with your account and we&rsquo;ll send you a secure link.</p>
+                    </div>
+                    <form onSubmit={handlePasswordResetRequestSubmit} className="space-y-3">
+                      <div className="space-y-2">
+                        <label htmlFor="landing-reset-email" className="text-sm font-medium">Email</label>
+                        <input
+                          id="landing-reset-email"
+                          type="email"
+                          required
+                          value={passwordResetEmail}
+                          onChange={(event) => {
+                            setPasswordResetEmail(event.target.value);
+                            if (passwordResetRequestError) {
+                              setPasswordResetRequestError('');
+                            }
+                            if (passwordResetRequestSuccess) {
+                              setPasswordResetRequestSuccess(false);
+                            }
+                          }}
+                          className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      {passwordResetRequestError && (
+                        <p className="text-sm text-red-600" role="alert">{passwordResetRequestError}</p>
+                      )}
+                      {passwordResetRequestSuccess && (
+                        <p className="text-sm text-emerald-600" role="status">
+                          Check your inbox for the reset link. If it doesn&rsquo;t arrive within a few minutes, please check your spam folder.
+                        </p>
+                      )}
+                      <Button
+                        type="submit"
+                        size="lg"
+                        className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                        disabled={passwordResetRequestPending}
+                      >
+                        {passwordResetRequestPending ? 'Sending…' : 'Send reset link'}
+                      </Button>
+                    </form>
+                    <div className="text-center text-sm text-gray-600">
+                      <button
+                        type="button"
+                        onClick={() => updateLandingAuthMode('login')}
+                        className="font-semibold hover:underline btn-hover-lighter"
+                        style={{ color: 'rgb(95, 179, 249)' }}
+                      >
+                        Return to sign in
+                      </button>
+                    </div>
+                  </>
+                )}
+                {landingAuthMode === 'reset' && (
+                  <>
+                    <div className="text-center space-y-2">
+                      <h1 className="text-2xl font-semibold">Choose a new password</h1>
+                      <p className="text-sm text-gray-600">
+                        {resetPasswordToken ? 'Create a new password to secure your account.' : 'This reset link is invalid or expired. Request a new one to continue.'}
+                      </p>
+                    </div>
+                    {!resetPasswordSuccess && (
+                      <form onSubmit={handlePasswordResetSubmit} className="space-y-3">
+                        <div className="space-y-2">
+                          <label htmlFor="landing-new-password" className="text-sm font-medium">New password</label>
+                          <div className="relative">
+                            <input
+                              id="landing-new-password"
+                              type={showResetPassword ? 'text' : 'password'}
+                              value={resetPasswordValue}
+                              onChange={(event) => setResetPasswordValue(event.target.value)}
+                              required
+                              disabled={!resetPasswordToken}
+                              className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:bg-slate-50 disabled:text-slate-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowResetPassword((prev) => !prev)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter"
+                              aria-label={showResetPassword ? 'Hide new password' : 'Show new password'}
+                              aria-pressed={showResetPassword}
+                            >
+                              {showResetPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label htmlFor="landing-confirm-password" className="text-sm font-medium">Confirm password</label>
+                          <div className="relative">
+                            <input
+                              id="landing-confirm-password"
+                              type={showResetPasswordConfirm ? 'text' : 'password'}
+                              value={resetPasswordConfirmValue}
+                              onChange={(event) => setResetPasswordConfirmValue(event.target.value)}
+                              required
+                              disabled={!resetPasswordToken}
+                              className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:bg-slate-50 disabled:text-slate-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowResetPasswordConfirm((prev) => !prev)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter"
+                              aria-label={showResetPasswordConfirm ? 'Hide confirm password' : 'Show confirm password'}
+                              aria-pressed={showResetPasswordConfirm}
+                            >
+                              {showResetPasswordConfirm ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                            </button>
+                          </div>
+                        </div>
+                        {resetPasswordError && (
+                          <p className="text-sm text-red-600" role="alert">{resetPasswordError}</p>
+                        )}
+                        <Button
+                          type="submit"
+                          size="lg"
+                          className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                          disabled={!resetPasswordToken || resetPasswordPending}
+                        >
+                          {resetPasswordPending ? 'Updating…' : 'Update password'}
+                        </Button>
+                      </form>
+                    )}
+                    {resetPasswordSuccess && (
+                      <div className="space-y-3 text-center">
+                        <p className="text-sm text-emerald-600" role="status">{resetPasswordSuccess}</p>
+                        <Button
+                          type="button"
+                          size="lg"
+                          className="w-full squircle-sm glass-brand btn-hover-lighter"
+                          onClick={() => updateLandingAuthMode('login')}
+                        >
+                          Return to sign in
+                        </Button>
+                      </div>
+                    )}
+                    {!resetPasswordToken && !resetPasswordSuccess && (
+                      <div className="text-center text-sm text-gray-600">
+                        <button
+                          type="button"
+                          onClick={() => updateLandingAuthMode('forgot')}
+                          className="font-semibold hover:underline btn-hover-lighter"
+                          style={{ color: 'rgb(95, 179, 249)' }}
+                        >
+                          Request a new reset link
+                        </button>
+                      </div>
+                    )}
+                    <div className="text-center text-sm text-gray-600">
+                      <button
+                        type="button"
+                        onClick={() => updateLandingAuthMode('login')}
+                        className="font-semibold hover:underline btn-hover-lighter"
+                        style={{ color: 'rgb(95, 179, 249)' }}
+                      >
+                        Back to sign in
+                      </button>
+                    </div>
+                  </>
+                )}
+                {landingAuthMode === 'signup' && (
                   <>
                     <div className="text-center space-y-2">
                       <h1 className="text-2xl font-semibold">Join the PepPro Network</h1>

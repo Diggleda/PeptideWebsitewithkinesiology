@@ -1,0 +1,435 @@
+from __future__ import annotations
+
+import logging
+from typing import Dict, Optional, Mapping, Any
+from uuid import uuid4
+
+import requests
+from requests.auth import HTTPBasicAuth
+
+from ..services import get_config
+
+logger = logging.getLogger(__name__)
+
+
+class IntegrationError(RuntimeError):
+    def __init__(self, message: str, response: Optional[Dict] = None):
+        super().__init__(message)
+        self.response = response
+
+
+def _strip(s: Optional[str]) -> str:
+    return (s or "").strip()
+
+
+def is_configured() -> bool:
+    config = get_config()
+    data = config.woo_commerce
+    store = _strip(data.get("store_url"))
+    ck = _strip(data.get("consumer_key"))
+    cs = _strip(data.get("consumer_secret"))
+    return bool(store and ck and cs)
+
+
+def _parse_woo_id(raw):
+    if raw is None:
+        return None
+    try:
+        # Accept formats like "woo-392" or "392"
+        s = str(raw)
+        if s.startswith("woo-"):
+            s = s.split("-", 1)[1]
+        return int(s)
+    except Exception:
+        return None
+
+
+def build_line_items(items):
+    line_items = []
+    for item in items or []:
+        quantity = item.get("quantity", 0)
+        price = item.get("price", 0)
+        total = f"{float(price) * float(quantity):.2f}"
+        product_id = _parse_woo_id(item.get("productId"))
+        variation_id = _parse_woo_id(item.get("variantId"))
+        line = {
+            "name": item.get("name"),
+            "sku": item.get("productId"),
+            "product_id": product_id,
+            "quantity": quantity,
+            "total": total,
+            "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
+        }
+        # Woo rejects null variation_id; include only when we have a number.
+        if variation_id is not None:
+            line["variation_id"] = variation_id
+        line_items.append(line)
+    return line_items
+
+
+def build_order_payload(order: Dict, customer: Dict) -> Dict:
+    # Optional referral credit applied at checkout (negative fee)
+    applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
+    fee_lines = []
+    if applied_credit > 0:
+        fee_lines.append(
+            {
+                "name": "Referral credit",
+                "total": f"-{applied_credit:.2f}",
+                "tax_status": "none",
+            }
+        )
+
+    shipping_total = float(order.get("shippingTotal") or 0) or 0.0
+    shipping_lines = []
+    shipping_estimate = order.get("shippingEstimate") or {}
+    method_code = shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate"
+    method_title = shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping"
+    shipping_lines.append(
+        {
+            "method_id": method_code,
+            "method_title": method_title,
+            "total": f"{shipping_total:.2f}",
+        }
+    )
+
+    address = order.get("shippingAddress") or {}
+    billing_address = {
+        "first_name": customer.get("name") or "PepPro",
+        "last_name": "",
+        "email": customer.get("email") or "orders@peppro.example",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+    shipping_address = {
+        "first_name": address.get("name") or customer.get("name") or "PepPro",
+        "last_name": "",
+        "address_1": address.get("addressLine1") or "",
+        "address_2": address.get("addressLine2") or "",
+        "city": address.get("city") or "",
+        "state": address.get("state") or "",
+        "postcode": address.get("postalCode") or "",
+        "country": address.get("country") or "US",
+        "phone": address.get("phone") or "",
+    }
+
+    return {
+        "status": "pending",
+        "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
+        "set_paid": False,
+        "line_items": build_line_items(order.get("items")),
+        "fee_lines": fee_lines,
+        "shipping_lines": shipping_lines,
+        "meta_data": [
+            {"key": "peppro_order_id", "value": order.get("id")},
+            {"key": "peppro_total", "value": order.get("total")},
+            {"key": "peppro_created_at", "value": order.get("createdAt")},
+            {"key": "peppro_shipping_total", "value": shipping_total},
+            {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
+            {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},
+            {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
+        ],
+        "billing": billing_address,
+        "shipping": shipping_address,
+    }
+
+
+def forward_order(order: Dict, customer: Dict) -> Dict:
+    payload = build_order_payload(order, customer)
+    config = get_config()
+
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured", "payload": payload}
+
+    if not config.woo_commerce.get("auto_submit_orders"):
+        draft_id = str(uuid4())
+        logger.info("WooCommerce auto-submit disabled; draft generated", extra={"draftId": draft_id, "orderId": order.get("id")})
+        return {"status": "pending", "reason": "auto_submit_disabled", "payload": payload, "draftId": draft_id}
+
+    base_url = _strip(config.woo_commerce.get("store_url", "")).rstrip("/")
+    api_version = _strip(config.woo_commerce.get("api_version", "wc/v3")).lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders"
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            auth=HTTPBasicAuth(
+                _strip(config.woo_commerce.get("consumer_key")),
+                _strip(config.woo_commerce.get("consumer_secret")),
+            ),
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        data = None
+        response_text = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:  # pragma: no cover - best effort
+                data = exc.response.text
+            try:
+                response_text = exc.response.text
+            except Exception:
+                response_text = None
+        status_code = getattr(exc.response, "status_code", None)
+        # Emit a verbose log line so cPanel / Passenger logs show the payload and Woo response.
+        logger.error(
+            "Failed to create WooCommerce order | orderId=%s status=%s woo_response_json=%s woo_response_text=%s woo_payload=%s",
+            order.get("id"),
+            status_code,
+            data,
+            response_text,
+            payload,
+            exc_info=True,
+        )
+        # Also log a plain string without structured placeholders in case the host logging formatter drops extras.
+        try:
+            logger.error(
+                "WooCommerce 400 detail: status=%s json=%s text=%s payload=%s",
+                status_code,
+                data,
+                response_text,
+                payload,
+            )
+        except Exception:
+            pass
+        # And force a stdout/stderr line to survive any logging config quirks on cPanel/Passenger.
+        try:
+            print(
+                f"WOO_COMMERCE_ERROR status={status_code} json={data} text={response_text} payload={payload}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        raise IntegrationError("WooCommerce order creation failed", response=data or response_text) from exc
+
+    body = response.json()
+    # Attempt to derive a payment URL that will present WooCommerce checkout
+    payment_url = body.get("payment_url")
+    try:
+        # Fallback: construct order-pay URL
+        if not payment_url:
+            order_id = body.get("id")
+            order_key = body.get("order_key") or body.get("key")
+            payment_url = f"{base_url}/checkout/order-pay/{order_id}/?pay_for_order=true"
+            if order_key:
+                payment_url += f"&key={order_key}"
+    except Exception:
+        payment_url = None
+    return {
+        "status": "success",
+        "payload": payload,
+        "response": {
+            "id": body.get("id"),
+            "number": body.get("number"),
+            "status": body.get("status"),
+            "paymentUrl": payment_url,
+            "orderKey": body.get("order_key") or body.get("key"),
+            "payForOrderUrl": payment_url,
+        },
+    }
+
+
+def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    woo_order_id = details.get("woo_order_id") or details.get("wooOrderId") or details.get("id")
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
+    meta = []
+    if details.get("payment_intent_id"):
+        meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
+    if details.get("order_key"):
+        meta.append({"key": "order_key", "value": details.get("order_key")})
+    try:
+        response = requests.put(
+            url,
+            json={
+                "status": "processing",
+                "set_paid": True,
+                "payment_method": "stripe",
+                "payment_method_title": "Stripe Onsite",
+                "meta_data": meta,
+            },
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=10,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {"status": "success", "response": {"id": body.get("id"), "status": body.get("status")}}
+    except requests.RequestException as exc:
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("Failed to mark Woo order paid", exc_info=True, extra={"wooOrderId": woo_order_id})
+        raise IntegrationError("Failed to mark Woo order paid", response=data) from exc
+
+
+# ---- Catalog proxy helpers -------------------------------------------------
+
+_ALLOWED_QUERY_KEYS = {
+    "per_page",
+    "page",
+    "search",
+    "status",
+    "orderby",
+    "order",
+    "slug",
+    "sku",
+    "category",
+    "tag",
+    "type",
+    "featured",
+    "stock_status",
+    "min_price",
+    "max_price",
+    "before",
+    "after",
+}
+
+
+def _sanitize_query_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        try:
+            return str(int(value)) if float(value).is_integer() else str(float(value))
+        except Exception:
+            return None
+    s = str(value).strip()
+    return s or None
+
+
+def _sanitize_params(params: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    if not params:
+        return {}
+    cleaned: Dict[str, str] = {}
+    for key, raw in params.items():
+        if key not in _ALLOWED_QUERY_KEYS:
+            continue
+        val = _sanitize_query_value(raw)
+        if val is not None:
+            cleaned[key] = val
+    return cleaned
+
+
+def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> Any:
+    """Fetch Woo catalog resources via server-side credentials.
+
+    endpoint examples:
+      - "products"
+      - "products/categories"
+    """
+    if not is_configured():
+        raise IntegrationError("WooCommerce is not configured")
+
+    config = get_config()
+    base_url = _strip(config.woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(config.woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    normalized = endpoint.lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/{normalized}"
+
+    try:
+        response = requests.get(
+            url,
+            params=_sanitize_params(params or {}),
+            auth=HTTPBasicAuth(
+                _strip(config.woo_commerce.get("consumer_key")),
+                _strip(config.woo_commerce.get("consumer_secret")),
+            ),
+            timeout=10,
+        )
+        response.raise_for_status()
+        # Try JSON; fall back to text if necessary.
+        try:
+            return response.json()
+        except ValueError:
+            return response.text
+    except requests.RequestException as exc:  # pragma: no cover - network error path
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("WooCommerce catalog fetch failed", exc_info=True, extra={"endpoint": endpoint})
+        err = IntegrationError("WooCommerce catalog request failed", response=data)
+        setattr(err, "status", getattr(exc.response, "status_code", 502) if exc.response else 502)
+        raise err
+
+
+def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
+    """Map Woo order JSON to a lightweight summary for the API."""
+    def _num(val: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(val)
+        except Exception:
+            return fallback
+
+    return {
+        "id": str(order.get("id") or ""),
+        "number": str(order.get("number") or order.get("id") or ""),
+        "status": order.get("status"),
+        "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
+        "currency": order.get("currency") or "USD",
+        "paymentMethod": order.get("payment_method_title") or order.get("payment_method"),
+        "createdAt": order.get("date_created") or order.get("date_created_gmt"),
+        "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
+        "billingEmail": (order.get("billing") or {}).get("email"),
+        "source": "woocommerce",
+        "lineItems": [
+            {
+                "id": item.get("id"),
+                "productId": item.get("product_id"),
+                "variationId": item.get("variation_id"),
+                "name": item.get("name"),
+                "quantity": _num(item.get("quantity"), 0),
+                "total": _num(item.get("total"), 0.0),
+                "sku": item.get("sku"),
+            }
+            for item in order.get("line_items") or []
+        ],
+    }
+
+
+def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
+    if not email or not is_configured():
+        return []
+    trimmed = email.strip().lower()
+    if not trimmed:
+        return []
+
+    size = max(1, min(per_page, 50))
+    try:
+        response = fetch_catalog("orders", {"per_page": size, "orderby": "date", "order": "desc"})
+        payload = response if isinstance(response, list) else []
+        return [
+            _map_woo_order_summary(order)
+            for order in payload
+            if isinstance(order, dict)
+            and isinstance((order.get("billing") or {}).get("email"), str)
+            and (order.get("billing") or {}).get("email").strip().lower() == trimmed
+        ]
+    except IntegrationError:
+        raise
+    except Exception as exc:
+        logger.error("Failed to fetch WooCommerce orders by email", exc_info=True, extra={"email": email})
+        raise IntegrationError("WooCommerce order lookup failed")

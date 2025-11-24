@@ -430,3 +430,43 @@ export const quotesAPI = {
     }>;
   },
 };
+
+export const passwordResetAPI = {
+  request: async (email: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/password-reset/request`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+  reset: async (token: string, password: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/password-reset/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    });
+  },
+};
+
+// Legacy-style API helper used by some admin utilities
+export const api = {
+  post: async (path: string, payload: unknown) => {
+    const token = getAuthToken();
+    const url =
+      path.startsWith('http://') || path.startsWith('https://')
+        ? path
+        : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload ?? {}),
+    });
+  },
+};

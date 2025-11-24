@@ -1085,19 +1085,24 @@ export function Header({
 
   const accountInfoPanel = localUser ? (
     <div className="space-y-4">
-      {localUser.role !== 'sales_rep' && (
-        <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
-          <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator at anytime.</p>
-          <div className="space-y-1 text-sm text-slate-600">
-            <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
-            <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
-            <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
-          </div>
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Account Details and Direct Shipping</h2>
+          <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
         </div>
-      )}
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-1">
-        <h3 className="text-base font-semibold text-slate-800">Account Details</h3>
-        <div className="grid gap-3 pt-2">
+        
+        {localUser.role !== 'sales_rep' && (
+          <div className="pt-4 mt-4 border-t border-[var(--brand-glass-border-2)]">
+            <p className="text-sm font-medium text-slate-700">Your Regional Administrator</p>
+            <div className="space-y-1 text-sm text-slate-600 mt-2">
+              <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
+              <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
+              <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-3 pt-4">
           {identityFields.map(({ key, label, type, autoComplete }) => (
             <EditableRow
               key={key}
@@ -1110,14 +1115,6 @@ export function Header({
               }}
             />
           ))}
-        </div>
-      </div>
-      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-800">Direct Shipping</h3>
-          <p className="text-sm text-slate-600">Use your office address for cold-chain deliveries and samples.</p>
-        </div>
-        <div className="grid gap-3">
           {directShippingFields.map(({ key, label, autoComplete }) => (
             <EditableRow
               key={key}
