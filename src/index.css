@@ -3037,6 +3037,9 @@ html {
     0 1px 3px rgba(95, 179, 249, 0.12),
     inset 0 1px rgba(255, 255, 255, 0.55);
   transition: background-color 180ms ease, border-color 180ms ease, box-shadow 220ms ease;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .referral-pill:hover {
@@ -3065,14 +3068,72 @@ html {
 /* Shared moving underline for account tabs */
 .account-tab-underline-indicator {
   position: absolute;
-  bottom: -7px;
-  height: 3px;
+  bottom: 0;
+  height: 4px;
   background: rgb(95, 179, 249);
   border-radius: 9999px;
   box-shadow: 0 4px 12px rgba(95, 179, 249, 0.45);
   opacity: 0;
   transition: left 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
   pointer-events: none;
+}
+
+.account-tab-row {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  touch-action: pan-x;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.order-header-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-header-actions {
+  flex-shrink: 0;
+}
+
+.order-number-row {
+  gap: 1rem;
+}
+
+.order-line-item {
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .order-header-meta {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .order-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .order-header-actions button {
+    width: auto;
+    min-width: 0;
+  }
+
+  .order-number-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .order-line-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .referral-toolbar__search {
@@ -3358,10 +3419,44 @@ html {
   padding: 2rem 0.5rem;
 }
 
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.75rem;
+  min-height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgb(30, 41, 59);
+}
+
+.filter-chip--info {
+  background: rgba(95, 179, 249, 0.15);
+  border-color: rgba(95, 179, 249, 0.5);
+  color: rgb(30, 64, 175);
+}
+
+.filter-chip--warn {
+  background: rgba(250, 204, 21, 0.12);
+  border-color: rgba(250, 204, 21, 0.45);
+  color: rgb(120, 53, 15);
+}
+
+.filter-chip--error {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: rgb(185, 28, 28);
+}
+
 @media (max-width: 799px) {
   .referral-pill {
     display: flex;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 }
 
@@ -3438,7 +3533,8 @@ html {
   .mobile-safe-area .catalog-filter-card,
   .mobile-safe-area .glass-card,
   .mobile-safe-area .products-layout,
-  .mobile-safe-area .referral-pill-wrapper {
+  .mobile-safe-area .referral-pill-wrapper,
+  .mobile-safe-area .glass {
     max-width: 100%;
     width: 100%;
     box-sizing: border-box;
@@ -3452,8 +3548,12 @@ html {
 .referral-pill-wrapper {
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
-  margin-right: clamp(0rem, 1vw, 1.25rem);
-  margin-left: clamp(0rem, 1vw, 1.25rem);
+  margin-right: clamp(0.75rem, 4vw, 1.5rem);
+  margin-left: clamp(0.75rem, 4vw, 1.5rem);
+  width: auto;
+  max-width: calc(100% - (2 * clamp(0.75rem, 4vw, 1.5rem)));
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 @media (min-width: 64rem) {
@@ -3471,7 +3571,31 @@ html {
   .referral-pill-wrapper {
     margin-left: clamp(1rem, 2vw, 1.5rem);
     margin-right: clamp(1rem, 2vw, 1.5rem);
+    max-width: calc(100% - (2 * clamp(1rem, 2vw, 1.5rem)));
   }
+}
+
+@media (max-width: 640px) {
+  .referral-pill-wrapper {
+    margin-top: 1.25rem;
+    margin-bottom: 1.25rem;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Simple fade-up animation used for landing welcome overlay */

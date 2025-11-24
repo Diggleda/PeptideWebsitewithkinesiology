@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -128,7 +128,14 @@ const formatOrderDate = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 };
 
 const formatCurrency = (amount?: number | null, currency = 'USD') => {
@@ -147,6 +154,17 @@ const titleCase = (value?: string | null) => {
   const spaced = value.replace(/[_-]+/g, ' ').trim();
   if (!spaced) return null;
   return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const parseMaybeJson = (value: any) => {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
 };
 
 const formatExpectedDelivery = (order: AccountOrderSummary) => {
@@ -176,6 +194,40 @@ const formatShippingMethod = (estimate?: AccountShippingEstimate | null) => {
     return null;
   }
   return titleCase(estimate.serviceType || estimate.serviceCode) || null;
+};
+
+const parseAddress = (address: any): AccountOrderAddress | null => {
+  if (!address) return null;
+  if (typeof address === 'string') {
+    try {
+      return JSON.parse(address);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof address === 'object') {
+    return address as AccountOrderAddress;
+  }
+  return null;
+};
+
+const convertWooAddress = (addr: any): AccountOrderAddress | null => {
+  if (!addr) return null;
+  const first = addr.first_name || '';
+  const last = addr.last_name || '';
+  const name = [first, last].filter(Boolean).join(' ').trim() || addr.name || null;
+  return {
+    name,
+    company: addr.company || null,
+    addressLine1: addr.address_1 || addr.addressLine1 || null,
+    addressLine2: addr.address_2 || addr.addressLine2 || null,
+    city: addr.city || null,
+    state: addr.state || null,
+    postalCode: addr.postcode || addr.postal_code || addr.postalCode || null,
+    country: addr.country || null,
+    phone: addr.phone || null,
+    email: addr.email || null,
+  };
 };
 
 const renderAddressLines = (address?: AccountOrderAddress | null) => {
@@ -374,7 +426,9 @@ export function Header({
     : '';
 
   // Account tab underline indicator (shared bar that moves to active tab)
-  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
+const tabsContainerRef = useRef<HTMLDivElement | null>(null);
+const isDraggingTabsRef = useRef(false);
+const dragPositionRef = useRef<{ startX: number; scrollLeft: number }>({ startX: 0, scrollLeft: 0 });
   const [indicatorLeft, setIndicatorLeft] = useState<number>(0);
   const [indicatorWidth, setIndicatorWidth] = useState<number>(0);
   const [indicatorOpacity, setIndicatorOpacity] = useState<number>(0);
@@ -393,6 +447,100 @@ export function Header({
     setIndicatorWidth(width);
     setIndicatorOpacity(1);
   }, [accountTab]);
+
+  const scrollTabs = useCallback((pageX: number) => {
+    const container = tabsContainerRef.current;
+    if (!container) {
+      return;
+    }
+    const { startX, scrollLeft } = dragPositionRef.current;
+    const x = pageX - container.offsetLeft;
+    container.scrollLeft = scrollLeft - (x - startX);
+  }, []);
+
+  const handleTabsDragMove = useCallback(
+    (event: MouseEvent) => {
+      if (!isDraggingTabsRef.current) {
+        return;
+      }
+      const container = tabsContainerRef.current;
+      if (!container) {
+        return;
+      }
+      event.preventDefault();
+      scrollTabs(event.pageX);
+    },
+    [scrollTabs],
+  );
+
+  const handleTabsTouchMove = useCallback(
+    (event: TouchEvent) => {
+      if (!isDraggingTabsRef.current) {
+        return;
+      }
+      const touch = event.touches[0];
+      if (!touch) {
+        return;
+      }
+      event.preventDefault();
+      scrollTabs(touch.pageX);
+    },
+    [scrollTabs],
+  );
+
+  const handleTabsDragEnd = useCallback(() => {
+    const container = tabsContainerRef.current;
+    if (container) {
+      container.classList.remove('cursor-grabbing');
+    }
+    document.body.style.userSelect = '';
+    isDraggingTabsRef.current = false;
+    window.removeEventListener('mousemove', handleTabsDragMove);
+    window.removeEventListener('mouseup', handleTabsDragEnd);
+    window.removeEventListener('touchmove', handleTabsTouchMove);
+    window.removeEventListener('touchend', handleTabsDragEnd);
+  }, [handleTabsDragMove, handleTabsTouchMove]);
+
+  const handleTabsDragStart = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const container = tabsContainerRef.current;
+      if (!container) {
+        return;
+      }
+      isDraggingTabsRef.current = true;
+      container.classList.add('cursor-grabbing');
+      document.body.style.userSelect = 'none';
+      dragPositionRef.current = {
+        startX: event.pageX - container.offsetLeft,
+        scrollLeft: container.scrollLeft,
+      };
+      window.addEventListener('mousemove', handleTabsDragMove);
+      window.addEventListener('mouseup', handleTabsDragEnd);
+    },
+    [handleTabsDragMove, handleTabsDragEnd],
+  );
+
+  const handleTabsTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      const container = tabsContainerRef.current;
+      if (!container) {
+        return;
+      }
+      isDraggingTabsRef.current = true;
+      container.classList.add('cursor-grabbing');
+      document.body.style.userSelect = 'none';
+      dragPositionRef.current = {
+        startX: (event.touches[0]?.pageX ?? 0) - container.offsetLeft,
+        scrollLeft: container.scrollLeft,
+      };
+      window.addEventListener('touchmove', handleTabsTouchMove, { passive: false });
+      window.addEventListener('touchend', handleTabsDragEnd);
+    },
+    [handleTabsTouchMove, handleTabsDragEnd],
+  );
 
   useLayoutEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -1043,6 +1191,8 @@ export function Header({
           const itemCount = order.lineItems?.length ?? 0;
           const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
           const expectedDelivery = formatExpectedDelivery(order);
+          const displayTotal = (order.total ?? 0) + (order.shippingTotal ?? 0);
+          const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
           
           return (
             <div
@@ -1050,70 +1200,75 @@ export function Header({
               className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden"
             >
               {/* Order Header */}
-              <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9] flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-8 text-sm text-slate-700">
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Order placed</p>
-                    <p className="text-sm font-semibold text-slate-900">{formatOrderDate(order.createdAt)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {formatCurrency(order.total ?? null, order.currency || 'USD')}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
-                    <p className="text-sm font-semibold text-slate-900">{status}</p>
-                  </div>
-                  {expectedDelivery && (
+              <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9]">
+                <div className="order-header-main flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="order-header-meta flex flex-wrap items-center gap-8 text-sm text-slate-700">
                     <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
-                      <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Order placed</p>
+                      <p className="text-sm font-semibold text-slate-900">{formatOrderDate(order.createdAt)}</p>
                     </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <button
-                    type="button"
-                    className="text-[rgb(26,85,173)] font-semibold hover:underline"
-                    onClick={() => setSelectedOrder(order)}
-                  >
-                    View order details
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    type="button"
-                    className="text-[rgb(26,85,173)] font-semibold hover:underline"
-                    onClick={() => {
-                      const integrations = order.integrations || (order as any).integrationDetails;
-                      const wooIntegration = (integrations as any)?.wooCommerce;
-                      if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
-                    }}
-                  >
-                    View invoice
-                  </button>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {formatCurrency(displayTotal, order.currency || 'USD')}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
+                      <p className="text-sm font-semibold text-slate-900">{status}</p>
+                    </div>
+                    {expectedDelivery && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
+                        <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="order-header-actions flex flex-wrap items-center gap-3 text-sm">
+                    <button
+                      type="button"
+                      className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                      onClick={() => {
+                        const integrations = order.integrations || (order as any).integrationDetails;
+                        const wooIntegration = (integrations as any)?.wooCommerce;
+                        if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
+                      }}
+                    >
+                      View invoice
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                      onClick={() => setSelectedOrder(order)}
+                    >
+                      View order details
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {/* Order Body */}
-              <div className="px-6 py-5 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="text-base font-bold text-slate-900">
+              <div className="px-6 pt-5 pb-5 space-y-4">
+                <div className="order-card-divider border-t border-[#d5d9d9] sm:hidden" aria-hidden="true" />
+                <div className="flex flex-wrap items-center justify-between gap-3 order-number-row">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-base font-bold text-slate-900 break-words">
                       <span className="mr-2">{orderNumberLabel}</span>
                       {showItemCount && (
-                        <span className="text-slate-700 font-semibold">
-                          {itemCount} item{itemCount !== 1 ? 's' : ''}
+                        <span className="text-slate-700 font-semibold hidden sm:inline">
+                          {itemLabel}
                         </span>
                       )}
-                    </div>
+                    </p>
+                    {showItemCount && (
+                      <p className="text-sm text-slate-600 sm:hidden">{itemLabel}</p>
+                    )}
                   </div>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 min-w-[10rem] justify-center font-semibold mt-2 gap-2"
+                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 sm:min-w-[10rem] justify-center font-semibold mt-2 sm:mt-0 gap-2 w-full sm:w-auto"
                     onClick={() => {
                       if (onBuyOrderAgain) {
                         onBuyOrderAgain(order);
@@ -1130,7 +1285,7 @@ export function Header({
                 {order.lineItems && order.lineItems.length > 0 && (
                   <div className="space-y-3">
                     {order.lineItems.map((line, idx) => (
-                      <div key={line.id || `${line.sku}-${idx}`} className="flex items-start gap-4 mb-4">
+                      <div key={line.id || `${line.sku}-${idx}`} className="order-line-item flex items-start gap-4 mb-4">
                         <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
                           {(line as any).image ? (
                             <img
@@ -1147,7 +1302,7 @@ export function Header({
                             {line.name || 'Item'}
                           </p>
                           <p className="text-sm text-slate-700">
-                            Qty: {line.quantity ?? '—'} • {formatCurrency(line.total ?? line.price ?? null, order.currency || 'USD')}
+                            Qty: {line.quantity ?? '—'}
                           </p>
                           {line.sku && <p className="text-xs text-slate-500">SKU: {line.sku}</p>}
                         </div>
@@ -1166,10 +1321,40 @@ export function Header({
 
   const renderOrderDetails = () => {
     if (!selectedOrder) return null;
+    const integrationDetails = parseMaybeJson((selectedOrder as any).integrationDetails);
+    const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
+    const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+    const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+    const wooShippingLine =
+      (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
+      (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
+
     const expectedDelivery = formatExpectedDelivery(selectedOrder);
-    const shippingMethod = formatShippingMethod(selectedOrder.shippingEstimate);
+    const shippingMethod =
+      formatShippingMethod(selectedOrder.shippingEstimate) ||
+      titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
+    const shippingCarrier =
+      titleCase(selectedOrder.shippingEstimate?.carrierId) ||
+      titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
+    const shippingRate =
+      selectedOrder.shippingEstimate?.rate ??
+      (wooShippingLine && typeof wooShippingLine.total === 'string' ? Number(wooShippingLine.total) : undefined);
+
+    const wooShippingAddress = convertWooAddress(wooResponse?.shipping || wooPayload?.shipping);
+    const wooBillingAddress = convertWooAddress(wooResponse?.billing || wooPayload?.billing);
+
+    const shippingAddress =
+      parseAddress(selectedOrder.shippingAddress) ||
+      parseAddress((selectedOrder as any).shipping) ||
+      wooShippingAddress ||
+      parseAddress(selectedOrder.billingAddress);
+    const billingAddress =
+      parseAddress(selectedOrder.billingAddress) ||
+      wooBillingAddress ||
+      parseAddress(selectedOrder.shippingAddress);
     const lineItems = selectedOrder.lineItems || [];
-    const stripeMeta = (selectedOrder.integrationDetails as any)?.stripe || {};
+    const stripeMeta = parseMaybeJson(integrationDetails?.stripe || (integrationDetails as any)?.Stripe) || {};
+    const detailTotal = (selectedOrder.total ?? 0) + (selectedOrder.shippingTotal ?? 0);
     const paymentDisplay = (() => {
       const raw = selectedOrder.paymentMethod || null;
       if (raw && !/stripe onsite/i.test(raw)) {
@@ -1204,7 +1389,7 @@ export function Header({
             <div>
               <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
               <p className="text-sm font-semibold text-slate-900">
-                {formatCurrency(selectedOrder.total ?? null, selectedOrder.currency || 'USD')}
+                {formatCurrency(detailTotal, selectedOrder.currency || 'USD')}
               </p>
             </div>
             {expectedDelivery && (
@@ -1219,11 +1404,22 @@ export function Header({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-3 text-left">
             <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
-            {renderAddressLines(selectedOrder.shippingAddress)}
+            {renderAddressLines(shippingAddress)}
             <div className="text-sm text-slate-700 space-y-1">
               {shippingMethod && (
                 <p>
                   <span className="font-semibold">Service:</span> {shippingMethod}
+                </p>
+              )}
+              {shippingCarrier && (
+                <p>
+                  <span className="font-semibold">Carrier:</span> {shippingCarrier}
+                </p>
+              )}
+              {typeof shippingRate === 'number' && (
+                <p>
+                  <span className="font-semibold">Rate:</span>{' '}
+                  {formatCurrency(shippingRate, selectedOrder.currency || 'USD')}
                 </p>
               )}
               {typeof selectedOrder.shippingTotal === 'number' && (
@@ -1242,7 +1438,7 @@ export function Header({
 
           <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-3 text-left">
             <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
-            {renderAddressLines(selectedOrder.billingAddress || selectedOrder.shippingAddress)}
+            {renderAddressLines(billingAddress)}
             <div className="text-sm text-slate-700 space-y-1">
               {paymentDisplay && (
                 <p>
@@ -1269,9 +1465,7 @@ export function Header({
                       {line.sku ? ` • SKU: ${line.sku}` : ''}
                     </p>
                   </div>
-                  <p className="font-semibold text-slate-900">
-                    {formatCurrency(line.total ?? line.price ?? null, selectedOrder.currency || 'USD')}
-                  </p>
+                  <div className="text-right min-w-[3rem]" aria-hidden="true" />
                 </div>
               ))}
             </div>
@@ -1419,7 +1613,12 @@ export function Header({
                   ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! Your can manage your account details and orders below.`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
-              <div className="relative flex items-center gap-4 pb-2" ref={tabsContainerRef}>
+              <div
+                className="relative flex items-center gap-4 pb-2 overflow-x-auto no-scrollbar w-full cursor-grab account-tab-row"
+                ref={tabsContainerRef}
+                onMouseDown={handleTabsDragStart}
+                onTouchStart={handleTabsTouchStart}
+              >
                 {accountHeaderTabs.map((tab) => {
                   const isActive = accountTab === tab.id;
                   return (
@@ -1427,7 +1626,7 @@ export function Header({
                       key={tab.id}
                       type="button"
                       className={clsx(
-                        'relative inline-flex items-center gap-2 px-3 pb-2 pt-1 text-sm font-semibold transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30',
+                        'relative inline-flex items-center gap-2 px-3 pb-2 pt-1 text-sm font-semibold transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0',
                         isActive && 'text-slate-900'
                       )}
                       data-tab={tab.id}
