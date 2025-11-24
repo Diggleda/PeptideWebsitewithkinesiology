@@ -96,13 +96,19 @@ CREATE_TABLE_STATEMENTS = [
         user_id VARCHAR(32) NOT NULL,
         items LONGTEXT NULL,
         total DECIMAL(12,2) NOT NULL DEFAULT 0,
+        shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+        shipping_carrier VARCHAR(64) NULL,
+        shipping_service VARCHAR(128) NULL,
+        physician_certified TINYINT(1) NOT NULL DEFAULT 0,
         referral_code VARCHAR(8) NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'pending',
         referrer_bonus LONGTEXT NULL,
         first_order_bonus LONGTEXT NULL,
         integrations LONGTEXT NULL,
+        payload LONGTEXT NULL,
         shipping_address LONGTEXT NULL,
-        created_at DATETIME NULL
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
     """
 ]
@@ -111,3 +117,20 @@ CREATE_TABLE_STATEMENTS = [
 def ensure_schema() -> None:
     for statement in CREATE_TABLE_STATEMENTS:
         mysql_client.execute(statement)
+
+    # Apply lightweight schema evolutions without breaking existing tables
+    migrations = [
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_rate LONGTEXT NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload LONGTEXT NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
+    ]
+    for stmt in migrations:
+        try:
+            mysql_client.execute(stmt)
+        except Exception:
+            # Best effort; if column exists or engine doesn't support IF NOT EXISTS, ignore
+            continue

@@ -3470,6 +3470,12 @@ const renderSalesRepDashboard = () => {
 
   const featuredProducts = filteredProductCatalog.slice(0, 4);
   const quoteReady = showQuote && Boolean(quoteOfTheDay);
+  const quoteFontSize = useMemo(() => {
+    const len = quoteOfTheDay?.text?.length || 0;
+    if (len > 180) return 'clamp(0.70rem, 1.7vw, 0.90rem)';
+    if (len > 120) return 'clamp(0.75rem, 1.9vw, 0.98rem)';
+    return 'clamp(0.80rem, 2.2vw, 1.05rem)';
+  }, [quoteOfTheDay]);
 
   const totalCartItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const shouldShowHeaderCartIcon = totalCartItems > 0 && !isCheckoutButtonVisible;
@@ -3588,6 +3594,7 @@ const renderSalesRepDashboard = () => {
                     style={{
                       backdropFilter: 'blur(20px) saturate(1.4)',
                       minHeight: 'min(140px, 12.5vh)',
+                      maxHeight: 'min(160px, 14vh)',
                     }}
                     aria-live="polite"
                   >
@@ -3604,7 +3611,12 @@ const renderSalesRepDashboard = () => {
                       <p
                         className="px-4 sm:px-6 italic text-gray-700 text-center leading-snug break-words"
                         style={{
-                          fontSize: 'clamp(0.8rem, 2.6vw, 1.05rem)',
+                          fontSize: quoteFontSize,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
                         }}
                       >
                         "{quoteOfTheDay.text}" — {quoteOfTheDay.author}

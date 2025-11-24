@@ -57,23 +57,34 @@ def insert(order: Dict) -> Dict:
         mysql_client.execute(
             """
             INSERT INTO orders (
-                id, user_id, items, total, referral_code, status,
-                referrer_bonus, first_order_bonus, integrations, shipping_address, created_at
+                id, user_id, items, total, shipping_total, shipping_carrier, shipping_service,
+                physician_certified, referral_code, status,
+                referrer_bonus, first_order_bonus, integrations, shipping_rate, shipping_address, payload,
+                created_at, updated_at
             ) VALUES (
-                %(id)s, %(user_id)s, %(items)s, %(total)s, %(referral_code)s, %(status)s,
-                %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_address)s, %(created_at)s
+                %(id)s, %(user_id)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                %(physician_certified)s, %(referral_code)s, %(status)s,
+                %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(shipping_address)s, %(payload)s,
+                %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
                 user_id = VALUES(user_id),
                 items = VALUES(items),
                 total = VALUES(total),
+                shipping_total = VALUES(shipping_total),
+                shipping_carrier = VALUES(shipping_carrier),
+                shipping_service = VALUES(shipping_service),
+                physician_certified = VALUES(physician_certified),
                 referral_code = VALUES(referral_code),
                 status = VALUES(status),
                 referrer_bonus = VALUES(referrer_bonus),
                 first_order_bonus = VALUES(first_order_bonus),
                 integrations = VALUES(integrations),
+                shipping_rate = VALUES(shipping_rate),
                 shipping_address = VALUES(shipping_address),
-                created_at = VALUES(created_at)
+                payload = VALUES(payload),
+                created_at = VALUES(created_at),
+                updated_at = VALUES(updated_at)
             """,
             params,
         )
@@ -153,13 +164,19 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "userId": row.get("user_id"),
         "items": parse_json(row.get("items"), []),
         "total": float(row.get("total") or 0),
+        "shippingTotal": float(row.get("shipping_total") or 0),
+        "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
+        "shippingAddress": parse_json(row.get("shipping_address"), None),
+        "shippingCarrier": row.get("shipping_carrier"),
+        "shippingService": row.get("shipping_service"),
+        "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
         "status": row.get("status"),
         "referrerBonus": parse_json(row.get("referrer_bonus"), None),
         "firstOrderBonus": parse_json(row.get("first_order_bonus"), None),
         "integrations": parse_json(row.get("integrations"), {}),
-        "shippingAddress": parse_json(row.get("shipping_address"), None),
         "createdAt": fmt_datetime(row.get("created_at")),
+        "updatedAt": fmt_datetime(row.get("updated_at")),
     }
 
 
@@ -185,11 +202,22 @@ def _to_db_params(order: Dict) -> Dict:
         "user_id": order.get("userId"),
         "items": serialize_json(order.get("items")),
         "total": float(order.get("total") or 0),
+        "shipping_total": float(order.get("shippingTotal") or 0),
+        "shipping_carrier": order.get("shippingCarrier")
+        or order.get("shippingEstimate", {}).get("carrierId")
+        or order.get("shippingEstimate", {}).get("carrier_id"),
+        "shipping_service": order.get("shippingService")
+        or order.get("shippingEstimate", {}).get("serviceType")
+        or order.get("shippingEstimate", {}).get("serviceCode"),
+        "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),
         "status": order.get("status") or "pending",
         "referrer_bonus": serialize_json(order.get("referrerBonus")),
         "first_order_bonus": serialize_json(order.get("firstOrderBonus")),
         "integrations": serialize_json(order.get("integrations")),
+        "shipping_rate": serialize_json(order.get("shippingEstimate")),
         "shipping_address": serialize_json(order.get("shippingAddress")),
+        "payload": serialize_json(order),
         "created_at": parse_dt(order.get("createdAt")),
+        "updated_at": parse_dt(order.get("updatedAt") or datetime.now(timezone.utc)),
     }

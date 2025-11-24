@@ -7,4 +7,3 @@ router.get('/daily', quotesController.getDaily);
 router.get('/', quotesController.list);
 
 module.exports = router;
-

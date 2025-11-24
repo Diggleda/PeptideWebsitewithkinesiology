@@ -35,6 +35,7 @@ def help_endpoint():
             "integrations": {
                 "wooCommerce": {"configured": woo_commerce.is_configured()},
                 "shipEngine": {"configured": ship_engine.is_configured()},
+                "shipStation": {"configured": getattr(config, "ship_station", {}).get("api_token") or getattr(config, "ship_station", {}).get("api_key")},
             },
             "endpoints": [
                 "/api/auth/login",
@@ -42,6 +43,9 @@ def help_endpoint():
                 "/api/auth/me",
                 "/api/auth/check-email",
                 "/api/orders",
+                "/api/shipping/rates",
+                "/api/quotes/daily",
+                "/api/quotes",
                 "/api/woo/products",
                 "/api/woo/products/categories",
                 "/api/referrals/doctor/summary",

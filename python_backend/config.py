@@ -69,8 +69,10 @@ class AppConfig:
     stripe: Dict[str, Any]
     referral: Dict[str, Any]
     encryption: Dict[str, Any]
+    ship_station: Dict[str, Any]
     mysql: Dict[str, Any]
     integrations: Dict[str, Any]
+    quotes: Dict[str, Any]
     flask_settings: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -134,6 +136,25 @@ def load_config() -> AppConfig:
             "key": os.environ.get("DATA_ENCRYPTION_KEY", ""),
             "algorithm": os.environ.get("DATA_ENCRYPTION_ALGO", "aes-256-gcm"),
         },
+        ship_station={
+            "api_token": _s(os.environ.get("SHIPSTATION_API_TOKEN")),
+            "api_key": _s(os.environ.get("SHIPSTATION_API_KEY")),
+            "api_secret": _s(os.environ.get("SHIPSTATION_API_SECRET")),
+            "carrier_code": _s(os.environ.get("SHIPSTATION_CARRIER_CODE")),
+            "service_code": _s(os.environ.get("SHIPSTATION_SERVICE_CODE")),
+            "package_code": _s(os.environ.get("SHIPSTATION_PACKAGE_CODE") or "package"),
+            "ship_from": {
+                "name": _s(os.environ.get("SHIPSTATION_SHIP_FROM_NAME")),
+                "company": _s(os.environ.get("SHIPSTATION_SHIP_FROM_COMPANY")),
+                "address_line1": _s(os.environ.get("SHIPSTATION_SHIP_FROM_ADDRESS1")),
+                "address_line2": _s(os.environ.get("SHIPSTATION_SHIP_FROM_ADDRESS2")),
+                "city": _s(os.environ.get("SHIPSTATION_SHIP_FROM_CITY")),
+                "state": _s(os.environ.get("SHIPSTATION_SHIP_FROM_STATE")),
+                "postal_code": _s(os.environ.get("SHIPSTATION_SHIP_FROM_POSTAL")),
+                "country_code": _s(os.environ.get("SHIPSTATION_SHIP_FROM_COUNTRY") or "US"),
+                "phone": _s(os.environ.get("SHIPSTATION_SHIP_FROM_PHONE")),
+            },
+        },
         mysql={
             "enabled": os.environ.get("MYSQL_ENABLED", "").lower() == "true",
             "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
@@ -147,6 +168,17 @@ def load_config() -> AppConfig:
         },
         integrations={
             "google_sheets_secret": os.environ.get("GOOGLE_SHEETS_WEBHOOK_SECRET", ""),
+        },
+        quotes={
+            "source_url": _s(
+                os.environ.get("QUOTES_SOURCE_URL")
+                or "https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php"
+            ),
+            "secret": _s(
+                os.environ.get("QUOTES_WEBHOOK_SECRET")
+                or os.environ.get("GOOGLE_SHEETS_WEBHOOK_SECRET")
+                or ""
+            ),
         },
         flask_settings={
             "JSON_SORT_KEYS": False,

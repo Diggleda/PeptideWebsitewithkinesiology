@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import requests
 
@@ -114,3 +114,56 @@ def forward_shipment(order: Dict, customer: Dict) -> Dict:
             "trackingNumber": body.get("tracking_number"),
         },
     }
+
+
+def estimate_rates(address: Dict, total_weight_oz: float) -> List[Dict]:
+    if not is_configured():
+        raise IntegrationError("ShipEngine is not configured")
+
+    config = get_config()
+    headers = {
+        "Content-Type": "application/json",
+        "API-Key": config.ship_engine["api_key"],
+    }
+
+    payload = {
+        "carrier_ids": [config.ship_engine.get("default_carrier_id")] if config.ship_engine.get("default_carrier_id") else None,
+        "service_code": config.ship_engine.get("default_service_code") or None,
+        "from_country_code": config.ship_engine.get("ship_from_country") or "US",
+        "from_postal_code": config.ship_engine.get("ship_from_postal_code") or "",
+        "from_city_locality": config.ship_engine.get("ship_from_city") or "",
+        "from_state_province": config.ship_engine.get("ship_from_state") or "",
+        "to_country_code": address.get("country"),
+        "to_postal_code": address.get("postalCode"),
+        "to_city_locality": address.get("city"),
+        "to_state_province": address.get("state"),
+        "packages": [
+            {
+                "weight": {
+                    "value": max(total_weight_oz, 1.0),
+                    "unit": "ounce",
+                },
+            }
+        ],
+    }
+
+    # Remove empty values that ShipEngine rejects
+    payload = {key: value for key, value in payload.items() if value not in (None, "", [])}
+
+    try:
+        response = requests.post(f"{API_BASE_URL}/rates/estimate", json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - network errors
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:  # pragma: no cover
+                data = exc.response.text
+        raise IntegrationError("Failed to estimate ShipEngine rates", response=data) from exc
+
+    body = response.json()
+    rates = body.get("rate_response", {}).get("rates")
+    if rates is None and isinstance(body, dict):
+        rates = body.get("rates")
+    return rates or []

@@ -19,7 +19,16 @@ def _validate_items(items: Optional[List[Dict]]) -> bool:
     )
 
 
-def create_order(user_id: str, items: List[Dict], total: float, referral_code: Optional[str]) -> Dict:
+def create_order(
+    user_id: str,
+    items: List[Dict],
+    total: float,
+    referral_code: Optional[str],
+    shipping_total: Optional[float] = None,
+    shipping_address: Optional[Dict] = None,
+    shipping_rate: Optional[Dict] = None,
+    physician_certified: bool = False,
+) -> Dict:
     if not _validate_items(items):
         raise _service_error("Order requires at least one item", 400)
     if not isinstance(total, (int, float)) or total <= 0:
@@ -36,9 +45,13 @@ def create_order(user_id: str, items: List[Dict], total: float, referral_code: O
         "userId": user_id,
         "items": items,
         "total": float(total),
+        "shippingTotal": float(shipping_total or 0),
+        "shippingEstimate": shipping_rate or {},
+        "shippingAddress": shipping_address or {},
         "referralCode": normalized_referral,
         "status": "pending",
         "createdAt": now,
+        "physicianCertificationAccepted": bool(physician_certified),
     }
 
     # Auto-apply available referral credits to this order
