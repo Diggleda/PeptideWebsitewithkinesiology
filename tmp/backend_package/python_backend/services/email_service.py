@@ -116,20 +116,23 @@ def _send_via_sendgrid(
 
 def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str]:
     safe_base_url = base_url.rstrip("/") or "https://peppro.net"
+    logo_url = f"{safe_base_url}/Peppro_fulllogo.png"
     html = f"""<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>PepPro Password Reset</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
   </head>
-  <body style="margin:0;padding:0;background-color:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8;padding:32px 0;">
+  <body style="margin:0;padding:0;background-color:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#111827;color-scheme:light;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8;padding:32px 0;color-scheme:light;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,0.08);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,0.08);color-scheme:light;">
             <tr>
               <td style="background-color:#ffffff;padding:24px 24px 12px;" align="center">
-                <img src="{PEPPRO_LOGO_DATA_URI}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
+                <img src="{logo_url}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
               </td>
             </tr>
             <tr>
@@ -142,19 +145,19 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
                   If you did not request this, you can safely ignore this email—your password will remain unchanged.
                 </p>
                 <p style="margin:0 0 32px;text-align:center;">
-                  <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background-color:#0B274B;color:#ffffff;font-weight:600;border-radius:999px;text-decoration:none;">Reset Password</a>
+                  <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Reset Password</a>
                 </p>
                 <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#6b7280;">
                   Or copy and paste this link into your browser:
                 </p>
-                <p style="margin:0;font-size:14px;line-height:1.5;color:#1d4ed8;word-break:break-all;">
+                <p style="margin:0;font-size:14px;line-height:1.5;color:#5FB3F9;word-break:break-all;">
                   {reset_url}
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
-                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#0B274B;text-decoration:none;">support@peppro.net</a> or visit <a href="{safe_base_url}" style="color:#0B274B;text-decoration:none;">{safe_base_url}</a>.</p>
+                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#5FB3F9;text-decoration:none;">support@peppro.net</a> or visit <a href="{safe_base_url}" style="color:#5FB3F9;text-decoration:none;">{safe_base_url}</a>.</p>
                 <p style="margin:0;">This link will expire in 60 minutes to keep your account secure.</p>
               </td>
             </tr>

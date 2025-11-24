@@ -4187,23 +4187,8 @@ const renderSalesRepDashboard = () => {
                             spellCheck={false}
                             required
                             onFocus={handleLandingCredentialFocus}
-                            className="flex-1 h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                           />
-                          {passkeySupport.platform && (
-                            <button
-                              type="button"
-                              onClick={handleManualPasskeyLogin}
-                              disabled={passkeyLoginPending}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] disabled:opacity-50 disabled:cursor-not-allowed btn-hover-lighter"
-                              aria-label="Sign in with a passkey (biometrics)"
-                            >
-                              {passkeyLoginPending ? (
-                                <Loader2 className="h-5 w-5 animate-spin-slow text-gray-500" aria-hidden="true" />
-                              ) : (
-                                <Fingerprint className="h-5 w-5" aria-hidden="true" />
-                              )}
-                            </button>
-                          )}
                         </div>
                         {/* Hidden field to hint WebAuthn conditional UI to the browser */}
                         <input
@@ -4243,59 +4228,64 @@ const renderSalesRepDashboard = () => {
                             )}
                           </button>
                         </div>
-                        <p className="text-sm text-gray-600">
-                          Forgot your password?{' '}
-                          <button
-                            type="button"
-                            onClick={() => updateLandingAuthMode('forgot')}
-                            className="font-semibold hover:underline btn-hover-lighter"
-                            style={{ color: 'rgb(95, 179, 249)' }}
-                          >
-                            Reset it
-                          </button>
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
+                          <p>
+                            Forgot your password?{' '}
+                            <button
+                              type="button"
+                              onClick={() => updateLandingAuthMode('forgot')}
+                              className="font-semibold hover:underline btn-hover-lighter"
+                              style={{ color: 'rgb(95, 179, 249)' }}
+                            >
+                              Reset it
+                            </button>
+                          </p>
+                          {passkeySupport.platform && (
+                            <button
+                              type="button"
+                              onClick={handleManualPasskeyLogin}
+                              disabled={passkeyLoginPending}
+                              className="inline-flex items-center gap-1 font-semibold text-transparent hover:text-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] btn-hover-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label="Sign in with a passkey (biometrics)"
+                              style={{ backgroundColor: 'transparent', borderColor: 'transparent' }}
+                            >
+                              {passkeyLoginPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin-slow" aria-hidden="true" />
+                              ) : (
+                                <Fingerprint className="h-4 w-4" aria-hidden="true" />
+                              )}
+                              <span className="sr-only">Sign in with passkey</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {landingLoginError && (
                         <p className="text-sm text-red-600" role="alert">{landingLoginError}</p>
                       )}
-                      {passkeySupport.platform && (
+                      <div className="space-y-2">
                         <Button
-                          type="button"
-                          variant="outline"
+                          type="submit"
                           size="lg"
-                          onClick={handleManualPasskeyLogin}
-                          disabled={passkeyLoginPending}
-                          className="w-full squircle-sm btn-hover-lighter"
-                          aria-label="Sign in with a passkey (biometrics)"
+                          className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
+                          disabled={landingLoginPending}
                         >
-                          <Fingerprint className="h-4 w-4" aria-hidden="true" />
-                          {passkeyLoginPending ? 'Waiting for biometric confirmation…' : 'Sign in with passkey'}
+                          {landingLoginPending && (
+                            <Loader2
+                              className="h-4 w-4 animate-spin-slow text-white shrink-0"
+                              aria-hidden="true"
+                              style={{ transformOrigin: 'center center', transform: 'translateZ(0)' }}
+                            />
+                          )}
+                          {landingLoginPending ? 'Signing in…' : 'Sign In'}
                         </Button>
-                      )}
-                      <Button
-                        type="submit"
-                        size="lg"
-                        className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
-                        disabled={landingLoginPending}
-                      >
-                        {landingLoginPending && (
-                          <Loader2
-                            className="h-4 w-4 animate-spin-slow text-white shrink-0"
-                            aria-hidden="true"
-                            style={{ transformOrigin: 'center center', transform: 'translateZ(0)' }}
-                          />
-                        )}
-                        {landingLoginPending ? 'Signing in…' : 'Sign In'}
-                      </Button>
+                        <p className="text-center text-sm text-gray-600">
+                          Have a referral code?{' '}
+                          <button type="button" onClick={() => updateLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
+                            Create an account
+                          </button>
+                        </p>
+                      </div>
                     </form>
-                    <div className="text-center space-y-1">
-                      <p className="text-sm text-gray-600">
-                        Have a referral code?{' '}
-                        <button type="button" onClick={() => updateLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
-                          Create an account
-                        </button>
-                      </p>
-                    </div>
                   </>
                 )}
                 {landingAuthMode === 'forgot' && (
@@ -4671,22 +4661,22 @@ const renderSalesRepDashboard = () => {
                       {landingSignupError && (
                         <p className="text-sm text-red-600" role="alert">{landingSignupError}</p>
                       )}
-                      <Button
-                        type="submit"
-                        size="lg"
-                        className="w-full squircle-sm glass-brand btn-hover-lighter"
-                      >
-                        Create Account
-                      </Button>
+                      <div className="space-y-2">
+                        <Button
+                          type="submit"
+                          size="lg"
+                          className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter"
+                        >
+                          Create Account
+                        </Button>
+                        <p className="text-center text-sm text-gray-600">
+                          Already have an account?{' '}
+                          <button type="button" onClick={() => updateLandingAuthMode('login')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
+                            Sign in
+                          </button>
+                        </p>
+                      </div>
                     </form>
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">
-                        Already have an account?{' '}
-                        <button type="button" onClick={() => updateLandingAuthMode('login')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
-                          Sign in
-                        </button>
-                      </p>
-                    </div>
                   </>
                 )}
                 </div>
