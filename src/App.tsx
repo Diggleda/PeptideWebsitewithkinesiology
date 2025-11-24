@@ -1021,6 +1021,23 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleLocationSync);
   }, []);
 
+  const closeResetWindow = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const origin = window.location.origin;
+    if (window.opener && !window.opener.closed) {
+      try {
+        window.opener.postMessage({ type: 'PASSWORD_RESET_COMPLETE' }, origin);
+      } catch (error) {
+        console.warn('[Auth] Unable to notify opener about password reset completion', error);
+      }
+      window.close();
+    } else {
+      window.location.replace('/');
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
@@ -1032,27 +1049,14 @@ export default function App() {
       }
       return;
     }
-    const finalizeResetFlow = () => {
-      const origin = window.location.origin;
-      if (window.opener && !window.opener.closed) {
-        try {
-          window.opener.postMessage({ type: 'PASSWORD_RESET_COMPLETE' }, origin);
-        } catch (error) {
-          console.warn('[Auth] Unable to notify opener about password reset completion', error);
-        }
-        window.close();
-      } else {
-        window.location.replace('/');
-      }
-    };
-    resetCompletionTimerRef.current = window.setTimeout(finalizeResetFlow, 1500);
+    resetCompletionTimerRef.current = window.setTimeout(closeResetWindow, 1500);
     return () => {
       if (resetCompletionTimerRef.current) {
         window.clearTimeout(resetCompletionTimerRef.current);
         resetCompletionTimerRef.current = null;
       }
     };
-  }, [resetPasswordSuccess]);
+  }, [closeResetWindow, resetPasswordSuccess]);
 
   const clearResetRoute = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -4170,20 +4174,37 @@ const renderSalesRepDashboard = () => {
                     >
                       <div className="space-y-2">
                         <label htmlFor="landing-username" className="text-sm font-medium">Email</label>
-                        <input
-                          ref={landingLoginEmailRef}
-                          id="landing-username"
-                          name="username"
-                          type="text"
-                          autoComplete="username"
-                          inputMode="email"
-                          autoCapitalize="none"
-                          autoCorrect="off"
-                          spellCheck={false}
-                          required
-                          onFocus={handleLandingCredentialFocus}
-                          className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={landingLoginEmailRef}
+                            id="landing-username"
+                            name="username"
+                            type="text"
+                            autoComplete="username"
+                            inputMode="email"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            required
+                            onFocus={handleLandingCredentialFocus}
+                            className="flex-1 h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                          {passkeySupport.platform && (
+                            <button
+                              type="button"
+                              onClick={handleManualPasskeyLogin}
+                              disabled={passkeyLoginPending}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-transparent text-gray-600 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(95,179,249,0.3)] disabled:opacity-50 disabled:cursor-not-allowed btn-hover-lighter"
+                              aria-label="Sign in with a passkey (biometrics)"
+                            >
+                              {passkeyLoginPending ? (
+                                <Loader2 className="h-5 w-5 animate-spin-slow text-gray-500" aria-hidden="true" />
+                              ) : (
+                                <Fingerprint className="h-5 w-5" aria-hidden="true" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                         {/* Hidden field to hint WebAuthn conditional UI to the browser */}
                         <input
                           type="text"
@@ -4222,6 +4243,17 @@ const renderSalesRepDashboard = () => {
                             )}
                           </button>
                         </div>
+                        <p className="text-sm text-gray-600">
+                          Forgot your password?{' '}
+                          <button
+                            type="button"
+                            onClick={() => updateLandingAuthMode('forgot')}
+                            className="font-semibold hover:underline btn-hover-lighter"
+                            style={{ color: 'rgb(95, 179, 249)' }}
+                          >
+                            Reset it
+                          </button>
+                        </p>
                       </div>
                       {landingLoginError && (
                         <p className="text-sm text-red-600" role="alert">{landingLoginError}</p>
@@ -4257,17 +4289,6 @@ const renderSalesRepDashboard = () => {
                       </Button>
                     </form>
                     <div className="text-center space-y-1">
-                      <p className="text-sm text-gray-600">
-                        Forgot your password?{' '}
-                        <button
-                          type="button"
-                          onClick={() => updateLandingAuthMode('forgot')}
-                          className="font-semibold hover:underline btn-hover-lighter"
-                          style={{ color: 'rgb(95, 179, 249)' }}
-                        >
-                          Reset it
-                        </button>
-                      </p>
                       <p className="text-sm text-gray-600">
                         Have a referral code?{' '}
                         <button type="button" onClick={() => updateLandingAuthMode('signup')} className="font-semibold hover:underline btn-hover-lighter" style={{ color: 'rgb(95, 179, 249)' }}>
@@ -4317,13 +4338,13 @@ const renderSalesRepDashboard = () => {
                         className="w-full squircle-sm glass-brand btn-hover-lighter inline-flex items-center justify-center gap-2"
                         disabled={passwordResetRequestPending}
                       >
-                        {passwordResetRequestPending ? 'Sending…' : 'Send reset link'}
+                        {passwordResetRequestPending ? 'Sending…' : passwordResetRequestSuccess ? 'Reset link sent' : 'Send reset link'}
                       </Button>
                     </form>
                     <div className="text-center text-sm text-gray-600">
                       <button
                         type="button"
-                        onClick={() => updateLandingAuthMode('login')}
+                        onClick={() => closeResetWindow()}
                         className="font-semibold hover:underline btn-hover-lighter"
                         style={{ color: 'rgb(95, 179, 249)' }}
                       >
@@ -4408,7 +4429,7 @@ const renderSalesRepDashboard = () => {
                           type="button"
                           size="lg"
                           className="w-full squircle-sm glass-brand btn-hover-lighter"
-                          onClick={() => updateLandingAuthMode('login')}
+                          onClick={() => closeResetWindow()}
                         >
                           Return to sign in
                         </Button>
