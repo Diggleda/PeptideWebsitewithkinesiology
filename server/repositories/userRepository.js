@@ -70,6 +70,15 @@ const syncDirectShippingToSql = (user) => {
     });
 };
 
+const normalizeRole = (role) => {
+  const normalized = (role || '').toLowerCase();
+  if (normalized === 'sales_rep') return 'sales_rep';
+  if (normalized === 'admin') return 'admin';
+  if (normalized === 'test_doctor') return 'test_doctor';
+  if (normalized === 'doctor') return 'doctor';
+  return 'doctor';
+};
+
 const ensureUserDefaults = (user) => {
   const normalized = { ...user };
   if (typeof normalized.visits !== 'number' || Number.isNaN(normalized.visits)) {
@@ -89,9 +98,7 @@ const ensureUserDefaults = (user) => {
   } else if (normalized.npiNumber == null) {
     normalized.npiNumber = null;
   }
-  if (!normalized.role) {
-    normalized.role = 'doctor';
-  }
+  normalized.role = normalizeRole(normalized.role);
   if (!Object.prototype.hasOwnProperty.call(normalized, 'salesRepId')) {
     normalized.salesRepId = null;
   }
@@ -119,12 +126,12 @@ const loadUsers = () => {
   let changed = false;
   const normalized = users.map((user) => {
     const candidate = ensureUserDefaults(user);
-    if (
-      candidate.visits !== user.visits
-      || candidate.lastLoginAt !== user.lastLoginAt
-      || candidate.referralCredits !== user.referralCredits
-      || candidate.totalReferrals !== user.totalReferrals
-    ) {
+    const roleChanged = candidate.role !== user.role;
+    const visitsChanged = candidate.visits !== user.visits;
+    const lastLoginChanged = candidate.lastLoginAt !== user.lastLoginAt;
+    const creditsChanged = candidate.referralCredits !== user.referralCredits;
+    const totalRefsChanged = candidate.totalReferrals !== user.totalReferrals;
+    if (roleChanged || visitsChanged || lastLoginChanged || creditsChanged || totalRefsChanged) {
       changed = true;
     }
     return candidate;

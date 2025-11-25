@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { env } = require('../config/env');
+const userRepository = require('../repositories/userRepository');
 
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -14,7 +15,11 @@ const authenticate = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, env.jwtSecret);
-    req.user = decoded;
+    const user = userRepository.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    req.user = { ...user, id: user.id || decoded.id, email: user.email || decoded.email || null };
     return next();
   } catch (error) {
     return res.status(403).json({ error: 'Invalid token' });

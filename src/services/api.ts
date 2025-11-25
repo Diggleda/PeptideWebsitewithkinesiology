@@ -268,6 +268,20 @@ export const authAPI = {
   },
 };
 
+export const settingsAPI = {
+  getShopStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
+      method: 'GET',
+    });
+  },
+  updateShopStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+};
+
 // Orders API
 export const ordersAPI = {
   create: async (

@@ -3,6 +3,13 @@ const { logger } = require('../config/logger');
 
 const STATEMENTS = [
   `
+    CREATE TABLE IF NOT EXISTS settings (
+      \`key\` VARCHAR(64) NOT NULL PRIMARY KEY,
+      value_json JSON NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS user_passkeys (
       id VARCHAR(32) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
@@ -40,6 +47,16 @@ const STATEMENTS = [
       INDEX idx_peppro_orders_user (user_id),
       INDEX idx_peppro_orders_woo (woo_order_id),
       INDEX idx_peppro_orders_shipstation (shipstation_order_id)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS contact_forms (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      phone VARCHAR(64) NULL,
+      source VARCHAR(255) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
   `,
 ];

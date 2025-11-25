@@ -124,23 +124,19 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   const variationSelector =
     product.variations && product.variations.length > 0 ? (
       <div className="space-y-1">
-        <label className="text-xs text-gray-600">Strength</label>
-        <Select value={selectedVariation.id} onValueChange={handleVariationChange}>
-          <SelectTrigger className="squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner focus:ring-[rgb(95,179,249)] focus:ring-2 transition-all">
-            <SelectValue placeholder="Select strength" />
-          </SelectTrigger>
-          <SelectContent className="rounded-2xl border border-[var(--brand-glass-border-2)] bg-white/95 shadow-xl">
-            {product.variations.map((variation) => (
-              <SelectItem
-                key={variation.id}
-                value={variation.id}
-                className="rounded-xl pl-10 pr-3 py-2 text-sm focus:bg-[rgba(95,179,249,0.08)] focus:text-[rgb(95,179,249)] data-[state=checked]:text-[rgb(95,179,249)]"
-              >
-                {variation.strength}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="text-xs text-gray-600" htmlFor={`variation-${product.id}`}>Strength</label>
+        <select
+          id={`variation-${product.id}`}
+          value={selectedVariation.id}
+          onChange={(e) => handleVariationChange(e.target.value)}
+          className="w-full squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(95,179,249)] focus:border-[rgb(95,179,249)]"
+        >
+          {product.variations.map((variation) => (
+            <option key={variation.id} value={variation.id}>
+              {variation.strength}
+            </option>
+          ))}
+        </select>
       </div>
     ) : null;
 

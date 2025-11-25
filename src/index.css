@@ -3634,6 +3634,85 @@ html {
   transition: filter 160ms ease, background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
+.landing-richtext,
+.landing-richtext * {
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important;
+}
+
+.landing-richtext h2,
+.landing-richtext h3 {
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.landing-richtext h4 {
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(95, 179, 249);
+}
+
+.landing-richtext p {
+  margin-top: 0.75rem;
+}
+
+.landing-richtext p:first-of-type {
+  margin-top: 0;
+}
+
+.landing-richtext ul {
+  margin: 0.5rem 0 0 1.25rem;
+  list-style: disc;
+}
+
+.landing-richtext li + li {
+  margin-top: 0.35rem;
+}
+
+.legal-richtext,
+.legal-richtext * {
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important;
+}
+
+.legal-richtext h2 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  color: rgb(95, 179, 249);
+  font-weight: 600;
+}
+
+.legal-richtext h3 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 1.35rem;
+  margin-bottom: 0.5rem;
+  color: rgb(95, 179, 249);
+}
+
+.legal-richtext section:first-of-type h3 {
+  margin-top: 0;
+}
+
+.legal-richtext p {
+  margin-top: 0.75rem;
+}
+
+.legal-richtext p:first-of-type {
+  margin-top: 0;
+}
+
+.legal-richtext ul {
+  margin: 0.5rem 0 0 1.25rem;
+  list-style: disc;
+}
+
+.legal-richtext li + li {
+  margin-top: 0.4rem;
+}
+
 @media (hover: hover) {
   .btn-hover-lighter:hover {
     text-decoration: none;

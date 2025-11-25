@@ -5,6 +5,7 @@ PepPro is a Vite + React front end paired with an Express backend designed to ru
 ## Project Layout
 
 - `src/`: React client application.
+- `src/content/`: Editable marketing/legal copy. Edit the `.docx` files (names must match: `Care-Compliance.docx`, `Physicians-choice.docx`, `Privacy-policy.docx`, `Shipping-Handling.docx`, `Terms-of-service.docx`) and run `npm run convert-content` (automatically run before `npm run build`/`npm run start`) to regenerate the HTML snippets. The converter uses macOS `textutil` so inline formatting (font sizes, emphasis, etc.) is preserved while fonts inherit from the site theme.
 - `server/`: Modular Express backend prepared for WooCommerce + ShipEngine.
 - `server-data/`: File-based persistence for users and orders (easy to swap for a database later).
 

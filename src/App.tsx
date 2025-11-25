@@ -13,7 +13,9 @@ import { Badge } from './components/ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { ShoppingCart, Eye, EyeOff, ArrowRight, ArrowLeft, ChevronRight, RefreshCw, ArrowUpDown, Fingerprint, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts@2.15.2';
-import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth, passwordResetAPI } from './services/api';
+import { authAPI, ordersAPI, referralAPI, newsAPI, quotesAPI, checkServerHealth, passwordResetAPI, settingsAPI } from './services/api';
+import physiciansChoiceHtml from './content/landing/physicians-choice.html?raw';
+import careComplianceHtml from './content/landing/care-compliance.html?raw';
 import { ProductDetailDialog } from './components/ProductDetailDialog';
 import { LegalFooter } from './components/LegalFooter';
 import { AuthActionResult } from './types/auth';
@@ -38,7 +40,7 @@ interface User {
     primaryTaxonomy?: string | null;
     organizationName?: string | null;
   } | null;
-  role: 'doctor' | 'sales_rep' | string;
+  role: 'doctor' | 'sales_rep' | 'admin' | 'test_doctor' | string;
   salesRepId?: string | null;
   salesRep?: {
     id: string;
@@ -61,6 +63,17 @@ interface User {
 // Feature flags for passkey UX. Defaults keep prompts manual-only.
 const PASSKEY_AUTOPROMPT = String((import.meta as any).env?.VITE_PASSKEY_AUTOPROMPT || '').toLowerCase() === 'true';
 const PASSKEY_AUTOREGISTER = String((import.meta as any).env?.VITE_PASSKEY_AUTOREGISTER || '').toLowerCase() === 'true';
+
+const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
+const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
+const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+const isTestDoctor = (role?: string | null) => normalizeRole(role) === 'test_doctor';
+const isDoctorRole = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'doctor' || normalized === 'test_doctor';
+};
+
+const noop = () => {};
 
 interface CartItem {
   id: string;
@@ -981,6 +994,12 @@ export default function App() {
   const [enablePasskeyPending, setEnablePasskeyPending] = useState(false);
   const [enablePasskeyError, setEnablePasskeyError] = useState('');
   const passkeyAutoRegisterAttemptedRef = useRef(false);
+  const consoleRestoreRef = useRef<null | {
+    log: Console['log'];
+    info: Console['info'];
+    debug: Console['debug'];
+    warn: Console['warn'];
+  }>(null);
   const [accountOrders, setAccountOrders] = useState<AccountOrderSummary[]>([]);
   const [accountOrdersLoading, setAccountOrdersLoading] = useState(false);
   const [accountOrdersError, setAccountOrdersError] = useState<string | null>(null);
@@ -1006,6 +1025,38 @@ export default function App() {
       landingCredentialAutofillInFlight.current = false;
     }
   }, []);
+
+  useEffect(() => {
+    const suppress = user && (isDoctorRole(user.role) || isRep(user.role));
+    if (suppress && !consoleRestoreRef.current) {
+      consoleRestoreRef.current = {
+        log: console.log,
+        info: console.info,
+        debug: console.debug,
+        warn: console.warn,
+      };
+      console.log = noop;
+      console.info = noop;
+      console.debug = noop;
+      console.warn = noop;
+    }
+    if (!suppress && consoleRestoreRef.current) {
+      console.log = consoleRestoreRef.current.log;
+      console.info = consoleRestoreRef.current.info;
+      console.debug = consoleRestoreRef.current.debug;
+      console.warn = consoleRestoreRef.current.warn;
+      consoleRestoreRef.current = null;
+    }
+    return () => {
+      if (consoleRestoreRef.current) {
+        console.log = consoleRestoreRef.current.log;
+        console.info = consoleRestoreRef.current.info;
+        console.debug = consoleRestoreRef.current.debug;
+        console.warn = consoleRestoreRef.current.warn;
+        consoleRestoreRef.current = null;
+      }
+    };
+  }, [user]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1365,6 +1416,50 @@ export default function App() {
     void handleEnablePasskey();
   }, [user, passkeySupport.platform, handleEnablePasskey]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('peppro:shop-enabled');
+      if (stored !== null) {
+        setShopEnabled(stored !== 'false');
+      }
+    } catch {
+      setShopEnabled(true);
+    }
+    let cancelled = false;
+    const fetchSetting = async () => {
+      try {
+        const data = await settingsAPI.getShopStatus();
+        if (!cancelled && data && typeof data.shopEnabled === 'boolean') {
+          setShopEnabled(data.shopEnabled);
+          localStorage.setItem('peppro:shop-enabled', data.shopEnabled ? 'true' : 'false');
+        }
+      } catch (error) {
+        console.warn('[Shop] Unable to load shop setting, using local fallback', error);
+      }
+    };
+    fetchSetting();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleShopToggle = useCallback(async (value: boolean) => {
+    if (!isAdmin(user?.role)) {
+      return;
+    }
+    setShopEnabled(value);
+    try {
+      localStorage.setItem('peppro:shop-enabled', value ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+    try {
+      await settingsAPI.updateShopStatus(value);
+    } catch (error) {
+      console.warn('[Shop] Failed to update shop toggle', error);
+    }
+  }, [user?.role]);
+
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState('');
   const [landingSignupError, setLandingSignupError] = useState('');
@@ -1391,6 +1486,7 @@ export default function App() {
   const [referralStatusMessage, setReferralStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
+  const [shopEnabled, setShopEnabled] = useState(true);
   const referralRefreshInFlight = useRef(false);
   const [adminActionState, setAdminActionState] = useState<{
     updatingReferral: string | null;
@@ -1548,10 +1644,10 @@ const filteredDoctorReferrals = useMemo(() => {
 
     console.debug('[Referral] Refresh start', { role: user.role, userId: user.id });
 
-    try {
-      setReferralDataError(null);
-      if (user.role === 'doctor') {
-        const response = await referralAPI.getDoctorSummary();
+      try {
+        setReferralDataError(null);
+        if (isDoctorRole(user.role)) {
+          const response = await referralAPI.getDoctorSummary();
         const referrals = Array.isArray(response?.referrals) ? response.referrals : [];
         const credits = response?.credits ?? {};
 
@@ -1586,8 +1682,8 @@ const filteredDoctorReferrals = useMemo(() => {
           referrals: normalizedReferrals.length,
           credits: normalizedCredits,
         });
-      } else if (user.role === 'sales_rep') {
-        const dashboard = await referralAPI.getSalesRepDashboard();
+        } else if (isRep(user.role) || isAdmin(user.role)) {
+          const dashboard = await referralAPI.getSalesRepDashboard();
         setSalesRepDashboard(dashboard);
         console.debug('[Referral] Sales rep dashboard loaded', {
           referrals: dashboard?.referrals?.length ?? 0,
@@ -2005,7 +2101,7 @@ const filteredDoctorReferrals = useMemo(() => {
   }, [user, postLoginHold]);
 
   useEffect(() => {
-    if (!user || user.role !== 'sales_rep' || postLoginHold) {
+    if (!user || (!isRep(user.role) && !isAdmin(user.role)) || postLoginHold) {
       return undefined;
     }
 
@@ -2021,7 +2117,7 @@ const filteredDoctorReferrals = useMemo(() => {
       return undefined;
     }
 
-    if (!user || user.role !== 'doctor' || postLoginHold) {
+    if (!user || (!isDoctorRole(user.role) && !isAdmin(user.role)) || postLoginHold) {
       return undefined;
     }
 
@@ -2868,7 +2964,7 @@ const filteredDoctorReferrals = useMemo(() => {
   };
 
   const handleUpdateReferralStatus = async (referralId: string, nextStatus: string) => {
-    if (!user || user.role !== 'sales_rep') {
+    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
       return;
     }
 
@@ -3353,7 +3449,7 @@ const renderProductSection = () => {
 };
 
 const renderSalesRepDashboard = () => {
-  if (!user || user.role !== 'sales_rep') {
+  if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
     return null;
   }
 
@@ -4020,7 +4116,7 @@ const renderSalesRepDashboard = () => {
                 </div>
                 <div className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl" style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}>
                   <div className="space-y-4">
-                    <div className="flex w-full justify-between gap-3 pb-2">
+                    <div className="flex w-full justify-between gap-3 pb-2 items-center">
                       <Button
                         type="button"
                         size="lg"
@@ -4035,15 +4131,27 @@ const renderSalesRepDashboard = () => {
                         type="button"
                         size="lg"
                         onClick={handleAdvanceFromWelcome}
+                        disabled={!(shopEnabled || isAdmin(user?.role) || isRep(user?.role) || isTestDoctor(user?.role))}
                         className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                         style={{ backgroundColor: 'rgb(95, 179, 249)' }}
                       >
                         <span className="mr-2">Shop</span>
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </Button>
+                      {isAdmin(user?.role) && (
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={shopEnabled}
+                            onChange={(e) => handleShopToggle(e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
+                          />
+                          <span>Enable Shop button for users</span>
+                        </label>
+                      )}
                     </div>
                     {/* Regional contact info for doctors */}
-                    {user.role !== 'sales_rep' && (
+                      {!isRep(user.role) && (
                       <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                         <p className="text-sm font-medium text-slate-700">Please contact your Regional Administrator anytime.</p>
                         <div className="space-y-1 text-sm text-slate-600">
@@ -4069,39 +4177,10 @@ const renderSalesRepDashboard = () => {
 
                         <div className="grid gap-10 md:grid-cols-[1.15fr_0.85fr] mb-4">
                           <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">
-                            <h3 className="text-lg font-semibold text-[rgb(95,179,249)] mb-4">Physicians' Choice Program</h3>
-                            <div className="space-y-4 text-sm text-gray-700 leading-relaxed">
-                              <p>
-                                The Physicians' Choice Program is designed exclusively for medical professionals who order 25 units or more of a single product. Participants can choose to private label their products and/or utilize our 3PL Fulfillment Program for seamless inventory and distribution management.
-                              </p>
-                            </div>
-                            <div className="text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}>Private Labeling</h4>
-                              <p className="mt-0">
-                                Physicians who opt to private label will collaborate with their Regional Administrator to provide logos and branding details for custom product labels.
-                              </p>
-                              <p className="mt-3">
-                                For those wishing to customize beyond the standard PepPro label design - such as changing colors, layout, or branding - we will provide a die line template for your designer to create your preferred look and feel. If design assistance is needed, we can connect you with a trusted graphic design partner.
-                              </p>
-                            </div>
-                            <div className="text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}>3PL Fulfillment Program</h4>
-                              <p className="mt-0">
-                                Our third-party logistics (3PL) program enables physicians to maintain inventory at our Anaheim, CA fulfillment center, ensuring quick, reliable delivery directly to patients. Participants may also hold stock at their practice for in-person distribution.
-                              </p>
-                              <p className="mt-3">
-                                All PepPro products are produced in GMP-certified and 503A/503B-compliant facilities located in San Diego, CA. Each order is stored in a temperature-controlled environment and shipped within 24 hours of receipt.
-                              </p>
-                              <p className="mt-3">
-                                Shipments include ice packs to maintain product integrity, ensuring all items arrive cold and ready for use. Comprehensive dosing instructions are included with every order - covering nasal sprays, vials, and chewables.
-                              </p>
-                            </div>
-                            <div className="text-sm text-gray-700 leading-relaxed">
-                              <h4 className="text-sm font-semibold text-[rgb(95,179,249)] uppercase tracking-wide" style={{ marginTop: '12px', marginBottom: 0 }}></h4>
-                              <p className="mt-0 font-semibold text-[rgb(95,179,249)]">
-                                Orders over $250 qualify for free shipping within the U.S.A.
-                              </p>
-                            </div>
+                            <div
+                              className="landing-richtext text-sm text-gray-700 leading-relaxed"
+                              dangerouslySetInnerHTML={{ __html: physiciansChoiceHtml }}
+                            />
                           </section>
                           <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm flex items-center justify-center">
                             <figure className="space-y-4 flex flex-col items-center">
@@ -4119,10 +4198,10 @@ const renderSalesRepDashboard = () => {
                         </div>
 
                         <section className="squircle glass-strong landing-glass-strong border border-[var(--brand-glass-border-3)] p-6 text-slate-900 shadow-sm">
-                          <h3 className="text-lg font-semibold">Care & Compliance</h3>
-                          <div className="mt-4 text-sm">
-                            <p>PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.</p>
-                          </div>
+                          <div
+                            className="landing-richtext text-sm"
+                            dangerouslySetInnerHTML={{ __html: careComplianceHtml }}
+                          />
                         </section>
                       </div>
 
@@ -4689,13 +4768,13 @@ const renderSalesRepDashboard = () => {
           {/* Main Content */}
           {user && !postLoginHold && (
             <main className="w-full py-12 mobile-safe-area" style={{ marginTop: '2.4rem' }}>
-              {user.role === 'sales_rep' ? renderSalesRepDashboard() : renderDoctorDashboard()}
+              {(isRep(user.role) || isAdmin(user.role)) ? renderSalesRepDashboard() : renderDoctorDashboard()}
               {renderProductSection()}
             </main>
           )}
         </div>
 
-        <LegalFooter />
+        <LegalFooter showContactCTA={!user} />
       </div>
 
       {/* Checkout Modal */}

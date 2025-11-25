@@ -18,8 +18,11 @@ const REFERRAL_STATUSES = [
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
+const normalizeRole = (role) => (role || '').toLowerCase();
+const isRep = (role) => normalizeRole(role) === 'sales_rep';
 const ensureDoctor = (user) => {
-  if (!user || user.role !== 'doctor') {
+  const role = normalizeRole(user?.role);
+  if (!user || (role !== 'doctor' && role !== 'test_doctor' && role !== 'admin')) {
     const error = new Error('Doctor access required');
     error.status = 403;
     throw error;
@@ -27,7 +30,8 @@ const ensureDoctor = (user) => {
 };
 
 const ensureSalesRep = (user) => {
-  if (!user || (user.role !== 'sales_rep' && user.role !== 'admin')) {
+  const role = normalizeRole(user?.role);
+  if (!user || (!isRep(role) && role !== 'admin')) {
     const error = new Error('Sales representative access required');
     error.status = 403;
     throw error;
@@ -108,7 +112,8 @@ const getDoctorLedger = (req, res, next) => {
 const getSalesRepDashboard = (req, res, next) => {
   try {
     ensureSalesRep(req.user);
-    const isAdmin = req.user.role === 'admin';
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
     const referrals = isAdmin ? referralRepository.getAll() : referralRepository.findBySalesRepId(req.user.id);
     const codes = isAdmin ? referralCodeRepository.getAll() : referralCodeRepository.findBySalesRepId(req.user.id);
     res.json({

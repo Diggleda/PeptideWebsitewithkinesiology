@@ -10,6 +10,10 @@ import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 
+const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
+const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
+const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+
 interface HeaderUserSalesRep {
   id?: string;
   name?: string | null;
@@ -420,9 +424,11 @@ export function Header({
     }
   }, [welcomeOpen]);
   const headerDisplayName = localUser
-    ? user.role === 'sales_rep'
+    ? isAdmin(user.role)
       ? `Admin: ${localUser.name}`
-      : localUser.name
+      : isRep(user.role)
+        ? `Rep: ${localUser.name}`
+        : localUser.name
     : '';
 
   // Account tab underline indicator (shared bar that moves to active tab)
@@ -1091,7 +1097,7 @@ export function Header({
           <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
         </div>
         
-        {localUser.role !== 'sales_rep' && (
+        {!isRep(localUser.role) && (
           <div className="pt-4 mt-4 border-t border-[var(--brand-glass-border-2)]">
             <p className="text-sm font-medium text-slate-700">Your Regional Administrator</p>
             <div className="space-y-1 text-sm text-slate-600 mt-2">
@@ -1475,7 +1481,7 @@ export function Header({
   };
 
   const accountOrdersPanel = localUser ? (
-    localUser.role !== 'sales_rep' ? (
+    !isRep(localUser.role) ? (
       <div className="space-y-4">
         {/* Header Section */}
         <div className="flex flex-col gap-4">

@@ -72,6 +72,15 @@ const normalizeOptionalString = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeRole = (role) => {
+  const normalized = (role || '').toLowerCase();
+  if (normalized === 'sales_rep') return 'sales_rep';
+  if (normalized === 'admin') return 'admin';
+  if (normalized === 'test_doctor') return 'test_doctor';
+  if (normalized === 'doctor') return 'doctor';
+  return 'doctor';
+};
+
 const sanitizeUser = (user) => {
   const {
     password,
@@ -80,6 +89,7 @@ const sanitizeUser = (user) => {
   } = user;
   return {
     ...rest,
+    role: normalizeRole(user.role),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
   };
 };
@@ -203,6 +213,7 @@ const register = async ({
   const hashedPassword = await bcrypt.hash(password, 10);
   const now = new Date().toISOString();
 
+  const role = isSalesRepEmail ? 'sales_rep' : 'doctor';
   const user = userRepository.insert({
     id: Date.now().toString(),
     name,
@@ -214,7 +225,7 @@ const register = async ({
     visits: 1,
     createdAt: now,
     lastLoginAt: now,
-    role: isSalesRepEmail ? 'sales_rep' : 'doctor',
+    role,
     salesRepId: isSalesRepEmail
       ? salesRepAccount?.id
         || salesRepAccount?.legacyUserId
@@ -358,7 +369,8 @@ const updateProfile = async (userId, data) => {
 
   const updated = userRepository.update(next) || next;
 
-  if (updated.role === 'sales_rep' && updated.salesRepId) {
+  const normalizedRole = normalizeRole(updated.role);
+  if (normalizedRole === 'sales_rep' && updated.salesRepId) {
     salesRepRepository.update({
       id: updated.salesRepId,
       phone: updated.phone,

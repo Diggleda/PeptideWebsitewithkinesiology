@@ -11,6 +11,8 @@ const quotesRoutes = require('./routes/quotesRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const passwordResetRoutes = require('./routes/passwordReset');
+const contactRoutes = require('./routes/contactRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 
@@ -61,6 +63,8 @@ const createApp = () => {
   app.use('/api/quotes', quotesRoutes);
   app.use('/api/news', newsRoutes);
   app.use('/api/password-reset', passwordResetRoutes);
+  app.use('/api/contact', contactRoutes);
+  app.use('/api/settings', settingsRoutes);
   app.use('/api', systemRoutes);
 
   app.use((err, req, res, _next) => {

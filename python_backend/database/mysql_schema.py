@@ -110,6 +110,23 @@ CREATE_TABLE_STATEMENTS = [
         created_at DATETIME NULL,
         updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contact_forms (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(64) NULL,
+        source VARCHAR(255) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS settings (
+        `key` VARCHAR(64) NOT NULL PRIMARY KEY,
+        value_json JSON NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
     """
 ]
 

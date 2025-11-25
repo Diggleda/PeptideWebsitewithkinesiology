@@ -50,6 +50,8 @@ def help_endpoint():
                 "/api/woo/products/categories",
                 "/api/referrals/doctor/summary",
                 "/api/referrals/admin/dashboard",
+                "/api/settings/shop",
+                "/api/contact",
                 "/api/integrations/google-sheets/sales-reps",
                 "/api/help",
                 "/api/news/peptides",

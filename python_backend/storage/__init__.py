@@ -11,6 +11,8 @@ sales_rep_store: Optional[JsonStore[List[dict]]] = None
 referral_code_store: Optional[JsonStore[List[dict]]] = None
 referral_store: Optional[JsonStore[List[dict]]] = None
 credit_ledger_store: Optional[JsonStore[List[dict]]] = None
+contact_form_store: Optional[JsonStore[List[dict]]] = None
+settings_store: Optional[JsonStore[dict]] = None
 
 
 def _make_store(config, file_name: str, default) -> JsonStore:
@@ -30,7 +32,7 @@ def _make_store(config, file_name: str, default) -> JsonStore:
 
 
 def init_storage(config) -> None:
-    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, credit_ledger_store
+    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, credit_ledger_store, contact_form_store, settings_store
 
     user_store = _make_store(config, "users.json", [])
     order_store = _make_store(config, "orders.json", [])
@@ -38,6 +40,8 @@ def init_storage(config) -> None:
     referral_code_store = _make_store(config, "referral-codes.json", [])
     referral_store = _make_store(config, "referrals.json", [])
     credit_ledger_store = _make_store(config, "credit-ledger.json", [])
+    contact_form_store = _make_store(config, "contact-forms.json", [])
+    settings_store = _make_store(config, "settings.json", {"shopEnabled": True})
 
     for store in (
         user_store,
@@ -46,6 +50,8 @@ def init_storage(config) -> None:
         referral_code_store,
         referral_store,
         credit_ledger_store,
+        contact_form_store,
+        settings_store,
     ):
         if store:
             store.init()
@@ -59,4 +65,6 @@ __all__ = [
     "referral_code_store",
     "referral_store",
     "credit_ledger_store",
+    "contact_form_store",
+    "settings_store",
 ]

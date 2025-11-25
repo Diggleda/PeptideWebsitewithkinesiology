@@ -11,13 +11,14 @@ const ensureDefaults = (record) => {
   if (!record || typeof record !== 'object') {
     return record;
   }
+  const role = (record.role || '').toLowerCase() === 'rep' ? 'sales_rep' : (record.role || null);
   return {
     id: record.id || record.salesRepId || null,
     name: record.name || null,
     email: record.email || null,
     phone: record.phone || null,
     status: record.status || null,
-    role: record.role || null,
+    role,
     ...record,
   };
 };
