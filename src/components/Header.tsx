@@ -124,6 +124,7 @@ interface HeaderProps {
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
+  onCancelOrder?: (orderId: string) => Promise<unknown>;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -199,6 +200,8 @@ const formatShippingMethod = (estimate?: AccountShippingEstimate | null) => {
   }
   return titleCase(estimate.serviceType || estimate.serviceCode) || null;
 };
+
+const CANCELLABLE_ORDER_STATUSES = new Set(['pending', 'on-hold', 'failed', 'payment_failed', 'processing']);
 
 const parseAddress = (address: any): AccountOrderAddress | null => {
   if (!address) return null;
@@ -305,6 +308,7 @@ export function Header({
   showCanceledOrders = false,
   onToggleShowCanceled,
   onBuyOrderAgain,
+  onCancelOrder,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -340,6 +344,7 @@ export function Header({
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
@@ -962,6 +967,27 @@ export function Header({
     }
   };
 
+  const handleCancelOrderClick = useCallback(async (orderId: string) => {
+    if (!onCancelOrder) {
+      return;
+    }
+    setCancellingOrderId(orderId);
+    try {
+      await onCancelOrder(orderId);
+      toast.success('Order cancelled. Please retry once your payment info is ready.');
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(null);
+      }
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' && error.message.trim().length > 0
+        ? error.message
+        : 'Unable to cancel this order right now.';
+      toast.error(message);
+    } finally {
+      setCancellingOrderId((current) => (current === orderId ? null : current));
+    }
+  }, [onCancelOrder, selectedOrder]);
+
   const handleCopyReferralCode = async () => {
   if (!user?.referralCode) return;
     try {
@@ -1171,18 +1197,20 @@ export function Header({
 
     return (
       <div className="space-y-4 pb-4">
-        {visibleOrders.map((order) => {
-          const status = humanizeOrderStatus(order.status);
-          const statusNormalized = (order.status || '').toLowerCase();
-          const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
-          const isProcessing = statusNormalized.includes('processing');
-          const orderNumberLabel = order.number ? `Order #${order.number}` : order.id ? `Order #${order.id}` : 'Order';
-          const itemCount = order.lineItems?.length ?? 0;
-          const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
-          const expectedDelivery = formatExpectedDelivery(order);
-          const displayTotal = (order.total ?? 0) + (order.shippingTotal ?? 0);
-          const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
-          
+          {visibleOrders.map((order) => {
+            const status = humanizeOrderStatus(order.status);
+            const statusNormalized = (order.status || '').toLowerCase();
+            const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
+            const isProcessing = statusNormalized.includes('processing');
+            const canCancel = Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
+            const isCanceling = cancellingOrderId === order.id;
+            const orderNumberLabel = order.number ? `Order #${order.number}` : order.id ? `Order #${order.id}` : 'Order';
+            const itemCount = order.lineItems?.length ?? 0;
+            const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
+            const expectedDelivery = formatExpectedDelivery(order);
+            const displayTotal = (order.total ?? 0) + (order.shippingTotal ?? 0);
+            const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
+            
           return (
             <div
               key={`${order.source}-${order.id}`}
@@ -1213,96 +1241,112 @@ export function Header({
                       </div>
                     )}
                   </div>
-                  <div className="order-header-actions flex flex-wrap items-center gap-3 text-sm">
-                    <button
-                      type="button"
-                      className="text-[rgb(26,85,173)] font-semibold hover:underline"
-                      onClick={() => {
-                        const integrations = order.integrations || (order as any).integrationDetails;
-                        const wooIntegration = (integrations as any)?.wooCommerce;
-                        if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
-                      }}
-                    >
-                      View invoice
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[rgb(26,85,173)] font-semibold hover:underline"
-                      onClick={() => setSelectedOrder(order)}
-                    >
-                      View order details
-                    </button>
+                  <div className="order-header-actions flex flex-row items-end gap-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                        onClick={() => {
+                          const integrations = order.integrations || (order as any).integrationDetails;
+                          const wooIntegration = (integrations as any)?.wooCommerce;
+                          if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                      >
+                        View invoice
+                      </button>
+                      |
+                      <button
+                        type="button"
+                        className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                        onClick={() => setSelectedOrder(order)}
+                      >
+                        View order details
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Order Body */}
-              <div className="px-6 pt-5 pb-5 space-y-4">
-                <div className="order-card-divider border-t border-[#d5d9d9] sm:hidden" aria-hidden="true" />
-                <div className="flex flex-wrap items-center justify-between gap-3 order-number-row">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <p className="text-base font-bold text-slate-900 break-words">
-                      <span className="mr-2">{orderNumberLabel}</span>
-                      {showItemCount && (
-                        <span className="text-slate-700 font-semibold hidden sm:inline">
-                          {itemLabel}
-                        </span>
-                      )}
-                    </p>
-                    {showItemCount && (
-                      <p className="text-sm text-slate-600 sm:hidden">{itemLabel}</p>
+              <div className="px-6 pt-5 pb-5">
+                <div className="order-card-body flex flex-col gap-4 pt-4 md:flex-row md:items-start md:gap-6">
+                  <div className="space-y-4 flex-1 min-w-0">
+                    <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <p className="text-base font-bold text-slate-900 break-words">
+                          <span className="mr-2">{orderNumberLabel}</span>
+                          {showItemCount && (
+                            <span className="text-slate-700 font-semibold hidden sm:inline">
+                              {itemLabel}
+                            </span>
+                          )}
+                        </p>
+                        {showItemCount && (
+                          <p className="text-sm text-slate-600 sm:hidden">{itemLabel}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {order.lineItems && order.lineItems.length > 0 && (
+                      <div className="space-y-3">
+                        {order.lineItems.map((line, idx) => (
+                          <div key={line.id || `${line.sku}-${idx}`} className="order-line-item flex items-start gap-4 mb-4">
+                            <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                              {(line as any).image ? (
+                                <img
+                                  src={(line as any).image as string}
+                                  alt={line.name || 'Item thumbnail'}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <Package className="h-6 w-6" />
+                              )}
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
+                                {line.name || 'Item'}
+                              </p>
+                              <p className="text-sm text-slate-700">
+                                Qty: {line.quantity ?? '—'}
+                              </p>
+                              {line.sku && <p className="text-xs text-slate-500">SKU: {line.sku}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-
-                {order.lineItems && order.lineItems.length > 0 && (
-                  <div className="space-y-3">
-                    {order.lineItems.map((line, idx) => (
-                      <div key={line.id || `${line.sku}-${idx}`} className="order-line-item flex items-start gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
-                          {(line as any).image ? (
-                            <img
-                              src={(line as any).image as string}
-                              alt={line.name || 'Item thumbnail'}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <Package className="h-6 w-6" />
-                          )}
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
-                            {line.name || 'Item'}
-                          </p>
-                          <p className="text-sm text-slate-700">
-                            Qty: {line.quantity ?? '—'}
-                          </p>
-                          {line.sku && <p className="text-xs text-slate-500">SKU: {line.sku}</p>}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full"
+                      onClick={() => {
+                        if (onBuyOrderAgain) {
+                          onBuyOrderAgain(order);
+                        } else {
+                          setSelectedOrder(order);
+                        }
+                      }}
+                    >
+                      <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+                      Buy it again
+                    </Button>
+                    <button
+                      type="button"
+                      disabled={!canCancel || isCanceling}
+                      onClick={() => {
+                        if (canCancel && !isCanceling) {
+                          handleCancelOrderClick(order.id);
+                        }
+                      }}
+                      className="order-cancel-button header-home-button squircle-sm bg-white text-slate-500 px-6 justify-center font-semibold gap-2 w-full lg:w-full disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isCanceling ? 'Canceling…' : 'Cancel order'}
+                    </button>
                   </div>
-                )}
-
-                <div className="pt-2 flex justify-start sm:justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="header-home-button squircle-sm bg-white text-slate-900 px-6 sm:min-w-[10rem] justify-center font-semibold mt-2 sm:mt-0 gap-2 w-full sm:w-auto"
-                    onClick={() => {
-                      if (onBuyOrderAgain) {
-                        onBuyOrderAgain(order);
-                      } else {
-                        setSelectedOrder(order);
-                      }
-                    }}
-                  >
-                    <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-                    Buy it again
-                  </Button>
                 </div>
-
               </div>
             </div>
           );
@@ -1360,6 +1404,16 @@ export function Header({
 
     return (
       <div className="space-y-6">
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle-sm glass btn-hover-lighter"
+            onClick={() => setSelectedOrder(null)}
+          >
+            ← Back to orders
+          </Button>
+        </div>
         <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden">
           <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9] flex flex-wrap items-center justify-between gap-4">
             <div className="space-y-1 text-left">
@@ -1466,16 +1520,6 @@ export function Header({
           )}
         </div>
 
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle-sm glass btn-hover-lighter"
-            onClick={() => setSelectedOrder(null)}
-          >
-            ← Back to orders
-          </Button>
-        </div>
       </div>
     );
   };
@@ -1602,7 +1646,7 @@ export function Header({
               </div>
               <DialogDescription className="account-header-description">
                 {(user.visits ?? 1) > 1
-                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! Your can manage your account details and orders below.`
+                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! You can manage your account details and orders below.`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
               <div className="relative w-full">

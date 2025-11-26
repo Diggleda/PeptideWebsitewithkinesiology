@@ -79,6 +79,21 @@ const buildLocalOrderSummary = (order) => ({
   physicianCertified: order.physicianCertificationAccepted === true,
 });
 
+const normalizeWooOrderId = (rawId) => {
+  if (!rawId) {
+    return null;
+  }
+  if (typeof rawId === 'number' && Number.isFinite(rawId)) {
+    return rawId;
+  }
+  const idString = String(rawId);
+  if (/^\d+$/.test(idString)) {
+    return Number(idString);
+  }
+  const match = idString.match(/(\d+)/);
+  return match ? Number(match[1]) : null;
+};
+
 const validateItems = (items) => Array.isArray(items)
   && items.length > 0
   && items.every((item) => item && typeof item.quantity === 'number');
@@ -114,7 +129,7 @@ const createOrder = async ({
     const error = new Error('Order requires at least one item');
     error.status = 400;
     throw error;
-  }
+}
 
   if (typeof total !== 'number' || Number.isNaN(total) || total <= 0) {
     const error = new Error('Order total must be a positive number');
@@ -297,10 +312,149 @@ const createOrder = async ({
   };
 };
 
+const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
+  const normalizedWooOrderId = normalizeWooOrderId(wooOrderId);
+  if (!normalizedWooOrderId) {
+    const error = new Error('Order not found');
+    error.status = 404;
+    throw error;
+  }
+
+  const user = userRepository.findById(userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
+  }
+
+  let wooOrder;
+  try {
+    wooOrder = await wooCommerceClient.fetchOrderById(normalizedWooOrderId);
+  } catch (error) {
+    throw error;
+  }
+
+  if (!wooOrder) {
+    const error = new Error('Order not found');
+    error.status = 404;
+    throw error;
+  }
+
+  const wooEmail = (wooOrder?.billing?.email || wooOrder?.billing?.email_address || wooOrder?.email || '')
+    .toLowerCase()
+    .trim();
+  const normalizedUserEmail = (user.email || '').toLowerCase().trim();
+  if (wooEmail && normalizedUserEmail && wooEmail !== normalizedUserEmail) {
+    const error = new Error('Unauthorized');
+    error.status = 403;
+    throw error;
+  }
+
+  const cancellationReason = reason || 'Cancelled via account portal';
+  const wooCancellation = await wooCommerceClient.cancelOrder({
+    wooOrderId: normalizedWooOrderId,
+    reason: cancellationReason,
+  });
+
+  return {
+    success: true,
+    order: {
+      id: String(normalizedWooOrderId),
+      number: wooOrder?.number || String(normalizedWooOrderId),
+      status: wooCancellation?.response?.status || 'cancelled',
+      source: 'woocommerce',
+      updatedAt: new Date().toISOString(),
+    },
+    cancellationReason,
+    wooCancellation,
+  };
+};
+
+const cancelOrder = async ({ userId, orderId, reason }) => {
+  const cancellationReason = typeof reason === 'string' && reason.trim().length > 0
+    ? reason.trim()
+    : 'Cancelled via account portal';
+  const order = orderRepository.findById(orderId);
+  if (!order) {
+    return cancelWooOrderForUser({ userId, wooOrderId: orderId, reason: cancellationReason });
+  }
+  if (order.userId !== userId) {
+    const error = new Error('Unauthorized');
+    error.status = 403;
+    throw error;
+  }
+  const normalizedStatus = (order.status || '').toLowerCase();
+  if (normalizedStatus === 'paid' || normalizedStatus === 'processing' || normalizedStatus === 'completed') {
+    const error = new Error('Order cannot be cancelled once payment completed');
+    error.status = 400;
+    throw error;
+  }
+
+  let wooCancellation = null;
+  if (order.wooOrderId) {
+    try {
+      wooCancellation = await wooCommerceClient.cancelOrder({
+        wooOrderId: order.wooOrderId,
+        reason: cancellationReason,
+      });
+    } catch (error) {
+      logger.error({ err: error, orderId: order.id }, 'Failed to cancel WooCommerce order after payment failure');
+      wooCancellation = {
+        status: 'error',
+        message: error.message,
+      };
+    }
+  }
+
+  const updatedOrder = {
+    ...order,
+    status: 'payment_failed',
+    cancellationReason,
+    updatedAt: new Date().toISOString(),
+    integrationDetails: {
+      ...(order.integrationDetails || {}),
+      stripe: {
+        ...(order.integrationDetails?.stripe || {}),
+        status: 'failed',
+        reason: cancellationReason,
+        cancellationReason,
+        lastSyncAt: new Date().toISOString(),
+        wooCancellation,
+      },
+    },
+    integrations: {
+      ...(order.integrations || {}),
+      stripe: 'failed',
+      wooCommerce: order.integrations?.wooCommerce,
+    },
+  };
+
+  orderRepository.update(updatedOrder);
+  try {
+    await orderSqlRepository.persistOrder({
+      order: updatedOrder,
+      wooOrderId: updatedOrder.wooOrderId,
+      shipStationOrderId: updatedOrder.shipStationOrderId,
+    });
+  } catch (error) {
+    logger.error({ err: error, orderId: order.id }, 'Failed to update MySQL record for cancelled order');
+  }
+
+  return {
+    success: true,
+    order: sanitizeOrder(updatedOrder),
+    cancellationReason,
+    wooCancellation,
+  };
+};
+
 const getOrdersForUser = async (userId) => {
   const user = userRepository.findById(userId);
   const orders = orderRepository.findByUserId(userId);
   const localSummaries = orders.map(buildLocalOrderSummary);
+  const visibleLocalSummaries = localSummaries.filter(
+    (summary) => ((summary.status || '').toLowerCase() !== 'payment_failed'),
+  );
 
   let wooOrders = [];
   let wooError = null;
@@ -318,7 +472,7 @@ const getOrdersForUser = async (userId) => {
   }
 
   return {
-    local: localSummaries,
+    local: visibleLocalSummaries,
     woo: wooOrders,
     fetchedAt: new Date().toISOString(),
     wooError,
@@ -328,4 +482,5 @@ const getOrdersForUser = async (userId) => {
 module.exports = {
   createOrder,
   getOrdersForUser,
+  cancelOrder,
 };

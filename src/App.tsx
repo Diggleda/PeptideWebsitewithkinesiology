@@ -427,6 +427,7 @@ const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
 const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
 const CATALOG_RETRY_DELAY_MS = 4000;
+const CATALOG_POLL_INTERVAL_MS = 0.5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
 
 const SALES_REP_STATUS_ORDER = [
   'pending',
@@ -1155,6 +1156,14 @@ export default function App() {
     }
   }, [user?.id, showCanceledOrders]);
 
+  const handleCancelOrder = useCallback(async (orderId: string) => {
+    if (!orderId) {
+      return;
+    }
+    await ordersAPI.cancelOrder(orderId, 'Cancelled via account portal');
+    await loadAccountOrders();
+  }, [loadAccountOrders]);
+
   const toggleShowCanceledOrders = useCallback(() => {
     setShowCanceledOrders((prev) => {
       const next = !prev;
@@ -1504,6 +1513,7 @@ export default function App() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const catalogRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const catalogFetchInFlightRef = useRef(false);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
@@ -1810,22 +1820,25 @@ const filteredDoctorReferrals = useMemo(() => {
     }
 
     let cancelled = false;
-    const scheduleRetry = () => {
+    const scheduleRetry = (background = false) => {
       if (catalogRetryTimeoutRef.current) {
         window.clearTimeout(catalogRetryTimeoutRef.current);
       }
       catalogRetryTimeoutRef.current = window.setTimeout(() => {
-        void loadCatalog();
+        void loadCatalog(background);
       }, CATALOG_RETRY_DELAY_MS);
     };
 
-    async function loadCatalog() {
-      if (cancelled) {
+    const loadCatalog = async (background = false) => {
+      if (cancelled || catalogFetchInFlightRef.current) {
         return;
       }
 
+      catalogFetchInFlightRef.current = true;
       catalogRetryTimeoutRef.current = null;
-      setCatalogLoading(true);
+      if (!background) {
+        setCatalogLoading(true);
+      }
       setCatalogError(null);
       try {
         const [wooProducts, wooCategories] = await Promise.all([
@@ -1886,6 +1899,7 @@ const filteredDoctorReferrals = useMemo(() => {
           ) as string[];
           setCatalogTypes(typesFromProducts);
           setCatalogLoading(false);
+          catalogFetchInFlightRef.current = false;
           return;
         }
 
@@ -1901,26 +1915,37 @@ const filteredDoctorReferrals = useMemo(() => {
           }
         }
 
-        scheduleRetry();
+        setCatalogLoading(false);
+        scheduleRetry(background);
       } catch (error) {
         if (!cancelled) {
           console.warn('[Catalog] Catalog fetch failed', error);
-          setCatalogProducts([]);
-          setCatalogCategories([]);
-          setCatalogTypes([]);
-          setCatalogError(null);
-          scheduleRetry();
+          if (!background) {
+            setCatalogProducts([]);
+            setCatalogCategories([]);
+            setCatalogTypes([]);
+            setCatalogError(null);
+            setCatalogLoading(false);
+          }
+          scheduleRetry(background);
         }
+      } finally {
+        catalogFetchInFlightRef.current = false;
       }
-    }
+    };
 
-    void loadCatalog();
+    void loadCatalog(false);
+
+    const intervalId = window.setInterval(() => {
+      void loadCatalog(true);
+    }, CATALOG_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       if (catalogRetryTimeoutRef.current) {
         window.clearTimeout(catalogRetryTimeoutRef.current);
       }
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -3838,6 +3863,7 @@ const renderSalesRepDashboard = () => {
             onToggleShowCanceled={toggleShowCanceledOrders}
             accountModalRequest={accountModalRequest}
             onBuyOrderAgain={handleBuyOrderAgain}
+            onCancelOrder={handleCancelOrder}
           />
         )}
 
@@ -4119,11 +4145,15 @@ const renderSalesRepDashboard = () => {
                 </div>
                 <div className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl" style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}>
                   <div className="space-y-4">
-                    <div className="flex w-full flex-wrap items-center gap-3 pb-2">
-                      <Button
-                        type="button"
-                        size="lg"
-                        onClick={handleLogout}
+                <div
+                  className={`flex w-full flex-wrap items-center gap-3 pb-2 ${
+                    isDoctorRole(user?.role) ? 'justify-between' : ''
+                  }`}
+                >
+                  <Button
+                    type="button"
+                    size="lg"
+                    onClick={handleLogout}
                         className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                         style={{ backgroundColor: 'rgb(95, 179, 249)' }}
                       >
@@ -4135,7 +4165,7 @@ const renderSalesRepDashboard = () => {
                         size="lg"
                         onClick={handleAdvanceFromWelcome}
                         disabled={!(shopEnabled || isAdmin(user?.role) || isRep(user?.role) || isTestDoctor(user?.role))}
-                        className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                      className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                         style={{ backgroundColor: 'rgb(95, 179, 249)' }}
                       >
                         <span className="mr-2">Shop</span>

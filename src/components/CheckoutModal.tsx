@@ -15,7 +15,7 @@ import { Card, CardContent } from './ui/card';
 import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
-import { paymentsAPI, shippingAPI } from '../services/api';
+import { ordersAPI, paymentsAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 
@@ -354,6 +354,7 @@ export function CheckoutModal({
       }))
     });
     setIsProcessing(true);
+    let createdOrderId: string | null = null;
     try {
       const result = await onCheckout({
         shippingAddress,
@@ -361,6 +362,7 @@ export function CheckoutModal({
         shippingTotal: shippingCost,
         physicianCertificationAccepted: termsAccepted,
       });
+      createdOrderId = result?.order?.id ?? null;
       const stripeInfo = result && typeof result === 'object'
         ? result?.integrations?.stripe
         : null;
@@ -436,7 +438,14 @@ export function CheckoutModal({
             console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
           }
         }
-      } catch (error: any) {
+    } catch (error: any) {
+      if (createdOrderId) {
+        try {
+          await ordersAPI.cancelOrder(createdOrderId, error?.message ?? 'Payment confirmation failed');
+        } catch (cancelError) {
+          console.warn('[CheckoutModal] Failed to cancel order after payment failure', cancelError);
+        }
+      }
       console.warn('[CheckoutModal] Checkout handler threw', error);
       const message = typeof error?.message === 'string' && error.message.trim().length > 0
         ? error.message

@@ -27,7 +27,21 @@ const getOrders = async (req, res, next) => {
   }
 };
 
+const cancelOrder = async (req, res, next) => {
+  try {
+    const result = await orderService.cancelOrder({
+      userId: req.user.id,
+      orderId: req.params.orderId,
+      reason: typeof req.body?.reason === 'string' ? req.body.reason.trim() : '',
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
+  cancelOrder,
 };

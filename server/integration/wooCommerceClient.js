@@ -308,7 +308,7 @@ const mapWooOrderSummary = (order) => {
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
-    number: pepproOrderId || wooNumber,
+    number: wooNumber || pepproOrderId,
     status: order?.status || 'pending',
     currency: order?.currency || 'USD',
     total: normalizeNumber(order?.total, normalizeNumber(order?.total_ex_tax)),
@@ -407,6 +407,53 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   }
 };
 
+const cancelOrder = async ({ wooOrderId, reason }) => {
+  if (!wooOrderId) {
+    return { status: 'skipped', reason: 'missing_woo_order_id' };
+  }
+  if (!isConfigured()) {
+    return { status: 'skipped', reason: 'not_configured' };
+  }
+  try {
+    const client = getClient();
+    const payload = {
+      status: 'cancelled',
+      set_paid: false,
+      customer_note: reason ? String(reason) : 'Order cancelled (payment failed)',
+    };
+    const response = await client.put(`/orders/${wooOrderId}`, payload);
+    return {
+      status: 'success',
+      response: {
+        id: response.data?.id,
+        status: response.data?.status,
+      },
+    };
+  } catch (error) {
+    logger.error({ err: error, wooOrderId }, 'Failed to cancel WooCommerce order');
+    const integrationError = new Error('Failed to cancel WooCommerce order');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? 502;
+    throw integrationError;
+  }
+};
+
+const fetchOrderById = async (wooOrderId) => {
+  if (!wooOrderId || !isConfigured()) {
+    return null;
+  }
+  try {
+    const client = getClient();
+    const response = await client.get(`/orders/${wooOrderId}`);
+    return response.data;
+  } catch (error) {
+    const integrationError = new Error('Failed to fetch WooCommerce order');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? 502;
+    throw integrationError;
+  }
+};
+
 const findProductBySku = async (sku) => {
   if (!sku || !isConfigured()) {
     return null;
@@ -490,8 +537,10 @@ module.exports = {
     }
   },
   fetchOrdersByEmail,
+  fetchOrderById,
   mapWooOrderSummary,
   markOrderPaid,
+  cancelOrder,
   findProductBySku,
   updateProductInventory,
 };

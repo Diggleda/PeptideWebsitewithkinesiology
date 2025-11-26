@@ -311,6 +311,16 @@ export const ordersAPI = {
     });
   },
 
+  cancelOrder: async (orderId: string, reason?: string) => {
+    if (!orderId) {
+      throw new Error('Order ID is required to cancel an order');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Payment confirmation failed' }),
+    });
+  },
+
   getAll: async () => {
     return fetchWithAuth(`${API_BASE_URL}/orders/`);
   },

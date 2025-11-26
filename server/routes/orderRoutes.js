@@ -6,5 +6,6 @@ const router = Router();
 
 router.post('/', authenticate, orderController.createOrder);
 router.get('/', authenticate, orderController.getOrders);
+router.post('/:orderId/cancel', authenticate, orderController.cancelOrder);
 
 module.exports = router;
