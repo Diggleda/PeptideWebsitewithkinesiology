@@ -66,7 +66,10 @@ const PASSKEY_AUTOREGISTER = String((import.meta as any).env?.VITE_PASSKEY_AUTOR
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
-const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+const isRep = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep');
+};
 const isTestDoctor = (role?: string | null) => normalizeRole(role) === 'test_doctor';
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -1027,7 +1030,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const suppress = user && (isDoctorRole(user.role) || isRep(user.role));
+    const suppress = Boolean(user && (isDoctorRole(user.role) || isRep(user.role)));
     if (suppress && !consoleRestoreRef.current) {
       consoleRestoreRef.current = {
         log: console.log,
@@ -1056,7 +1059,7 @@ export default function App() {
         consoleRestoreRef.current = null;
       }
     };
-  }, [user]);
+  }, [user?.role]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -4116,7 +4119,7 @@ const renderSalesRepDashboard = () => {
                 </div>
                 <div className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl" style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}>
                   <div className="space-y-4">
-                    <div className="flex w-full justify-between gap-3 pb-2 items-center">
+                    <div className="flex w-full flex-wrap items-center gap-3 pb-2">
                       <Button
                         type="button"
                         size="lg"
@@ -4138,6 +4141,11 @@ const renderSalesRepDashboard = () => {
                         <span className="mr-2">Shop</span>
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                       </Button>
+                      {isRep(user?.role) && (
+                        <span className="text-[11px] text-slate-600 italic">
+                          Shop for physicians: {shopEnabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      )}
                       {isAdmin(user?.role) && (
                         <label className="flex items-center gap-2 text-sm text-slate-700">
                           <input
@@ -4175,25 +4183,12 @@ const renderSalesRepDashboard = () => {
                       <div className="flex-1 overflow-y-auto pr-1 space-y-16">
                         {/* Removed: Customer experiences & referrals section */}
 
-                        <div className="grid gap-10 md:grid-cols-[1.15fr_0.85fr] mb-4">
+                        <div className="mb-4">
                           <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">
                             <div
                               className="landing-richtext text-sm text-gray-700 leading-relaxed"
                               dangerouslySetInnerHTML={{ __html: physiciansChoiceHtml }}
                             />
-                          </section>
-                          <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm flex items-center justify-center">
-                            <figure className="space-y-4 flex flex-col items-center">
-                              <img
-                                src="/src/data/Peptide_PNGs/PeptidePackagedWell.png"
-                                alt="PepPro fulfillment specialists preparing temperature-controlled shipments"
-                                className="object-contain shadow-md"
-                                style={{ width: '50%', height: 'auto' }}
-                              />
-                              <figcaption className="text-xs text-gray-500">
-                                {/* Supply supporting caption or accreditation */}
-                              </figcaption>
-                            </figure>
                           </section>
                         </div>
 

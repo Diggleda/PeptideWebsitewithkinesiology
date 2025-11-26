@@ -129,7 +129,16 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
           id={`variation-${product.id}`}
           value={selectedVariation.id}
           onChange={(e) => handleVariationChange(e.target.value)}
-          className="w-full squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(95,179,249)] focus:border-[rgb(95,179,249)]"
+          className="w-full squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(95,179,249)] focus:border-[rgb(95,179,249)] appearance-none"
+          style={{
+            WebkitAppearance: 'menulist',
+            MozAppearance: 'menulist',
+            backgroundImage:
+              "linear-gradient(45deg, transparent 50%, #3b82f6 50%), linear-gradient(135deg, #3b82f6 50%, transparent 50%), linear-gradient(to right, #e5e7eb, #e5e7eb)",
+            backgroundPosition: 'calc(100% - 14px) calc(50% - 2px), calc(100% - 7px) calc(50% - 2px), calc(100% - 28px) 50%',
+            backgroundSize: '7px 7px, 7px 7px, 1px 75%',
+            backgroundRepeat: 'no-repeat',
+          }}
         >
           {product.variations.map((variation) => (
             <option key={variation.id} value={variation.id}>

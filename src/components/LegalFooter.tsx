@@ -207,16 +207,34 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     <>
       <footer className="relative z-10 mt-24 glass-strong">
         <div className="w-full px-4 sm:px-8 pt-12 pb-10">
-          <div className="grid grid-cols-1 gap-8 items-start text-center lg:text-left lg:grid-cols-3">
+          <div className="flex flex-col gap-8 items-center text-center lg:text-left lg:grid lg:grid-cols-3 lg:items-start">
+            {/* Contact CTA - Top on mobile, right on desktop */}
+            {showContactCTA && (
+              <div className="flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0 lg:col-start-3">
+                <p className="text-sm lg:pt-6 font-medium text-slate-900">Want to join the Network?</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new Event('peppro:close-dialogs'));
+                    setContactOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
+                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                >
+                  Contact a Representative
+                </button>
+              </div>
+            )}
+
             {/* Disclaimer - Left Third */}
-            <div className="flex items-center justify-center lg:justify-start">
+            <div className="flex items-center justify-center lg:justify-start w-full lg:col-start-1">
               <p className="text-xs text-slate-500 leading-relaxed pt-4 text-left sm:text-justify max-w-xl">
                 PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
               </p>
             </div>
 
             {/* Center Content - Middle Third */}
-            <div className="flex flex-col items-center text-center gap-3">
+            <div className="flex flex-col items-center text-center gap-3 w-full lg:col-start-2">
               <div className="space-y-1 text-sm text-slate-600">
                 <p>Advancing research-grade peptide access with care and compliance.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
@@ -235,24 +253,6 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
                 ))}
               </nav>
             </div>
-
-            {/* Contact CTA - Right Third */}
-            {showContactCTA && (
-              <div className="flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right">
-                <p className="text-sm pt-6 font-medium text-slate-900">Want to join the Network?</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(new Event('peppro:close-dialogs'));
-                    setContactOpen(true);
-                  }}
-                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
-                >
-                  Contact a Representative
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </footer>
@@ -407,7 +407,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">What introduced you to PepPro?</label>
+                <label className="text-sm font-medium text-slate-700" htmlFor="contact-source">How did you get introduced to PepPro?</label>
                 <input
                   id="contact-source"
                   type="text"
