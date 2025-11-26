@@ -78,9 +78,40 @@ const constructEvent = (payload, signature) => {
   return stripe.webhooks.constructEvent(payload, signature, env.stripe.webhookSecret);
 };
 
+const refundPaymentIntent = async ({ paymentIntentId, amount, reason }) => {
+  if (!isConfigured()) {
+    const error = new Error('Stripe is not configured');
+    error.status = 503;
+    throw error;
+  }
+  if (!paymentIntentId) {
+    const error = new Error('Payment intent ID is required for refunds');
+    error.status = 400;
+    throw error;
+  }
+  const stripe = getClient();
+  const params = {
+    payment_intent: paymentIntentId,
+    reason: reason ? 'requested_by_customer' : undefined,
+  };
+  if (Number.isFinite(amount) && amount > 0) {
+    params.amount = Math.round(amount);
+  }
+  try {
+    return await stripe.refunds.create(params);
+  } catch (error) {
+    logger.error({ err: error, paymentIntentId }, 'Stripe refund failed');
+    const wrapped = new Error('Stripe refund failed');
+    wrapped.cause = error;
+    wrapped.status = error?.statusCode || 502;
+    throw wrapped;
+  }
+};
+
 module.exports = {
   isConfigured,
   createPaymentIntent,
   constructEvent,
   retrievePaymentIntent,
+  refundPaymentIntent,
 };

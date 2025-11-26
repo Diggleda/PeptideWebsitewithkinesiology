@@ -35,6 +35,15 @@ const persistAuthToken = (token: string) => {
   }
 };
 
+const clearAuthToken = () => {
+  localStorage.removeItem('auth_token');
+  try {
+    sessionStorage.removeItem('auth_token');
+  } catch {
+    // ignore storage errors
+  }
+};
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   const token = getAuthToken();
@@ -92,6 +101,10 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     const error = new Error(errorMessage);
     (error as any).status = response.status;
     (error as any).details = errorDetails;
+    if (response.status === 401 || response.status === 403) {
+      clearAuthToken();
+      (error as any).code = 'AUTH_REQUIRED';
+    }
     throw error;
   }
 
@@ -180,12 +193,7 @@ export const authAPI = {
   },
 
   logout: () => {
-    localStorage.removeItem('auth_token');
-    try {
-      sessionStorage.removeItem('auth_token');
-    } catch {
-      // ignore
-    }
+    clearAuthToken();
   },
 
   getCurrentUser: async () => {

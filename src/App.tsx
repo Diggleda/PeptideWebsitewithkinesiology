@@ -936,6 +936,9 @@ const fetchProductVariations = async (products: WooProduct[]): Promise<Map<numbe
   return variationMap;
 };
 
+const STRIPE_PUBLISHABLE_KEY = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined)?.trim() || '';
+const stripeInstancePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -980,10 +983,6 @@ export default function App() {
     conditional: false,
     checked: false,
   });
-  const stripePromise = useMemo(() => {
-    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
-    return key ? loadStripe(key) : null;
-  }, []);
   const stripeIsTestMode = useMemo(() => {
     const explicitMode = (import.meta.env.VITE_STRIPE_MODE || import.meta.env.STRIPE_MODE || '').toLowerCase();
     if (explicitMode === 'test') {
@@ -1148,6 +1147,14 @@ export default function App() {
       setAccountOrdersError(wooErrorMessage);
       return normalized;
     } catch (error: any) {
+      if (error?.code === 'AUTH_REQUIRED') {
+        setAccountOrders([]);
+        setAccountOrdersSyncedAt(null);
+        setAccountOrdersError('Please sign in again to view your latest orders.');
+        setUser(null);
+        toast.error('Your session expired. Please log in again.');
+        return [];
+      }
       const message = typeof error?.message === 'string' ? error.message : 'Unable to load orders.';
       setAccountOrdersError(message);
       throw error;
@@ -1160,8 +1167,17 @@ export default function App() {
     if (!orderId) {
       return;
     }
-    await ordersAPI.cancelOrder(orderId, 'Cancelled via account portal');
-    await loadAccountOrders();
+    try {
+      await ordersAPI.cancelOrder(orderId, 'Cancelled via account portal');
+      await loadAccountOrders();
+    } catch (error: any) {
+      if (error?.code === 'AUTH_REQUIRED') {
+        setUser(null);
+        toast.error('Your session expired. Please log in again to cancel orders.');
+        throw new Error('Please log in again to cancel orders.');
+      }
+      throw error;
+    }
   }, [loadAccountOrders]);
 
   const toggleShowCanceledOrders = useCallback(() => {
@@ -4803,8 +4819,8 @@ const renderSalesRepDashboard = () => {
       </div>
 
       {/* Checkout Modal */}
-      {stripePromise ? (
-        <Elements stripe={stripePromise}>
+      {stripeInstancePromise ? (
+        <Elements stripe={stripeInstancePromise}>
           <CheckoutModal
             isOpen={checkoutOpen}
             onClose={() => setCheckoutOpen(false)}

@@ -974,7 +974,7 @@ export function Header({
     setCancellingOrderId(orderId);
     try {
       await onCancelOrder(orderId);
-      toast.success('Order cancelled. Please retry once your payment info is ready.');
+      toast.success('Order canceled! Please retry when your payment system is ready');
       if (selectedOrder?.id === orderId) {
         setSelectedOrder(null);
       }
@@ -1204,7 +1204,12 @@ export function Header({
             const isProcessing = statusNormalized.includes('processing');
             const canCancel = Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
             const isCanceling = cancellingOrderId === order.id;
-            const orderNumberLabel = order.number ? `Order #${order.number}` : order.id ? `Order #${order.id}` : 'Order';
+            const wooOrderNumber =
+              (order.integrationDetails as any)?.wooCommerce?.wooOrderNumber ||
+              (order.integrationDetails as any)?.wooCommerce?.pepproOrderId ||
+              null;
+            const orderNumberValue = wooOrderNumber || order.number || order.id || 'Order';
+            const orderNumberLabel = `Order #${orderNumberValue}`;
             const itemCount = order.lineItems?.length ?? 0;
             const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
             const expectedDelivery = formatExpectedDelivery(order);
@@ -1333,18 +1338,20 @@ export function Header({
                       <ShoppingCart className="h-4 w-4" aria-hidden="true" />
                       Buy it again
                     </Button>
-                    <button
-                      type="button"
-                      disabled={!canCancel || isCanceling}
-                      onClick={() => {
-                        if (canCancel && !isCanceling) {
-                          handleCancelOrderClick(order.id);
-                        }
-                      }}
-                      className="order-cancel-button header-home-button squircle-sm bg-white text-slate-500 px-6 justify-center font-semibold gap-2 w-full lg:w-full disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isCanceling ? 'Canceling…' : 'Cancel order'}
-                    </button>
+                    {canCancel && (
+                      <button
+                        type="button"
+                        disabled={isCanceling}
+                        onClick={() => {
+                          if (!isCanceling) {
+                            handleCancelOrderClick(order.id);
+                          }
+                        }}
+                        className="order-cancel-button squircle-sm px-6 py-1 font-semibold w-full lg:w-full text-center disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isCanceling ? 'Canceling…' : 'Cancel order'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -3805,7 +3805,7 @@ html {
 
 .order-card-actions {
   display: flex;
-  flex-direction: col;
+  flex-direction: column;
   gap: 0.75rem;
   justify-content: flex-start;
   align-items: stretch;
@@ -3818,12 +3818,22 @@ html {
 }
 
 .order-cancel-button {
-  color: #64748b3c; /* slate-500 */
+  background-color: transparent;
+  border: 2px solid #0f172a6c;
+  color: #0f172a;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .order-cancel-button:hover,
 .order-cancel-button:focus-visible {
-  color: #475569;
+  background-color: #0f172a;
+  color: #ffffff;
+}
+
+.order-cancel-button:disabled {
+  background-color: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.3);
+  color: rgba(15, 23, 42, 0.4);
 }
 
 @media (min-width: 768px) {
@@ -3831,7 +3841,7 @@ html {
     flex-direction: column;
     align-items: flex-end;
     width: auto;
-    min-width: 16rem;
+    min-width: 12rem;
     text-align: right;
   }
 }

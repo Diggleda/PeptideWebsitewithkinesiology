@@ -313,11 +313,37 @@ const createOrder = async ({
 };
 
 const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
+  const cancellationReason = reason || 'Cancelled via account portal';
   const normalizedWooOrderId = normalizeWooOrderId(wooOrderId);
   if (!normalizedWooOrderId) {
     const error = new Error('Order not found');
     error.status = 404;
     throw error;
+  }
+
+  const buildWooCancellationResponse = ({ wooOrder = null, status = 'cancelled', wooCancellation = null }) => ({
+    success: true,
+    order: {
+      id: String(normalizedWooOrderId),
+      number: wooOrder?.number || String(normalizedWooOrderId),
+      status,
+      source: 'woocommerce',
+      updatedAt: new Date().toISOString(),
+    },
+    cancellationReason,
+    wooCancellation: wooCancellation || {
+      status: wooOrder ? 'success' : 'skipped',
+      reason: wooOrder ? null : 'unavailable',
+    },
+  });
+
+  if (!wooCommerceClient.isConfigured()) {
+    return buildWooCancellationResponse({
+      wooCancellation: {
+        status: 'skipped',
+        reason: 'not_configured',
+      },
+    });
   }
 
   const user = userRepository.findById(userId);
@@ -331,13 +357,24 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
   try {
     wooOrder = await wooCommerceClient.fetchOrderById(normalizedWooOrderId);
   } catch (error) {
-    throw error;
+    logger.warn({ err: error, wooOrderId: normalizedWooOrderId, userId }, 'Unable to fetch Woo order for cancellation; returning fallback success');
+    return buildWooCancellationResponse({
+      wooCancellation: {
+        status: 'error',
+        reason: 'fetch_failed',
+        message: error.message,
+      },
+    });
   }
 
   if (!wooOrder) {
-    const error = new Error('Order not found');
-    error.status = 404;
-    throw error;
+    logger.warn({ wooOrderId: normalizedWooOrderId, userId }, 'Woo order not found; returning fallback success');
+    return buildWooCancellationResponse({
+      wooCancellation: {
+        status: 'skipped',
+        reason: 'missing_order',
+      },
+    });
   }
 
   const wooEmail = (wooOrder?.billing?.email || wooOrder?.billing?.email_address || wooOrder?.email || '')
@@ -350,24 +387,27 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
     throw error;
   }
 
-  const cancellationReason = reason || 'Cancelled via account portal';
-  const wooCancellation = await wooCommerceClient.cancelOrder({
-    wooOrderId: normalizedWooOrderId,
-    reason: cancellationReason,
-  });
-
-  return {
-    success: true,
-    order: {
-      id: String(normalizedWooOrderId),
-      number: wooOrder?.number || String(normalizedWooOrderId),
-      status: wooCancellation?.response?.status || 'cancelled',
-      source: 'woocommerce',
-      updatedAt: new Date().toISOString(),
-    },
-    cancellationReason,
-    wooCancellation,
-  };
+  try {
+    const wooCancellation = await wooCommerceClient.cancelOrder({
+      wooOrderId: normalizedWooOrderId,
+      reason: cancellationReason,
+    });
+    return buildWooCancellationResponse({
+      wooOrder,
+      status: wooCancellation?.response?.status || wooOrder?.status || 'cancelled',
+      wooCancellation,
+    });
+  } catch (error) {
+    logger.warn({ err: error, wooOrderId: normalizedWooOrderId, userId }, 'WooCommerce cancellation failed; returning fallback success');
+    return buildWooCancellationResponse({
+      wooOrder,
+      status: wooOrder?.status || 'cancelled',
+      wooCancellation: {
+        status: 'error',
+        message: error.message,
+      },
+    });
+  }
 };
 
 const cancelOrder = async ({ userId, orderId, reason }) => {
@@ -376,7 +416,13 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
     : 'Cancelled via account portal';
   const order = orderRepository.findById(orderId);
   if (!order) {
-    return cancelWooOrderForUser({ userId, wooOrderId: orderId, reason: cancellationReason });
+    const fallbackResult = await cancelWooOrderForUser({ userId, wooOrderId: orderId, reason: cancellationReason });
+    if (fallbackResult) {
+      return fallbackResult;
+    }
+    const error = new Error('Order not found');
+    error.status = 404;
+    throw error;
   }
   if (order.userId !== userId) {
     const error = new Error('Unauthorized');
@@ -384,10 +430,32 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
     throw error;
   }
   const normalizedStatus = (order.status || '').toLowerCase();
-  if (normalizedStatus === 'paid' || normalizedStatus === 'processing' || normalizedStatus === 'completed') {
-    const error = new Error('Order cannot be cancelled once payment completed');
+  const cancellableStatuses = new Set(['pending', 'processing', 'paid']);
+  if (!cancellableStatuses.has(normalizedStatus)) {
+    const error = new Error('This order can no longer be cancelled');
     error.status = 400;
     throw error;
+  }
+
+  let stripeRefund = null;
+  const requiresRefund = normalizedStatus !== 'pending' || Boolean(order.paymentIntentId);
+  if (requiresRefund && order.paymentIntentId) {
+    const amountCents = Math.max(
+      Math.round(((order.total ?? 0) + (order.shippingTotal ?? 0)) * 100),
+      0,
+    );
+    try {
+      stripeRefund = await paymentService.refundPaymentIntent({
+        paymentIntentId: order.paymentIntentId,
+        amountCents: amountCents || undefined,
+        reason: cancellationReason,
+      });
+    } catch (error) {
+      logger.error({ err: error, orderId: order.id }, 'Stripe refund failed during order cancellation');
+      const refundError = new Error('Unable to refund this order right now. Please try again soon.');
+      refundError.status = 502;
+      throw refundError;
+    }
   }
 
   let wooCancellation = null;
@@ -408,24 +476,33 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
 
   const updatedOrder = {
     ...order,
-    status: 'payment_failed',
+    status: stripeRefund ? 'refunded' : 'cancelled',
     cancellationReason,
     updatedAt: new Date().toISOString(),
     integrationDetails: {
       ...(order.integrationDetails || {}),
       stripe: {
         ...(order.integrationDetails?.stripe || {}),
-        status: 'failed',
+        status: stripeRefund ? 'refunded' : order.integrationDetails?.stripe?.status || null,
         reason: cancellationReason,
         cancellationReason,
         lastSyncAt: new Date().toISOString(),
+        refund: stripeRefund
+          ? {
+              id: stripeRefund.id,
+              amount: stripeRefund.amount,
+              currency: stripeRefund.currency,
+              status: stripeRefund.status,
+              createdAt: new Date().toISOString(),
+            }
+          : order.integrationDetails?.stripe?.refund,
         wooCancellation,
       },
     },
     integrations: {
       ...(order.integrations || {}),
-      stripe: 'failed',
-      wooCommerce: order.integrations?.wooCommerce,
+      stripe: stripeRefund ? 'refunded' : order.integrations?.stripe || null,
+      wooCommerce: wooCancellation?.status || order.integrations?.wooCommerce || null,
     },
   };
 

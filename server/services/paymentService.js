@@ -120,6 +120,24 @@ const finalizePaymentIntent = async ({ paymentIntentId }) => {
   return { status: intent?.status || 'unknown', wooOrderId, orderId };
 };
 
+const refundPaymentIntent = async ({ paymentIntentId, amountCents, reason }) => {
+  if (!stripeClient.isConfigured()) {
+    const error = new Error('Stripe is not configured');
+    error.status = 503;
+    throw error;
+  }
+  try {
+    return await stripeClient.refundPaymentIntent({
+      paymentIntentId,
+      amount: amountCents,
+      reason,
+    });
+  } catch (error) {
+    logger.error({ err: error, paymentIntentId }, 'Stripe refund failed');
+    throw error;
+  }
+};
+
 const handleStripeWebhook = async ({ payload, signature }) => {
   const event = stripeClient.constructEvent(payload, signature);
   const intent = event?.data?.object;
@@ -197,4 +215,5 @@ module.exports = {
   createStripePayment,
   handleStripeWebhook,
   finalizePaymentIntent,
+  refundPaymentIntent,
 };
