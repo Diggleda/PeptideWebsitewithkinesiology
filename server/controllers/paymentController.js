@@ -10,11 +10,17 @@ const createIntent = async (req, res, next) => {
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    const wooOrderId = order.integrationDetails?.wooCommerce?.response?.id || null;
+    const wooOrderId = order.wooOrderId
+      || order.integrationDetails?.wooCommerce?.response?.id
+      || null;
+    const wooOrderNumber = order.wooOrderNumber
+      || order.integrationDetails?.wooCommerce?.response?.number
+      || (wooOrderId ? String(wooOrderId) : null);
     const result = await paymentService.createStripePayment({
       order,
       customer: req.user || {},
       wooOrderId,
+      wooOrderNumber,
     });
     return res.json(result);
   } catch (error) {

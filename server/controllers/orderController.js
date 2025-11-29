@@ -11,6 +11,7 @@ const createOrder = async (req, res, next) => {
       shippingTotal: req.body.shippingTotal,
       referralCode: req.body.referralCode,
       physicianCertification: req.body.physicianCertification === true,
+      taxTotal: req.body.taxTotal,
     });
     res.json(result);
   } catch (error) {
@@ -40,8 +41,24 @@ const cancelOrder = async (req, res, next) => {
   }
 };
 
+const estimateOrderTotals = async (req, res, next) => {
+  try {
+    const result = await orderService.estimateOrderTotals({
+      userId: req.user.id,
+      items: req.body.items,
+      shippingAddress: req.body.shippingAddress,
+      shippingEstimate: req.body.shippingEstimate,
+      shippingTotal: req.body.shippingTotal,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
   cancelOrder,
+  estimateOrderTotals,
 };

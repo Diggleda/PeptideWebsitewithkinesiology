@@ -39,7 +39,24 @@ const findByEmail = (email) => {
 
 const getAll = () => load();
 
+const save = (records) => {
+  salesRepStore.write(records.map(ensureDefaults));
+};
+
+const update = (rep) => {
+  const reps = load();
+  const idx = reps.findIndex((item) => item.id === rep.id || item.salesRepId === rep.id);
+  if (idx === -1) {
+    return null;
+  }
+  const updated = ensureDefaults({ ...reps[idx], ...rep, id: reps[idx].id || rep.id });
+  reps[idx] = updated;
+  save(reps);
+  return updated;
+};
+
 module.exports = {
   getAll,
   findByEmail,
+  update,
 };

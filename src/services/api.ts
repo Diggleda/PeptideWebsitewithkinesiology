@@ -19,10 +19,22 @@ const getAuthToken = () => {
       return sessionToken;
     }
   } catch {
-    // sessionStorage may be unavailable in certain environments (e.g., SSR)
+    // sessionStorage may be unavailable (SSR / private mode)
   }
-
-  return localStorage.getItem('auth_token');
+  try {
+    const storageToken = localStorage.getItem('auth_token');
+    if (storageToken && storageToken.trim().length > 0) {
+      try {
+        sessionStorage.setItem('auth_token', storageToken);
+      } catch {
+        // Ignore sessionStorage writes if unavailable
+      }
+      return storageToken;
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+  return null;
 };
 
 const persistAuthToken = (token: string) => {
@@ -101,9 +113,19 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     const error = new Error(errorMessage);
     (error as any).status = response.status;
     (error as any).details = errorDetails;
-    if (response.status === 401 || response.status === 403) {
+    const codeField = typeof errorDetails === 'object' && errorDetails !== null
+      ? (errorDetails as any).code
+      : null;
+    const isAuthError = response.status === 401
+      || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
+    if (isAuthError) {
       clearAuthToken();
       (error as any).code = 'AUTH_REQUIRED';
+      if (typeof codeField === 'string') {
+        (error as any).authCode = codeField;
+      }
+    } else if (response.status === 403) {
+      (error as any).code = 'FORBIDDEN';
     }
     throw error;
   }
@@ -304,6 +326,7 @@ export const ordersAPI = {
     options?: {
       physicianCertification?: boolean;
     },
+    taxTotal?: number | null,
   ) => {
     return fetchWithAuth(`${API_BASE_URL}/orders/`, {
       method: 'POST',
@@ -315,7 +338,20 @@ export const ordersAPI = {
         shippingEstimate: shipping?.estimate,
         shippingTotal: shipping?.shippingTotal ?? null,
         physicianCertification: options?.physicianCertification === true,
+        taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),
+    });
+  },
+
+  estimateTotals: async (payload: {
+    items: any[];
+    shippingAddress: any;
+    shippingEstimate: any;
+    shippingTotal: number;
+  }) => {
+    return fetchWithAuth(`${API_BASE_URL}/orders/estimate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 

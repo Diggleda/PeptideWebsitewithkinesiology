@@ -38,6 +38,7 @@ const createApp = () => {
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
+  app.use(bodyParser.urlencoded({ limit: env.bodyParser.limit, extended: true }));
 
   // Handle CORS preflight for all API routes without redirecting.
   // Express 5 disallows plain "*" path strings; use a regex matcher instead.

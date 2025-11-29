@@ -1216,12 +1216,13 @@ export function Header({
     <div className="space-y-4">
       <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">Account Details and Direct Shipping</h2>
+          <h2 className="text-lg font-semibold text-slate-800">Contact Info</h2>
           <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
         </div>
 
-          <div className="flex items-center gap-4 pt-2">
-            <div className="relative inline-block">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start pt-2">
+          <div className="flex flex-col gap-3 sm:min-w-[220px] sm:max-w-[260px]">
+            <div className="avatar-shell">
               {renderAvatar(72)}
               <button
                 type="button"
@@ -1232,7 +1233,8 @@ export function Header({
                 <Pencil className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex-1 min-w-0 space-y-2">
+
+            <div className="space-y-2">
               <p className="text-sm font-semibold text-slate-800">Profile photo</p>
               {showAvatarActions ? (
                 <div className="flex items-center gap-3 flex-wrap">
@@ -1246,53 +1248,62 @@ export function Header({
                   >
                     {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
                   </Button>
-                  <p className="text-xs text-slate-500">Uploading a new photo will replace the current one.</p>
+                  <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
                 </div>
-              ) : (
-                <p className="text-xs text-slate-500">Tap the pencil to change your photo.</p>
-              )}
-            </div>
-            <input
-              type="file"
-              accept="image/*"
-              ref={avatarInputRef}
-              className="hidden"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                setAvatarUploading(true);
-                setAvatarUploadPercent(5);
-                try {
-                  const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
-                  setAvatarUploadPercent(85);
-                  await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
-                  setAvatarUploadPercent(100);
-                  setShowAvatarActions(false);
-                } finally {
-                  setAvatarUploading(false);
-                  setAvatarUploadPercent(0);
-                  if (avatarInputRef.current) {
-                    avatarInputRef.current.value = '';
+              ) : null}
+
+              <input
+                type="file"
+                accept="image/*"
+                ref={avatarInputRef}
+                className="hidden"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  setAvatarUploading(true);
+                  setAvatarUploadPercent(5);
+                  try {
+                    const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
+                    setAvatarUploadPercent(85);
+                    await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
+                    setAvatarUploadPercent(100);
+                    setShowAvatarActions(false);
+                  } finally {
+                    setAvatarUploading(false);
+                    setAvatarUploadPercent(0);
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = '';
+                    }
                   }
-                }
-              }}
-            />
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-1">
+            {identityFields.map(({ key, label, type, autoComplete }) => (
+              <EditableRow
+                key={key}
+                label={label}
+                value={(localUser?.[key] as string | null) || ''}
+                type={type || 'text'}
+                autoComplete={autoComplete}
+                onSave={async (next) => {
+                  await saveProfileField(label, { [key]: next });
+                }}
+              />
+            ))}
           </div>
         </div>
-        
-        <div className="grid gap-3 pt-4">
-          {identityFields.map(({ key, label, type, autoComplete }) => (
-            <EditableRow
-              key={key}
-              label={label}
-              value={(localUser?.[key] as string | null) || ''}
-              type={type || 'text'}
-              autoComplete={autoComplete}
-              onSave={async (next) => {
-                await saveProfileField(label, { [key]: next });
-              }}
-            />
-          ))}
+      </div>
+
+      <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-2)] space-y-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-800">Direct Shipping</h3>
+          <p className="text-sm text-slate-600">Update the address where orders should ship.</p>
+        </div>
+
+        <div className="grid gap-3">
           {directShippingFields.map(({ key, label, autoComplete }) => (
             <EditableRow
               key={key}
@@ -1306,7 +1317,8 @@ export function Header({
           ))}
         </div>
       </div>
-  ) : null;
+    </div>
+) : null;
 
   const researchPanel = (
     <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">
@@ -2357,16 +2369,7 @@ function EditableRow({
   }, [next, onSave, saving]);
 
   return (
-    <div className="editable-row group flex items-center gap-3">
-      <button
-        type="button"
-        className={clsx('inline-edit-button', editing && 'is-active')}
-        onClick={() => setEditing(true)}
-        aria-label={`Edit ${label}`}
-        title={`Edit ${label}`}
-      >
-        <Pencil className="w-3 h-3" />
-      </button>
+    <div className="editable-row group flex items-start gap-3 sm:items-center">
       <div className="min-w-[7rem] text-sm font-medium text-slate-700">{label}</div>
       <div className="flex-1 flex items-center gap-2 flex-wrap">
         {editing ? (
@@ -2384,7 +2387,18 @@ function EditableRow({
             }}
           />
         ) : (
-          <div className="text-sm text-slate-700">{value || '—'}</div>
+          <div className="text-sm text-slate-700 flex items-center gap-2">
+            <span>{value || '—'}</span>
+            <button
+              type="button"
+              className={clsx('inline-edit-button', editing && 'is-active')}
+              onClick={() => setEditing(true)}
+              aria-label={`Edit ${label}`}
+              title={`Edit ${label}`}
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          </div>
         )}
         {editing && (
           <div className="flex items-center gap-2">

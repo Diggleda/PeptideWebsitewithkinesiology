@@ -3783,6 +3783,69 @@ html {
   color: rgb(95, 179, 249);
 }
 
+.header-account-button {
+  position: relative;
+  overflow: visible;
+  padding-right: 3.6rem;
+  z-index: 1;
+  margin-right: 1rem;
+}
+
+.header-account-avatar {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  box-shadow: 0 10px 24px -12px rgba(7, 18, 36, 0.45);
+}
+
+.header-account-avatar-shell {
+  position: absolute;
+  right: -1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.header-account-avatar.header-avatar-fallback {
+  /* Match details tab avatar tone but stay fully opaque for stacking */
+  background: linear-gradient(135deg, #e2f1fd, #bbdffc);
+  color: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .header-account-button {
+    padding: 0;
+    border-radius: 9999px;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    min-width: auto;
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    margin-right: 0.4rem;
+  }
+
+  .header-account-avatar-shell {
+    position: absolute;
+    right: -0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .header-account-avatar {
+    position: relative;
+    z-index: 2;
+  }
+}
+
 .header-avatar-image,
 .header-avatar-fallback {
   border-radius: 9999px;
@@ -3805,10 +3868,25 @@ html {
   box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.5);
 }
 
+.avatar-shell {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  aspect-ratio: 1 / 1;
+  min-width: 72px;
+  min-height: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  flex: 0 0 auto;
+}
+
 .avatar-edit-badge {
   position: absolute;
-  right: -4px;
-  bottom: -4px;
+  right: -6px;
+  bottom: -6px;
+  transform: none;
   height: 24px;
   width: 24px;
   border-radius: 9999px;
@@ -3820,6 +3898,7 @@ html {
   justify-content: center;
   box-shadow: 0 8px 16px -10px rgba(15, 23, 42, 0.35);
   transition: transform 120ms ease, box-shadow 120ms ease;
+  z-index: 2;
 }
 
 .avatar-edit-badge:hover,

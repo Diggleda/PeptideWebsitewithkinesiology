@@ -89,6 +89,7 @@ const sanitizeUser = (user) => {
   } = user;
   return {
     ...rest,
+    profileImageUrl: normalizeOptionalString(user.profileImageUrl),
     role: normalizeRole(user.role),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
   };
@@ -243,6 +244,7 @@ const register = async ({
         organizationName: npiVerification.organizationName,
       }
       : null,
+    profileImageUrl: null,
   });
 
   const token = createAuthToken({ id: user.id, email: user.email });
@@ -366,6 +368,9 @@ const updateProfile = async (userId, data) => {
       next[field] = normalizeOptionalString(data[field]);
     }
   });
+  if (Object.prototype.hasOwnProperty.call(data, 'profileImageUrl')) {
+    next.profileImageUrl = normalizeOptionalString(data.profileImageUrl);
+  }
 
   const updated = userRepository.update(next) || next;
 

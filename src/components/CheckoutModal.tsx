@@ -4,6 +4,7 @@ import {
   useRef,
   useCallback,
   useLayoutEffect,
+  useMemo,
 } from 'react';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
@@ -105,10 +106,11 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   onCheckout: (payload: {
     shippingAddress: ShippingAddress;
-    shippingRate: ShippingRate | null;
-    shippingTotal: number;
-    physicianCertificationAccepted: boolean;
-  }) => Promise<CheckoutResult | void> | CheckoutResult | void;
+  shippingRate: ShippingRate | null;
+  shippingTotal: number;
+  physicianCertificationAccepted: boolean;
+  taxTotal?: number | null;
+}) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
   onUpdateItemQuantity: (cartItemId: string, quantity: number) => void;
@@ -174,6 +176,7 @@ export function CheckoutModal({
   const stripeReady = stripeOnsiteEnabled && Boolean(stripePublishableKey);
   const stripe = useStripe();
   const elements = useElements();
+  const defaultCardholderName = (defaultShippingAddress?.name || physicianName || customerName || '').trim();
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
@@ -182,7 +185,8 @@ export function CheckoutModal({
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
-  const [cardholderName, setCardholderName] = useState('');
+  const [cardholderName, setCardholderName] = useState(defaultCardholderName);
+  const cardholderAutofillRef = useRef(defaultCardholderName);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
   const checkoutStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,6 +207,9 @@ export function CheckoutModal({
   const checkoutScrollRef = useRef<HTMLDivElement | null>(null);
   const checkoutScrollPositionRef = useRef(0);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [taxEstimate, setTaxEstimate] = useState<{ amount: number; currency: string; grandTotal: number; source?: string | null } | null>(null);
+  const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
+  const [taxEstimatePending, setTaxEstimatePending] = useState(false);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -266,15 +273,42 @@ export function CheckoutModal({
     return visible;
   };
 
-  const subtotal = cartItems.reduce((sum, item) => {
-    const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
-    return sum + unitPrice * item.quantity;
-  }, 0);
-  const shippingCost = selectedRateIndex != null && shippingRates?.[selectedRateIndex]?.rate
-    ? Number(shippingRates[selectedRateIndex].rate) || 0
+  const checkoutLineItems = useMemo(
+    () =>
+      cartItems.map(({ id, product, quantity, note, variant }, index) => {
+        const unitPrice = computeUnitPrice(product, variant, quantity);
+        return {
+          cartItemId: id,
+          productId: product.id,
+          variantId: variant?.id ?? null,
+          name: variant ? `${product.name} — ${variant.label}` : product.name,
+          price: unitPrice,
+          quantity,
+          note: note ?? null,
+          position: index + 1,
+        };
+      }),
+    [cartItems],
+  );
+  const cartLineItemSignature = useMemo(
+    () =>
+      checkoutLineItems
+        .map((item) => `${item.productId}:${item.variantId || 'base'}:${item.quantity}:${item.price}`)
+        .join('|'),
+    [checkoutLineItems],
+  );
+  const subtotal = useMemo(
+    () => checkoutLineItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [checkoutLineItems],
+  );
+  const selectedShippingRate = selectedRateIndex != null && shippingRates
+    ? shippingRates[selectedRateIndex]
+    : null;
+  const shippingCost = selectedShippingRate?.rate
+    ? Number(selectedShippingRate.rate) || 0
     : 0;
-  const taxAmount = 0;
-  const total = subtotal + shippingCost;
+  const taxAmount = taxEstimate?.amount ?? 0;
+  const total = taxEstimate?.grandTotal ?? subtotal + shippingCost + taxAmount;
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -295,7 +329,9 @@ export function CheckoutModal({
       && cardholderName.trim().length >= 2,
     );
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
-  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate;
+  const shouldFetchTax = shippingAddressComplete && hasSelectedShippingRate && checkoutLineItems.length > 0;
+  const isTaxReady = !hasSelectedShippingRate || (!taxEstimatePending && Boolean(taxEstimate));
+  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate && isTaxReady;
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
   let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
@@ -358,9 +394,10 @@ export function CheckoutModal({
     try {
       const result = await onCheckout({
         shippingAddress,
-        shippingRate: selectedRateIndex != null && shippingRates ? shippingRates[selectedRateIndex] : null,
+        shippingRate: selectedShippingRate,
         shippingTotal: shippingCost,
         physicianCertificationAccepted: termsAccepted,
+        taxTotal: taxAmount,
       });
       createdOrderId = result?.order?.id ?? null;
       const stripeInfo = result && typeof result === 'object'
@@ -468,6 +505,14 @@ export function CheckoutModal({
       toast.error('Select a shipping option before completing your purchase.');
       return;
     }
+    if (shouldFetchTax && !taxEstimate) {
+      toast.error('Calculating taxes. Please wait a moment.');
+      return;
+    }
+    if (taxEstimateError) {
+      toast.error('Unable to calculate taxes. Please update your address or try again.');
+      return;
+    }
     if (!isAuthenticated) {
       onRequireLogin();
       return;
@@ -535,7 +580,8 @@ export function CheckoutModal({
       setCardNumber('');
       setExpiry('');
       setCvv('');
-      setCardholderName('');
+      setCardholderName(defaultCardholderName);
+      cardholderAutofillRef.current = defaultCardholderName;
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
       setShippingRates(null);
@@ -571,6 +617,17 @@ export function CheckoutModal({
   }, [defaultShippingAddress, physicianName, customerName]);
 
   useEffect(() => {
+    setCardholderName((prev) => {
+      const trimmedPrev = prev.trim();
+      if (!trimmedPrev || trimmedPrev === cardholderAutofillRef.current) {
+        cardholderAutofillRef.current = defaultCardholderName;
+        return defaultCardholderName;
+      }
+      return prev;
+    });
+  }, [defaultCardholderName]);
+
+  useEffect(() => {
     if (cartItems.length === 0) {
       setQuantityInputs({});
       return;
@@ -603,6 +660,74 @@ export function CheckoutModal({
     setSelectedRateIndex(null);
     setShippingRateError('Shipping address changed. Please fetch shipping rates again.');
   }, [shippingAddressSignature, shippingRates]);
+
+  useEffect(() => {
+    if (!shouldFetchTax || !selectedShippingRate) {
+      setTaxEstimate(null);
+      setTaxEstimateError(null);
+      setTaxEstimatePending(false);
+      return;
+    }
+    let cancelled = false;
+    setTaxEstimatePending(true);
+    setTaxEstimateError(null);
+    ordersAPI
+      .estimateTotals({
+        items: checkoutLineItems,
+        shippingAddress,
+        shippingEstimate: selectedShippingRate,
+        shippingTotal: shippingCost,
+      })
+      .then((response) => {
+        if (cancelled) return;
+        const toNumber = (value: unknown) => {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const amount = toNumber(response?.totals?.taxTotal);
+        const computedGrandTotal = toNumber(response?.totals?.grandTotal);
+        const currency = typeof response?.totals?.currency === 'string'
+          ? response.totals.currency
+          : 'USD';
+        setTaxEstimate({
+          amount,
+          currency,
+          grandTotal: computedGrandTotal > 0 ? computedGrandTotal : subtotal + shippingCost + amount,
+          source: response?.totals?.source || null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error?.code === 'AUTH_REQUIRED') {
+          onRequireLogin();
+          return;
+        }
+        if (cancelled) return;
+        setTaxEstimate(null);
+        setTaxEstimateError(
+          typeof error?.message === 'string' && error.message.trim().length > 0
+            ? error.message
+            : 'Unable to calculate taxes. Please try again.',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTaxEstimatePending(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    shouldFetchTax,
+    selectedShippingRate,
+    shippingCost,
+    checkoutLineItems,
+    cartLineItemSignature,
+    shippingAddressSignature,
+    subtotal,
+    onRequireLogin,
+  ]);
 
   const isCartEmpty = cartItems.length === 0;
 
@@ -1086,8 +1211,13 @@ export function CheckoutModal({
                 </div>
                 <div className="flex justify-between text-sm text-slate-700">
                   <span>Tax:</span>
-                  <span>${taxAmount.toFixed(2)}</span>
+                  <span>
+                    {taxEstimatePending ? 'Calculating…' : `$${taxAmount.toFixed(2)}`}
+                  </span>
                 </div>
+                {taxEstimateError && (
+                  <p className="text-xs text-red-600 text-right">{taxEstimateError}</p>
+                )}
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span>Total:</span>

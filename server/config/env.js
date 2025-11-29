@@ -66,7 +66,9 @@ const env = {
     allowList: parseList(process.env.CORS_ALLOW_ORIGINS || '*'),
   },
   bodyParser: {
-    limit: process.env.BODY_LIMIT || '1mb',
+    // Allow larger payloads (e.g., base64 image uploads). Base64 adds ~33% overhead,
+    // so default to 50mb to comfortably support ~25-35mb binary images.
+    limit: process.env.BODY_LIMIT || '50mb',
   },
   backendBuild: process.env.BACKEND_BUILD || '2024.10.01-02',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
@@ -76,6 +78,7 @@ const env = {
     consumerSecret: process.env.WC_CONSUMER_SECRET || '',
     apiVersion: process.env.WC_API_VERSION || 'wc/v3',
     autoSubmitOrders: process.env.WC_AUTO_SUBMIT_ORDERS === 'true',
+    requestTimeoutMs: toNumber(process.env.WC_REQUEST_TIMEOUT_MS, 25000),
   },
   shipEngine: {
     apiKey: process.env.SHIPENGINE_API_KEY || '',
@@ -115,6 +118,7 @@ const env = {
     apiToken: process.env.SHIPSTATION_API_TOKEN || process.env.SHIPSTATION_PRODUCTION_KEY || '',
     apiKey: process.env.SHIPSTATION_API_KEY || '',
     apiSecret: process.env.SHIPSTATION_API_SECRET || '',
+    storeId: process.env.SHIPSTATION_STORE_ID || '',
     carrierCode: process.env.SHIPSTATION_CARRIER_CODE || '',
     serviceCode: process.env.SHIPSTATION_SERVICE_CODE || '',
     packageCode: process.env.SHIPSTATION_PACKAGE_CODE || 'package',

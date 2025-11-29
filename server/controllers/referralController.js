@@ -18,7 +18,7 @@ const REFERRAL_STATUSES = [
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
-const normalizeRole = (role) => (role || '').toLowerCase();
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 const isRep = (role) => normalizeRole(role) === 'sales_rep';
 const ensureDoctor = (user) => {
   const role = normalizeRole(user?.role);

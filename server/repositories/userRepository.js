@@ -39,6 +39,7 @@ const syncDirectShippingToSql = (user) => {
     city: user.officeCity,
     state: user.officeState,
     postalCode: user.officePostalCode,
+    profileImageUrl: user.profileImageUrl,
   };
   mysqlClient
     .execute(
@@ -49,7 +50,8 @@ const syncDirectShippingToSql = (user) => {
           office_address_line2 = :addressLine2,
           office_city = :city,
           office_state = :state,
-          office_postal_code = :postalCode
+          office_postal_code = :postalCode,
+          profile_image_url = :profileImageUrl
         WHERE id = :id
       `,
       params,
@@ -71,7 +73,7 @@ const syncDirectShippingToSql = (user) => {
 };
 
 const normalizeRole = (role) => {
-  const normalized = (role || '').toLowerCase();
+  const normalized = (role || '').toString().trim().toLowerCase();
   if (normalized === 'sales_rep') return 'sales_rep';
   if (normalized === 'admin') return 'admin';
   if (normalized === 'test_doctor') return 'test_doctor';
@@ -110,6 +112,11 @@ const ensureUserDefaults = (user) => {
   }
   if (!Array.isArray(normalized.passkeys)) {
     normalized.passkeys = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'profileImageUrl')) {
+    normalized.profileImageUrl = null;
+  } else {
+    normalized.profileImageUrl = normalizeOptionalString(normalized.profileImageUrl);
   }
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {

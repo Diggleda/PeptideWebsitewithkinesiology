@@ -126,9 +126,9 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     carrierCode: env.shipStation.carrierCode || undefined,
     serviceCode: env.shipStation.serviceCode || undefined,
     packageCode: env.shipStation.packageCode || 'package',
-    amountPaid: 0,
+    amountPaid: Math.max(Number(order.total) || 0, 0),
     shippingPaid: shippingTotal,
-    taxAmount: 0,
+    taxAmount: Number(order.taxTotal) || 0,
     billTo: {
       name: customer.name || 'PepPro Customer',
       company: customer.company || '',
@@ -149,8 +149,11 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     },
     items: buildOrderItems(order.items || []),
     advancedOptions: {
-      storeId: wooOrderId || undefined,
+      storeId: env.shipStation.storeId
+        ? Number(env.shipStation.storeId)
+        : undefined,
       source: 'woocommerce',
+      customOrderNumber: wooOrderNumber || order.id,
     },
   };
 };

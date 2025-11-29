@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback, FormEvent, ReactNode } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Header } from './components/Header';
 import { FeaturedSection } from './components/FeaturedSection';
 import { ProductCard } from './components/ProductCard';
@@ -29,6 +29,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
   hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
@@ -192,6 +193,81 @@ interface AccountOrderSummary {
   physicianCertified?: boolean | null;
 }
 
+const normalizeAddressPart = (value?: string | null) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const hasSavedAddress = (address?: AccountOrderAddress | null) => {
+  if (!address) {
+    return false;
+  }
+  return Boolean(
+    normalizeAddressPart(address.addressLine1)
+    || normalizeAddressPart(address.city)
+    || normalizeAddressPart(address.state)
+    || normalizeAddressPart(address.postalCode),
+  );
+};
+
+const sanitizeAccountAddress = (
+  address?: AccountOrderAddress | null,
+  fallbackName?: string | null,
+): AccountOrderAddress | undefined => {
+  if (!address && !fallbackName) {
+    return undefined;
+  }
+  return {
+    name: normalizeAddressPart(address?.name) || normalizeAddressPart(fallbackName),
+    company: normalizeAddressPart(address?.company),
+    addressLine1: normalizeAddressPart(address?.addressLine1),
+    addressLine2: normalizeAddressPart(address?.addressLine2),
+    city: normalizeAddressPart(address?.city),
+    state: normalizeAddressPart(address?.state),
+    postalCode: normalizeAddressPart(address?.postalCode),
+    country: normalizeAddressPart(address?.country) || 'US',
+    phone: normalizeAddressPart(address?.phone),
+    email: normalizeAddressPart(address?.email),
+  };
+};
+
+const buildShippingAddressFromUserProfile = (user?: User | null): AccountOrderAddress | undefined => {
+  if (!user) {
+    return undefined;
+  }
+  const candidate: AccountOrderAddress = {
+    name: user.name || user.npiVerification?.name || null,
+    addressLine1: user.officeAddressLine1 || null,
+    addressLine2: user.officeAddressLine2 || null,
+    city: user.officeCity || null,
+    state: user.officeState || null,
+    postalCode: user.officePostalCode || null,
+    country: 'US',
+  };
+  return hasSavedAddress(candidate) ? sanitizeAccountAddress(candidate) : undefined;
+};
+
+const deriveShippingAddressFromOrders = (
+  orders: AccountOrderSummary[],
+  fallbackName?: string | null,
+): AccountOrderAddress | undefined => {
+  if (!orders || orders.length === 0) {
+    return undefined;
+  }
+  for (const order of orders) {
+    if (hasSavedAddress(order.shippingAddress)) {
+      return sanitizeAccountAddress(order.shippingAddress, fallbackName);
+    }
+    if (hasSavedAddress(order.billingAddress)) {
+      return sanitizeAccountAddress(order.billingAddress, fallbackName);
+    }
+  }
+  return undefined;
+};
+
 const WOO_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
 
@@ -337,6 +413,7 @@ const normalizeAccountOrdersResponse = (
         billingAddress: sanitizeOrderAddress(order?.billingAddress || order?.billing),
         shippingEstimate: normalizeShippingEstimateField(order?.shippingEstimate),
         shippingTotal: coerceNumber(order?.shippingTotal ?? order?.shipping_total) ?? null,
+        taxTotal: coerceNumber(order?.taxTotal ?? order?.total_tax ?? order?.totalTax) ?? null,
         physicianCertified: order?.physicianCertified === true,
       });
     });
@@ -362,6 +439,7 @@ const normalizeAccountOrdersResponse = (
         billingAddress: sanitizeOrderAddress(order?.billingAddress),
         shippingEstimate: normalizeShippingEstimateField(order?.shippingEstimate),
         shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
+        taxTotal: coerceNumber(order?.taxTotal) ?? null,
         physicianCertified: order?.physicianCertified === true,
       });
     });
@@ -936,10 +1014,27 @@ const fetchProductVariations = async (products: WooProduct[]): Promise<Map<numbe
   return variationMap;
 };
 
+declare global {
+  interface Window {
+    __PEPPRO_STRIPE_PROMISE?: Promise<Stripe | null>;
+  }
+}
+
 const STRIPE_PUBLISHABLE_KEY = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined)?.trim() || '';
-const stripeInstancePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 export default function App() {
+  const stripeClientPromise = useMemo(() => {
+    if (!STRIPE_PUBLISHABLE_KEY) {
+      return null;
+    }
+    if (typeof window !== 'undefined') {
+      if (!window.__PEPPRO_STRIPE_PROMISE) {
+        window.__PEPPRO_STRIPE_PROMISE = loadStripe(STRIPE_PUBLISHABLE_KEY);
+      }
+      return window.__PEPPRO_STRIPE_PROMISE;
+    }
+    return loadStripe(STRIPE_PUBLISHABLE_KEY);
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -1009,6 +1104,34 @@ export default function App() {
   const [accountOrdersSyncedAt, setAccountOrdersSyncedAt] = useState<string | null>(null);
   const [showCanceledOrders, setShowCanceledOrders] = useState(false);
   const [accountModalRequest, setAccountModalRequest] = useState<{ tab: 'details' | 'orders'; open?: boolean; token: number } | null>(null);
+  const profileShippingAddress = useMemo(
+    () => buildShippingAddressFromUserProfile(user),
+    [user],
+  );
+  const historyShippingAddress = useMemo(
+    () => deriveShippingAddressFromOrders(accountOrders, user?.name || user?.npiVerification?.name || null),
+    [accountOrders, user?.name, user?.npiVerification?.name],
+  );
+  const checkoutDefaultShippingAddress = useMemo(() => {
+    if (profileShippingAddress) {
+      return profileShippingAddress;
+    }
+    if (historyShippingAddress) {
+      return historyShippingAddress;
+    }
+    if (user) {
+      return {
+        name: user.name || user.npiVerification?.name || null,
+        addressLine1: user.officeAddressLine1 || null,
+        addressLine2: user.officeAddressLine2 || null,
+        city: user.officeCity || null,
+        state: user.officeState || null,
+        postalCode: user.officePostalCode || null,
+        country: 'US',
+      };
+    }
+    return undefined;
+  }, [profileShippingAddress, historyShippingAddress, user]);
   const triggerLandingCredentialAutofill = useCallback(async () => {
     if (landingCredentialAutofillInFlight.current) {
       return;
@@ -2854,6 +2977,7 @@ const filteredDoctorReferrals = useMemo(() => {
     shippingRate: any;
     shippingTotal: number;
     physicianCertificationAccepted?: boolean;
+    taxTotal?: number | null;
   }) => {
     console.debug('[Checkout] Attempt', { items: cartItems.length, shipping: options });
     if (cartItems.length === 0) {
@@ -2873,7 +2997,8 @@ const filteredDoctorReferrals = useMemo(() => {
     }));
 
     const itemTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const total = itemTotal + (options?.shippingTotal || 0);
+    const taxTotal = typeof options?.taxTotal === 'number' && options.taxTotal >= 0 ? options.taxTotal : 0;
+    const total = itemTotal + (options?.shippingTotal || 0) + taxTotal;
 
     try {
       const response = await ordersAPI.create(
@@ -2888,6 +3013,7 @@ const filteredDoctorReferrals = useMemo(() => {
         {
           physicianCertification: options?.physicianCertificationAccepted === true,
         },
+        taxTotal,
       );
       await loadAccountOrders().catch(() => undefined);
       return response;
@@ -3813,11 +3939,34 @@ const renderSalesRepDashboard = () => {
 
   const featuredProducts = filteredProductCatalog.slice(0, 4);
   const quoteReady = showQuote && Boolean(quoteOfTheDay);
-  const quoteFontSize = useMemo(() => {
+  const { quoteFontSize, quoteLineClamp, quoteMobileFont } = useMemo(() => {
     const len = quoteOfTheDay?.text?.length || 0;
-    if (len > 180) return 'clamp(0.70rem, 1.7vw, 0.90rem)';
-    if (len > 120) return 'clamp(0.75rem, 1.9vw, 0.98rem)';
-    return 'clamp(0.80rem, 2.2vw, 1.05rem)';
+    if (len > 260) {
+      return {
+        quoteFontSize: 'clamp(0.58rem, 1.35vw, 0.78rem)',
+        quoteLineClamp: 5,
+        quoteMobileFont: 'clamp(0.7rem, 2vw, 0.85rem)',
+      };
+    }
+    if (len > 180) {
+      return {
+        quoteFontSize: 'clamp(0.65rem, 1.6vw, 0.88rem)',
+        quoteLineClamp: 4,
+        quoteMobileFont: 'clamp(0.76rem, 2.2vw, 0.9rem)',
+      };
+    }
+    if (len > 120) {
+      return {
+        quoteFontSize: 'clamp(0.72rem, 1.85vw, 0.96rem)',
+        quoteLineClamp: 3,
+        quoteMobileFont: 'clamp(0.82rem, 2.4vw, 0.98rem)',
+      };
+    }
+    return {
+      quoteFontSize: 'clamp(0.8rem, 2.2vw, 1.05rem)',
+      quoteLineClamp: 3,
+      quoteMobileFont: 'clamp(0.88rem, 2.8vw, 1.05rem)',
+    };
   }, [quoteOfTheDay]);
 
   const totalCartItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -3959,7 +4108,7 @@ const renderSalesRepDashboard = () => {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           display: '-webkit-box',
-                          WebkitLineClamp: 3,
+                          WebkitLineClamp: quoteLineClamp,
                           WebkitBoxOrient: 'vertical',
                         }}
                       >
@@ -4018,7 +4167,12 @@ const renderSalesRepDashboard = () => {
                         <p
                           className="px-4 sm:px-6 italic text-gray-700 leading-snug break-words"
                           style={{
-                            fontSize: 'clamp(0.8rem, 2.4vw, 0.95rem)',
+                            fontSize: quoteMobileFont,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: quoteLineClamp,
+                            WebkitBoxOrient: 'vertical',
                           }}
                         >
                           "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
@@ -4819,8 +4973,8 @@ const renderSalesRepDashboard = () => {
       </div>
 
       {/* Checkout Modal */}
-      {stripeInstancePromise ? (
-        <Elements stripe={stripeInstancePromise}>
+      {stripeClientPromise ? (
+        <Elements stripe={stripeClientPromise}>
           <CheckoutModal
             isOpen={checkoutOpen}
             onClose={() => setCheckoutOpen(false)}
@@ -4841,19 +4995,7 @@ const renderSalesRepDashboard = () => {
             physicianName={user?.npiVerification?.name || user?.name || null}
             customerEmail={user?.email || null}
             customerName={user?.name || null}
-            defaultShippingAddress={
-              user
-                ? {
-                  name: user.name,
-                  addressLine1: user.officeAddressLine1,
-                  addressLine2: user.officeAddressLine2,
-                  city: user.officeCity,
-                  state: user.officeState,
-                  postalCode: user.officePostalCode,
-                  country: 'US',
-                }
-                : undefined
-            }
+            defaultShippingAddress={checkoutDefaultShippingAddress}
           />
         </Elements>
       ) : (
@@ -4877,19 +5019,7 @@ const renderSalesRepDashboard = () => {
           physicianName={user?.npiVerification?.name || user?.name || null}
           customerEmail={user?.email || null}
           customerName={user?.name || null}
-          defaultShippingAddress={
-            user
-              ? {
-                name: user.name,
-                addressLine1: user.officeAddressLine1,
-                addressLine2: user.officeAddressLine2,
-                city: user.officeCity,
-                state: user.officeState,
-                postalCode: user.officePostalCode,
-                country: 'US',
-              }
-              : undefined
-          }
+          defaultShippingAddress={checkoutDefaultShippingAddress}
         />
       )}
 
