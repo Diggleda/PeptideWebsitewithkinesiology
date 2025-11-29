@@ -14,6 +14,40 @@ const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
 
+// Downscale/compress images before uploading to avoid proxy/body limits.
+const compressImageToDataUrl = (file: File, opts?: { maxSize?: number; quality?: number }): Promise<string> => {
+  const maxSize = opts?.maxSize ?? 1600; // max width/height in px
+  const quality = opts?.quality ?? 0.82; // JPEG quality
+
+  const loadImage = () => new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+
+  return loadImage().then((img) => {
+    const { naturalWidth: width, naturalHeight: height, src } = img;
+    const scale = Math.min(1, maxSize / Math.max(width, height));
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      URL.revokeObjectURL(src);
+      throw new Error('Unable to get canvas context');
+    }
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    URL.revokeObjectURL(src);
+    return dataUrl;
+  });
+};
+
 interface HeaderUserSalesRep {
   id?: string;
   name?: string | null;
@@ -31,6 +65,7 @@ type DirectShippingField =
 interface HeaderUser {
   id?: string;
   name: string;
+  profileImageUrl?: string | null;
   role?: string | null;
   referralCode?: string | null;
   visits?: number;
@@ -159,6 +194,26 @@ const titleCase = (value?: string | null) => {
   const spaced = value.replace(/[_-]+/g, ' ').trim();
   if (!spaced) return null;
   return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const getInitials = (value?: string | null) => {
+  if (!value) return 'PP';
+  const honorifics = new Set(['mr', 'mrs', 'ms', 'miss', 'mx', 'dr', 'doctor', 'prof', 'prof.', 'sir', 'madam']);
+  const suffixes = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+  const tokens = value
+    .split(/\s+/)
+    .map((token) => token.replace(/[.,]/g, '').trim())
+    .filter(Boolean);
+  const filtered = tokens.filter((token, idx) => {
+    const lower = token.toLowerCase();
+    if (honorifics.has(lower)) return false;
+    if (idx === tokens.length - 1 && suffixes.has(lower)) return false;
+    return true;
+  });
+  if (filtered.length === 0) return 'PP';
+  const first = filtered[0]?.[0] || '';
+  const last = filtered.length > 1 ? filtered[filtered.length - 1]?.[0] || '' : '';
+  return (first + last).toUpperCase() || 'PP';
 };
 
 const parseMaybeJson = (value: any) => {
@@ -348,6 +403,10 @@ export function Header({
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
+  const [showAvatarActions, setShowAvatarActions] = useState(false);
   const credentialAutofillRequestInFlight = useRef(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
   const applyPendingLoginPrefill = useCallback(() => {
@@ -435,6 +494,8 @@ export function Header({
         ? `Rep: ${localUser.name}`
         : localUser.name
     : '';
+  const profileImageUrl = localUser?.profileImageUrl || user.profileImageUrl || null;
+  const userInitials = getInitials(localUser?.name || user.name || headerDisplayName);
 
   // Account tab underline indicator (shared bar that moves to active tab)
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -446,6 +507,36 @@ export function Header({
     startX: 0,
     scrollLeft: 0,
   });
+
+  const renderAvatar = (size = 32, className = '') => {
+    const dimension = typeof size === 'number' ? `${size}px` : size;
+    const numericSize = typeof size === 'number' ? size : null;
+    const fallbackFontSize = numericSize ? `${Math.max(12, Math.round(numericSize * 0.45))}px` : undefined;
+    if (profileImageUrl) {
+      return (
+        <img
+          src={profileImageUrl}
+          alt={`${headerDisplayName || localUser?.name || user.name} avatar`}
+          className={clsx('header-avatar-image', className)}
+          style={{ width: dimension, height: dimension }}
+          onError={() => {
+            if (onUserUpdated && localUser) {
+              onUserUpdated({ ...localUser, profileImageUrl: null });
+            }
+          }}
+        />
+      );
+    }
+    return (
+      <div
+        className={clsx('header-avatar-image header-avatar-fallback', className)}
+        style={{ width: dimension, height: dimension, fontSize: fallbackFontSize }}
+        aria-hidden="true"
+      >
+        {userInitials}
+      </div>
+    );
+  };
 
   const updateTabIndicator = useCallback(() => {
     const container = tabsContainerRef.current;
@@ -1094,7 +1185,13 @@ export function Header({
         onUserUpdated?.(nextUserState);
         toast.success(`${label} updated`);
       } catch (error: any) {
-        toast.error(error?.message === 'EMAIL_EXISTS' ? 'That email is already in use.' : 'Update failed');
+        if (error?.status === 413) {
+          toast.error('Upload too large. Please choose a smaller image.');
+        } else if (error?.message === 'EMAIL_EXISTS') {
+          toast.error('That email is already in use.');
+        } else {
+          toast.error('Update failed');
+        }
         throw error;
       }
     },
@@ -1122,18 +1219,67 @@ export function Header({
           <h2 className="text-lg font-semibold text-slate-800">Account Details and Direct Shipping</h2>
           <p className="text-sm text-slate-600">Manage your account and shipping information below.</p>
         </div>
-        
-        {!isRep(localUser.role) && (
-          <div className="pt-4 mt-4 border-t border-[var(--brand-glass-border-2)]">
-            <p className="text-sm font-medium text-slate-700">Your Regional Administrator</p>
-            <div className="space-y-1 text-sm text-slate-600 mt-2">
-              <p><span className="font-semibold">Name:</span> {localUser.salesRep?.name || 'N/A'}</p>
-              <p><span className="font-semibold">Email:</span> {localUser.salesRep?.email || 'N/A'}</p>
-              <p><span className="font-semibold">Phone:</span> {localUser.salesRep?.phone || 'N/A'}</p>
-            </div>
-          </div>
-        )}
 
+          <div className="flex items-center gap-4 pt-2">
+            <div className="relative inline-block">
+              {renderAvatar(72)}
+              <button
+                type="button"
+                className="avatar-edit-badge"
+                onClick={() => setShowAvatarActions((prev) => !prev)}
+                aria-label="Edit profile photo"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="flex-1 min-w-0 space-y-2">
+              <p className="text-sm font-semibold text-slate-800">Profile photo</p>
+              {showAvatarActions ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="squircle-sm"
+                    disabled={avatarUploading}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
+                  </Button>
+                  <p className="text-xs text-slate-500">Uploading a new photo will replace the current one.</p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Tap the pencil to change your photo.</p>
+              )}
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              ref={avatarInputRef}
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setAvatarUploading(true);
+                setAvatarUploadPercent(5);
+                try {
+                  const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
+                  setAvatarUploadPercent(85);
+                  await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
+                  setAvatarUploadPercent(100);
+                  setShowAvatarActions(false);
+                } finally {
+                  setAvatarUploading(false);
+                  setAvatarUploadPercent(0);
+                  if (avatarInputRef.current) {
+                    avatarInputRef.current.value = '';
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
+        
         <div className="grid gap-3 pt-4">
           {identityFields.map(({ key, label, type, autoComplete }) => (
             <EditableRow
@@ -1160,7 +1306,6 @@ export function Header({
           ))}
         </div>
       </div>
-    </div>
   ) : null;
 
   const researchPanel = (
@@ -1609,12 +1754,14 @@ export function Header({
             variant="default"
             size="sm"
             onClick={() => setWelcomeOpen(true)}
-            className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap px-4"
+            className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
             aria-haspopup="dialog"
             aria-expanded={welcomeOpen}
           >
-            <User className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden sm:inline ml-3 text-white">{headerDisplayName}</span>
+            <span className="hidden sm:inline text-white">{headerDisplayName}</span>
+            <span className="header-account-avatar-shell">
+              {renderAvatar(40, 'header-account-avatar')}
+            </span>
           </Button>
         </DialogTrigger>
         <DialogContent
@@ -1713,7 +1860,7 @@ export function Header({
               type="button"
               variant="outline"
               size="sm"
-              className="btn-no-hover header-logout-button squircle-sm glass bg-white text-slate-900 border-0"
+              className="btn-no-hover header-logout-button squircle-sm glass text-slate-900 border-0"
               onClick={onLogout}
             >
               <LogOut className="h-4 w-4 mr-2" />
@@ -2197,10 +2344,31 @@ function EditableRow({
   const [next, setNext] = useState(value);
   useEffect(() => setNext(value), [value]);
   const [saving, setSaving] = useState(false);
+
+  const saveValue = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [next, onSave, saving]);
+
   return (
-    <div className="group flex items-center justify-between gap-3">
+    <div className="editable-row group flex items-center gap-3">
+      <button
+        type="button"
+        className={clsx('inline-edit-button', editing && 'is-active')}
+        onClick={() => setEditing(true)}
+        aria-label={`Edit ${label}`}
+        title={`Edit ${label}`}
+      >
+        <Pencil className="w-3 h-3" />
+      </button>
       <div className="min-w-[7rem] text-sm font-medium text-slate-700">{label}</div>
-      <div className="flex-1 flex items-center gap-2">
+      <div className="flex-1 flex items-center gap-2 flex-wrap">
         {editing ? (
           <input
             className="w-full h-9 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -2208,35 +2376,23 @@ function EditableRow({
             type={type}
             autoComplete={autoComplete}
             onChange={(e) => setNext(e.currentTarget.value)}
+            onKeyDown={async (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                await saveValue();
+              }
+            }}
           />
         ) : (
-          <div className="flex-1 text-sm text-slate-700">{value || '—'}</div>
+          <div className="text-sm text-slate-700">{value || '—'}</div>
         )}
-        {!editing ? (
-          <button
-            type="button"
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-700"
-            onClick={() => setEditing(true)}
-            aria-label={`Edit ${label}`}
-            title={`Edit ${label}`}
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-        ) : (
+        {editing && (
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               className="squircle-sm"
               disabled={saving}
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  await onSave(next);
-                  setEditing(false);
-                } finally {
-                  setSaving(false);
-                }
-              }}
+              onClick={saveValue}
             >
               Save
             </Button>

@@ -3758,7 +3758,7 @@ html {
 .header-home-button {
   box-shadow: none;
   border-width: 2px;
-  border-color: transparent;
+  border-color: rgb(95, 179, 249);
   background-color: transparent;
   color: rgb(95, 179, 249);
 }
@@ -3766,8 +3766,8 @@ html {
 .header-home-button:hover,
 .header-home-button:focus-visible {
   box-shadow: none;
-  background-color: transparent;
-  color: rgb(95, 179, 249);
+  background-color: rgb(95, 179, 249);
+  color: #ffffff;
   border-color: rgb(95, 179, 249);
   filter: none !important;
   transform: none !important;
@@ -3781,6 +3781,87 @@ html {
 /* Header user name brand color */
 .header-user-name {
   color: rgb(95, 179, 249);
+}
+
+.header-avatar-image,
+.header-avatar-fallback {
+  border-radius: 9999px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(95,179,249,0.18), rgba(95,179,249,0.42));
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 2px solid rgb(95, 179, 249);
+  box-shadow: 0 6px 16px -12px rgba(15, 23, 42, 0.55);
+  object-fit: cover;
+}
+
+.avatar-inline-edge {
+  margin-left: 10px;
+  margin-right: -14px; /* pull avatar further over the button edge so the blue doesn’t peek through */
+  box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.5);
+}
+
+.avatar-edit-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  height: 24px;
+  width: 24px;
+  border-radius: 9999px;
+  border: 2px solid rgb(95, 179, 249);
+  background: #ffffff;
+  color: rgb(95, 179, 249);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 16px -10px rgba(15, 23, 42, 0.35);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.avatar-edit-badge:hover,
+.avatar-edit-badge:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px -10px rgba(15, 23, 42, 0.4);
+  outline: none;
+}
+
+.inline-edit-button {
+  height: 26px;
+  width: 26px;
+  min-width: 26px;
+  border-radius: 9999px;
+  border: 2px solid rgb(95, 179, 249);
+  background: #ffffff;
+  color: rgb(95, 179, 249);
+  display: inline-flex;
+  align-items: center;
+  justify-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px -12px rgba(15, 23, 42, 0.45);
+  transition: transform 120ms ease, box-shadow 120ms ease, color 120ms ease, border-color 120ms ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inline-edit-button:hover,
+.inline-edit-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px -12px rgba(15, 23, 42, 0.5);
+  color: rgb(64, 149, 219);
+  border-color: rgb(64, 149, 219);
+  outline: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.editable-row:hover .inline-edit-button,
+.inline-edit-button.is-active {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Account order list cards */
@@ -3819,20 +3900,21 @@ html {
 
 .order-cancel-button {
   background-color: transparent;
-  border: 2px solid #0f172a6c;
-  color: #0f172a;
+  border: 2px solid #0f172a6c !important;
+  color: #0f172a6c;
   transition: background-color 150ms ease, color 150ms ease;
 }
 
 .order-cancel-button:hover,
 .order-cancel-button:focus-visible {
-  background-color: #0f172a;
+  background-color: #0f172a6c;
   color: #ffffff;
+  border: 2px solid #0f172a6c !important;
 }
 
 .order-cancel-button:disabled {
   background-color: rgba(15, 23, 42, 0.05);
-  border-color: rgba(15, 23, 42, 0.3);
+  border-color: #0f172a6c;
   color: rgba(15, 23, 42, 0.4);
 }
 
