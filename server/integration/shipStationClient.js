@@ -280,8 +280,21 @@ const fetchProductBySku = async (sku) => {
       id: product.productId || product.product_id || product.id || null,
       sku: product.sku || sku,
       name: product.name || '',
-      stockOnHand: Number(product.quantityOnHand ?? product.quantity_on_hand ?? product.stock ?? product.stockOnHand ?? 0),
-      available: Number(product.quantityAvailable ?? product.quantity_available ?? product.available ?? 0),
+      // ShipStation product inventory fields are typically onHand / available.
+      stockOnHand: Number(
+        product.onHand
+        ?? product.quantityOnHand
+        ?? product.quantity_on_hand
+        ?? product.stock
+        ?? product.stockOnHand
+        ?? 0,
+      ),
+      available: Number(
+        product.available
+        ?? product.quantityAvailable
+        ?? product.quantity_available
+        ?? 0,
+      ),
     };
   } catch (error) {
     logger.error({ err: error, sku }, 'ShipStation product fetch failed');

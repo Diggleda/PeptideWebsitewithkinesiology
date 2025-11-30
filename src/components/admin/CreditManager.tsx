@@ -32,57 +32,69 @@ const CreditManager: React.FC = () => {
   };
 
   return (
-    <div className="card">
-      <div className="card-body">
-        <h5 className="card-title">Manual Credit Adjustment</h5>
-        {error && <div className="alert alert-danger">{error}</div>}
-        {success && <div className="alert alert-success">{success}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="mb-3">
-            <label htmlFor="doctorId" className="form-label">
-              Doctor ID
-            </label>
+    <div className="manual-credit-card glass-card squircle-md">
+      <div className="manual-credit-header">
+        <div>
+          <p className="manual-credit-kicker">Manual Credit</p>
+          <h3>Adjust a doctor&apos;s balance</h3>
+          <p>Add one-off credits for first orders, corrections, or retention incentives.</p>
+        </div>
+        <div className="manual-credit-meta">
+          <span className="manual-credit-chip">Admin only</span>
+          <span className="manual-credit-chip muted">Posts to ledger</span>
+        </div>
+      </div>
+
+      {error && <div className="manual-credit-alert error">{error}</div>}
+      {success && <div className="manual-credit-alert success">{success}</div>}
+
+      <form className="manual-credit-form" onSubmit={handleSubmit}>
+        <div className="manual-credit-grid">
+          <label className="manual-credit-field">
+            <span>Doctor ID</span>
             <input
               type="text"
-              className="form-control"
               id="doctorId"
               value={doctorId}
               onChange={(e) => setDoctorId(e.target.value)}
               required
+              placeholder="e.g. doctor_123"
             />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="amount" className="form-label">
-              Amount
-            </label>
+          </label>
+
+          <label className="manual-credit-field">
+            <span>Amount (USD)</span>
             <input
               type="number"
               step="0.01"
-              className="form-control"
               id="amount"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required
+              placeholder="50.00"
+              min="0"
             />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="reason" className="form-label">
-              Reason
-            </label>
+          </label>
+
+          <label className="manual-credit-field manual-credit-field--full">
+            <span>Reason</span>
             <textarea
-              className="form-control"
               id="reason"
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               required
-            ></textarea>
-          </div>
-          <button type="submit" className="btn btn-primary">
+              placeholder="First order bonus, manual correction, etc."
+            />
+          </label>
+        </div>
+
+        <div className="manual-credit-actions">
+          <button type="submit" className="manual-credit-submit">
             Add Credit
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 };

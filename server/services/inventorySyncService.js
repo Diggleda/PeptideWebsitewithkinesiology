@@ -41,9 +41,9 @@ const syncShipStationInventoryToWoo = async (items = []) => {
         continue;
       }
 
-      const resolvedStock = Number.isFinite(shipStationProduct.available)
-        ? shipStationProduct.available
-        : shipStationProduct.stockOnHand;
+      const resolvedStock = Number.isFinite(shipStationProduct.stockOnHand)
+        ? shipStationProduct.stockOnHand
+        : shipStationProduct.available;
 
       const wooProduct = await wooCommerceClient.findProductBySku(sku);
       if (!wooProduct?.id) {
@@ -51,8 +51,10 @@ const syncShipStationInventoryToWoo = async (items = []) => {
         continue;
       }
 
-      await wooCommerceClient.updateProductInventory(wooProduct.id, {
+      const inventoryResult = await wooCommerceClient.updateProductInventory(wooProduct.id, {
         stock_quantity: resolvedStock,
+        parent_id: wooProduct.parent_id || null,
+        type: wooProduct.type || null,
       });
 
       results.push({
@@ -60,6 +62,13 @@ const syncShipStationInventoryToWoo = async (items = []) => {
         status: 'updated',
         stockQuantity: resolvedStock,
         wooProductId: wooProduct.id,
+        shipStation: {
+          stockOnHand: shipStationProduct.stockOnHand,
+          available: shipStationProduct.available,
+        },
+        wooInventory: {
+          stock_quantity: inventoryResult?.response?.stock_quantity ?? null,
+        },
       });
     } catch (error) {
       logger.error({ err: error, sku }, 'Inventory sync failed for SKU');

@@ -319,10 +319,14 @@ const buildTaxCalculationPayload = ({ order }) => {
   };
 };
 
+// Ordered list of Woo tax endpoints to probe. Newer endpoints first, fall back to legacy.
 const TAX_CALCULATION_ENDPOINTS = [
+  '/wccom-site/v3/tax/calculate',
   '/wccom-site/v2/tax/calculate',
   '/wccom-site/v2/tax/calculations',
   '/wccom-site/v1/tax/calculate',
+  '/wccom-site/tax/calculate',
+  '/wc/v3/taxes/calculate',
 ];
 
 const calculateOrderTaxes = async ({ order, customer }) => {
@@ -366,6 +370,7 @@ const calculateOrderTaxes = async ({ order, customer }) => {
       if (statusCode !== 404) {
         break;
       }
+      logger.warn({ err: error?.response?.data || error?.message || error, endpoint }, 'Woo tax endpoint returned 404, trying next');
     }
   }
 
@@ -682,7 +687,7 @@ const addOrderNote = async ({ wooOrderId, note, isCustomerNote = false }) => {
   }
 };
 
-const updateProductInventory = async (productId, { stock_quantity: stockQuantity }) => {
+const updateProductInventory = async (productId, { stock_quantity: stockQuantity, parent_id: parentId, type }) => {
   if (!productId || !isConfigured()) {
     return { status: 'skipped', reason: 'not_configured' };
   }
@@ -693,7 +698,12 @@ const updateProductInventory = async (productId, { stock_quantity: stockQuantity
       manage_stock: true,
       stock_quantity: Number.isFinite(stockQuantity) ? Number(stockQuantity) : null,
     };
-    const response = await client.put(`/products/${productId}`, payload);
+    const isVariation = Boolean(parentId) || String(type || '').toLowerCase() === 'variation';
+    const endpoint = isVariation
+      ? `/products/${parentId}/variations/${productId}`
+      : `/products/${productId}`;
+
+    const response = await client.put(endpoint, payload);
     return {
       status: 'success',
       response: {

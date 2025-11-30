@@ -5,6 +5,7 @@ const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
 const shipStationClient = require('../integration/shipStationClient');
 const paymentService = require('./paymentService');
+const stripeClient = require('../integration/stripeClient');
 const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
 const inventorySyncService = require('./inventorySyncService');
@@ -554,6 +555,8 @@ const createOrder = async ({
   };
 };
 
+const allowZeroTaxFallback = process.env.ALLOW_ZERO_TAX_FALLBACK !== 'false';
+
 const estimateOrderTotals = async ({
   userId,
   items,
@@ -597,6 +600,7 @@ const estimateOrderTotals = async ({
   let taxTotal = 0;
   let shippingTotalFromPreview = shippingData.shippingTotal;
   let wooTaxResponse = null;
+  let taxSource = 'none';
   const shippingLocation = {
     country: provisionalOrder.shippingAddress.country || 'US',
     state: provisionalOrder.shippingAddress.state || '',
@@ -604,7 +608,24 @@ const estimateOrderTotals = async ({
     city: provisionalOrder.shippingAddress.city || '',
   };
 
-  if (wooCommerceClient.isConfigured() && typeof wooCommerceClient.calculateOrderTaxes === 'function') {
+  // Try Stripe Tax first if configured
+  if (stripeClient.isTaxConfigured && stripeClient.isTaxConfigured()) {
+    try {
+      const stripeResult = await stripeClient.calculateStripeTax({
+        items,
+        shippingAddress: provisionalOrder.shippingAddress,
+        shippingTotal: shippingTotalFromPreview,
+      });
+      if (stripeResult && stripeResult.status === 'success') {
+        taxTotal = roundCurrency(stripeResult.taxAmount);
+        taxSource = 'stripe_tax';
+      }
+    } catch (error) {
+      logger.warn({ err: error, userId }, 'Stripe Tax calculation failed, falling back to WooCommerce tax logic');
+    }
+  }
+
+  if (taxSource === 'none' && wooCommerceClient.isConfigured() && typeof wooCommerceClient.calculateOrderTaxes === 'function') {
     try {
       wooTaxResponse = await wooCommerceClient.calculateOrderTaxes({
         order: provisionalOrder,
@@ -619,6 +640,7 @@ const estimateOrderTotals = async ({
         return sum + lineTax + shippingTax;
       }, 0);
       taxTotal = roundCurrency(totalTaxFromWoo);
+      taxSource = 'woocommerce';
     } catch (error) {
       const isUnsupported = error?.code === 'WOO_TAX_UNSUPPORTED';
       if (isUnsupported) {
@@ -638,15 +660,33 @@ const estimateOrderTotals = async ({
             shippingTotal: shippingTotalFromPreview,
           });
           taxTotal = roundCurrency(computedTax);
+          taxSource = 'rates_lookup';
           wooTaxResponse = {
             response: rateResponse,
             status: 'fallback_rates',
           };
+        } else {
+          logger.warn({ shippingLocation, userId }, 'WooCommerce tax rate lookup returned no rates');
         }
       } catch (lookupError) {
         logger.warn({ err: lookupError, userId }, 'WooCommerce tax rate lookup failed, using zero tax');
       }
     }
+  }
+
+  if (taxSource === 'none' && taxTotal === 0) {
+    if (!allowZeroTaxFallback) {
+      const error = new Error('Tax service unavailable for this address');
+      error.status = 502;
+      error.code = 'TAX_UNAVAILABLE';
+      error.details = { shippingLocation };
+      throw error;
+    }
+    logger.warn(
+      { shippingLocation },
+      'Tax service unavailable; returning zero tax via fallback',
+    );
+    taxSource = 'fallback_zero';
   }
 
   const grandTotal = roundCurrency(itemsSubtotal + shippingTotalFromPreview + taxTotal);
@@ -659,7 +699,7 @@ const estimateOrderTotals = async ({
       taxTotal: roundCurrency(taxTotal),
       grandTotal: roundCurrency(grandTotal),
       currency: 'USD',
-      source: wooTaxResponse ? 'woocommerce' : 'fallback',
+      source: taxSource || (wooTaxResponse ? 'woocommerce' : 'fallback'),
     },
     wooPreview: wooTaxResponse,
   };

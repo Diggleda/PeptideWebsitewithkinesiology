@@ -3,6 +3,17 @@ const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 
 let pool = null;
+let loggedDisabled = false;
+
+const logDisabledOnce = () => {
+  if (!loggedDisabled) {
+    logger.warn(
+      { mysqlEnabled: false, envMysqlEnabled: env.mysql?.enabled },
+      'MySQL is disabled; database writes are skipped',
+    );
+    loggedDisabled = true;
+  }
+};
 
 const isEnabled = () => Boolean(env.mysql?.enabled);
 
@@ -47,6 +58,7 @@ const requirePool = () => {
 
 const execute = async (query, params = {}) => {
   if (!isEnabled()) {
+    logDisabledOnce();
     return null;
   }
   const [result] = await requirePool().execute(query, params);
@@ -55,6 +67,7 @@ const execute = async (query, params = {}) => {
 
 const fetchOne = async (query, params = {}) => {
   if (!isEnabled()) {
+    logDisabledOnce();
     return null;
   }
   const [rows] = await requirePool().execute(query, params);
@@ -63,6 +76,7 @@ const fetchOne = async (query, params = {}) => {
 
 const fetchAll = async (query, params = {}) => {
   if (!isEnabled()) {
+    logDisabledOnce();
     return [];
   }
   const [rows] = await requirePool().execute(query, params);

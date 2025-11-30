@@ -29,6 +29,7 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("salesRepId", None)
     normalized.setdefault("referrerDoctorId", None)
     normalized.setdefault("phone", None)
+    normalized.setdefault("profileImageUrl", None)
     normalized["mustResetPassword"] = bool(normalized.get("mustResetPassword", False))
     normalized.setdefault("firstOrderBonusGrantedAt", None)
     normalized.setdefault("createdAt", normalized.get("createdAt") or None)
@@ -172,12 +173,12 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, sales_rep_id, referrer_doctor_id,
-            phone, referral_credits, total_referrals, visits,
+            phone, profile_image_url, referral_credits, total_referrals, visits,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(phone)s, %(referral_credits)s,
+            %(referrer_doctor_id)s, %(phone)s, %(profile_image_url)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
@@ -190,6 +191,7 @@ def _mysql_insert(user: Dict) -> Dict:
             sales_rep_id = VALUES(sales_rep_id),
             referrer_doctor_id = VALUES(referrer_doctor_id),
             phone = VALUES(phone),
+            profile_image_url = VALUES(profile_image_url),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
             visits = VALUES(visits),
@@ -226,6 +228,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
             phone = %(phone)s,
+            profile_image_url = %(profile_image_url)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
             visits = %(visits)s,
@@ -274,6 +277,7 @@ def _row_to_user(row: Dict) -> Dict:
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
             "phone": row.get("phone"),
+            "profileImageUrl": row.get("profile_image_url"),
             "referralCode": row.get("referral_code"),
             "referralCredits": float(row.get("referral_credits") or 0),
             "totalReferrals": int(row.get("total_referrals") or 0),
@@ -313,6 +317,7 @@ def _to_db_params(user: Dict) -> Dict:
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
         "phone": user.get("phone"),
+        "profile_image_url": user.get("profileImageUrl"),
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
         "visits": int(user.get("visits") or 0),

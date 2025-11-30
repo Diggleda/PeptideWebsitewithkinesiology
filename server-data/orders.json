@@ -3079,5 +3079,385 @@
     "wooOrderNumber": "446",
     "paymentIntentId": "pi_3SYCaNLdQwKDgAgZ2lXw44Z8",
     "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1764392184170",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-397::woo-variation-400",
+        "productId": "woo-397",
+        "variantId": "woo-variation-400",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) V — 40mg",
+        "price": 272.29,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 318.44,
+    "taxTotal": 0,
+    "itemsSubtotal": 272.29,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-29T04:56:24.170Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1764392184170",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) V — 40mg",
+              "sku": "woo-397",
+              "quantity": 1,
+              "total": "272.29",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1764392184170"
+            },
+            {
+              "key": "peppro_total",
+              "value": 318.44
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-29T04:56:24.170Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1764392184170"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1764392184170"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1764392184170"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_shipstation",
+              "method_title": "PepPro Shipping",
+              "total": "46.15"
+            }
+          ]
+        },
+        "response": {
+          "id": 447,
+          "number": "447",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/447/?pay_for_order=true&key=wc_order_qorlJvYw153bZ",
+          "order_key": "wc_order_qorlJvYw153bZ"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SYgCtLdQwKDgAgZ1t9P4QNH_secret_mIplmXicaVMY6hHXjnAyTWy5l",
+        "paymentIntentId": "pi_3SYgCtLdQwKDgAgZ1t9P4QNH",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-29T04:56:56.954Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "woo-397",
+            "status": "shipstation_not_found"
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "447",
+    "wooOrderNumber": "447",
+    "paymentIntentId": "pi_3SYgCtLdQwKDgAgZ1t9P4QNH",
+    "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1764401471224",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-448::woo-variation-449",
+        "productId": "woo-448",
+        "variantId": "woo-variation-449",
+        "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+        "price": 236.84,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 282.99,
+    "taxTotal": 0,
+    "itemsSubtotal": 236.84,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-11-29T07:31:11.224Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1764401471224",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+              "sku": "woo-448",
+              "quantity": 1,
+              "total": "236.84",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1764401471224"
+            },
+            {
+              "key": "peppro_total",
+              "value": 282.99
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-11-29T07:31:11.224Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1764401471224"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1764401471224"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1764401471224"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_shipstation",
+              "method_title": "PepPro Shipping",
+              "total": "46.15"
+            }
+          ]
+        },
+        "response": {
+          "id": 450,
+          "number": "450",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/450/?pay_for_order=true&key=wc_order_Zrs7CT19VqUbj",
+          "order_key": "wc_order_Zrs7CT19VqUbj"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SYiciLdQwKDgAgZ3jSJqbuI_secret_LrCfV2uxrR1ezsXnpUAftHyoO",
+        "paymentIntentId": "pi_3SYiciLdQwKDgAgZ3jSJqbuI",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-11-29T07:31:43.459Z",
+        "wooUpdate": {
+          "status": "success",
+          "response": {
+            "id": 450,
+            "status": "processing"
+          }
+        }
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "woo-448",
+            "status": "shipstation_not_found"
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "450",
+    "wooOrderNumber": "450",
+    "paymentIntentId": "pi_3SYiciLdQwKDgAgZ3jSJqbuI",
+    "paymentMethod": "Card on file"
   }
 ]

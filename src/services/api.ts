@@ -343,15 +343,19 @@ export const ordersAPI = {
     });
   },
 
-  estimateTotals: async (payload: {
-    items: any[];
-    shippingAddress: any;
-    shippingEstimate: any;
-    shippingTotal: number;
-  }) => {
+  estimateTotals: async (
+    payload: {
+      items: any[];
+      shippingAddress: any;
+      shippingEstimate: any;
+      shippingTotal: number;
+    },
+    options?: { signal?: AbortSignal },
+  ) => {
     return fetchWithAuth(`${API_BASE_URL}/orders/estimate`, {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal: options?.signal,
     });
   },
 

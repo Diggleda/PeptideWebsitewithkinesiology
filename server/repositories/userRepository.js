@@ -30,37 +30,141 @@ const normalizeOptionalString = (value) => {
 
 const syncDirectShippingToSql = (user) => {
   if (!mysqlClient.isEnabled()) {
+    logger.warn(
+      {
+        userId: user.id,
+        mysqlEnabled: mysqlClient.isEnabled(),
+        envMysqlEnabled: process.env.MYSQL_ENABLED,
+      },
+      'MySQL not enabled, skipping direct shipping/profile sync',
+    );
     return;
   }
+  const profileImageBytes = user.profileImageUrl
+    ? Buffer.byteLength(String(user.profileImageUrl), 'utf8')
+    : 0;
   const params = {
     id: user.id,
+    email: user.email || null,
+    name: user.name || null,
+    phone: user.phone || null,
+    password: user.password || null,
+    role: user.role || null,
     addressLine1: user.officeAddressLine1,
     addressLine2: user.officeAddressLine2,
     city: user.officeCity,
     state: user.officeState,
     postalCode: user.officePostalCode,
     profileImageUrl: user.profileImageUrl,
+    npiNumber: user.npiNumber || null,
+    npiProviderName: user.npiVerification?.name || null,
+    npiClinicName: user.npiVerification?.organizationName || null,
+    npiVerificationStatus: user.npiVerificationStatus || (user.npiVerification ? 'VALID' : null),
+    npiVerifiedAt: user.npiLastVerifiedAt || null,
+    isTaxExempt: user.isTaxExempt ? 1 : 0,
+    taxExemptSource: user.taxExemptSource || null,
+    taxExemptReason: user.taxExemptReason || null,
   };
+  logger.info(
+    {
+      userId: user.id,
+      hasProfileImage: Boolean(params.profileImageUrl),
+      profileImageBytes,
+      email: params.email,
+    },
+    'Upserting user record into MySQL (includes profile image)',
+  );
+  logger.debug(
+    { userId: user.id, profileImageUrl: params.profileImageUrl, profileImageBytes },
+    'Syncing direct shipping info to MySQL (includes profile image)',
+  );
+  const startedAt = Date.now();
   mysqlClient
     .execute(
       `
-        UPDATE users
-        SET
-          office_address_line1 = :addressLine1,
-          office_address_line2 = :addressLine2,
-          office_city = :city,
-          office_state = :state,
-          office_postal_code = :postalCode,
-          profile_image_url = :profileImageUrl
-        WHERE id = :id
+        INSERT INTO users (
+          id,
+          email,
+          name,
+          phone,
+          password,
+          role,
+          office_address_line1,
+          office_address_line2,
+          office_city,
+          office_state,
+          office_postal_code,
+          profile_image_url,
+          npi_number,
+          npi_provider_name,
+          npi_clinic_name,
+          npi_verification_status,
+          npi_verified_at,
+          is_tax_exempt,
+          tax_exempt_source,
+          tax_exempt_reason
+        ) VALUES (
+          :id,
+          :email,
+          :name,
+          :phone,
+          :password,
+          :role,
+          :addressLine1,
+          :addressLine2,
+          :city,
+          :state,
+          :postalCode,
+          :profileImageUrl,
+          :npiNumber,
+          :npiProviderName,
+          :npiClinicName,
+          :npiVerificationStatus,
+          :npiVerifiedAt,
+          :isTaxExempt,
+          :taxExemptSource,
+          :taxExemptReason
+        )
+        ON DUPLICATE KEY UPDATE
+          email = COALESCE(VALUES(email), email),
+          name = COALESCE(VALUES(name), name),
+          phone = COALESCE(VALUES(phone), phone),
+          password = COALESCE(VALUES(password), password),
+          role = COALESCE(VALUES(role), role),
+          office_address_line1 = VALUES(office_address_line1),
+          office_address_line2 = VALUES(office_address_line2),
+          office_city = VALUES(office_city),
+          office_state = VALUES(office_state),
+          office_postal_code = VALUES(office_postal_code),
+          profile_image_url = VALUES(profile_image_url),
+          npi_number = VALUES(npi_number),
+          npi_provider_name = VALUES(npi_provider_name),
+          npi_clinic_name = VALUES(npi_clinic_name),
+          npi_verification_status = VALUES(npi_verification_status),
+          npi_verified_at = VALUES(npi_verified_at),
+          is_tax_exempt = VALUES(is_tax_exempt),
+          tax_exempt_source = VALUES(tax_exempt_source),
+          tax_exempt_reason = VALUES(tax_exempt_reason)
       `,
       params,
     )
     .then((result) => {
+      const durationMs = Date.now() - startedAt;
       if (!result || result.affectedRows === 0) {
         logger.warn(
-          { userId: user.id },
+          { userId: user.id, durationMs },
           'No rows updated while syncing direct shipping info to MySQL',
+        );
+      } else {
+        logger.info(
+          {
+            userId: user.id,
+            profileImageUrl: params.profileImageUrl,
+            profileImageBytes,
+            affectedRows: result.affectedRows,
+            durationMs,
+          },
+          'Direct shipping info synced to MySQL (profile image included)',
         );
       }
     })
@@ -109,6 +213,18 @@ const ensureUserDefaults = (user) => {
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'npiLastVerifiedAt')) {
     normalized.npiLastVerifiedAt = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'npiVerificationStatus')) {
+    normalized.npiVerificationStatus = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'isTaxExempt')) {
+    normalized.isTaxExempt = false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'taxExemptSource')) {
+    normalized.taxExemptSource = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'taxExemptReason')) {
+    normalized.taxExemptReason = null;
   }
   if (!Array.isArray(normalized.passkeys)) {
     normalized.passkeys = [];
@@ -210,6 +326,7 @@ const replace = (predicate, updater) => {
   const updated = ensureUserDefaults(updater(users[index]));
   users[index] = updated;
   saveUsers(users);
+  syncDirectShippingToSql(updated);
   return updated;
 };
 

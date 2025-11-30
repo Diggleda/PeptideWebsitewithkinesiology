@@ -210,6 +210,7 @@ export function CheckoutModal({
   const [taxEstimate, setTaxEstimate] = useState<{ amount: number; currency: string; grandTotal: number; source?: string | null } | null>(null);
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
+  const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -307,8 +308,8 @@ export function CheckoutModal({
   const shippingCost = selectedShippingRate?.rate
     ? Number(selectedShippingRate.rate) || 0
     : 0;
-  const taxAmount = taxEstimate?.amount ?? 0;
-  const total = taxEstimate?.grandTotal ?? subtotal + shippingCost + taxAmount;
+  const taxAmount = 0;
+  const total = subtotal + shippingCost;
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -329,9 +330,8 @@ export function CheckoutModal({
       && cardholderName.trim().length >= 2,
     );
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
-  const shouldFetchTax = shippingAddressComplete && hasSelectedShippingRate && checkoutLineItems.length > 0;
-  const isTaxReady = !hasSelectedShippingRate || (!taxEstimatePending && Boolean(taxEstimate));
-  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate && isTaxReady;
+  const shouldFetchTax = false;
+  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate;
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
   let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
@@ -505,14 +505,6 @@ export function CheckoutModal({
       toast.error('Select a shipping option before completing your purchase.');
       return;
     }
-    if (shouldFetchTax && !taxEstimate) {
-      toast.error('Calculating taxes. Please wait a moment.');
-      return;
-    }
-    if (taxEstimateError) {
-      toast.error('Unable to calculate taxes. Please update your address or try again.');
-      return;
-    }
     if (!isAuthenticated) {
       onRequireLogin();
       return;
@@ -662,48 +654,121 @@ export function CheckoutModal({
   }, [shippingAddressSignature, shippingRates]);
 
   useEffect(() => {
-    if (!shouldFetchTax || !selectedShippingRate) {
-      setTaxEstimate(null);
-      setTaxEstimateError(null);
-      setTaxEstimatePending(false);
+    // Tax estimation disabled for now; keep state cleared.
+    setTaxEstimate(null);
+    setTaxEstimateError(null);
+    setTaxEstimatePending(false);
+    lastTaxQuoteRef.current = null;
+    return;
+    // Existing tax estimation logic left in place for future use.
+    const estimateKey = [
+      shippingAddressSignature,
+      selectedShippingRate.carrierId || '',
+      selectedShippingRate.serviceCode || '',
+      selectedShippingRate.serviceType || '',
+      selectedShippingRate.rate ?? '',
+      cartLineItemSignature,
+    ].join('|');
+
+    // Avoid refetching if we already have a quote for this exact state
+    if (
+      lastTaxQuoteRef.current?.key === estimateKey
+      && taxEstimatePending
+    ) {
+      console.debug('[CheckoutModal] Skipping tax estimate: already pending', { estimateKey });
       return;
     }
+
+    if (
+      lastTaxQuoteRef.current?.key === estimateKey
+      && taxEstimate
+      && !taxEstimateError
+      && !taxEstimatePending
+    ) {
+      console.debug('[CheckoutModal] Skipping tax estimate: cached result', { estimateKey });
+      return;
+    }
+
+    // Throttle repeated failures for the same payload
+    if (
+      lastTaxQuoteRef.current?.key === estimateKey
+      && taxEstimateError
+      && Date.now() - (lastTaxQuoteRef.current?.ts ?? 0) < 5000
+    ) {
+      console.debug('[CheckoutModal] Skipping tax estimate: recent failure', { estimateKey });
+      return;
+    }
+
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      controller.abort(new Error('Tax estimate timeout'));
+    }, 10000);
+
     setTaxEstimatePending(true);
     setTaxEstimateError(null);
+    lastTaxQuoteRef.current = { key: estimateKey, ts: Date.now() };
+    console.debug('[CheckoutModal] Estimating taxes', {
+      estimateKey,
+      shippingAddress: shippingAddressSignature,
+      shippingRate: {
+        carrierId: selectedShippingRate.carrierId,
+        serviceCode: selectedShippingRate.serviceCode,
+        serviceType: selectedShippingRate.serviceType,
+        rate: selectedShippingRate.rate,
+      },
+      cartSignature: cartLineItemSignature,
+    });
     ordersAPI
-      .estimateTotals({
-        items: checkoutLineItems,
-        shippingAddress,
-        shippingEstimate: selectedShippingRate,
-        shippingTotal: shippingCost,
-      })
+      .estimateTotals(
+        {
+          items: checkoutLineItems,
+          shippingAddress,
+          shippingEstimate: selectedShippingRate,
+          shippingTotal: shippingCost,
+        },
+        { signal: controller.signal },
+      )
       .then((response) => {
         if (cancelled) return;
+        const totals = response?.totals;
+        const hasValidTotals = totals && (totals.taxTotal !== undefined && totals.taxTotal !== null);
+        if (!hasValidTotals) {
+          console.warn('[CheckoutModal] Tax estimate returned no totals', { response });
+          setTaxEstimate(null);
+          setTaxEstimateError('Tax service unavailable. Please try again.');
+          return;
+        }
         const toNumber = (value: unknown) => {
           const parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : 0;
         };
-        const amount = toNumber(response?.totals?.taxTotal);
-        const computedGrandTotal = toNumber(response?.totals?.grandTotal);
-        const currency = typeof response?.totals?.currency === 'string'
-          ? response.totals.currency
+        const amount = toNumber(totals?.taxTotal);
+        const computedGrandTotal = toNumber(totals?.grandTotal);
+        const currency = typeof totals?.currency === 'string'
+          ? totals.currency
           : 'USD';
         setTaxEstimate({
           amount,
           currency,
           grandTotal: computedGrandTotal > 0 ? computedGrandTotal : subtotal + shippingCost + amount,
-          source: response?.totals?.source || null,
+          source: totals?.source || null,
         });
+        console.debug('[CheckoutModal] Tax estimate received', { amount, grandTotal: computedGrandTotal, source: response?.totals?.source });
       })
       .catch((error) => {
         if (cancelled) return;
+        if (error?.name === 'AbortError') {
+          console.warn('[CheckoutModal] Tax estimate aborted/timeout', { estimateKey });
+          lastTaxQuoteRef.current = null;
+        }
         if (error?.code === 'AUTH_REQUIRED') {
           onRequireLogin();
           return;
         }
         if (cancelled) return;
         setTaxEstimate(null);
+        console.warn('[CheckoutModal] Tax estimate failed', { estimateKey, error });
         setTaxEstimateError(
           typeof error?.message === 'string' && error.message.trim().length > 0
             ? error.message
@@ -711,12 +776,15 @@ export function CheckoutModal({
         );
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (!cancelled) {
           setTaxEstimatePending(false);
         }
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [
     shouldFetchTax,
@@ -1209,15 +1277,6 @@ export function CheckoutModal({
                   <span>Shipping:</span>
                   <span>${shippingCost.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm text-slate-700">
-                  <span>Tax:</span>
-                  <span>
-                    {taxEstimatePending ? 'Calculating…' : `$${taxAmount.toFixed(2)}`}
-                  </span>
-                </div>
-                {taxEstimateError && (
-                  <p className="text-xs text-red-600 text-right">{taxEstimateError}</p>
-                )}
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span>Total:</span>

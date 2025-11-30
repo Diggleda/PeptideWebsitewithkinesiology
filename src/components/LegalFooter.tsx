@@ -207,10 +207,10 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     <>
       <footer className="relative z-10 mt-24 glass-strong">
         <div className="w-full px-4 sm:px-8 pt-12 pb-10">
-          <div className="flex flex-col gap-8 items-center text-center lg:text-left lg:grid lg:grid-cols-3 lg:items-start lg:justify-items-start">
-            {/* Contact CTA - Top on mobile, right on desktop */}
+          <div className="legal-footer-layout gap-8 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
+            {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
-              <div className="flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0 lg:col-start-3">
+              <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
                 <p className="text-sm lg:pt-6 font-medium text-slate-900">Want to join the Network?</p>
                 <button
                   type="button"
@@ -226,21 +226,21 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
               </div>
             )}
 
-            {/* Disclaimer - Left Third */}
-            <div className="legal-disclaimer flex items-start justify-start w-full lg:w-auto lg:col-start-1 lg:col-span-1 lg:pr-10 lg:mr-auto lg:ml-0 lg:place-self-start lg:justify-self-start">
-              <p className="text-xs text-slate-500 leading-relaxed pt-4 text-left w-full">
+            {/* Disclaimer - left column on desktop, middle stack on mobile */}
+            <div className="legal-disclaimer flex items-start justify-start w-full lg:w-auto lg:pr-10 lg:mr-auto lg:ml-0 lg:place-self-start lg:justify-self-start">
+              <p className="text-xs text-slate-500 leading-relaxed pt-4 text-center lg:text-left w-full">
                 PepPro peptide products are research chemicals intended for licensed physicians only. They are not intended to prevent, treat, or cure any medical condition, ailment or disease. These products have not been reviewed or approved by the US Food and Drug Administration.
               </p>
             </div>
 
-            {/* Center Content - Middle Third */}
-            <div className="flex flex-col items-center text-center gap-3 w-full lg:col-start-2">
-              <div className="space-y-1 text-sm text-slate-600">
+            {/* Legal text + links - middle column on desktop, bottom on mobile */}
+            <div className="legal-links flex flex-col items-center text-center gap-3 w-full lg:items-start lg:text-left">
+              <div className="space-y-1 text-sm text-slate-600 w-full">
                 <p>Advancing research-grade peptide access with care and compliance.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by kinesiology for the highest good.</p>
               </div>
-              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center gap-3 text-sm font-medium text-[rgb(95,179,249)]">
+              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center lg:justify-start gap-3 text-sm font-medium text-[rgb(95,179,249)]">
                 {legalLinks.map((link) => (
                   <button
                     key={link.key}

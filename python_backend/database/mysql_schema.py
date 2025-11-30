@@ -15,6 +15,7 @@ CREATE_TABLE_STATEMENTS = [
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         phone VARCHAR(32) NULL,
+        profile_image_url LONGTEXT NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
         visits INT NOT NULL DEFAULT 0,
@@ -137,6 +138,8 @@ def ensure_schema() -> None:
 
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
+        "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",

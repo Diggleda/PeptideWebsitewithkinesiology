@@ -1222,12 +1222,15 @@ export function Header({
 
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start pt-2">
           <div className="flex flex-col gap-3 sm:min-w-[220px] sm:max-w-[260px]">
-            <div className="avatar-shell">
+            <div className="avatar-shell" onClick={() => avatarInputRef.current?.click()}>
               {renderAvatar(72)}
               <button
                 type="button"
                 className="avatar-edit-badge"
-                onClick={() => setShowAvatarActions((prev) => !prev)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  avatarInputRef.current?.click();
+                }}
                 aria-label="Edit profile photo"
               >
                 <Pencil className="h-3 w-3" />
@@ -1236,21 +1239,19 @@ export function Header({
 
             <div className="space-y-2">
               <p className="text-sm font-semibold text-slate-800">Profile photo</p>
-              {showAvatarActions ? (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="squircle-sm"
-                    disabled={avatarUploading}
-                    onClick={() => avatarInputRef.current?.click()}
-                  >
-                    {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
-                  </Button>
-                  <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
-                </div>
-              ) : null}
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="squircle-sm"
+                  disabled={avatarUploading}
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
+                </Button>
+                <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
+              </div>
 
               <input
                 type="file"
@@ -1260,15 +1261,43 @@ export function Header({
                 onChange={async (event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
+                  const maxBytes = 50 * 1024 * 1024; // 50MB limit
+                  if (file.size > maxBytes) {
+                    toast.error('Upload too large. Please choose an image 50MB or smaller.');
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = '';
+                    }
+                    return;
+                  }
                   setAvatarUploading(true);
-                  setAvatarUploadPercent(5);
+                  setAvatarUploadPercent(8);
+                  let uploadTicker: number | null = null;
                   try {
+                    console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
                     const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
-                    setAvatarUploadPercent(85);
+                    setAvatarUploadPercent(55);
+
+                    // Simulated progress while request is in-flight
+                    const startProgress = 60;
+                    const targetProgress = 95;
+                    let current = startProgress;
+                    uploadTicker = window.setInterval(() => {
+                      current = Math.min(targetProgress, current + 2);
+                      setAvatarUploadPercent(current);
+                    }, 120);
+
                     await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
                     setAvatarUploadPercent(100);
                     setShowAvatarActions(false);
+                    toast.success('Profile photo updated');
+                  } catch (error: any) {
+                    const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
+                    toast.error(message);
+                    console.error('[Profile] Upload failed', { message, error });
                   } finally {
+                    if (uploadTicker) {
+                      window.clearInterval(uploadTicker);
+                    }
                     setAvatarUploading(false);
                     setAvatarUploadPercent(0);
                     if (avatarInputRef.current) {
@@ -1772,7 +1801,7 @@ export function Header({
           >
             <span className="hidden sm:inline text-white">{headerDisplayName}</span>
             <span className="header-account-avatar-shell">
-              {renderAvatar(40, 'header-account-avatar')}
+              {renderAvatar(48, 'header-account-avatar')}
             </span>
           </Button>
         </DialogTrigger>

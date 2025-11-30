@@ -3320,13 +3320,202 @@ html {
   color: rgb(100, 116, 139);
 }
 
-.sales-rep-chart-card,
 .sales-rep-leads-card {
   border-radius: 20px;
   border: 1px solid rgba(95, 179, 249, 0.55);
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.94), rgba(236, 244, 255, 0.9));
   box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.35);
   padding: 1.5rem;
+}
+
+.sales-rep-combined-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sales-rep-card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.sales-rep-leads-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sales-rep-combined-chart {
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  padding-top: 1.5rem;
+  margin-top: 0;
+}
+
+.sales-rep-dashboard-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+}
+
+.sales-tracking-card {
+  border-radius: 20px;
+  border: 1px solid rgba(95, 179, 249, 0.35);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(236, 244, 255, 0.92));
+  box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.35);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sales-tracking-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.sales-tracking-meta {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(100, 116, 139);
+}
+
+.sales-tracking-summary {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.sales-tracking-summary-item {
+  flex: 1 1 160px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.sales-tracking-summary-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(100, 116, 139);
+}
+
+.sales-tracking-summary-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+  margin-top: 0.35rem;
+}
+
+.sales-tracking-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sales-tracking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sales-tracking-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.sales-tracking-row-title {
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+}
+
+.sales-tracking-row-subtitle {
+  font-size: 0.75rem;
+  color: rgb(100, 116, 139);
+  margin-top: 0.15rem;
+}
+
+.sales-tracking-row-details {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.sales-tracking-row-amount {
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+}
+
+.sales-tracking-row-time {
+  font-size: 0.75rem;
+  color: rgb(100, 116, 139);
+}
+
+.sales-tracking-row-status {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(95, 179, 249, 0.15);
+  color: rgb(12, 74, 110);
+}
+
+.sales-tracking-row-status {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(95, 179, 249, 0.15);
+  color: rgb(12, 74, 110);
+}
+
+@media (max-width: 1023px) {
+  .sales-rep-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .sales-tracking-card {
+    padding: 1.25rem;
+  }
+  .sales-tracking-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .sales-tracking-row-details {
+    align-items: flex-start;
+  }
+}
+
+.sales-rep-dashboard {
+  margin: 0 auto;
+  width: calc(100% - 2.5rem);
+}
+
+@media (min-width: 1024px) {
+  .sales-rep-dashboard {
+    width: calc(100% - 5rem);
+  }
 }
 
 .sales-rep-chart-header h3,
@@ -3359,75 +3548,177 @@ html {
 }
 
 .sales-rep-table-wrapper {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   overflow-x: auto;
   border-radius: 16px;
   border: 1px solid rgba(95, 179, 249, 0.35);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  padding: 0.75rem;
 }
 
-.sales-rep-metrics {
-  display: flex;
-  gap: 1.25rem;
-  margin-left: auto;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  max-width: 100%;
-}
-
-.sales-rep-metric {
+/* Manual credit styling */
+.manual-credit-card {
+  border: 1px solid rgba(95, 179, 249, 0.45);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 244, 255, 0.9));
+  box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.32);
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  min-width: 96px;
-  flex: 0 1 auto;
+  gap: 1.5rem;
 }
 
-.sales-rep-metric__label {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(100, 116, 139);
+.manual-credit-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
-.sales-rep-metric__value {
-  margin-top: 0.35rem;
-  font-size: 2rem;
-  font-weight: 600;
+.manual-credit-header h3 {
+  margin: 0.15rem 0 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: rgb(15, 23, 42);
 }
 
-@media (max-width: 1023px) {
-  .sales-rep-metrics {
-    width: 100%;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.85);
-    border-radius: 14px;
-    border: 1px solid rgba(95, 179, 249, 0.35);
-    margin-left: 0;
-  }
-
-  .sales-rep-metric {
-    align-items: center;
-    flex: 1 1 80px;
-    min-width: 0;
-  }
-
-  .sales-rep-metric__label {
-    letter-spacing: 0.06em;
-  }
+.manual-credit-header p {
+  margin: 0;
+  color: rgb(100, 116, 139);
+  font-size: 0.95rem;
 }
 
-@media (max-width: 640px) {
-  .sales-rep-metrics {
-    gap: 0.75rem;
-  }
+.manual-credit-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(95, 179, 249);
+  margin: 0;
+  font-weight: 700;
+}
 
-  .sales-rep-metric__value {
-    font-size: 1.5rem;
-  }
+.manual-credit-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.manual-credit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(95, 179, 249, 0.12);
+  color: rgb(30, 64, 175);
+  border: 1px solid rgba(95, 179, 249, 0.35);
+}
+
+.manual-credit-chip.muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: rgb(71, 85, 105);
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.manual-credit-alert {
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.manual-credit-alert.error {
+  background: rgba(248, 113, 113, 0.1);
+  color: rgb(185, 28, 28);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.manual-credit-alert.success {
+  background: rgba(34, 197, 94, 0.12);
+  color: rgb(22, 101, 52);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.manual-credit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.manual-credit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.manual-credit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+  color: rgb(51, 65, 85);
+}
+
+.manual-credit-field--full {
+  grid-column: 1 / -1;
+}
+
+.manual-credit-field input,
+.manual-credit-field textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  color: rgb(30, 41, 59);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.manual-credit-field input:focus,
+.manual-credit-field textarea:focus {
+  outline: none;
+  border-color: rgb(95, 179, 249);
+  box-shadow: 0 0 0 3px rgba(95, 179, 249, 0.22);
+}
+
+.manual-credit-field textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.manual-credit-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.manual-credit-submit {
+  min-width: 160px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgb(95, 179, 249);
+  background: linear-gradient(135deg, rgb(95, 179, 249), rgb(68, 150, 226));
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 14px 28px -14px rgba(59, 130, 246, 0.6);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 160ms ease;
+}
+
+.manual-credit-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 32px -16px rgba(59, 130, 246, 0.65);
+}
+
+.manual-credit-submit:active {
+  transform: translateY(0);
+  box-shadow: 0 10px 18px -14px rgba(59, 130, 246, 0.5);
 }
 
 .referrals-empty-state {
@@ -3716,6 +4007,63 @@ html {
   margin-top: 0.4rem;
 }
 
+.legal-disclaimer {
+  text-align: center;
+  justify-self: flex-start;
+  align-self: flex-start;
+  width: 100%;
+  max-width: 44rem;
+  margin-right: auto;
+}
+
+.legal-disclaimer p {
+  text-align: center;
+  width: 100%;
+}
+
+@media (min-width: 48rem) {
+  .legal-disclaimer {
+    width: auto;
+    max-width: 32rem;
+    margin-right: 0;
+  }
+  .legal-disclaimer,
+  .legal-disclaimer p {
+    text-align: left;
+  }
+}
+
+.legal-footer-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "contact"
+    "disclaimer"
+    "links";
+  justify-items: center;
+}
+
+.legal-footer-layout .legal-contact {
+  grid-area: contact;
+}
+
+.legal-footer-layout .legal-disclaimer {
+  grid-area: disclaimer;
+}
+
+.legal-footer-layout .legal-links {
+  grid-area: links;
+}
+
+@media (min-width: 48rem) {
+  .legal-footer-layout {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "disclaimer links contact";
+    align-items: start;
+    justify-items: start;
+  }
+}
+
 @media (hover: hover) {
   .btn-hover-lighter:hover {
     text-decoration: none;
@@ -3786,9 +4134,18 @@ html {
 .header-account-button {
   position: relative;
   overflow: visible;
-  padding-right: 3.6rem;
+  padding-right: 1.8rem;
   z-index: 1;
-  margin-right: 1rem;
+  margin-right: 1.5rem;
+}
+
+.header-account-button:hover,
+.header-account-button:focus-visible {
+  background: rgb(95, 179, 249);
+  border-color: transparent;
+  box-shadow: none;
+  filter: none;
+  color: #ffffff;
 }
 
 .header-account-avatar {
@@ -3800,7 +4157,7 @@ html {
 
 .header-account-avatar-shell {
   position: absolute;
-  right: -1.25rem;
+  right: -1.5rem;
   top: 50%;
   transform: translateY(-50%);
   display: inline-flex;

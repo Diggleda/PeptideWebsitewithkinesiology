@@ -20,6 +20,7 @@ const getClient = () => {
 };
 
 const isConfigured = () => Boolean(env.stripe.onsiteEnabled && env.stripe.secretKey);
+const isTaxConfigured = () => Boolean(env.stripe.taxEnabled && isConfigured());
 
 const retrievePaymentIntent = async (paymentIntentId) => {
   if (!isConfigured()) {
@@ -138,10 +139,101 @@ const refundPaymentIntent = async ({ paymentIntentId, amount, reason, metadata }
   }
 };
 
+const calculateStripeTax = async ({ items, shippingAddress, shippingTotal }) => {
+  if (!isTaxConfigured()) {
+    return { status: 'skipped', reason: 'stripe_tax_disabled' };
+  }
+
+  const stripe = getClient();
+  const currency = 'usd';
+
+  const lineItems = (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      const unitPrice = Number(item?.price) || 0;
+      const quantity = Number(item?.quantity) || 0;
+      const amount = Math.round(Math.max(0, unitPrice * quantity * 100));
+      if (!amount) {
+        return null;
+      }
+      const line = {
+        amount,
+        reference: item?.productId ? String(item.productId) : `line_${index + 1}`,
+      };
+      if (env.stripe.defaultTaxCode) {
+        line.tax_code = env.stripe.defaultTaxCode;
+      }
+      return line;
+    })
+    .filter(Boolean);
+
+  if (!lineItems.length) {
+    const error = new Error('Stripe tax calculation requires at least one line item');
+    error.status = 400;
+    throw error;
+  }
+
+  const shippingAmount = Math.round(Math.max(0, Number(shippingTotal || 0) * 100));
+  const shippingCost = shippingAmount
+    ? {
+        amount: shippingAmount,
+        ...(env.stripe.shippingTaxCode || env.stripe.defaultTaxCode
+          ? { tax_code: env.stripe.shippingTaxCode || env.stripe.defaultTaxCode }
+          : {}),
+      }
+    : undefined;
+
+  const address = shippingAddress || {};
+
+  try {
+    const calculation = await stripe.tax.calculations.create({
+      currency,
+      line_items: lineItems,
+      ...(shippingCost ? { shipping_cost: shippingCost } : {}),
+      customer_details: {
+        address: {
+          line1: address.addressLine1 || address.address1 || undefined,
+          line2: address.addressLine2 || address.address2 || undefined,
+          city: address.city || undefined,
+          state: address.state || undefined,
+          postal_code: address.postalCode || address.postcode || undefined,
+          country: address.country || 'US',
+        },
+        address_source: 'shipping',
+      },
+    });
+
+    const lineTaxCents = Array.isArray(calculation.line_items)
+      ? calculation.line_items.reduce(
+          (sum, item) => sum + (Number(item?.amount_tax) || 0),
+          0,
+        )
+      : 0;
+    const shippingTaxCents = calculation.shipping_cost
+      ? Number(calculation.shipping_cost.amount_tax) || 0
+      : 0;
+    const totalTaxCents = lineTaxCents + shippingTaxCents;
+
+    return {
+      status: 'success',
+      taxAmount: totalTaxCents / 100,
+      calculation,
+    };
+  } catch (error) {
+    logger.warn({ err: error }, 'Stripe Tax calculation failed');
+    const wrapped = new Error(error?.message || 'Stripe Tax calculation failed');
+    wrapped.status = error?.statusCode || 502;
+    wrapped.code = error?.code || 'STRIPE_TAX_ERROR';
+    wrapped.cause = error;
+    throw wrapped;
+  }
+};
+
 module.exports = {
   isConfigured,
+  isTaxConfigured,
   createPaymentIntent,
   constructEvent,
   retrievePaymentIntent,
   refundPaymentIntent,
+  calculateStripeTax,
 };

@@ -61,6 +61,115 @@ const STATEMENTS = [
   `,
 ];
 
+const ensureUserColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+
+  const columns = [
+    {
+      name: 'npi_number',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_number VARCHAR(20) NULL
+      `,
+    },
+    {
+      name: 'npi_provider_name',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_provider_name VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'npi_clinic_name',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_clinic_name VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'npi_verification_status',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_verification_status VARCHAR(32) NULL
+      `,
+    },
+    {
+      name: 'npi_verified_at',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN npi_verified_at DATETIME NULL
+      `,
+    },
+    {
+      name: 'is_tax_exempt',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN is_tax_exempt TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'tax_exempt_source',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN tax_exempt_source VARCHAR(64) NULL
+      `,
+    },
+    {
+      name: 'tax_exempt_reason',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN tax_exempt_reason VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'profile_image_url',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN profile_image_url LONGTEXT NULL
+      `,
+      expectedDataType: 'longtext',
+      alter: `
+        ALTER TABLE users
+        MODIFY COLUMN profile_image_url LONGTEXT NULL
+      `,
+    },
+  ];
+
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME, DATA_TYPE
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL users table column added');
+      } else if (
+        column.expectedDataType
+        && column.alter
+        && typeof existing.DATA_TYPE === 'string'
+        && existing.DATA_TYPE.toLowerCase() !== column.expectedDataType.toLowerCase()
+      ) {
+        await mysqlClient.execute(column.alter);
+        logger.info(
+          { column: column.name, from: existing.DATA_TYPE, to: column.expectedDataType },
+          'MySQL users table column altered',
+        );
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL users table column');
+    }
+  }
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -68,6 +177,7 @@ const ensureSchema = async () => {
   for (const statement of STATEMENTS) {
     await mysqlClient.execute(statement);
   }
+   await ensureUserColumns();
   logger.info('MySQL schema ensured');
 };
 

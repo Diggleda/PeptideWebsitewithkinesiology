@@ -18,6 +18,11 @@ const bootstrap = async () => {
       },
       'MySQL client configured',
     );
+  } else {
+    logger.warn(
+      { mysqlEnabled: false },
+      'MySQL disabled; profile images will NOT be persisted to MySQL users table',
+    );
   }
 };
 

@@ -72,6 +72,8 @@ const env = {
   },
   backendBuild: process.env.BACKEND_BUILD || '2024.10.01-02',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+  // Allow forcing pretty console logs even in production (set LOG_PRETTY=true)
+  logPretty: process.env.LOG_PRETTY === 'true',
   wooCommerce: {
     storeUrl: process.env.WC_STORE_URL || '',
     consumerKey: process.env.WC_CONSUMER_KEY || '',
@@ -112,6 +114,9 @@ const env = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
     mode: process.env.STRIPE_MODE || 'test',
     publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+    taxEnabled: process.env.STRIPE_TAX_ENABLED === 'true',
+    defaultTaxCode: process.env.STRIPE_TAX_CODE || '',
+    shippingTaxCode: process.env.STRIPE_TAX_SHIPPING_CODE || '',
   },
   shipStation: {
     // V2 bearer token support; fall back to legacy key/secret if provided

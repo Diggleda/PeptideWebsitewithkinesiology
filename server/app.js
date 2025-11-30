@@ -55,6 +55,23 @@ const createApp = () => {
     next();
   });
 
+  app.use((req, res, next) => {
+    res.on('finish', () => {
+      if (res.statusCode >= 400) {
+        logger.warn(
+          {
+            method: req.method,
+            path: req.originalUrl,
+            status: res.statusCode,
+            userId: req.user?.id || null,
+          },
+          'Request returned client or server error',
+        );
+      }
+    });
+    next();
+  });
+
   app.use('/api/auth', authRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/payments', paymentRoutes);

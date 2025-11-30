@@ -6,6 +6,7 @@ const salesRepRepository = require('../repositories/salesRepRepository');
 const { env } = require('../config/env');
 const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 const { logger } = require('../config/logger');
+const mysqlClient = require('../database/mysqlClient');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
 
@@ -165,6 +166,14 @@ const createError = (message, status = 400) => {
   return error;
 };
 
+const isPhysicianTaxonomy = (value) => {
+  if (!value) {
+    return false;
+  }
+  const normalized = String(value).toLowerCase();
+  return normalized.includes('physician');
+};
+
 const register = async ({
   name,
   email,
@@ -214,6 +223,21 @@ const register = async ({
   const hashedPassword = await bcrypt.hash(password, 10);
   const now = new Date().toISOString();
 
+  let npiVerificationStatus = null;
+  let isTaxExempt = false;
+  let taxExemptSource = null;
+  let taxExemptReason = null;
+
+  if (npiVerification) {
+    const physicianTaxonomy = isPhysicianTaxonomy(npiVerification.primaryTaxonomy);
+    npiVerificationStatus = physicianTaxonomy ? 'VALID_PHYSICIAN' : 'VALID';
+    if (physicianTaxonomy) {
+      isTaxExempt = true;
+      taxExemptSource = 'NPI_VERIFICATION';
+      taxExemptReason = 'Licensed medical provider purchasing prescription products';
+    }
+  }
+
   const role = isSalesRepEmail ? 'sales_rep' : 'doctor';
   const user = userRepository.insert({
     id: Date.now().toString(),
@@ -235,6 +259,10 @@ const register = async ({
       : null,
     npiNumber: npiVerification ? npiVerification.npiNumber : null,
     npiLastVerifiedAt: npiVerification ? now : null,
+    npiVerificationStatus,
+    isTaxExempt,
+    taxExemptSource,
+    taxExemptReason,
     npiVerification: npiVerification
       ? {
         name: npiVerification.name,
@@ -370,9 +398,31 @@ const updateProfile = async (userId, data) => {
   });
   if (Object.prototype.hasOwnProperty.call(data, 'profileImageUrl')) {
     next.profileImageUrl = normalizeOptionalString(data.profileImageUrl);
+    logger.info(
+      {
+        userId: user.id,
+        profileImageUrl: next.profileImageUrl,
+        mysqlEnabled: mysqlClient.isEnabled(),
+        profileImageBytes: next.profileImageUrl
+          ? Buffer.byteLength(next.profileImageUrl, 'utf8')
+          : 0,
+      },
+      'Profile image value saved to user record',
+    );
   }
 
   const updated = userRepository.update(next) || next;
+  logger.debug(
+    {
+      userId: updated.id,
+      profileImageUrl: updated.profileImageUrl,
+      mysqlEnabled: mysqlClient.isEnabled(),
+      profileImageBytes: updated.profileImageUrl
+        ? Buffer.byteLength(updated.profileImageUrl, 'utf8')
+        : 0,
+    },
+    'Profile update persisted across stores (local + MySQL sync attempted)',
+  );
 
   const normalizedRole = normalizeRole(updated.role);
   if (normalizedRole === 'sales_rep' && updated.salesRepId) {
