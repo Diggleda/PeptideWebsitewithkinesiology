@@ -181,6 +181,9 @@ interface AccountOrderSummary {
   createdAt?: string | null;
   updatedAt?: string | null;
   source: 'local' | 'woocommerce' | 'peppro';
+  doctorId?: string | null;
+  doctorName?: string | null;
+  doctorEmail?: string | null;
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
@@ -1632,6 +1635,10 @@ export default function App() {
   const [salesTrackingLoading, setSalesTrackingLoading] = useState(false);
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(null);
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<number | null>(null);
+  const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
+    { salesRepId: string; salesRepName: string; salesRepEmail: string | null; totalOrders: number; totalRevenue: number }[]
+  >([]);
+  const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<string | null>(null);
   const [referralForm, setReferralForm] = useState({
     contactName: '',
     contactEmail: '',
@@ -1811,25 +1818,49 @@ const filteredDoctorReferrals = useMemo(() => {
   }, []);
 
   const fetchSalesTrackingOrders = useCallback(async () => {
-    if (salesRepDoctorIds.size === 0) {
-      setSalesTrackingOrders([]);
-      setSalesTrackingError(null);
-      setSalesTrackingLastUpdated(null);
-      return;
-    }
-
     setSalesTrackingLoading(true);
     setSalesTrackingError(null);
+    setSalesRepSalesSummaryError(null);
 
     try {
-      const response = await ordersAPI.getAll();
-      const orders = Array.isArray(response) ? (response as AccountOrderSummary[]) : [];
+      let orders: AccountOrderSummary[] = [];
+      if (isRep(user?.role)) {
+        const response = await ordersAPI.getForSalesRep();
+        const fromResponse = Array.isArray((response as any)?.orders)
+          ? ((response as any).orders as AccountOrderSummary[])
+          : Array.isArray(response)
+            ? (response as AccountOrderSummary[])
+            : [];
+        orders = fromResponse;
+      } else if (isAdmin(user?.role)) {
+        try {
+          const [ordersResponse, salesSummaryResponse] = await Promise.all([
+            ordersAPI.getAll(),
+            ordersAPI.getSalesByRepForAdmin(),
+          ]);
+          orders = Array.isArray(ordersResponse) ? (ordersResponse as AccountOrderSummary[]) : [];
+          const summaryArray = Array.isArray(salesSummaryResponse)
+            ? salesSummaryResponse
+            : Array.isArray((salesSummaryResponse as any)?.orders)
+              ? (salesSummaryResponse as any).orders
+              : [];
+          setSalesRepSalesSummary(summaryArray as any);
+        } catch (adminError: any) {
+          const message = typeof adminError?.message === 'string' ? adminError.message : 'Unable to load sales summary';
+          setSalesRepSalesSummaryError(message);
+        }
+      } else {
+        setSalesTrackingOrders([]);
+        setSalesTrackingLastUpdated(Date.now());
+        setSalesTrackingLoading(false);
+        return;
+      }
+
       const enriched = orders
         .map((order) => ({
           order,
           doctorId: resolveOrderDoctorId(order),
         }))
-        .filter((entry) => entry.doctorId && salesRepDoctorIds.has(entry.doctorId))
         .sort((a, b) => {
           const aTime = a.order.createdAt ? new Date(a.order.createdAt).getTime() : 0;
           const bTime = b.order.createdAt ? new Date(b.order.createdAt).getTime() : 0;
@@ -1839,24 +1870,16 @@ const filteredDoctorReferrals = useMemo(() => {
 
       setSalesTrackingOrders(enriched);
       setSalesTrackingLastUpdated(Date.now());
-    } catch (error) {
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : 'Unable to load sales tracking data at the moment.';
       console.error('[Sales Tracking] Unable to fetch orders', error);
-      setSalesTrackingError(
-        error instanceof Error ? error.message : 'Unable to load sales tracking data at the moment.'
-      );
+      setSalesTrackingError(message);
     } finally {
       setSalesTrackingLoading(false);
     }
-  }, [salesRepDoctorIds]);
+  }, [user?.role, resolveOrderDoctorId, isRep, isAdmin]);
 
   useEffect(() => {
-    if (salesRepDoctorIds.size === 0) {
-      setSalesTrackingOrders([]);
-      setSalesTrackingError(null);
-      setSalesTrackingLastUpdated(null);
-      return;
-    }
-
     fetchSalesTrackingOrders();
     const pollHandle = window.setInterval(() => {
       void fetchSalesTrackingOrders();
@@ -3806,6 +3829,50 @@ const renderSalesRepDashboard = () => {
           </p>
         )}
 
+        {isAdmin(user?.role) && (
+          <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Sales by Sales Rep</h3>
+                <p className="text-sm text-slate-600">Orders placed by doctors assigned to each rep.</p>
+              </div>
+              <span className="text-xs text-slate-500">Fetched {salesTrackingLastUpdated ? new Date(salesTrackingLastUpdated).toLocaleTimeString() : '—'}</span>
+            </div>
+            <div className="overflow-x-auto">
+              {salesRepSalesSummaryError ? (
+                <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                  {salesRepSalesSummaryError}
+                </div>
+              ) : salesRepSalesSummary.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-500">No sales recorded yet.</div>
+              ) : (
+                <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
+                  <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Sales Rep</th>
+                      <th className="px-4 py-2 text-left">Email</th>
+                      <th className="px-4 py-2 text-right">Orders</th>
+                      <th className="px-4 py-2 text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {salesRepSalesSummary.map((rep) => (
+                      <tr key={rep.salesRepId}>
+                        <td className="px-4 py-3 text-sm font-medium text-slate-800">{rep.salesRepName}</td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{rep.salesRepEmail || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-right text-slate-800">{rep.totalOrders}</td>
+                        <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900">
+                          {formatCurrency(rep.totalRevenue || 0)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="sales-rep-dashboard-grid">
           <div className="sales-tracking-card glass-card squircle-lg">
             <div className="sales-tracking-header">
@@ -3851,7 +3918,7 @@ const renderSalesRepDashboard = () => {
                   {salesTrackingDisplayOrders.map((order) => {
                     const doctorId = resolveOrderDoctorId(order);
                     const doctorName =
-                      (doctorId && salesRepDoctorsById.get(doctorId)) || 'Doctor';
+                      (doctorId && salesRepDoctorsById.get(doctorId)) || order.doctorName || 'Doctor';
                     const orderTime = order.createdAt ? formatDateTime(order.createdAt) : 'Unknown';
                     return (
                       <li key={order.id} className="sales-tracking-row">

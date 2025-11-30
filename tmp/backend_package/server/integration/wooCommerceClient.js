@@ -9,6 +9,59 @@ const isConfigured = () => Boolean(
   && env.wooCommerce.consumerSecret,
 );
 
+const DEFAULT_WOO_TIMEOUT_MS = env.wooCommerce.requestTimeoutMs || 25000;
+const RETRIABLE_NETWORK_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN']);
+const MAX_WOO_REQUEST_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 750;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryWooError = (error) => {
+  if (!error) {
+    return false;
+  }
+  const code = error.code || error.cause?.code;
+  if (code && RETRIABLE_NETWORK_CODES.has(code)) {
+    return true;
+  }
+  const status = error.response?.status ?? error.status;
+  if (typeof status === 'number' && status >= 500) {
+    return true;
+  }
+  const message = (error.message || error.cause?.message || '').toLowerCase();
+  return message.includes('timeout') || message.includes('timed out');
+};
+
+const executeWithRetry = async (operation, { label = 'woo_request', maxAttempts = MAX_WOO_REQUEST_ATTEMPTS } = {}) => {
+  let attempt = 0;
+  let lastError = null;
+  while (attempt < maxAttempts) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      attempt += 1;
+      const shouldRetry = shouldRetryWooError(error) && attempt < maxAttempts;
+      logger.warn(
+        {
+          err: error,
+          label,
+          attempt,
+          maxAttempts,
+          willRetry: shouldRetry,
+        },
+        'WooCommerce request failed',
+      );
+      if (!shouldRetry) {
+        break;
+      }
+      const delay = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 5000);
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+};
+
 const shouldAutoSubmitOrders = env.wooCommerce.autoSubmitOrders === true;
 const MAX_WOO_ORDER_FETCH = 25;
 
@@ -77,13 +130,17 @@ const sanitizeQueryParams = (query = {}) => {
   }, {});
 };
 
+const normalizedStoreUrl = env.wooCommerce.storeUrl
+  ? env.wooCommerce.storeUrl.replace(/\/+$/, '')
+  : '';
+
 const getClient = () => {
   if (!isConfigured()) {
     throw new Error('WooCommerce is not configured');
   }
 
   return axios.create({
-    baseURL: `${env.wooCommerce.storeUrl.replace(/\/+$/, '')}/wp-json/${env.wooCommerce.apiVersion.replace(/^\/+/, '')}`,
+    baseURL: `${normalizedStoreUrl}/wp-json/${env.wooCommerce.apiVersion.replace(/^\/+/, '')}`,
     auth: {
       username: env.wooCommerce.consumerKey,
       password: env.wooCommerce.consumerSecret,
@@ -91,9 +148,30 @@ const getClient = () => {
     headers: {
       'Content-Type': 'application/json',
     },
-    timeout: 10_000,
+    timeout: DEFAULT_WOO_TIMEOUT_MS,
   });
 };
+
+const getSiteClient = () => {
+  if (!isConfigured()) {
+    throw new Error('WooCommerce is not configured');
+  }
+
+  return axios.create({
+    baseURL: `${normalizedStoreUrl}/wp-json`,
+    auth: {
+      username: env.wooCommerce.consumerKey,
+      password: env.wooCommerce.consumerSecret,
+    },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout: DEFAULT_WOO_TIMEOUT_MS,
+  });
+};
+
+let taxCalculationSupported = true;
+let taxCalculationWarningLogged = false;
 
 const buildLineItems = (items) => items.map((item) => ({
   name: item.name,
@@ -222,6 +300,103 @@ const forwardOrder = async ({ order, customer }) => {
   }
 };
 
+const buildTaxCalculationPayload = ({ order }) => {
+  if (!order?.shippingAddress) {
+    return null;
+  }
+  const normalizedLineItems = (order.items || []).map((item, index) => ({
+    id: item.productId || item.product_id || index + 1,
+    price: Number(item.price || 0).toFixed(2),
+    quantity: Number(item.quantity || 0),
+  }));
+  return {
+    country: order.shippingAddress.country || 'US',
+    state: order.shippingAddress.state || '',
+    city: order.shippingAddress.city || '',
+    postcode: order.shippingAddress.postalCode || order.shippingAddress.postcode || '',
+    shipping: Number(order.shippingTotal || 0).toFixed(2),
+    line_items: normalizedLineItems,
+  };
+};
+
+// Ordered list of Woo tax endpoints to probe. Newer endpoints first, fall back to legacy.
+const TAX_CALCULATION_ENDPOINTS = [
+  '/wccom-site/v3/tax/calculate',
+  '/wccom-site/v2/tax/calculate',
+  '/wccom-site/v2/tax/calculations',
+  '/wccom-site/v1/tax/calculate',
+  '/wccom-site/tax/calculate',
+  '/wc/v3/taxes/calculate',
+];
+
+const calculateOrderTaxes = async ({ order, customer }) => {
+  if (!taxCalculationSupported) {
+    const integrationError = new Error('WooCommerce tax calculation endpoint unavailable');
+    integrationError.status = 404;
+    integrationError.code = 'WOO_TAX_UNSUPPORTED';
+    throw integrationError;
+  }
+  const payload = buildTaxCalculationPayload({ order, customer });
+
+  if (!payload) {
+    const error = new Error('Shipping address is required for tax calculation');
+    error.status = 400;
+    throw error;
+  }
+
+  if (!isConfigured()) {
+    return {
+      status: 'skipped',
+      reason: 'not_configured',
+      payload,
+    };
+  }
+
+  const client = getSiteClient();
+  const tryEndpoints = TAX_CALCULATION_ENDPOINTS.length ? TAX_CALCULATION_ENDPOINTS : ['/wccom-site/v2/tax/calculate'];
+  let lastError = null;
+
+  for (const endpoint of tryEndpoints) {
+    try {
+      const response = await client.post(endpoint, payload);
+      return {
+        status: 'success',
+        payload,
+        response: response.data,
+      };
+    } catch (error) {
+      lastError = error;
+      const statusCode = error?.response?.status ?? error?.status;
+      if (statusCode !== 404) {
+        break;
+      }
+      logger.warn({ err: error?.response?.data || error?.message || error, endpoint }, 'Woo tax endpoint returned 404, trying next');
+    }
+  }
+
+  try {
+    throw lastError;
+  } catch (error) {
+    const statusCode = error?.response?.status ?? error?.status;
+    if (statusCode === 404) {
+      taxCalculationSupported = false;
+      if (!taxCalculationWarningLogged) {
+        logger.warn({ err: error }, 'WooCommerce tax calculation endpoint unavailable; using fallback strategy');
+        taxCalculationWarningLogged = true;
+      }
+      const integrationError = new Error('WooCommerce tax calculation endpoint unavailable');
+      integrationError.status = 404;
+      integrationError.code = 'WOO_TAX_UNSUPPORTED';
+      throw integrationError;
+    }
+    logger.error({ err: error, orderId: order?.id }, 'Failed to calculate WooCommerce taxes');
+    const integrationError = new Error('WooCommerce tax calculation failed');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = statusCode ?? 502;
+    throw integrationError;
+  }
+};
+
 const normalizeNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -308,7 +483,7 @@ const mapWooOrderSummary = (order) => {
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
-    number: pepproOrderId || wooNumber,
+    number: wooNumber || pepproOrderId,
     status: order?.status || 'pending',
     currency: order?.currency || 'USD',
     total: normalizeNumber(order?.total, normalizeNumber(order?.total_ex_tax)),
@@ -407,6 +582,63 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   }
 };
 
+const cancelOrder = async ({ wooOrderId, reason, statusOverride }) => {
+  if (!wooOrderId) {
+    return { status: 'skipped', reason: 'missing_woo_order_id' };
+  }
+  if (!isConfigured()) {
+    return { status: 'skipped', reason: 'not_configured' };
+  }
+  const nextStatus = typeof statusOverride === 'string' && statusOverride.trim().length > 0
+    ? statusOverride.trim()
+    : 'cancelled';
+  const attemptCancel = async () => {
+    const client = getClient();
+    const payload = {
+      status: nextStatus,
+      set_paid: false,
+      customer_note: reason ? String(reason) : 'Order cancelled (payment failed)',
+    };
+    const response = await client.put(`/orders/${wooOrderId}`, payload);
+    return {
+      status: 'success',
+      response: {
+        id: response.data?.id,
+        status: response.data?.status,
+      },
+    };
+  };
+
+  try {
+    return await executeWithRetry(attemptCancel, {
+      label: `cancel_order_${wooOrderId}`,
+    });
+  } catch (error) {
+    logger.error({ err: error, wooOrderId }, 'Failed to cancel WooCommerce order');
+    const integrationError = new Error('Failed to cancel WooCommerce order');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? error.status ?? 502;
+    integrationError.code = error.code || error.cause?.code;
+    throw integrationError;
+  }
+};
+
+const fetchOrderById = async (wooOrderId) => {
+  if (!wooOrderId || !isConfigured()) {
+    return null;
+  }
+  try {
+    const client = getClient();
+    const response = await client.get(`/orders/${wooOrderId}`);
+    return response.data;
+  } catch (error) {
+    const integrationError = new Error('Failed to fetch WooCommerce order');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? 502;
+    throw integrationError;
+  }
+};
+
 const findProductBySku = async (sku) => {
   if (!sku || !isConfigured()) {
     return null;
@@ -430,7 +662,32 @@ const findProductBySku = async (sku) => {
   }
 };
 
-const updateProductInventory = async (productId, { stock_quantity: stockQuantity }) => {
+const addOrderNote = async ({ wooOrderId, note, isCustomerNote = false }) => {
+  if (!wooOrderId || !note || !isConfigured()) {
+    return { status: 'skipped', reason: 'missing_params' };
+  }
+  try {
+    const client = getClient();
+    const response = await client.post(`/orders/${wooOrderId}/notes`, {
+      note: String(note),
+      customer_note: Boolean(isCustomerNote),
+    });
+    return {
+      status: 'success',
+      response: {
+        id: response.data?.id,
+      },
+    };
+  } catch (error) {
+    logger.error({ err: error, wooOrderId }, 'Failed to append WooCommerce order note');
+    const integrationError = new Error('Failed to append WooCommerce order note');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? 502;
+    throw integrationError;
+  }
+};
+
+const updateProductInventory = async (productId, { stock_quantity: stockQuantity, parent_id: parentId, type }) => {
   if (!productId || !isConfigured()) {
     return { status: 'skipped', reason: 'not_configured' };
   }
@@ -441,7 +698,12 @@ const updateProductInventory = async (productId, { stock_quantity: stockQuantity
       manage_stock: true,
       stock_quantity: Number.isFinite(stockQuantity) ? Number(stockQuantity) : null,
     };
-    const response = await client.put(`/products/${productId}`, payload);
+    const isVariation = Boolean(parentId) || String(type || '').toLowerCase() === 'variation';
+    const endpoint = isVariation
+      ? `/products/${parentId}/variations/${productId}`
+      : `/products/${productId}`;
+
+    const response = await client.put(endpoint, payload);
     return {
       status: 'success',
       response: {
@@ -458,9 +720,36 @@ const updateProductInventory = async (productId, { stock_quantity: stockQuantity
   }
 };
 
+const fetchTaxRates = async ({ country, state, postcode, city, taxClass } = {}) => {
+  if (!isConfigured()) {
+    return [];
+  }
+  try {
+    const client = getClient();
+    const response = await client.get('/taxes', {
+      params: {
+        country: country || undefined,
+        state: state || undefined,
+        postcode: postcode || undefined,
+        city: city || undefined,
+        class: taxClass || undefined,
+        per_page: 100,
+      },
+    });
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to fetch WooCommerce tax rates');
+    const integrationError = new Error('WooCommerce tax lookup failed');
+    integrationError.cause = error.response?.data || error;
+    integrationError.status = error.response?.status ?? 502;
+    throw integrationError;
+  }
+};
+
 module.exports = {
   isConfigured,
   forwardOrder,
+  calculateOrderTaxes,
   buildOrderPayload,
   fetchCatalog: async (endpoint, query = {}) => {
     if (!isConfigured()) {
@@ -490,8 +779,12 @@ module.exports = {
     }
   },
   fetchOrdersByEmail,
+  fetchOrderById,
   mapWooOrderSummary,
   markOrderPaid,
+  cancelOrder,
+  addOrderNote,
+  fetchTaxRates,
   findProductBySku,
   updateProductInventory,
 };

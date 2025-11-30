@@ -28,6 +28,19 @@ const getOrders = async (req, res, next) => {
   }
 };
 
+const getOrdersForSalesRep = async (req, res, next) => {
+  try {
+    const role = (req.user?.role || '').toLowerCase();
+    if (role !== 'sales_rep' && role !== 'rep' && role !== 'admin') {
+      return res.status(403).json({ error: 'Sales rep access required' });
+    }
+    const response = await orderService.getOrdersForSalesRep(req.user.id, { includeDoctors: true });
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const cancelOrder = async (req, res, next) => {
   try {
     const result = await orderService.cancelOrder({
@@ -56,9 +69,24 @@ const estimateOrderTotals = async (req, res, next) => {
   }
 };
 
+const getSalesByRepForAdmin = async (req, res, next) => {
+  try {
+    const role = (req.user?.role || '').toLowerCase();
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const summary = await orderService.getSalesByRep({ excludeSalesRepId: req.user.id });
+    res.json(summary);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
+  getOrdersForSalesRep,
+  getSalesByRepForAdmin,
   cancelOrder,
   estimateOrderTotals,
 };

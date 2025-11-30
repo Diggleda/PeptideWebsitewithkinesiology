@@ -15,6 +15,7 @@ CREATE_TABLE_STATEMENTS = [
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         phone VARCHAR(32) NULL,
+        profile_image_url LONGTEXT NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
         visits INT NOT NULL DEFAULT 0,
@@ -110,6 +111,23 @@ CREATE_TABLE_STATEMENTS = [
         created_at DATETIME NULL,
         updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contact_forms (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(64) NULL,
+        source VARCHAR(255) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS settings (
+        `key` VARCHAR(64) NOT NULL PRIMARY KEY,
+        value_json JSON NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
     """
 ]
 
@@ -120,6 +138,8 @@ def ensure_schema() -> None:
 
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
+        "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",

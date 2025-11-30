@@ -228,6 +228,7 @@ const buildLocalOrderSummary = (order) => ({
   updatedAt: order.updatedAt || order.createdAt,
   referralCode: order.referralCode || null,
   source: 'local',
+  userId: order.userId,
   lineItems: (order.items || []).map((item) => ({
     id: item.cartItemId || item.productId || item.id || `${order.id}-${item.name}`,
     name: item.name,
@@ -1053,9 +1054,100 @@ const getOrdersForUser = async (userId) => {
   };
 };
 
+const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {}) => {
+  const doctors = userRepository.getAll().filter((candidate) => {
+    const role = (candidate.role || '').toLowerCase();
+    return (role === 'doctor' || role === 'test_doctor') && candidate.salesRepId === salesRepId;
+  });
+
+  const doctorLookup = new Map(
+    doctors.map((doctor) => [
+      doctor.id,
+      {
+        id: doctor.id,
+        name: doctor.name || doctor.email || 'Doctor',
+        email: doctor.email || null,
+      },
+    ]),
+  );
+
+  const summaries = [];
+  doctors.forEach((doctor) => {
+    const doctorOrders = orderRepository.findByUserId(doctor.id);
+    doctorOrders.forEach((order) => {
+      const summary = {
+        ...buildLocalOrderSummary(order),
+        doctorId: doctor.id,
+        doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
+        doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
+      };
+      summaries.push(summary);
+    });
+  });
+
+  summaries.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  return includeDoctors
+    ? {
+      orders: summaries,
+      doctors: Array.from(doctorLookup.values()),
+      fetchedAt: new Date().toISOString(),
+    }
+    : summaries;
+};
+
+const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
+  const users = userRepository.getAll();
+  const reps = users.filter((u) => (u.role || '').toLowerCase() === 'sales_rep');
+  const repFromUsers = new Map(reps.map((rep) => [rep.id, rep]));
+  const doctors = users.filter((u) => {
+    const role = (u.role || '').toLowerCase();
+    return role === 'doctor' || role === 'test_doctor';
+  });
+
+  const repMap = new Map(reps.map((rep) => [rep.id, rep]));
+  const doctorToRep = new Map();
+  doctors.forEach((doc) => {
+    if (doc.salesRepId) {
+      doctorToRep.set(doc.id, doc.salesRepId);
+    }
+  });
+
+  const orders = orderRepository.getAll();
+  const repTotals = new Map();
+
+  orders.forEach((order) => {
+    const repId = doctorToRep.get(order.userId);
+    if (!repId) return;
+    const current = repTotals.get(repId) || { totalOrders: 0, totalRevenue: 0 };
+    current.totalOrders += 1;
+    current.totalRevenue += Number(order.total) || 0;
+    repTotals.set(repId, current);
+  });
+
+  return Array.from(repTotals.entries())
+    .map(([repId, totals]) => {
+    const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
+      return {
+        salesRepId: repId,
+        salesRepName: rep.name || rep.email || 'Sales Rep',
+        salesRepEmail: rep.email || null,
+        totalOrders: totals.totalOrders,
+        totalRevenue: totals.totalRevenue,
+      };
+    })
+    .sort((a, b) => b.totalRevenue - a.totalRevenue);
+};
+
 module.exports = {
   createOrder,
   estimateOrderTotals,
   getOrdersForUser,
+  getOrdersForSalesRep,
+  getSalesByRep,
   cancelOrder,
 };

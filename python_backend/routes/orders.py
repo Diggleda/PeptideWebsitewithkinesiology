@@ -44,3 +44,20 @@ def create_order():
 def list_orders():
     user_id = g.current_user.get("id")
     return handle_action(lambda: order_service.get_orders_for_user(user_id))
+
+
+@blueprint.get("/sales-rep")
+@require_auth
+def list_orders_for_sales_rep():
+    def action():
+        sales_rep_id = g.current_user.get("id")
+        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=True)
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/sales-rep-summary")
+@require_auth
+def admin_sales_by_rep():
+    exclude_id = g.current_user.get("id")
+    return handle_action(lambda: order_service.get_sales_by_rep(exclude_sales_rep_id=exclude_id))

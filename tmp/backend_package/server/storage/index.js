@@ -7,6 +7,7 @@ const salesRepStore = new JsonStore(env.dataDir, 'sales-reps.json', []);
 const referralStore = new JsonStore(env.dataDir, 'referrals.json', []);
 const referralCodeStore = new JsonStore(env.dataDir, 'referral-codes.json', []);
 const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
+const settingsStore = new JsonStore(env.dataDir, 'settings.json', { shopEnabled: true });
 
 const initStorage = () => {
   userStore.init();
@@ -15,6 +16,7 @@ const initStorage = () => {
   referralStore.init();
   referralCodeStore.init();
   creditLedgerStore.init();
+  settingsStore.init();
 };
 
 module.exports = {
@@ -24,5 +26,6 @@ module.exports = {
   referralStore,
   referralCodeStore,
   creditLedgerStore,
+  settingsStore,
   initStorage,
 };

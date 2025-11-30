@@ -126,9 +126,9 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     carrierCode: env.shipStation.carrierCode || undefined,
     serviceCode: env.shipStation.serviceCode || undefined,
     packageCode: env.shipStation.packageCode || 'package',
-    amountPaid: 0,
+    amountPaid: Math.max(Number(order.total) || 0, 0),
     shippingPaid: shippingTotal,
-    taxAmount: 0,
+    taxAmount: Number(order.taxTotal) || 0,
     billTo: {
       name: customer.name || 'PepPro Customer',
       company: customer.company || '',
@@ -149,8 +149,11 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     },
     items: buildOrderItems(order.items || []),
     advancedOptions: {
-      storeId: wooOrderId || undefined,
+      storeId: env.shipStation.storeId
+        ? Number(env.shipStation.storeId)
+        : undefined,
       source: 'woocommerce',
+      customOrderNumber: wooOrderNumber || order.id,
     },
   };
 };
@@ -277,8 +280,21 @@ const fetchProductBySku = async (sku) => {
       id: product.productId || product.product_id || product.id || null,
       sku: product.sku || sku,
       name: product.name || '',
-      stockOnHand: Number(product.quantityOnHand ?? product.quantity_on_hand ?? product.stock ?? product.stockOnHand ?? 0),
-      available: Number(product.quantityAvailable ?? product.quantity_available ?? product.available ?? 0),
+      // ShipStation product inventory fields are typically onHand / available.
+      stockOnHand: Number(
+        product.onHand
+        ?? product.quantityOnHand
+        ?? product.quantity_on_hand
+        ?? product.stock
+        ?? product.stockOnHand
+        ?? 0,
+      ),
+      available: Number(
+        product.available
+        ?? product.quantityAvailable
+        ?? product.quantity_available
+        ?? 0,
+      ),
     };
   } catch (error) {
     logger.error({ err: error, sku }, 'ShipStation product fetch failed');

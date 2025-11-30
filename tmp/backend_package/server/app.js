@@ -11,6 +11,8 @@ const quotesRoutes = require('./routes/quotesRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const passwordResetRoutes = require('./routes/passwordReset');
+const contactRoutes = require('./routes/contactRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 
@@ -36,6 +38,7 @@ const createApp = () => {
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
   app.use(bodyParser.json({ limit: env.bodyParser.limit }));
+  app.use(bodyParser.urlencoded({ limit: env.bodyParser.limit, extended: true }));
 
   // Handle CORS preflight for all API routes without redirecting.
   // Express 5 disallows plain "*" path strings; use a regex matcher instead.
@@ -52,6 +55,23 @@ const createApp = () => {
     next();
   });
 
+  app.use((req, res, next) => {
+    res.on('finish', () => {
+      if (res.statusCode >= 400) {
+        logger.warn(
+          {
+            method: req.method,
+            path: req.originalUrl,
+            status: res.statusCode,
+            userId: req.user?.id || null,
+          },
+          'Request returned client or server error',
+        );
+      }
+    });
+    next();
+  });
+
   app.use('/api/auth', authRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/payments', paymentRoutes);
@@ -61,6 +81,8 @@ const createApp = () => {
   app.use('/api/quotes', quotesRoutes);
   app.use('/api/news', newsRoutes);
   app.use('/api/password-reset', passwordResetRoutes);
+  app.use('/api/contact', contactRoutes);
+  app.use('/api/settings', settingsRoutes);
   app.use('/api', systemRoutes);
 
   app.use((err, req, res, _next) => {

@@ -45,16 +45,20 @@ def _ensure_user():
 
 
 def _require_doctor(user):
-    if user.get("role") != "doctor":
+    role = (user.get("role") or "").lower()
+    if role not in ("doctor", "test_doctor"):
         raise _error("DOCTOR_ACCESS_REQUIRED", 403)
 
 
 def _require_sales_rep(user):
-    if (user.get("role") or "").lower() != "sales_rep":
-        token_role = (g.current_user.get("role") or "").lower()
-        if token_role == "sales_rep":
-            return
-        raise _error("SALES_REP_ACCESS_REQUIRED", 403)
+    role = (user.get("role") or "").lower()
+    token_role = (g.current_user.get("role") or "").lower()
+    # Allow admins regardless of stored role, and allow explicit sales_rep/rep
+    if token_role == "admin" or role == "admin":
+        return
+    if role in ("sales_rep", "rep") or token_role in ("sales_rep", "rep"):
+        return
+    raise _error("SALES_REP_ACCESS_REQUIRED", 403)
 
 
 @blueprint.post("/doctor/referrals")

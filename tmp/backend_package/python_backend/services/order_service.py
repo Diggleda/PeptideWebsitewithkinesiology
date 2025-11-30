@@ -4,7 +4,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from ..repositories import order_repository, user_repository
+from ..repositories import (
+    order_repository,
+    user_repository,
+    sales_rep_repository,
+    referral_code_repository,
+)
 from ..integrations import ship_engine, stripe_payments, woo_commerce
 from . import referral_service
 
@@ -172,6 +177,96 @@ def get_orders_for_user(user_id: str):
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
         "wooError": woo_error,
     }
+
+
+def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
+    users = user_repository.get_all()
+    doctors = [
+        user
+        for user in users
+        if (user.get("role") or "").lower() in ("doctor", "test_doctor")
+        and user.get("salesRepId") == sales_rep_id
+    ]
+
+    doctor_lookup = {
+        doc.get("id"): {
+            "id": doc.get("id"),
+            "name": doc.get("name") or doc.get("email") or "Doctor",
+            "email": doc.get("email"),
+        }
+        for doc in doctors
+    }
+
+    summaries: List[Dict] = []
+    for doctor in doctors:
+        for order in order_repository.find_by_user_id(doctor.get("id")):
+            summaries.append(
+                {
+                    **order,
+                    "doctorId": doctor.get("id"),
+                    "doctorName": doctor.get("name") or doctor.get("email") or "Doctor",
+                    "doctorEmail": doctor.get("email"),
+                }
+            )
+
+    summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
+
+    return (
+        {
+            "orders": summaries,
+            "doctors": list(doctor_lookup.values()),
+            "fetchedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        if include_doctors
+        else summaries
+    )
+
+
+def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
+    users = user_repository.get_all()
+    reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+    rep_records = {rep.get("id"): rep for rep in sales_rep_repository.get_all()}
+    user_lookup = {u.get("id"): u for u in users}
+    doctors = [
+        u
+        for u in users
+        if (u.get("role") or "").lower() in ("doctor", "test_doctor")
+        and u.get("salesRepId")
+    ]
+
+    doctor_to_rep = {doc.get("id"): doc.get("salesRepId") for doc in doctors if doc.get("salesRepId")}
+    rep_totals: Dict[str, Dict[str, float]] = {}
+
+    for order in order_repository.get_all():
+        rep_id = doctor_to_rep.get(order.get("userId"))
+        if not rep_id:
+            continue
+        if exclude_sales_rep_id and rep_id == exclude_sales_rep_id:
+            continue
+        current = rep_totals.get(rep_id, {"totalOrders": 0, "totalRevenue": 0})
+        current["totalOrders"] += 1
+        current["totalRevenue"] += float(order.get("total") or 0)
+        rep_totals[rep_id] = current
+
+    rep_lookup = {rep.get("id"): rep for rep in reps}
+    summary = []
+    for rep_id, totals in rep_totals.items():
+        rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
+        rep_record = rep_records.get(rep_id) or {}
+        # Fallback: derive name/email from any user with matching id; otherwise use id
+        summary.append(
+            {
+                "salesRepId": rep_id,
+                "salesRepName": rep.get("name") or rep_record.get("name") or rep.get("email") or rep_id or "Sales Rep",
+                "salesRepEmail": rep.get("email") or rep_record.get("email"),
+                "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
+                "totalOrders": totals["totalOrders"],
+                "totalRevenue": totals["totalRevenue"],
+            }
+        )
+
+    summary.sort(key=lambda r: r["totalRevenue"], reverse=True)
+    return summary
 
 
 def _service_error(message: str, status: int) -> Exception:

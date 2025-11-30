@@ -60,9 +60,10 @@ const applyCardSummaryToOrder = ({ order, cardSummary, stripeData }) => {
   };
 };
 
-const createStripePayment = async ({ order, customer, wooOrderId }) => stripeClient.createPaymentIntent({
+const createStripePayment = async ({ order, customer, wooOrderId, wooOrderNumber }) => stripeClient.createPaymentIntent({
   order,
   wooOrderId,
+  wooOrderNumber,
   customer,
 });
 
@@ -120,9 +121,35 @@ const finalizePaymentIntent = async ({ paymentIntentId }) => {
   return { status: intent?.status || 'unknown', wooOrderId, orderId };
 };
 
+const refundPaymentIntent = async ({ paymentIntentId, amountCents, reason, metadata }) => {
+  if (!stripeClient.isConfigured()) {
+    const error = new Error('Stripe is not configured');
+    error.status = 503;
+    throw error;
+  }
+  try {
+    return await stripeClient.refundPaymentIntent({
+      paymentIntentId,
+      amount: amountCents,
+      reason,
+      metadata,
+    });
+  } catch (error) {
+    logger.error({ err: error, paymentIntentId }, 'Stripe refund failed');
+    throw error;
+  }
+};
+
 const handleStripeWebhook = async ({ payload, signature }) => {
   const event = stripeClient.constructEvent(payload, signature);
   const intent = event?.data?.object;
+  logger.debug(
+    {
+      type: event?.type || 'unknown',
+      stripeObjectId: intent?.id || intent?.object || null,
+    },
+    'Stripe webhook event received',
+  );
 
   if (!event?.type || !intent?.id) {
     return { received: true };
@@ -197,4 +224,5 @@ module.exports = {
   createStripePayment,
   handleStripeWebhook,
   finalizePaymentIntent,
+  refundPaymentIntent,
 };

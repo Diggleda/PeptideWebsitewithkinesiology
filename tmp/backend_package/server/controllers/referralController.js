@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const referralRepository = require('../repositories/referralRepository');
 const referralCodeRepository = require('../repositories/referralCodeRepository');
 const creditLedgerRepository = require('../repositories/creditLedgerRepository');
+const { logger } = require('../config/logger');
 
 const REFERRAL_STATUSES = [
   'pending',
@@ -18,16 +19,39 @@ const REFERRAL_STATUSES = [
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
-const ensureDoctor = (user) => {
-  if (!user || user.role !== 'doctor') {
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const isRep = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'sales_rep' || normalized === 'rep';
+};
+const ensureDoctor = (user, context = 'unknown') => {
+  const role = normalizeRole(user?.role);
+  if (!user || (role !== 'doctor' && role !== 'test_doctor' && role !== 'admin')) {
+    logger.warn(
+      {
+        context,
+        userId: user?.id || null,
+        role: user?.role || null,
+      },
+      'Doctor access required but not satisfied',
+    );
     const error = new Error('Doctor access required');
     error.status = 403;
     throw error;
   }
 };
 
-const ensureSalesRep = (user) => {
-  if (!user || (user.role !== 'sales_rep' && user.role !== 'admin')) {
+const ensureSalesRep = (user, context = 'unknown') => {
+  const role = normalizeRole(user?.role);
+  if (!user || (!isRep(role) && role !== 'admin')) {
+    logger.warn(
+      {
+        context,
+        userId: user?.id || null,
+        role: user?.role || null,
+      },
+      'Sales representative access required but not satisfied',
+    );
     const error = new Error('Sales representative access required');
     error.status = 403;
     throw error;
@@ -36,7 +60,7 @@ const ensureSalesRep = (user) => {
 
 const submitDoctorReferral = (req, res, next) => {
   try {
-    ensureDoctor(req.user);
+    ensureDoctor(req.user, 'submitDoctorReferral');
     const { contactName, contactEmail, contactPhone, notes } = req.body || {};
     if (!contactName || typeof contactName !== 'string') {
       const error = new Error('Contact name is required');
@@ -81,15 +105,84 @@ const buildDoctorCredits = (doctorId) => {
   };
 };
 
+const buildAggregatedCredits = (doctorIds = []) => {
+  const uniqueDoctorIds = Array.from(new Set(doctorIds.filter(Boolean)));
+  const aggregated = {
+    totalCredits: 0,
+    firstOrderBonuses: 0,
+    ledger: [],
+  };
+
+  uniqueDoctorIds.forEach((doctorId) => {
+    const summary = buildDoctorCredits(doctorId);
+    aggregated.totalCredits += summary.totalCredits;
+    aggregated.firstOrderBonuses += summary.firstOrderBonuses;
+  });
+
+  return aggregated;
+};
+
 const getDoctorSummary = (req, res, next) => {
   try {
-    ensureDoctor(req.user);
-    const referrals = referralRepository.findByDoctorId(req.user.id);
-    const credits = buildDoctorCredits(req.user.id);
-    res.json({
-      credits,
-      referrals,
-    });
+    const role = normalizeRole(req.user?.role);
+    logger.info(
+      {
+        userId: req.user?.id || null,
+        role,
+        salesRepId: req.user?.salesRepId || null,
+        path: '/api/referrals/doctor/summary',
+      },
+      'Referral summary request',
+    );
+    if (!req.user) {
+      const error = new Error('Authentication required');
+      error.status = 401;
+      throw error;
+    }
+
+    if (role === 'doctor' || role === 'test_doctor') {
+      const referrals = referralRepository.findByDoctorId(req.user.id);
+      const credits = buildDoctorCredits(req.user.id);
+      res.json({
+        credits,
+        referrals,
+        scope: 'doctor',
+      });
+      return;
+    }
+
+    if (role === 'sales_rep' || role === 'rep') {
+      const salesRepId = req.user.salesRepId || req.user.id;
+      const referrals = referralRepository.findBySalesRepId(salesRepId);
+      const doctorIds = referrals.map((referral) => referral.referrerDoctorId).filter(Boolean);
+      const credits = buildAggregatedCredits(doctorIds);
+      res.json({
+        credits,
+        referrals,
+        scope: 'sales_rep',
+      });
+      return;
+    }
+
+    if (role === 'admin') {
+      const referrals = referralRepository.getAll();
+      const doctorIds = referrals.map((referral) => referral.referrerDoctorId).filter(Boolean);
+      const credits = buildAggregatedCredits(doctorIds);
+      res.json({
+        credits,
+        referrals,
+        scope: 'admin',
+      });
+      return;
+    }
+
+    logger.warn(
+      { userId: req.user.id, role, path: '/api/referrals/doctor/summary' },
+      'Access denied for doctor summary request',
+    );
+    const error = new Error('Doctor access required');
+    error.status = 403;
+    throw error;
   } catch (error) {
     next(error);
   }
@@ -97,7 +190,7 @@ const getDoctorSummary = (req, res, next) => {
 
 const getDoctorLedger = (req, res, next) => {
   try {
-    ensureDoctor(req.user);
+    ensureDoctor(req.user, 'getDoctorLedger');
     const ledger = creditLedgerRepository.findByDoctorId(req.user.id);
     res.json({ ledger });
   } catch (error) {
@@ -107,10 +200,16 @@ const getDoctorLedger = (req, res, next) => {
 
 const getSalesRepDashboard = (req, res, next) => {
   try {
-    ensureSalesRep(req.user);
-    const isAdmin = req.user.role === 'admin';
-    const referrals = isAdmin ? referralRepository.getAll() : referralRepository.findBySalesRepId(req.user.id);
-    const codes = isAdmin ? referralCodeRepository.getAll() : referralCodeRepository.findBySalesRepId(req.user.id);
+    ensureSalesRep(req.user, 'getSalesRepDashboard');
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const salesRepId = req.user.salesRepId || req.user.id;
+    logger.info(
+      { userId: req.user.id, role, salesRepId, path: '/api/referrals/admin/dashboard' },
+      'Sales rep dashboard request',
+    );
+    const referrals = isAdmin ? referralRepository.getAll() : referralRepository.findBySalesRepId(salesRepId);
+    const codes = isAdmin ? referralCodeRepository.getAll() : referralCodeRepository.findBySalesRepId(salesRepId);
     res.json({
       referrals,
       codes,
@@ -123,7 +222,7 @@ const getSalesRepDashboard = (req, res, next) => {
 
 const createReferralCode = (req, res, next) => {
   try {
-    ensureSalesRep(req.user);
+    ensureSalesRep(req.user, 'createReferralCode');
     const { referralId } = req.body || {};
     if (!referralId) {
       const error = new Error('Referral ID is required');
@@ -170,7 +269,7 @@ const createReferralCode = (req, res, next) => {
 
 const updateReferralCodeStatus = (req, res, next) => {
   try {
-    ensureSalesRep(req.user);
+    ensureSalesRep(req.user, 'updateReferralCodeStatus');
     const { codeId } = req.params;
     const { status } = req.body || {};
     if (!REFERRAL_CODE_STATUSES.includes(status)) {

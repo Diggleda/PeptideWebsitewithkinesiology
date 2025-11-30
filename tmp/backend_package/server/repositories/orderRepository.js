@@ -26,6 +26,16 @@ const update = (order) => {
   return orders[index];
 };
 
+const removeById = (id) => {
+  const orders = getAll();
+  const filtered = orders.filter((order) => order.id !== id);
+  if (filtered.length === orders.length) {
+    return null;
+  }
+  orderStore.write(filtered);
+  return id;
+};
+
 module.exports = {
   getAll,
   findById,
@@ -33,4 +43,5 @@ module.exports = {
   findByPaymentIntentId,
   insert,
   update,
+  removeById,
 };

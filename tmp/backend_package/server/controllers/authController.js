@@ -1,5 +1,6 @@
 const authService = require('../services/authService');
 const { verifyDoctorNpi } = require('../services/npiService');
+const { logger } = require('../config/logger');
 
 const register = async (req, res, next) => {
   try {
@@ -48,6 +49,18 @@ const verifyNpi = async (req, res, next) => {
 
 const updateProfile = async (req, res, next) => {
   try {
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'profileImageUrl')) {
+      logger.info(
+        {
+          userId: req.user?.id || null,
+          hasImage: typeof req.body.profileImageUrl === 'string' && req.body.profileImageUrl.length > 0,
+          imageBytes: typeof req.body.profileImageUrl === 'string'
+            ? Buffer.byteLength(req.body.profileImageUrl)
+            : 0,
+        },
+        'Received profile image update payload',
+      );
+    }
     const updated = await authService.updateProfile(req.user.id, req.body || {});
     res.json(updated);
   } catch (error) {

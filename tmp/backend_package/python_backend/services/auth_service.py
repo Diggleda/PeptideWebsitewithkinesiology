@@ -347,6 +347,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     name = _sanitize_name(data.get("name") or user.get("name") or "")
     phone = (data.get("phone") or user.get("phone") or None)
     email = _normalize_email(data.get("email") or user.get("email") or "")
+    profile_image_url = data.get("profileImageUrl") or user.get("profileImageUrl") or None
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -358,9 +359,26 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "name": name or user.get("name"),
         "phone": phone,
         "email": email or user.get("email"),
+        "profileImageUrl": profile_image_url,
     }
 
+    logger.info(
+        {
+            "userId": user_id,
+            "hasProfileImage": bool(profile_image_url),
+            "profileImageBytes": len(profile_image_url.encode("utf-8")) if isinstance(profile_image_url, str) else 0,
+        },
+        "Profile update requested (includes profile image)",
+    )
+
     saved = user_repository.update(updated) or updated
+    logger.info(
+        {
+            "userId": user_id,
+            "hasProfileImage": bool(saved.get("profileImageUrl")),
+        },
+        "Profile update saved",
+    )
     return _sanitize_user(saved)
 
 

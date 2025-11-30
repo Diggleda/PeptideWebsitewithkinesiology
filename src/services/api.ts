@@ -372,6 +372,14 @@ export const ordersAPI = {
   getAll: async () => {
     return fetchWithAuth(`${API_BASE_URL}/orders/`);
   },
+
+  getForSalesRep: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/orders/sales-rep`);
+  },
+
+  getSalesByRepForAdmin: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/orders/admin/sales-rep-summary`);
+  },
 };
 
 export const shippingAPI = {
