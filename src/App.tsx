@@ -60,6 +60,15 @@ interface User {
   mustResetPassword?: boolean;
 }
 
+interface ContactFormSubmission {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  source: string;
+  created_at: string;
+}
+
 // Feature flags for passkey UX. Defaults keep prompts manual-only.
 const PASSKEY_AUTOPROMPT = String((import.meta as any).env?.VITE_PASSKEY_AUTOPROMPT || '').toLowerCase() === 'true';
 const PASSKEY_AUTOREGISTER = String((import.meta as any).env?.VITE_PASSKEY_AUTOREGISTER || '').toLowerCase() === 'true';
@@ -530,11 +539,45 @@ const SALES_REP_STATUS_ORDER = [
   'disqualified',
   'rejected',
   'in_review',
+  'contact_form',
+];
+
+const REFERRAL_STATUS_FLOW = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'follow_up', label: 'Follow-Up' },
+  { key: 'converted', label: 'Converted' },
+];
+const REFERRAL_LEAD_STATUS_KEYS = new Set(
+  REFERRAL_STATUS_FLOW.filter((stage) => stage.key !== 'pending').map((stage) => stage.key)
+);
+const REFERRAL_STATUS_SET = new Set(REFERRAL_STATUS_FLOW.map((stage) => stage.key));
+const sanitizeReferralStatus = (status?: string | null): string => {
+  const normalized = (status || '').toLowerCase().trim();
+  if (REFERRAL_STATUS_SET.has(normalized)) {
+    return normalized;
+  }
+  return 'pending';
+};
+
+const CONTACT_FORM_STATUS_FLOW = [
+  { key: 'contact_form', label: 'New Lead' },
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'follow_up', label: 'Follow-Up' },
+  { key: 'converted', label: 'Converted' },
 ];
 
 const humanizeReferralStatus = (status?: string) => {
   if (!status) {
     return 'Unknown';
+  }
+  const normalized = status.toLowerCase().trim();
+  const match = REFERRAL_STATUS_FLOW.find((stage) => stage.key === normalized);
+  if (match) {
+    return match.label;
+  }
+  if (normalized === 'contact_form') {
+    return 'Contact Form';
   }
   return status
     .split('_')
@@ -1092,6 +1135,7 @@ export default function App() {
     conditional: false,
     checked: false,
   });
+  const [passkeyAutopromptEnabled, setPasskeyAutopromptEnabled] = useState(PASSKEY_AUTOPROMPT);
   const stripeIsTestMode = useMemo(() => {
     const explicitMode = (import.meta.env.VITE_STRIPE_MODE || import.meta.env.STRIPE_MODE || '').toLowerCase();
     if (explicitMode === 'test') {
@@ -1105,6 +1149,7 @@ export default function App() {
   const [landingLoginPending, setLandingLoginPending] = useState(false);
   const [enablePasskeyPending, setEnablePasskeyPending] = useState(false);
   const [enablePasskeyError, setEnablePasskeyError] = useState('');
+  const passkeyAutopromptAttemptedRef = useRef(false);
   const passkeyAutoRegisterAttemptedRef = useRef(false);
   const consoleRestoreRef = useRef<null | {
     log: Console['log'];
@@ -1491,18 +1536,22 @@ export default function App() {
     } catch (error: any) {
       if (!(error instanceof DOMException) || error.name !== 'NotAllowedError') {
         console.debug('[Passkey] Conditional login dismissed or failed', error);
+      } else {
+        // User closed the prompt; disable autoprompt for this session so it does not reopen.
+        setPasskeyAutopromptEnabled(false);
       }
     } finally {
       passkeyConditionalInFlight.current = false;
     }
-  }, [performPasskeyLogin, user]);
+  }, [performPasskeyLogin, user, setPasskeyAutopromptEnabled]);
 
   useEffect(() => {
-    // Only attempt conditional UI when explicitly enabled via env flag.
-    if (!user && PASSKEY_AUTOPROMPT && passkeySupport.conditional) {
+    // Attempt conditional UI only once per session unless explicitly re-enabled.
+    if (!user && passkeyAutopromptEnabled && passkeySupport.conditional && !passkeyAutopromptAttemptedRef.current) {
+      passkeyAutopromptAttemptedRef.current = true;
       void startConditionalPasskeyLogin();
     }
-  }, [user, passkeySupport.conditional, startConditionalPasskeyLogin]);
+  }, [user, passkeyAutopromptEnabled, passkeySupport.conditional, startConditionalPasskeyLogin]);
 
   const handleLandingCredentialFocus = useCallback(() => {
     // Only try to autofill saved username/password; do not auto-trigger passkey UI.
@@ -1641,6 +1690,10 @@ export default function App() {
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] = useState<SalesRepDashboard | null>(null);
   const [salesRepStatusFilter, setSalesRepStatusFilter] = useState<string>('all');
+  const normalizedReferrals = useMemo(
+    () => (salesRepDashboard?.referrals ?? []).map((ref) => ({ ...ref, status: sanitizeReferralStatus(ref.status) })),
+    [salesRepDashboard?.referrals]
+  );
   const [salesTrackingOrders, setSalesTrackingOrders] = useState<AccountOrderSummary[]>([]);
   const [salesTrackingDoctors, setSalesTrackingDoctors] = useState<
     Map<
@@ -1678,6 +1731,7 @@ export default function App() {
     updatingReferral: null,
     error: null,
   });
+  const [creditingReferralId, setCreditingReferralId] = useState<string | null>(null);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
@@ -1721,6 +1775,23 @@ export default function App() {
     return window.innerWidth >= 1024;
   });
 
+  const isContactFormEntry = useCallback((referral: ReferralRecord | null | undefined) => {
+    if (!referral) {
+      return false;
+    }
+    const status = (referral.status || '').toLowerCase();
+    const id = String(referral.id || '');
+    return status === 'contact_form' || id.startsWith('contact_form:');
+  }, []);
+
+  const isLeadStatus = useCallback((status?: string | null) => {
+    const normalized = (status || '').toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return REFERRAL_LEAD_STATUS_KEYS.has(normalized);
+  }, []);
+
 const filteredDoctorReferrals = useMemo(() => {
     const normalizedQuery = referralSearchTerm.trim().toLowerCase();
     const sorted = [...doctorReferrals].sort((a, b) => {
@@ -1754,28 +1825,95 @@ const filteredDoctorReferrals = useMemo(() => {
       return Array.from(new Set(salesRepDashboard.statuses.map((status) => (status || '').trim()))).filter(Boolean);
     }
     return Array.from(
-      new Set((salesRepDashboard.referrals ?? []).map((referral) => (referral.status || '').trim()).filter(Boolean))
+      new Set(normalizedReferrals.map((referral) => (referral.status || '').trim()).filter(Boolean))
     );
-  }, [salesRepDashboard]);
+  }, [salesRepDashboard, normalizedReferrals]);
+
+  const referralFilterStatuses = useMemo(() => {
+    const defaults = REFERRAL_STATUS_FLOW.filter((stage) => !REFERRAL_LEAD_STATUS_KEYS.has(stage.key)).map(
+      (stage) => stage.key
+    );
+    const dynamic = salesRepStatusOptions
+      .map((status) => status.toLowerCase())
+      .filter((status) => !isLeadStatus(status) && status !== 'contact_form');
+    return Array.from(new Set([...defaults, ...dynamic]));
+  }, [salesRepStatusOptions, isLeadStatus]);
+
+  const leadStatusOptions = useMemo(() => {
+    const defaults = REFERRAL_STATUS_FLOW.filter((stage) => REFERRAL_LEAD_STATUS_KEYS.has(stage.key)).map(
+      (stage) => stage.key
+    );
+    const dynamic = salesRepStatusOptions.map((status) => status.toLowerCase()).filter((status) => isLeadStatus(status));
+    return Array.from(new Set([...defaults, ...dynamic]));
+  }, [salesRepStatusOptions, isLeadStatus]);
+
+  const contactFormEntries = useMemo(() => {
+    return normalizedReferrals.filter(isContactFormEntry);
+  }, [normalizedReferrals, isContactFormEntry]);
+
+  const contactFormQueue = useMemo(() => {
+    return contactFormEntries.filter((entry) => !isLeadStatus(entry.status));
+  }, [contactFormEntries, isLeadStatus]);
+
+  const contactFormPipeline = useMemo(() => {
+    return contactFormEntries.filter((entry) => isLeadStatus(entry.status));
+  }, [contactFormEntries, isLeadStatus]);
+
+  const referralRecords = useMemo(() => {
+    return normalizedReferrals.filter((referral) => !isContactFormEntry(referral));
+  }, [normalizedReferrals, isContactFormEntry]);
+
+  const referralLeadEntries = useMemo(() => {
+    return referralRecords.filter((referral) => isLeadStatus(referral.status));
+  }, [referralRecords, isLeadStatus]);
+
+  const referralQueue = useMemo(() => {
+    return referralRecords.filter((referral) => !isLeadStatus(referral.status));
+  }, [referralRecords, isLeadStatus]);
+
+  const combinedLeadEntries = useMemo(
+    () =>
+      [
+        ...referralLeadEntries.map((record) => ({ kind: 'referral' as const, record })),
+        ...contactFormPipeline.map((record) => ({ kind: 'contact_form' as const, record })),
+      ].sort((a, b) => {
+        const aTime = a.record.updatedAt
+          ? new Date(a.record.updatedAt).getTime()
+          : a.record.createdAt
+            ? new Date(a.record.createdAt).getTime()
+            : 0;
+        const bTime = b.record.updatedAt
+          ? new Date(b.record.updatedAt).getTime()
+          : b.record.createdAt
+            ? new Date(b.record.createdAt).getTime()
+            : 0;
+        return bTime - aTime;
+      }),
+    [referralLeadEntries, contactFormPipeline],
+  );
 
   const filteredSalesRepReferrals = useMemo(() => {
-    const allReferrals = salesRepDashboard?.referrals ?? [];
+    const normalizedFilter = salesRepStatusFilter.toLowerCase();
+    const allReferrals = referralQueue;
     console.debug('[Referral] Filter compute', {
-      filter: salesRepStatusFilter,
+      filter: normalizedFilter,
       total: allReferrals.length,
     });
-    if (salesRepStatusFilter === 'all') {
+    if (normalizedFilter === 'contact_form') {
+      return [];
+    }
+    if (normalizedFilter === 'all') {
       return allReferrals;
     }
     const filtered = allReferrals.filter(
-      (referral) => (referral.status || '').toLowerCase() === salesRepStatusFilter.toLowerCase()
+      (referral) => (referral.status || '').toLowerCase() === normalizedFilter
     );
-    console.debug('[Referral] Filter result', { filter: salesRepStatusFilter, count: filtered.length });
+    console.debug('[Referral] Filter result', { filter: normalizedFilter, count: filtered.length });
     return filtered;
-  }, [salesRepDashboard, salesRepStatusFilter]);
+  }, [referralQueue, salesRepStatusFilter]);
 
   const salesRepChartData = useMemo(() => {
-    const referralList = salesRepDashboard?.referrals ?? [];
+    const referralList = normalizedReferrals;
     const counts = referralList.reduce<Record<string, number>>((acc, referral) => {
       const status = (referral.status || 'pending').toLowerCase();
       acc[status] = (acc[status] || 0) + 1;
@@ -1787,10 +1925,32 @@ const filteredDoctorReferrals = useMemo(() => {
       label: humanizeReferralStatus(status),
       count: counts[status] || 0,
     }));
-  }, [salesRepDashboard?.referrals]);
+  }, [normalizedReferrals]);
 
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+  }, []);
+
+  const renderContactFormStatusTracker = useCallback((status?: string) => {
+    const normalizedStatus = (status || 'contact_form').toLowerCase();
+    const currentIndex = Math.max(
+      0,
+      CONTACT_FORM_STATUS_FLOW.findIndex((stage) => stage.key === normalizedStatus)
+    );
+
+    return (
+      <div className="flex flex-col gap-1 text-xs">
+        {CONTACT_FORM_STATUS_FLOW.map((stage, index) => {
+          const reached = index <= currentIndex;
+          return (
+            <div key={stage.key} className="flex items-center gap-2">
+              <div className={`h-2.5 w-2.5 rounded-full ${reached ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              <span className={reached ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>{stage.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
   }, []);
 
   const sortDirectionLabel = referralSortOrder === 'desc' ? 'Newest first' : 'Oldest first';
@@ -1799,11 +1959,11 @@ const filteredDoctorReferrals = useMemo(() => {
     if (salesRepStatusFilter === 'all') {
       return;
     }
-    const available = new Set(salesRepStatusOptions.map((status) => status.toLowerCase()));
+    const available = new Set(referralFilterStatuses.map((status) => status.toLowerCase()));
     if (!available.has(salesRepStatusFilter.toLowerCase())) {
       setSalesRepStatusFilter('all');
     }
-  }, [salesRepStatusFilter, salesRepStatusOptions]);
+  }, [salesRepStatusFilter, referralFilterStatuses]);
 
   const salesRepDoctorsById = useMemo(() => {
     const lookup = new Map<string, string>();
@@ -1838,58 +1998,69 @@ const filteredDoctorReferrals = useMemo(() => {
   }, []);
 
   const fetchSalesTrackingOrders = useCallback(async () => {
+    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+      setSalesTrackingOrders([]);
+      setSalesTrackingDoctors(new Map());
+      setSalesRepSalesSummary([]);
+      setSalesTrackingError(null);
+      setSalesRepSalesSummaryError(null);
+      setSalesTrackingLoading(false);
+      return;
+    }
+
     setSalesTrackingLoading(true);
     setSalesTrackingError(null);
     setSalesRepSalesSummaryError(null);
 
     try {
+      console.log('[Sales Tracking] Fetch start', {
+        role: user.role || null,
+        salesRepId: user.salesRepId || null,
+      });
       let orders: AccountOrderSummary[] = [];
       const doctorLookup = new Map<
         string,
         { name: string; email?: string | null; profileImageUrl?: string | null }
       >();
 
-      if (isRep(user?.role) || isAdmin(user?.role)) {
-        const response = await ordersAPI.getForSalesRep();
-        if (response && typeof response === 'object' && !Array.isArray(response)) {
-          const respObj = response as any;
-          if (Array.isArray(respObj.orders)) {
-            orders = respObj.orders as AccountOrderSummary[];
-          }
-          const doctors = Array.isArray(respObj.doctors) ? respObj.doctors : [];
-          doctors.forEach((doc: any) => {
-            const id = doc.id || doc.doctorId || doc.userId;
-            if (!id) return;
-            doctorLookup.set(String(id), {
-              name: doc.name || doc.email || 'Doctor',
-              email: doc.email || doc.doctorEmail || null,
-              profileImageUrl: doc.profileImageUrl || doc.profile_image_url || null,
-            });
+      const response = await ordersAPI.getForSalesRep({
+        salesRepId: user.salesRepId || user.id || undefined,
+        scope: isAdmin(user.role) ? 'mine' : 'mine',
+      });
+      if (response && typeof response === 'object' && !Array.isArray(response)) {
+        const respObj = response as any;
+        if (Array.isArray(respObj.orders)) {
+          orders = respObj.orders as AccountOrderSummary[];
+        }
+        const doctors = Array.isArray(respObj.doctors) ? respObj.doctors : [];
+        doctors.forEach((doc: any) => {
+          const id = doc.id || doc.doctorId || doc.userId;
+          if (!id) return;
+          doctorLookup.set(String(id), {
+            name: doc.name || doc.email || 'Doctor',
+            email: doc.email || doc.doctorEmail || null,
+            profileImageUrl: doc.profileImageUrl || doc.profile_image_url || null,
           });
-        } else if (Array.isArray(response)) {
-          orders = response as AccountOrderSummary[];
-        }
+        });
+      } else if (Array.isArray(response)) {
+        orders = response as AccountOrderSummary[];
+      }
 
-        if (isAdmin(user?.role)) {
-          try {
-            const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin();
-            const summaryArray = Array.isArray(salesSummaryResponse)
-              ? salesSummaryResponse
-              : Array.isArray((salesSummaryResponse as any)?.orders)
-                ? (salesSummaryResponse as any).orders
-                : [];
-            setSalesRepSalesSummary(summaryArray as any);
-          } catch (adminError: any) {
-            const message =
-              typeof adminError?.message === 'string' ? adminError.message : 'Unable to load sales summary';
-            setSalesRepSalesSummaryError(message);
-          }
+      if (isAdmin(user.role)) {
+        try {
+          const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin();
+          const summaryArray = Array.isArray(salesSummaryResponse)
+            ? salesSummaryResponse
+            : Array.isArray((salesSummaryResponse as any)?.orders)
+              ? (salesSummaryResponse as any).orders
+              : [];
+          const filteredSummary = summaryArray.filter((rep: any) => rep.salesRepId !== user.id);
+          setSalesRepSalesSummary(filteredSummary as any);
+        } catch (adminError: any) {
+          const message =
+            typeof adminError?.message === 'string' ? adminError.message : 'Unable to load sales summary';
+          setSalesRepSalesSummaryError(message);
         }
-      } else {
-        setSalesTrackingOrders([]);
-        setSalesTrackingLastUpdated(Date.now());
-        setSalesTrackingLoading(false);
-        return;
       }
 
       const enriched = orders
@@ -1921,6 +2092,10 @@ const filteredDoctorReferrals = useMemo(() => {
       setSalesTrackingDoctors(doctorLookup);
       setSalesTrackingOrders(enriched);
       setSalesTrackingLastUpdated(Date.now());
+      console.log('[Sales Tracking] Orders loaded', {
+        count: enriched.length,
+        doctors: doctorLookup.size,
+      });
     } catch (error: any) {
       const message = typeof error?.message === 'string' ? error.message : 'Unable to load sales tracking data at the moment.';
       console.error('[Sales Tracking] Unable to fetch orders', error);
@@ -1928,9 +2103,12 @@ const filteredDoctorReferrals = useMemo(() => {
     } finally {
       setSalesTrackingLoading(false);
     }
-  }, [user?.role, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById]);
+  }, [user, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById]);
 
   useEffect(() => {
+    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+      return;
+    }
     fetchSalesTrackingOrders();
     const pollHandle = window.setInterval(() => {
       void fetchSalesTrackingOrders();
@@ -1938,7 +2116,7 @@ const filteredDoctorReferrals = useMemo(() => {
     return () => {
       window.clearInterval(pollHandle);
     };
-  }, [fetchSalesTrackingOrders, salesRepDoctorIds]);
+  }, [fetchSalesTrackingOrders, salesRepDoctorIds, user, isRep, isAdmin]);
 
   const salesTrackingSummary = useMemo(() => {
     if (salesTrackingOrders.length === 0) {
@@ -1952,7 +2130,45 @@ const filteredDoctorReferrals = useMemo(() => {
     };
   }, [salesTrackingOrders]);
 
-  const salesTrackingDisplayOrders = useMemo(() => salesTrackingOrders.slice(0, 4), [salesTrackingOrders]);
+  const salesTrackingOrdersByDoctor = useMemo(() => {
+    const buckets = new Map<
+      string,
+      {
+        doctorId: string;
+        doctorName: string;
+        doctorEmail?: string | null;
+        doctorAvatar?: string | null;
+        orders: AccountOrderSummary[];
+        total: number;
+      }
+    >();
+    for (const order of salesTrackingOrders) {
+      const doctorId = resolveOrderDoctorId(order) || order.userId || `anon:${order.id}`;
+      const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
+      const doctorName =
+        doctorInfo?.name || salesRepDoctorsById.get(doctorId) || order.doctorName || 'Doctor';
+      const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
+      const doctorAvatar =
+        doctorInfo?.profileImageUrl || (order as any).doctorProfileImageUrl || null;
+      const bucket =
+        buckets.get(doctorId) ||
+        (() => {
+          const created = {
+            doctorId,
+            doctorName,
+            doctorEmail,
+            doctorAvatar,
+            orders: [] as AccountOrderSummary[],
+            total: 0,
+          };
+          buckets.set(doctorId, created);
+          return created;
+        })();
+      bucket.orders.push(order);
+      bucket.total += coerceNumber(order.total) ?? 0;
+    }
+    return Array.from(buckets.values()).sort((a, b) => b.total - a.total);
+  }, [salesTrackingOrders, resolveOrderDoctorId, salesTrackingDoctors, salesRepDoctorsById]);
 
   const hasAuthToken = useCallback(() => {
     try {
@@ -2052,7 +2268,10 @@ const filteredDoctorReferrals = useMemo(() => {
           credits: normalizedCredits,
         });
         } else if (isRep(user.role) || isAdmin(user.role)) {
-          const dashboard = await referralAPI.getSalesRepDashboard();
+          const dashboard = await referralAPI.getSalesRepDashboard({
+            salesRepId: user.salesRepId || user.id,
+            scope: isAdmin(user.role) ? 'mine' : 'mine',
+          });
         setSalesRepDashboard(dashboard);
         console.debug('[Referral] Sales rep dashboard loaded', {
           referrals: dashboard?.referrals?.length ?? 0,
@@ -2086,6 +2305,37 @@ const filteredDoctorReferrals = useMemo(() => {
       }
     }
   }, [user, setUser, referralPollingSuppressed, hasAuthToken]);
+
+  const handleReferralCredit = useCallback(
+    async (referral: ReferralRecord) => {
+      const doctorId = referral.referrerDoctorId;
+      const doctorName = referral.referrerDoctorName || 'User';
+      if (!doctorId) {
+        toast.error('Unable to credit this referral because the referrer is missing.');
+        return;
+      }
+      if (!window.confirm('Are you sure?')) {
+        return;
+      }
+      try {
+        setCreditingReferralId(referral.id);
+        await referralAPI.addManualCredit({
+          doctorId,
+          amount: 50,
+          reason: `Manual credit for referral ${referral.id}`,
+        });
+        toast.success(`Credited ${doctorName} $50`);
+        await refreshReferralData({ showLoading: false });
+      } catch (error: any) {
+        console.error('[Referral] Manual credit failed', error);
+        const message = typeof error?.message === 'string' ? error.message : 'Unable to issue credit right now.';
+        toast.error(message);
+      } finally {
+        setCreditingReferralId(null);
+      }
+    },
+    [refreshReferralData],
+  );
 
   const formatDate = useCallback((value?: string | null) => {
     if (!value) {
@@ -2320,58 +2570,65 @@ const filteredDoctorReferrals = useMemo(() => {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadPeptideNews = async () => {
-      beginNewsLoading();
-      setPeptideNewsError(null);
-      const startedAt = Date.now();
+useEffect(() => {
+  if (!user) {
+    setPeptideNews([]);
+    setPeptideNewsError(null);
+    setPeptideNewsUpdatedAt(null);
+    return;
+  }
 
-      try {
-        const data = await newsAPI.getPeptideHeadlines();
-        if (cancelled) {
-          return;
-        }
+  let cancelled = false;
+  const loadPeptideNews = async () => {
+    beginNewsLoading();
+    setPeptideNewsError(null);
+    const startedAt = Date.now();
 
-        const items = Array.isArray(data?.items)
-          ? data.items
-            .map((item: any) => ({
-              title: typeof item?.title === 'string' ? item.title.trim() : '',
-              url: typeof item?.url === 'string' ? item.url.trim() : '',
-              summary: typeof item?.summary === 'string' && item.summary.trim() ? item.summary.trim() : undefined,
-              image: typeof item?.imageUrl === 'string' && item.imageUrl.trim() ? item.imageUrl.trim() : undefined,
-              date: typeof item?.date === 'string' && item.date.trim() ? item.date.trim() : undefined,
-            }))
-            .filter((item) => item.title && item.url)
-          : [];
-
-        if (items.length === 0) {
-          setPeptideNews([]);
-          setPeptideNewsError('No headlines available right now.');
-          setPeptideNewsUpdatedAt(new Date());
-          return;
-        }
-        setPeptideNews(items.slice(0, 6));
-        setPeptideNewsUpdatedAt(new Date());
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('[News] Failed to load peptide headlines', error);
-          setPeptideNewsError('Unable to load peptide news at the moment.');
-          setPeptideNews([]);
-        }
-      } finally {
-        if (!cancelled) {
-          settleNewsLoading(startedAt);
-        }
+    try {
+      const data = await newsAPI.getPeptideHeadlines();
+      if (cancelled) {
+        return;
       }
-    };
 
-    loadPeptideNews();
+      const items = Array.isArray(data?.items)
+        ? data.items
+          .map((item: any) => ({
+            title: typeof item?.title === 'string' ? item.title.trim() : '',
+            url: typeof item?.url === 'string' ? item.url.trim() : '',
+            summary: typeof item?.summary === 'string' && item.summary.trim() ? item.summary.trim() : undefined,
+            image: typeof item?.imageUrl === 'string' && item.imageUrl.trim() ? item.imageUrl.trim() : undefined,
+            date: typeof item?.date === 'string' && item.date.trim() ? item.date.trim() : undefined,
+          }))
+          .filter((item) => item.title && item.url)
+        : [];
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      if (items.length === 0) {
+        setPeptideNews([]);
+        setPeptideNewsError('No headlines available right now.');
+        setPeptideNewsUpdatedAt(new Date());
+        return;
+      }
+      setPeptideNews(items.slice(0, 6));
+      setPeptideNewsUpdatedAt(new Date());
+    } catch (error) {
+      if (!cancelled) {
+        console.warn('[News] Failed to load peptide headlines', error);
+        setPeptideNewsError('Unable to load peptide news at the moment.');
+        setPeptideNews([]);
+      }
+    } finally {
+      if (!cancelled) {
+        settleNewsLoading(startedAt);
+      }
+    }
+  };
+
+  loadPeptideNews();
+
+  return () => {
+    cancelled = true;
+  };
+}, [user]);
 
   // Prepare welcome animation only on fresh sign-in
   useEffect(() => {
@@ -3745,6 +4002,7 @@ const renderProductSection = () => {
   const statusChips: { key: string; label: string; tone?: 'info' | 'warn' | 'error' }[] = [
     { key: 'count', label: itemLabel },
   ];
+  const showFilters = !catalogLoading;
 
   if (formattedSearch.length > 0) {
     statusChips.push({ key: 'search', label: `Search • “${formattedSearch}”` });
@@ -3760,21 +4018,23 @@ const renderProductSection = () => {
   }
 
   return (
-    <div className="products-layout mt-24">
+    <div className={`products-layout mt-24${showFilters ? '' : ' products-layout--single'}`}>
     {/* Filters Sidebar */}
-    <div
-      ref={filterSidebarRef}
-      className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
-    >
-      <CategoryFilter
-        categories={catalogCategories}
-        types={[]}
-        filters={filters}
-        onFiltersChange={setFilters}
-        productCounts={productCounts}
-        typeCounts={{}}
-      />
-    </div>
+    {showFilters && (
+      <div
+        ref={filterSidebarRef}
+        className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
+      >
+        <CategoryFilter
+          categories={catalogCategories}
+          types={[]}
+          filters={filters}
+          onFiltersChange={setFilters}
+          productCounts={productCounts}
+          typeCounts={{}}
+        />
+      </div>
+    )}
 
     {/* Products Grid */}
     <div className="w-full min-w-0 flex-1">
@@ -3830,8 +4090,8 @@ const renderProductSection = () => {
           })}
         </div>
       ) : (
-        <div className="text-center py-12">
-          <div className="glass-card squircle-lg p-8 max-w-md mx-auto">
+        <div className="catalog-loading-state py-12">
+          <div className="glass-card squircle-lg p-8 max-w-md text-center">
             <h3 className="mb-2">{catalogLoading ? 'Fetching products…' : 'No products found'}</h3>
             <p className="text-gray-600">
               {catalogLoading ? 'Please wait while we load the catalog.' : 'Try adjusting your filters or search terms.'}
@@ -3849,14 +4109,7 @@ const renderSalesRepDashboard = () => {
     return null;
   }
 
-  const referrals = salesRepDashboard?.referrals ?? [];
-  const statusOptions = Array.from(
-    new Set([
-      ...salesRepStatusOptions,
-      ...referrals.map((referral) => (referral.status || '').trim()).filter(Boolean),
-    ]),
-  ).filter(Boolean);
-  statusOptions.sort();
+  const referrals = normalizedReferrals;
 
   const totalReferrals = referrals.length;
   const activeStatuses = new Set(['pending', 'contacted', 'follow_up', 'code_issued']);
@@ -3925,111 +4178,102 @@ const renderSalesRepDashboard = () => {
             </div>
           </div>
         )}
-
-        <div className="sales-rep-dashboard-grid">
-          <div className="sales-tracking-card glass-card squircle-lg">
-            <div className="sales-tracking-header">
+      <div className="sales-rep-dashboard-grid">
+          <div className="sales-rep-leads-card sales-rep-combined-card">
+            <div className="sales-rep-leads-header">
               <div>
-                <h3>Sales Tracking</h3>
-                <p className="text-sm text-slate-600">Live orders from the doctors you represent.</p>
+                <h3>Your Sales</h3>
+                <p className="text-sm text-slate-600">Live orders grouped by your doctors.</p>
               </div>
-              <span className="sales-tracking-meta">
-                {salesTrackingLoading
-                  ? 'Polling for updates…'
-                  : salesTrackingLastUpdated
-                    ? `Updated ${new Date(salesTrackingLastUpdated).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}`
-                    : 'Awaiting data…'}
-              </span>
+              <div className="sales-rep-card-controls sales-metric-controls">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fetchSalesTrackingOrders()}
+                  disabled={salesTrackingLoading}
+                  className="gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${salesTrackingLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <div className="sales-metric-pill-group">
+                  <div className="sales-metric-pill">
+                    <p className="sales-metric-label">Orders</p>
+                    <p className="sales-metric-value">{salesTrackingSummary?.totalOrders ?? 0}</p>
+                  </div>
+                  <div className="sales-metric-pill">
+                    <p className="sales-metric-label">Total Revenue</p>
+                    <p className="sales-metric-value">
+                      {formatCurrency(salesTrackingSummary?.totalRevenue ?? 0)}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="sales-tracking-summary">
-              <div className="sales-tracking-summary-item">
-                <p className="sales-tracking-summary-label">Orders</p>
-                <p className="sales-tracking-summary-value">{salesTrackingSummary?.totalOrders ?? 0}</p>
-              </div>
-              <div className="sales-tracking-summary-item">
-                <p className="sales-tracking-summary-label">Revenue</p>
-                <p className="sales-tracking-summary-value">
-                  {formatCurrency(salesTrackingSummary?.totalRevenue ?? 0)}
-                </p>
-              </div>
-            </div>
-            <div className="sales-tracking-body">
+            <div className="sales-rep-lead-grid">
               {salesTrackingLoading && (
-                <p className="text-sm text-slate-500">Loading sales data from your doctors…</p>
+                <p className="lead-panel-empty text-sm text-slate-500">Loading sales data from your doctors…</p>
               )}
               {!salesTrackingLoading && salesTrackingError && (
-                <p className="text-sm text-rose-600">{salesTrackingError}</p>
+                <p className="lead-panel-empty text-sm text-rose-600">{salesTrackingError}</p>
               )}
-              {!salesTrackingLoading && !salesTrackingError && salesTrackingDisplayOrders.length === 0 && (
-                <p className="text-sm text-slate-500">No sales activity reported yet.</p>
+              {!salesTrackingLoading && !salesTrackingError && salesTrackingOrdersByDoctor.length === 0 && (
+                <p className="lead-panel-empty text-sm text-slate-500">No sales activity reported yet.</p>
               )}
-              {!salesTrackingLoading && !salesTrackingError && salesTrackingDisplayOrders.length > 0 && (
-                <ul className="sales-tracking-list">
-                  {salesTrackingDisplayOrders.map((order) => {
-                    const doctorId = resolveOrderDoctorId(order);
-                    const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
-                    const doctorName =
-                      doctorInfo?.name
-                      || (doctorId && salesRepDoctorsById.get(doctorId))
-                      || order.doctorName
-                      || 'Doctor';
-                    const doctorAvatar = doctorInfo?.profileImageUrl || (order as any).doctorProfileImageUrl || null;
-                    const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
-                    const orderTime = order.createdAt ? formatDateTime(order.createdAt) : 'Unknown';
-                    return (
-                      <li key={order.id} className="sales-tracking-row flex items-center justify-between gap-3">
+              {!salesTrackingLoading && !salesTrackingError && salesTrackingOrdersByDoctor.length > 0 && (
+                salesTrackingOrdersByDoctor.map((bucket) => {
+                  return (
+                    <section key={bucket.doctorId} className="lead-panel">
+                      <div className="lead-panel-header">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm">
-                            {doctorAvatar ? (
-                              <img src={doctorAvatar} alt={doctorName} className="h-full w-full object-cover" />
+                            {bucket.doctorAvatar ? (
+                              <img src={bucket.doctorAvatar} alt={bucket.doctorName} className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-sm font-semibold text-slate-600">{getInitials(doctorName)}</span>
+                              <span className="text-sm font-semibold text-slate-600">{getInitials(bucket.doctorName)}</span>
                             )}
                           </div>
                           <div>
-                            <p className="sales-tracking-row-title">{doctorName}</p>
-                            <p className="sales-tracking-row-subtitle">
-                              Order #{order.number ?? order.id}
-                            </p>
-                            {doctorEmail && (
-                              <p className="text-xs text-slate-500 truncate">{doctorEmail}</p>
-                            )}
+                            <p className="lead-list-name">{bucket.doctorName}</p>
+                            {bucket.doctorEmail && <p className="lead-list-detail">{bucket.doctorEmail}</p>}
                           </div>
                         </div>
-                        <div className="sales-tracking-row-details">
-                          <p className="sales-tracking-row-amount">{formatCurrency(order.total)}</p>
-                          <p className="sales-tracking-row-time">{orderTime}</p>
-                          <span className="sales-tracking-row-status">{order.status ?? 'Pending'}</span>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">Revenue</p>
+                          <p className="text-base font-semibold text-slate-900">{formatCurrency(bucket.total)}</p>
                         </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                      </div>
+                      <ul className="lead-list">
+                        {bucket.orders.map((order) =>
+                          (
+                            <li key={order.id} className="lead-list-item">
+                              <div className="lead-list-meta">
+                                <div className="lead-list-name">Order #{order.number ?? order.id}</div>
+                                <div className="lead-list-detail">
+                                  {order.createdAt ? formatDateTime(order.createdAt) : 'Unknown date'}
+                                </div>
+                              </div>
+                              <div className="lead-list-actions">
+                                <div className="lead-updated">{formatCurrency(order.total)}</div>
+                                <span className="sales-tracking-row-status">{order.status ?? 'Pending'}</span>
+                              </div>
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </section>
+                  );
+                })
               )}
             </div>
           </div>
           <div className="sales-rep-leads-card sales-rep-combined-card">
             <div className="sales-rep-leads-header">
               <div>
-                <h3>Referral Leads</h3>
-                <p>Review contact details and keep statuses accurate.</p>
+                <h3>Your Leads</h3>
+                <p>Advance referrals and inbound requests through your pipeline.</p>
               </div>
               <div className="sales-rep-card-controls">
-                <select
-                  value={salesRepStatusFilter}
-                  onChange={(event) => setSalesRepStatusFilter(event.target.value)}
-                  className="rounded-md border border-slate-200/80 bg-white/90 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                >
-                  <option value="all">All statuses</option>
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {humanizeReferralStatus(status)}
-                    </option>
-                  ))}
-                </select>
                 <Button
                   type="button"
                   variant="outline"
@@ -4042,86 +4286,267 @@ const renderSalesRepDashboard = () => {
                 </Button>
               </div>
             </div>
-            <div className="sales-rep-table-wrapper">
-              <table className="min-w-[720px] divide-y divide-slate-200/70">
-                <thead className="bg-slate-50/70">
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-3">Referrer</th>
-                    <th className="px-4 py-3">Lead</th>
-                    <th className="px-4 py-3">Notes from Referrer</th>
-                    <th className="px-4 py-3 whitespace-nowrap">Submitted</th>
-                    <th className="px-4 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/60">
-                  {referralDataLoading ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
-                        Loading referrals…
-                      </td>
-                    </tr>
-                  ) : filteredSalesRepReferrals.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
-                        No referrals match this filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSalesRepReferrals.map((referral) => {
-                      const isUpdating = adminActionState.updatingReferral === referral.id;
-                      const referralStatusOptions = statusOptions.length > 0 ? statusOptions : [referral.status || 'pending'];
-
+            <div className="sales-rep-lead-grid">
+              <section className="lead-panel">
+                <div className="lead-panel-header">
+                  <div>
+                    <h4>Active Prospects</h4>
+                    <p className="text-sm text-slate-500">Combination of referral and contact form prospects.</p>
+                  </div>
+                  <span className="lead-panel-count">
+                    {combinedLeadEntries.length} {combinedLeadEntries.length === 1 ? 'Prospect' : 'Prospects'}
+                  </span>
+                </div>
+                {referralDataLoading && combinedLeadEntries.length === 0 ? (
+                  <p className="lead-panel-empty text-sm text-slate-500">Loading prospects…</p>
+                ) : combinedLeadEntries.length === 0 ? (
+                  <p className="lead-panel-empty text-sm text-slate-500">
+                    Nobody yet. Update a referral or contact form status to move it here.
+                  </p>
+                ) : (
+                  <ul className="lead-list">
+                    {combinedLeadEntries.map(({ kind, record }) => {
+                      const isUpdating = adminActionState.updatingReferral === record.id;
+                      const normalizedStatus = (record.status || (kind === 'contact_form' ? 'contact_form' : 'pending')).toLowerCase();
                       return (
-                        <tr key={referral.id} className="align-top">
-                          <td className="px-4 py-4">
-                            <div className="font-semibold text-slate-900">{referral.referrerDoctorName ?? '—'}</div>
-                            <div className="text-xs text-slate-500">{referral.referrerDoctorEmail ?? '—'}</div>
-                            {referral.referrerDoctorPhone && (
-                              <div className="text-xs text-slate-500">{referral.referrerDoctorPhone}</div>
+                        <li key={record.id} className="lead-list-item">
+                          <div className="lead-list-meta">
+                            <div className="lead-list-name">{record.referredContactName || record.referredContactEmail || '—'}</div>
+                            {record.referredContactEmail && (
+                              <div className="lead-list-detail">{record.referredContactEmail}</div>
                             )}
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="font-medium text-slate-900">{referral.referredContactName || '—'}</div>
-                            {referral.referredContactEmail && (
-                              <div className="text-xs text-slate-500">{referral.referredContactEmail}</div>
+                            {record.referredContactPhone && (
+                              <div className="lead-list-detail">{record.referredContactPhone}</div>
                             )}
-                            {referral.referredContactPhone && (
-                              <div className="text-xs text-slate-500">{referral.referredContactPhone}</div>
-                            )}
-                          </td>
-                          <td className="px-4 py-4">
-                            {referral.notes ? (
-                              <div className="max-w-md text-sm text-slate-600 whitespace-pre-wrap">
-                                {referral.notes}
-                              </div>
-                            ) : (
-                              <span className="text-xs italic text-slate-400">No notes</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-4 text-sm text-slate-600">
-                            <div>{formatDateTime(referral.createdAt)}</div>
-                            <div className="text-xs text-slate-400">Updated {formatDateTime(referral.updatedAt)}</div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <select
-                              value={referral.status}
-                              onChange={(event) => handleUpdateReferralStatus(referral.id, event.target.value)}
-                              disabled={isUpdating}
-                              className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            <span
+                              className={`lead-source-pill ${kind === 'contact_form' ? 'lead-source-pill--contact' : 'lead-source-pill--referral'}`}
                             >
-                              {referralStatusOptions.map((status) => (
-                                <option key={status} value={status}>
-                                  {humanizeReferralStatus(status)}
-                                </option>
-                              ))}
+                              {kind === 'contact_form' ? 'Contact Form' : 'Referral'}
+                            </span>
+                          </div>
+                          <div className="lead-list-actions">
+                            <select
+                              value={normalizedStatus}
+                              disabled={isUpdating}
+                              onChange={(event) => handleUpdateReferralStatus(record.id, event.target.value)}
+                              className="lead-status-select"
+                            >
+                              {kind === 'contact_form'
+                                ? CONTACT_FORM_STATUS_FLOW.map((stage) => (
+                                    <option key={stage.key} value={stage.key}>
+                                      {stage.label}
+                                    </option>
+                                  ))
+                                : leadStatusOptions.map((status) => (
+                                    <option key={status} value={status}>
+                                      {humanizeReferralStatus(status)}
+                                    </option>
+                                  ))}
                             </select>
+                            <div className="lead-updated">{record.updatedAt ? `Updated ${formatDateTime(record.updatedAt)}` : formatDateTime(record.createdAt)}</div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+              <section className="lead-panel">
+                <div className="lead-panel-header">
+                  <div>
+                    <h4>Referrals</h4>
+                    <p className="text-sm text-slate-500">Qualify new referrals and update their status.</p>
+                  </div>
+                  <div className="lead-panel-actions">
+                    <select
+                      value={salesRepStatusFilter}
+                      onChange={(event) => setSalesRepStatusFilter(event.target.value)}
+                      className="rounded-md border border-slate-200/80 bg-white/90 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                    >
+                      <option value="all">All statuses</option>
+                      {referralFilterStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {humanizeReferralStatus(status)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="sales-rep-table-wrapper">
+                  <table className="min-w-[720px] divide-y divide-slate-200/70">
+                    <thead className="bg-slate-50/70">
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-4 py-3">Referrer</th>
+                        <th className="px-4 py-3">Lead</th>
+                        <th className="px-4 py-3">Notes from Referrer</th>
+                        <th className="px-4 py-3 whitespace-nowrap">Submitted</th>
+                        <th className="px-4 py-3">Status Tracker</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/60">
+                      {referralDataLoading ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
+                            Loading referrals…
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                      ) : filteredSalesRepReferrals.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
+                            No referrals match this filter.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSalesRepReferrals.map((referral) => {
+                          const isUpdating = adminActionState.updatingReferral === referral.id;
+                          const isCrediting = creditingReferralId === referral.id;
+                          const referralStatusOptions = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
+                          const referralDisplayName = referral.referrerDoctorName || 'User';
+                          return (
+                            <tr key={referral.id} className="align-top">
+                              <td className="px-4 py-4">
+                                <div className="font-semibold text-slate-900">{referral.referrerDoctorName ?? '—'}</div>
+                                <div className="text-xs text-slate-500">{referral.referrerDoctorEmail ?? '—'}</div>
+                                {referral.referrerDoctorPhone && (
+                                  <div className="text-xs text-slate-500">{referral.referrerDoctorPhone}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium text-slate-900">{referral.referredContactName || '—'}</div>
+                                {referral.referredContactEmail && (
+                                  <div className="text-xs text-slate-500">{referral.referredContactEmail}</div>
+                                )}
+                                {referral.referredContactPhone && (
+                                  <div className="text-xs text-slate-500">{referral.referredContactPhone}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-4">
+                                {referral.notes ? (
+                                  <div className="max-w-md text-sm text-slate-600 whitespace-pre-wrap">
+                                    {referral.notes}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs italic text-slate-400">No notes</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-slate-600">
+                                <div>{formatDateTime(referral.createdAt)}</div>
+                                <div className="text-xs text-slate-400">Updated {formatDateTime(referral.updatedAt)}</div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-col gap-2">
+                                  <select
+                                    value={referral.status}
+                                    onChange={(event) => handleUpdateReferralStatus(referral.id, event.target.value)}
+                                    disabled={isUpdating}
+                                    className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                                  >
+                                    {referralStatusOptions.map((status) => (
+                                      <option key={status} value={status}>
+                                        {humanizeReferralStatus(status)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {referral.status === 'converted' && (
+                                    <Button
+                                      type="button"
+                                      disabled={isCrediting}
+                                      onClick={() => handleReferralCredit(referral)}
+                                      className="w-full squircle-sm glass-brand btn-hover-lighter justify-center"
+                                    >
+                                      {isCrediting ? 'Crediting…' : `Credit ${referralDisplayName} $50`}
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              {isAdmin(user?.role) && (
+                <section className="lead-panel">
+                  <div className="lead-panel-header">
+                    <div>
+                      <h4>House / Contact Form</h4>
+                      <p className="text-sm text-slate-500">Inbound submissions captured directly from the site.</p>
+                    </div>
+                    <span className="lead-panel-count">
+                      {contactFormQueue.length} {contactFormQueue.length === 1 ? 'submission' : 'submissions'}
+                    </span>
+                  </div>
+                  <div className="sales-rep-table-wrapper">
+                    <table className="min-w-[720px] divide-y divide-slate-200/70">
+                      <thead className="bg-slate-50/70">
+                        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-3">ID</th>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Email</th>
+                          <th className="px-4 py-3">Phone</th>
+                          <th className="px-4 py-3">How did you get introduced to PepPro?</th>
+                          <th className="px-4 py-3">Received</th>
+                          <th className="px-4 py-3">Status Tracker</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200/60">
+                        {referralDataLoading ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                              Loading contact forms…
+                            </td>
+                          </tr>
+                        ) : contactFormQueue.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                              No contact form submissions available.
+                            </td>
+                          </tr>
+                        ) : (
+                          contactFormQueue.map((lead) => {
+                            const isUpdating = adminActionState.updatingReferral === lead.id;
+                            const normalizedStatus = (lead.status || 'contact_form').toLowerCase();
+                            const displayId = (lead.id || '').replace('contact_form:', '') || lead.id || '—';
+                            return (
+                              <tr key={lead.id} className="align-top">
+                                <td className="px-4 py-4 font-mono text-xs text-slate-500">{displayId}</td>
+                                <td className="px-4 py-4 text-sm font-medium text-slate-900">
+                                  {lead.referredContactName || '—'}
+                                </td>
+                                <td className="px-4 py-4 text-sm text-slate-600">{lead.referredContactEmail || '—'}</td>
+                                <td className="px-4 py-4 text-sm text-slate-600">{lead.referredContactPhone || '—'}</td>
+                                <td className="px-4 py-4 text-sm text-slate-600">{lead.notes || 'Contact form'}</td>
+                                <td className="px-4 py-4 text-sm text-slate-600">
+                                  <div>{formatDateTime(lead.createdAt)}</div>
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="flex flex-col gap-2">
+                                    <select
+                                      value={normalizedStatus}
+                                      disabled={isUpdating}
+                                      onChange={(event) => handleUpdateReferralStatus(lead.id, event.target.value)}
+                                      className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                                    >
+                                      {CONTACT_FORM_STATUS_FLOW.map((stage) => (
+                                        <option key={stage.key} value={stage.key}>
+                                          {stage.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {renderContactFormStatusTracker(lead.status)}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
             </div>
             <div className="sales-rep-combined-chart">
               <div className="sales-rep-chart-header">
@@ -4157,7 +4582,7 @@ const renderSalesRepDashboard = () => {
           </div>
         </div>
       </div>
-      <p className="text-xs text-slate-500/80 pt-2 text-center italic">
+      <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
         Send dashboard recommendations and ideas that will improve your productivity to{' '}
         <a
           className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
@@ -4282,29 +4707,29 @@ const renderSalesRepDashboard = () => {
     const len = quoteOfTheDay?.text?.length || 0;
     if (len > 260) {
       return {
-        quoteFontSize: 'clamp(0.58rem, 1.35vw, 0.78rem)',
-        quoteLineClamp: 5,
-        quoteMobileFont: 'clamp(0.7rem, 2vw, 0.85rem)',
+        quoteFontSize: 'clamp(0.55rem, 1.1vw, 0.72rem)',
+        quoteLineClamp: 8,
+        quoteMobileFont: 'clamp(0.68rem, 1.9vw, 0.84rem)',
       };
     }
     if (len > 180) {
       return {
-        quoteFontSize: 'clamp(0.65rem, 1.6vw, 0.88rem)',
-        quoteLineClamp: 4,
-        quoteMobileFont: 'clamp(0.76rem, 2.2vw, 0.9rem)',
+        quoteFontSize: 'clamp(0.6rem, 1.3vw, 0.8rem)',
+        quoteLineClamp: 6,
+        quoteMobileFont: 'clamp(0.72rem, 2vw, 0.88rem)',
       };
     }
     if (len > 120) {
       return {
-        quoteFontSize: 'clamp(0.72rem, 1.85vw, 0.96rem)',
-        quoteLineClamp: 3,
-        quoteMobileFont: 'clamp(0.82rem, 2.4vw, 0.98rem)',
+        quoteFontSize: 'clamp(0.66rem, 1.5vw, 0.9rem)',
+        quoteLineClamp: 5,
+        quoteMobileFont: 'clamp(0.78rem, 2.2vw, 0.94rem)',
       };
     }
     return {
-      quoteFontSize: 'clamp(0.8rem, 2.2vw, 1.05rem)',
-      quoteLineClamp: 3,
-      quoteMobileFont: 'clamp(0.88rem, 2.8vw, 1.05rem)',
+      quoteFontSize: 'clamp(0.74rem, 1.8vw, 0.98rem)',
+      quoteLineClamp: 4,
+      quoteMobileFont: 'clamp(0.84rem, 2.5vw, 1rem)',
     };
   }, [quoteOfTheDay]);
 
@@ -4426,7 +4851,6 @@ const renderSalesRepDashboard = () => {
                     style={{
                       backdropFilter: 'blur(20px) saturate(1.4)',
                       minHeight: 'min(140px, 12.5vh)',
-                      maxHeight: 'min(160px, 14vh)',
                     }}
                     aria-live="polite"
                   >
