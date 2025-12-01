@@ -1840,10 +1840,10 @@ const filteredDoctorReferrals = useMemo(() => {
   }, [salesRepStatusOptions, isLeadStatus]);
 
   const leadStatusOptions = useMemo(() => {
-    const defaults = REFERRAL_STATUS_FLOW.filter((stage) => REFERRAL_LEAD_STATUS_KEYS.has(stage.key)).map(
-      (stage) => stage.key
-    );
-    const dynamic = salesRepStatusOptions.map((status) => status.toLowerCase()).filter((status) => isLeadStatus(status));
+    const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
+    const dynamic = salesRepStatusOptions
+      .map((status) => status.toLowerCase())
+      .filter((status) => status === 'pending' || isLeadStatus(status));
     return Array.from(new Set([...defaults, ...dynamic]));
   }, [salesRepStatusOptions, isLeadStatus]);
 
@@ -4307,7 +4307,13 @@ const renderSalesRepDashboard = () => {
                   <ul className="lead-list">
                     {combinedLeadEntries.map(({ kind, record }) => {
                       const isUpdating = adminActionState.updatingReferral === record.id;
-                      const normalizedStatus = (record.status || (kind === 'contact_form' ? 'contact_form' : 'pending')).toLowerCase();
+                      const normalizedStatus =
+                        kind === 'contact_form'
+                          ? (record.status || 'contact_form').toLowerCase()
+                          : sanitizeReferralStatus(record.status);
+                      const isCrediting = creditingReferralId === record.id;
+                      const referralDisplayName =
+                        (kind === 'referral' && record.referrerDoctorName) || 'User';
                       return (
                         <li key={record.id} className="lead-list-item">
                           <div className="lead-list-meta">
@@ -4343,6 +4349,16 @@ const renderSalesRepDashboard = () => {
                                     </option>
                                   ))}
                             </select>
+                            {kind === 'referral' && normalizedStatus === 'converted' && (
+                              <Button
+                                type="button"
+                                disabled={isCrediting}
+                                onClick={() => handleReferralCredit(record as ReferralRecord)}
+                                className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter justify-center"
+                              >
+                                {isCrediting ? 'Crediting…' : `Credit ${referralDisplayName} $50`}
+                              </Button>
+                            )}
                             <div className="lead-updated">{record.updatedAt ? `Updated ${formatDateTime(record.updatedAt)}` : formatDateTime(record.createdAt)}</div>
                           </div>
                         </li>

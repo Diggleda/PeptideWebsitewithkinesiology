@@ -15,6 +15,13 @@ const mysqlClient = require('../database/mysqlClient');
 
 const sanitizeOrder = (order) => ({ ...order });
 
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return null;
+  return String(value);
+};
+
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+
 const extractWooMetaValue = (wooOrder, keys) => {
   const lookup = Array.isArray(keys) ? keys : [keys];
   const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
@@ -1060,51 +1067,121 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
 };
 
 const getOrdersForUser = async (userId) => {
-  // Prefer MySQL as the single source of truth
-  if (mysqlClient.isEnabled()) {
-    const sqlOrders = await orderSqlRepository.fetchByUserId(userId);
-    return {
-      local: sqlOrders.map(buildLocalOrderSummary),
-      woo: [],
-      fetchedAt: new Date().toISOString(),
-      wooError: null,
-    };
+  const user = typeof userRepository.findById === 'function'
+    ? userRepository.findById(userId)
+    : null;
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
   }
 
-  const orders = orderRepository.findByUserId(userId);
-  const localSummaries = orders.map(buildLocalOrderSummary);
-  const visibleLocalSummaries = localSummaries.filter(
-    (summary) => ((summary.status || '').toLowerCase() !== 'payment_failed'),
-  );
+  let localSummaries = [];
+  if (mysqlClient.isEnabled()) {
+    const sqlOrders = await orderSqlRepository.fetchByUserId(userId);
+    localSummaries = sqlOrders.map(buildLocalOrderSummary);
+  } else {
+    const orders = orderRepository.findByUserId(userId);
+    localSummaries = orders
+      .map(buildLocalOrderSummary)
+      .filter((summary) => (summary.status || '').toLowerCase() !== 'payment_failed');
+  }
+
+  let wooOrders = [];
+  let wooError = null;
+  const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+  if (email && typeof wooCommerceClient.fetchOrdersByEmail === 'function') {
+    try {
+      wooOrders = await wooCommerceClient.fetchOrdersByEmail(email, { perPage: 20 });
+    } catch (error) {
+      logger.error(
+        { err: error, userId, email },
+        'Failed to fetch WooCommerce orders for user',
+      );
+      wooError = {
+        message: error.message || 'Unable to load WooCommerce orders.',
+        details: error.response?.data || error.cause || null,
+        status: error.response?.status ?? error.status ?? 502,
+      };
+    }
+  }
 
   return {
-    local: visibleLocalSummaries,
-    woo: [],
+    local: localSummaries,
+    woo: wooOrders,
     fetchedAt: new Date().toISOString(),
-    wooError: null,
+    wooError,
   };
 };
 
-const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {}) => {
+const getOrdersForSalesRep = async (
+  salesRepId,
+  {
+    includeDoctors = false,
+    includeSelfOrders = false,
+    includeAllDoctors = false,
+    alternateSalesRepIds = [],
+  } = {},
+) => {
+  const normalizedSalesRepId = normalizeId(salesRepId);
+  const normalizedAlternates = Array.isArray(alternateSalesRepIds)
+    ? alternateSalesRepIds.map(normalizeId).filter(Boolean)
+    : [];
+  const allowedRepIds = new Set([normalizedSalesRepId, ...normalizedAlternates].filter(Boolean));
+  logger.info(
+    {
+      salesRepId: normalizedSalesRepId,
+      alternates: normalizedAlternates,
+      includeDoctors,
+      includeSelfOrders,
+      includeAllDoctors,
+    },
+    'Sales rep order fetch: scope resolved',
+  );
+
   const doctors = userRepository.getAll().filter((candidate) => {
-    const role = (candidate.role || '').toLowerCase();
-    return (role === 'doctor' || role === 'test_doctor') && candidate.salesRepId === salesRepId;
+    const role = normalizeRole(candidate.role);
+    if (role !== 'doctor' && role !== 'test_doctor') {
+      return false;
+    }
+    if (includeAllDoctors) {
+      return allowedRepIds.size === 0 ? true : allowedRepIds.has(normalizeId(candidate.salesRepId));
+    }
+    const repId = normalizeId(candidate.salesRepId);
+    return allowedRepIds.size === 0 ? false : allowedRepIds.has(repId);
   });
 
   const doctorLookup = new Map(
-    doctors.map((doctor) => [
-      doctor.id,
-      {
-        id: doctor.id,
-        name: doctor.name || doctor.email || 'Doctor',
-        email: doctor.email || null,
-      },
-    ]),
+    doctors.map((doctor) => {
+      const id = normalizeId(doctor.id);
+      return [
+        id,
+        {
+          id,
+          name: doctor.name || doctor.email || 'Doctor',
+          email: doctor.email || null,
+        },
+      ];
+    }),
   );
+
+  if (includeSelfOrders && normalizedSalesRepId && !doctorLookup.has(normalizedSalesRepId)) {
+    const selfUser = userRepository.findById ? userRepository.findById(normalizedSalesRepId) : null;
+    doctorLookup.set(normalizedSalesRepId, {
+      id: normalizedSalesRepId,
+      name: (selfUser && (selfUser.name || selfUser.email)) || 'Your Orders',
+      email: selfUser?.email || null,
+    });
+    doctors.push({
+      id: normalizedSalesRepId,
+      name: selfUser?.name || selfUser?.email || 'Your Orders',
+      email: selfUser?.email || null,
+    });
+  }
 
   const summaries = [];
   const seenKeys = new Set();
-  const doctorIds = doctors.map((d) => d.id);
+  const doctorIds = doctors.map((d) => normalizeId(d.id)).filter(Boolean);
 
   // Prefer MySQL source of truth
   if (mysqlClient.isEnabled()) {
@@ -1116,8 +1193,8 @@ const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {})
       summaries.push({
         ...buildLocalOrderSummary(order),
         doctorId: order.userId,
-        doctorName: doctorLookup.get(order.userId)?.name || 'Doctor',
-        doctorEmail: doctorLookup.get(order.userId)?.email || null,
+        doctorName: doctorLookup.get(normalizeId(order.userId))?.name || 'Doctor',
+        doctorEmail: doctorLookup.get(normalizeId(order.userId))?.email || null,
         source: 'mysql',
       });
     });
@@ -1155,20 +1232,29 @@ const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {})
     : summaries;
 };
 
-const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
+const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] } = {}) => {
+  const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
+  const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
   const reps = users.filter((u) => (u.role || '').toLowerCase() === 'sales_rep');
-  const repFromUsers = new Map(reps.map((rep) => [rep.id, rep]));
+  const repFromUsers = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
   const doctors = users.filter((u) => {
     const role = (u.role || '').toLowerCase();
     return role === 'doctor' || role === 'test_doctor';
   });
 
-  const repMap = new Map(reps.map((rep) => [rep.id, rep]));
+  const repMap = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
   const doctorToRep = new Map();
   doctors.forEach((doc) => {
-    if (doc.salesRepId) {
-      doctorToRep.set(doc.id, doc.salesRepId);
+    const repId = normalizeId(doc.salesRepId);
+    const doctorId = normalizeId(doc.id);
+    if (!repId || !doctorId) return;
+    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
+    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') {
+      return;
+    }
+    if (repMap.has(repId)) {
+      doctorToRep.set(doctorId, repId);
     }
   });
 
@@ -1181,9 +1267,15 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
 
   sourceOrders.forEach((order) => {
     const userId = order.userId || order.user_id || order.id;
-    const repId = doctorToRep.get(userId);
+    const normalizedUserId = normalizeId(userId);
+    if (normalizedUserId && excludeDoctorSet.has(normalizedUserId)) {
+      return;
+    }
+    const repId = doctorToRep.get(normalizedUserId);
     if (!repId) return;
-    if (excludeSalesRepId && repId === excludeSalesRepId) return;
+    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
+    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') return; // only count real sales reps
+    if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
     const current = repTotals.get(repId) || { totalOrders: 0, totalRevenue: 0 };
     current.totalOrders += 1;
     current.totalRevenue += Number(order.total) || 0;
@@ -1192,7 +1284,10 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
 
   return Array.from(repTotals.entries())
     .map(([repId, totals]) => {
-    const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
+      if (!repMap.has(repId)) {
+        return null;
+      }
+      const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
       return {
         salesRepId: repId,
         salesRepName: rep.name || rep.email || 'Sales Rep',
@@ -1201,6 +1296,7 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
         totalRevenue: totals.totalRevenue,
       };
     })
+    .filter(Boolean)
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
 

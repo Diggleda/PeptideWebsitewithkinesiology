@@ -159,23 +159,54 @@ def create_order(
 
 
 def get_orders_for_user(user_id: str):
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _service_error("User not found", 404)
+
     orders = order_repository.find_by_user_id(user_id)
+    woo_orders = []
+    woo_error = None
+
+    email = (user.get("email") or "").strip().lower()
+    if email:
+        try:
+            woo_orders = woo_commerce.fetch_orders_by_email(email)
+        except woo_commerce.IntegrationError as exc:
+            logger.error("WooCommerce order lookup failed", exc_info=True, extra={"userId": user_id})
+            woo_error = {
+                "message": str(exc) or "Unable to load WooCommerce orders.",
+                "details": getattr(exc, "response", None),
+                "status": getattr(exc, "status", 502),
+            }
+        except Exception as exc:  # pragma: no cover - unexpected network error path
+            logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
+            woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
+
     return {
         "local": orders,
-        "woo": [],
+        "woo": woo_orders,
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
-        "wooError": None,
+        "wooError": woo_error,
     }
 
 
 def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     users = user_repository.get_all()
-    doctors = [
-        user
-        for user in users
-        if (user.get("role") or "").lower() in ("doctor", "test_doctor")
-        and user.get("salesRepId") == sales_rep_id
-    ]
+    normalized_sales_rep_id = str(sales_rep_id)
+    role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
+
+    doctors = []
+    for user in users:
+        role = (user.get("role") or "").lower()
+        if role not in ("doctor", "test_doctor"):
+            continue
+        if str(user.get("salesRepId") or "") != normalized_sales_rep_id:
+            continue
+        # Only attach doctors to real sales reps; if the "rep" is actually an admin,
+        # still include these for the admin's personal tracker but not in rep rollups.
+        if role_lookup.get(normalized_sales_rep_id) not in ("sales_rep", "rep", "admin"):
+            continue
+        doctors.append(user)
 
     doctor_lookup = {
         doc.get("id"): {
@@ -229,11 +260,15 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
     doctors = [
         u
         for u in users
-        if (u.get("role") or "").lower() in ("doctor", "test_doctor")
-        and u.get("salesRepId")
+        if (u.get("role") or "").lower() in ("doctor", "test_doctor") and u.get("salesRepId")
     ]
 
-    doctor_to_rep = {doc.get("id"): doc.get("salesRepId") for doc in doctors if doc.get("salesRepId")}
+    valid_rep_ids = {rep.get("id") for rep in reps}
+    doctor_to_rep = {
+        doc.get("id"): doc.get("salesRepId")
+        for doc in doctors
+        if doc.get("salesRepId") in valid_rep_ids
+    }
     rep_totals: Dict[str, Dict[str, float]] = {}
 
     # Local orders

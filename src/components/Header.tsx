@@ -406,7 +406,7 @@ export function Header({
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
-  const [showAvatarActions, setShowAvatarActions] = useState(false);
+  const [showAvatarControls, setShowAvatarControls] = useState(false);
   const credentialAutofillRequestInFlight = useRef(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
   const applyPendingLoginPrefill = useCallback(() => {
@@ -1229,7 +1229,8 @@ export function Header({
                 className="avatar-edit-badge"
                 onClick={(e) => {
                   e.preventDefault();
-                  avatarInputRef.current?.click();
+                  e.stopPropagation();
+                  setShowAvatarControls((prev) => !prev);
                 }}
                 aria-label="Edit profile photo"
               >
@@ -1237,76 +1238,78 @@ export function Header({
               </button>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-slate-800">Profile photo</p>
-              <div className="flex items-center gap-3 flex-wrap">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="squircle-sm"
-                  disabled={avatarUploading}
-                  onClick={() => avatarInputRef.current?.click()}
-                >
-                  {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
-                </Button>
-                <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
+            {showAvatarControls && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-800">Profile photo</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="squircle-sm"
+                    disabled={avatarUploading}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
+                  </Button>
+                  <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
+                </div>
               </div>
+            )}
 
-              <input
-                type="file"
-                accept="image/*"
-                ref={avatarInputRef}
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  const maxBytes = 50 * 1024 * 1024; // 50MB limit
-                  if (file.size > maxBytes) {
-                    toast.error('Upload too large. Please choose an image 50MB or smaller.');
-                    if (avatarInputRef.current) {
-                      avatarInputRef.current.value = '';
-                    }
-                    return;
+            <input
+              type="file"
+              accept="image/*"
+              ref={avatarInputRef}
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                const maxBytes = 50 * 1024 * 1024; // 50MB limit
+                if (file.size > maxBytes) {
+                  toast.error('Upload too large. Please choose an image 50MB or smaller.');
+                  if (avatarInputRef.current) {
+                    avatarInputRef.current.value = '';
                   }
-                  setAvatarUploading(true);
-                  setAvatarUploadPercent(8);
-                  let uploadTicker: number | null = null;
-                  try {
-                    console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
-                    const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
-                    setAvatarUploadPercent(55);
+                  return;
+                }
+                setAvatarUploading(true);
+                setAvatarUploadPercent(8);
+                let uploadTicker: number | null = null;
+                try {
+                  console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
+                  const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
+                  setAvatarUploadPercent(55);
 
-                    // Simulated progress while request is in-flight
-                    const startProgress = 60;
-                    const targetProgress = 95;
-                    let current = startProgress;
-                    uploadTicker = window.setInterval(() => {
-                      current = Math.min(targetProgress, current + 2);
-                      setAvatarUploadPercent(current);
-                    }, 120);
+                  // Simulated progress while request is in-flight
+                  const startProgress = 60;
+                  const targetProgress = 95;
+                  let current = startProgress;
+                  uploadTicker = window.setInterval(() => {
+                    current = Math.min(targetProgress, current + 2);
+                    setAvatarUploadPercent(current);
+                  }, 120);
 
-                    await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
-                    setAvatarUploadPercent(100);
-                    setShowAvatarActions(false);
-                    toast.success('Profile photo updated');
-                  } catch (error: any) {
-                    const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
-                    toast.error(message);
-                    console.error('[Profile] Upload failed', { message, error });
-                  } finally {
-                    if (uploadTicker) {
-                      window.clearInterval(uploadTicker);
-                    }
-                    setAvatarUploading(false);
-                    setAvatarUploadPercent(0);
-                    if (avatarInputRef.current) {
-                      avatarInputRef.current.value = '';
-                    }
+                  await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
+                  setAvatarUploadPercent(100);
+                  setShowAvatarControls(false);
+                  toast.success('Profile photo updated');
+                } catch (error: any) {
+                  const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
+                  toast.error(message);
+                  console.error('[Profile] Upload failed', { message, error });
+                } finally {
+                  if (uploadTicker) {
+                    window.clearInterval(uploadTicker);
                   }
-                }}
-              />
-            </div>
+                  setAvatarUploading(false);
+                  setAvatarUploadPercent(0);
+                  if (avatarInputRef.current) {
+                    avatarInputRef.current.value = '';
+                  }
+                }
+              }}
+            />
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-1">
@@ -1347,7 +1350,7 @@ export function Header({
         </div>
       </div>
     </div>
-) : null;
+  ) : null;
 
   const researchPanel = (
     <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">

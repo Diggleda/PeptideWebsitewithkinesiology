@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
 const salesRepRepository = require('../repositories/salesRepRepository');
+const adminRepository = require('../repositories/adminRepository');
 const { env } = require('../config/env');
 const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 const { logger } = require('../config/logger');
@@ -195,11 +196,13 @@ const register = async ({
 
   const salesRepAccount = salesRepRepository.findByEmail(email);
   const isSalesRepEmail = Boolean(salesRepAccount);
+  const adminAccount = adminRepository.findByEmail(email);
+  const isAdminEmail = Boolean(adminAccount);
 
   const normalizedNpi = normalizeNpiNumber(npiNumber);
   const hasValidNpi = /^\d{10}$/.test(normalizedNpi);
 
-  if (!isSalesRepEmail && !hasValidNpi) {
+  if (!isSalesRepEmail && !isAdminEmail && !hasValidNpi) {
     throw createError('NPI_INVALID', 400);
   }
 
@@ -214,7 +217,7 @@ const register = async ({
     ? await verifyDoctorNpi(normalizedNpi)
     : null;
 
-  if (!isSalesRepEmail && npiVerification?.name) {
+  if (!isSalesRepEmail && !isAdminEmail && npiVerification?.name) {
     if (!namesRoughlyMatch(name, npiVerification.name)) {
       throw createError('NPI_NAME_MISMATCH', 422);
     }
@@ -238,13 +241,13 @@ const register = async ({
     }
   }
 
-  const role = isSalesRepEmail ? 'sales_rep' : 'doctor';
+  const role = isAdminEmail ? 'admin' : (isSalesRepEmail ? 'sales_rep' : 'doctor');
   const user = userRepository.insert({
     id: Date.now().toString(),
     name,
     email,
     password: hashedPassword,
-    referralCode: referralService.generateReferralCode(),
+    referralCode: adminAccount?.referralCode || referralService.generateReferralCode(),
     referralCredits: 0,
     totalReferrals: 0,
     visits: 1,

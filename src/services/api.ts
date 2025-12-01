@@ -373,8 +373,17 @@ export const ordersAPI = {
     return fetchWithAuth(`${API_BASE_URL}/orders/`);
   },
 
-  getForSalesRep: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/orders/sales-rep`);
+  getForSalesRep: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all' }) => {
+    const params = new URLSearchParams();
+    if (options?.salesRepId) {
+      params.set('salesRepId', options.salesRepId);
+    }
+    if (options?.scope) {
+      params.set('scope', options.scope);
+    }
+    const query = params.toString();
+    const url = query ? `${API_BASE_URL}/orders/sales-rep?${query}` : `${API_BASE_URL}/orders/sales-rep`;
+    return fetchWithAuth(url);
   },
 
   getSalesByRepForAdmin: async () => {
@@ -421,8 +430,17 @@ export const referralAPI = {
     return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`);
   },
 
-  getSalesRepDashboard: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/dashboard`);
+  getSalesRepDashboard: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all' }) => {
+    const params = new URLSearchParams();
+    if (options?.salesRepId) {
+      params.set('salesRepId', options.salesRepId);
+    }
+    if (options?.scope) {
+      params.set('scope', options.scope);
+    }
+    const query = params.toString();
+    const url = query ? `${API_BASE_URL}/referrals/admin/dashboard?${query}` : `${API_BASE_URL}/referrals/admin/dashboard`;
+    return fetchWithAuth(url);
   },
 
   createReferralCode: async (referralId: string) => {
@@ -448,6 +466,13 @@ export const referralAPI = {
   }) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/referrals/${referralId}`, {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  addManualCredit: async (payload: { doctorId: string; amount: number; reason: string }) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/credits`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     });
   },
@@ -523,6 +548,12 @@ export const passwordResetAPI = {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     });
+  },
+};
+
+export const contactFormsAPI = {
+  getAll: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/contact`);
   },
 };
 

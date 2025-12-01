@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const referralRepository = require('../repositories/referralRepository');
 const referralCodeRepository = require('../repositories/referralCodeRepository');
 const creditLedgerRepository = require('../repositories/creditLedgerRepository');
+const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 
 const REFERRAL_STATUSES = [
@@ -15,6 +16,7 @@ const REFERRAL_STATUSES = [
   'disqualified',
   'rejected',
   'in_review',
+  'contact_form',
 ];
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
@@ -198,18 +200,65 @@ const getDoctorLedger = (req, res, next) => {
   }
 };
 
-const getSalesRepDashboard = (req, res, next) => {
+const getSalesRepDashboard = async (req, res, next) => {
   try {
     ensureSalesRep(req.user, 'getSalesRepDashboard');
     const role = normalizeRole(req.user.role);
     const isAdmin = role === 'admin';
-    const salesRepId = req.user.salesRepId || req.user.id;
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : requestedSalesRepId;
     logger.info(
-      { userId: req.user.id, role, salesRepId, path: '/api/referrals/admin/dashboard' },
+      {
+        userId: req.user.id,
+        role,
+        requestedSalesRepId,
+        salesRepId,
+        scopeAll,
+        path: '/api/referrals/admin/dashboard',
+      },
       'Sales rep dashboard request',
     );
-    const referrals = isAdmin ? referralRepository.getAll() : referralRepository.findBySalesRepId(salesRepId);
+    let referrals = scopeAll
+      ? referralRepository.getAll()
+      : referralRepository.findBySalesRepId(salesRepId);
     const codes = isAdmin ? referralCodeRepository.getAll() : referralCodeRepository.findBySalesRepId(salesRepId);
+
+    if (isAdmin && mysqlClient.isEnabled()) {
+      try {
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
+            FROM contact_forms
+            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
+          `,
+        );
+        const mapped = (rows || []).map((row) => {
+          const createdAt = row.created_at || row.createdAt || null;
+          const updatedAt = row.updated_at || row.updatedAt || createdAt || null;
+          return {
+            id: row.id ? `contact_form:${row.id}` : crypto.randomUUID(),
+            status: 'contact_form',
+            salesRepId: null,
+            referrerDoctorId: null,
+            referrerDoctorName: 'Contact Form / House',
+            referrerDoctorEmail: null,
+            referrerDoctorPhone: null,
+            referredContactName: row.name || 'Contact Form Lead',
+            referredContactEmail: row.email || null,
+            referredContactPhone: row.phone || null,
+            notes: row.source || 'Contact form submission',
+            createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
+            updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
+            source: 'contact_form',
+          };
+        });
+        referrals = [...mapped, ...referrals];
+      } catch (error) {
+        logger.error({ err: error }, 'Failed to load contact form referrals from MySQL');
+      }
+    }
+
     res.json({
       referrals,
       codes,

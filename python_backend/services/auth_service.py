@@ -164,7 +164,8 @@ def register(data: Dict) -> Dict:
     if onboarding_record:
         referral_service.redeem_onboarding_code({"code": code, "doctorId": user["id"]})
 
-    token = _create_auth_token({"id": user["id"], "email": user["email"]})
+    token_role = (user.get("role") or "doctor").lower()
+    token = _create_auth_token({"id": user["id"], "email": user["email"], "role": token_role})
 
     return {"token": token, "user": _sanitize_user(user)}
 
@@ -274,7 +275,8 @@ def login(data: Dict) -> Dict:
             }
         ) or user
 
-        token = _create_auth_token({"id": updated["id"], "email": updated["email"]})
+        token_role = (updated.get("role") or "doctor").lower()
+        token = _create_auth_token({"id": updated["id"], "email": updated["email"], "role": token_role})
         return {"token": token, "user": _sanitize_user(updated)}
 
     sales_rep = sales_rep_repository.find_by_email(email)
