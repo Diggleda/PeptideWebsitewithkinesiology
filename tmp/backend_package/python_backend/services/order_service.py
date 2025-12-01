@@ -159,23 +159,12 @@ def create_order(
 
 
 def get_orders_for_user(user_id: str):
-    user = user_repository.find_by_id(user_id)
-    local_orders = order_repository.find_by_user_id(user_id)
-
-    woo_orders = []
-    woo_error = None
-    if user and user.get("email"):
-        try:
-            woo_orders = woo_commerce.fetch_orders_by_email(user.get("email"), per_page=15)
-        except Exception as exc:
-            logger.error("Failed to fetch WooCommerce orders for user", exc_info=True, extra={"userId": user_id})
-            woo_error = getattr(exc, "response", None) or {"message": str(exc)}
-
+    orders = order_repository.find_by_user_id(user_id)
     return {
-        "local": local_orders,
-        "woo": woo_orders,
+        "local": orders,
+        "woo": [],
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
-        "wooError": woo_error,
+        "wooError": None,
     }
 
 
@@ -198,14 +187,24 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     }
 
     summaries: List[Dict] = []
+    seen_keys = set()
     for doctor in doctors:
-        for order in order_repository.find_by_user_id(doctor.get("id")):
+        doctor_id = doctor.get("id")
+        doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
+        doctor_email = doctor.get("email")
+
+        for order in order_repository.find_by_user_id(doctor_id):
+            key = f"local:{order.get('id')}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             summaries.append(
                 {
                     **order,
-                    "doctorId": doctor.get("id"),
-                    "doctorName": doctor.get("name") or doctor.get("email") or "Doctor",
-                    "doctorEmail": doctor.get("email"),
+                    "doctorId": doctor_id,
+                    "doctorName": doctor_name,
+                    "doctorEmail": doctor_email,
+                    "source": order.get("source") or "local",
                 }
             )
 
@@ -237,6 +236,7 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
     doctor_to_rep = {doc.get("id"): doc.get("salesRepId") for doc in doctors if doc.get("salesRepId")}
     rep_totals: Dict[str, Dict[str, float]] = {}
 
+    # Local orders
     for order in order_repository.get_all():
         rep_id = doctor_to_rep.get(order.get("userId"))
         if not rep_id:
@@ -247,6 +247,8 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
         current["totalOrders"] += 1
         current["totalRevenue"] += float(order.get("total") or 0)
         rep_totals[rep_id] = current
+
+    # No WooCommerce aggregation; MySQL/local orders are the source of truth
 
     rep_lookup = {rep.get("id"): rep for rep in reps}
     summary = []

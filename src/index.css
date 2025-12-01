@@ -3361,6 +3361,25 @@ html {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
 }
 
+.sales-rep-dashboard,
+.sales-rep-dashboard-grid,
+.sales-tracking-card,
+.sales-rep-combined-card {
+  min-width: 0;
+}
+
+.sales-rep-dashboard {
+  margin: 0 auto;
+  width: calc(100% - 2.5rem);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.sales-rep-dashboard .overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 .sales-tracking-card {
   border-radius: 20px;
   border: 1px solid rgba(95, 179, 249, 0.35);
@@ -3394,10 +3413,10 @@ html {
 }
 
 .sales-tracking-summary-item {
-  flex: 1 1 160px;
+  flex: 1 1 80px;
   background: rgba(255, 255, 255, 0.9);
   border-radius: 14px;
-  padding: 0.85rem 1rem;
+  padding: 0.65rem 0.9rem;
   border: 1px solid rgba(148, 163, 184, 0.4);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.7);
 }
@@ -3410,10 +3429,11 @@ html {
 }
 
 .sales-tracking-summary-value {
-  font-size: 1.8rem;
+  font-size: 1.55rem;
   font-weight: 600;
   color: rgb(15, 23, 42);
-  margin-top: 0.35rem;
+  margin-top: 0.25rem;
+  line-height: 1.1;
 }
 
 .sales-tracking-body {
@@ -3507,9 +3527,47 @@ html {
   }
 }
 
-.sales-rep-dashboard {
-  margin: 0 auto;
-  width: calc(100% - 2.5rem);
+@media (max-width: 768px) {
+  .sales-rep-dashboard {
+    width: 100%;
+    padding: 1.25rem;
+  }
+  .sales-rep-dashboard-grid {
+    gap: 1.1rem;
+  }
+  .sales-tracking-card {
+    padding: 1.1rem;
+  }
+  .sales-tracking-row {
+    gap: 0.75rem;
+  }
+  .sales-tracking-row-details {
+    width: 100%;
+  }
+  .sales-rep-chart-body {
+    height: 240px;
+  }
+}
+
+@media (max-width: 640px) {
+  .sales-rep-dashboard {
+    padding: 1rem;
+  }
+  .sales-rep-dashboard-grid {
+    gap: 1rem;
+  }
+  .sales-tracking-summary {
+    flex-direction: column;
+  }
+  .sales-rep-table-wrapper {
+    margin-left: -0.5rem;
+    margin-right: -0.5rem;
+    padding: 0.5rem;
+  }
+  .sales-rep-table-wrapper table,
+  .sales-rep-dashboard .overflow-x-auto table {
+    min-width: 520px;
+  }
 }
 
 @media (min-width: 1024px) {

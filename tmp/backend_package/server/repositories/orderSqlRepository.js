@@ -95,6 +95,64 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   }
 };
 
+const mapRowToOrder = (row) => {
+  if (!row) return null;
+  const parseJson = (value, fallback = null) => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return fallback;
+    }
+  };
+  return {
+    id: sanitizeString(row.id),
+    userId: sanitizeString(row.user_id),
+    wooOrderId: sanitizeString(row.woo_order_id),
+    shipStationOrderId: sanitizeString(row.shipstation_order_id),
+    total: Number(row.total) || 0,
+    shippingTotal: Number(row.shipping_total) || 0,
+    shippingCarrier: sanitizeString(row.shipping_carrier),
+    shippingService: sanitizeString(row.shipping_service),
+    physicianCertificationAccepted: Boolean(row.physician_certified),
+    status: row.status || 'pending',
+    payload: parseJson(row.payload, {}),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+    source: 'mysql',
+  };
+};
+
+const fetchAll = async () => {
+  if (!mysqlClient.isEnabled()) return [];
+  const rows = await mysqlClient.fetchAll('SELECT * FROM peppro_orders');
+  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+};
+
+const fetchByUserIds = async (userIds = []) => {
+  if (!mysqlClient.isEnabled()) return [];
+  if (!Array.isArray(userIds) || userIds.length === 0) return [];
+  const placeholders = userIds.map((_, idx) => `:id${idx}`).join(', ');
+  const params = userIds.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+  const rows = await mysqlClient.fetchAll(
+    `SELECT * FROM peppro_orders WHERE user_id IN (${placeholders})`,
+    params,
+  );
+  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+};
+
+const fetchByUserId = async (userId) => {
+  if (!mysqlClient.isEnabled() || !userId) return [];
+  const rows = await mysqlClient.fetchAll(
+    'SELECT * FROM peppro_orders WHERE user_id = :userId ORDER BY created_at DESC',
+    { userId },
+  );
+  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+};
+
 module.exports = {
   persistOrder,
+  fetchAll,
+  fetchByUserId,
+  fetchByUserIds,
 };

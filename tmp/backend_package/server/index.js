@@ -4,6 +4,7 @@ const createApp = require('./app');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
+const { startOrderSyncJob } = require('./services/orderService');
 
 const findAvailablePort = async (startPort, attempts = 5) => {
   for (let i = 0; i < attempts; i += 1) {
@@ -42,6 +43,7 @@ const start = async () => {
         },
         'Backend server is ready',
       );
+      startOrderSyncJob();
     });
 
     server.on('error', (error) => {

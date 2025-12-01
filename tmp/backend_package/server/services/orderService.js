@@ -1,3 +1,4 @@
+const { env } = require('../config/env');
 const orderRepository = require('../repositories/orderRepository');
 const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
@@ -10,6 +11,7 @@ const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
 const inventorySyncService = require('./inventorySyncService');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
+const mysqlClient = require('../database/mysqlClient');
 
 const sanitizeOrder = (order) => ({ ...order });
 
@@ -102,11 +104,35 @@ const getWooOrderNumberFromOrder = (order) => order?.wooOrderNumber
   || order?.integrationDetails?.wooCommerce?.response?.number
   || null;
 
+const resolveWooOrderNumber = async (order) => {
+  const existing = getWooOrderNumberFromOrder(order);
+  if (existing) {
+    return existing;
+  }
+  if (order?.wooOrderId && wooCommerceClient?.isConfigured?.()) {
+    try {
+      const wooOrder = await wooCommerceClient.fetchOrderById(order.wooOrderId);
+      const number = wooOrder?.number || String(order.wooOrderId);
+      if (number) {
+        return number;
+      }
+    } catch (error) {
+      logger.debug(
+        { err: error, wooOrderId: order.wooOrderId },
+        'Unable to resolve Woo order number during sync',
+      );
+    }
+  }
+  return null;
+};
+
+const DEFAULT_ORDER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const RETRIABLE_WOO_ERROR_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN']);
 const BACKGROUND_WOO_CANCELLATION_MAX_ATTEMPTS = 3;
 const BACKGROUND_WOO_RETRY_BASE_DELAY_MS = 5000;
 const wooCancellationRetryTracker = new Map();
 let wooTaxFallbackWarned = false;
+let orderSyncTimer = null;
 
 const shouldRetryWooCancellationError = (error) => {
   if (!error) {
@@ -533,6 +559,16 @@ const createOrder = async ({
       wooOrderId,
       shipStationOrderId,
     });
+    logger.info(
+      {
+        orderId: order.id,
+        wooOrderId: wooOrderId || null,
+        wooOrderNumber: wooOrderNumber || null,
+        userId: order.userId,
+        mysqlStatus: integrations.mysql?.status || null,
+      },
+      'Order persisted to MySQL',
+    );
     order.integrations.mysql = integrations.mysql?.status || integrations.mysql?.reason || order.integrations.mysql;
     order.integrationDetails.mysql = integrations.mysql;
   } catch (error) {
@@ -1024,33 +1060,28 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
 };
 
 const getOrdersForUser = async (userId) => {
-  const user = userRepository.findById(userId);
+  // Prefer MySQL as the single source of truth
+  if (mysqlClient.isEnabled()) {
+    const sqlOrders = await orderSqlRepository.fetchByUserId(userId);
+    return {
+      local: sqlOrders.map(buildLocalOrderSummary),
+      woo: [],
+      fetchedAt: new Date().toISOString(),
+      wooError: null,
+    };
+  }
+
   const orders = orderRepository.findByUserId(userId);
   const localSummaries = orders.map(buildLocalOrderSummary);
   const visibleLocalSummaries = localSummaries.filter(
     (summary) => ((summary.status || '').toLowerCase() !== 'payment_failed'),
   );
 
-  let wooOrders = [];
-  let wooError = null;
-
-  if (user?.email) {
-    try {
-      wooOrders = await wooCommerceClient.fetchOrdersByEmail(user.email, { perPage: 15 });
-    } catch (error) {
-      logger.error({ err: error, userId }, 'Failed to fetch WooCommerce orders for user');
-      wooError = {
-        message: error?.message || 'WooCommerce order lookup failed',
-        status: error?.status || null,
-      };
-    }
-  }
-
   return {
     local: visibleLocalSummaries,
-    woo: wooOrders,
+    woo: [],
     fetchedAt: new Date().toISOString(),
-    wooError,
+    wooError: null,
   };
 };
 
@@ -1072,18 +1103,42 @@ const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {})
   );
 
   const summaries = [];
-  doctors.forEach((doctor) => {
-    const doctorOrders = orderRepository.findByUserId(doctor.id);
-    doctorOrders.forEach((order) => {
-      const summary = {
+  const seenKeys = new Set();
+  const doctorIds = doctors.map((d) => d.id);
+
+  // Prefer MySQL source of truth
+  if (mysqlClient.isEnabled()) {
+    const sqlOrders = await orderSqlRepository.fetchByUserIds(doctorIds);
+    sqlOrders.forEach((order) => {
+      const key = `sql:${order.id}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      summaries.push({
         ...buildLocalOrderSummary(order),
-        doctorId: doctor.id,
-        doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
-        doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
-      };
-      summaries.push(summary);
+        doctorId: order.userId,
+        doctorName: doctorLookup.get(order.userId)?.name || 'Doctor',
+        doctorEmail: doctorLookup.get(order.userId)?.email || null,
+        source: 'mysql',
+      });
     });
-  });
+  } else {
+    doctors.forEach((doctor) => {
+      const doctorOrders = orderRepository.findByUserId(doctor.id);
+      doctorOrders.forEach((order) => {
+        const key = `local:${order.id}`;
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
+        const summary = {
+          ...buildLocalOrderSummary(order),
+          doctorId: doctor.id,
+          doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
+          doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
+          source: order.source || 'local',
+        };
+        summaries.push(summary);
+      });
+    });
+  }
 
   summaries.sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -1117,12 +1172,18 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
     }
   });
 
-  const orders = orderRepository.getAll();
   const repTotals = new Map();
 
-  orders.forEach((order) => {
-    const repId = doctorToRep.get(order.userId);
+  const doctorIds = doctors.map((d) => d.id);
+  const sourceOrders = mysqlClient.isEnabled()
+    ? await orderSqlRepository.fetchByUserIds(doctorIds)
+    : orderRepository.getAll();
+
+  sourceOrders.forEach((order) => {
+    const userId = order.userId || order.user_id || order.id;
+    const repId = doctorToRep.get(userId);
     if (!repId) return;
+    if (excludeSalesRepId && repId === excludeSalesRepId) return;
     const current = repTotals.get(repId) || { totalOrders: 0, totalRevenue: 0 };
     current.totalOrders += 1;
     current.totalRevenue += Number(order.total) || 0;
@@ -1143,6 +1204,63 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
 
+const syncOrderToMySql = async (order) => {
+  if (!order) {
+    return { status: 'skipped', reason: 'missing_order' };
+  }
+  const wooOrderNumber = await resolveWooOrderNumber(order);
+  const payloadOrder = wooOrderNumber ? { ...order, wooOrderNumber } : order;
+  const result = await orderSqlRepository.persistOrder({
+    order: payloadOrder,
+    wooOrderId: payloadOrder.wooOrderId || null,
+    shipStationOrderId: payloadOrder.shipStationOrderId || null,
+  });
+  logger.info(
+    {
+      orderId: payloadOrder.id,
+      wooOrderId: payloadOrder.wooOrderId || null,
+      wooOrderNumber: wooOrderNumber || null,
+      userId: payloadOrder.userId || null,
+      mysqlStatus: result?.status || null,
+    },
+    'Order sync to MySQL (Woo linked)',
+  );
+  return result;
+};
+
+const syncOrdersToMySql = async () => {
+  if (!env.mysql?.enabled) {
+    logger.debug('MySQL disabled; skipping background order sync');
+    return;
+  }
+  const orders = orderRepository.getAll();
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return;
+  }
+  logger.debug({ count: orders.length }, 'Starting background order sync to MySQL');
+  for (const order of orders) {
+    // eslint-disable-next-line no-await-in-loop
+    await syncOrderToMySql(order);
+  }
+};
+
+const startOrderSyncJob = () => {
+  if (orderSyncTimer) {
+    return;
+  }
+  const intervalMs = Math.max(env.orderSync?.intervalMs || DEFAULT_ORDER_SYNC_INTERVAL_MS, 60_000);
+  const runner = async () => {
+    try {
+      await syncOrdersToMySql();
+    } catch (error) {
+      logger.error({ err: error }, 'Background order sync failed');
+    }
+  };
+  runner();
+  orderSyncTimer = setInterval(runner, intervalMs);
+  logger.info({ intervalMs }, 'Background order sync scheduled');
+};
+
 module.exports = {
   createOrder,
   estimateOrderTotals,
@@ -1150,4 +1268,6 @@ module.exports = {
   getOrdersForSalesRep,
   getSalesByRep,
   cancelOrder,
+  startOrderSyncJob,
+  syncOrdersToMySql,
 };

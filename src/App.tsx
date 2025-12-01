@@ -184,6 +184,7 @@ interface AccountOrderSummary {
   doctorId?: string | null;
   doctorName?: string | null;
   doctorEmail?: string | null;
+   doctorProfileImageUrl?: string | null;
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
@@ -234,6 +235,15 @@ const sanitizeAccountAddress = (
     phone: normalizeAddressPart(address?.phone),
     email: normalizeAddressPart(address?.email),
   };
+};
+
+const getInitials = (name?: string | null) => {
+  if (!name) return 'Dr';
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
 const buildShippingAddressFromUserProfile = (user?: User | null): AccountOrderAddress | undefined => {
@@ -1632,6 +1642,16 @@ export default function App() {
   const [salesRepDashboard, setSalesRepDashboard] = useState<SalesRepDashboard | null>(null);
   const [salesRepStatusFilter, setSalesRepStatusFilter] = useState<string>('all');
   const [salesTrackingOrders, setSalesTrackingOrders] = useState<AccountOrderSummary[]>([]);
+  const [salesTrackingDoctors, setSalesTrackingDoctors] = useState<
+    Map<
+      string,
+      {
+        name: string;
+        email?: string | null;
+        profileImageUrl?: string | null;
+      }
+    >
+  >(new Map());
   const [salesTrackingLoading, setSalesTrackingLoading] = useState(false);
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(null);
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<number | null>(null);
@@ -1824,30 +1844,46 @@ const filteredDoctorReferrals = useMemo(() => {
 
     try {
       let orders: AccountOrderSummary[] = [];
-      if (isRep(user?.role)) {
+      const doctorLookup = new Map<
+        string,
+        { name: string; email?: string | null; profileImageUrl?: string | null }
+      >();
+
+      if (isRep(user?.role) || isAdmin(user?.role)) {
         const response = await ordersAPI.getForSalesRep();
-        const fromResponse = Array.isArray((response as any)?.orders)
-          ? ((response as any).orders as AccountOrderSummary[])
-          : Array.isArray(response)
-            ? (response as AccountOrderSummary[])
-            : [];
-        orders = fromResponse;
-      } else if (isAdmin(user?.role)) {
-        try {
-          const [ordersResponse, salesSummaryResponse] = await Promise.all([
-            ordersAPI.getAll(),
-            ordersAPI.getSalesByRepForAdmin(),
-          ]);
-          orders = Array.isArray(ordersResponse) ? (ordersResponse as AccountOrderSummary[]) : [];
-          const summaryArray = Array.isArray(salesSummaryResponse)
-            ? salesSummaryResponse
-            : Array.isArray((salesSummaryResponse as any)?.orders)
-              ? (salesSummaryResponse as any).orders
-              : [];
-          setSalesRepSalesSummary(summaryArray as any);
-        } catch (adminError: any) {
-          const message = typeof adminError?.message === 'string' ? adminError.message : 'Unable to load sales summary';
-          setSalesRepSalesSummaryError(message);
+        if (response && typeof response === 'object' && !Array.isArray(response)) {
+          const respObj = response as any;
+          if (Array.isArray(respObj.orders)) {
+            orders = respObj.orders as AccountOrderSummary[];
+          }
+          const doctors = Array.isArray(respObj.doctors) ? respObj.doctors : [];
+          doctors.forEach((doc: any) => {
+            const id = doc.id || doc.doctorId || doc.userId;
+            if (!id) return;
+            doctorLookup.set(String(id), {
+              name: doc.name || doc.email || 'Doctor',
+              email: doc.email || doc.doctorEmail || null,
+              profileImageUrl: doc.profileImageUrl || doc.profile_image_url || null,
+            });
+          });
+        } else if (Array.isArray(response)) {
+          orders = response as AccountOrderSummary[];
+        }
+
+        if (isAdmin(user?.role)) {
+          try {
+            const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin();
+            const summaryArray = Array.isArray(salesSummaryResponse)
+              ? salesSummaryResponse
+              : Array.isArray((salesSummaryResponse as any)?.orders)
+                ? (salesSummaryResponse as any).orders
+                : [];
+            setSalesRepSalesSummary(summaryArray as any);
+          } catch (adminError: any) {
+            const message =
+              typeof adminError?.message === 'string' ? adminError.message : 'Unable to load sales summary';
+            setSalesRepSalesSummaryError(message);
+          }
         }
       } else {
         setSalesTrackingOrders([]);
@@ -1857,10 +1893,24 @@ const filteredDoctorReferrals = useMemo(() => {
       }
 
       const enriched = orders
-        .map((order) => ({
-          order,
-          doctorId: resolveOrderDoctorId(order),
-        }))
+        .map((order) => {
+          const doctorId = resolveOrderDoctorId(order);
+          const doctorInfo = doctorId ? doctorLookup.get(doctorId) : null;
+          return {
+            order: {
+              ...order,
+              doctorId: doctorId || order.doctorId || null,
+              doctorName:
+                doctorInfo?.name
+                || (doctorId ? salesRepDoctorsById.get(doctorId) : null)
+                || order.doctorName
+                || 'Doctor',
+              doctorEmail: doctorInfo?.email || order.doctorEmail || null,
+              doctorProfileImageUrl: doctorInfo?.profileImageUrl || (order as any).doctorProfileImageUrl || null,
+            },
+            doctorId,
+          };
+        })
         .sort((a, b) => {
           const aTime = a.order.createdAt ? new Date(a.order.createdAt).getTime() : 0;
           const bTime = b.order.createdAt ? new Date(b.order.createdAt).getTime() : 0;
@@ -1868,6 +1918,7 @@ const filteredDoctorReferrals = useMemo(() => {
         })
         .map((entry) => entry.order);
 
+      setSalesTrackingDoctors(doctorLookup);
       setSalesTrackingOrders(enriched);
       setSalesTrackingLastUpdated(Date.now());
     } catch (error: any) {
@@ -1877,7 +1928,7 @@ const filteredDoctorReferrals = useMemo(() => {
     } finally {
       setSalesTrackingLoading(false);
     }
-  }, [user?.role, resolveOrderDoctorId, isRep, isAdmin]);
+  }, [user?.role, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById]);
 
   useEffect(() => {
     fetchSalesTrackingOrders();
@@ -3818,7 +3869,9 @@ const renderSalesRepDashboard = () => {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Sales Rep Dashboard</h2>
+            <h2 className="text-xl font-semibold text-slate-900">
+              {isAdmin(user?.role) ? 'Admin Dashboard' : 'Sales Rep Dashboard'}
+            </h2>
             <p className="text-sm text-slate-600">Monitor referral progress and keep statuses in sync.</p>
           </div>
         </div>
@@ -3917,16 +3970,34 @@ const renderSalesRepDashboard = () => {
                 <ul className="sales-tracking-list">
                   {salesTrackingDisplayOrders.map((order) => {
                     const doctorId = resolveOrderDoctorId(order);
+                    const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
                     const doctorName =
-                      (doctorId && salesRepDoctorsById.get(doctorId)) || order.doctorName || 'Doctor';
+                      doctorInfo?.name
+                      || (doctorId && salesRepDoctorsById.get(doctorId))
+                      || order.doctorName
+                      || 'Doctor';
+                    const doctorAvatar = doctorInfo?.profileImageUrl || (order as any).doctorProfileImageUrl || null;
+                    const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
                     const orderTime = order.createdAt ? formatDateTime(order.createdAt) : 'Unknown';
                     return (
-                      <li key={order.id} className="sales-tracking-row">
-                        <div>
-                          <p className="sales-tracking-row-title">{doctorName}</p>
-                          <p className="sales-tracking-row-subtitle">
-                            Order #{order.number ?? order.id}
-                          </p>
+                      <li key={order.id} className="sales-tracking-row flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm">
+                            {doctorAvatar ? (
+                              <img src={doctorAvatar} alt={doctorName} className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-sm font-semibold text-slate-600">{getInitials(doctorName)}</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="sales-tracking-row-title">{doctorName}</p>
+                            <p className="sales-tracking-row-subtitle">
+                              Order #{order.number ?? order.id}
+                            </p>
+                            {doctorEmail && (
+                              <p className="text-xs text-slate-500 truncate">{doctorEmail}</p>
+                            )}
+                          </div>
                         </div>
                         <div className="sales-tracking-row-details">
                           <p className="sales-tracking-row-amount">{formatCurrency(order.total)}</p>
@@ -4086,11 +4157,11 @@ const renderSalesRepDashboard = () => {
           </div>
         </div>
       </div>
-      <p className="text-xs text-slate-500/80 text-center italic">
+      <p className="text-xs text-slate-500/80 pt-2 text-center italic">
         Send dashboard recommendations and ideas that will improve your productivity to{' '}
         <a
           className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
-          href="mailto:petergibbons7@icloud.com"
+          href="mailto:petergibbons7@icloud.com?subject=Dashboard%20Recommendation%20(PepPro)"
         >
           petergibbons7@icloud.com
         </a>

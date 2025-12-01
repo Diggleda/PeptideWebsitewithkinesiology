@@ -137,6 +137,10 @@ const env = {
       phone: process.env.SHIPSTATION_SHIP_FROM_PHONE || '',
     },
   },
+  orderSync: {
+    // Background task to keep MySQL in sync with WooCommerce/local orders
+    intervalMs: toNumber(process.env.ORDER_SYNC_INTERVAL_MS, 5 * 60 * 1000),
+  },
 };
 
 env.mysql = {

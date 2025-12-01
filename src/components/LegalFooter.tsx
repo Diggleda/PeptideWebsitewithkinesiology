@@ -207,11 +207,11 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     <>
       <footer className="relative z-10 mt-24 glass-strong">
         <div className="w-full px-4 sm:px-8 pt-12 pb-10">
-          <div className="legal-footer-layout gap-8 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
+          <div className="legal-footer-layout gap-4 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
             {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
               <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
-                <p className="text-sm lg:pt-6 font-medium text-slate-900">Want to join the Network?</p>
+                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Want to join the Network?</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -240,7 +240,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by kinesiology for the highest good.</p>
               </div>
-              <nav className="mt-1 mb-1 flex flex-wrap items-center justify-center lg:justify-start gap-3 text-sm font-medium text-[rgb(95,179,249)]">
+              <nav className="mt-1 mb-4 flex flex-wrap items-center justify-center lg:justify-start gap-3 text-sm font-medium text-[rgb(95,179,249)]">
                 {legalLinks.map((link) => (
                   <button
                     key={link.key}
