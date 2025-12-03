@@ -124,3 +124,55 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
 
     data = response.json()
     return data if isinstance(data, list) else []
+
+
+def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
+    if not sku or not is_configured():
+        return None
+
+    headers, auth = _http_args()
+    params = {
+        "sku": sku.strip(),
+        "includeInactive": "false",
+        "pageSize": 1,
+    }
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/products",
+            params=params,
+            headers=headers,
+            auth=auth,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - defensive logging
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("ShipStation product lookup failed", exc_info=True, extra={"sku": sku})
+        raise IntegrationError("Failed to fetch ShipStation product", response=data) from exc
+
+    payload = response.json() or {}
+    products = payload.get("products") if isinstance(payload, dict) else None
+    if isinstance(products, list) and products:
+        product = products[0] or {}
+        return {
+            "id": product.get("productId") or product.get("product_id") or product.get("id"),
+            "sku": product.get("sku") or sku,
+            "name": product.get("name"),
+            "stockOnHand": float(
+                product.get("onHand")
+                or product.get("quantityOnHand")
+                or product.get("quantity_on_hand")
+                or product.get("stock")
+                or 0
+            ),
+            "available": float(
+                product.get("available") or product.get("quantityAvailable") or product.get("quantity_available") or 0
+            ),
+        }
+    return None

@@ -9,14 +9,25 @@ const normalizeSku = (value) => {
   return String(value).trim();
 };
 
-const uniqueSkusFromItems = (items = []) => Array.from(new Set(
-  (items || [])
-    .map((item) => normalizeSku(item.sku || item.productId))
-    .filter(Boolean),
-));
+const collectSkus = (items = [], extraSkus = []) => {
+  const unique = new Set();
+  (items || []).forEach((item) => {
+    const normalized = normalizeSku(item?.sku || item?.productId);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  });
+  (extraSkus || []).forEach((sku) => {
+    const normalized = normalizeSku(sku);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  });
+  return Array.from(unique);
+};
 
-const syncShipStationInventoryToWoo = async (items = []) => {
-  const skus = uniqueSkusFromItems(items);
+const syncShipStationInventoryToWoo = async (items = [], options = {}) => {
+  const skus = collectSkus(items, options?.skus);
 
   if (skus.length === 0) {
     return {
