@@ -47,20 +47,25 @@ def _parse_woo_id(raw):
 def build_line_items(items):
     line_items = []
     for item in items or []:
-        quantity = item.get("quantity", 0)
-        price = item.get("price", 0)
-        total = f"{float(price) * float(quantity):.2f}"
+        quantity = int(item.get("quantity", 0) or 0)
+        price = float(item.get("price", 0))
+        total = f"{price * quantity:.2f}"
         product_id = _parse_woo_id(item.get("productId"))
         variation_id = _parse_woo_id(item.get("variantId"))
         line = {
             "name": item.get("name"),
             "sku": item.get("productId"),
-            "product_id": product_id,
             "quantity": quantity,
+            "product_id": product_id,
+            # Woo keeps our explicit totals; also helps ShipStation export items.
+            "price": f"{price:.2f}",
             "total": total,
+            "subtotal": total,
+            "total_tax": "0",
+            "subtotal_tax": "0",
             "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
         }
-        # Woo rejects null variation_id; include only when we have a number.
+        # Include variation when available so Woo export/ShipStation can map items.
         if variation_id is not None:
             line["variation_id"] = variation_id
         line_items.append(line)
@@ -71,14 +76,9 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     # Optional referral credit applied at checkout (negative fee)
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
     fee_lines = []
+    discount_total = "0"
     if applied_credit > 0:
-        fee_lines.append(
-            {
-                "name": "Referral credit",
-                "total": f"-{applied_credit:.2f}",
-                "tax_status": "none",
-            }
-        )
+        discount_total = f"-{applied_credit:.2f}"
 
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
@@ -125,6 +125,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "line_items": build_line_items(order.get("items")),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
+        "discount_total": discount_total,
         "meta_data": [
             {"key": "peppro_order_id", "value": order.get("id")},
             {"key": "peppro_total", "value": order.get("total")},
@@ -251,6 +252,8 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
         meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
     if details.get("order_key"):
         meta.append({"key": "order_key", "value": details.get("order_key")})
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+    now_iso = datetime.utcnow().isoformat()
     try:
         response = requests.put(
             url,
@@ -259,13 +262,16 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
                 "set_paid": True,
                 "payment_method": "stripe",
                 "payment_method_title": "Stripe Onsite",
+                # Explicitly set paid date to help Woo → ShipStation exports.
+                "date_paid": now_iso,
+                "date_paid_gmt": now_iso,
                 "meta_data": meta,
             },
             auth=HTTPBasicAuth(
                 _strip(get_config().woo_commerce.get("consumer_key")),
                 _strip(get_config().woo_commerce.get("consumer_secret")),
             ),
-            timeout=10,
+            timeout=timeout_seconds,
         )
         response.raise_for_status()
         body = response.json()
@@ -279,6 +285,54 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
                 data = exc.response.text
         logger.error("Failed to mark Woo order paid", exc_info=True, extra={"wooOrderId": woo_order_id})
         raise IntegrationError("Failed to mark Woo order paid", response=data) from exc
+
+
+def cancel_order(woo_order_id: str, reason: str = "", status_override: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Cancel a WooCommerce order. Returns a status payload; does not raise on 404.
+    """
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
+    next_status = (status_override or "cancelled").strip() or "cancelled"
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+
+    try:
+        response = requests.put(
+            url,
+            json={
+                "status": next_status,
+                "set_paid": False,
+                "customer_note": reason or "Order cancelled (payment failed)",
+            },
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {"status": "success", "response": {"id": body.get("id"), "status": body.get("status")}}
+    except requests.RequestException as exc:
+        data = None
+        status_code = getattr(exc.response, "status_code", None)
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        # Return graceful result for 404 so frontend can proceed.
+        if status_code == 404:
+            logger.warn("Woo order not found while cancelling", extra={"wooOrderId": woo_order_id})
+            return {"status": "not_found", "wooOrderId": woo_order_id}
+        logger.error("Failed to cancel Woo order", exc_info=True, extra={"wooOrderId": woo_order_id})
+        raise IntegrationError("Failed to cancel Woo order", response=data) from exc
 
 
 # ---- Catalog proxy helpers -------------------------------------------------
@@ -433,3 +487,19 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
     except Exception as exc:
         logger.error("Failed to fetch WooCommerce orders by email", exc_info=True, extra={"email": email})
         raise IntegrationError("WooCommerce order lookup failed")
+
+
+def fetch_order(woo_order_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single Woo order by id; returns None on not found/errors."""
+    if not woo_order_id or not is_configured():
+        return None
+    try:
+        result = fetch_catalog(f"orders/{woo_order_id}")
+        if isinstance(result, dict) and result.get("id"):
+            return result
+    except IntegrationError as exc:  # pragma: no cover - network path
+        if getattr(exc, "status", None) == 404:
+            return None
+    except Exception as exc:  # pragma: no cover - network path
+        logger.error("Failed to fetch Woo order by id", exc_info=True, extra={"wooOrderId": woo_order_id})
+    return None

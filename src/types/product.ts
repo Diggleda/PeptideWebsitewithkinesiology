@@ -3,8 +3,15 @@ export interface ProductVariantAttribute {
   value: string;
 }
 
+export interface ProductDimensions {
+  lengthIn?: number | null;
+  widthIn?: number | null;
+  heightIn?: number | null;
+}
+
 export interface ProductVariant {
   id: string;
+  wooId?: number;
   label: string;
   price: number;
   originalPrice?: number;
@@ -14,6 +21,7 @@ export interface ProductVariant {
   image?: string;
   description?: string;
   weightOz?: number | null;
+  dimensions?: ProductDimensions;
 }
 
 export interface BulkPricingTier {
@@ -23,6 +31,7 @@ export interface BulkPricingTier {
 
 export interface Product {
   id: string;
+  wooId?: number;
   name: string;
   category: string;
   price: number;
@@ -39,6 +48,8 @@ export interface Product {
   isSubscription?: boolean;
   description?: string;
   weightOz?: number | null;
+  dimensions?: ProductDimensions;
+  sku?: string;
   variants?: ProductVariant[];
   hasVariants?: boolean;
   defaultVariantId?: string;

@@ -3652,5 +3652,626 @@
     "wooOrderNumber": "459",
     "paymentIntentId": "pi_3SZbSwLdQwKDgAgZ3cDydR31",
     "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1764708777285",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-448::woo-variation-449",
+        "productId": "woo-448",
+        "variantId": "woo-variation-449",
+        "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+        "price": 236.84,
+        "quantity": 1,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 282.99,
+    "taxTotal": 0,
+    "itemsSubtotal": 236.84,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-12-02T20:52:57.285Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1764708777285",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+              "sku": "woo-448",
+              "quantity": 1,
+              "total": "236.84",
+              "meta_data": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1764708777285"
+            },
+            {
+              "key": "peppro_total",
+              "value": 282.99
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-02T20:52:57.285Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1764708777285"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1764708777285"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1764708777285"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_shipstation",
+              "method_title": "PepPro Shipping",
+              "total": "46.15"
+            }
+          ]
+        },
+        "response": {
+          "id": 469,
+          "number": "469",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/469/?pay_for_order=true&key=wc_order_MTHbpUByQm5iX",
+          "order_key": "wc_order_MTHbpUByQm5iX"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3Sa0ZDLdQwKDgAgZ1RalfLbC_secret_Rc0D7P2z8hplZRNShr8J4nGBx",
+        "paymentIntentId": "pi_3Sa0ZDLdQwKDgAgZ1RalfLbC",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-12-02T20:53:25.200Z",
+        "wooUpdate": {
+          "status": "success",
+          "response": {
+            "id": 469,
+            "status": "processing"
+          }
+        }
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "woo-448",
+            "status": "shipstation_not_found"
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "469",
+    "wooOrderNumber": "469",
+    "paymentIntentId": "pi_3Sa0ZDLdQwKDgAgZ1RalfLbC",
+    "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1764788675855",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-448::woo-variation-449",
+        "productId": "woo-448",
+        "variantId": "woo-variation-449",
+        "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+        "price": 236.84,
+        "quantity": 12,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 2919.99,
+    "taxTotal": 0,
+    "itemsSubtotal": 2842.08,
+    "shippingTotal": 77.91,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air_early_am",
+      "serviceType": "ups_next_day_air_early_am",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 77.91,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-12-03T19:04:35.855Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1764788675855",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+              "sku": "woo-448",
+              "quantity": 12,
+              "total": "2842.08",
+              "subtotal": "2842.08",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 448,
+              "variation_id": 449
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1764788675855"
+            },
+            {
+              "key": "peppro_total",
+              "value": 2919.99
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-03T19:04:35.855Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1764788675855"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1764788675855"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1764788675855"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 77.91
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air_early_am\",\"serviceType\":\"ups_next_day_air_early_am\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":77.91,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_next_day_air_early_am",
+              "method_title": "ups_next_day_air_early_am",
+              "total": "77.91",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_next_day_air_early_am"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_next_day_air_early_am"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "response": {
+          "id": 474,
+          "number": "474",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/474/?pay_for_order=true&key=wc_order_daPiMKrKCyKXY",
+          "order_key": "wc_order_daPiMKrKCyKXY"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SaLLtLdQwKDgAgZ30wMBZaJ_secret_UZoDoqA16EXdnUOu6dmCFTUTw",
+        "paymentIntentId": "pi_3SaLLtLdQwKDgAgZ30wMBZaJ",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-12-03T19:05:05.210Z",
+        "wooUpdate": null
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "woo-448",
+            "status": "shipstation_not_found"
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "474",
+    "wooOrderNumber": "474",
+    "paymentIntentId": "pi_3SaLLtLdQwKDgAgZ30wMBZaJ",
+    "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1764789846019",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-448::woo-variation-449",
+        "productId": 448,
+        "variantId": 449,
+        "sku": "Peptra-PT141-10mg-Oxytocin-3mg-Tesamorelin-10mg-N",
+        "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+        "price": 236.84,
+        "quantity": 12,
+        "note": null,
+        "position": 1
+      }
+    ],
+    "total": 2847.64,
+    "taxTotal": 0,
+    "itemsSubtotal": 2842.08,
+    "shippingTotal": 5.56,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_ground_saver",
+      "serviceType": "ups_ground_saver",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 5.56,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "paid",
+    "createdAt": "2025-12-03T19:24:06.019Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "error",
+      "inventorySync": "completed",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1764789846019",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "PT-141 / Oxytocin / Tesamorelin N — 10mg / 3mg / 10mg",
+              "sku": "Peptra-PT141-10mg-Oxytocin-3mg-Tesamorelin-10mg-N",
+              "quantity": 12,
+              "total": "2842.08",
+              "subtotal": "2842.08",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 448,
+              "variation_id": 449
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1764789846019"
+            },
+            {
+              "key": "peppro_total",
+              "value": 2847.64
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-03T19:24:06.019Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1764789846019"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1764789846019"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1764789846019"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 5.56
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_ground_saver\",\"serviceType\":\"ups_ground_saver\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":5.56,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\"}"
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_ground_saver",
+              "method_title": "ups_ground_saver",
+              "total": "5.56",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_ground_saver"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_ground_saver"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "response": {
+          "id": 476,
+          "number": "476",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/476/?pay_for_order=true&key=wc_order_mOCEA7MxySKjd",
+          "order_key": "wc_order_mOCEA7MxySKjd"
+        }
+      },
+      "shipStation": {
+        "status": "error",
+        "message": "ShipStation order creation failed",
+        "details": {
+          "message": "Request failed with status code 400"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SaLeqLdQwKDgAgZ12FXdcjF_secret_AoDrZs7z4rCN8f1qPit6ehOc4",
+        "paymentIntentId": "pi_3SaLeqLdQwKDgAgZ12FXdcjF",
+        "eventType": "succeeded",
+        "lastSyncAt": "2025-12-03T19:24:41.573Z",
+        "wooUpdate": {
+          "status": "success",
+          "response": {
+            "id": 476,
+            "status": "processing"
+          }
+        }
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "inventorySync": {
+        "status": "completed",
+        "total": 1,
+        "results": [
+          {
+            "sku": "Peptra-PT141-10mg-Oxytocin-3mg-Tesamorelin-10mg-N",
+            "status": "updated",
+            "stockQuantity": 0,
+            "wooProductId": 449,
+            "shipStation": {
+              "stockOnHand": 0,
+              "available": 0
+            },
+            "wooInventory": {
+              "stock_quantity": 0
+            }
+          }
+        ]
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": "476",
+    "wooOrderNumber": "476",
+    "paymentIntentId": "pi_3SaLeqLdQwKDgAgZ12FXdcjF",
+    "paymentMethod": "Card on file"
   }
 ]

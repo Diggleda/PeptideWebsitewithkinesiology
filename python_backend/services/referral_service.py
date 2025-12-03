@@ -4,6 +4,7 @@ import logging
 import re
 import secrets
 from datetime import datetime
+from time import time
 from typing import Dict, List, Optional
 
 from ..repositories import (
@@ -23,16 +24,23 @@ ALLOWED_SUFFIX_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 REFERRAL_STATUS_CHOICES = [
     "pending",
     "contacted",
-    "follow_up",
-    "code_issued",
+    "account_created",
+    "nuture",
     "converted",
-    "closed",
-    "not_interested",
-    "disqualified",
-    "rejected",
-    "in_review",
     "contact_form",
 ]
+
+LEGACY_STATUS_ALIASES = {
+    "follow_up": "nuture",
+    "nurture": "nuture",
+    "code_issued": "account_created",
+    "account_created": "account_created",
+    "closed": "pending",
+    "not_interested": "pending",
+    "disqualified": "pending",
+    "rejected": "pending",
+    "in_review": "account_created",
+}
 
 
 def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]:
@@ -64,11 +72,23 @@ def _sanitize_notes(value: Optional[str]) -> Optional[str]:
     return _sanitize_text(value, 600)
 
 
+def _normalize_status_candidate(status: Optional[str]) -> Optional[str]:
+    if status is None:
+        return None
+    normalized = (status or "").strip().lower()
+    if not normalized:
+        return None
+    return LEGACY_STATUS_ALIASES.get(normalized, normalized)
+
+
 def _sanitize_referral_status(status: Optional[str], fallback: str) -> str:
-    candidate = (status or "").strip().lower()
+    candidate = _normalize_status_candidate(status)
+    normalized_fallback = _normalize_status_candidate(fallback) or "pending"
+    if candidate is None:
+        return normalized_fallback
     if candidate in REFERRAL_STATUS_CHOICES:
         return candidate
-    return fallback
+    return normalized_fallback
 
 
 def _normalize_initials(initials: str) -> str:
@@ -112,7 +132,41 @@ def _enrich_referral(referral: Dict) -> Dict:
         enriched["referrerDoctorEmail"] = None
         enriched["referrerDoctorPhone"] = None
     enriched["notes"] = referral.get("notes") or None
+
+    contact_account, contact_order_count = _resolve_referred_contact_account(referral)
+    enriched["referredContactHasAccount"] = bool(contact_account)
+    enriched["referredContactAccountId"] = contact_account.get("id") if contact_account else None
+    enriched["referredContactAccountName"] = contact_account.get("name") if contact_account else None
+    enriched["referredContactAccountEmail"] = contact_account.get("email") if contact_account else None
+    enriched["referredContactAccountCreatedAt"] = (
+        contact_account.get("createdAt") or contact_account.get("created_at")
+        if contact_account
+        else None
+    )
+    enriched["referredContactTotalOrders"] = contact_order_count
+    enriched["referredContactEligibleForCredit"] = contact_order_count > 0
+
     return enriched
+
+
+def _resolve_referred_contact_account(referral: Dict):
+    contact_account = None
+    order_count = 0
+
+    converted_doctor_id = referral.get("convertedDoctorId")
+    if converted_doctor_id:
+        contact_account = user_repository.find_by_id(str(converted_doctor_id))
+
+    if (contact_account is None) and referral.get("referredContactEmail"):
+        contact_account = user_repository.find_by_email(referral.get("referredContactEmail"))
+
+    if contact_account and contact_account.get("id"):
+        try:
+            order_count = count_orders_for_doctor(contact_account.get("id"))
+        except Exception:
+            order_count = 0
+
+    return contact_account, order_count
 
 
 def _ensure_sales_rep(sales_rep_id: Optional[str]) -> Dict:
@@ -225,6 +279,50 @@ def record_referral_submission(data: Dict) -> Dict:
             "updatedAt": timestamp,
         }
     )
+
+
+def create_manual_prospect(data: Dict) -> Dict:
+    sales_rep_id = (data.get("salesRepId") or "").strip()
+    if not sales_rep_id:
+        raise _service_error("SALES_REP_REQUIRED", 400)
+
+    contact_name = _sanitize_text(data.get("name"))
+    if not contact_name:
+        raise _service_error("CONTACT_NAME_REQUIRED", 400)
+
+    contact_email = _sanitize_email(data.get("email"))
+    contact_phone = _sanitize_phone(data.get("phone"))
+    notes = _sanitize_notes(data.get("notes"))
+    status = _sanitize_referral_status(data.get("status"), "pending")
+
+    record = referral_repository.insert(
+        {
+            "id": _generate_manual_id(),
+            "referrerDoctorId": None,
+            "salesRepId": sales_rep_id,
+            "referredContactName": contact_name,
+            "referredContactEmail": contact_email,
+            "referredContactPhone": contact_phone,
+            "status": status,
+            "notes": notes,
+        }
+    )
+    return _enrich_referral(record)
+
+
+def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
+    if not referral_id:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    referral = referral_repository.find_by_id(referral_id)
+    if not referral:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    if not str(referral.get("id") or "").startswith("manual:"):
+        raise _service_error("NOT_MANUAL_PROSPECT", 400)
+    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+    record_sales_rep_id = referral.get("salesRepId")
+    if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip():
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    referral_repository.delete(referral_id)
 
 
 def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
@@ -549,13 +647,13 @@ def award_checkout_referral_commission(referral_code: Optional[str], total: floa
         }
     )
 
+    updated_referrer = user_repository.adjust_referral_credits(referrer["id"], commission) or referrer
     updated_referrer = user_repository.update(
         {
-            **referrer,
-            "referralCredits": float(referrer.get("referralCredits") or 0) + commission,
-            "totalReferrals": int(referrer.get("totalReferrals") or 0) + 1,
+            **updated_referrer,
+            "totalReferrals": int(updated_referrer.get("totalReferrals") or 0) + 1,
         }
-    ) or referrer
+    ) or updated_referrer
 
     return {
         "referrerId": updated_referrer["id"],
@@ -598,13 +696,13 @@ def award_first_order_credit(purchasing_doctor_id: str, order_id: str, order_tot
         }
     )
 
+    updated_referrer = user_repository.adjust_referral_credits(referrer["id"], amount) or referrer
     updated_referrer = user_repository.update(
         {
-            **referrer,
-            "referralCredits": float(referrer.get("referralCredits") or 0) + amount,
-            "totalReferrals": int(referrer.get("totalReferrals") or 0) + 1,
+            **updated_referrer,
+            "totalReferrals": int(updated_referrer.get("totalReferrals") or 0) + 1,
         }
-    ) or referrer
+    ) or updated_referrer
 
     user_repository.update(
         {
@@ -644,14 +742,20 @@ def _has_first_order_credit(referrer_id: str, converted_doctor_id: str) -> bool:
 
 def calculate_doctor_credit_summary(doctor_id: str):
     summary = credit_ledger_repository.summarize_credits(doctor_id)
+    doctor = user_repository.find_by_id(doctor_id) or {}
+    available_balance = float(doctor.get("referralCredits") or 0)
+    lifetime_credits = float(summary.get("creditsEarned") or summary.get("total") or 0)
+    net_credits = float(summary.get("total") or 0)
     return {
-        "totalCredits": round(float(summary["total"]), 2),
+        "totalCredits": round(lifetime_credits, 2),
+        "availableCredits": round(available_balance, 2),
+        "netCredits": round(net_credits, 2),
         "firstOrderBonuses": round(float(summary["firstOrderBonuses"]), 2),
         "ledger": credit_ledger_repository.find_by_doctor(doctor_id),
     }
 
 
-def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: str):
+def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: str, referral_id: Optional[str] = None):
     """Manually add a credit to a doctor's account."""
     if not doctor_id or not isinstance(amount, (int, float)) or not reason:
         raise _service_error("INVALID_REQUEST", 400)
@@ -659,6 +763,25 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
     doctor = user_repository.find_by_id(doctor_id)
     if not doctor:
         raise _service_error("DOCTOR_NOT_FOUND", 404)
+
+    referral_record = referral_repository.find_by_id(referral_id) if referral_id else None
+    referral_contact_name = referral_record.get("referredContactName") if referral_record else None
+    description = referral_contact_name and f"Credited for {referral_contact_name}" or reason
+
+    if referral_record:
+        contact_account, order_count = _resolve_referred_contact_account(referral_record)
+        if order_count <= 0:
+            contact_label = referral_contact_name or referral_record.get("referredContactEmail") or "This referral"
+            raise _service_error(
+                f"{contact_label} has not yet placed their first order.",
+                400,
+            )
+
+    metadata = {"context": "manual_credit", "createdBy": created_by}
+    if referral_id:
+        metadata["referralId"] = referral_id
+    if referral_contact_name:
+        metadata["referralContactName"] = referral_contact_name
 
     ledger_entry = credit_ledger_repository.insert(
         {
@@ -668,16 +791,28 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
             "currency": "USD",
             "direction": "credit",
             "reason": "manual_adjustment",
-            "description": reason,
+            "description": description,
             "firstOrderBonus": False,
-            "metadata": {"context": "manual_credit", "createdBy": created_by},
+            "referralId": referral_id,
+            "metadata": metadata,
         }
     )
 
-    new_balance = float(doctor.get("referralCredits") or 0) + round(amount, 2)
-    updated_doctor = user_repository.update(
-        {**doctor, "referralCredits": new_balance}
-    ) or doctor
+    delta = round(amount, 2)
+    updated_doctor = user_repository.adjust_referral_credits(doctor_id, delta) or {
+        **doctor,
+        "referralCredits": float(doctor.get("referralCredits") or 0) + delta,
+    }
+
+    if referral_record:
+        referral_repository.update(
+            {
+                **referral_record,
+                "creditIssuedAt": _now(),
+                "creditIssuedAmount": delta,
+                "creditIssuedBy": created_by,
+            }
+        )
 
     return {"ledgerEntry": ledger_entry, "doctor": updated_doctor}
 
@@ -701,8 +836,7 @@ def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
     if amt > balance + 1e-9:
         raise _service_error("INSUFFICIENT_CREDITS", 400)
 
-    new_balance = round(balance - amt, 2)
-    updated = user_repository.update({**doctor, "referralCredits": new_balance}) or {**doctor, "referralCredits": new_balance}
+    updated = user_repository.adjust_referral_credits(doctor_id, -amt) or {**doctor, "referralCredits": round(balance - amt, 2)}
 
     ledger_entry = credit_ledger_repository.insert(
         {
@@ -723,7 +857,7 @@ def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
 
 
 def count_orders_for_doctor(doctor_id: str) -> int:
-    return len(order_repository.find_by_user_id(doctor_id))
+    return order_repository.count_by_user_id(doctor_id)
 
 
 def _service_error(message: str, status: int) -> Exception:
@@ -736,6 +870,10 @@ def _now() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
+
+
+def _generate_manual_id() -> str:
+    return f"manual:{int(time() * 1000)}"
 def _normalize_timestamp(value) -> str:
     if isinstance(value, datetime):
         return value.isoformat()

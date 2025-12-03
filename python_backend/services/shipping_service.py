@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import hashlib
 import logging
 from typing import Dict, List, Optional, Tuple
@@ -14,6 +15,56 @@ class ShippingError(RuntimeError):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+def _text_contains_address_issue(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if "address" not in lowered:
+        return False
+    keywords = (
+        "invalid",
+        "not found",
+        "unrecognized",
+        "unable",
+        "cannot",
+        "unverified",
+        "identified",
+    )
+    return any(keyword in lowered for keyword in keywords)
+
+
+def _friendly_rate_error(message: str, response_payload, status: int) -> str:
+    default = "Unable to calculate shipping for that address."
+    if status == 400:
+        return "Address cannot be identified."
+
+    payload_text = ""
+    if isinstance(response_payload, dict):
+        try:
+            payload_text = json.dumps(response_payload)
+        except Exception:  # pragma: no cover - defensive
+            payload_text = str(response_payload)
+    elif isinstance(response_payload, str):
+        payload_text = response_payload
+
+    if _text_contains_address_issue(payload_text) or _text_contains_address_issue(
+        message
+    ):
+        return "Address cannot be identified."
+
+    if "<html" in (payload_text or "").lower():
+        return default
+
+    cleaned = (message or "").strip()
+    if cleaned and "<" in cleaned and ">" in cleaned:
+        return default
+
+    if cleaned:
+        return cleaned
+
+    return default
 
 
 def _normalize_string(value) -> str:
@@ -188,7 +239,8 @@ def get_rates(shipping_address: Dict, items) -> Dict:
             raw_rates = ship_station.estimate_rates(address, normalized_items)
         except ship_station.IntegrationError as exc:
             logger.error("ShipStation rate estimate failed", exc_info=True)
-            raise ShippingError(str(exc), status=getattr(exc, "status", 502)) from exc
+            friendly = _friendly_rate_error(str(exc), getattr(exc, "response", None), getattr(exc, "status", 502))
+            raise ShippingError(friendly, status=getattr(exc, "status", 502)) from exc
     elif shipengine_cfg:
         logger.info("Using ShipEngine for rate estimate", extra={"address_fingerprint": fingerprint})
         try:
@@ -203,7 +255,8 @@ def get_rates(shipping_address: Dict, items) -> Dict:
                         error_message = errors[0].get("message") or error_message
                     elif isinstance(errors, str):
                         error_message = errors
-            raise ShippingError(error_message, status=502) from exc
+            friendly = _friendly_rate_error(error_message, getattr(exc, "response", None), getattr(exc, "status", 502))
+            raise ShippingError(friendly, status=getattr(exc, "status", 502)) from exc
     else:
         cfg = get_config()
         logger.warning(

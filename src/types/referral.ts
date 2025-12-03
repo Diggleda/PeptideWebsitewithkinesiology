@@ -1,14 +1,10 @@
 export type ReferralStatus =
   | 'pending'
   | 'contacted'
-  | 'follow_up'
-  | 'code_issued'
+  | 'account_created'
+  | 'nuture'
   | 'converted'
-  | 'closed'
-  | 'not_interested'
-  | 'disqualified'
-  | 'rejected'
-  | 'in_review';
+  | 'contact_form';
 
 export interface ReferralRecord {
   id: string;
@@ -27,6 +23,16 @@ export interface ReferralRecord {
   referrerDoctorName?: string | null;
   referrerDoctorEmail?: string | null;
   referrerDoctorPhone?: string | null;
+  creditIssuedAt?: string | null;
+  creditIssuedAmount?: number | null;
+  creditIssuedBy?: string | null;
+  referredContactHasAccount?: boolean;
+  referredContactAccountId?: string | null;
+  referredContactAccountName?: string | null;
+  referredContactAccountEmail?: string | null;
+  referredContactAccountCreatedAt?: string | null;
+  referredContactTotalOrders?: number;
+  referredContactEligibleForCredit?: boolean;
 }
 
 export interface ReferralCodeRecord {
@@ -67,6 +73,8 @@ export interface CreditLedgerEntry {
 
 export interface DoctorCreditSummary {
   totalCredits: number;
+  availableCredits: number;
+  netCredits?: number;
   firstOrderBonuses: number;
   ledger: CreditLedgerEntry[];
 }

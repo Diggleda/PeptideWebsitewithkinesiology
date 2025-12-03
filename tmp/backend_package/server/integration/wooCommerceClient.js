@@ -2,6 +2,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { calculateEstimatedArrivalDate } = require('../services/shippingValidation');
 
 const isConfigured = () => Boolean(
   env.wooCommerce.storeUrl
@@ -134,6 +135,15 @@ const normalizedStoreUrl = env.wooCommerce.storeUrl
   ? env.wooCommerce.storeUrl.replace(/\/+$/, '')
   : '';
 
+const buildInvoiceUrl = (orderId, orderKey) => {
+  if (!normalizedStoreUrl || !orderId || !orderKey) {
+    return null;
+  }
+  const safeId = encodeURIComponent(String(orderId).trim());
+  const safeKey = encodeURIComponent(String(orderKey).trim());
+  return `${normalizedStoreUrl}/my-account/view-order/${safeId}/?order=${safeId}&key=${safeKey}`;
+};
+
 const getClient = () => {
   if (!isConfigured()) {
     throw new Error('WooCommerce is not configured');
@@ -173,13 +183,16 @@ const getSiteClient = () => {
 let taxCalculationSupported = true;
 let taxCalculationWarningLogged = false;
 
-const buildLineItems = (items) => items.map((item) => ({
-  name: item.name,
-  sku: item.productId,
-  quantity: item.quantity,
-  total: Number(item.price * item.quantity).toFixed(2),
-  meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
-}));
+const buildLineItems = (items) => items.map((item) => {
+  const sku = item.sku || item.productId || item.variantId || null;
+  return {
+    name: item.name,
+    sku,
+    quantity: item.quantity,
+    total: Number(item.price * item.quantity).toFixed(2),
+    meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
+  };
+});
 
 const buildOrderPayload = ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
@@ -281,15 +294,18 @@ const forwardOrder = async ({ order, customer }) => {
   try {
     const client = getClient();
     const response = await client.post('/orders', payload);
+    const invoiceUrl = buildInvoiceUrl(response.data?.id, response.data?.order_key);
     return {
       status: 'success',
       payload,
+      invoiceUrl,
       response: {
         id: response.data?.id,
         number: response.data?.number,
         status: response.data?.status,
         payment_url: response.data?.payment_url,
         order_key: response.data?.order_key,
+        invoiceUrl,
       },
     };
   } catch (error) {
@@ -444,7 +460,7 @@ const mapWooAddress = (address = {}) => {
   };
 };
 
-const parseShippingEstimateMeta = (metaData = []) => {
+const parseShippingEstimateMeta = (metaData = [], order = {}) => {
   const entry = metaData.find((meta) => meta?.key === 'peppro_shipping_estimate');
   if (!entry || entry.value === undefined || entry.value === null) {
     return null;
@@ -461,7 +477,7 @@ const parseShippingEstimateMeta = (metaData = []) => {
   if (typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  return {
+  const estimate = {
     carrierId: value.carrierId || value.carrier_id || null,
     serviceCode: value.serviceCode || value.service_code || null,
     serviceType: value.serviceType || value.service_code || null,
@@ -472,6 +488,17 @@ const parseShippingEstimateMeta = (metaData = []) => {
     rate: Number.isFinite(Number(value.rate)) ? Number(value.rate) : null,
     currency: value.currency || 'USD',
   };
+  if (!estimate.estimatedArrivalDate && value.estimatedArrivalDate) {
+    estimate.estimatedArrivalDate = value.estimatedArrivalDate;
+  }
+  if (!estimate.estimatedArrivalDate) {
+    const referenceDate = order?.date_completed
+      || order?.date_created
+      || order?.date_created_gmt
+      || null;
+    estimate.estimatedArrivalDate = calculateEstimatedArrivalDate(estimate, referenceDate);
+  }
+  return estimate;
 };
 
 const mapWooOrderSummary = (order) => {
@@ -479,7 +506,7 @@ const mapWooOrderSummary = (order) => {
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
   const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
-  const shippingEstimate = parseShippingEstimateMeta(metaData);
+  const shippingEstimate = parseShippingEstimateMeta(metaData, order);
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
@@ -505,6 +532,7 @@ const mapWooOrderSummary = (order) => {
         wooOrderNumber: wooNumber,
         pepproOrderId,
         status: order?.status || 'pending',
+        invoiceUrl: buildInvoiceUrl(order?.id, order?.order_key),
       },
     },
   };

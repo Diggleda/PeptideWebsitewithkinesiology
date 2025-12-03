@@ -44,17 +44,35 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         "peppro_order_id": order.get("id"),
         "user_id": order.get("userId"),
     }
-    if order.get("wooOrderId"):
-        metadata["woo_order_id"] = order.get("wooOrderId")
+    woo_order_id = order.get("wooOrderId")
+    if woo_order_id:
+        metadata["woo_order_id"] = woo_order_id
     if order.get("wooOrderKey"):
         metadata["woo_order_key"] = order.get("wooOrderKey")
+    woo_order_number = order.get("wooOrderNumber") or woo_order_id
+    normalized_woo_number = None
+    if woo_order_number is not None:
+        try:
+            normalized_woo_number = str(woo_order_number).strip()
+        except Exception:
+            normalized_woo_number = None
+        if normalized_woo_number:
+            normalized_woo_number = normalized_woo_number.lstrip("#") or None
+    if normalized_woo_number:
+        metadata["woo_order_number"] = normalized_woo_number
 
     try:
+        description_parts = []
+        if normalized_woo_number:
+            description_parts.append(f"Woo Order #{normalized_woo_number}")
+        if order.get("id"):
+            description_parts.append(f"PepPro Order {order.get('id')}")
+        description = " · ".join(description_parts) if description_parts else "PepPro Order"
         intent = stripe.PaymentIntent.create(
             amount=amount,
             currency=currency,
             metadata=metadata,
-            description=f"PepPro Order {order.get('id')}",
+            description=description,
             automatic_payment_methods={"enabled": True},
         )
         return {
@@ -112,3 +130,34 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
             order_repository.update(order)
 
     return {"status": result.get("status"), "paymentIntentId": payment_intent_id, "orderId": order_id}
+
+
+def refund_payment_intent(payment_intent_id: str, amount_cents: Optional[int] = None, reason: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Issue a refund for a PaymentIntent. Returns a summary dict or raises StripeIntegrationError."""
+    config = get_config()
+    if not config.stripe.get("onsite_enabled"):
+        return {"status": "skipped", "reason": "stripe_disabled"}
+    if not config.stripe.get("secret_key"):
+        raise StripeIntegrationError("Stripe not configured", status=500)
+    if stripe is None:
+        raise StripeIntegrationError("Stripe SDK not installed", status=500)
+
+    stripe.api_key = config.stripe.get("secret_key")
+    try:
+        params: Dict[str, Any] = {"payment_intent": payment_intent_id}
+        if amount_cents is not None:
+            params["amount"] = int(amount_cents)
+        if reason:
+            params["reason"] = "requested_by_customer"
+        if metadata:
+            params["metadata"] = metadata
+        refund = stripe.Refund.create(**params)
+        return {
+          "id": refund.get("id"),
+          "amount": refund.get("amount"),
+          "currency": refund.get("currency"),
+          "status": refund.get("status"),
+        }
+    except Exception as exc:
+        logger.error("Stripe refund failed", exc_info=True, extra={"paymentIntentId": payment_intent_id})
+        raise StripeIntegrationError("Stripe refund failed", status=502, response=getattr(exc, "json_body", None)) from exc

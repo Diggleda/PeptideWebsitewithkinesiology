@@ -2,6 +2,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { calculateEstimatedArrivalDate } = require('../services/shippingValidation');
 
 const isConfigured = () => Boolean(
   env.wooCommerce.storeUrl
@@ -134,6 +135,15 @@ const normalizedStoreUrl = env.wooCommerce.storeUrl
   ? env.wooCommerce.storeUrl.replace(/\/+$/, '')
   : '';
 
+const buildInvoiceUrl = (orderId, orderKey) => {
+  if (!normalizedStoreUrl || !orderId || !orderKey) {
+    return null;
+  }
+  const safeId = encodeURIComponent(String(orderId).trim());
+  const safeKey = encodeURIComponent(String(orderKey).trim());
+  return `${normalizedStoreUrl}/my-account/view-order/${safeId}/?order=${safeId}&key=${safeKey}`;
+};
+
 const getClient = () => {
   if (!isConfigured()) {
     throw new Error('WooCommerce is not configured');
@@ -173,13 +183,86 @@ const getSiteClient = () => {
 let taxCalculationSupported = true;
 let taxCalculationWarningLogged = false;
 
-const buildLineItems = (items) => items.map((item) => ({
-  name: item.name,
-  sku: item.productId,
-  quantity: item.quantity,
-  total: Number(item.price * item.quantity).toFixed(2),
-  meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
-}));
+const parseWooNumericId = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const str = String(value);
+  const match = str.match(/(\d+)/);
+  return match ? Number(match[1]) : null;
+};
+
+const buildLineItems = (items) => items.map((item) => {
+  const quantity = Number(item.quantity) || 0;
+  const price = Number(item.price) || 0;
+  const total = Number(price * quantity).toFixed(2);
+  const productId = parseWooNumericId(item.productId || item.wooProductId || item.product_id);
+  const variationId = parseWooNumericId(
+    item.variantId
+    || item.variationId
+    || item.wooVariationId
+    || item.variation_id,
+  );
+  const resolvedSku = item.sku
+    || item.productSku
+    || item.variantSku
+    || (typeof item.productId === 'string' ? item.productId : null);
+  const line = {
+    name: item.name,
+    sku: resolvedSku || null,
+    quantity,
+    total,
+    subtotal: total,
+    total_tax: '0',
+    subtotal_tax: '0',
+    meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
+  };
+  // Include product/variation ids so Woo and ShipStation exports keep the items.
+  if (productId) {
+    line.product_id = productId;
+  }
+  if (variationId) {
+    line.variation_id = variationId;
+  }
+  return line;
+});
+
+const buildShippingLines = ({ shippingTotal, shippingEstimate }) => {
+  if (shippingEstimate) {
+    const total = Number.isFinite(shippingTotal) ? Number(shippingTotal) : 0;
+    const rawMethodId = shippingEstimate.serviceCode
+      || shippingEstimate.serviceType
+      || shippingEstimate.carrierId
+      || null;
+    const normalizedMethodId = rawMethodId
+      ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+      : 'peppro_shipstation';
+    const methodTitle = shippingEstimate.serviceType
+      || shippingEstimate.serviceCode
+      || shippingEstimate.carrierId
+      || 'PepPro Shipping';
+    const metaData = [
+      shippingEstimate.carrierId ? { key: 'peppro_carrier_id', value: shippingEstimate.carrierId } : null,
+      shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
+      shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
+      Number.isFinite(shippingEstimate.estimatedDeliveryDays)
+        ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
+        : null,
+    ].filter(Boolean);
+    return [
+      {
+        method_id: normalizedMethodId,
+        method_title: methodTitle,
+        total: total.toFixed(2),
+        meta_data: metaData,
+      },
+    ];
+  }
+  return [];
+};
 
 const buildOrderPayload = ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
@@ -230,14 +313,12 @@ const buildOrderPayload = ({ order, customer }) => {
     };
   }
 
-  if (shippingTotal > 0) {
-    payload.shipping_lines = [
-      {
-        method_id: 'peppro_shipstation',
-        method_title: 'PepPro Shipping',
-        total: shippingTotal.toFixed(2),
-      },
-    ];
+  const shippingLines = buildShippingLines({
+    shippingTotal,
+    shippingEstimate: order.shippingEstimate,
+  });
+  if (shippingLines.length > 0) {
+    payload.shipping_lines = shippingLines;
   }
 
   return payload;
@@ -281,15 +362,18 @@ const forwardOrder = async ({ order, customer }) => {
   try {
     const client = getClient();
     const response = await client.post('/orders', payload);
+    const invoiceUrl = buildInvoiceUrl(response.data?.id, response.data?.order_key);
     return {
       status: 'success',
       payload,
+      invoiceUrl,
       response: {
         id: response.data?.id,
         number: response.data?.number,
         status: response.data?.status,
         payment_url: response.data?.payment_url,
         order_key: response.data?.order_key,
+        invoiceUrl,
       },
     };
   } catch (error) {
@@ -444,7 +528,7 @@ const mapWooAddress = (address = {}) => {
   };
 };
 
-const parseShippingEstimateMeta = (metaData = []) => {
+const parseShippingEstimateMeta = (metaData = [], order = {}) => {
   const entry = metaData.find((meta) => meta?.key === 'peppro_shipping_estimate');
   if (!entry || entry.value === undefined || entry.value === null) {
     return null;
@@ -461,7 +545,7 @@ const parseShippingEstimateMeta = (metaData = []) => {
   if (typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  return {
+  const estimate = {
     carrierId: value.carrierId || value.carrier_id || null,
     serviceCode: value.serviceCode || value.service_code || null,
     serviceType: value.serviceType || value.service_code || null,
@@ -472,6 +556,17 @@ const parseShippingEstimateMeta = (metaData = []) => {
     rate: Number.isFinite(Number(value.rate)) ? Number(value.rate) : null,
     currency: value.currency || 'USD',
   };
+  if (!estimate.estimatedArrivalDate && value.estimatedArrivalDate) {
+    estimate.estimatedArrivalDate = value.estimatedArrivalDate;
+  }
+  if (!estimate.estimatedArrivalDate) {
+    const referenceDate = order?.date_completed
+      || order?.date_created
+      || order?.date_created_gmt
+      || null;
+    estimate.estimatedArrivalDate = calculateEstimatedArrivalDate(estimate, referenceDate);
+  }
+  return estimate;
 };
 
 const mapWooOrderSummary = (order) => {
@@ -479,7 +574,7 @@ const mapWooOrderSummary = (order) => {
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
   const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
-  const shippingEstimate = parseShippingEstimateMeta(metaData);
+  const shippingEstimate = parseShippingEstimateMeta(metaData, order);
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
@@ -505,6 +600,7 @@ const mapWooOrderSummary = (order) => {
         wooOrderNumber: wooNumber,
         pepproOrderId,
         status: order?.status || 'pending',
+        invoiceUrl: buildInvoiceUrl(order?.id, order?.order_key),
       },
     },
   };
@@ -557,11 +653,15 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   }
   try {
     const client = getClient();
+    const nowIso = new Date().toISOString();
     const response = await client.put(`/orders/${wooOrderId}`, {
       set_paid: true,
       status: 'processing',
       payment_method: 'stripe',
       payment_method_title: 'Stripe Onsite',
+      // Setting paid date helps Woo → ShipStation exports.
+      date_paid: nowIso,
+      date_paid_gmt: nowIso,
       meta_data: paymentIntentId
         ? [{ key: 'stripe_payment_intent', value: paymentIntentId }]
         : [],

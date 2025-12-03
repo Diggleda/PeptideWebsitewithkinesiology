@@ -350,6 +350,14 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     phone = (data.get("phone") or user.get("phone") or None)
     email = _normalize_email(data.get("email") or user.get("email") or "")
     profile_image_url = data.get("profileImageUrl") or user.get("profileImageUrl") or None
+    shipping_fields = {
+        "officeAddressLine1": data.get("officeAddressLine1") or user.get("officeAddressLine1"),
+        "officeAddressLine2": data.get("officeAddressLine2") or user.get("officeAddressLine2"),
+        "officeCity": data.get("officeCity") or user.get("officeCity"),
+        "officeState": data.get("officeState") or user.get("officeState"),
+        "officePostalCode": data.get("officePostalCode") or user.get("officePostalCode"),
+        "officeCountry": data.get("officeCountry") or user.get("officeCountry"),
+    }
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -362,24 +370,25 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "phone": phone,
         "email": email or user.get("email"),
         "profileImageUrl": profile_image_url,
+        **shipping_fields,
     }
 
     logger.info(
+        "Profile update requested (includes profile image) %s",
         {
             "userId": user_id,
             "hasProfileImage": bool(profile_image_url),
             "profileImageBytes": len(profile_image_url.encode("utf-8")) if isinstance(profile_image_url, str) else 0,
         },
-        "Profile update requested (includes profile image)",
     )
 
     saved = user_repository.update(updated) or updated
     logger.info(
+        "Profile update saved %s",
         {
             "userId": user_id,
             "hasProfileImage": bool(saved.get("profileImageUrl")),
         },
-        "Profile update saved",
     )
     return _sanitize_user(saved)
 
@@ -388,17 +397,29 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized = dict(user)
     sanitized.pop("password", None)
     rep_id = sanitized.get("salesRepId")
+    sales_rep = None
     if rep_id:
         sales_rep = sales_rep_repository.find_by_id(rep_id)
-        if sales_rep:
-            sanitized["salesRep"] = {
-                "id": sales_rep.get("id"),
-                "name": sales_rep.get("name"),
-                "email": sales_rep.get("email"),
-                "phone": sales_rep.get("phone"),
-            }
-        else:
-            sanitized["salesRep"] = None
+    else:
+        role = (sanitized.get("role") or "").lower()
+        if role in ("admin", "sales_rep"):
+            email = sanitized.get("email") or ""
+            sales_rep = sales_rep_repository.find_by_email(email) if email else None
+            if not sales_rep:
+                sales_rep = sales_rep_repository.find_by_id(sanitized.get("id"))
+            if sales_rep and not rep_id:
+                sanitized["salesRepId"] = sales_rep.get("id") or sanitized.get("salesRepId")
+    if sales_rep:
+        sanitized["salesRep"] = {
+            "id": sales_rep.get("id"),
+            "name": sales_rep.get("name"),
+            "email": sales_rep.get("email"),
+            "phone": sales_rep.get("phone"),
+        }
+        if not sanitized.get("referralCode"):
+            sales_code = sales_rep.get("salesCode")
+            if sales_code:
+                sanitized["referralCode"] = sales_code
     else:
         sanitized["salesRep"] = None
     return sanitized
@@ -410,6 +431,8 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     sanitized.setdefault("role", "sales_rep")
     sanitized.setdefault("salesRepId", sanitized.get("id"))
     sanitized.setdefault("salesRep", None)
+    if sanitized.get("salesCode") and not sanitized.get("referralCode"):
+        sanitized["referralCode"] = sanitized.get("salesCode")
     return sanitized
 
 

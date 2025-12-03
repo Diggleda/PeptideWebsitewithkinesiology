@@ -121,6 +121,7 @@ interface CheckoutModalProps {
   customerEmail?: string | null;
   customerName?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
+  availableCredits?: number;
 }
 
 const formatCardNumber = (value: string) =>
@@ -169,6 +170,7 @@ export function CheckoutModal({
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
+  availableCredits = 0,
 }: CheckoutModalProps) {
   const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
   const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
@@ -309,7 +311,9 @@ export function CheckoutModal({
     ? Number(selectedShippingRate.rate) || 0
     : 0;
   const taxAmount = 0;
-  const total = subtotal + shippingCost;
+  const normalizedCredits = Math.max(0, Number(availableCredits || 0));
+  const appliedCredits = Math.min(subtotal, normalizedCredits);
+  const total = Math.max(0, subtotal - appliedCredits + shippingCost);
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -356,11 +360,17 @@ export function CheckoutModal({
     try {
       const payload = {
         shippingAddress,
-        items: cartItems.map((item) => ({
-          name: item.product.name,
-          quantity: item.quantity,
-          weightOz: item.variant?.weightOz ?? (item.product as any)?.weightOz ?? null,
-        })),
+        items: cartItems.map((item) => {
+          const dimensions = item.variant?.dimensions || item.product.dimensions || {};
+          return {
+            name: item.product.name,
+            quantity: item.quantity,
+            weightOz: item.variant?.weightOz ?? item.product.weightOz ?? null,
+            lengthIn: dimensions?.lengthIn ?? null,
+            widthIn: dimensions?.widthIn ?? null,
+            heightIn: dimensions?.heightIn ?? null,
+          };
+        }),
       };
       const response = await shippingAPI.getRates(payload);
       const rates = Array.isArray(response?.rates) ? response.rates : [];
@@ -1273,6 +1283,14 @@ export function CheckoutModal({
                   <span>Subtotal:</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
+                {appliedCredits > 0 && (
+                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+                    <span>Referral Credit</span>
+                    <span>
+                      - ${appliedCredits.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm text-slate-700">
                   <span>Shipping:</span>
                   <span>${shippingCost.toFixed(2)}</span>

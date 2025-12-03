@@ -5,19 +5,7 @@ const creditLedgerRepository = require('../repositories/creditLedgerRepository')
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 
-const REFERRAL_STATUSES = [
-  'pending',
-  'contacted',
-  'follow_up',
-  'code_issued',
-  'converted',
-  'closed',
-  'not_interested',
-  'disqualified',
-  'rejected',
-  'in_review',
-  'contact_form',
-];
+const REFERRAL_STATUSES = ['pending', 'contacted', 'account_created', 'nuture', 'converted', 'contact_form'];
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
@@ -307,7 +295,7 @@ const createReferralCode = (req, res, next) => {
 
     referralRepository.update(referralId, {
       referralCodeId: code.id,
-      status: 'code_issued',
+      status: 'contacted',
     });
 
     res.json({ code });

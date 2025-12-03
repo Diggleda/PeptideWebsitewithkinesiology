@@ -29,6 +29,12 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("salesRepId", None)
     normalized.setdefault("referrerDoctorId", None)
     normalized.setdefault("phone", None)
+    normalized["officeAddressLine1"] = (normalized.get("officeAddressLine1") or None)
+    normalized["officeAddressLine2"] = (normalized.get("officeAddressLine2") or None)
+    normalized["officeCity"] = (normalized.get("officeCity") or None)
+    normalized["officeState"] = (normalized.get("officeState") or None)
+    normalized["officePostalCode"] = (normalized.get("officePostalCode") or None)
+    normalized["officeCountry"] = (normalized.get("officeCountry") or None)
     normalized.setdefault("profileImageUrl", None)
     normalized["mustResetPassword"] = bool(normalized.get("mustResetPassword", False))
     normalized.setdefault("firstOrderBonusGrantedAt", None)
@@ -173,12 +179,15 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, sales_rep_id, referrer_doctor_id,
-            phone, profile_image_url, referral_credits, total_referrals, visits,
+            phone, office_address_line1, office_address_line2, office_city, office_state,
+            office_postal_code, office_country, profile_image_url, referral_credits, total_referrals, visits,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(phone)s, %(profile_image_url)s, %(referral_credits)s,
+            %(referrer_doctor_id)s, %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
+            %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
+            %(profile_image_url)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
@@ -191,6 +200,12 @@ def _mysql_insert(user: Dict) -> Dict:
             sales_rep_id = VALUES(sales_rep_id),
             referrer_doctor_id = VALUES(referrer_doctor_id),
             phone = VALUES(phone),
+            office_address_line1 = VALUES(office_address_line1),
+            office_address_line2 = VALUES(office_address_line2),
+            office_city = VALUES(office_city),
+            office_state = VALUES(office_state),
+            office_postal_code = VALUES(office_postal_code),
+            office_country = VALUES(office_country),
             profile_image_url = VALUES(profile_image_url),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
@@ -228,6 +243,12 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
             phone = %(phone)s,
+            office_address_line1 = %(office_address_line1)s,
+            office_address_line2 = %(office_address_line2)s,
+            office_city = %(office_city)s,
+            office_state = %(office_state)s,
+            office_postal_code = %(office_postal_code)s,
+            office_country = %(office_country)s,
             profile_image_url = %(profile_image_url)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
@@ -277,6 +298,12 @@ def _row_to_user(row: Dict) -> Dict:
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
             "phone": row.get("phone"),
+            "officeAddressLine1": row.get("office_address_line1"),
+            "officeAddressLine2": row.get("office_address_line2"),
+            "officeCity": row.get("office_city"),
+            "officeState": row.get("office_state"),
+            "officePostalCode": row.get("office_postal_code"),
+            "officeCountry": row.get("office_country"),
             "profileImageUrl": row.get("profile_image_url"),
             "referralCode": row.get("referral_code"),
             "referralCredits": float(row.get("referral_credits") or 0),
@@ -317,6 +344,12 @@ def _to_db_params(user: Dict) -> Dict:
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
         "phone": user.get("phone"),
+        "office_address_line1": user.get("officeAddressLine1"),
+        "office_address_line2": user.get("officeAddressLine2"),
+        "office_city": user.get("officeCity"),
+        "office_state": user.get("officeState"),
+        "office_postal_code": user.get("officePostalCode"),
+        "office_country": user.get("officeCountry"),
         "profile_image_url": user.get("profileImageUrl"),
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
@@ -331,6 +364,39 @@ def _to_db_params(user: Dict) -> Dict:
         "npi_status": user.get("npiStatus"),
         "npi_check_error": user.get("npiCheckError"),
     }
+
+
+def adjust_referral_credits(user_id: str, delta: float) -> Optional[Dict]:
+    if not user_id or not isinstance(delta, (int, float)):
+        return None
+    amount = round(float(delta), 2)
+    if abs(amount) < 1e-9:
+        return find_by_id(user_id)
+
+    if _using_mysql():
+        rows = mysql_client.execute(
+            """
+            UPDATE users
+            SET referral_credits = ROUND(COALESCE(referral_credits, 0) + %(delta)s, 2)
+            WHERE id = %(id)s
+            """,
+            {"id": user_id, "delta": amount},
+        )
+        if rows == 0:
+            return None
+        return find_by_id(user_id)
+
+    users = _load()
+    for index, existing in enumerate(users):
+        if existing.get("id") == user_id:
+            new_balance = round(float(existing.get("referralCredits") or 0) + amount, 2)
+            updated = _ensure_defaults({**existing, "referralCredits": new_balance})
+            users[index] = updated
+            _save(users)
+            return updated
+    return None
+
+
 def find_by_npi_number(npi_number: str) -> Optional[Dict]:
     normalized = _normalize_npi(npi_number)
     if not normalized:

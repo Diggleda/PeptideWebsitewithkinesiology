@@ -11,7 +11,7 @@ const normalizeSku = (value) => {
 
 const uniqueSkusFromItems = (items = []) => Array.from(new Set(
   (items || [])
-    .map((item) => normalizeSku(item.productId || item.sku))
+    .map((item) => normalizeSku(item.sku || item.productId))
     .filter(Boolean),
 ));
 

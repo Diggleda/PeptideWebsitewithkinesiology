@@ -303,6 +303,21 @@ const validateItems = (items) => Array.isArray(items)
   && items.length > 0
   && items.every((item) => item && typeof item.quantity === 'number');
 
+const hasPaidLineItem = (items = []) => {
+  if (!Array.isArray(items)) {
+    return false;
+  }
+  return items.some((item) => {
+    const quantity = Number(item?.quantity);
+    const price = Number(item?.price);
+    if (!Number.isFinite(quantity) || !Number.isFinite(price)) {
+      return false;
+    }
+    const lineTotal = price * quantity;
+    return quantity > 0 && lineTotal > 0;
+  });
+};
+
 const serializeCause = (cause) => {
   if (!cause) {
     return null;
@@ -391,7 +406,13 @@ const createOrder = async ({
     const error = new Error('Order requires at least one item');
     error.status = 400;
     throw error;
-}
+  }
+  if (!hasPaidLineItem(items)) {
+    const error = new Error('Order must include at least one paid line item before checkout.');
+    error.status = 400;
+    error.code = 'INVALID_LINE_ITEMS';
+    throw error;
+  }
 
   const user = userRepository.findById(userId);
   if (!user) {
@@ -932,7 +953,24 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
   const cancellationReason = typeof reason === 'string' && reason.trim().length > 0
     ? reason.trim()
     : 'Cancelled via account portal';
-  const order = orderRepository.findById(orderId);
+  let order = orderRepository.findById(orderId);
+  if (!order && typeof orderSqlRepository.fetchById === 'function') {
+    try {
+      const sqlOrder = await orderSqlRepository.fetchById(orderId);
+      if (sqlOrder) {
+        order = {
+          ...sqlOrder,
+          integrationDetails: sqlOrder.integrationDetails
+            || sqlOrder.payload?.integrations
+            || sqlOrder.integrations
+            || null,
+          integrations: sqlOrder.integrations || null,
+        };
+      }
+    } catch (error) {
+      logger.error({ err: error, orderId }, 'Failed to load order from MySQL during cancellation');
+    }
+  }
   if (!order) {
     const fallbackResult = await cancelWooOrderForUser({ userId, wooOrderId: orderId, reason: cancellationReason });
     if (fallbackResult) {

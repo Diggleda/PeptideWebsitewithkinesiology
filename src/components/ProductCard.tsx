@@ -124,28 +124,28 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   const variationSelector =
     product.variations && product.variations.length > 0 ? (
       <div className="space-y-1">
-        <label className="text-xs text-gray-600" htmlFor={`variation-${product.id}`}>Strength</label>
-        <select
-          id={`variation-${product.id}`}
-          value={selectedVariation.id}
-          onChange={(e) => handleVariationChange(e.target.value)}
-          className="w-full squircle-sm border border-[var(--brand-glass-border-2)] bg-white/95 shadow-inner px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(95,179,249)] focus:border-[rgb(95,179,249)] appearance-none"
-          style={{
-            WebkitAppearance: 'menulist',
-            MozAppearance: 'menulist',
-            backgroundImage:
-              "linear-gradient(45deg, transparent 50%, #3b82f6 50%), linear-gradient(135deg, #3b82f6 50%, transparent 50%), linear-gradient(to right, #e5e7eb, #e5e7eb)",
-            backgroundPosition: 'calc(100% - 14px) calc(50% - 2px), calc(100% - 7px) calc(50% - 2px), calc(100% - 28px) 50%',
-            backgroundSize: '7px 7px, 7px 7px, 1px 75%',
-            backgroundRepeat: 'no-repeat',
-          }}
-        >
-          {product.variations.map((variation) => (
-            <option key={variation.id} value={variation.id}>
-              {variation.strength}
-            </option>
-          ))}
-        </select>
+        <label className="text-xs text-gray-600" htmlFor={`variation-${product.id}`}>
+          Strength
+        </label>
+        <div className="relative">
+          <select
+            id={`variation-${product.id}`}
+            value={selectedVariation.id}
+            onChange={(e) => handleVariationChange(e.target.value)}
+            className="w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select"
+            >
+            {product.variations.map((variation) => (
+              <option key={variation.id} value={variation.id}>
+                {variation.strength}
+              </option>
+            ))}
+          </select>
+          <span className="product-card-select__chevron" aria-hidden="true">
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+        </div>
       </div>
     ) : null;
 

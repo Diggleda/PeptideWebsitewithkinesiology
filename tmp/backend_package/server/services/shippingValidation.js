@@ -74,6 +74,54 @@ const hasCarrierOrService = (estimate = {}) => {
   );
 };
 
+const fallbackServiceTransitDays = [
+  { pattern: /next[_-]?day|overnight|1day/i, days: 1 },
+  { pattern: /(2nd|second)[_-]?day/i, days: 2 },
+  { pattern: /(3rd|third|3)[_-]?day/i, days: 3 },
+  { pattern: /(ground_saver|ground)/i, days: 5 },
+];
+
+const inferTransitDaysFromService = (serviceCode = '') => {
+  if (!serviceCode) {
+    return null;
+  }
+  const normalized = String(serviceCode).toLowerCase();
+  for (const entry of fallbackServiceTransitDays) {
+    if (entry.pattern.test(normalized)) {
+      return entry.days;
+    }
+  }
+  return null;
+};
+
+const calculateEstimatedArrivalDate = (estimate = {}, referenceDate) => {
+  if (!estimate || typeof estimate !== 'object') {
+    return null;
+  }
+  if (estimate.deliveryDateGuaranteed) {
+    const guaranteedDate = new Date(estimate.deliveryDateGuaranteed);
+    if (!Number.isNaN(guaranteedDate.getTime())) {
+      return guaranteedDate.toISOString();
+    }
+  }
+  const baseDate = referenceDate ? new Date(referenceDate) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return null;
+  }
+  let deliveryDays = Number(estimate.estimatedDeliveryDays);
+  if (!Number.isFinite(deliveryDays) || deliveryDays <= 0) {
+    deliveryDays = inferTransitDaysFromService(
+      estimate.serviceCode || estimate.serviceType || estimate.carrierId || '',
+    );
+  }
+  if (!Number.isFinite(deliveryDays) || deliveryDays <= 0) {
+    return null;
+  }
+  const projected = new Date(baseDate.getTime());
+  projected.setDate(projected.getDate() + deliveryDays);
+  return projected.toISOString();
+};
+
 const normalizeShippingEstimate = (estimate = {}) => {
   const normalizedCurrency = normalizeString(estimate.currency).toUpperCase();
   return {
@@ -90,7 +138,7 @@ const normalizeShippingEstimate = (estimate = {}) => {
   };
 };
 
-const ensureShippingEstimate = (estimate) => {
+const ensureShippingEstimate = (estimate, { referenceDate } = {}) => {
   if (!estimate || typeof estimate !== 'object') {
     const error = new Error('Shipping rate selection is required.');
     error.status = 400;
@@ -102,6 +150,9 @@ const ensureShippingEstimate = (estimate) => {
     throw error;
   }
   const normalized = normalizeShippingEstimate(estimate);
+  if (!normalized.estimatedArrivalDate) {
+    normalized.estimatedArrivalDate = calculateEstimatedArrivalDate(normalized, referenceDate);
+  }
   if (!normalized.addressFingerprint) {
     const error = new Error('Shipping rate is missing address validation metadata. Please fetch rates again.');
     error.status = 400;
@@ -166,4 +217,6 @@ module.exports = {
   ensureShippingEstimate,
   createAddressFingerprint,
   ensureShippingData,
+  calculateEstimatedArrivalDate,
+  inferTransitDaysFromService,
 };

@@ -91,6 +91,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     let errorMessage = `Request failed (${response.status})`;
     let errorDetails: Record<string, unknown> | string | null = null;
 
+    let htmlLikePayload = false;
     try {
       if (contentType.includes('application/json')) {
         errorDetails = await response.json();
@@ -103,11 +104,22 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       } else {
         errorDetails = await response.text();
         if (typeof errorDetails === 'string' && errorDetails.trim().length > 0) {
-          errorMessage = `${errorMessage}: ${errorDetails}`;
+          const trimmed = errorDetails.trim();
+          htmlLikePayload = trimmed.startsWith('<') || trimmed.includes('<html');
+          errorMessage = `${errorMessage}: ${trimmed}`;
         }
       }
     } catch (parseError) {
       errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+    }
+
+    if (htmlLikePayload) {
+      const normalizedUrl = url.toLowerCase();
+      if (normalizedUrl.includes('/shipping/')) {
+        errorMessage = 'Address cannot be identified.';
+      } else {
+        errorMessage = `Request failed (${response.status}). Please try again in a moment.`;
+      }
     }
 
     const error = new Error(errorMessage);
@@ -470,7 +482,30 @@ export const referralAPI = {
     });
   },
 
-  addManualCredit: async (payload: { doctorId: string; amount: number; reason: string }) => {
+  createManualProspect: async (payload: {
+    name: string;
+    email?: string;
+    phone?: string;
+    notes?: string;
+    status?: string;
+  }) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/manual`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteManualProspect: async (referralId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/manual/${referralId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getReferralCodes: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/codes`);
+  },
+
+  addManualCredit: async (payload: { doctorId: string; amount: number; reason: string; referralId?: string }) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/credits`, {
       method: 'POST',
       body: JSON.stringify(payload),

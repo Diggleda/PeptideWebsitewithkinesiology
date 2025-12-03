@@ -60,6 +60,22 @@ const applyCardSummaryToOrder = ({ order, cardSummary, stripeData }) => {
   };
 };
 
+const resolveWooOrderId = (providedId, order) => {
+  if (providedId) {
+    return providedId;
+  }
+  if (order?.wooOrderId) {
+    return order.wooOrderId;
+  }
+  const integrationId = order?.integrationDetails?.wooCommerce?.response?.id
+    || order?.integrationDetails?.wooCommerce?.payload?.id
+    || null;
+  if (integrationId) {
+    return integrationId;
+  }
+  return null;
+};
+
 const createStripePayment = async ({ order, customer, wooOrderId, wooOrderNumber }) => stripeClient.createPaymentIntent({
   order,
   wooOrderId,
@@ -70,18 +86,24 @@ const createStripePayment = async ({ order, customer, wooOrderId, wooOrderNumber
 const finalizePaymentIntent = async ({ paymentIntentId }) => {
   const intent = await stripeClient.retrievePaymentIntent(paymentIntentId);
   const orderId = intent?.metadata?.peppro_order_id || null;
-  const wooOrderId = intent?.metadata?.woo_order_id || null;
-  const order = orderId ? orderRepository.findById(orderId) : orderRepository.findByPaymentIntentId(paymentIntentId);
+  const metadataWooOrderId = intent?.metadata?.woo_order_id || null;
+  const order = orderId
+    ? orderRepository.findById(orderId)
+    : orderRepository.findByPaymentIntentId(paymentIntentId);
+  const resolvedWooOrderId = resolveWooOrderId(metadataWooOrderId, order);
   let wooUpdate = null;
 
-  if (wooOrderId) {
+  if (resolvedWooOrderId) {
     try {
       wooUpdate = await wooCommerceClient.markOrderPaid({
-        wooOrderId,
+        wooOrderId: resolvedWooOrderId,
         paymentIntentId,
       });
     } catch (error) {
-      logger.error({ err: error, wooOrderId, intentId: paymentIntentId }, 'Failed to mark Woo order paid from confirm endpoint');
+      logger.error(
+        { err: error, wooOrderId: resolvedWooOrderId, intentId: paymentIntentId },
+        'Failed to mark Woo order paid from confirm endpoint',
+      );
     }
   }
 
@@ -102,7 +124,7 @@ const finalizePaymentIntent = async ({ paymentIntentId }) => {
       ...order,
       status: intent?.status === 'succeeded' ? 'paid' : order.status,
       paymentIntentId,
-      wooOrderId: wooOrderId || order.wooOrderId,
+      wooOrderId: resolvedWooOrderId || order.wooOrderId,
       paymentMethod: paymentMethod || order.paymentMethod || 'Card on file',
       integrationDetails: {
         ...(order.integrationDetails || {}),
@@ -118,7 +140,11 @@ const finalizePaymentIntent = async ({ paymentIntentId }) => {
     orderRepository.update(updated);
   }
 
-  return { status: intent?.status || 'unknown', wooOrderId, orderId };
+  return {
+    status: intent?.status || 'unknown',
+    wooOrderId: resolvedWooOrderId || metadataWooOrderId,
+    orderId,
+  };
 };
 
 const refundPaymentIntent = async ({ paymentIntentId, amountCents, reason, metadata }) => {
@@ -157,18 +183,24 @@ const handleStripeWebhook = async ({ payload, signature }) => {
 
   if (event.type === 'payment_intent.succeeded') {
     const orderId = intent.metadata?.peppro_order_id || null;
-    const wooOrderId = intent.metadata?.woo_order_id || null;
-    const order = orderId ? orderRepository.findById(orderId) : null;
+    const metadataWooOrderId = intent.metadata?.woo_order_id || null;
+    const order = orderId
+      ? orderRepository.findById(orderId)
+      : orderRepository.findByPaymentIntentId(intent.id);
+    const resolvedWooOrderId = resolveWooOrderId(metadataWooOrderId, order);
     let wooUpdate = null;
 
-    if (wooOrderId) {
+    if (resolvedWooOrderId) {
       try {
         wooUpdate = await wooCommerceClient.markOrderPaid({
-          wooOrderId,
+          wooOrderId: resolvedWooOrderId,
           paymentIntentId: intent.id,
         });
       } catch (error) {
-        logger.error({ err: error, wooOrderId, intentId: intent.id }, 'Failed to mark Woo order paid from webhook');
+        logger.error(
+          { err: error, wooOrderId: resolvedWooOrderId, intentId: intent.id },
+          'Failed to mark Woo order paid from webhook',
+        );
       }
     }
 

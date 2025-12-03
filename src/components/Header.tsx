@@ -110,6 +110,7 @@ interface AccountShippingEstimate {
   deliveryDateGuaranteed?: string | null;
   rate?: number | null;
   currency?: string | null;
+  estimatedArrivalDate?: string | null;
 }
 
 interface AccountOrderSummary {
@@ -160,6 +161,7 @@ interface HeaderProps {
   onToggleShowCanceled?: () => void;
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
   onCancelOrder?: (orderId: string) => Promise<unknown>;
+  referralCodes?: string[] | null;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -227,10 +229,37 @@ const parseMaybeJson = (value: any) => {
   return value;
 };
 
+const SHIPPED_STATUS_KEYWORDS = [
+  'processing',
+  'completed',
+  'complete',
+  'shipped',
+  'in-transit',
+  'in_transit',
+  'out-for-delivery',
+  'out_for_delivery',
+  'delivered',
+  'fulfilled',
+];
+
+const isShipmentInTransit = (status?: string | null) => {
+  if (!status) {
+    return false;
+  }
+  const normalized = status.toLowerCase();
+  return SHIPPED_STATUS_KEYWORDS.some((token) => normalized.includes(token));
+};
+
 const formatExpectedDelivery = (order: AccountOrderSummary) => {
   const estimate = order.shippingEstimate;
   if (!estimate) {
     return null;
+  }
+  if (estimate.estimatedArrivalDate) {
+    const arrival = new Date(estimate.estimatedArrivalDate);
+    if (!Number.isNaN(arrival.getTime())) {
+      return arrival.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
   }
   if (estimate.deliveryDateGuaranteed) {
     const date = new Date(estimate.deliveryDateGuaranteed);
@@ -364,6 +393,7 @@ export function Header({
   onToggleShowCanceled,
   onBuyOrderAgain,
   onCancelOrder,
+  referralCodes = [],
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -487,15 +517,37 @@ export function Header({
       setAccountTab('details');
     }
   }, [welcomeOpen]);
+  const accountRole = localUser?.role ?? user.role;
+  const accountIsAdmin = isAdmin(accountRole);
+  const accountIsSalesRep = isRep(accountRole);
   const headerDisplayName = localUser
-    ? isAdmin(user.role)
+    ? accountIsAdmin
       ? `Admin: ${localUser.name}`
-      : isRep(user.role)
+      : accountIsSalesRep
         ? `Rep: ${localUser.name}`
         : localUser.name
     : '';
   const profileImageUrl = localUser?.profileImageUrl || user.profileImageUrl || null;
   const userInitials = getInitials(localUser?.name || user.name || headerDisplayName);
+  const normalizedReferralCodes = Array.isArray(referralCodes)
+    ? referralCodes
+        .map((code) => {
+          if (code === null || code === undefined) {
+            return '';
+          }
+          return String(code).trim().toUpperCase();
+        })
+        .filter((code, index, array) => code.length > 0 && array.indexOf(code) === index)
+    : [];
+  const directReferralCode = (() => {
+    const raw = localUser?.referralCode ?? user.referralCode ?? null;
+    if (raw === null || raw === undefined) {
+      return '';
+    }
+    return String(raw).trim().toUpperCase();
+  })();
+  const primaryReferralCode = directReferralCode || normalizedReferralCodes[0] || null;
+  const canShowReferralCode = (accountIsAdmin || accountIsSalesRep) && Boolean(primaryReferralCode);
 
   // Account tab underline indicator (shared bar that moves to active tab)
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1079,14 +1131,13 @@ export function Header({
     }
   }, [onCancelOrder, selectedOrder]);
 
-  const handleCopyReferralCode = async () => {
-  if (!user?.referralCode) return;
+  const handleCopyReferralCode = useCallback(async () => {
+    if (!primaryReferralCode) return;
     try {
       if (!navigator?.clipboard) {
         throw new Error('Clipboard API unavailable');
       }
-      await navigator.clipboard.writeText(user.referralCode);
-      // toast.success('Referral code copied');
+      await navigator.clipboard.writeText(primaryReferralCode);
       setReferralCopied(true);
       if (referralCopyTimeout.current) {
         clearTimeout(referralCopyTimeout.current);
@@ -1095,10 +1146,9 @@ export function Header({
         setReferralCopied(false);
       }, 2000);
     } catch (error) {
-      // toast.error('Unable to copy referral code');
       setReferralCopied(false);
     }
-  };
+  }, [primaryReferralCode]);
 
   const renderCartButton = () => (
     <Button
@@ -1312,6 +1362,31 @@ export function Header({
             />
           </div>
 
+          {canShowReferralCode && primaryReferralCode && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Referral Code</label>
+              <div
+                className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800"
+              >
+                <span className="tracking-[0.16em] uppercase">
+                  {primaryReferralCode}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="squircle-sm text-xs"
+                  onClick={handleCopyReferralCode}
+                >
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Share this code with doctors to link them to your account. Editing is disabled for security.
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 sm:flex-1">
             {identityFields.map(({ key, label, type, autoComplete }) => (
               <EditableRow
@@ -1402,6 +1477,7 @@ export function Header({
             const itemCount = order.lineItems?.length ?? 0;
             const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
             const expectedDelivery = formatExpectedDelivery(order);
+            const showExpectedDelivery = Boolean(expectedDelivery && isShipmentInTransit(order.status));
             const displayTotal = (order.total ?? 0) + (order.shippingTotal ?? 0);
             const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
             
@@ -1428,7 +1504,7 @@ export function Header({
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
                       <p className="text-sm font-semibold text-slate-900">{status}</p>
                     </div>
-                    {expectedDelivery && (
+                    {showExpectedDelivery && (
                       <div className="space-y-1">
                         <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
                         <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
@@ -1634,7 +1710,7 @@ export function Header({
                 {formatCurrency(detailTotal, selectedOrder.currency || 'USD')}
               </p>
             </div>
-            {expectedDelivery && (
+            {showExpectedDelivery && (
               <div>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
                 <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>

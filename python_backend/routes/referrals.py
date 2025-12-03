@@ -180,7 +180,15 @@ def admin_codes():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        codes = [code for code in referral_code_repository.get_all() if code.get("salesRepId") == user["id"]]
+        target_ids = {str(user.get("id"))}
+        linked = user.get("salesRepId") or g.current_user.get("salesRepId")
+        if linked:
+            target_ids.add(str(linked))
+        codes = [
+            code
+            for code in referral_code_repository.get_all()
+            if str(code.get("salesRepId")) in target_ids
+        ]
         return {"codes": codes}
 
     return handle_action(action)
@@ -215,13 +223,49 @@ def admin_create_code():
             {
                 **referral,
                 "referralCodeId": record.get("id"),
-                "status": "code_issued",
+                "status": "contacted",
             }
         )
 
         return {"code": record}
 
     return handle_action(action, status=201)
+
+
+@blueprint.post("/admin/manual")
+@require_auth
+def admin_create_manual_prospect():
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        referral = referral_service.create_manual_prospect(
+            {
+                "salesRepId": user["id"],
+                "name": payload.get("name"),
+                "email": payload.get("email"),
+                "phone": payload.get("phone"),
+                "notes": payload.get("notes"),
+                "status": payload.get("status"),
+            }
+        )
+        return {"referral": referral}
+
+    return handle_action(action, status=201)
+
+
+@blueprint.delete("/admin/manual/<referral_id>")
+@require_auth
+def admin_delete_manual_prospect(referral_id: str):
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        referral_service.delete_manual_prospect(referral_id, user["id"])
+        return {"status": "deleted"}
+
+    return handle_action(action)
 
 
 @blueprint.patch("/admin/referrals/<referral_id>")
@@ -264,6 +308,7 @@ def admin_add_credit():
         doctor_id = payload.get("doctorId")
         amount = payload.get("amount")
         reason = _sanitize_string(payload.get("reason"))
+        referral_id = payload.get("referralId")
 
         if not doctor_id or not isinstance(amount, (int, float)) or not reason:
             raise _error("INVALID_PAYLOAD", 400)
@@ -273,6 +318,7 @@ def admin_add_credit():
             amount=amount,
             reason=reason,
             created_by=user.get("email") or user["id"],
+            referral_id=referral_id,
         )
         return result
 

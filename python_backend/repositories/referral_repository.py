@@ -138,6 +138,12 @@ def _ensure_defaults(referral: Dict) -> Dict:
     created_at = normalized.get("createdAt") or _now()
     normalized["createdAt"] = created_at
     normalized["updatedAt"] = normalized.get("updatedAt") or created_at
+    normalized.setdefault("creditIssuedAt", normalized.get("creditIssuedAt") or None)
+    credit_amount = normalized.get("creditIssuedAmount")
+    normalized["creditIssuedAmount"] = (
+        float(credit_amount) if credit_amount not in (None, "") else None
+    )
+    normalized.setdefault("creditIssuedBy", normalized.get("creditIssuedBy") or None)
     return normalized
 
 
@@ -223,6 +229,21 @@ def find_by_sales_rep(sales_rep_id: str) -> List[Dict]:
     return referrals
 
 
+def delete(referral_id: str) -> bool:
+    if _using_mysql():
+        result = mysql_client.execute(
+            "DELETE FROM referrals WHERE id = %(id)s",
+            {"id": referral_id},
+        )
+        return result > 0
+    records = _load()
+    filtered = [record for record in records if record.get("id") != referral_id]
+    if len(filtered) == len(records):
+        return False
+    _save(filtered)
+    return True
+
+
 def insert(referral: Dict) -> Dict:
     if _using_mysql():
         record = _ensure_defaults(referral)
@@ -232,11 +253,15 @@ def insert(referral: Dict) -> Dict:
             INSERT INTO referrals (
                 id, referrer_doctor_id, sales_rep_id, referral_code_id,
                 referred_contact_name, referred_contact_email, referred_contact_phone,
-                status, notes, converted_doctor_id, converted_at, created_at, updated_at
+                status, notes, converted_doctor_id, converted_at,
+                credit_issued_at, credit_issued_amount, credit_issued_by,
+                created_at, updated_at
             ) VALUES (
                 %(id)s, %(referrer_doctor_id)s, %(sales_rep_id)s, %(referral_code_id)s,
                 %(referred_contact_name)s, %(referred_contact_email)s, %(referred_contact_phone)s,
-                %(status)s, %(notes)s, %(converted_doctor_id)s, %(converted_at)s, %(created_at)s, %(updated_at)s
+                %(status)s, %(notes)s, %(converted_doctor_id)s, %(converted_at)s,
+                %(credit_issued_at)s, %(credit_issued_amount)s, %(credit_issued_by)s,
+                %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
                 referrer_doctor_id = VALUES(referrer_doctor_id),
@@ -249,6 +274,9 @@ def insert(referral: Dict) -> Dict:
                 notes = VALUES(notes),
                 converted_doctor_id = VALUES(converted_doctor_id),
                 converted_at = VALUES(converted_at),
+                credit_issued_at = VALUES(credit_issued_at),
+                credit_issued_amount = VALUES(credit_issued_amount),
+                    credit_issued_by = VALUES(credit_issued_by),
                 updated_at = VALUES(updated_at)
             """,
             params,
@@ -283,6 +311,9 @@ def update(referral: Dict) -> Optional[Dict]:
                 notes = %(notes)s,
                 converted_doctor_id = %(converted_doctor_id)s,
                 converted_at = %(converted_at)s,
+                credit_issued_at = %(credit_issued_at)s,
+                credit_issued_amount = %(credit_issued_amount)s,
+                credit_issued_by = %(credit_issued_by)s,
                 updated_at = %(updated_at)s
             WHERE id = %(id)s
             """,
@@ -324,6 +355,9 @@ def _row_to_referral(row: Optional[Dict]) -> Optional[Dict]:
             "notes": row.get("notes"),
             "convertedDoctorId": row.get("converted_doctor_id"),
             "convertedAt": fmt_datetime(row.get("converted_at")),
+            "creditIssuedAt": fmt_datetime(row.get("credit_issued_at")),
+            "creditIssuedAmount": float(row.get("credit_issued_amount")) if row.get("credit_issued_amount") is not None else None,
+            "creditIssuedBy": row.get("credit_issued_by"),
             "createdAt": fmt_datetime(row.get("created_at")),
             "updatedAt": fmt_datetime(row.get("updated_at")),
         }
@@ -354,6 +388,9 @@ def _to_db_params(referral: Dict) -> Dict:
         "notes": referral.get("notes"),
         "converted_doctor_id": referral.get("convertedDoctorId"),
         "converted_at": parse_dt(referral.get("convertedAt")),
+        "credit_issued_at": parse_dt(referral.get("creditIssuedAt")),
+        "credit_issued_amount": referral.get("creditIssuedAmount"),
+        "credit_issued_by": referral.get("creditIssuedBy"),
         "created_at": parse_dt(referral.get("createdAt")),
         "updated_at": parse_dt(referral.get("updatedAt")),
     }

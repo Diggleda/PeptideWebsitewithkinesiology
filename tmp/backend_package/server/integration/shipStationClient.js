@@ -19,12 +19,58 @@ const normalizeWeightOz = (items = []) => {
   return total > 0 ? total : 16; // default 1 lb
 };
 
+const aggregatePackageDimensions = (items = []) => {
+  const totals = (items || []).reduce((acc, item) => {
+    const quantity = Number(item?.quantity) || 0;
+    if (quantity <= 0) {
+      return acc;
+    }
+    const length = Number(item?.lengthIn ?? item?.dimensions?.lengthIn);
+    const width = Number(item?.widthIn ?? item?.dimensions?.widthIn);
+    const height = Number(item?.heightIn ?? item?.dimensions?.heightIn);
+    if (Number.isFinite(length) && length > 0) {
+      acc.length = Math.max(acc.length, length);
+    }
+    if (Number.isFinite(width) && width > 0) {
+      acc.width = Math.max(acc.width, width);
+    }
+    if (Number.isFinite(height) && height > 0) {
+      acc.height += height * quantity;
+    }
+    return acc;
+  }, { length: 0, width: 0, height: 0 });
+
+  if (totals.length <= 0 || totals.width <= 0 || totals.height <= 0) {
+    return null;
+  }
+  const round = (value) => Math.round(value * 100) / 100;
+  return {
+    length: round(totals.length),
+    width: round(totals.width),
+    height: round(totals.height),
+  };
+};
+
 const resolveTotalWeightOz = (items = [], totalWeightOz) => {
   const parsed = Number(totalWeightOz);
   if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
   return normalizeWeightOz(items);
+};
+
+const resolveShippingMeta = (order = {}) => {
+  const estimate = order.shippingEstimate || {};
+  const carrierId = estimate.carrierId || estimate.carrierCode || null;
+  const serviceCode = estimate.serviceCode || estimate.serviceType || null;
+  const requestedService = estimate.serviceType || estimate.serviceCode || null;
+  const packageCode = estimate.packageCode || env.shipStation.packageCode || 'package';
+  return {
+    carrierCode: carrierId || env.shipStation.carrierCode || undefined,
+    serviceCode: serviceCode || env.shipStation.serviceCode || undefined,
+    requestedService: requestedService || env.shipStation.serviceCode || undefined,
+    packageCode,
+  };
 };
 
 const buildShipTo = (shippingAddress = {}, customer = {}) => ({
@@ -79,10 +125,14 @@ const buildOrderItems = (items = []) => items.map((item, index) => {
   const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
   const unitPrice = Number(item.price) || 0;
   const weightOz = Number(item.weightOz);
+  const resolvedSku = item.sku
+    || item.productSku
+    || item.variantSku
+    || (typeof item.productId === 'string' ? item.productId : null);
 
   const payload = {
     lineItemKey,
-    sku: item.productId || item.sku || null,
+    sku: resolvedSku || null,
     name: item.name || `Item ${index + 1}`,
     quantity,
     unitPrice,
@@ -110,8 +160,10 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     || null;
   const totalWeightOz = normalizeWeightOz(order.items || []);
   const shippingTotal = Number(order.shippingTotal) || 0;
+  const packageDimensions = aggregatePackageDimensions(order.items || []);
+  const shippingMeta = resolveShippingMeta(order);
 
-  return {
+  const payload = {
     orderNumber: wooOrderNumber || order.id,
     orderKey: wooOrderId ? `woo-${wooOrderId}` : order.id,
     orderSource: 'PepPro Checkout',
@@ -122,10 +174,10 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     customerNotes: order.referralCode
       ? `Referral code: ${order.referralCode}`
       : undefined,
-    requestedShippingService: env.shipStation.serviceCode || undefined,
-    carrierCode: env.shipStation.carrierCode || undefined,
-    serviceCode: env.shipStation.serviceCode || undefined,
-    packageCode: env.shipStation.packageCode || 'package',
+    requestedShippingService: shippingMeta.requestedService,
+    carrierCode: shippingMeta.carrierCode,
+    serviceCode: shippingMeta.serviceCode,
+    packageCode: shippingMeta.packageCode,
     amountPaid: Math.max(Number(order.total) || 0, 0),
     shippingPaid: shippingTotal,
     taxAmount: Number(order.taxTotal) || 0,
@@ -154,8 +206,20 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
         : undefined,
       source: 'woocommerce',
       customOrderNumber: wooOrderNumber || order.id,
+      requestedPackageType: shippingMeta.packageCode,
     },
   };
+
+  if (packageDimensions) {
+    payload.dimensions = {
+      units: 'inches',
+      length: packageDimensions.length,
+      width: packageDimensions.width,
+      height: packageDimensions.height,
+    };
+  }
+
+  return payload;
 };
 
 /**
@@ -178,6 +242,7 @@ const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
   const weightOz = resolveTotalWeightOz(items || [], totalWeightOz);
 
   const shipFrom = buildShipFrom();
+  const packageDimensions = aggregatePackageDimensions(items || []);
   const payload = {
     carrierCode: env.shipStation.carrierCode || undefined,
     serviceCode: env.shipStation.serviceCode || undefined,
@@ -196,6 +261,14 @@ const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
       units: 'ounces',
     },
   };
+  if (packageDimensions) {
+    payload.dimensions = {
+      units: 'inches',
+      length: packageDimensions.length,
+      width: packageDimensions.width,
+      height: packageDimensions.height,
+    };
+  }
 
   try {
     const client = getHttpClient();

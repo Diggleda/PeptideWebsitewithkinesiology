@@ -56,6 +56,15 @@ def list_orders_for_sales_rep():
     return handle_action(action)
 
 
+@blueprint.post("/<order_id>/cancel")
+@require_auth
+def cancel_order(order_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+    reason = (payload.get("reason") or "").strip()
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: order_service.cancel_order(user_id=user_id, order_id=order_id, reason=reason))
+
+
 @blueprint.get("/admin/sales-rep-summary")
 @require_auth
 def admin_sales_by_rep():
