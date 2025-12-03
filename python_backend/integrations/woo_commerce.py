@@ -31,6 +31,16 @@ def is_configured() -> bool:
     return bool(store and ck and cs)
 
 
+def _client_config():
+    config = get_config()
+    data = config.woo_commerce
+    base_url = _strip(data.get("store_url")).rstrip("/")
+    api_version = _strip(data.get("api_version") or "wc/v3").lstrip("/")
+    auth = HTTPBasicAuth(_strip(data.get("consumer_key")), _strip(data.get("consumer_secret")))
+    timeout = data.get("request_timeout_seconds") or 25
+    return base_url, api_version, auth, timeout
+
+
 def _parse_woo_id(raw):
     if raw is None:
         return None
