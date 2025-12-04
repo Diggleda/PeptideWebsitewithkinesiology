@@ -50,6 +50,16 @@ def find_by_user_id(user_id: str) -> List[Dict]:
     return [order for order in _load() if order.get("userId") == user_id]
 
 
+def count_by_user_id(user_id: str) -> int:
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            "SELECT COUNT(*) AS count FROM orders WHERE user_id = %(user_id)s",
+            {"user_id": user_id},
+        )
+        return int(row.get("count") or 0) if row else 0
+    return len(find_by_user_id(user_id))
+
+
 def insert(order: Dict) -> Dict:
     if _using_mysql():
         order.setdefault("id", order.get("id") or _generate_id())

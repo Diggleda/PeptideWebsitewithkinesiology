@@ -46,9 +46,7 @@ class TestWooCommerceWebhook(unittest.TestCase):
                 "related_entity_id": "order-abc",
             }
         )
-        mock_user_repository.update.assert_called_once_with(
-            {**mock_user, "referralCredits": 150.0}
-        )
+        mock_user_repository.adjust_referral_credits.assert_called_once_with("user-123", 50.0)
 
 
 if __name__ == "__main__":

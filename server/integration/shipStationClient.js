@@ -330,6 +330,19 @@ const forwardOrder = async ({ order, customer, wooOrder }) => {
   }
 };
 
+const coerceInventoryNumber = (...values) => {
+  for (const value of values) {
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
 const fetchProductBySku = async (sku) => {
   if (!isConfigured() || !sku) {
     return null;
@@ -349,25 +362,25 @@ const fetchProductBySku = async (sku) => {
       return null;
     }
     const product = products[0];
+    const stockOnHand = coerceInventoryNumber(
+      product.onHand,
+      product.quantityOnHand,
+      product.quantity_on_hand,
+      product.stock,
+      product.stockOnHand,
+    );
+    const available = coerceInventoryNumber(
+      product.available,
+      product.quantityAvailable,
+      product.quantity_available,
+    );
     return {
       id: product.productId || product.product_id || product.id || null,
       sku: product.sku || sku,
       name: product.name || '',
       // ShipStation product inventory fields are typically onHand / available.
-      stockOnHand: Number(
-        product.onHand
-        ?? product.quantityOnHand
-        ?? product.quantity_on_hand
-        ?? product.stock
-        ?? product.stockOnHand
-        ?? 0,
-      ),
-      available: Number(
-        product.available
-        ?? product.quantityAvailable
-        ?? product.quantity_available
-        ?? 0,
-      ),
+      stockOnHand,
+      available,
     };
   } catch (error) {
     logger.error({ err: error, sku }, 'ShipStation product fetch failed');

@@ -65,6 +65,19 @@ def _ship_from() -> Dict:
     }
 
 
+def _coerce_inventory_number(*values: Optional[float]) -> Optional[float]:
+    for value in values:
+        if value in (None, "", False):
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric >= 0:
+            return numeric
+    return None
+
+
 def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
     if not is_configured():
         raise IntegrationError("ShipStation is not configured", status=503)
@@ -164,15 +177,16 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
             "id": product.get("productId") or product.get("product_id") or product.get("id"),
             "sku": product.get("sku") or sku,
             "name": product.get("name"),
-            "stockOnHand": float(
-                product.get("onHand")
-                or product.get("quantityOnHand")
-                or product.get("quantity_on_hand")
-                or product.get("stock")
-                or 0
+            "stockOnHand": _coerce_inventory_number(
+                product.get("onHand"),
+                product.get("quantityOnHand"),
+                product.get("quantity_on_hand"),
+                product.get("stock"),
             ),
-            "available": float(
-                product.get("available") or product.get("quantityAvailable") or product.get("quantity_available") or 0
+            "available": _coerce_inventory_number(
+                product.get("available"),
+                product.get("quantityAvailable"),
+                product.get("quantity_available"),
             ),
         }
     return None

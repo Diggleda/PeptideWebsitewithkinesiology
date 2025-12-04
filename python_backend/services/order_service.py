@@ -145,17 +145,31 @@ def create_order(
             "details": getattr(exc, "response", None),
         }
 
-    try:
-        integrations["stripe"] = stripe_payments.create_payment_intent(order)
-        if integrations["stripe"].get("paymentIntentId"):
-            order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
-    except Exception as exc:  # pragma: no cover - network error path
-        logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+    if order.get("wooOrderId"):
+        try:
+            integrations["stripe"] = stripe_payments.create_payment_intent(order)
+            if integrations["stripe"].get("paymentIntentId"):
+                order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
+        except Exception as exc:  # pragma: no cover - network error path
+            logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+            integrations["stripe"] = {
+                "status": "error",
+                "message": str(exc),
+                "details": getattr(exc, "response", None),
+            }
+    else:
         integrations["stripe"] = {
-            "status": "error",
-            "message": str(exc),
-            "details": getattr(exc, "response", None),
+            "status": "skipped",
+            "reason": "woo_order_missing",
         }
+        logger.warning(
+            "Stripe payment skipped because WooCommerce order failed",
+            extra={
+                "orderId": order["id"],
+                "wooStatus": integrations.get("wooCommerce", {}).get("status"),
+                "wooMessage": integrations.get("wooCommerce", {}).get("message"),
+            },
+        )
 
     try:
         integrations["shipEngine"] = ship_engine.forward_shipment(order, user)

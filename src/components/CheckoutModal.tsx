@@ -289,6 +289,8 @@ export function CheckoutModal({
           quantity,
           note: note ?? null,
           position: index + 1,
+          sku: variant?.sku || product.sku || null,
+          image: variant?.image || product.image || null,
         };
       }),
     [cartItems],

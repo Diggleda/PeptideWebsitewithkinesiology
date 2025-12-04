@@ -234,7 +234,10 @@ def verify_authentication_response_for_user(
         "passkeys": updated_passkeys,
     }
 
-    token = auth_service._create_auth_token({"id": updated_user["id"], "email": updated_user["email"]})  # pylint: disable=protected-access
+    token_role = (updated_user.get("role") or "doctor").lower()
+    token = auth_service._create_auth_token(
+        {"id": updated_user["id"], "email": updated_user["email"], "role": token_role}
+    )  # pylint: disable=protected-access
 
     return {
         "token": token,

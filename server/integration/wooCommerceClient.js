@@ -504,6 +504,9 @@ const sanitizeWooLineItems = (items = []) => {
     quantity: normalizeNumber(item?.quantity, 0),
     total: normalizeNumber(item?.total || item?.subtotal, 0),
     sku: item?.sku || null,
+    image: typeof item?.image?.src === 'string'
+      ? item.image.src
+      : (typeof item?.image === 'string' && item.image.trim().length > 0 ? item.image.trim() : null),
   }));
 };
 

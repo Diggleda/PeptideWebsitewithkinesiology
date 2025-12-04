@@ -65,6 +65,19 @@ def _ship_from() -> Dict:
     }
 
 
+def _coerce_inventory_number(*values: Optional[float]) -> Optional[float]:
+    for value in values:
+        if value in (None, "", False):
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric >= 0:
+            return numeric
+    return None
+
+
 def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
     if not is_configured():
         raise IntegrationError("ShipStation is not configured", status=503)
@@ -124,3 +137,56 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
 
     data = response.json()
     return data if isinstance(data, list) else []
+
+
+def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
+    if not sku or not is_configured():
+        return None
+
+    headers, auth = _http_args()
+    params = {
+        "sku": sku.strip(),
+        "includeInactive": "false",
+        "pageSize": 1,
+    }
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/products",
+            params=params,
+            headers=headers,
+            auth=auth,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - defensive logging
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("ShipStation product lookup failed", exc_info=True, extra={"sku": sku})
+        raise IntegrationError("Failed to fetch ShipStation product", response=data) from exc
+
+    payload = response.json() or {}
+    products = payload.get("products") if isinstance(payload, dict) else None
+    if isinstance(products, list) and products:
+        product = products[0] or {}
+        return {
+            "id": product.get("productId") or product.get("product_id") or product.get("id"),
+            "sku": product.get("sku") or sku,
+            "name": product.get("name"),
+            "stockOnHand": _coerce_inventory_number(
+                product.get("onHand"),
+                product.get("quantityOnHand"),
+                product.get("quantity_on_hand"),
+                product.get("stock"),
+            ),
+            "available": _coerce_inventory_number(
+                product.get("available"),
+                product.get("quantityAvailable"),
+                product.get("quantity_available"),
+            ),
+        }
+    return None

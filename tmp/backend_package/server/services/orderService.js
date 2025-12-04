@@ -9,11 +9,17 @@ const paymentService = require('./paymentService');
 const stripeClient = require('../integration/stripeClient');
 const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
-const inventorySyncService = require('./inventorySyncService');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
 
 const sanitizeOrder = (order) => ({ ...order });
+
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return null;
+  return String(value);
+};
+
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 
 const extractWooMetaValue = (wooOrder, keys) => {
   const lookup = Array.isArray(keys) ? keys : [keys];
@@ -261,6 +267,10 @@ const buildLocalOrderSummary = (order) => ({
     quantity: item.quantity,
     price: item.price,
     total: Number(item.price || 0) * Number(item.quantity || 0),
+    sku: item.sku || item.productSku || null,
+    productId: item.productId || null,
+    variantId: item.variantId || null,
+    image: item.image || null,
   })),
   integrations: order.integrations || null,
   referrerBonus: order.referrerBonus || null,
@@ -295,6 +305,21 @@ const normalizeWooOrderId = (rawId) => {
 const validateItems = (items) => Array.isArray(items)
   && items.length > 0
   && items.every((item) => item && typeof item.quantity === 'number');
+
+const hasPaidLineItem = (items = []) => {
+  if (!Array.isArray(items)) {
+    return false;
+  }
+  return items.some((item) => {
+    const quantity = Number(item?.quantity);
+    const price = Number(item?.price);
+    if (!Number.isFinite(quantity) || !Number.isFinite(price)) {
+      return false;
+    }
+    const lineTotal = price * quantity;
+    return quantity > 0 && lineTotal > 0;
+  });
+};
 
 const serializeCause = (cause) => {
   if (!cause) {
@@ -384,7 +409,13 @@ const createOrder = async ({
     const error = new Error('Order requires at least one item');
     error.status = 400;
     throw error;
-}
+  }
+  if (!hasPaidLineItem(items)) {
+    const error = new Error('Order must include at least one paid line item before checkout.');
+    error.status = 400;
+    error.code = 'INVALID_LINE_ITEMS';
+    throw error;
+  }
 
   const user = userRepository.findById(userId);
   if (!user) {
@@ -484,20 +515,35 @@ const createOrder = async ({
 
   shipStationOrderId = integrations.shipStation?.response?.orderId || null;
 
-  try {
-    integrations.stripe = await paymentService.createStripePayment({
-      order,
-      customer: user,
-      wooOrderId,
-      wooOrderNumber,
-    });
-  } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
+  if (wooOrderId) {
+    try {
+      integrations.stripe = await paymentService.createStripePayment({
+        order,
+        customer: user,
+        wooOrderId,
+        wooOrderNumber,
+      });
+    } catch (error) {
+      logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
+      integrations.stripe = {
+        status: 'error',
+        message: error.message,
+        details: serializeCause(error.cause),
+      };
+    }
+  } else {
     integrations.stripe = {
-      status: 'error',
-      message: error.message,
-      details: serializeCause(error.cause),
+      status: 'skipped',
+      reason: 'woo_order_missing',
     };
+    logger.warn(
+      {
+        orderId: order.id,
+        wooStatus: integrations.wooCommerce?.status || 'unknown',
+        wooReason: integrations.wooCommerce?.reason || integrations.wooCommerce?.message || null,
+      },
+      'Stripe payment skipped because WooCommerce order was not created',
+    );
   }
 
   if (shipStationClient.isConfigured()) {
@@ -521,22 +567,11 @@ const createOrder = async ({
     }
   }
 
-  try {
-    integrations.inventorySync = await inventorySyncService.syncShipStationInventoryToWoo(order.items);
-  } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'Inventory sync integration failed');
-    integrations.inventorySync = {
-      status: 'error',
-      message: error.message,
-    };
-  }
-
   order.integrations = {
     wooCommerce: integrations.wooCommerce?.status,
     stripe: integrations.stripe?.status,
     shipEngine: integrations.shipEngine?.status,
     shipStation: integrations.shipStation?.status,
-    inventorySync: integrations.inventorySync?.status || integrations.inventorySync?.reason || null,
     mysql: integrations.mysql?.status || integrations.mysql?.reason || null,
   };
   order.integrationDetails = integrations;
@@ -925,7 +960,24 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
   const cancellationReason = typeof reason === 'string' && reason.trim().length > 0
     ? reason.trim()
     : 'Cancelled via account portal';
-  const order = orderRepository.findById(orderId);
+  let order = orderRepository.findById(orderId);
+  if (!order && typeof orderSqlRepository.fetchById === 'function') {
+    try {
+      const sqlOrder = await orderSqlRepository.fetchById(orderId);
+      if (sqlOrder) {
+        order = {
+          ...sqlOrder,
+          integrationDetails: sqlOrder.integrationDetails
+            || sqlOrder.payload?.integrations
+            || sqlOrder.integrations
+            || null,
+          integrations: sqlOrder.integrations || null,
+        };
+      }
+    } catch (error) {
+      logger.error({ err: error, orderId }, 'Failed to load order from MySQL during cancellation');
+    }
+  }
   if (!order) {
     const fallbackResult = await cancelWooOrderForUser({ userId, wooOrderId: orderId, reason: cancellationReason });
     if (fallbackResult) {
@@ -1060,51 +1112,121 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
 };
 
 const getOrdersForUser = async (userId) => {
-  // Prefer MySQL as the single source of truth
-  if (mysqlClient.isEnabled()) {
-    const sqlOrders = await orderSqlRepository.fetchByUserId(userId);
-    return {
-      local: sqlOrders.map(buildLocalOrderSummary),
-      woo: [],
-      fetchedAt: new Date().toISOString(),
-      wooError: null,
-    };
+  const user = typeof userRepository.findById === 'function'
+    ? userRepository.findById(userId)
+    : null;
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
   }
 
-  const orders = orderRepository.findByUserId(userId);
-  const localSummaries = orders.map(buildLocalOrderSummary);
-  const visibleLocalSummaries = localSummaries.filter(
-    (summary) => ((summary.status || '').toLowerCase() !== 'payment_failed'),
-  );
+  let localSummaries = [];
+  if (mysqlClient.isEnabled()) {
+    const sqlOrders = await orderSqlRepository.fetchByUserId(userId);
+    localSummaries = sqlOrders.map(buildLocalOrderSummary);
+  } else {
+    const orders = orderRepository.findByUserId(userId);
+    localSummaries = orders
+      .map(buildLocalOrderSummary)
+      .filter((summary) => (summary.status || '').toLowerCase() !== 'payment_failed');
+  }
+
+  let wooOrders = [];
+  let wooError = null;
+  const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+  if (email && typeof wooCommerceClient.fetchOrdersByEmail === 'function') {
+    try {
+      wooOrders = await wooCommerceClient.fetchOrdersByEmail(email, { perPage: 20 });
+    } catch (error) {
+      logger.error(
+        { err: error, userId, email },
+        'Failed to fetch WooCommerce orders for user',
+      );
+      wooError = {
+        message: error.message || 'Unable to load WooCommerce orders.',
+        details: error.response?.data || error.cause || null,
+        status: error.response?.status ?? error.status ?? 502,
+      };
+    }
+  }
 
   return {
-    local: visibleLocalSummaries,
-    woo: [],
+    local: localSummaries,
+    woo: wooOrders,
     fetchedAt: new Date().toISOString(),
-    wooError: null,
+    wooError,
   };
 };
 
-const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {}) => {
+const getOrdersForSalesRep = async (
+  salesRepId,
+  {
+    includeDoctors = false,
+    includeSelfOrders = false,
+    includeAllDoctors = false,
+    alternateSalesRepIds = [],
+  } = {},
+) => {
+  const normalizedSalesRepId = normalizeId(salesRepId);
+  const normalizedAlternates = Array.isArray(alternateSalesRepIds)
+    ? alternateSalesRepIds.map(normalizeId).filter(Boolean)
+    : [];
+  const allowedRepIds = new Set([normalizedSalesRepId, ...normalizedAlternates].filter(Boolean));
+  logger.info(
+    {
+      salesRepId: normalizedSalesRepId,
+      alternates: normalizedAlternates,
+      includeDoctors,
+      includeSelfOrders,
+      includeAllDoctors,
+    },
+    'Sales rep order fetch: scope resolved',
+  );
+
   const doctors = userRepository.getAll().filter((candidate) => {
-    const role = (candidate.role || '').toLowerCase();
-    return (role === 'doctor' || role === 'test_doctor') && candidate.salesRepId === salesRepId;
+    const role = normalizeRole(candidate.role);
+    if (role !== 'doctor' && role !== 'test_doctor') {
+      return false;
+    }
+    if (includeAllDoctors) {
+      return allowedRepIds.size === 0 ? true : allowedRepIds.has(normalizeId(candidate.salesRepId));
+    }
+    const repId = normalizeId(candidate.salesRepId);
+    return allowedRepIds.size === 0 ? false : allowedRepIds.has(repId);
   });
 
   const doctorLookup = new Map(
-    doctors.map((doctor) => [
-      doctor.id,
-      {
-        id: doctor.id,
-        name: doctor.name || doctor.email || 'Doctor',
-        email: doctor.email || null,
-      },
-    ]),
+    doctors.map((doctor) => {
+      const id = normalizeId(doctor.id);
+      return [
+        id,
+        {
+          id,
+          name: doctor.name || doctor.email || 'Doctor',
+          email: doctor.email || null,
+        },
+      ];
+    }),
   );
+
+  if (includeSelfOrders && normalizedSalesRepId && !doctorLookup.has(normalizedSalesRepId)) {
+    const selfUser = userRepository.findById ? userRepository.findById(normalizedSalesRepId) : null;
+    doctorLookup.set(normalizedSalesRepId, {
+      id: normalizedSalesRepId,
+      name: (selfUser && (selfUser.name || selfUser.email)) || 'Your Orders',
+      email: selfUser?.email || null,
+    });
+    doctors.push({
+      id: normalizedSalesRepId,
+      name: selfUser?.name || selfUser?.email || 'Your Orders',
+      email: selfUser?.email || null,
+    });
+  }
 
   const summaries = [];
   const seenKeys = new Set();
-  const doctorIds = doctors.map((d) => d.id);
+  const doctorIds = doctors.map((d) => normalizeId(d.id)).filter(Boolean);
 
   // Prefer MySQL source of truth
   if (mysqlClient.isEnabled()) {
@@ -1116,8 +1238,8 @@ const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {})
       summaries.push({
         ...buildLocalOrderSummary(order),
         doctorId: order.userId,
-        doctorName: doctorLookup.get(order.userId)?.name || 'Doctor',
-        doctorEmail: doctorLookup.get(order.userId)?.email || null,
+        doctorName: doctorLookup.get(normalizeId(order.userId))?.name || 'Doctor',
+        doctorEmail: doctorLookup.get(normalizeId(order.userId))?.email || null,
         source: 'mysql',
       });
     });
@@ -1155,20 +1277,29 @@ const getOrdersForSalesRep = async (salesRepId, { includeDoctors = false } = {})
     : summaries;
 };
 
-const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
+const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] } = {}) => {
+  const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
+  const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
   const reps = users.filter((u) => (u.role || '').toLowerCase() === 'sales_rep');
-  const repFromUsers = new Map(reps.map((rep) => [rep.id, rep]));
+  const repFromUsers = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
   const doctors = users.filter((u) => {
     const role = (u.role || '').toLowerCase();
     return role === 'doctor' || role === 'test_doctor';
   });
 
-  const repMap = new Map(reps.map((rep) => [rep.id, rep]));
+  const repMap = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
   const doctorToRep = new Map();
   doctors.forEach((doc) => {
-    if (doc.salesRepId) {
-      doctorToRep.set(doc.id, doc.salesRepId);
+    const repId = normalizeId(doc.salesRepId);
+    const doctorId = normalizeId(doc.id);
+    if (!repId || !doctorId) return;
+    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
+    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') {
+      return;
+    }
+    if (repMap.has(repId)) {
+      doctorToRep.set(doctorId, repId);
     }
   });
 
@@ -1181,9 +1312,15 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
 
   sourceOrders.forEach((order) => {
     const userId = order.userId || order.user_id || order.id;
-    const repId = doctorToRep.get(userId);
+    const normalizedUserId = normalizeId(userId);
+    if (normalizedUserId && excludeDoctorSet.has(normalizedUserId)) {
+      return;
+    }
+    const repId = doctorToRep.get(normalizedUserId);
     if (!repId) return;
-    if (excludeSalesRepId && repId === excludeSalesRepId) return;
+    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
+    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') return; // only count real sales reps
+    if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
     const current = repTotals.get(repId) || { totalOrders: 0, totalRevenue: 0 };
     current.totalOrders += 1;
     current.totalRevenue += Number(order.total) || 0;
@@ -1192,7 +1329,10 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
 
   return Array.from(repTotals.entries())
     .map(([repId, totals]) => {
-    const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
+      if (!repMap.has(repId)) {
+        return null;
+      }
+      const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
       return {
         salesRepId: repId,
         salesRepName: rep.name || rep.email || 'Sales Rep',
@@ -1201,6 +1341,7 @@ const getSalesByRep = async ({ excludeSalesRepId = null } = {}) => {
         totalRevenue: totals.totalRevenue,
       };
     })
+    .filter(Boolean)
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
 

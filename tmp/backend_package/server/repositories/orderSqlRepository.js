@@ -105,28 +105,80 @@ const mapRowToOrder = (row) => {
       return fallback;
     }
   };
-  return {
-    id: sanitizeString(row.id),
-    userId: sanitizeString(row.user_id),
-    wooOrderId: sanitizeString(row.woo_order_id),
-    shipStationOrderId: sanitizeString(row.shipstation_order_id),
-    total: Number(row.total) || 0,
-    shippingTotal: Number(row.shipping_total) || 0,
-    shippingCarrier: sanitizeString(row.shipping_carrier),
-    shippingService: sanitizeString(row.shipping_service),
-    physicianCertificationAccepted: Boolean(row.physician_certified),
-    status: row.status || 'pending',
-    payload: parseJson(row.payload, {}),
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+
+  const payload = parseJson(row.payload, {});
+  const payloadOrder = (payload && typeof payload.order === 'object')
+    ? payload.order
+    : {};
+
+  const coalesce = (...values) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null) {
+        return value;
+      }
+    }
+    return undefined;
+  };
+
+  const normalized = {
+    ...payloadOrder,
+    id: sanitizeString(coalesce(payloadOrder.id, row.id)),
+    userId: sanitizeString(coalesce(payloadOrder.userId, row.user_id)),
+    wooOrderId: sanitizeString(coalesce(payloadOrder.wooOrderId, row.woo_order_id)),
+    shipStationOrderId: sanitizeString(coalesce(payloadOrder.shipStationOrderId, row.shipstation_order_id)),
+    total: Number(coalesce(payloadOrder.total, row.total)) || 0,
+    shippingTotal: Number(coalesce(payloadOrder.shippingTotal, row.shipping_total)) || 0,
+    shippingCarrier: sanitizeString(coalesce(payloadOrder.shippingCarrier, row.shipping_carrier)),
+    shippingService: sanitizeString(coalesce(payloadOrder.shippingService, row.shipping_service)),
+    physicianCertificationAccepted: typeof payloadOrder.physicianCertificationAccepted === 'boolean'
+      ? payloadOrder.physicianCertificationAccepted
+      : Boolean(row.physician_certified),
+    status: payloadOrder.status || row.status || 'pending',
+    createdAt: payloadOrder.createdAt
+      || (row.created_at ? new Date(row.created_at).toISOString() : null),
+    updatedAt: payloadOrder.updatedAt
+      || (row.updated_at ? new Date(row.updated_at).toISOString() : null),
+    integrationDetails: payloadOrder.integrationDetails
+      || payload.integrations
+      || null,
+    integrations: payloadOrder.integrations
+      || payload.integrations
+      || null,
+    items: Array.isArray(payloadOrder.items) ? payloadOrder.items : [],
+    shippingEstimate: payloadOrder.shippingEstimate || null,
+    shippingAddress: payloadOrder.shippingAddress
+      || payloadOrder.shipping_address
+      || null,
+    billingAddress: payloadOrder.billingAddress
+      || payloadOrder.billing_address
+      || null,
+    paymentMethod: payloadOrder.paymentMethod || null,
+    referrerBonus: payloadOrder.referrerBonus || null,
+    referralCode: payloadOrder.referralCode || null,
+    taxTotal: payloadOrder.taxTotal ?? null,
+    itemsSubtotal: payloadOrder.itemsSubtotal ?? null,
+    payload,
     source: 'mysql',
   };
+
+  return normalized;
 };
 
 const fetchAll = async () => {
   if (!mysqlClient.isEnabled()) return [];
   const rows = await mysqlClient.fetchAll('SELECT * FROM peppro_orders');
   return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+};
+
+const fetchById = async (orderId) => {
+  if (!mysqlClient.isEnabled() || !orderId) {
+    return null;
+  }
+  const row = await mysqlClient.fetchOne(
+    'SELECT * FROM peppro_orders WHERE id = :id LIMIT 1',
+    { id: orderId },
+  );
+  return mapRowToOrder(row);
 };
 
 const fetchByUserIds = async (userIds = []) => {
@@ -155,4 +207,5 @@ module.exports = {
   fetchAll,
   fetchByUserId,
   fetchByUserIds,
+  fetchById,
 };

@@ -15,6 +15,12 @@ CREATE_TABLE_STATEMENTS = [
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         phone VARCHAR(32) NULL,
+        office_address_line1 VARCHAR(190) NULL,
+        office_address_line2 VARCHAR(190) NULL,
+        office_city VARCHAR(120) NULL,
+        office_state VARCHAR(64) NULL,
+        office_postal_code VARCHAR(32) NULL,
+        office_country VARCHAR(64) NULL,
         profile_image_url LONGTEXT NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
@@ -68,6 +74,9 @@ CREATE_TABLE_STATEMENTS = [
         notes LONGTEXT NULL,
         converted_doctor_id VARCHAR(32) NULL,
         converted_at DATETIME NULL,
+        credit_issued_at DATETIME NULL,
+        credit_issued_amount DECIMAL(12,2) NULL,
+        credit_issued_by VARCHAR(190) NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
@@ -147,6 +156,15 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_rate LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
+        "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_at DATETIME NULL",
+        "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_amount DECIMAL(12,2) NULL",
+        "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_by VARCHAR(190) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_address_line1 VARCHAR(190) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_address_line2 VARCHAR(190) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_city VARCHAR(120) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_state VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
     ]
     for stmt in migrations:
         try:

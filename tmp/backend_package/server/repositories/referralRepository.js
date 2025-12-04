@@ -1,13 +1,24 @@
 const crypto = require('crypto');
 const { referralStore } = require('../storage');
 
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return null;
+  return String(value);
+};
+
 const getAll = () => referralStore.read();
 
 const findById = (id) => getAll().find((referral) => referral.id === id) || null;
 
-const findByDoctorId = (doctorId) => getAll().filter((referral) => referral.referrerDoctorId === doctorId);
+const findByDoctorId = (doctorId) => {
+  const target = normalizeId(doctorId);
+  return getAll().filter((referral) => normalizeId(referral.referrerDoctorId) === target);
+};
 
-const findBySalesRepId = (salesRepId) => getAll().filter((referral) => referral.salesRepId === salesRepId);
+const findBySalesRepId = (salesRepId) => {
+  const target = normalizeId(salesRepId);
+  return getAll().filter((referral) => normalizeId(referral.salesRepId) === target);
+};
 
 const insert = (referral) => {
   const records = getAll();

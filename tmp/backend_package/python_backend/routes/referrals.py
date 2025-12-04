@@ -130,9 +130,22 @@ def admin_dashboard():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        referrals = referral_service.list_referrals_for_sales_rep(user["id"])
-        codes = [code for code in referral_code_repository.get_all() if code.get("salesRepId") == user["id"]]
+        requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
+        scope_all = (request.args.get("scope") or "").lower() == "all"
+        # Admins can view all referrals; sales reps stay scoped to their own assignments.
+        target_sales_rep_id = user["id"] if not scope_all and not requested_sales_rep_id else requested_sales_rep_id or user["id"]
+        referrals = referral_service.list_referrals_for_sales_rep(
+            target_sales_rep_id,
+            scope_all=scope_all and user.get("role", "").lower() == "admin",
+            token_role=(g.current_user.get("role") or "").lower(),
+        )
+        codes = (
+            referral_code_repository.get_all()
+            if scope_all and (user.get("role") or "").lower() == "admin"
+            else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
+        )
         return {
+            "version": "backend_v1.7.16",
             "referrals": referrals,
             "codes": codes,
             "statuses": referral_service.get_referral_status_choices(),
@@ -148,7 +161,10 @@ def admin_referrals():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        referrals = referral_service.list_referrals_for_sales_rep(user["id"])
+        referrals = referral_service.list_referrals_for_sales_rep(
+            user["id"],
+            token_role=(g.current_user.get("role") or "").lower(),
+        )
         return {
             "referrals": referrals,
             "statuses": referral_service.get_referral_status_choices(),
@@ -164,7 +180,15 @@ def admin_codes():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        codes = [code for code in referral_code_repository.get_all() if code.get("salesRepId") == user["id"]]
+        target_ids = {str(user.get("id"))}
+        linked = user.get("salesRepId") or g.current_user.get("salesRepId")
+        if linked:
+            target_ids.add(str(linked))
+        codes = [
+            code
+            for code in referral_code_repository.get_all()
+            if str(code.get("salesRepId")) in target_ids
+        ]
         return {"codes": codes}
 
     return handle_action(action)
@@ -199,13 +223,49 @@ def admin_create_code():
             {
                 **referral,
                 "referralCodeId": record.get("id"),
-                "status": "code_issued",
+                "status": "contacted",
             }
         )
 
         return {"code": record}
 
     return handle_action(action, status=201)
+
+
+@blueprint.post("/admin/manual")
+@require_auth
+def admin_create_manual_prospect():
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        referral = referral_service.create_manual_prospect(
+            {
+                "salesRepId": user["id"],
+                "name": payload.get("name"),
+                "email": payload.get("email"),
+                "phone": payload.get("phone"),
+                "notes": payload.get("notes"),
+                "status": payload.get("status"),
+            }
+        )
+        return {"referral": referral}
+
+    return handle_action(action, status=201)
+
+
+@blueprint.delete("/admin/manual/<referral_id>")
+@require_auth
+def admin_delete_manual_prospect(referral_id: str):
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        referral_service.delete_manual_prospect(referral_id, user["id"])
+        return {"status": "deleted"}
+
+    return handle_action(action)
 
 
 @blueprint.patch("/admin/referrals/<referral_id>")
@@ -248,6 +308,7 @@ def admin_add_credit():
         doctor_id = payload.get("doctorId")
         amount = payload.get("amount")
         reason = _sanitize_string(payload.get("reason"))
+        referral_id = payload.get("referralId")
 
         if not doctor_id or not isinstance(amount, (int, float)) or not reason:
             raise _error("INVALID_PAYLOAD", 400)
@@ -257,6 +318,7 @@ def admin_add_credit():
             amount=amount,
             reason=reason,
             created_by=user.get("email") or user["id"],
+            referral_id=referral_id,
         )
         return result
 

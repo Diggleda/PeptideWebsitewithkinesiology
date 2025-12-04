@@ -1,8 +1,29 @@
 const express = require('express');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
+const { ensureAdmin } = require('../middleware/auth');
 
 const router = express.Router();
+
+router.get('/', ensureAdmin, async (req, res) => {
+  if (!mysqlClient.isEnabled()) {
+    return res.status(503).json({ error: 'Contact form storage requires MySQL to be enabled.' });
+  }
+
+  try {
+    const submissions = await mysqlClient.fetchAll(
+      `
+        SELECT id, name, email, phone, source, created_at
+        FROM contact_forms
+        ORDER BY created_at DESC
+      `,
+    );
+    return res.status(200).json(submissions);
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to fetch contact forms');
+    return res.status(500).json({ error: 'Unable to fetch contact forms. Please try again later.' });
+  }
+});
 
 router.post('/', async (req, res) => {
   const { name = '', email = '', phone = '', source = '' } = req.body || {};

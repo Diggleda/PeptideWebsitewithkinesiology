@@ -6,6 +6,7 @@ import {
   useCallback,
   FormEvent,
   ReactNode,
+  forwardRef,
 } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -237,6 +238,9 @@ interface AccountOrderLineItem {
   total?: number | null;
   price?: number | null;
   sku?: string | null;
+  productId?: string | number | null;
+  variantId?: string | number | null;
+  image?: string | null;
 }
 
 interface AccountOrderAddress {
@@ -283,8 +287,11 @@ interface AccountOrderSummary {
   billingAddress?: AccountOrderAddress | null;
   shippingEstimate?: AccountShippingEstimate | null;
   shippingTotal?: number | null;
+  taxTotal?: number | null;
   physicianCertified?: boolean | null;
 }
+
+const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v1";
 
 const normalizeAddressPart = (value?: string | null) => {
   if (typeof value === "string") {
@@ -413,6 +420,64 @@ const coerceNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const normalizeIdField = (
+  value: unknown,
+): string | number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const resolveLineImageUrl = (item: any): string | null => {
+  const candidates = [
+    item?.image,
+    item?.imageUrl,
+    item?.image_url,
+    item?.thumbnail,
+    item?.thumb,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+    if (candidate && typeof candidate === "object") {
+      const source =
+        candidate.src ||
+        candidate.url ||
+        candidate.href ||
+        candidate.source;
+      if (typeof source === "string" && source.trim().length > 0) {
+        return source.trim();
+      }
+    }
+  }
+
+  const metadata = Array.isArray(item?.meta_data)
+    ? item.meta_data
+    : Array.isArray(item?.meta)
+      ? item.meta
+      : [];
+  for (const entry of metadata) {
+    const value = entry?.value;
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+    if (value && typeof value === "object") {
+      const source =
+        value.src || value.url || value.href || value.source;
+      if (typeof source === "string" && source.trim().length > 0) {
+        return source.trim();
+      }
+    }
+  }
+  return null;
+};
+
 const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
   if (!Array.isArray(items)) {
     return [];
@@ -434,6 +499,15 @@ const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
           typeof item?.sku === "string" && item.sku.trim().length > 0
             ? item.sku.trim()
             : null,
+        productId: normalizeIdField(
+          item?.productId ?? item?.product_id ?? item?.wooProductId,
+        ),
+        variantId: normalizeIdField(
+          item?.variantId ??
+            item?.variation_id ??
+            item?.wooVariationId,
+        ),
+        image: resolveLineImageUrl(item),
       };
     })
     .filter((line) => line.name);
@@ -1377,9 +1451,7 @@ const mapWooProductToProduct = (
     prescription: false,
     dosage: hasVariants
       ? `${variantList.length} option${variantList.length === 1 ? "" : "s"} available`
-      : product.sku
-        ? `SKU ${product.sku}`
-        : "See details",
+      : "See details",
     manufacturer:
       stripHtml(typeof manufacturerMeta === "string" ? manufacturerMeta : "") ||
       "",
@@ -1435,8 +1507,118 @@ const toCardProduct = (product: Product): CardProduct => {
   };
 };
 
+const CatalogSkeletonCard = forwardRef<HTMLDivElement>((_props, ref) => (
+  <div
+    ref={ref}
+    className="glass-card squircle-xl p-5 flex flex-col gap-3 min-h-[12rem]"
+    aria-hidden="true"
+  >
+    <div className="h-3 w-1/3 rounded-full bg-slate-200" />
+    <div className="space-y-2">
+      <div className="h-3 w-5/6 rounded-full bg-slate-100 border border-slate-200" />
+      <div className="h-3 w-2/3 rounded-full bg-slate-100 border border-slate-200" />
+      <div className="h-3 w-1/2 rounded-full bg-slate-100 border border-slate-200" />
+    </div>
+    <div className="space-y-2 mt-auto">
+      <div className="h-3 w-1/3 rounded-full bg-slate-100 border border-slate-200" />
+      <div className="h-3 w-1/4 rounded-full bg-slate-100 border border-slate-200" />
+    </div>
+  </div>
+));
+CatalogSkeletonCard.displayName = "CatalogSkeletonCard";
+
+const formatPreviewCurrency = (value?: number | null) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "";
+  }
+  return `$${value.toFixed(2)}`;
+};
+
+const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
+  <div className="glass-card squircle-xl p-5 flex flex-col gap-3 min-h-[16rem]" aria-live="polite">
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs font-semibold text-slate-500">{product.category || "PepPro Catalog"}</span>
+      {product.price && (
+        <span className="text-sm font-bold text-slate-900">{formatPreviewCurrency(product.price)}</span>
+      )}
+    </div>
+    <h3 className="text-base font-semibold text-slate-900 line-clamp-2">
+      {product.name}
+    </h3>
+    {product.dosage && (
+      <p className="text-xs text-slate-600">{product.dosage}</p>
+    )}
+    {product.manufacturer && (
+      <p className="text-xs uppercase tracking-wide text-slate-500">{product.manufacturer}</p>
+    )}
+    <div className="mt-auto text-xs text-slate-400">
+      Ready to view details once loaded…
+    </div>
+  </div>
+);
+
+interface LazyCatalogProductCardProps {
+  product: Product;
+  onAddToCart: (productId: string, variationId: string | undefined | null, quantity: number) => void;
+}
+
+const LazyCatalogProductCard = ({ product, onAddToCart }: LazyCatalogProductCardProps) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const placeholderRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (isVisible) return;
+    const node = placeholderRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: "300px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  const cardProduct = useMemo(() => {
+    if (!isVisible) return null;
+    return toCardProduct(product);
+  }, [isVisible, product]);
+
+  if (cardProduct) {
+    return (
+      <ProductCard
+        product={cardProduct}
+        onAddToCart={(productId, variationId, quantity) =>
+          onAddToCart(productId, variationId, quantity)
+        }
+      />
+    );
+  }
+
+  return (
+    <div ref={placeholderRef}>
+      <CatalogTextPreviewCard product={product} />
+    </div>
+  );
+};
+
+type VariationFetchOptions = {
+  cache?: Map<number, WooVariation[]>;
+  concurrency?: number;
+};
+
 const fetchProductVariations = async (
   products: WooProduct[],
+  options: VariationFetchOptions = {},
 ): Promise<Map<number, WooVariation[]>> => {
   const variationMap = new Map<number, WooVariation[]>();
   if (products.length === 0) {
@@ -1444,7 +1626,11 @@ const fetchProductVariations = async (
   }
 
   const queue = [...products];
-  const concurrency = Math.min(4, queue.length);
+  const cache = options.cache;
+  const concurrency = Math.max(
+    1,
+    Math.min(options.concurrency ?? 12, queue.length),
+  );
 
   const workers = Array.from({ length: concurrency }, () =>
     (async function worker() {
@@ -1453,21 +1639,26 @@ const fetchProductVariations = async (
         if (!nextProduct) {
           break;
         }
+        const cached = cache?.get(nextProduct.id);
+        if (cached) {
+          variationMap.set(nextProduct.id, cached);
+          continue;
+        }
         try {
           const variations = await listProductVariations<WooVariation[]>(
             nextProduct.id,
             { per_page: 100, status: "publish" },
           );
-          if (Array.isArray(variations)) {
-            variationMap.set(nextProduct.id, variations);
-          } else {
-            variationMap.set(nextProduct.id, []);
-          }
+          const normalized = Array.isArray(variations) ? variations : [];
+          variationMap.set(nextProduct.id, normalized);
+          cache?.set(nextProduct.id, normalized);
         } catch (error) {
           console.warn("[Catalog] Failed to load variations", {
             productId: nextProduct.id,
             error,
           });
+          variationMap.set(nextProduct.id, []);
+          cache?.set(nextProduct.id, []);
         }
       }
     })(),
@@ -1519,6 +1710,62 @@ export default function App() {
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
     useState(false);
+  const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
+  const variationCacheLoadedRef = useRef(false);
+  const ensureVariationCacheReady = useCallback(() => {
+    if (variationCacheLoadedRef.current) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      variationCacheLoadedRef.current = true;
+      return;
+    }
+    variationCacheLoadedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(
+        VARIATION_CACHE_STORAGE_KEY,
+      );
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.data &&
+        typeof parsed.data === "object"
+      ) {
+        Object.entries(parsed.data as Record<string, WooVariation[]>).forEach(
+          ([key, value]) => {
+            const id = Number(key);
+            if (Number.isFinite(id) && Array.isArray(value)) {
+              variationCacheRef.current.set(id, value);
+            }
+          },
+        );
+      }
+    } catch (error) {
+      console.debug("[Catalog] Failed to load variation cache", error);
+      variationCacheRef.current.clear();
+    }
+  }, []);
+  const persistVariationCache = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const payload: Record<string, WooVariation[]> = {};
+      variationCacheRef.current.forEach((value, key) => {
+        payload[String(key)] = value;
+      });
+      window.sessionStorage.setItem(
+        VARIATION_CACHE_STORAGE_KEY,
+        JSON.stringify({ data: payload, ts: Date.now() }),
+      );
+    } catch (error) {
+      console.debug("[Catalog] Failed to persist variation cache", error);
+    }
+  }, []);
   const referralSummaryCooldownRef = useRef<number | null>(null);
   const prevUserRef = useRef<User | null>(null);
   const [showLandingLoginPassword, setShowLandingLoginPassword] =
@@ -3353,6 +3600,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    ensureVariationCacheReady();
+  }, [ensureVariationCacheReady]);
+
+  useEffect(() => {
     let cancelled = false;
     const warmApi = async () => {
       const start =
@@ -3421,35 +3672,14 @@ export default function App() {
           return;
         }
 
-        const variableProducts = (wooProducts ?? []).filter(
-          (item): item is WooProduct =>
-            Boolean(
-              item && typeof item === "object" && item.type === "variable",
-            ),
-        );
-        const variationMap =
-          variableProducts.length > 0
-            ? await fetchProductVariations(variableProducts)
-            : new Map<number, WooVariation[]>();
-
-        if (cancelled) {
-          return;
-        }
-
-        const mappedProducts = (wooProducts ?? [])
-          .filter((item): item is WooProduct =>
-            Boolean(item && typeof item === "object" && "id" in item),
-          )
-          .map((item) =>
-            mapWooProductToProduct(item, variationMap.get(item.id) ?? []),
-          )
-          .filter((product) => product && product.name);
-
-        if (mappedProducts.length > 0) {
-          setCatalogProducts(mappedProducts);
+        const applyCatalogState = (products: Product[]) => {
+          if (!products || products.length === 0) {
+            return false;
+          }
+          setCatalogProducts(products);
           const categoriesFromProducts = Array.from(
             new Set(
-              mappedProducts
+              products
                 .map((product) => product.category)
                 .filter(
                   (category): category is string =>
@@ -3473,14 +3703,62 @@ export default function App() {
               : categoryNamesFromApi.length > 0
                 ? categoryNamesFromApi
                 : [];
-          setCatalogCategories(nextCategories);
-
+          if (nextCategories.length > 0) {
+            setCatalogCategories(nextCategories);
+          }
           const typesFromProducts = Array.from(
-            new Set(
-              mappedProducts.map((product) => product.type).filter(Boolean),
-            ),
+            new Set(products.map((product) => product.type).filter(Boolean)),
           ) as string[];
-          setCatalogTypes(typesFromProducts);
+          if (typesFromProducts.length > 0) {
+            setCatalogTypes(typesFromProducts);
+          }
+          return true;
+        };
+
+        const baseProducts = (wooProducts ?? [])
+          .filter((item): item is WooProduct =>
+            Boolean(item && typeof item === "object" && "id" in item),
+          )
+          .map((item) => mapWooProductToProduct(item, []))
+          .filter((product): product is Product => Boolean(product && product.name));
+
+        const hadBaseProducts = applyCatalogState(baseProducts);
+        if (hadBaseProducts) {
+          setCatalogLoading(false);
+        }
+
+        const variableProducts = (wooProducts ?? []).filter(
+          (item): item is WooProduct =>
+            Boolean(
+              item && typeof item === "object" && item.type === "variable",
+            ),
+        );
+        ensureVariationCacheReady();
+        const variationMap =
+          variableProducts.length > 0
+            ? await fetchProductVariations(variableProducts, {
+                cache: variationCacheRef.current,
+                concurrency: 12,
+              })
+            : new Map<number, WooVariation[]>();
+        if (variableProducts.length > 0) {
+          persistVariationCache();
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const mappedProducts = (wooProducts ?? [])
+          .filter((item): item is WooProduct =>
+            Boolean(item && typeof item === "object" && "id" in item),
+          )
+          .map((item) =>
+            mapWooProductToProduct(item, variationMap.get(item.id) ?? []),
+          )
+          .filter((product) => product && product.name);
+
+        if (applyCatalogState(mappedProducts)) {
           setCatalogLoading(false);
           catalogFetchInFlightRef.current = false;
           return;
@@ -3530,7 +3808,7 @@ export default function App() {
       }
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [ensureVariationCacheReady, persistVariationCache]);
 
   useEffect(() => {
     if (!user) {
@@ -5561,7 +5839,7 @@ export default function App() {
       label: string;
       tone?: "info" | "warn" | "error";
     }[] = [{ key: "count", label: itemLabel }];
-    const showFilters = !catalogLoading;
+    const showFilters = true;
 
     if (formattedSearch.length > 0) {
       statusChips.push({
@@ -5578,6 +5856,8 @@ export default function App() {
     if (catalogError) {
       statusChips.push({ key: "error", label: "Woo sync issue" });
     }
+    const showSkeletonGrid = catalogLoading && filteredProducts.length === 0;
+    const productSkeletons = Array.from({ length: 6 });
 
     return (
       <div
@@ -5589,14 +5869,22 @@ export default function App() {
             ref={filterSidebarRef}
             className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
           >
-            <CategoryFilter
-              categories={catalogCategories}
-              types={[]}
-              filters={filters}
-              onFiltersChange={setFilters}
-              productCounts={productCounts}
-              typeCounts={{}}
-            />
+            {catalogCategories.length > 0 ? (
+              <CategoryFilter
+                categories={catalogCategories}
+                types={[]}
+                filters={filters}
+                onFiltersChange={setFilters}
+                productCounts={productCounts}
+                typeCounts={{}}
+              />
+            ) : (
+              <div className="glass-card squircle-lg px-8 py-6 lg:px-12 lg:py-8 text-sm text-slate-700" aria-live="polite">
+                <p className="font-semibold text-slate-900">
+                  Fetching Catelogue... Please wait while we load the products
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -5642,20 +5930,23 @@ export default function App() {
             </div>
           </div>
 
-          {filteredProducts.length > 0 ? (
+          {showSkeletonGrid ? (
             <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredProducts.map((product) => {
-                const cardProduct = toCardProduct(product);
-                return (
-                  <ProductCard
-                    key={product.id}
-                    product={cardProduct}
-                    onAddToCart={(productId, variationId, qty) =>
-                      handleAddToCart(productId, qty, undefined, variationId)
-                    }
-                  />
-                );
-              })}
+              {productSkeletons.map((_, index) => (
+                <CatalogSkeletonCard key={`catalog-skeleton-${index}`} />
+              ))}
+            </div>
+          ) : filteredProducts.length > 0 ? (
+            <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredProducts.map((product) => (
+                <LazyCatalogProductCard
+                  key={product.id}
+                  product={product}
+                  onAddToCart={(productId, variationId, qty) =>
+                    handleAddToCart(productId, qty, undefined, variationId)
+                  }
+                />
+              ))}
             </div>
           ) : (
             <div className="catalog-loading-state py-12">
@@ -6853,6 +7144,7 @@ export default function App() {
             onBuyOrderAgain={handleBuyOrderAgain}
             onCancelOrder={handleCancelOrder}
             referralCodes={referralCodesForHeader}
+            catalogLoading={catalogLoading}
           />
         )}
 

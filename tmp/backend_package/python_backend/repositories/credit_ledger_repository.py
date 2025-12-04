@@ -152,13 +152,23 @@ def update(entry: Dict) -> Optional[Dict]:
 
 def summarize_credits(doctor_id: str) -> Dict[str, float]:
     entries = find_by_doctor(doctor_id)
-    summary = {"total": 0.0, "firstOrderBonuses": 0.0}
+    summary = {
+        "total": 0.0,
+        "firstOrderBonuses": 0.0,
+        "creditsEarned": 0.0,
+        "creditsUsed": 0.0,
+    }
     for entry in entries:
-        sign = -1 if entry.get("direction") == "debit" else 1
         amount = float(entry.get("amount") or 0)
-        summary["total"] += sign * amount
-        if entry.get("firstOrderBonus") and entry.get("direction") == "credit":
-            summary["firstOrderBonuses"] += amount
+        direction = (entry.get("direction") or "credit").lower()
+        if direction == "debit":
+            summary["total"] -= amount
+            summary["creditsUsed"] += amount
+        else:
+            summary["total"] += amount
+            summary["creditsEarned"] += amount
+            if entry.get("firstOrderBonus"):
+                summary["firstOrderBonuses"] += amount
     return summary
 
 

@@ -9,7 +9,6 @@ const paymentService = require('./paymentService');
 const stripeClient = require('../integration/stripeClient');
 const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
-const inventorySyncService = require('./inventorySyncService');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
 
@@ -268,6 +267,10 @@ const buildLocalOrderSummary = (order) => ({
     quantity: item.quantity,
     price: item.price,
     total: Number(item.price || 0) * Number(item.quantity || 0),
+    sku: item.sku || item.productSku || null,
+    productId: item.productId || null,
+    variantId: item.variantId || null,
+    image: item.image || null,
   })),
   integrations: order.integrations || null,
   referrerBonus: order.referrerBonus || null,
@@ -512,20 +515,35 @@ const createOrder = async ({
 
   shipStationOrderId = integrations.shipStation?.response?.orderId || null;
 
-  try {
-    integrations.stripe = await paymentService.createStripePayment({
-      order,
-      customer: user,
-      wooOrderId,
-      wooOrderNumber,
-    });
-  } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
+  if (wooOrderId) {
+    try {
+      integrations.stripe = await paymentService.createStripePayment({
+        order,
+        customer: user,
+        wooOrderId,
+        wooOrderNumber,
+      });
+    } catch (error) {
+      logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
+      integrations.stripe = {
+        status: 'error',
+        message: error.message,
+        details: serializeCause(error.cause),
+      };
+    }
+  } else {
     integrations.stripe = {
-      status: 'error',
-      message: error.message,
-      details: serializeCause(error.cause),
+      status: 'skipped',
+      reason: 'woo_order_missing',
     };
+    logger.warn(
+      {
+        orderId: order.id,
+        wooStatus: integrations.wooCommerce?.status || 'unknown',
+        wooReason: integrations.wooCommerce?.reason || integrations.wooCommerce?.message || null,
+      },
+      'Stripe payment skipped because WooCommerce order was not created',
+    );
   }
 
   if (shipStationClient.isConfigured()) {
@@ -549,22 +567,11 @@ const createOrder = async ({
     }
   }
 
-  try {
-    integrations.inventorySync = await inventorySyncService.syncShipStationInventoryToWoo(order.items);
-  } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'Inventory sync integration failed');
-    integrations.inventorySync = {
-      status: 'error',
-      message: error.message,
-    };
-  }
-
   order.integrations = {
     wooCommerce: integrations.wooCommerce?.status,
     stripe: integrations.stripe?.status,
     shipEngine: integrations.shipEngine?.status,
     shipStation: integrations.shipStation?.status,
-    inventorySync: integrations.inventorySync?.status || integrations.inventorySync?.reason || null,
     mysql: integrations.mysql?.status || integrations.mysql?.reason || null,
   };
   order.integrationDetails = integrations;

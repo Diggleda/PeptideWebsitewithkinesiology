@@ -126,9 +126,9 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
     ? Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)
     : 0;
   const isInStock = showVariantSelector ? Boolean(activeVariant?.inStock) : Boolean(product?.inStock);
-  const skuDisplay = showVariantSelector
-    ? (activeVariant?.sku ? `SKU ${activeVariant.sku}` : product?.dosage)
-    : product?.dosage;
+  const detailDescriptor = showVariantSelector
+    ? activeVariant?.label || activeVariant?.dosage || product?.dosage
+    : product?.dosage || activeVariant?.label || activeVariant?.dosage;
 
   useEffect(() => {
     if (!tabs.some(tab => tab.id === activeTab)) {
@@ -266,7 +266,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                           </div>
                           <div>
                             <dt className="text-xs font-medium text-slate-600 uppercase tracking-wide">Dosage</dt>
-                            <dd className="mt-1 text-sm font-semibold text-slate-900">{skuDisplay}</dd>
+                            <dd className="mt-1 text-sm font-semibold text-slate-900">{detailDescriptor}</dd>
                           </div>
                           {product.type && (
                             <div>
@@ -294,7 +294,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                       <Pill className="w-4 h-4" />
                       <span className="text-xs font-medium uppercase tracking-wide">Dosage</span>
                     </div>
-                    <p className="text-sm font-semibold text-slate-900">{skuDisplay}</p>
+                    <p className="text-sm font-semibold text-slate-900">{detailDescriptor}</p>
                   </div>
 
                   {product.type && (

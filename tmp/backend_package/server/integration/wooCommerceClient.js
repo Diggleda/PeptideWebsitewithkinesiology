@@ -183,16 +183,86 @@ const getSiteClient = () => {
 let taxCalculationSupported = true;
 let taxCalculationWarningLogged = false;
 
+const parseWooNumericId = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const str = String(value);
+  const match = str.match(/(\d+)/);
+  return match ? Number(match[1]) : null;
+};
+
 const buildLineItems = (items) => items.map((item) => {
-  const sku = item.sku || item.productId || item.variantId || null;
-  return {
+  const quantity = Number(item.quantity) || 0;
+  const price = Number(item.price) || 0;
+  const total = Number(price * quantity).toFixed(2);
+  const productId = parseWooNumericId(item.productId || item.wooProductId || item.product_id);
+  const variationId = parseWooNumericId(
+    item.variantId
+    || item.variationId
+    || item.wooVariationId
+    || item.variation_id,
+  );
+  const resolvedSku = item.sku
+    || item.productSku
+    || item.variantSku
+    || (typeof item.productId === 'string' ? item.productId : null);
+  const line = {
     name: item.name,
-    sku,
-    quantity: item.quantity,
-    total: Number(item.price * item.quantity).toFixed(2),
+    sku: resolvedSku || null,
+    quantity,
+    total,
+    subtotal: total,
+    total_tax: '0',
+    subtotal_tax: '0',
     meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
   };
+  // Include product/variation ids so Woo and ShipStation exports keep the items.
+  if (productId) {
+    line.product_id = productId;
+  }
+  if (variationId) {
+    line.variation_id = variationId;
+  }
+  return line;
 });
+
+const buildShippingLines = ({ shippingTotal, shippingEstimate }) => {
+  if (shippingEstimate) {
+    const total = Number.isFinite(shippingTotal) ? Number(shippingTotal) : 0;
+    const rawMethodId = shippingEstimate.serviceCode
+      || shippingEstimate.serviceType
+      || shippingEstimate.carrierId
+      || null;
+    const normalizedMethodId = rawMethodId
+      ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+      : 'peppro_shipstation';
+    const methodTitle = shippingEstimate.serviceType
+      || shippingEstimate.serviceCode
+      || shippingEstimate.carrierId
+      || 'PepPro Shipping';
+    const metaData = [
+      shippingEstimate.carrierId ? { key: 'peppro_carrier_id', value: shippingEstimate.carrierId } : null,
+      shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
+      shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
+      Number.isFinite(shippingEstimate.estimatedDeliveryDays)
+        ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
+        : null,
+    ].filter(Boolean);
+    return [
+      {
+        method_id: normalizedMethodId,
+        method_title: methodTitle,
+        total: total.toFixed(2),
+        meta_data: metaData,
+      },
+    ];
+  }
+  return [];
+};
 
 const buildOrderPayload = ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
@@ -243,14 +313,12 @@ const buildOrderPayload = ({ order, customer }) => {
     };
   }
 
-  if (shippingTotal > 0) {
-    payload.shipping_lines = [
-      {
-        method_id: 'peppro_shipstation',
-        method_title: 'PepPro Shipping',
-        total: shippingTotal.toFixed(2),
-      },
-    ];
+  const shippingLines = buildShippingLines({
+    shippingTotal,
+    shippingEstimate: order.shippingEstimate,
+  });
+  if (shippingLines.length > 0) {
+    payload.shipping_lines = shippingLines;
   }
 
   return payload;
@@ -436,6 +504,9 @@ const sanitizeWooLineItems = (items = []) => {
     quantity: normalizeNumber(item?.quantity, 0),
     total: normalizeNumber(item?.total || item?.subtotal, 0),
     sku: item?.sku || null,
+    image: typeof item?.image?.src === 'string'
+      ? item.image.src
+      : (typeof item?.image === 'string' && item.image.trim().length > 0 ? item.image.trim() : null),
   }));
 };
 
@@ -585,11 +656,15 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   }
   try {
     const client = getClient();
+    const nowIso = new Date().toISOString();
     const response = await client.put(`/orders/${wooOrderId}`, {
       set_paid: true,
       status: 'processing',
       payment_method: 'stripe',
       payment_method_title: 'Stripe Onsite',
+      // Setting paid date helps Woo → ShipStation exports.
+      date_paid: nowIso,
+      date_paid_gmt: nowIso,
       meta_data: paymentIntentId
         ? [{ key: 'stripe_payment_intent', value: paymentIntentId }]
         : [],

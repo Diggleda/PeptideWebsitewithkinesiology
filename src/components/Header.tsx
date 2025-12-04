@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Users } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Users, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -87,6 +87,9 @@ interface AccountOrderLineItem {
   total?: number | null;
   price?: number | null;
   sku?: string | null;
+  productId?: string | number | null;
+  variantId?: string | number | null;
+  image?: string | null;
 }
 
 interface AccountOrderAddress {
@@ -129,6 +132,7 @@ interface AccountOrderSummary {
   billingAddress?: AccountOrderAddress | null;
   shippingEstimate?: AccountShippingEstimate | null;
   shippingTotal?: number | null;
+  taxTotal?: number | null;
   physicianCertified?: boolean | null;
 }
 
@@ -162,6 +166,7 @@ interface HeaderProps {
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
   onCancelOrder?: (orderId: string) => Promise<unknown>;
   referralCodes?: string[] | null;
+  catalogLoading?: boolean;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -189,6 +194,17 @@ const formatCurrency = (amount?: number | null, currency = 'USD') => {
   } catch {
     return `$${amount.toFixed(2)}`;
   }
+};
+
+const parseWooMoney = (value: any, fallback = 0) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  }
+  return fallback;
 };
 
 const titleCase = (value?: string | null) => {
@@ -348,6 +364,126 @@ const renderAddressLines = (address?: AccountOrderAddress | null) => {
   );
 };
 
+const normalizeImageSource = (value: any): string | null => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (value && typeof value === 'object') {
+    const source = value.src || value.url || value.href || value.source;
+    if (typeof source === 'string' && source.trim().length > 0) {
+      return source.trim();
+    }
+  }
+  return null;
+};
+
+const normalizeIdValue = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const matchWooLineItemForImage = (
+  line: AccountOrderLineItem,
+  wooLineItems: any[] = [],
+) => {
+  if (!Array.isArray(wooLineItems) || wooLineItems.length === 0) {
+    return null;
+  }
+  const lineSku = line.sku?.trim();
+  const lineName = line.name?.trim().toLowerCase();
+  const lineProductId =
+    normalizeIdValue(line.productId) ||
+    normalizeIdValue((line as any)?.product_id);
+  const lineVariantId =
+    normalizeIdValue(line.variantId) ||
+    normalizeIdValue((line as any)?.variation_id);
+
+  return wooLineItems.find((candidate) => {
+    if (!candidate) {
+      return false;
+    }
+    const candidateSku =
+      typeof candidate.sku === 'string' ? candidate.sku.trim() : null;
+    if (lineSku && candidateSku && lineSku === candidateSku) {
+      return true;
+    }
+
+    const candidateProductId = normalizeIdValue(candidate.product_id);
+    if (
+      lineProductId &&
+      candidateProductId &&
+      lineProductId === candidateProductId
+    ) {
+      return true;
+    }
+
+    const candidateVariationId = normalizeIdValue(candidate.variation_id);
+    if (
+      lineVariantId &&
+      candidateVariationId &&
+      lineVariantId === candidateVariationId
+    ) {
+      return true;
+    }
+
+    const candidateName =
+      typeof candidate.name === 'string'
+        ? candidate.name.trim().toLowerCase()
+        : null;
+    if (lineName && candidateName && lineName === candidateName) {
+      return true;
+    }
+    return false;
+  });
+};
+
+const resolveOrderLineImage = (
+  line: AccountOrderLineItem,
+  wooLineItems: any[] = [],
+): string | null => {
+  const inlineImage =
+    normalizeImageSource((line as any)?.image) ||
+    normalizeImageSource((line as any)?.imageUrl) ||
+    normalizeImageSource((line as any)?.thumbnail);
+  if (inlineImage) {
+    return inlineImage;
+  }
+  const match = matchWooLineItemForImage(line, wooLineItems);
+  if (!match) {
+    return null;
+  }
+  const fromMatch =
+    normalizeImageSource(match?.image) ||
+    normalizeImageSource(match?.product_image) ||
+    normalizeImageSource(match?.image_url);
+  if (fromMatch) {
+    return fromMatch;
+  }
+  const metaData = Array.isArray(match?.meta_data) ? match.meta_data : [];
+  for (const entry of metaData) {
+    const candidate = normalizeImageSource(entry?.value);
+    if (candidate) {
+      return candidate;
+    }
+    if (
+      typeof entry?.value === 'string' &&
+      entry.value.trim().length > 0
+    ) {
+      return entry.value.trim();
+    }
+  }
+  return null;
+};
+
 const humanizeOrderStatus = (status?: string | null) => {
   if (!status) return 'Pending';
   const normalized = status.trim().toLowerCase();
@@ -394,6 +530,7 @@ export function Header({
   onBuyOrderAgain,
   onCancelOrder,
   referralCodes = [],
+  catalogLoading = false,
 }: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -1461,8 +1598,8 @@ export function Header({
 
     return (
       <div className="space-y-4 pb-4">
-          {visibleOrders.map((order) => {
-            const status = humanizeOrderStatus(order.status);
+      {visibleOrders.map((order) => {
+        const status = humanizeOrderStatus(order.status);
             const statusNormalized = (order.status || '').toLowerCase();
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
@@ -1476,9 +1613,60 @@ export function Header({
             const orderNumberLabel = `Order #${orderNumberValue}`;
             const itemCount = order.lineItems?.length ?? 0;
             const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
+            const integrationDetails = parseMaybeJson((order as any).integrationDetails);
+            const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
+            const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+            const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+            const wooShippingLine =
+              (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
+              (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
+            const wooLineItems = Array.isArray(wooResponse?.line_items)
+              ? wooResponse.line_items
+              : Array.isArray(wooPayload?.line_items)
+                ? wooPayload.line_items
+                : [];
             const expectedDelivery = formatExpectedDelivery(order);
             const showExpectedDelivery = Boolean(expectedDelivery && isShipmentInTransit(order.status));
-            const displayTotal = (order.total ?? 0) + (order.shippingTotal ?? 0);
+            const summedLineItems = (order.lineItems || []).reduce((sum, line) => {
+              const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
+              return sum + lineTotal;
+            }, 0);
+            const subtotalValue = parseWooMoney(
+              (order as any).itemsSubtotal ?? (order as any).itemsTotal,
+              summedLineItems > 0
+                ? summedLineItems
+                : parseWooMoney(wooResponse?.subtotal ?? wooPayload?.subtotal, 0),
+            );
+            const shippingValue = parseWooMoney(
+              order.shippingTotal,
+              parseWooMoney(
+                wooResponse?.shipping_total ??
+                  wooPayload?.shipping_total ??
+                  wooShippingLine?.total,
+                0,
+              ),
+            );
+            const taxValue = parseWooMoney(
+              order.taxTotal,
+              parseWooMoney(wooResponse?.total_tax ?? wooPayload?.total_tax, 0),
+            );
+            const discountValue = Math.abs(
+              parseWooMoney(
+                (order as any).appliedReferralCredit,
+                parseWooMoney(
+                  wooResponse?.discount_total ??
+                    wooPayload?.discount_total ??
+                    (wooPayload?.discount_lines?.[0]?.total ?? 0),
+                  0,
+                ),
+              ),
+            );
+            const storedGrandTotal = parseWooMoney(
+              (order as any).grandTotal,
+              parseWooMoney(order.total, 0),
+            );
+            const computedGrandTotal = subtotalValue + shippingValue + taxValue - discountValue;
+            const displayTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
             const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
             
           return (
@@ -1517,7 +1705,7 @@ export function Header({
                         type="button"
                         className="text-[rgb(26,85,173)] font-semibold hover:underline"
                         onClick={() => {
-                          const integrations = order.integrations || (order as any).integrationDetails;
+                          const integrations = order.integrations || integrationDetails;
                           const wooIntegration = (integrations as any)?.wooCommerce;
                           if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
                         }}
@@ -1559,30 +1747,32 @@ export function Header({
 
                     {order.lineItems && order.lineItems.length > 0 && (
                       <div className="space-y-3">
-                        {order.lineItems.map((line, idx) => (
-                          <div key={line.id || `${line.sku}-${idx}`} className="order-line-item flex items-start gap-4 mb-4">
-                            <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
-                              {(line as any).image ? (
-                                <img
-                                  src={(line as any).image as string}
-                                  alt={line.name || 'Item thumbnail'}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <Package className="h-6 w-6" />
-                              )}
+                        {order.lineItems.map((line, idx) => {
+                          const lineImage = resolveOrderLineImage(line, wooLineItems);
+                          return (
+                            <div key={line.id || `${line.sku}-${idx}`} className="order-line-item flex items-start gap-4 mb-4">
+                              <div className="w-10 h-10 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                                {lineImage ? (
+                                  <img
+                                    src={lineImage}
+                                    alt={line.name || 'Item thumbnail'}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <Package className="h-6 w-6" />
+                                )}
+                              </div>
+                              <div className="flex-1 space-y-1">
+                                <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
+                                  {line.name || 'Item'}
+                                </p>
+                                <p className="text-sm text-slate-700">
+                                  Qty: {line.quantity ?? '—'}
+                                </p>
+                              </div>
                             </div>
-                            <div className="flex-1 space-y-1">
-                              <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
-                                {line.name || 'Item'}
-                              </p>
-                              <p className="text-sm text-slate-700">
-                                Qty: {line.quantity ?? '—'}
-                              </p>
-                              {line.sku && <p className="text-xs text-slate-500">SKU: {line.sku}</p>}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1636,8 +1826,16 @@ export function Header({
     const wooShippingLine =
       (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
       (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
+    const wooLineItems = Array.isArray(wooResponse?.line_items)
+      ? wooResponse.line_items
+      : Array.isArray(wooPayload?.line_items)
+        ? wooPayload.line_items
+        : [];
 
     const expectedDelivery = formatExpectedDelivery(selectedOrder);
+    const showExpectedDeliveryDetails = Boolean(
+      expectedDelivery && isShipmentInTransit(selectedOrder.status),
+    );
     const shippingMethod =
       formatShippingMethod(selectedOrder.shippingEstimate) ||
       titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
@@ -1661,8 +1859,46 @@ export function Header({
       wooBillingAddress ||
       parseAddress(selectedOrder.shippingAddress);
     const lineItems = selectedOrder.lineItems || [];
+    const summedLineItems = lineItems.reduce((sum, line) => {
+      const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
+      return sum + lineTotal;
+    }, 0);
     const stripeMeta = parseMaybeJson(integrationDetails?.stripe || (integrationDetails as any)?.Stripe) || {};
-    const detailTotal = (selectedOrder.total ?? 0) + (selectedOrder.shippingTotal ?? 0);
+    const subtotal = parseWooMoney(
+      (selectedOrder as any).itemsSubtotal ?? (selectedOrder as any).itemsTotal,
+      summedLineItems > 0
+        ? summedLineItems
+        : parseWooMoney(
+            wooResponse.total ?? wooPayload.total ?? wooResponse.subtotal ?? wooPayload.subtotal,
+            0,
+          ),
+    );
+    const shippingTotal = parseWooMoney(
+      selectedOrder.shippingTotal,
+      parseWooMoney(
+        wooResponse.shipping_total ?? wooPayload.shipping_total ?? wooShippingLine?.total,
+        0,
+      ),
+    );
+    const taxTotal = parseWooMoney(
+      (selectedOrder as any).taxTotal,
+      parseWooMoney(wooResponse.total_tax ?? wooPayload.total_tax, 0),
+    );
+    const discountTotalRaw = parseWooMoney(
+      (selectedOrder as any).appliedReferralCredit,
+      parseWooMoney(
+        wooResponse.discount_total ?? wooPayload.discount_total ?? (wooPayload.discount_lines?.[0]?.total ?? 0),
+        0,
+      ),
+    );
+    const discountTotal = Math.abs(discountTotalRaw);
+    const storedGrandTotal = parseWooMoney(
+      (selectedOrder as any).grandTotal,
+      parseWooMoney(selectedOrder.total, 0),
+    );
+    const computedGrandTotal = subtotal + shippingTotal + taxTotal - discountTotal;
+    const grandTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
+    const detailTotal = Math.max(grandTotal, 0);
     const paymentDisplay = (() => {
       const raw = selectedOrder.paymentMethod || null;
       if (raw && !/stripe onsite/i.test(raw)) {
@@ -1710,7 +1946,7 @@ export function Header({
                 {formatCurrency(detailTotal, selectedOrder.currency || 'USD')}
               </p>
             </div>
-            {showExpectedDelivery && (
+            {showExpectedDeliveryDetails && (
               <div>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
                 <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
@@ -1740,10 +1976,10 @@ export function Header({
                   {formatCurrency(shippingRate, selectedOrder.currency || 'USD')}
                 </p>
               )}
-              {typeof selectedOrder.shippingTotal === 'number' && (
+              {Number.isFinite(shippingTotal) && (
                 <p>
                   <span className="font-semibold">Shipping:</span>{' '}
-                  {formatCurrency(selectedOrder.shippingTotal, selectedOrder.currency || 'USD')}
+                  {formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}
                 </p>
               )}
               {expectedDelivery && (
@@ -1774,24 +2010,82 @@ export function Header({
           <h4 className="text-base font-semibold text-slate-900">Items</h4>
           {lineItems.length > 0 ? (
             <div className="space-y-4">
-              {lineItems.map((line, idx) => (
-                <div key={line.id || `${line.sku}-${idx}`} className="flex items-start justify-between text-sm">
-                  <div className="flex-1 pr-4">
-                    <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
-                    <p className="text-slate-600">
-                      Qty: {line.quantity ?? '—'}
-                      {line.sku ? ` • SKU: ${line.sku}` : ''}
-                    </p>
+              {lineItems.map((line, idx) => {
+                const quantity = Number(line.quantity) || 0;
+                const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
+                const unitPrice = quantity > 0 ? lineTotal / quantity : parseWooMoney(line.price, lineTotal);
+                const lineImage = resolveOrderLineImage(line, wooLineItems);
+                return (
+                  <div key={line.id || `${line.sku}-${idx}`} className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                    <div className="w-14 h-14 rounded-md border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                      {lineImage ? (
+                        <img
+                          src={lineImage}
+                          alt={line.name || 'Item thumbnail'}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Package className="h-6 w-6" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-[12rem] space-y-1 pr-4">
+                      <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
+                      <p className="text-slate-600">Qty: {quantity || '—'}</p>
+                    </div>
+                    <div className="text-sm text-slate-700 text-right min-w-[8rem]">
+                      {Number.isFinite(unitPrice) && (
+                        <p>Each: {formatCurrency(unitPrice, selectedOrder.currency || 'USD')}</p>
+                      )}
+                      {Number.isFinite(lineTotal) && (
+                        <p className="font-semibold">
+                          Total: {formatCurrency(lineTotal, selectedOrder.currency || 'USD')}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right min-w-[3rem]" aria-hidden="true" />
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-slate-600">No line items available for this order.</p>
           )}
         </div>
 
+        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-3 text-left">
+          <h4 className="text-base font-semibold text-slate-900">Order Summary</h4>
+          <div className="space-y-2 text-sm text-slate-700">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{formatCurrency(subtotal, selectedOrder.currency || 'USD')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Shipping</span>
+              <span>{formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}</span>
+            </div>
+            {taxTotal > 0 && (
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span>{formatCurrency(taxTotal, selectedOrder.currency || 'USD')}</span>
+              </div>
+            )}
+            {discountTotal > 0 && (
+              <div className="flex justify-between text-[rgb(26,85,173)]">
+                <span>Credits & Discounts</span>
+                <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>
+              </div>
+            )}
+            {paymentDisplay && (
+              <div className="flex justify-between">
+                <span>Paid with</span>
+                <span className="font-medium text-slate-900">{paymentDisplay}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
+              <span>Total</span>
+              <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -1837,10 +2131,20 @@ export function Header({
             </div>
           )}
 
-      </div>
+          {catalogLoading && (
+            <div className="glass-card squircle-md p-4 border border-[rgba(95,179,249,0.35)] bg-white/80 flex items-center gap-3">
+              <RefreshCw className="h-4 w-4 text-[rgb(95,179,249)] animate-spin" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
+                <p className="text-xs text-slate-600">Please hold while we sync the catalog data.</p>
+              </div>
+            </div>
+          )}
 
-      {/* Orders Content */}
-      <div className="relative">
+        </div>
+
+        {/* Orders Content */}
+        <div className="relative">
         {selectedOrder ? renderOrderDetails() : renderOrdersList()}
       </div>
       </div>

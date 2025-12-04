@@ -43,13 +43,14 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # Update the user's credit balance
-    current_balance = float(user.get("referralCredits", 0))
-    new_balance = current_balance + refund_amount
-    user_repository.update({**user, "referralCredits": new_balance})
+    updated_user = user_repository.adjust_referral_credits(user["id"], refund_amount) or {
+        **user,
+        "referralCredits": float(user.get("referralCredits", 0)) + refund_amount,
+    }
 
     logger.info(
         f"Processed refund for order #{order_id}. "
-        f"Added {refund_amount} to credit balance for user {user['id']}"
+        f"Added {refund_amount} to credit balance for user {updated_user['id']}"
     )
 
     return {"status": "processed", "ledger_entry_id": ledger_entry["id"]}

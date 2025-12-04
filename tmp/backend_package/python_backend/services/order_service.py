@@ -24,6 +24,29 @@ def _validate_items(items: Optional[List[Dict]]) -> bool:
     )
 
 
+def _normalize_address_field(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _extract_user_address_fields(shipping_address: Optional[Dict]) -> Dict[str, Optional[str]]:
+    if not isinstance(shipping_address, dict):
+        return {}
+    return {
+        "officeAddressLine1": _normalize_address_field(shipping_address.get("addressLine1")),
+        "officeAddressLine2": _normalize_address_field(shipping_address.get("addressLine2")),
+        "officeCity": _normalize_address_field(shipping_address.get("city")),
+        "officeState": _normalize_address_field(shipping_address.get("state")),
+        "officePostalCode": _normalize_address_field(shipping_address.get("postalCode")),
+        "officeCountry": _normalize_address_field(shipping_address.get("country")),
+    }
+
+
 def create_order(
     user_id: str,
     items: List[Dict],
@@ -44,6 +67,13 @@ def create_order(
         raise _service_error("User not found", 404)
 
     now = datetime.now(timezone.utc).isoformat()
+    shipping_address = shipping_address or {}
+    address_updates = _extract_user_address_fields(shipping_address)
+    if any(address_updates.values()):
+        updated_user = user_repository.update({**user, **address_updates})
+        if updated_user:
+            user = updated_user
+
     normalized_referral = (referral_code or "").strip().upper() or None
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
@@ -97,8 +127,10 @@ def create_order(
         integrations["wooCommerce"] = woo_commerce.forward_order(order, user)
         woo_resp = integrations["wooCommerce"]
         if woo_resp.get("status") == "success":
-            order["wooOrderId"] = woo_resp.get("response", {}).get("id")
-            order["wooOrderKey"] = woo_resp.get("response", {}).get("orderKey")
+            woo_response = woo_resp.get("response", {}) or {}
+            order["wooOrderId"] = woo_response.get("id")
+            order["wooOrderKey"] = woo_response.get("orderKey")
+            order["wooOrderNumber"] = woo_response.get("number")
         # On successful Woo order creation, finalize referral credit deduction
         if order.get("appliedReferralCredit"):
             try:
@@ -113,15 +145,31 @@ def create_order(
             "details": getattr(exc, "response", None),
         }
 
-    try:
-        integrations["stripe"] = stripe_payments.create_payment_intent(order)
-    except Exception as exc:  # pragma: no cover - network error path
-        logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+    if order.get("wooOrderId"):
+        try:
+            integrations["stripe"] = stripe_payments.create_payment_intent(order)
+            if integrations["stripe"].get("paymentIntentId"):
+                order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
+        except Exception as exc:  # pragma: no cover - network error path
+            logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+            integrations["stripe"] = {
+                "status": "error",
+                "message": str(exc),
+                "details": getattr(exc, "response", None),
+            }
+    else:
         integrations["stripe"] = {
-            "status": "error",
-            "message": str(exc),
-            "details": getattr(exc, "response", None),
+            "status": "skipped",
+            "reason": "woo_order_missing",
         }
+        logger.warning(
+            "Stripe payment skipped because WooCommerce order failed",
+            extra={
+                "orderId": order["id"],
+                "wooStatus": integrations.get("wooCommerce", {}).get("status"),
+                "wooMessage": integrations.get("wooCommerce", {}).get("message"),
+            },
+        )
 
     try:
         integrations["shipEngine"] = ship_engine.forward_shipment(order, user)
@@ -158,24 +206,135 @@ def create_order(
     }
 
 
+def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
+    """Best-effort lookup of a local order using a WooCommerce order id/number."""
+    if not woo_order_id:
+        return None
+    target = str(woo_order_id)
+    for order in order_repository.get_all():
+        if str(order.get("wooOrderId") or order.get("woo_order_id") or "") == target:
+            return order
+        details = order.get("integrationDetails") or {}
+        woo_details = details.get("wooCommerce") or {}
+        if str(woo_details.get("wooOrderNumber") or woo_details.get("woo_order_number") or "") == target:
+            return order
+    return None
+
+
+def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> Dict:
+    """
+    Cancel a WooCommerce order first (source of truth), then mirror status locally if present.
+    """
+    local_order = _find_order_by_woo_id(order_id) or order_repository.find_by_id(order_id)
+    stripe_refund = None
+    woo_order = None
+
+    # If no local record, attempt to fetch Woo order to extract payment intent/total.
+    if not local_order:
+        woo_order = woo_commerce.fetch_order(order_id)
+
+    # Attempt Stripe refund first if we have a PaymentIntent.
+    payment_intent_id = None
+    total_amount = None
+    if local_order and local_order.get("paymentIntentId"):
+        payment_intent_id = local_order["paymentIntentId"]
+        total_amount = float(local_order.get("total") or 0) + float(local_order.get("shippingTotal") or 0)
+    elif woo_order:
+        meta = woo_order.get("meta_data") or []
+        for entry in meta:
+            if entry.get("key") == "stripe_payment_intent":
+                payment_intent_id = entry.get("value")
+                break
+        try:
+            total_amount = float(woo_order.get("total") or 0)
+            total_amount += float(woo_order.get("shipping_total") or 0)
+        except Exception:
+            total_amount = None
+
+    if payment_intent_id:
+        try:
+            stripe_refund = stripe_payments.refund_payment_intent(
+                payment_intent_id,
+                amount_cents=int(round(total_amount * 100)) if total_amount and total_amount > 0 else None,
+                reason=reason or None,
+                metadata={"peppro_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
+            )
+        except Exception as exc:  # pragma: no cover - network path
+            logger.error("Stripe refund failed during cancellation", exc_info=True, extra={"orderId": order_id})
+
+    woo_result = None
+    try:
+        woo_result = woo_commerce.cancel_order(order_id, reason or "")
+    except Exception as exc:  # pragma: no cover - network path
+        logger.error("WooCommerce cancellation failed", exc_info=True, extra={"orderId": order_id})
+        woo_result = {"status": "error", "message": str(exc)}
+
+    if woo_result and woo_result.get("status") == "not_found":
+        raise _service_error("Order not found", 404)
+
+    # Mirror status locally if we have a record; do not block on missing or mismatched ownership.
+    if local_order:
+        local_order["status"] = "refunded" if stripe_refund else "cancelled"
+        local_order["cancellationReason"] = reason or ""
+        order_repository.update(local_order)
+
+    return {
+        "status": "refunded" if stripe_refund else (woo_result.get("status") if isinstance(woo_result, dict) else "cancelled"),
+        "order": local_order,
+        "wooCancellation": woo_result,
+        "stripeRefund": stripe_refund,
+    }
+
+
 def get_orders_for_user(user_id: str):
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _service_error("User not found", 404)
+
     orders = order_repository.find_by_user_id(user_id)
+    woo_orders = []
+    woo_error = None
+
+    email = (user.get("email") or "").strip().lower()
+    if email:
+        try:
+            woo_orders = woo_commerce.fetch_orders_by_email(email)
+        except woo_commerce.IntegrationError as exc:
+            logger.error("WooCommerce order lookup failed", exc_info=True, extra={"userId": user_id})
+            woo_error = {
+                "message": str(exc) or "Unable to load WooCommerce orders.",
+                "details": getattr(exc, "response", None),
+                "status": getattr(exc, "status", 502),
+            }
+        except Exception as exc:  # pragma: no cover - unexpected network error path
+            logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
+            woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
+
     return {
         "local": orders,
-        "woo": [],
+        "woo": woo_orders,
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
-        "wooError": None,
+        "wooError": woo_error,
     }
 
 
 def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     users = user_repository.get_all()
-    doctors = [
-        user
-        for user in users
-        if (user.get("role") or "").lower() in ("doctor", "test_doctor")
-        and user.get("salesRepId") == sales_rep_id
-    ]
+    normalized_sales_rep_id = str(sales_rep_id)
+    role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
+
+    doctors = []
+    for user in users:
+        role = (user.get("role") or "").lower()
+        if role not in ("doctor", "test_doctor"):
+            continue
+        if str(user.get("salesRepId") or "") != normalized_sales_rep_id:
+            continue
+        # Only attach doctors to real sales reps; if the "rep" is actually an admin,
+        # still include these for the admin's personal tracker but not in rep rollups.
+        if role_lookup.get(normalized_sales_rep_id) not in ("sales_rep", "rep", "admin"):
+            continue
+        doctors.append(user)
 
     doctor_lookup = {
         doc.get("id"): {
@@ -229,11 +388,15 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
     doctors = [
         u
         for u in users
-        if (u.get("role") or "").lower() in ("doctor", "test_doctor")
-        and u.get("salesRepId")
+        if (u.get("role") or "").lower() in ("doctor", "test_doctor") and u.get("salesRepId")
     ]
 
-    doctor_to_rep = {doc.get("id"): doc.get("salesRepId") for doc in doctors if doc.get("salesRepId")}
+    valid_rep_ids = {rep.get("id") for rep in reps}
+    doctor_to_rep = {
+        doc.get("id"): doc.get("salesRepId")
+        for doc in doctors
+        if doc.get("salesRepId") in valid_rep_ids
+    }
     rep_totals: Dict[str, Dict[str, float]] = {}
 
     # Local orders

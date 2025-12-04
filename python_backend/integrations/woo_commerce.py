@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Dict, Optional, Mapping, Any
 from uuid import uuid4
 
@@ -62,9 +63,17 @@ def build_line_items(items):
         total = f"{price * quantity:.2f}"
         product_id = _parse_woo_id(item.get("productId"))
         variation_id = _parse_woo_id(item.get("variantId"))
+        resolved_sku = item.get("sku") or item.get("productId") or item.get("variantSku")
+        if resolved_sku is not None and not isinstance(resolved_sku, str):
+            try:
+                resolved_sku = str(resolved_sku)
+            except Exception:
+                resolved_sku = None
+        if resolved_sku:
+            resolved_sku = resolved_sku.strip()
         line = {
             "name": item.get("name"),
-            "sku": item.get("productId"),
+            "sku": resolved_sku or None,
             "quantity": quantity,
             "product_id": product_id,
             # Woo keeps our explicit totals; also helps ShipStation export items.
@@ -440,6 +449,79 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
         raise err
 
 
+def find_product_by_sku(sku: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not sku or not is_configured():
+        return None
+
+    base_url, api_version, auth, timeout = _client_config()
+    url = f"{base_url}/wp-json/{api_version}/products"
+
+    try:
+        response = requests.get(
+            url,
+            params={"sku": sku, "per_page": 1},
+            auth=auth,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - defensive logging
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("WooCommerce product lookup failed", exc_info=True, extra={"sku": sku})
+        raise IntegrationError("Failed to look up WooCommerce product", response=data) from exc
+
+    payload = response.json()
+    if isinstance(payload, list) and payload:
+        return payload[0]
+    return None
+
+
+def update_product_inventory(
+    product_id: Optional[int],
+    stock_quantity: Optional[float],
+    parent_id: Optional[int] = None,
+    product_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not product_id or not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+
+    base_url, api_version, auth, timeout = _client_config()
+    is_variation = bool(parent_id) or (product_type or "").lower() == "variation"
+    if is_variation and not parent_id:
+        raise IntegrationError("Variation inventory update requires parent product id")
+
+    if is_variation:
+        endpoint = f"{base_url}/wp-json/{api_version}/products/{parent_id}/variations/{product_id}"
+    else:
+        endpoint = f"{base_url}/wp-json/{api_version}/products/{product_id}"
+
+    payload = {"manage_stock": True, "stock_quantity": stock_quantity if stock_quantity is not None else None}
+
+    try:
+        response = requests.put(endpoint, json=payload, auth=auth, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - defensive logging
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error(
+            "WooCommerce inventory update failed",
+            exc_info=True,
+            extra={"productId": product_id, "parentId": parent_id},
+        )
+        raise IntegrationError("Failed to update WooCommerce inventory", response=data) from exc
+
+    body = response.json() if response.content else {}
+    return {"status": "success", "response": {"id": body.get("id"), "stock_quantity": body.get("stock_quantity")}}
+
+
 def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     """Map Woo order JSON to a lightweight summary for the API."""
     def _num(val: Any, fallback: float = 0.0) -> float:
@@ -468,6 +550,16 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
                 "quantity": _num(item.get("quantity"), 0),
                 "total": _num(item.get("total"), 0.0),
                 "sku": item.get("sku"),
+                "image": (
+                    item.get("image", {}).get("src")
+                    if isinstance(item.get("image"), dict)
+                    else item.get("image")
+                )
+                or (
+                    item.get("product_image", {}).get("src")
+                    if isinstance(item.get("product_image"), dict)
+                    else item.get("product_image")
+                ),
             }
             for item in order.get("line_items") or []
         ],
