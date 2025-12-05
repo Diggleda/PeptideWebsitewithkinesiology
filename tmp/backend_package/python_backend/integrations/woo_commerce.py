@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Mapping, Any
+from datetime import datetime
+from typing import Dict, Optional, Mapping, Any, List
 from uuid import uuid4
 
 import requests
 from requests.auth import HTTPBasicAuth
+from urllib.parse import quote
 
 from ..services import get_config
 
@@ -521,6 +523,82 @@ def update_product_inventory(
     return {"status": "success", "response": {"id": body.get("id"), "stock_quantity": body.get("stock_quantity")}}
 
 
+def _sanitize_store_url() -> str:
+    config = get_config()
+    store_url = _strip(config.woo_commerce.get("store_url"))
+    return store_url.rstrip("/")
+
+
+def _build_invoice_url(order_id: Any, order_key: Any) -> Optional[str]:
+    base = _sanitize_store_url()
+    if not base or not order_id or not order_key:
+        return None
+    safe_id = quote(str(order_id).strip(), safe="")
+    safe_key = quote(str(order_key).strip(), safe="")
+    return f"{base}/my-account/view-order/{safe_id}/?order={safe_id}&key={safe_key}"
+
+
+def _map_address(address: Optional[Dict[str, Any]]) -> Optional[Dict[str, Optional[str]]]:
+    if not isinstance(address, dict):
+        return None
+    first = (address.get("first_name") or "").strip()
+    last = (address.get("last_name") or "").strip()
+    company = (address.get("company") or "").strip()
+    name_parts = [part for part in [first, last] if part]
+    name = " ".join(name_parts) or company or None
+    mapped = {
+        "name": name,
+        "addressLine1": address.get("address_1") or None,
+        "addressLine2": address.get("address_2") or None,
+        "city": address.get("city") or None,
+        "state": address.get("state") or None,
+        "postalCode": address.get("postcode") or None,
+        "country": address.get("country") or None,
+        "phone": address.get("phone") or None,
+    }
+    if any(mapped.values()):
+        return mapped
+    return None
+
+
+def _meta_value(meta: List[Dict[str, Any]], key: str) -> Optional[Any]:
+    for entry in meta or []:
+        if entry.get("key") == key:
+            return entry.get("value")
+    return None
+
+
+def _map_shipping_estimate(order: Dict[str, Any], meta: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(order, dict):
+        return None
+    shipping_lines = order.get("shipping_lines") or []
+    first_line = shipping_lines[0] if shipping_lines else {}
+    estimate: Dict[str, Any] = {}
+    meta_service = _meta_value(meta, "peppro_shipping_service")
+    meta_carrier = _meta_value(meta, "peppro_shipping_carrier")
+    meta_total = _meta_value(meta, "peppro_shipping_total")
+    if meta_service:
+        estimate["serviceType"] = meta_service
+    if meta_carrier:
+        estimate["carrierId"] = meta_carrier
+    if meta_total is not None:
+        try:
+            estimate["rate"] = float(meta_total)
+        except Exception:
+            pass
+    if first_line:
+        estimate.setdefault("serviceType", first_line.get("method_title") or first_line.get("method_id"))
+        estimate.setdefault("serviceCode", first_line.get("method_id"))
+        estimate.setdefault("carrierId", first_line.get("method_id"))
+        try:
+            total = float(first_line.get("total") or 0)
+            if total:
+                estimate.setdefault("rate", total)
+        except Exception:
+            pass
+    return estimate or None
+
+
 def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     """Map Woo order JSON to a lightweight summary for the API."""
     def _num(val: Any, fallback: float = 0.0) -> float:
@@ -529,6 +607,13 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             return fallback
 
+    meta_data = order.get("meta_data") or []
+    peppro_order_id = _meta_value(meta_data, "peppro_order_id")
+    shipping_estimate = _map_shipping_estimate(order, meta_data)
+    shipping_total = _num(order.get("shipping_total"), _num(_meta_value(meta_data, "peppro_shipping_total"), 0.0))
+    invoice_url = _build_invoice_url(order.get("id"), order.get("order_key"))
+    first_shipping_line = (order.get("shipping_lines") or [None])[0] or {}
+
     return {
         "id": str(order.get("id") or ""),
         "number": str(order.get("number") or order.get("id") or ""),
@@ -536,9 +621,13 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
         "currency": order.get("currency") or "USD",
         "paymentMethod": order.get("payment_method_title") or order.get("payment_method"),
+        "shippingTotal": shipping_total,
         "createdAt": order.get("date_created") or order.get("date_created_gmt"),
         "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
         "billingEmail": (order.get("billing") or {}).get("email"),
+        "shippingAddress": _map_address(order.get("shipping")),
+        "billingAddress": _map_address(order.get("billing")),
+        "shippingEstimate": shipping_estimate,
         "source": "woocommerce",
         "lineItems": [
             {
@@ -562,6 +651,15 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             }
             for item in order.get("line_items") or []
         ],
+        "integrationDetails": {
+            "wooCommerce": {
+                "wooOrderNumber": order.get("number") or order.get("id"),
+                "pepproOrderId": str(peppro_order_id) if peppro_order_id else None,
+                "status": order.get("status"),
+                "invoiceUrl": invoice_url,
+                "shippingLine": first_shipping_line,
+            }
+        },
     }
 
 

@@ -5,7 +5,16 @@ const ERROR_IMG_SRC =
 
 export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
   const [didError, setDidError] = useState(false)
-  const { alt, style, className, loading = 'lazy', ...rest } = props
+  const {
+    alt,
+    style,
+    className,
+    loading = 'lazy',
+    decoding = 'async',
+    referrerPolicy = 'no-referrer',
+    crossOrigin = 'anonymous',
+    ...rest
+  } = props
 
   useEffect(() => {
     setDidError(false)
@@ -23,7 +32,16 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
         className={`flex h-full w-full items-center justify-center bg-gray-100 text-center align-middle ${className ?? ''}`}
         style={style}
       >
-        <img src={ERROR_IMG_SRC} alt={alt || 'Image'} className="block max-h-full max-w-full object-contain" loading={loading} {...rest} />
+        <img
+          src={ERROR_IMG_SRC}
+          alt={alt || 'Image'}
+          className="block max-h-full max-w-full object-contain"
+          loading={loading}
+          decoding={decoding}
+          referrerPolicy={referrerPolicy}
+          crossOrigin={crossOrigin}
+          {...rest}
+        />
       </div>
     );
   }
@@ -33,6 +51,9 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
       src={PLACEHOLDER}
       alt={alt}
       loading={loading}
+      decoding={decoding}
+      referrerPolicy={referrerPolicy}
+      crossOrigin={crossOrigin}
       className={`block ${className ?? ''}`}
       style={style}
       {...rest}

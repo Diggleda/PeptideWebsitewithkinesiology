@@ -77,6 +77,7 @@ import {
   listCategories,
   listProductVariations,
 } from "./lib/wooClient";
+import { proxifyWooMediaUrl } from "./lib/mediaProxy";
 import {
   beginPasskeyAuthentication,
   beginPasskeyRegistration,
@@ -264,6 +265,11 @@ interface AccountShippingEstimate {
   deliveryDateGuaranteed?: string | null;
   rate?: number | null;
   currency?: string | null;
+  packageCode?: string | null;
+  packageDimensions?: { length?: number | null; width?: number | null; height?: number | null } | null;
+  weightOz?: number | null;
+  estimatedArrivalDate?: string | null;
+  meta?: Record<string, any> | null;
 }
 
 interface AccountOrderSummary {
@@ -282,6 +288,7 @@ interface AccountOrderSummary {
   lineItems?: AccountOrderLineItem[];
   integrations?: Record<string, string | null> | null;
   paymentMethod?: string | null;
+  paymentDetails?: string | null;
   integrationDetails?: Record<string, any> | null;
   shippingAddress?: AccountOrderAddress | null;
   billingAddress?: AccountOrderAddress | null;
@@ -289,6 +296,9 @@ interface AccountOrderSummary {
   shippingTotal?: number | null;
   taxTotal?: number | null;
   physicianCertified?: boolean | null;
+  wooOrderNumber?: string | null;
+  wooOrderId?: string | null;
+  cancellationId?: string | null;
 }
 
 const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v1";
@@ -384,6 +394,33 @@ const deriveShippingAddressFromOrders = (
 
 const WOO_PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
+
+const normalizeWooImageUrl = (value?: string | null): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  let candidate = value.trim();
+  if (!candidate) {
+    return null;
+  }
+  if (candidate.startsWith("//")) {
+    candidate = `https:${candidate}`;
+  }
+  if (/^http:\/\//i.test(candidate)) {
+    candidate = candidate.replace(/^http:\/\//i, "https://");
+  }
+  try {
+    const url = new URL(candidate);
+    url.protocol = "https:";
+    url.pathname = url.pathname
+      .split("/")
+      .map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+      .join("/");
+    return proxifyWooMediaUrl(url.toString());
+  } catch (_error) {
+    return proxifyWooMediaUrl(candidate);
+  }
+};
 
 const RESET_PASSWORD_ROUTE = "/reset-password";
 
@@ -570,7 +607,38 @@ const normalizeShippingEstimateField = (
     }
     return parsed.toISOString();
   };
+  const normalizeDimensionNumber = (value: unknown) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return null;
+    }
+    return Math.round(numeric * 100) / 100;
+  };
+  const normalizeDimensions = (value: any) => {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    const length =
+      normalizeDimensionNumber(value.length) ??
+      normalizeDimensionNumber(value.lengthIn) ??
+      normalizeDimensionNumber(value.l);
+    const width =
+      normalizeDimensionNumber(value.width) ??
+      normalizeDimensionNumber(value.widthIn) ??
+      normalizeDimensionNumber(value.w);
+    const height =
+      normalizeDimensionNumber(value.height) ??
+      normalizeDimensionNumber(value.heightIn) ??
+      normalizeDimensionNumber(value.h);
+    if (!length || !width || !height) {
+      return null;
+    }
+    return { length, width, height };
+  };
   const fallbackDate = options?.fallbackDate || null;
+  const packageDimensions =
+    normalizeDimensions(estimate.packageDimensions) ||
+    normalizeDimensions(estimate.dimensions);
   const normalized = {
     carrierId: estimate.carrierId || estimate.carrier_id || null,
     serviceCode: estimate.serviceCode || estimate.service_code || null,
@@ -590,6 +658,17 @@ const normalizeShippingEstimateField = (
         : typeof estimate.estimated_arrival_date === "string"
           ? normalizeDateToIso(estimate.estimated_arrival_date)
           : null,
+    packageCode:
+      estimate.packageCode ||
+      estimate.package_code ||
+      estimate.packageType ||
+      null,
+    packageDimensions,
+    weightOz: coerceNumber(estimate.weightOz) ?? null,
+    meta:
+      typeof estimate.meta === "object" && estimate.meta !== null
+        ? estimate.meta
+        : null,
   };
   if (!normalized.estimatedArrivalDate && normalized.deliveryDateGuaranteed) {
     normalized.estimatedArrivalDate = normalizeDateToIso(
@@ -618,12 +697,141 @@ const normalizeShippingEstimateField = (
   return hasData ? normalized : null;
 };
 
+const normalizeWooOrderNumberKey = (value?: string | null) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const cleaned = value.replace(/^#/, "").trim().toLowerCase();
+  return cleaned.length > 0 ? cleaned : null;
+};
+
+const normalizeWooOrderId = (value: unknown): string | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      return trimmed;
+    }
+    const match = trimmed.match(/(\d+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+};
+
+const resolveWooOrderIdFromIntegrations = (order: any): string | null => {
+  if (!order) {
+    return null;
+  }
+  const integrations =
+    order.integrationDetails?.wooCommerce ||
+    order.integrationDetails?.woocommerce ||
+    {};
+  const response = integrations.response || {};
+  const payload = integrations.payload || {};
+  const candidates = [
+    order.wooOrderId,
+    order.woo_order_id,
+    integrations.wooOrderId,
+    integrations.woo_order_id,
+    response.id,
+    response.orderId,
+    payload.id,
+    payload.orderId,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeWooOrderId(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const mergeIntegrationDetails = (
+  localDetails?: Record<string, any> | null,
+  wooDetails?: Record<string, any> | null,
+): Record<string, any> | null => {
+  if (!localDetails && !wooDetails) {
+    return null;
+  }
+  if (!localDetails) {
+    return wooDetails ? { ...wooDetails } : null;
+  }
+  if (!wooDetails) {
+    return localDetails;
+  }
+  return {
+    ...wooDetails,
+    ...localDetails,
+    wooCommerce: {
+      ...(localDetails.wooCommerce || {}),
+      ...(wooDetails.wooCommerce || {}),
+    },
+  };
+};
+
+const mergeWooSummaryIntoLocal = (
+  localOrder: AccountOrderSummary,
+  wooOrder: AccountOrderSummary,
+) => {
+  localOrder.status = wooOrder.status || localOrder.status;
+  localOrder.total =
+    typeof wooOrder.total === "number" ? wooOrder.total : localOrder.total;
+  localOrder.currency = wooOrder.currency || localOrder.currency;
+  localOrder.number = wooOrder.number || localOrder.number;
+  localOrder.wooOrderNumber =
+    wooOrder.wooOrderNumber || wooOrder.number || localOrder.wooOrderNumber;
+  localOrder.updatedAt = wooOrder.updatedAt || localOrder.updatedAt;
+
+  if (!hasSavedAddress(localOrder.shippingAddress) && hasSavedAddress(wooOrder.shippingAddress)) {
+    localOrder.shippingAddress = wooOrder.shippingAddress;
+  }
+  if (!hasSavedAddress(localOrder.billingAddress) && hasSavedAddress(wooOrder.billingAddress)) {
+    localOrder.billingAddress = wooOrder.billingAddress;
+  }
+  if (!localOrder.shippingEstimate && wooOrder.shippingEstimate) {
+    localOrder.shippingEstimate = wooOrder.shippingEstimate;
+  }
+  if (typeof wooOrder.shippingTotal === "number") {
+    localOrder.shippingTotal = wooOrder.shippingTotal;
+  }
+  if (typeof wooOrder.taxTotal === "number") {
+    localOrder.taxTotal = wooOrder.taxTotal;
+  }
+  if (!localOrder.lineItems?.length && wooOrder.lineItems?.length) {
+    localOrder.lineItems = wooOrder.lineItems;
+  }
+  localOrder.paymentMethod = localOrder.paymentMethod || wooOrder.paymentMethod;
+  localOrder.paymentDetails = localOrder.paymentDetails || wooOrder.paymentDetails;
+  localOrder.integrationDetails = mergeIntegrationDetails(
+    localOrder.integrationDetails,
+    wooOrder.integrationDetails,
+  );
+  if (!localOrder.wooOrderId && wooOrder.wooOrderId) {
+    localOrder.wooOrderId = wooOrder.wooOrderId;
+  }
+  if (!localOrder.cancellationId) {
+    localOrder.cancellationId =
+      wooOrder.cancellationId ||
+      wooOrder.wooOrderId ||
+      localOrder.wooOrderId ||
+      localOrder.id;
+  }
+};
+
 const normalizeAccountOrdersResponse = (
   payload: any,
   options?: { includeCanceled?: boolean },
 ): AccountOrderSummary[] => {
   const includeCanceled = options?.includeCanceled ?? false;
   const result: AccountOrderSummary[] = [];
+  const localById = new Map<string, AccountOrderSummary>();
+  const localByWooNumber = new Map<string, AccountOrderSummary>();
   const shouldIncludeStatus = (status?: string | null) => {
     if (!status) return true;
     const normalized = String(status).trim().toLowerCase();
@@ -632,6 +840,74 @@ const normalizeAccountOrdersResponse = (
     }
     return true;
   };
+
+  const registerLocalEntry = (entry: AccountOrderSummary) => {
+    result.push(entry);
+    if (entry.id) {
+      localById.set(String(entry.id), entry);
+    }
+    const wooKey = normalizeWooOrderNumberKey(
+      entry.wooOrderNumber ||
+        entry.integrationDetails?.wooCommerce?.response?.number ||
+        entry.integrationDetails?.wooCommerce?.wooOrderNumber ||
+        entry.number,
+    );
+    if (wooKey) {
+      localByWooNumber.set(wooKey, entry);
+    }
+  };
+
+  if (payload && Array.isArray(payload.local)) {
+    payload.local
+      .filter((order: any) => shouldIncludeStatus(order?.status))
+      .forEach((order: any) => {
+        const identifier = order?.id
+          ? String(order.id)
+          : `local-${Math.random().toString(36).slice(2, 10)}`;
+        const wooOrderId =
+          normalizeWooOrderId(order?.wooOrderId) ||
+          normalizeWooOrderId(order?.woo_order_id) ||
+          resolveWooOrderIdFromIntegrations(order);
+        const cancellationId = wooOrderId || identifier;
+        registerLocalEntry({
+          id: identifier,
+          number: order?.number || identifier,
+          status:
+            order?.status === "trash" ? "canceled" : order?.status || "pending",
+          currency: order?.currency || "USD",
+          total: coerceNumber(order?.total) ?? null,
+          createdAt: order?.createdAt || null,
+          updatedAt: order?.updatedAt || null,
+          source: "peppro",
+          lineItems: toOrderLineItems(order?.items),
+          integrations: order?.integrations || null,
+          paymentMethod: order?.paymentMethod || null,
+          paymentDetails:
+            order?.paymentDetails ||
+            (order?.integrationDetails?.stripe?.cardLast4
+              ? `${order.integrationDetails?.stripe?.cardBrand || "Card"} •••• ${order.integrationDetails.stripe.cardLast4}`
+              : order?.paymentMethod || null),
+          integrationDetails: order?.integrationDetails || null,
+          shippingAddress: sanitizeOrderAddress(order?.shippingAddress),
+          billingAddress: sanitizeOrderAddress(order?.billingAddress),
+          shippingEstimate: normalizeShippingEstimateField(
+            order?.shippingEstimate,
+            { fallbackDate: order?.createdAt || null },
+          ),
+          shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
+          taxTotal: coerceNumber(order?.taxTotal) ?? null,
+          physicianCertified: order?.physicianCertified === true,
+          wooOrderNumber:
+            normalizeStringField(
+              order?.wooOrderNumber ||
+                order?.integrationDetails?.wooCommerce?.response?.number ||
+                order?.integrationDetails?.wooCommerce?.wooOrderNumber,
+            ) || null,
+          wooOrderId: wooOrderId || null,
+          cancellationId,
+        });
+      });
+  }
 
   if (payload && Array.isArray(payload.woo)) {
     payload.woo
@@ -642,9 +918,14 @@ const normalizeAccountOrdersResponse = (
           : order?.number
             ? `woo-${order.number}`
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
-        result.push({
+        const wooEntry: AccountOrderSummary = {
           id: identifier,
           number: order?.number || identifier,
+          wooOrderNumber: normalizeStringField(order?.number),
+          wooOrderId:
+            normalizeWooOrderId(order?.id) ||
+            normalizeWooOrderId(order?.wooOrderId) ||
+            null,
           status:
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
@@ -663,6 +944,10 @@ const normalizeAccountOrdersResponse = (
           lineItems: toOrderLineItems(order?.lineItems),
           integrations: order?.integrations || null,
           paymentMethod: order?.paymentMethod || null,
+          paymentDetails:
+            normalizeStringField(order?.paymentDetails) ||
+            normalizeStringField(order?.paymentMethod) ||
+            null,
           integrationDetails: order?.integrationDetails || null,
           shippingAddress: sanitizeOrderAddress(
             order?.shippingAddress || order?.shipping,
@@ -687,41 +972,23 @@ const normalizeAccountOrdersResponse = (
               order?.taxTotal ?? order?.total_tax ?? order?.totalTax,
             ) ?? null,
           physicianCertified: order?.physicianCertified === true,
-        });
-      });
-  }
-
-  if (payload && Array.isArray(payload.local)) {
-    payload.local
-      .filter((order: any) => shouldIncludeStatus(order?.status))
-      .forEach((order: any) => {
-        const identifier = order?.id
-          ? String(order.id)
-          : `local-${Math.random().toString(36).slice(2, 10)}`;
-        result.push({
-          id: identifier,
-          number: order?.number || identifier,
-          status:
-            order?.status === "trash" ? "canceled" : order?.status || "pending",
-          currency: order?.currency || "USD",
-          total: coerceNumber(order?.total) ?? null,
-          createdAt: order?.createdAt || null,
-          updatedAt: order?.updatedAt || null,
-          source: "peppro",
-          lineItems: toOrderLineItems(order?.items),
-          integrations: order?.integrations || null,
-          paymentMethod: order?.paymentMethod || null,
-          integrationDetails: order?.integrationDetails || null,
-          shippingAddress: sanitizeOrderAddress(order?.shippingAddress),
-          billingAddress: sanitizeOrderAddress(order?.billingAddress),
-          shippingEstimate: normalizeShippingEstimateField(
-            order?.shippingEstimate,
-            { fallbackDate: order?.createdAt || null },
-          ),
-          shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
-          taxTotal: coerceNumber(order?.taxTotal) ?? null,
-          physicianCertified: order?.physicianCertified === true,
-        });
+          cancellationId:
+            normalizeWooOrderId(order?.id) ||
+            normalizeWooOrderId(order?.number) ||
+            identifier,
+        };
+        const pepproOrderId = normalizeStringField(
+          order?.integrationDetails?.wooCommerce?.pepproOrderId,
+        );
+        const wooKey = normalizeWooOrderNumberKey(wooEntry.wooOrderNumber);
+        const localMatch =
+          (pepproOrderId && localById.get(pepproOrderId)) ||
+          (wooKey && localByWooNumber.get(wooKey));
+        if (localMatch) {
+          mergeWooSummaryIntoLocal(localMatch, wooEntry);
+        } else {
+          result.push(wooEntry);
+        }
       });
   }
 
@@ -1245,7 +1512,7 @@ const mapWooProductToProduct = (
   productVariations: WooVariation[] = [],
 ): Product => {
   const imageSources = (product.images ?? [])
-    .map((image) => image?.src)
+    .map((image) => normalizeWooImageUrl(image?.src))
     .filter((src): src is string => Boolean(src));
   const rawCategoryName = product.categories?.[0]?.name?.trim() ?? "";
   const categoryName =
@@ -1368,7 +1635,7 @@ const mapWooProductToProduct = (
         sku: variation.sku?.trim() || undefined,
         inStock: (variation.stock_status ?? "").toLowerCase() !== "outofstock",
         attributes,
-        image: variation.image?.src ?? undefined,
+        image: normalizeWooImageUrl(variation.image?.src) ?? undefined,
         description: stripHtml(variation.description ?? "") || undefined,
         weightOz,
         dimensions: variation.dimensions
@@ -1508,20 +1775,17 @@ const toCardProduct = (product: Product): CardProduct => {
 };
 
 const CatalogSkeletonCard = forwardRef<HTMLDivElement>((_props, ref) => (
-  <div
-    ref={ref}
-    className="glass-card squircle-xl p-5 flex flex-col gap-3 min-h-[12rem]"
-    aria-hidden="true"
-  >
-    <div className="h-3 w-1/3 rounded-full bg-slate-200" />
-    <div className="space-y-2">
-      <div className="h-3 w-5/6 rounded-full bg-slate-100 border border-slate-200" />
-      <div className="h-3 w-2/3 rounded-full bg-slate-100 border border-slate-200" />
-      <div className="h-3 w-1/2 rounded-full bg-slate-100 border border-slate-200" />
+  <div ref={ref} className="catalog-skeleton-card squircle-xl" aria-hidden="true">
+    <div className="catalog-skeleton-thumb" />
+    <div className="catalog-skeleton-lines">
+      <div className="catalog-skeleton-line catalog-skeleton-line--short" />
+      <div className="catalog-skeleton-line" />
+      <div className="catalog-skeleton-line catalog-skeleton-line--medium" />
+      <div className="catalog-skeleton-line catalog-skeleton-line--xs" />
     </div>
-    <div className="space-y-2 mt-auto">
-      <div className="h-3 w-1/3 rounded-full bg-slate-100 border border-slate-200" />
-      <div className="h-3 w-1/4 rounded-full bg-slate-100 border border-slate-200" />
+    <div className="catalog-skeleton-footer">
+      <div className="catalog-skeleton-pill" />
+      <div className="catalog-skeleton-pill catalog-skeleton-pill--short" />
     </div>
   </div>
 ));
@@ -2058,6 +2322,7 @@ export default function App() {
       }
       try {
         await ordersAPI.cancelOrder(orderId, "Cancelled via account portal");
+        toast.success("Order canceled. A refund is on the way.");
         await loadAccountOrders();
       } catch (error: any) {
         if (error?.code === "AUTH_REQUIRED") {
@@ -5879,9 +6144,10 @@ export default function App() {
                 typeCounts={{}}
               />
             ) : (
-              <div className="glass-card squircle-lg px-8 py-6 lg:px-12 lg:py-8 text-sm text-slate-700" aria-live="polite">
-                <p className="font-semibold text-slate-900">
-                  Fetching Catelogue... Please wait while we load the products
+              <div className='glass-card squircle-lg px-10 py-8 lg:px-16 lg:py-10 text-sm text-slate-700 text-center font-["Lexend",_var(--font-sans)]' aria-live="polite">
+                <p className="mx-auto max-w-sm leading-relaxed">
+                  <span className="text-base text-slate-900 block mb-1">Fetching Catelogue…</span>
+                  <span className="text-sm text-slate-800 block">Please wait while we load the products</span>
                 </p>
               </div>
             )}
@@ -7083,7 +7349,7 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 flex flex-col"
+      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
       style={{
         position: "static",
       }}

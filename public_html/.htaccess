@@ -1,0 +1,101 @@
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/oz0fsscenn2m/PepPro"
+PassengerBaseURI "/"
+PassengerPython "/home/oz0fsscenn2m/virtualenv/PepPro/3.10/bin/python"
+PassengerAppLogFile "/home/oz0fsscenn2m/logs/passenger.log"
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+Options -MultiViews
+DirectoryIndex index.html index.php
+RewriteEngine On
+# Force www.peppro.net to the apex domain without keeping the path
+RewriteCond %{HTTP_HOST} ^www\.peppro\.net$ [NC]
+RewriteRule ^ https://peppro.net [L,R=301]
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|png|jpg|jpeg|gif|svg|webp|woff2?)$">
+    Header set Cache-Control "max-age=31536000, public, immutable"
+  </FilesMatch>
+</IfModule>
+
+# Do not redirect OPTIONS for API
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^/api/ - [L]
+# --- Route shop.peppro.net into its own folder, then stop processing ---
+RewriteCond %{HTTP_HOST} ^shop\.peppro\.net$ [NC]
+RewriteRule ^(.*)$ /shop.peppro.net/$1 [L]
+# --- SPA + Passenger rules for the primary site(s) only ---
+# Let Passenger handle /api
+RewriteCond %{REQUEST_URI} ^/api [NC]
+RewriteRule ^ - [L]
+# Serve existing files/folders
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+# Allow PHP files in root (if any)
+RewriteRule \.php$ - [L]
+# SPA fallback
+RewriteRule ^ /index.html [L]
+PassengerAppType wsgi
+PassengerStartupFile passenger_wsgi.py
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
+<IfModule Litespeed>
+SetEnv BODY_LIMIT 1mb
+SetEnv CORS_ALLOW_ORIGINS https://peppro.net,https://shop.peppro.net
+SetEnv DATA_DIR /home/oz0fsscenn2m/PepPro/server-data
+SetEnv DOTENV_CONFIG_PATH /home/oz0fsscenn2m/PepPro/.env
+SetEnv GOOGLE_SHEETS_WEBHOOK_SECRET wqEpTQeBJzrDBZV6Ao5CIU7EQZV5KJUD+kd1gdI1Stw=
+SetEnv JWT_SECRET fniaxMM6E5tyhbjCqYaTonj/khRnjjIN/+v8GBGzRx8=
+SetEnv LOG_LEVEL info
+SetEnv MAIL_FROM "support@peppro.net"
+SetEnv MYSQL_DATABASE PepPro
+SetEnv MYSQL_ENABLED true
+SetEnv MYSQL_HOST localhost
+SetEnv MYSQL_PASSWORD peptidesforgood42
+SetEnv MYSQL_POOL_SIZE 8
+SetEnv MYSQL_PORT 3306
+SetEnv MYSQL_SSL false
+SetEnv MYSQL_TIMEZONE Z
+SetEnv MYSQL_USER peppro_api
+SetEnv NODE_ENV production
+SetEnv PORT 3001
+SetEnv SENDGRIRD_API_KEY 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
+SetEnv SHIPENGINE_ACCOUNT_ID 
+SetEnv SHIPENGINE_API_KEY 
+SetEnv SHIPENGINE_AUTO_CREATE_LABELS false
+SetEnv SHIPENGINE_CARRIER_ID 
+SetEnv SHIPENGINE_SERVICE_CODE 
+SetEnv SHIPENGINE_SHIP_FROM_ADDRESS1 
+SetEnv SHIPENGINE_SHIP_FROM_ADDRESS2 
+SetEnv SHIPENGINE_SHIP_FROM_CITY 
+SetEnv SHIPENGINE_SHIP_FROM_COUNTRY US
+SetEnv SHIPENGINE_SHIP_FROM_NAME 
+SetEnv SHIPENGINE_SHIP_FROM_POSTAL 
+SetEnv SHIPENGINE_SHIP_FROM_STATE 
+SetEnv SHIPSTATION_API_KEY 88289c8055924bfa8cf8d958138b72f9
+SetEnv SHIPSTATION_API_SECRET 50af75a2db814e0cafcab92c87bb787b
+SetEnv SHIPSTATION_CARRIER_CODE ups_walleted
+SetEnv SHIPSTATION_PACKAGE_CODE package
+SetEnv SHIPSTATION_SHIP_FROM_ADDRESS1 640 S. Grand Ave
+SetEnv SHIPSTATION_SHIP_FROM_ADDRESS2 107
+SetEnv SHIPSTATION_SHIP_FROM_CITY Santa Ana
+SetEnv SHIPSTATION_SHIP_FROM_COMPANY PepPro
+SetEnv SHIPSTATION_SHIP_FROM_COUNTRY US
+SetEnv SHIPSTATION_SHIP_FROM_NAME Peptra
+SetEnv SHIPSTATION_SHIP_FROM_PHONE 7149320232
+SetEnv SHIPSTATION_SHIP_FROM_POSTAL 92705
+SetEnv SHIPSTATION_SHIP_FROM_STATE CA
+SetEnv STRIPE_ONSITE_ENABLED true
+SetEnv STRIPE_SECRET_KEY sk_test_51STxCBLdQwKDgAgZFCfDnzD1Zv4OIHSQai1gdGZJJ01Y9J24N7Lqqug1c5bFiFWi1XjORjVMuHgEaUF5sjQBOTAO00p5G7AuEs
+SetEnv STRIPE_WEBHOOK_SECRET whsec_y8V0twNFUmh23NgoHK4qWHLBxNpKaSD2
+SetEnv WC_API_VERSION wc/v3
+SetEnv WC_AUTO_SUBMIT_ORDERS false
+SetEnv WC_CONSUMER_KEY ck_743edbf5d45339cf19d7e248ee0f4a4da77e70f4
+SetEnv WC_CONSUMER_SECRET cs_047db46ebd6befcbf4ee185548b108100b50e712
+SetEnv WC_STORE_URL https://shop.peppro.net 
+SetEnv FRONTEND_BASE_URL https://peppro.net
+</IfModule>
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END

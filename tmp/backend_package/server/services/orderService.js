@@ -1002,7 +1002,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
   }
 
   let stripeRefund = null;
-  const requiresRefund = normalizedStatus !== 'pending' || Boolean(order.paymentIntentId);
+  const requiresRefund = Boolean(order.paymentIntentId);
   if (requiresRefund && order.paymentIntentId) {
     const amountCents = Math.max(
       Math.round(((order.total ?? 0) + (order.shippingTotal ?? 0)) * 100),

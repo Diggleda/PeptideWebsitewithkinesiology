@@ -292,7 +292,10 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
               'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-200 ease-out h-full',
               isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
-            style={{ willChange: 'opacity, transform', maxHeight: 'calc(100vh - 4rem)' }}
+            style={{
+              willChange: 'opacity, transform',
+              maxHeight: 'calc(var(--viewport-height, 100dvh) - 4rem)',
+            }}
           >
             <div
               className="squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"

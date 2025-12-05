@@ -85,7 +85,7 @@ const DialogContent = React.forwardRef<
           backdropFilter: 'blur(16px) saturate(1.45)',
           WebkitBackdropFilter: 'blur(16px) saturate(1.45)',
           // Leave room for the sticky header when positioning + sizing the modal
-          maxHeight: 'calc(100vh - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))',
+          maxHeight: 'calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))',
           margin: 'clamp(0.5rem, 3vh, 2rem) auto 1.5rem',
           willChange: 'opacity, transform',
           ...style,

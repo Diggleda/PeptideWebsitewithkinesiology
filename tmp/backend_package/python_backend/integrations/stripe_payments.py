@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import json
 from typing import Any, Dict, Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +112,123 @@ def retrieve_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
 
     stripe.api_key = config.stripe.get("secret_key")
     try:
-        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        intent = stripe.PaymentIntent.retrieve(
+            payment_intent_id,
+            expand=[
+                "charges.data.payment_method_details.card",
+                "charges.data.payment_method_details.card_present",
+                "charges.data.payment_method_details.card_swipe",
+                "charges.data.payment_method_details.klarna",
+                "latest_charge.payment_method_details.card",
+                "latest_charge.payment_method_details.card_present",
+            ],
+        )
         return {"status": intent.get("status"), "intent": intent}
     except Exception as exc:
         logger.error("Stripe PaymentIntent retrieve failed", exc_info=True, extra={"paymentIntentId": payment_intent_id})
         raise StripeIntegrationError("Stripe PaymentIntent retrieve failed", status=500, response=getattr(exc, "json_body", None))
+
+
+def _title_case(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    spaced = str(value).replace("_", " ").replace("-", " ").strip()
+    if not spaced:
+        return None
+    return " ".join(part.capitalize() for part in spaced.split())
+
+
+def _extract_card_summary(intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    charges = intent.get("charges", {}).get("data")
+    if not isinstance(charges, list) or not charges:
+        return None
+    charge = charges[-1] or {}
+    details = charge.get("payment_method_details") or {}
+    card_details = (
+        details.get("card")
+        or details.get("card_present")
+        or details.get("card_swipe")
+        or details.get("klarna")
+        or None
+    )
+    if not card_details:
+        return None
+    brand = (
+        _title_case(card_details.get("brand"))
+        or _title_case(card_details.get("card_brand"))
+        or _title_case(card_details.get("network"))
+        or "Card"
+    )
+    last4 = (
+        card_details.get("last4")
+        or card_details.get("card_last4")
+        or card_details.get("number_last4")
+        or None
+    )
+    if not last4:
+        return None
+    return {"brand": brand, "last4": last4}
+
+
+def _apply_card_summary(order: Dict[str, Any], card_summary: Optional[Dict[str, Any]], stripe_data: Dict[str, Any]) -> Dict[str, Any]:
+    if not card_summary:
+        return {
+            "paymentMethod": order.get("paymentMethod"),
+            "paymentDetails": order.get("paymentDetails") or order.get("paymentMethod"),
+            "stripeMeta": stripe_data,
+        }
+    label = f"{card_summary.get('brand') or 'Card'} •••• {card_summary.get('last4')}"
+    stripe_meta = {
+        **stripe_data,
+        "cardBrand": card_summary.get("brand"),
+        "cardLast4": card_summary.get("last4"),
+    }
+    return {
+        "paymentMethod": label,
+        "paymentDetails": label,
+        "stripeMeta": stripe_meta,
+    }
+
+
+def ensure_order_card_summary(order: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not order or not order.get("paymentIntentId"):
+        return order
+
+    integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+    stripe_meta = _ensure_dict(integrations.get("stripe"))
+    if order.get("paymentDetails") or stripe_meta.get("cardLast4"):
+        return order
+
+    payment_intent_id = order.get("paymentIntentId")
+    try:
+        intent_result = retrieve_payment_intent(payment_intent_id)
+    except StripeIntegrationError:
+        return order
+
+    intent = intent_result.get("intent") or {}
+    card_summary = _extract_card_summary(intent)
+    if not card_summary:
+        return order
+
+    stripe_meta.update(
+        {
+            "eventType": intent.get("status"),
+            "paymentIntentId": payment_intent_id,
+            "lastSyncAt": datetime.utcnow().isoformat(),
+        }
+    )
+    applied = _apply_card_summary(order, card_summary, stripe_meta)
+    order["paymentMethod"] = applied["paymentMethod"] or order.get("paymentMethod") or "Card on file"
+    order["paymentDetails"] = (
+        applied["paymentDetails"]
+        or order.get("paymentDetails")
+        or order.get("paymentMethod")
+        or applied["paymentMethod"]
+    )
+    integrations["stripe"] = applied["stripeMeta"]
+    order["integrationDetails"] = integrations
+    order_repository.update(order)
+    return order
 
 
 def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
@@ -126,13 +239,6 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
     order = order_repository.find_by_id(order_id) if order_id else None
     woo_order_id = _resolve_woo_order_id(metadata, order)
     order_key = _resolve_order_key(metadata, order)
-
-    if order:
-        order["paymentIntentId"] = payment_intent_id
-        order["status"] = "paid" if intent.get("status") == "succeeded" else order.get("status", "pending")
-        if woo_order_id and not order.get("wooOrderId"):
-            order["wooOrderId"] = woo_order_id
-        order_repository.update(order)
 
     woo_update = None
     if woo_order_id:
@@ -150,6 +256,46 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
                 exc_info=True,
                 extra={"wooOrderId": woo_order_id, "paymentIntentId": payment_intent_id},
             )
+
+    if order:
+        order["paymentIntentId"] = payment_intent_id
+        order["status"] = "paid" if intent.get("status") == "succeeded" else order.get("status", "pending")
+        if woo_order_id and not order.get("wooOrderId"):
+            order["wooOrderId"] = woo_order_id
+        existing_integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        stripe_meta = _ensure_dict(existing_integrations.get("stripe"))
+        stripe_meta.update(
+            {
+                "eventType": intent.get("status"),
+                "paymentIntentId": payment_intent_id,
+                "lastSyncAt": datetime.utcnow().isoformat(),
+                "wooUpdate": woo_update,
+            }
+        )
+        card_summary = _extract_card_summary(intent)
+        if card_summary:
+            logger.info(
+                "Stripe card summary applied to order",
+                extra={
+                    "orderId": order.get("id"),
+                    "paymentIntentId": payment_intent_id,
+                    "cardBrand": card_summary.get("brand"),
+                    "cardLast4": card_summary.get("last4"),
+                },
+            )
+        applied = _apply_card_summary(order, card_summary, stripe_meta)
+        order["paymentMethod"] = applied["paymentMethod"] or order.get("paymentMethod") or "Card on file"
+        order["paymentDetails"] = (
+            applied["paymentDetails"]
+            or order.get("paymentDetails")
+            or order.get("paymentMethod")
+            or applied["paymentMethod"]
+        )
+        order["integrationDetails"] = {
+            **existing_integrations,
+            "stripe": applied["stripeMeta"],
+        }
+        order_repository.update(order)
 
     return {
         "status": result.get("status"),
