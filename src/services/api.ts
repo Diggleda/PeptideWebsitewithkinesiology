@@ -393,6 +393,8 @@ export const ordersAPI = {
     if (options?.scope) {
       params.set('scope', options.scope);
     }
+    // Ask backend (Node or Python) to include doctor context if supported
+    params.set('includeDoctors', 'true');
     const query = params.toString();
     const url = query ? `${API_BASE_URL}/orders/sales-rep?${query}` : `${API_BASE_URL}/orders/sales-rep`;
     return fetchWithAuth(url);
@@ -400,6 +402,32 @@ export const ordersAPI = {
 
   getSalesByRepForAdmin: async () => {
     return fetchWithAuth(`${API_BASE_URL}/orders/admin/sales-rep-summary`);
+  },
+
+  getSalesRepOrderDetail: async (orderId: string | number, doctorEmailOrId?: string | null) => {
+    if (!orderId) {
+      throw new Error('orderId is required');
+    }
+    const params = new URLSearchParams();
+    if (doctorEmailOrId) {
+      const looksLikeEmail = typeof doctorEmailOrId === 'string' && doctorEmailOrId.includes('@');
+      if (looksLikeEmail) {
+        params.set('doctorEmail', doctorEmailOrId);
+      } else {
+        params.set('doctorId', String(doctorEmailOrId));
+      }
+      // Send both when we can to support Node and Python backends
+      if (!looksLikeEmail) {
+        params.set('doctorEmail', String(doctorEmailOrId));
+      } else {
+        params.set('doctorId', String(doctorEmailOrId));
+      }
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/orders/sales-rep/${encodeURIComponent(orderId)}?${query}`
+      : `${API_BASE_URL}/orders/sales-rep/${encodeURIComponent(orderId)}`;
+    return fetchWithAuth(url);
   },
 };
 

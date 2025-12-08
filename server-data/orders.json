@@ -4839,5 +4839,860 @@
     "shipStationOrderId": 188816646,
     "paymentIntentId": "pi_3Sadl0LdQwKDgAgZ2UhSWPvr",
     "paymentMethod": "Card on file"
+  },
+  {
+    "id": "1765135889251",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-395::woo-variation-404",
+        "productId": 395,
+        "variantId": 404,
+        "sku": "Peptra-Tir-40mg-N",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+        "price": 273.18,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.1
+      }
+    ],
+    "total": 319.33,
+    "taxTotal": 0,
+    "itemsSubtotal": 273.18,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "f7d7e251830ca17a129a2a452dc75b5cc5366e63",
+      "packageCode": null,
+      "weightOz": null,
+      "packageDimensions": null,
+      "meta": null,
+      "estimatedArrivalDate": "2025-12-08T19:31:29.251Z"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "2102 Braemore Ave",
+      "addressLine2": "",
+      "city": "South Bend",
+      "state": "IN",
+      "postalCode": "46637",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "2102 Braemore Ave",
+      "addressLine2": null,
+      "city": "South Bend",
+      "state": "IN",
+      "postalCode": "46637",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-12-07T19:31:29.251Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "success",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1765135889251",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "sku": "Peptra-Tir-40mg-N",
+              "quantity": 1,
+              "total": "273.18",
+              "subtotal": "273.18",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 395,
+              "variation_id": 404
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1765135889251"
+            },
+            {
+              "key": "peppro_total",
+              "value": 319.33
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-07T19:31:29.251Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1765135889251"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1765135889251"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1765135889251"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"f7d7e251830ca17a129a2a452dc75b5cc5366e63\",\"packageCode\":null,\"weightOz\":null,\"packageDimensions\":null,\"meta\":null,\"estimatedArrivalDate\":\"2025-12-08T19:31:29.251Z\"}"
+            },
+            {
+              "key": "peppro_package_weight_oz",
+              "value": 0
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "2102 Braemore Ave",
+            "address_2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postcode": "46637",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_next_day_air",
+              "method_title": "ups_next_day_air",
+              "total": "46.15",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                },
+                {
+                  "key": "peppro_package_weight_oz",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "invoiceUrl": "https://shop.peppro.net/my-account/view-order/491/?order=491&key=wc_order_bgAgxMnYDJSk8",
+        "response": {
+          "id": 491,
+          "number": "491",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/491/?pay_for_order=true&key=wc_order_bgAgxMnYDJSk8",
+          "order_key": "wc_order_bgAgxMnYDJSk8",
+          "invoiceUrl": "https://shop.peppro.net/my-account/view-order/491/?order=491&key=wc_order_bgAgxMnYDJSk8"
+        }
+      },
+      "shipStation": {
+        "status": "success",
+        "payload": {
+          "orderNumber": "491",
+          "orderKey": "woo-491",
+          "orderSource": "PepPro Checkout",
+          "orderStatus": "awaiting_shipment",
+          "orderDate": "2025-12-07T19:31:29.251Z",
+          "paymentDate": "2025-12-07T19:31:29.251Z",
+          "customerEmail": "diggledadiggz@gmail.com",
+          "requestedShippingService": "ups_next_day_air",
+          "carrierCode": "ups_walleted",
+          "serviceCode": "ups_next_day_air",
+          "packageCode": "package",
+          "amountPaid": 319.33,
+          "shippingPaid": 46.15,
+          "taxAmount": 0,
+          "billTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "2102 Braemore Ave",
+            "street2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postalCode": "46637",
+            "country": "US",
+            "phone": "6302584773",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "2102 Braemore Ave",
+            "street2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postalCode": "46637",
+            "country": "US",
+            "phone": "6302584773"
+          },
+          "shipFrom": {
+            "name": "Peptra Fulfillment",
+            "company": "PepPro",
+            "street1": "640 S. Grand Ave",
+            "street2": "107",
+            "city": "Santa Ana",
+            "state": "CA",
+            "postalCode": "92705",
+            "country": "US",
+            "phone": "7149320232"
+          },
+          "weight": {
+            "value": 0.06,
+            "units": "ounces"
+          },
+          "items": [
+            {
+              "lineItemKey": "woo-395::woo-variation-404",
+              "sku": "Peptra-Tir-40mg-N",
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "quantity": 1,
+              "unitPrice": 273.18,
+              "weight": {
+                "value": 0.06,
+                "units": "ounces"
+              }
+            }
+          ],
+          "advancedOptions": {
+            "source": "woocommerce",
+            "customOrderNumber": "491",
+            "requestedPackageType": "package"
+          }
+        },
+        "response": {
+          "orderId": 191185820,
+          "orderKey": "woo-491",
+          "orderNumber": "491"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3Sbng8LdQwKDgAgZ061k6V9g_secret_eAkdUUvCWmbdqDMzHJ1tCwW5z",
+        "paymentIntentId": "pi_3Sbng8LdQwKDgAgZ061k6V9g"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": 491,
+    "wooOrderNumber": "491",
+    "shipStationOrderId": 191185820,
+    "paymentIntentId": "pi_3Sbng8LdQwKDgAgZ061k6V9g"
+  },
+  {
+    "id": "1765137929141",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-395::woo-variation-404",
+        "productId": 395,
+        "variantId": 404,
+        "sku": "Peptra-Tir-40mg-N",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+        "price": 273.18,
+        "quantity": 2,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.1
+      }
+    ],
+    "total": 592.51,
+    "taxTotal": 0,
+    "itemsSubtotal": 546.36,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "f7d7e251830ca17a129a2a452dc75b5cc5366e63",
+      "packageCode": null,
+      "weightOz": null,
+      "packageDimensions": null,
+      "meta": null,
+      "estimatedArrivalDate": "2025-12-08T20:05:29.141Z"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "2102 Braemore Ave",
+      "addressLine2": "",
+      "city": "South Bend",
+      "state": "IN",
+      "postalCode": "46637",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "2102 Braemore Ave",
+      "addressLine2": null,
+      "city": "South Bend",
+      "state": "IN",
+      "postalCode": "46637",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-12-07T20:05:29.141Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "success",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1765137929141",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "sku": "Peptra-Tir-40mg-N",
+              "quantity": 2,
+              "total": "546.36",
+              "subtotal": "546.36",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 395,
+              "variation_id": 404
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1765137929141"
+            },
+            {
+              "key": "peppro_total",
+              "value": 592.51
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-07T20:05:29.141Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1765137929141"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1765137929141"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1765137929141"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"f7d7e251830ca17a129a2a452dc75b5cc5366e63\",\"packageCode\":null,\"weightOz\":null,\"packageDimensions\":null,\"meta\":null,\"estimatedArrivalDate\":\"2025-12-08T20:05:29.141Z\"}"
+            },
+            {
+              "key": "peppro_package_weight_oz",
+              "value": 0
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "2102 Braemore Ave",
+            "address_2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postcode": "46637",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_next_day_air",
+              "method_title": "ups_next_day_air",
+              "total": "46.15",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                },
+                {
+                  "key": "peppro_package_weight_oz",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "invoiceUrl": "https://shop.peppro.net/my-account/view-order/492/?order=492&key=wc_order_OKl8uiUn7uL6d",
+        "response": {
+          "id": 492,
+          "number": "492",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/492/?pay_for_order=true&key=wc_order_OKl8uiUn7uL6d",
+          "order_key": "wc_order_OKl8uiUn7uL6d",
+          "invoiceUrl": "https://shop.peppro.net/my-account/view-order/492/?order=492&key=wc_order_OKl8uiUn7uL6d"
+        }
+      },
+      "shipStation": {
+        "status": "success",
+        "payload": {
+          "orderNumber": "492",
+          "orderKey": "woo-492",
+          "orderSource": "PepPro Checkout",
+          "orderStatus": "awaiting_shipment",
+          "orderDate": "2025-12-07T20:05:29.141Z",
+          "paymentDate": "2025-12-07T20:05:29.141Z",
+          "customerEmail": "diggledadiggz@gmail.com",
+          "requestedShippingService": "ups_next_day_air",
+          "carrierCode": "ups_walleted",
+          "serviceCode": "ups_next_day_air",
+          "packageCode": "package",
+          "amountPaid": 592.51,
+          "shippingPaid": 46.15,
+          "taxAmount": 0,
+          "billTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "2102 Braemore Ave",
+            "street2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postalCode": "46637",
+            "country": "US",
+            "phone": "6302584773",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "2102 Braemore Ave",
+            "street2": "",
+            "city": "South Bend",
+            "state": "IN",
+            "postalCode": "46637",
+            "country": "US",
+            "phone": "6302584773"
+          },
+          "shipFrom": {
+            "name": "Peptra Fulfillment",
+            "company": "PepPro",
+            "street1": "640 S. Grand Ave",
+            "street2": "107",
+            "city": "Santa Ana",
+            "state": "CA",
+            "postalCode": "92705",
+            "country": "US",
+            "phone": "7149320232"
+          },
+          "weight": {
+            "value": 0.12,
+            "units": "ounces"
+          },
+          "items": [
+            {
+              "lineItemKey": "woo-395::woo-variation-404",
+              "sku": "Peptra-Tir-40mg-N",
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "quantity": 2,
+              "unitPrice": 273.18,
+              "weight": {
+                "value": 0.06,
+                "units": "ounces"
+              }
+            }
+          ],
+          "advancedOptions": {
+            "source": "woocommerce",
+            "customOrderNumber": "492",
+            "requestedPackageType": "package"
+          }
+        },
+        "response": {
+          "orderId": 191204145,
+          "orderKey": "woo-492",
+          "orderNumber": "492"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SboD2LdQwKDgAgZ2Ew1FrJj_secret_CHKr9Mym8NAAQkrZgx0x5oOgS",
+        "paymentIntentId": "pi_3SboD2LdQwKDgAgZ2Ew1FrJj"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": 492,
+    "wooOrderNumber": "492",
+    "shipStationOrderId": 191204145,
+    "paymentIntentId": "pi_3SboD2LdQwKDgAgZ2Ew1FrJj"
+  },
+  {
+    "id": "1765142784731",
+    "userId": "1764556043938",
+    "items": [
+      {
+        "cartItemId": "woo-395::woo-variation-404",
+        "productId": 395,
+        "variantId": 404,
+        "sku": "Peptra-Tir-40mg-N",
+        "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+        "price": 273.18,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.1
+      }
+    ],
+    "total": 292.1,
+    "taxTotal": 0,
+    "itemsSubtotal": 273.18,
+    "shippingTotal": 18.92,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_2nd_day_air_am",
+      "serviceType": "ups_2nd_day_air_am",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 18.92,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023",
+      "packageCode": null,
+      "weightOz": null,
+      "packageDimensions": null,
+      "meta": null,
+      "estimatedArrivalDate": "2025-12-09T21:26:24.730Z"
+    },
+    "shippingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Mr. Peter J. Gibbons",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null,
+      "email": "petergibbons7@icloud.com"
+    },
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-12-07T21:26:24.731Z",
+    "physicianCertificationAccepted": true,
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "success",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order 1765142784731",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "sku": "Peptra-Tir-40mg-N",
+              "quantity": 1,
+              "total": "273.18",
+              "subtotal": "273.18",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 395,
+              "variation_id": 404
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "1765142784731"
+            },
+            {
+              "key": "peppro_total",
+              "value": 292.1
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-07T21:26:24.731Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "1765142784731"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "1765142784731"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "1765142784731"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 18.92
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_2nd_day_air_am\",\"serviceType\":\"ups_2nd_day_air_am\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":18.92,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\",\"packageCode\":null,\"weightOz\":null,\"packageDimensions\":null,\"meta\":null,\"estimatedArrivalDate\":\"2025-12-09T21:26:24.730Z\"}"
+            },
+            {
+              "key": "peppro_package_weight_oz",
+              "value": 0
+            }
+          ],
+          "billing": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "email": "petergibbons7@icloud.com"
+          },
+          "shipping": {
+            "first_name": "Mr. Peter J. Gibbons",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_2nd_day_air_am",
+              "method_title": "ups_2nd_day_air_am",
+              "total": "18.92",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_2nd_day_air_am"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_2nd_day_air_am"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                },
+                {
+                  "key": "peppro_package_weight_oz",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "invoiceUrl": "https://shop.peppro.net/my-account/view-order/493/?order=493&key=wc_order_9NhM81r5jtmoy",
+        "response": {
+          "id": 493,
+          "number": "493",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/493/?pay_for_order=true&key=wc_order_9NhM81r5jtmoy",
+          "order_key": "wc_order_9NhM81r5jtmoy",
+          "invoiceUrl": "https://shop.peppro.net/my-account/view-order/493/?order=493&key=wc_order_9NhM81r5jtmoy"
+        }
+      },
+      "shipStation": {
+        "status": "success",
+        "payload": {
+          "orderNumber": "493",
+          "orderKey": "woo-493",
+          "orderSource": "PepPro Checkout",
+          "orderStatus": "awaiting_shipment",
+          "orderDate": "2025-12-07T21:26:24.731Z",
+          "paymentDate": "2025-12-07T21:26:24.731Z",
+          "customerEmail": "petergibbons7@icloud.com",
+          "requestedShippingService": "ups_2nd_day_air_am",
+          "carrierCode": "ups_walleted",
+          "serviceCode": "ups_2nd_day_air_am",
+          "packageCode": "package",
+          "amountPaid": 292.1,
+          "shippingPaid": 18.92,
+          "taxAmount": 0,
+          "billTo": {
+            "name": "Mr. Peter J. Gibbons",
+            "company": "",
+            "street1": "6330 S County Line Rd",
+            "street2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postalCode": "60527",
+            "country": "US",
+            "phone": "",
+            "email": "petergibbons7@icloud.com"
+          },
+          "shipTo": {
+            "name": "Mr. Peter J. Gibbons",
+            "company": "",
+            "street1": "6330 S County Line Rd",
+            "street2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postalCode": "60527",
+            "country": "US",
+            "phone": ""
+          },
+          "shipFrom": {
+            "name": "Peptra Fulfillment",
+            "company": "PepPro",
+            "street1": "640 S. Grand Ave",
+            "street2": "107",
+            "city": "Santa Ana",
+            "state": "CA",
+            "postalCode": "92705",
+            "country": "US",
+            "phone": "7149320232"
+          },
+          "weight": {
+            "value": 0.06,
+            "units": "ounces"
+          },
+          "items": [
+            {
+              "lineItemKey": "woo-395::woo-variation-404",
+              "sku": "Peptra-Tir-40mg-N",
+              "name": "Dual Agonist GLP-1 + GIP (Tir) N — 40mg",
+              "quantity": 1,
+              "unitPrice": 273.18,
+              "weight": {
+                "value": 0.06,
+                "units": "ounces"
+              }
+            }
+          ],
+          "advancedOptions": {
+            "source": "woocommerce",
+            "customOrderNumber": "493",
+            "requestedPackageType": "package"
+          }
+        },
+        "response": {
+          "orderId": 191249305,
+          "orderKey": "woo-493",
+          "orderNumber": "493"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SbpTLLdQwKDgAgZ1uMozhtQ_secret_Mq5np0ABmI4WTjl3R8F3vCyYy",
+        "paymentIntentId": "pi_3SbpTLLdQwKDgAgZ1uMozhtQ"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": 493,
+    "wooOrderNumber": "493",
+    "shipStationOrderId": 191249305,
+    "paymentIntentId": "pi_3SbpTLLdQwKDgAgZ1uMozhtQ"
   }
 ]

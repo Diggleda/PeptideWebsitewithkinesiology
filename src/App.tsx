@@ -879,7 +879,9 @@ const normalizeAccountOrdersResponse = (
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
           source: "peppro",
-          lineItems: toOrderLineItems(order?.items),
+          lineItems: toOrderLineItems(
+            order?.items || order?.lineItems || order?.line_items,
+          ),
           integrations: order?.integrations || null,
           paymentMethod: order?.paymentMethod || null,
           paymentDetails:
@@ -888,10 +890,14 @@ const normalizeAccountOrdersResponse = (
               ? `${order.integrationDetails?.stripe?.cardBrand || "Card"} •••• ${order.integrationDetails.stripe.cardLast4}`
               : order?.paymentMethod || null),
           integrationDetails: order?.integrationDetails || null,
-          shippingAddress: sanitizeOrderAddress(order?.shippingAddress),
-          billingAddress: sanitizeOrderAddress(order?.billingAddress),
+          shippingAddress: sanitizeOrderAddress(
+            order?.shippingAddress || order?.shipping_address || order?.shipping,
+          ),
+          billingAddress: sanitizeOrderAddress(
+            order?.billingAddress || order?.billing_address || order?.billing,
+          ),
           shippingEstimate: normalizeShippingEstimateField(
-            order?.shippingEstimate,
+            order?.shippingEstimate || order?.shipping_estimate,
             { fallbackDate: order?.createdAt || null },
           ),
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
@@ -941,7 +947,9 @@ const normalizeAccountOrdersResponse = (
             order?.date_modified ||
             null,
           source: "woocommerce",
-          lineItems: toOrderLineItems(order?.lineItems),
+          lineItems: toOrderLineItems(
+            order?.lineItems || order?.line_items || order?.items,
+          ),
           integrations: order?.integrations || null,
           paymentMethod: order?.paymentMethod || null,
           paymentDetails:
@@ -950,13 +958,13 @@ const normalizeAccountOrdersResponse = (
             null,
           integrationDetails: order?.integrationDetails || null,
           shippingAddress: sanitizeOrderAddress(
-            order?.shippingAddress || order?.shipping,
+            order?.shippingAddress || order?.shipping || order?.shipping_address,
           ),
           billingAddress: sanitizeOrderAddress(
-            order?.billingAddress || order?.billing,
+            order?.billingAddress || order?.billing || order?.billing_address,
           ),
           shippingEstimate: normalizeShippingEstimateField(
-            order?.shippingEstimate,
+            order?.shippingEstimate || order?.shipping_estimate,
             {
               fallbackDate:
                 order?.createdAt ||
@@ -2109,6 +2117,7 @@ export default function App() {
     tab: "details" | "orders";
     open?: boolean;
     token: number;
+    order?: AccountOrderSummary;
   } | null>(null);
   const profileShippingAddress = useMemo(
     () => buildShippingAddressFromUserProfile(user),
@@ -2744,6 +2753,64 @@ export default function App() {
   const [salesTrackingOrders, setSalesTrackingOrders] = useState<
     AccountOrderSummary[]
   >([]);
+  const [salesOrderDetail, setSalesOrderDetail] =
+    useState<AccountOrderSummary | null>(null);
+  const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
+  const [salesOrderHydratingIds, setSalesOrderHydratingIds] = useState<
+    Set<string>
+  >(new Set());
+  const [collapsedSalesDoctorIds, setCollapsedSalesDoctorIds] = useState<
+    Set<string>
+  >(new Set());
+  const hasInitializedSalesCollapseRef = useRef(false);
+  const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
+  const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
+  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+    doctorId: string;
+    name: string;
+    email?: string | null;
+    avatar?: string | null;
+    revenue: number;
+    orders: AccountOrderSummary[];
+    phone?: string | null;
+    address?: string | null;
+    lastOrderDate?: string | null;
+    avgOrderValue?: number | null;
+  } | null>(null);
+  const mergeSalesOrderDetail = useCallback(
+    (detail: AccountOrderSummary | null) => {
+      if (!detail) return;
+      setSalesTrackingOrders((prev) =>
+        prev.map((order) => {
+          const match =
+            String(order.id || "") === String(detail.id || detail.number || "") ||
+            (order.wooOrderId && detail.wooOrderId && String(order.wooOrderId) === String(detail.wooOrderId)) ||
+            (order.number && detail.number && String(order.number) === String(detail.number));
+          if (!match) return order;
+          return {
+            ...order,
+            ...detail,
+            shippingEstimate: detail.shippingEstimate || order.shippingEstimate || null,
+            createdAt: detail.createdAt || order.createdAt || null,
+            updatedAt: detail.updatedAt || order.updatedAt || null,
+            lineItems: detail.lineItems?.length ? detail.lineItems : order.lineItems,
+          };
+        }),
+      );
+    },
+    [],
+  );
+  const toggleSalesDoctorCollapse = useCallback((doctorId: string) => {
+    setCollapsedSalesDoctorIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(doctorId)) {
+        next.delete(doctorId);
+      } else {
+        next.add(doctorId);
+      }
+      return next;
+    });
+  }, []);
   const [salesTrackingDoctors, setSalesTrackingDoctors] = useState<
     Map<
       string,
@@ -2751,6 +2818,13 @@ export default function App() {
         name: string;
         email?: string | null;
         profileImageUrl?: string | null;
+        phone?: string | null;
+        address1?: string | null;
+        address2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        postalCode?: string | null;
+        country?: string | null;
       }
     >
   >(new Map());
@@ -2761,6 +2835,255 @@ export default function App() {
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<
     number | null
   >(null);
+
+  useEffect(() => {
+    salesTrackingOrdersRef.current = salesTrackingOrders;
+  }, [salesTrackingOrders]);
+  const openSalesOrderDetails = useCallback(
+    async (order: AccountOrderSummary) => {
+      setSalesOrderDetail(order);
+      setSalesOrderDetailLoading(true);
+      try {
+        const detail = await ordersAPI.getSalesRepOrderDetail(
+          order.wooOrderId || order.id || order.number || "",
+          (order as any)?.doctorEmail ||
+            (order as any)?.doctor_email ||
+            (order as any)?.doctorId ||
+            resolveOrderDoctorId(order) ||
+            null,
+        );
+        const normalized = normalizeAccountOrdersResponse(
+          { woo: Array.isArray(detail) ? detail : [detail] },
+          { includeCanceled: true },
+        );
+        if (normalized && normalized.length > 0) {
+          const enriched = normalized[0];
+          setSalesOrderDetail(enriched);
+          mergeSalesOrderDetail(enriched);
+        } else if (detail && typeof detail === "object") {
+          const enriched = detail as AccountOrderSummary;
+          setSalesOrderDetail(enriched);
+          mergeSalesOrderDetail(enriched);
+        }
+      } catch (error: any) {
+        console.error("[Sales Tracking] Failed to fetch order detail", error);
+        toast.error(
+          typeof error?.message === "string"
+            ? error.message
+            : "Unable to load order details.",
+        );
+      } finally {
+        setSalesOrderDetailLoading(false);
+      }
+    },
+    [mergeSalesOrderDetail],
+  );
+
+  const openSalesDoctorDetail = useCallback(
+    (bucket: {
+      doctorId: string;
+      doctorName: string;
+      doctorEmail?: string | null;
+      doctorAvatar?: string | null;
+      doctorPhone?: string | null;
+      doctorAddress?: string | null;
+      orders: AccountOrderSummary[];
+      total: number;
+    }) => {
+      const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+      const latestOrder = ordersSorted[0];
+      const addressSource =
+        (latestOrder as any)?.shippingAddress ||
+        (latestOrder as any)?.shipping ||
+        (latestOrder as any)?.billingAddress ||
+        (latestOrder as any)?.billing ||
+        null;
+      const addressFromOrder =
+        addressSource &&
+        [
+          [addressSource.firstName, addressSource.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim(),
+          addressSource.address1 || addressSource.address_1,
+          addressSource.address2 || addressSource.address_2,
+          [addressSource.city, addressSource.state, addressSource.postcode]
+            .filter(Boolean)
+            .join(", "),
+          addressSource.country,
+        ]
+          .filter((part) => typeof part === "string" && part.trim().length > 0)
+          .join("\n");
+      const address =
+        bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
+          ? bucket.doctorAddress
+          : addressFromOrder || null;
+      const lastOrderDate = latestOrder?.createdAt || null;
+      const avgOrderValue =
+        bucket.orders.length > 0 ? bucket.total / bucket.orders.length : null;
+
+      setSalesDoctorDetail({
+        doctorId: bucket.doctorId,
+        name: bucket.doctorName,
+        email: bucket.doctorEmail,
+        avatar: bucket.doctorAvatar ?? null,
+        revenue: bucket.total,
+        orders: bucket.orders,
+        phone:
+          bucket.doctorPhone ||
+          (addressSource as any)?.phone ||
+          (addressSource as any)?.phoneNumber ||
+          null,
+        address,
+        lastOrderDate,
+        avgOrderValue,
+      });
+    },
+    [],
+  );
+
+  const renderSalesOrderSkeleton = () => (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="news-loading-line news-loading-shimmer w-36" />
+          <div className="news-loading-line news-loading-shimmer w-28" />
+        </div>
+        <div className="news-loading-line news-loading-shimmer w-16" />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[...Array(4)].map((_, idx) => (
+          <div key={idx} className="space-y-2">
+            <div className="news-loading-line news-loading-shimmer w-24" />
+            <div className="news-loading-line news-loading-shimmer w-28" />
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[...Array(2)].map((_, idx) => (
+          <div
+            key={idx}
+            className="news-loading-card bg-white/75 shadow-none border border-slate-200/70 space-y-3"
+          >
+            <div className="news-loading-line news-loading-shimmer w-32" />
+            <div className="space-y-2">
+              <div className="news-loading-line news-loading-shimmer w-40" />
+              <div className="news-loading-line news-loading-shimmer w-32" />
+              <div className="news-loading-line news-loading-shimmer w-28" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="news-loading-line news-loading-shimmer w-32" />
+        {[...Array(2)].map((_, idx) => (
+          <div
+            key={idx}
+            className="news-loading-card flex items-center gap-3 bg-white/75 shadow-none border border-slate-200/70"
+          >
+            <div className="news-loading-thumb rounded-md" />
+            <div className="flex-1 space-y-2">
+              <div className="news-loading-line news-loading-shimmer w-40" />
+              <div className="news-loading-line news-loading-shimmer w-28" />
+            </div>
+            <div className="news-loading-line news-loading-shimmer w-16" />
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="news-loading-line news-loading-shimmer w-36" />
+        <div className="grid grid-cols-2 gap-2">
+          {[...Array(4)].map((_, idx) => (
+            <div key={idx} className="news-loading-line news-loading-shimmer w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const enrichMissingOrderDetails = useCallback(
+    async (ordersToEnrich: AccountOrderSummary[]) => {
+      const needsDetail = ordersToEnrich.filter((order) => {
+        const hasPlaced =
+          Boolean(
+            order.createdAt ||
+              (order as any).dateCreated ||
+              (order as any).date_created ||
+              (order as any).date_created_gmt,
+          ) || false;
+        const hasEta = Boolean(
+          order?.shippingEstimate?.estimatedArrivalDate ||
+            (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
+            (order as any)?.shippingEstimate?.estimated_delivery_date ||
+            (order as any)?.shipping?.estimatedArrivalDate ||
+            (order as any)?.shipping?.estimated_delivery_date,
+        );
+        return !hasPlaced || !hasEta;
+      });
+
+      if (needsDetail.length === 0) return;
+
+      const shimmerStart =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      const MIN_SHIMMER_MS = 420;
+
+      const ids = new Set(
+        needsDetail.map((order) => String(order.id || order.number || "")),
+      );
+      setSalesOrderHydratingIds(ids);
+
+      await Promise.all(
+        needsDetail.map(async (order) => {
+          try {
+            const detail = await ordersAPI.getSalesRepOrderDetail(
+              order.wooOrderId || order.id || order.number || "",
+              (order as any)?.doctorEmail ||
+                (order as any)?.doctor_email ||
+                (order as any)?.doctorId ||
+                null,
+            );
+            const normalized = normalizeAccountOrdersResponse(
+              { woo: Array.isArray(detail) ? detail : [detail] },
+              { includeCanceled: true },
+            );
+            if (normalized && normalized.length > 0) {
+              mergeSalesOrderDetail(normalized[0]);
+            } else if (detail && typeof detail === "object") {
+              mergeSalesOrderDetail(detail as AccountOrderSummary);
+            }
+          } catch (error) {
+            console.debug("[Sales Tracking] detail enrichment skipped", {
+              orderId: order.id,
+              message:
+                typeof (error as any)?.message === "string"
+                  ? (error as any).message
+                  : String(error),
+            });
+          }
+        }),
+      );
+
+      const elapsed =
+        (typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now()) - shimmerStart;
+      if (elapsed < MIN_SHIMMER_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_SHIMMER_MS - elapsed));
+      }
+      setSalesOrderHydratingIds(new Set());
+    },
+    [mergeSalesOrderDetail],
+  );
   const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
     {
       salesRepId: string;
@@ -3108,6 +3431,136 @@ export default function App() {
     return referralRecords.filter((referral) => !isLeadStatus(referral.status));
   }, [referralRecords, isLeadStatus]);
 
+  const accountProspectEntries = useMemo(() => {
+    const dashboardAny = salesRepDashboard as any;
+    const rawAccounts = [
+      ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
+      ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
+      ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+    ];
+    if (rawAccounts.length === 0) return [];
+
+    const existingKeys = new Set<string>();
+    const addKey = (value?: string | null) => {
+      if (!value) return;
+      existingKeys.add(value.toLowerCase());
+    };
+    activeReferralEntries.forEach((ref) => {
+      addKey(ref.referredContactEmail || undefined);
+      addKey(ref.referredContactPhone ? `phone:${ref.referredContactPhone}` : undefined);
+      addKey(ref.referredContactAccountId ? `acct:${ref.referredContactAccountId}` : undefined);
+      addKey(ref.id ? `id:${ref.id}` : undefined);
+    });
+    contactFormPipeline.forEach((ref) => {
+      addKey(ref.referredContactEmail || undefined);
+      addKey(ref.referredContactPhone ? `phone:${ref.referredContactPhone}` : undefined);
+      addKey(ref.id ? `id:${ref.id}` : undefined);
+    });
+
+    const nowIso = new Date().toISOString();
+    const seenAccounts = new Map<string, any>();
+
+    rawAccounts.forEach((acct: any) => {
+      const id =
+        acct.id ||
+        acct.userId ||
+        acct.doctorId ||
+        acct.accountId ||
+        acct.account_id ||
+        acct.email ||
+        acct.username ||
+        acct.contactEmail ||
+        Math.random().toString(16).slice(2);
+      const key = String(id);
+      if (!seenAccounts.has(key)) {
+        seenAccounts.set(key, acct);
+      }
+    });
+
+    const syntheticEntries = Array.from(seenAccounts.values())
+      .map((acct: any, idx: number) => {
+        const name =
+          acct.name ||
+          [acct.firstName, acct.lastName].filter(Boolean).join(" ").trim() ||
+          acct.doctorName ||
+          acct.contactName ||
+          acct.username ||
+          acct.email ||
+          "Account";
+        const email =
+          acct.email ||
+          acct.userEmail ||
+          acct.doctorEmail ||
+          acct.contactEmail ||
+          null;
+        const phone =
+          acct.phone ||
+          acct.phoneNumber ||
+          acct.phone_number ||
+          acct.contactPhone ||
+          null;
+        const acctId =
+          acct.id ||
+          acct.userId ||
+          acct.doctorId ||
+          acct.accountId ||
+          acct.account_id ||
+          null;
+        const created =
+          acct.createdAt ||
+          acct.created_at ||
+          acct.dateCreated ||
+          acct.date_created ||
+          acct.updatedAt ||
+          acct.updated_at ||
+          nowIso;
+
+        const dedupeKey =
+          (email && email.toLowerCase()) ||
+          (phone && `phone:${phone}`) ||
+          (acctId && `acct:${acctId}`) ||
+          `synthetic:${idx}`;
+        if (existingKeys.has(dedupeKey.toLowerCase())) {
+          return null;
+        }
+
+        const record: ReferralRecord & { syntheticAccountProspect?: boolean } = {
+          id: `acct-prospect-${acctId || email || phone || idx}`,
+          referrerDoctorId: user?.id || user?.salesRepId || "rep",
+          salesRepId: user?.salesRepId || user?.id || null,
+          referredContactName: name,
+          referredContactEmail: email,
+          referredContactPhone: phone,
+          referralCodeId: null,
+          status: "account_created",
+          createdAt: created,
+          updatedAt: created,
+          convertedDoctorId: null,
+          convertedAt: null,
+          notes: acct.notes || null,
+          referrerDoctorName: null,
+          referrerDoctorEmail: null,
+          referrerDoctorPhone: null,
+          creditIssuedAt: null,
+          creditIssuedAmount: null,
+          creditIssuedBy: null,
+          referredContactHasAccount: true,
+          referredContactAccountId: acctId ? String(acctId) : null,
+          referredContactAccountName: name,
+          referredContactAccountEmail: email,
+          referredContactAccountCreatedAt: created,
+          referredContactTotalOrders: acct.totalOrders || 0,
+          referredContactEligibleForCredit: false,
+          syntheticAccountProspect: true,
+        };
+
+        return { kind: "referral" as const, record };
+      })
+      .filter(Boolean) as { kind: "referral"; record: ReferralRecord }[];
+
+    return syntheticEntries;
+  }, [activeReferralEntries, contactFormPipeline, salesRepDashboard, user?.id, user?.salesRepId]);
+
   const combinedLeadEntries = useMemo(
     () =>
       [
@@ -3119,6 +3572,7 @@ export default function App() {
           kind: "contact_form" as const,
           record,
         })),
+        ...accountProspectEntries,
       ].sort((a, b) => {
         const aTime = a.record.updatedAt
           ? new Date(a.record.updatedAt).getTime()
@@ -3132,7 +3586,7 @@ export default function App() {
             : 0;
         return bTime - aTime;
       }),
-    [activeReferralEntries, contactFormPipeline],
+    [activeReferralEntries, contactFormPipeline, accountProspectEntries],
   );
 
   const historicProspectEntries = useMemo(() => {
@@ -3318,10 +3772,15 @@ export default function App() {
         order.integrations) as Record<string, any> | null;
       const candidate =
         asAny.userId ??
+        asAny.user_id ??
         asAny.doctorId ??
+        asAny.doctor_id ??
         asAny.salesRepDoctorId ??
+        asAny.sales_rep_doctor_id ??
         integration?.doctorId ??
         integration?.referrerDoctorId ??
+        integration?.doctor_id ??
+        integration?.referrer_doctor_id ??
         integration?.userId ??
         null;
       if (!candidate) {
@@ -3355,7 +3814,18 @@ export default function App() {
       let orders: AccountOrderSummary[] = [];
       const doctorLookup = new Map<
         string,
-        { name: string; email?: string | null; profileImageUrl?: string | null }
+        {
+          name: string;
+          email?: string | null;
+          profileImageUrl?: string | null;
+          phone?: string | null;
+          address1?: string | null;
+          address2?: string | null;
+          city?: string | null;
+          state?: string | null;
+          postalCode?: string | null;
+          country?: string | null;
+        }
       >();
 
       const response = await ordersAPI.getForSalesRep({
@@ -3371,20 +3841,191 @@ export default function App() {
         if (Array.isArray(respObj.orders)) {
           orders = respObj.orders as AccountOrderSummary[];
         }
-        const doctors = Array.isArray(respObj.doctors) ? respObj.doctors : [];
+        const doctors = Array.isArray(respObj.doctors)
+          ? respObj.doctors
+          : Array.isArray(respObj.users)
+            ? respObj.users
+            : [];
         doctors.forEach((doc: any) => {
-          const id = doc.id || doc.doctorId || doc.userId;
+          const id = doc.id || doc.doctorId || doc.userId || doc.accountId || doc.account_id;
           if (!id) return;
           doctorLookup.set(String(id), {
-            name: doc.name || doc.email || "Doctor",
-            email: doc.email || doc.doctorEmail || null,
+            name:
+              doc.name ||
+              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
+              doc.email ||
+              "Doctor",
+            email: doc.email || doc.doctorEmail || doc.userEmail || null,
             profileImageUrl:
               doc.profileImageUrl || doc.profile_image_url || null,
+            phone:
+              doc.phone ||
+              doc.phoneNumber ||
+              doc.phone_number ||
+              doc.contactPhone ||
+              null,
+            address1: doc.address1 || doc.address_1 || null,
+            address2: doc.address2 || doc.address_2 || null,
+            city: doc.city || null,
+            state: doc.state || null,
+            postalCode: doc.postalCode || doc.postcode || doc.zip || null,
+            country: doc.country || null,
           });
         });
       } else if (Array.isArray(response)) {
         orders = response as AccountOrderSummary[];
       }
+
+      // Normalize orders using the same logic as the doctor's orders tab so dates and shipping ETAs are consistent
+      const originalByKey = new Map<string, any>();
+      const orderKey = (order: any, idx: number) =>
+        String(
+          order.id ||
+            order.wooOrderId ||
+            order.number ||
+            order.cancellationId ||
+            order.wooOrderNumber ||
+            `idx-${idx}`,
+        );
+      orders.forEach((order: any, idx: number) => {
+        const key = orderKey(order, idx);
+        originalByKey.set(key, order);
+      });
+      const normalizeDateField = (value: any): string | null => {
+        if (typeof value === "string" && value.trim().length > 0) {
+          const d = new Date(value);
+          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+        }
+        if (value instanceof Date) {
+          return Number.isNaN(value.getTime()) ? null : value.toISOString();
+        }
+        return null;
+      };
+
+      // Normalize using Woo order summaries only (same shape doctor tab uses)
+      const existingByKey = new Map<string, AccountOrderSummary>();
+      const addExistingKeys = (order: AccountOrderSummary, idx = 0) => {
+        const keys = [
+          order.id,
+          (order as any).wooOrderId,
+          (order as any).woo_order_id,
+          order.number,
+          (order as any).wooOrderNumber,
+          (order as any).cancellationId,
+          (order as any).cancellation_id,
+          `idx-${idx}`,
+        ]
+          .filter(Boolean)
+          .map((k) => String(k));
+        keys.forEach((k) => existingByKey.set(k, order));
+      };
+      salesTrackingOrdersRef.current.forEach((o, idx) => addExistingKeys(o, idx));
+
+      const normalizedOrders = normalizeAccountOrdersResponse(
+        { woo: orders },
+        { includeCanceled: true },
+      )
+        .map((order, idx) => {
+          const key = orderKey(order, idx);
+          const original = originalByKey.get(key) || {};
+          const doctorId =
+            resolveOrderDoctorId(original as any) ||
+            resolveOrderDoctorId(order) ||
+            (original as any).doctor_id ||
+            (original as any).doctorId ||
+            (order as any).doctor_id ||
+            (order as any).doctorId ||
+            null;
+          const doctorInfo = doctorId ? doctorLookup.get(doctorId) : null;
+          const createdAt =
+            normalizeDateField(order.createdAt) ||
+            normalizeDateField((order as any).dateCreated) ||
+            normalizeDateField((order as any).date_created) ||
+            normalizeDateField((order as any).dateCreatedGmt) ||
+            normalizeDateField((order as any).date_created_gmt) ||
+            null;
+          const updatedAt =
+            normalizeDateField(order.updatedAt) ||
+            normalizeDateField((order as any).dateModified) ||
+            normalizeDateField((order as any).date_modified) ||
+            normalizeDateField((order as any).dateModifiedGmt) ||
+            normalizeDateField((order as any).date_modified_gmt) ||
+            createdAt;
+          const estimatedArrival =
+            normalizeDateField(order?.shippingEstimate?.estimatedArrivalDate) ||
+            normalizeDateField(
+              (order as any)?.shippingEstimate?.deliveryDateGuaranteed,
+            ) ||
+            normalizeDateField(
+              (order as any)?.shippingEstimate?.estimated_delivery_date,
+            ) ||
+            normalizeDateField((order as any)?.shipping?.estimatedArrivalDate) ||
+            normalizeDateField(
+              (order as any)?.shipping?.estimated_delivery_date,
+            ) ||
+            null;
+          const shippingEstimate = {
+            ...(order.shippingEstimate || (order as any).shippingEstimate || {}),
+            estimatedArrivalDate: estimatedArrival,
+          };
+
+          const existing = existingByKey.get(key);
+          const merged =
+            existing && existing !== order
+              ? {
+                  ...existing,
+                  ...order,
+                  shippingEstimate:
+                    shippingEstimate ||
+                    (existing as any).shippingEstimate ||
+                    null,
+                  createdAt: createdAt || (existing as any).createdAt || null,
+                  updatedAt: updatedAt || (existing as any).updatedAt || null,
+                  lineItems:
+                    (order as any).lineItems?.length
+                      ? (order as any).lineItems
+                      : (existing as any).lineItems,
+                }
+              : order;
+
+          return {
+            ...merged,
+            createdAt: merged.createdAt || createdAt,
+            updatedAt: merged.updatedAt || updatedAt,
+            shippingEstimate: merged.shippingEstimate || shippingEstimate || null,
+            doctorId,
+            doctorEmail:
+              doctorInfo?.email ||
+              (original as any)?.doctorEmail ||
+              (original as any)?.doctor_email ||
+              (order as any)?.doctorEmail ||
+              (order as any)?.doctor_email ||
+              (order as any)?.billing?.email ||
+              (order as any)?.billing_email ||
+              null,
+            doctorName:
+              doctorInfo?.name ||
+              (original as any)?.doctorName ||
+              (original as any)?.billing_name ||
+              (order as any)?.doctorName ||
+              (order as any)?.billing?.firstName ||
+              (order as any)?.billing?.first_name ||
+              (order as any)?.billing_name ||
+              (order as any)?.billing?.lastName ||
+              (order as any)?.billing?.last_name ||
+              "Doctor",
+            doctorProfileImageUrl:
+              doctorInfo?.profileImageUrl ||
+              (original as any)?.doctorProfileImageUrl ||
+              (order as any)?.doctorProfileImageUrl ||
+              null,
+          };
+        })
+        .sort((a, b) => {
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bTime - aTime;
+        });
 
       if (isAdmin(user.role)) {
         try {
@@ -3407,46 +4048,44 @@ export default function App() {
         }
       }
 
-      const enriched = orders
-        .map((order) => {
-          const doctorId = resolveOrderDoctorId(order);
-          const doctorInfo = doctorId ? doctorLookup.get(doctorId) : null;
-          return {
-            order: {
-              ...order,
-              doctorId: doctorId || order.doctorId || null,
-              doctorName:
-                doctorInfo?.name ||
-                (doctorId ? salesRepDoctorsById.get(doctorId) : null) ||
-                order.doctorName ||
-                "Doctor",
-              doctorEmail: doctorInfo?.email || order.doctorEmail || null,
-              doctorProfileImageUrl:
-                doctorInfo?.profileImageUrl ||
-                (order as any).doctorProfileImageUrl ||
-                null,
-            },
-            doctorId,
-          };
-        })
-        .sort((a, b) => {
-          const aTime = a.order.createdAt
-            ? new Date(a.order.createdAt).getTime()
-            : 0;
-          const bTime = b.order.createdAt
-            ? new Date(b.order.createdAt).getTime()
-            : 0;
-          return bTime - aTime;
-        })
-        .map((entry) => entry.order);
-
       setSalesTrackingDoctors(doctorLookup);
-      setSalesTrackingOrders(enriched);
+      setSalesTrackingOrders(normalizedOrders);
+      const newlySeenDoctorIds: string[] = [];
+      normalizedOrders.forEach((order) => {
+        const docId = resolveOrderDoctorId(order) || order.userId || order.id;
+        if (!docId) return;
+        const idStr = String(docId);
+        if (!knownSalesDoctorIdsRef.current.has(idStr)) {
+          knownSalesDoctorIdsRef.current.add(idStr);
+          newlySeenDoctorIds.push(idStr);
+        }
+      });
+
+      if (!hasInitializedSalesCollapseRef.current) {
+        const collapsedIds = new Set<string>();
+        knownSalesDoctorIdsRef.current.forEach((id) => collapsedIds.add(id));
+        setCollapsedSalesDoctorIds(collapsedIds);
+        hasInitializedSalesCollapseRef.current = true;
+      } else if (newlySeenDoctorIds.length > 0) {
+        const next = new Set(collapsedSalesDoctorIds);
+        newlySeenDoctorIds.forEach((id) => next.add(id));
+        setCollapsedSalesDoctorIds(next);
+      }
       setSalesTrackingLastUpdated(Date.now());
       console.log("[Sales Tracking] Orders loaded", {
-        count: enriched.length,
+        count: normalizedOrders.length,
         doctors: doctorLookup.size,
+        sample:
+          normalizedOrders[0] && {
+            id: normalizedOrders[0].id,
+            number: normalizedOrders[0].number,
+            createdAt: normalizedOrders[0].createdAt,
+            updatedAt: normalizedOrders[0].updatedAt,
+            shippingEstimate: normalizedOrders[0].shippingEstimate,
+            arrival: normalizedOrders[0].shippingEstimate?.estimatedArrivalDate,
+          },
       });
+      void enrichMissingOrderDetails(normalizedOrders);
     } catch (error: any) {
       const message =
         typeof error?.message === "string"
@@ -3457,7 +4096,7 @@ export default function App() {
     } finally {
       setSalesTrackingLoading(false);
     }
-  }, [user, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById]);
+  }, [user, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById, enrichMissingOrderDetails]);
 
   useEffect(() => {
     if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
@@ -3476,14 +4115,18 @@ export default function App() {
     if (salesTrackingOrders.length === 0) {
       return null;
     }
-    const revenue = salesTrackingOrders.reduce(
+    const activeOrders = salesTrackingOrders.filter((order) => {
+      const status = (order.status || "").toLowerCase();
+      return status !== "cancelled" && status !== "canceled";
+    });
+    const revenue = activeOrders.reduce(
       (sum, order) => sum + (coerceNumber(order.total) ?? 0),
       0,
     );
     return {
-      totalOrders: salesTrackingOrders.length,
+      totalOrders: activeOrders.length,
       totalRevenue: revenue,
-      latestOrder: salesTrackingOrders[0],
+      latestOrder: activeOrders[0] || salesTrackingOrders[0],
     };
   }, [salesTrackingOrders]);
 
@@ -3495,6 +4138,8 @@ export default function App() {
         doctorName: string;
         doctorEmail?: string | null;
         doctorAvatar?: string | null;
+        doctorPhone?: string | null;
+        doctorAddress?: string | null;
         orders: AccountOrderSummary[];
         total: number;
       }
@@ -3513,14 +4158,41 @@ export default function App() {
         doctorInfo?.profileImageUrl ||
         (order as any).doctorProfileImageUrl ||
         null;
+      const doctorAddress = (() => {
+        const parts = [
+          doctorInfo?.address1,
+          doctorInfo?.address2,
+          [doctorInfo?.city, doctorInfo?.state, doctorInfo?.postalCode]
+            .filter(Boolean)
+            .join(", "),
+          doctorInfo?.country,
+        ].filter((p) => typeof p === "string" && p.trim().length > 0);
+        return parts.length > 0 ? parts.join("\n") : null;
+      })();
+      const doctorPhone = doctorInfo?.phone || null;
+      const doctorNameFromOrder =
+        doctorName ||
+        [order?.billing?.firstName, order?.billing?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+        (order as any)?.billing_name ||
+        "Doctor";
+      const doctorEmailFromOrder =
+        doctorEmail ||
+        (order as any)?.billing?.email ||
+        (order as any)?.billing_email ||
+        null;
       const bucket =
         buckets.get(doctorId) ||
         (() => {
           const created = {
             doctorId,
-            doctorName,
-            doctorEmail,
+            doctorName: doctorNameFromOrder,
+            doctorEmail: doctorEmailFromOrder,
             doctorAvatar,
+            doctorPhone,
+            doctorAddress,
             orders: [] as AccountOrderSummary[],
             total: 0,
           };
@@ -3528,7 +4200,10 @@ export default function App() {
           return created;
         })();
       bucket.orders.push(order);
-      bucket.total += coerceNumber(order.total) ?? 0;
+      const status = (order.status || "").toLowerCase();
+      if (status !== "cancelled" && status !== "canceled") {
+        bucket.total += coerceNumber(order.total) ?? 0;
+      }
     }
     return Array.from(buckets.values()).sort((a, b) => b.total - a.total);
   }, [
@@ -6448,9 +7123,46 @@ export default function App() {
               </div>
               <div className="sales-rep-lead-grid">
                 {salesTrackingLoading && (
-                  <p className="lead-panel-empty text-sm text-slate-500">
-                    Loading sales data from your doctors…
-                  </p>
+                  <ul className="space-y-4" aria-live="polite">
+                    {[...Array(2)].map((_, idx) => (
+                      <li
+                        key={`sales-loading-${idx}`}
+                        className="lead-panel bg-white/60 border border-slate-200/80 rounded-2xl p-4"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="news-loading-thumb rounded-full" />
+                            <div className="space-y-2">
+                              <div className="news-loading-line news-loading-shimmer w-32" />
+                              <div className="news-loading-line news-loading-shimmer w-24" />
+                            </div>
+                          </div>
+                          <div className="space-y-2 text-right">
+                            <div className="news-loading-line news-loading-shimmer w-16 ml-auto" />
+                            <div className="news-loading-line news-loading-shimmer w-20" />
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {[...Array(2)].map((_, lineIdx) => (
+                            <div
+                              key={`sales-loading-line-${idx}-${lineIdx}`}
+                              className="flex items-center justify-between rounded-xl border border-slate-100 bg-white/70 p-3"
+                            >
+                              <div className="space-y-2">
+                                <div className="news-loading-line news-loading-shimmer w-28" />
+                                <div className="news-loading-line news-loading-shimmer w-36" />
+                                <div className="news-loading-line news-loading-shimmer w-32" />
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="news-loading-line news-loading-shimmer w-14 rounded-full" />
+                                <div className="news-loading-line news-loading-shimmer w-16" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {!salesTrackingLoading && salesTrackingError && (
                   <p className="lead-panel-empty text-sm text-rose-600">
@@ -6468,33 +7180,80 @@ export default function App() {
                   !salesTrackingError &&
                   salesTrackingOrdersByDoctor.length > 0 &&
                   salesTrackingOrdersByDoctor.map((bucket) => {
+                    const isCollapsed = collapsedSalesDoctorIds.has(bucket.doctorId);
                     return (
                       <section key={bucket.doctorId} className="lead-panel">
-                        <div className="lead-panel-header">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm">
-                              {bucket.doctorAvatar ? (
-                                <img
-                                  src={bucket.doctorAvatar}
-                                  alt={bucket.doctorName}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <span className="text-sm font-semibold text-slate-600">
-                                  {getInitials(bucket.doctorName)}
-                                </span>
-                              )}
-                            </div>
-                            <div>
-                              <p className="lead-list-name">
-                                {bucket.doctorName}
-                              </p>
-                              {bucket.doctorEmail && (
-                                <p className="lead-list-detail">
-                                  {bucket.doctorEmail}
+                        <div
+                          className="lead-panel-header cursor-pointer items-center"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleSalesDoctorCollapse(bucket.doctorId)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleSalesDoctorCollapse(bucket.doctorId);
+                            }
+                          }}
+                          aria-expanded={!isCollapsed}
+                          aria-controls={`sales-orders-${bucket.doctorId}`}
+                          style={{ alignItems: "center" }}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <ChevronRight
+                              className="h-4 w-4 text-slate-500"
+                              aria-hidden="true"
+                              style={{
+                                transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)",
+                                transition:
+                                  "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
+                                transformOrigin: "center",
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="flex items-center gap-3 min-w-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSalesDoctorDetail(bucket);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openSalesDoctorDetail(bucket);
+                                }
+                              }}
+                              aria-label={`View ${bucket.doctorName} details`}
+                              style={{ background: "transparent", border: "none", padding: 0 }}
+                            >
+                              <div
+                                className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+                                style={{ width: 44, height: 44, minWidth: 44 }}
+                              >
+                                {bucket.doctorAvatar ? (
+                                  <img
+                                    src={bucket.doctorAvatar}
+                                    alt={bucket.doctorName}
+                                    className="h-full w-full object-cover"
+                                    style={{ width: 44, height: 44 }}
+                                  />
+                                ) : (
+                                  <span className="text-sm font-semibold text-slate-600">
+                                    {getInitials(bucket.doctorName)}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-left">
+                                <p className="lead-list-name">
+                                  {bucket.doctorName}
                                 </p>
-                              )}
-                            </div>
+                                {bucket.doctorEmail && (
+                                  <p className="lead-list-detail">
+                                    {bucket.doctorEmail}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
@@ -6503,32 +7262,97 @@ export default function App() {
                             <p className="text-base font-semibold text-slate-900">
                               {formatCurrency(bucket.total)}
                             </p>
+                            <p className="text-xs text-slate-500">
+                              {bucket.orders.length} order{bucket.orders.length === 1 ? "" : "s"}
+                            </p>
                           </div>
                         </div>
-                        <ul className="lead-list">
-                          {bucket.orders.map((order) => (
-                            <li key={order.id} className="lead-list-item">
-                              <div className="lead-list-meta">
-                                <div className="lead-list-name">
-                                  Order #{order.number ?? order.id}
+                        {!isCollapsed && (
+                          <ul
+                            className="lead-list"
+                            id={`sales-orders-${bucket.doctorId}`}
+                          >
+                          {bucket.orders.map((order) => {
+                            const placedDate =
+                              order.createdAt ||
+                              (order as any).dateCreated ||
+                              (order as any).date_created ||
+                              (order as any).dateCreatedGmt ||
+                              (order as any).date_created_gmt ||
+                              order.updatedAt ||
+                              null;
+                            const arrivalDate =
+                              order?.shippingEstimate?.estimatedArrivalDate ||
+                              (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
+                              (order as any)?.shippingEstimate?.estimated_delivery_date ||
+                              (order as any)?.shipping?.estimatedArrivalDate ||
+                              (order as any)?.shipping?.estimated_delivery_date ||
+                              null;
+                            const isHydrated =
+                              Boolean(placedDate) && Boolean(arrivalDate);
+                            const orderKey = String(order.id || order.number || "");
+                            const isHydrating =
+                              salesTrackingLoading ||
+                              salesOrderHydratingIds.has(orderKey);
+                            const showShimmer =
+                              !isHydrated &&
+                              (salesOrderHydratingIds.has(orderKey) ||
+                                salesTrackingLoading);
+                            const placedLabel = placedDate
+                              ? `Order placed ${formatDateTime(placedDate as string)}`
+                              : "Order placed Unknown date";
+                            const arrivalLabel = arrivalDate
+                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
+                              : "Expected delivery unavailable";
+                            return (
+                              <li
+                                key={order.id}
+                                className="lead-list-item cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
+                                onClick={() => openSalesOrderDetails(order)}
+                                aria-busy={showShimmer}
+                              >
+                                <div className="flex flex-col gap-2 w-full">
+                                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="lead-list-name">
+                                      Order #{order.number ?? order.id}
+                                    </div>
+                                    {showShimmer ? (
+                                      <div className="flex items-center gap-2 justify-end w-full sm:w-auto max-w-[200px]">
+                                        <div className="news-loading-line news-loading-shimmer w-16" />
+                                        <div className="news-loading-line news-loading-shimmer w-20" />
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-3 justify-end">
+                                        <div className="lead-updated">
+                                          {formatCurrency(order.total)}
+                                        </div>
+                                        <span className="sales-tracking-row-status">
+                                          {order.status ?? "Pending"}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {showShimmer ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                                      <div className="news-loading-line news-loading-shimmer w-full" />
+                                      <div className="news-loading-line news-loading-shimmer w-full" />
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                                      <div className="lead-list-detail">
+                                        {placedLabel}
+                                      </div>
+                                      <div className="lead-list-detail">
+                                        {arrivalLabel}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="lead-list-detail">
-                                  {order.createdAt
-                                    ? formatDateTime(order.createdAt)
-                                    : "Unknown date"}
-                                </div>
-                              </div>
-                              <div className="lead-list-actions">
-                                <div className="lead-updated">
-                                  {formatCurrency(order.total)}
-                                </div>
-                                <span className="sales-tracking-row-status">
-                                  {order.status ?? "Pending"}
-                                </span>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
+                              </li>
+                            );
+                          })}
+                          </ul>
+                        )}
                       </section>
                     );
                   })}
@@ -6643,6 +7467,8 @@ export default function App() {
                           const awaitingFirstPurchase =
                             normalizedStatus === "converted" &&
                             !hasLeadPlacedOrder(record);
+                          const isSyntheticAccount =
+                            (record as any).syntheticAccountProspect === true;
                           return (
                             <li key={record.id} className="lead-list-item">
                               <div className="lead-list-meta">
@@ -6673,12 +7499,20 @@ export default function App() {
                                     ? "Account Created"
                                     : "No Account Yet"}
                                 </span>
+                                {isSyntheticAccount && (
+                                  <span className="inline-flex text-[10px] uppercase tracking-wide text-[rgb(95,179,249)] font-semibold">
+                                    Synced Account
+                                  </span>
+                                )}
                               </div>
                               <div className="lead-list-actions">
                                 <select
                                   value={normalizedStatus}
-                                  disabled={isUpdating}
+                                  disabled={isUpdating || isSyntheticAccount}
                                   onChange={(event) => {
+                                    if (isSyntheticAccount) {
+                                      return;
+                                    }
                                     const nextValue = event.target.value;
                                     if (
                                       isManualLead &&
@@ -8968,6 +9802,439 @@ export default function App() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(salesDoctorDetail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSalesDoctorDetail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          {salesDoctorDetail && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>{salesDoctorDetail.name}</DialogTitle>
+                <DialogDescription>
+                  {salesDoctorDetail.email || "Doctor details"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-4">
+                <div
+                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+                  style={{ width: 72, height: 72, minWidth: 72 }}
+                >
+                  {salesDoctorDetail.avatar ? (
+                    <img
+                      src={salesDoctorDetail.avatar}
+                      alt={salesDoctorDetail.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold text-slate-600">
+                      {getInitials(salesDoctorDetail.name)}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-lg font-semibold text-slate-900">
+                    {salesDoctorDetail.name}
+                  </p>
+                  {salesDoctorDetail.email && (
+                    <p className="text-sm text-slate-600">
+                      {salesDoctorDetail.email}
+                    </p>
+                  )}
+                  <p className="text-sm text-slate-600">
+                    Orders: {salesDoctorDetail.orders.length}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    Revenue: {formatCurrency(salesDoctorDetail.revenue)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Contact
+                  </p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
+                    <div>
+                      <span className="font-semibold text-slate-800">Email: </span>
+                      <span>{salesDoctorDetail.email || "Unavailable"}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-800">Phone: </span>
+                      <span>{salesDoctorDetail.phone || "Unavailable"}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Address
+                  </p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
+                    {salesDoctorDetail.address || "Unavailable"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Total Orders
+                  </p>
+                  <p className="text-lg font-semibold text-slate-900">
+                    {salesDoctorDetail.orders.length}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Last Order
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {salesDoctorDetail.lastOrderDate
+                      ? formatDateTime(salesDoctorDetail.lastOrderDate)
+                      : "Unavailable"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Avg Order Value
+                  </p>
+                  <p className="text-lg font-semibold text-slate-900">
+                    {salesDoctorDetail.avgOrderValue
+                      ? formatCurrency(salesDoctorDetail.avgOrderValue)
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  Recent Orders
+                </p>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {salesDoctorDetail.orders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                    >
+                      <div className="text-sm text-slate-700">
+                        {`Order #${order.number ?? order.id}`}
+                        <div className="text-xs text-slate-500">
+                          {order.createdAt
+                            ? formatDateTime(order.createdAt)
+                            : "Date unavailable"}
+                        </div>
+                      </div>
+                      <div className="text-right text-sm font-semibold text-slate-900">
+                        {formatCurrency(order.total || 0)}
+                      </div>
+                    </div>
+                  ))}
+                  {salesDoctorDetail.orders.length === 0 && (
+                    <p className="text-xs text-slate-500">
+                      No orders available.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(salesOrderDetail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSalesOrderDetail(null);
+            setSalesOrderDetailLoading(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          {salesOrderDetailLoading && renderSalesOrderSkeleton()}
+          {!salesOrderDetailLoading && salesOrderDetail && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {salesOrderDetail.number
+                    ? `Order #${salesOrderDetail.number}`
+                    : "Order details"}
+                </DialogTitle>
+                <DialogDescription>
+                  {salesOrderDetail.doctorName || salesOrderDetail.doctorEmail || ""}
+                </DialogDescription>
+              </DialogHeader>
+              {(() => {
+                const shipping = salesOrderDetail.shippingEstimate || null;
+                const shippingAddress =
+                  salesOrderDetail.shippingAddress ||
+                  (salesOrderDetail as any).shipping ||
+                  (salesOrderDetail as any).shipping_address ||
+                  null;
+                const billingAddress =
+                  salesOrderDetail.billingAddress ||
+                  (salesOrderDetail as any).billing ||
+                  (salesOrderDetail as any).billing_address ||
+                  null;
+                const lineItems =
+                  salesOrderDetail.lineItems ||
+                  (salesOrderDetail as any).lineItems ||
+                  (salesOrderDetail as any).line_items ||
+                  [];
+                const subtotal = lineItems.reduce((sum, line) => {
+                  const lineTotal =
+                    typeof line.total === "number"
+                      ? line.total
+                      : (Number(line.price) || 0) * (Number(line.quantity) || 0);
+                  return sum + (Number.isFinite(lineTotal) ? lineTotal : 0);
+                }, 0);
+                const shippingTotal =
+                  typeof salesOrderDetail.shippingTotal === "number"
+                    ? salesOrderDetail.shippingTotal
+                    : 0;
+                const taxTotal =
+                  typeof (salesOrderDetail as any).taxTotal === "number"
+                    ? (salesOrderDetail as any).taxTotal
+                    : 0;
+                const grandTotal =
+                  typeof salesOrderDetail.total === "number"
+                    ? salesOrderDetail.total
+                    : subtotal + shippingTotal + taxTotal;
+                const paymentDisplay =
+                  salesOrderDetail.paymentDetails ||
+                  salesOrderDetail.paymentMethod ||
+                  null;
+                const renderAddressLines = (address: any) => {
+                  if (!address) return <p className="text-sm text-slate-500">—</p>;
+                  const lines = [
+                    address.name,
+                    [address.addressLine1, address.addressLine2]
+                      .filter(Boolean)
+                      .join(" ")
+                      .trim(),
+                    [address.city, address.state, address.postalCode]
+                      .filter(Boolean)
+                      .join(", ")
+                      .trim(),
+                    address.country,
+                    address.phone,
+                    address.email,
+                  ]
+                    .filter((line) => line && String(line).trim().length > 0)
+                    .map((line, idx) => (
+                      <p key={idx} className="text-sm text-slate-700">
+                        {line}
+                      </p>
+                    ));
+                  return lines.length > 0 ? lines : <p className="text-sm text-slate-500">—</p>;
+                };
+
+                const placedDate =
+                  salesOrderDetail.createdAt ||
+                  (salesOrderDetail as any).dateCreated ||
+                  (salesOrderDetail as any).date_created ||
+                  salesOrderDetail.updatedAt ||
+                  null;
+                const expectedDelivery =
+                  shipping?.estimatedArrivalDate
+                    ? formatDate(shipping.estimatedArrivalDate)
+                    : "—";
+
+                return (
+              <div className="space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-slate-700">
+                      <div>
+                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
+                          Order placed
+                        </p>
+                        <p className="font-semibold text-slate-900">
+                          {placedDate
+                            ? formatDateTime(placedDate)
+                            : "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
+                          Total
+                        </p>
+                        <p className="font-semibold text-slate-900">
+                          {formatCurrency(
+                            salesOrderDetail.total,
+                            salesOrderDetail.currency || "USD",
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
+                          Status
+                        </p>
+                        <Badge variant="secondary" className="uppercase">
+                          {salesOrderDetail.status || "Pending"}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
+                          Expected delivery
+                        </p>
+                        <p className="font-semibold text-slate-900">
+                          {expectedDelivery}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <h4 className="text-base font-semibold text-slate-900">
+                          Shipping Information
+                        </h4>
+                        {renderAddressLines(shippingAddress)}
+                        <div className="text-sm text-slate-700 space-y-1">
+                          {shipping?.serviceType && (
+                            <p>
+                              <span className="font-semibold">Service:</span>{" "}
+                              {shipping.serviceType}
+                            </p>
+                          )}
+                          {shipping?.carrierId && (
+                            <p>
+                              <span className="font-semibold">Carrier:</span>{" "}
+                              {shipping.carrierId}
+                            </p>
+                          )}
+                          {Number.isFinite(shippingTotal) && (
+                            <p>
+                              <span className="font-semibold">Shipping:</span>{" "}
+                              {formatCurrency(
+                                shippingTotal,
+                                salesOrderDetail.currency || "USD",
+                              )}
+                            </p>
+                          )}
+                          {expectedDelivery && expectedDelivery !== "—" && (
+                            <p>
+                              <span className="font-semibold">Expected:</span>{" "}
+                              {expectedDelivery}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="text-base font-semibold text-slate-900">
+                          Billing Information
+                        </h4>
+                        {renderAddressLines(billingAddress)}
+                        <div className="text-sm text-slate-700 space-y-1">
+                          <p>
+                            <span className="font-semibold">Payment:</span>{" "}
+                            {paymentDisplay || "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-base font-semibold text-slate-900">
+                        Items
+                      </h4>
+                      {lineItems.length ? (
+                        <div className="space-y-3">
+                          {lineItems.map((line, idx) => (
+                            <div
+                              key={line.id || `${line.sku}-${idx}`}
+                              className="flex items-start gap-3 rounded-lg border border-slate-100 p-3"
+                            >
+                              <div className="w-16 h-16 rounded-md border border-slate-200 bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                                {line.image ? (
+                                  <img
+                                    src={line.image}
+                                    alt={line.name || "Item thumbnail"}
+                                    className="h-full w-full object-contain"
+                                  />
+                                ) : (
+                                  <Package className="h-5 w-5" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-[10rem] space-y-1">
+                                <p className="text-slate-900 font-semibold">
+                                  {line.name || "Item"}
+                                </p>
+                                <p className="text-slate-600">
+                                  Qty: {line.quantity ?? "—"}
+                                </p>
+                              </div>
+                              <div className="text-sm text-slate-700 text-right min-w-[6rem]">
+                                {Number.isFinite(line.total) && (
+                                  <p className="font-semibold">
+                                    {formatCurrency(
+                                      line.total || 0,
+                                      salesOrderDetail.currency || "USD",
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-600">
+                          No line items available.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="text-base font-semibold text-slate-900">
+                        Order Summary
+                      </h4>
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <div className="flex justify-between">
+                          <span>Subtotal</span>
+                          <span>
+                            {formatCurrency(subtotal, salesOrderDetail.currency || "USD")}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Shipping</span>
+                          <span>
+                            {formatCurrency(
+                              shippingTotal,
+                              salesOrderDetail.currency || "USD",
+                            )}
+                          </span>
+                        </div>
+                        {taxTotal > 0 && (
+                          <div className="flex justify-between">
+                            <span>Tax</span>
+                            <span>
+                              {formatCurrency(
+                                taxTotal,
+                                salesOrderDetail.currency || "USD",
+                              )}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-2">
+                          <span>Total</span>
+                          <span>
+                            {formatCurrency(
+                              grandTotal,
+                              salesOrderDetail.currency || "USD",
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </DialogContent>
       </Dialog>
       <ProductDetailDialog

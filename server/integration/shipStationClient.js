@@ -288,7 +288,15 @@ const estimateRates = async ({ shippingAddress, items, totalWeightOz }) => {
       currency: rate.shippingAmount?.currency || 'USD',
     }));
   } catch (error) {
-    logger.error({ err: error, payload }, 'ShipStation rate estimate failed');
+    logger.error(
+      {
+        err: error,
+        status: error.response?.status ?? null,
+        response: error.response?.data || null,
+        payload,
+      },
+      'ShipStation rate estimate failed',
+    );
     const integrationError = new Error('ShipStation rate estimate failed');
     integrationError.status = error.response?.status ?? 502;
     integrationError.cause = error.response?.data || error;

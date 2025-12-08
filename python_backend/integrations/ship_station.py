@@ -190,3 +190,54 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
             ),
         }
     return None
+
+
+def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
+    """
+    Retrieve ShipStation order details by order number to check fulfillment status/tracking.
+    Returns a minimal dict or None if not found.
+    """
+    if not order_number or not is_configured():
+        return None
+
+    headers, auth = _http_args()
+    try:
+        resp = requests.get(
+            f"{API_BASE_URL}/orders",
+            params={"orderNumber": str(order_number).strip(), "pageSize": 1},
+            headers=headers,
+            auth=auth,
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - network path
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error("ShipStation order lookup failed", exc_info=True, extra={"orderNumber": order_number})
+        raise IntegrationError("ShipStation order lookup failed", response=data, status=getattr(exc.response, "status_code", 502) or 502) from exc
+
+    payload = resp.json() or {}
+    orders = payload.get("orders") if isinstance(payload, dict) else None
+    if not orders:
+        return None
+    order = orders[0] or {}
+    shipments = order.get("shipments") or []
+    tracking = None
+    if isinstance(shipments, list) and shipments:
+        for shipment in shipments:
+            tracking = shipment.get("trackingNumber") or tracking
+            if tracking:
+                break
+    return {
+        "status": order.get("orderStatus"),
+        "shipDate": order.get("shipDate"),
+        "trackingNumber": tracking or order.get("trackingNumber"),
+        "carrierCode": order.get("carrierCode"),
+        "serviceCode": order.get("serviceCode"),
+        "orderNumber": order.get("orderNumber"),
+        "orderId": order.get("orderId"),
+    }

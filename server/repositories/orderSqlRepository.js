@@ -129,6 +129,12 @@ const mapRowToOrder = (row) => {
     id: sanitizeString(coalesce(payloadOrder.id, row.id)),
     userId: sanitizeString(coalesce(payloadOrder.userId, row.user_id)),
     wooOrderId: sanitizeString(coalesce(payloadOrder.wooOrderId, row.woo_order_id)),
+    wooOrderNumber: sanitizeString(coalesce(
+      payloadOrder.wooOrderNumber,
+      payload?.integrations?.wooCommerce?.response?.number,
+      payloadOrder.wooOrderId,
+      row.woo_order_id,
+    )),
     shipStationOrderId: sanitizeString(coalesce(payloadOrder.shipStationOrderId, row.shipstation_order_id)),
     total: Number(coalesce(payloadOrder.total, row.total)) || 0,
     shippingTotal: Number(coalesce(payloadOrder.shippingTotal, row.shipping_total)) || 0,

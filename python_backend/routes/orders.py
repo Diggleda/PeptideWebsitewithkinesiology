@@ -51,7 +51,21 @@ def list_orders():
 def list_orders_for_sales_rep():
     def action():
         sales_rep_id = g.current_user.get("id")
+        # Optional override: allow explicit salesRepId query param for admins
+        override = request.args.get("salesRepId") or None
+        if override:
+            sales_rep_id = override
         return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=True)
+
+    return handle_action(action)
+
+
+@blueprint.get("/sales-rep/<order_id>")
+@require_auth
+def get_sales_rep_order_detail(order_id: str):
+    def action():
+        sales_rep_id = g.current_user.get("id")
+        return order_service.get_sales_rep_order_detail(order_id, sales_rep_id)
 
     return handle_action(action)
 

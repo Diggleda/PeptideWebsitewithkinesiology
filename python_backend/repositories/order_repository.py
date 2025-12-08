@@ -10,7 +10,9 @@ from .. import storage
 
 
 def _using_mysql() -> bool:
-    return bool(get_config().mysql.get("enabled"))
+    if not get_config().mysql.get("enabled"):
+        raise RuntimeError("MySQL must be enabled for order repository access")
+    return True
 
 
 def _get_store():

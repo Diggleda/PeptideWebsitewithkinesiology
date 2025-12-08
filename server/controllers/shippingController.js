@@ -28,14 +28,30 @@ const getRates = async (req, res, next) => {
     const normalizedAddress = ensureShippingAddress(shippingAddress);
     const totalWeightOz = calculateTotalWeightOz(items || []);
 
-    // Prefer ShipStation if configured; otherwise, fall back to ShipEngine.
+    // Prefer ShipStation; fall back to ShipEngine on failure.
     let rates;
     if (shipStationClient.isConfigured()) {
-      rates = await shipStationClient.estimateRates({
-        shippingAddress: normalizedAddress,
-        items,
-        totalWeightOz,
-      });
+      try {
+        rates = await shipStationClient.estimateRates({
+          shippingAddress: normalizedAddress,
+          items,
+          totalWeightOz,
+        });
+      } catch (shipStationError) {
+        logger.warn(
+          { err: shipStationError },
+          'ShipStation rate estimate failed; attempting ShipEngine fallback',
+        );
+        if (shipEngineClient.isConfigured()) {
+          rates = await shipEngineClient.estimateRates({
+            shippingAddress: normalizedAddress,
+            items,
+            totalWeightOz,
+          });
+        } else {
+          throw shipStationError;
+        }
+      }
     } else if (shipEngineClient.isConfigured()) {
       rates = await shipEngineClient.estimateRates({
         shippingAddress: normalizedAddress,

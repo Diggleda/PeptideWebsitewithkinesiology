@@ -166,7 +166,7 @@ interface HeaderProps {
   accountOrdersError?: string | null;
   ordersLastSyncedAt?: string | null;
   onRefreshOrders?: () => void;
-  accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number } | null;
+  accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number; order?: AccountOrderSummary } | null;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
@@ -582,6 +582,27 @@ export function Header({
   const [showAvatarControls, setShowAvatarControls] = useState(false);
   const credentialAutofillRequestInFlight = useRef(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
+  const mergeOrderIntoCache = useCallback(
+    (order: AccountOrderSummary | null | undefined) => {
+      if (!order) return;
+      const normalize = (value?: string | null) => (value ? String(value).trim() : null);
+      setCachedAccountOrders((prev) => {
+        if (
+          prev.some(
+            (entry) =>
+              normalize(entry.id) === normalize(order.id) ||
+              normalize(entry.wooOrderId) === normalize(order.wooOrderId) ||
+              normalize(entry.wooOrderNumber) === normalize(order.wooOrderNumber) ||
+              normalize(entry.number) === normalize(order.number),
+          )
+        ) {
+          return prev;
+        }
+        return [order, ...prev];
+      });
+    },
+    [],
+  );
   const applyPendingLoginPrefill = useCallback(() => {
     const pending = pendingLoginPrefill.current;
     if (pending.email !== undefined && loginEmailRef.current) {
@@ -638,13 +659,17 @@ export function Header({
     }
     accountModalRequestTokenRef.current = accountModalRequest.token ?? Date.now();
     console.debug('[Header] Processing account modal request', accountModalRequest);
+    if (accountModalRequest.order) {
+      mergeOrderIntoCache(accountModalRequest.order);
+      setSelectedOrder(accountModalRequest.order);
+    }
     if (accountModalRequest.tab) {
       setAccountTab(accountModalRequest.tab);
     }
-    if (accountModalRequest.open) {
+    if (accountModalRequest.open || accountModalRequest.order) {
       setWelcomeOpen(true);
     }
-  }, [accountModalRequest]);
+  }, [accountModalRequest, mergeOrderIntoCache]);
   useEffect(() => { setLocalUser(user); }, [user]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {

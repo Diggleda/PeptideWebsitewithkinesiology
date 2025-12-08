@@ -110,6 +110,27 @@ const getWooOrderNumberFromOrder = (order) => order?.wooOrderNumber
   || order?.integrationDetails?.wooCommerce?.response?.number
   || null;
 
+const buildWooOrderSummary = (wooOrder) => {
+  if (!wooOrder) {
+    return null;
+  }
+
+  const mapped = typeof wooCommerceClient.mapWooOrderSummary === 'function'
+    ? wooCommerceClient.mapWooOrderSummary(wooOrder)
+    : null;
+  if (!mapped) {
+    return null;
+  }
+
+  const number = mapped.wooOrderNumber || mapped.number || mapped.id || null;
+  return {
+    ...mapped,
+    wooOrderId: mapped.wooOrderId || mapped.id || null,
+    wooOrderNumber: mapped.wooOrderNumber || number,
+    number,
+  };
+};
+
 const resolveWooOrderNumber = async (order) => {
   const existing = getWooOrderNumberFromOrder(order);
   if (existing) {
@@ -250,47 +271,57 @@ const buildBillingAddressFromUser = (user, fallbackAddress = null) => {
   };
 };
 
-const buildLocalOrderSummary = (order) => ({
-  id: order.id,
-  number: order.id,
-  status: order.status,
-  total: order.total,
-  currency: 'USD',
-  createdAt: order.createdAt,
-  updatedAt: order.updatedAt || order.createdAt,
-  referralCode: order.referralCode || null,
-  source: 'local',
-  userId: order.userId,
-  lineItems: (order.items || []).map((item) => ({
-    id: item.cartItemId || item.productId || item.id || `${order.id}-${item.name}`,
-    name: item.name,
-    quantity: item.quantity,
-    price: item.price,
-    total: Number(item.price || 0) * Number(item.quantity || 0),
-    sku: item.sku || item.productSku || null,
-    productId: item.productId || null,
-    variantId: item.variantId || null,
-    image: item.image || null,
-  })),
-  integrations: order.integrations || null,
-  referrerBonus: order.referrerBonus || null,
-  integrationDetails: order.integrationDetails || null,
-  paymentMethod: order.paymentMethod
-    || (order.integrationDetails?.stripe?.cardLast4
-      ? `${order.integrationDetails?.stripe?.cardBrand || 'Card'} •••• ${order.integrationDetails.stripe.cardLast4}`
-      : null),
-  paymentDetails: order.paymentDetails
-    || order.paymentMethod
-    || (order.integrationDetails?.stripe?.cardLast4
-      ? `${order.integrationDetails?.stripe?.cardBrand || 'Card'} •••• ${order.integrationDetails.stripe.cardLast4}`
-      : null),
-  shippingAddress: buildAddressSummary(order.shippingAddress),
-  billingAddress: buildAddressSummary(order.billingAddress),
-  shippingEstimate: order.shippingEstimate || null,
-  shippingTotal: order.shippingTotal ?? null,
-  taxTotal: order.taxTotal ?? null,
-  physicianCertified: order.physicianCertificationAccepted === true,
-});
+const buildLocalOrderSummary = (order) => {
+  const wooOrderNumber = getWooOrderNumberFromOrder(order)
+    || order.wooOrderId
+    || order.integrationDetails?.wooCommerce?.orderId
+    || null;
+
+  return {
+    id: order.id,
+    number: wooOrderNumber || order.id,
+    status: order.status,
+    total: order.total,
+    currency: order.currency || 'USD',
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt || order.createdAt,
+    referralCode: order.referralCode || null,
+    source: order.source || 'local',
+    userId: order.userId,
+    lineItems: (order.items || []).map((item) => ({
+      id: item.cartItemId || item.productId || item.id || `${order.id}-${item.name}`,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      total: Number(item.price || 0) * Number(item.quantity || 0),
+      sku: item.sku || item.productSku || null,
+      productId: item.productId || null,
+      variantId: item.variantId || null,
+      image: item.image || null,
+    })),
+    integrations: order.integrations || null,
+    referrerBonus: order.referrerBonus || null,
+    integrationDetails: order.integrationDetails || null,
+    paymentMethod: order.paymentMethod
+      || (order.integrationDetails?.stripe?.cardLast4
+        ? `${order.integrationDetails?.stripe?.cardBrand || 'Card'} •••• ${order.integrationDetails.stripe.cardLast4}`
+        : null),
+    paymentDetails: order.paymentDetails
+      || order.paymentMethod
+      || (order.integrationDetails?.stripe?.cardLast4
+        ? `${order.integrationDetails?.stripe?.cardBrand || 'Card'} •••• ${order.integrationDetails.stripe.cardLast4}`
+        : null),
+    shippingAddress: buildAddressSummary(order.shippingAddress),
+    billingAddress: buildAddressSummary(order.billingAddress),
+    shippingEstimate: order.shippingEstimate || null,
+    shippingTotal: order.shippingTotal ?? null,
+    taxTotal: order.taxTotal ?? null,
+    wooOrderId: order.wooOrderId || order.integrationDetails?.wooCommerce?.orderId || null,
+    wooOrderNumber: wooOrderNumber,
+    shipStationOrderId: order.shipStationOrderId || null,
+    physicianCertified: order.physicianCertificationAccepted === true,
+  };
+};
 
 const normalizeWooOrderId = (rawId) => {
   if (!rawId) {
@@ -1230,6 +1261,7 @@ const getOrdersForSalesRep = async (
           id,
           name: doctor.name || doctor.email || 'Doctor',
           email: doctor.email || null,
+          profileImageUrl: doctor.profileImageUrl || null,
         },
       ];
     }),
@@ -1241,6 +1273,7 @@ const getOrdersForSalesRep = async (
       id: normalizedSalesRepId,
       name: (selfUser && (selfUser.name || selfUser.email)) || 'Your Orders',
       email: selfUser?.email || null,
+      profileImageUrl: selfUser?.profileImageUrl || null,
     });
     doctors.push({
       id: normalizedSalesRepId,
@@ -1253,9 +1286,17 @@ const getOrdersForSalesRep = async (
   const seenKeys = new Set();
   const doctorIds = doctors.map((d) => normalizeId(d.id)).filter(Boolean);
 
-  // Prefer MySQL source of truth
+  // Only use MySQL/WooCommerce-backed orders for sales rep reporting
   if (mysqlClient.isEnabled()) {
     const sqlOrders = await orderSqlRepository.fetchByUserIds(doctorIds);
+    logger.debug(
+      {
+        doctors: doctorIds.length,
+        sqlOrders: Array.isArray(sqlOrders) ? sqlOrders.length : 0,
+        mysqlEnabled: mysqlClient.isEnabled(),
+      },
+      'Sales rep fetch: using MySQL order source',
+    );
     sqlOrders.forEach((order) => {
       const key = `sql:${order.id}`;
       if (seenKeys.has(key)) return;
@@ -1265,26 +1306,53 @@ const getOrdersForSalesRep = async (
         doctorId: order.userId,
         doctorName: doctorLookup.get(normalizeId(order.userId))?.name || 'Doctor',
         doctorEmail: doctorLookup.get(normalizeId(order.userId))?.email || null,
+        doctorProfileImageUrl: doctorLookup.get(normalizeId(order.userId))?.profileImageUrl || null,
         source: 'mysql',
       });
     });
+  } else if (wooCommerceClient?.isConfigured?.()) {
+    for (const doctor of doctors) {
+      const doctorEmail = (doctor.email || '').trim().toLowerCase();
+      if (!doctorEmail) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const wooOrders = await wooCommerceClient.fetchOrdersByEmail(doctorEmail, { perPage: 50 });
+        logger.debug(
+          {
+            doctorId: doctor.id,
+            doctorEmail,
+            count: Array.isArray(wooOrders) ? wooOrders.length : 0,
+          },
+          'Sales rep fetch: WooCommerce orders loaded for doctor',
+        );
+        wooOrders.forEach((wooOrder) => {
+          const summary = buildWooOrderSummary(wooOrder);
+          if (!summary) return;
+          const key = `woo:${summary.id || summary.number}`;
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+          summaries.push({
+            ...summary,
+            doctorId: doctor.id,
+            doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
+            doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
+            doctorProfileImageUrl: doctorLookup.get(doctor.id)?.profileImageUrl || doctor.profileImageUrl || null,
+            source: 'woo',
+          });
+        });
+      } catch (error) {
+        logger.error({ err: error, doctorEmail }, 'Failed to fetch WooCommerce orders for doctor');
+      }
+    }
   } else {
-    doctors.forEach((doctor) => {
-      const doctorOrders = orderRepository.findByUserId(doctor.id);
-      doctorOrders.forEach((order) => {
-        const key = `local:${order.id}`;
-        if (seenKeys.has(key)) return;
-        seenKeys.add(key);
-        const summary = {
-          ...buildLocalOrderSummary(order),
-          doctorId: doctor.id,
-          doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
-          doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
-          source: order.source || 'local',
-        };
-        summaries.push(summary);
-      });
-    });
+    logger.warn(
+      {
+        mysqlEnabled: mysqlClient.isEnabled(),
+        wooConfigured: !!wooCommerceClient?.isConfigured?.(),
+        doctors: doctors.length,
+      },
+      'Sales rep fetch: no order source enabled (neither MySQL nor WooCommerce)',
+    );
   }
 
   summaries.sort((a, b) => {
@@ -1370,6 +1438,55 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
 
+const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
+  if (!orderId || !wooCommerceClient?.fetchOrderById) {
+    return null;
+  }
+  const numericId = normalizeWooOrderId(orderId) || orderId;
+  try {
+    const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
+    const summary = buildWooOrderSummary(wooOrder);
+    logger.debug(
+      {
+        orderId: numericId,
+        hasLineItems: Array.isArray(summary?.lineItems) ? summary.lineItems.length : 0,
+        hasShippingEstimate: Boolean(summary?.shippingEstimate),
+      },
+      'Sales rep detail fetched from WooCommerce',
+    );
+    return summary;
+  } catch (error) {
+    logger.warn({ err: error, orderId: numericId }, 'WooCommerce detail fetch by ID failed; attempting fallback');
+  }
+
+  if (doctorEmail && typeof wooCommerceClient.fetchOrdersByEmail === 'function') {
+    try {
+      const matches = await wooCommerceClient.fetchOrdersByEmail(doctorEmail, { perPage: 50 });
+      const normalizedKey = String(orderId).trim().replace(/^#/, '');
+      const candidate = matches.find((entry) => {
+        const idMatch = String(entry?.wooOrderId || entry?.id || '').replace(/^#/, '') === normalizedKey;
+        const numberMatch = String(entry?.number || entry?.wooOrderNumber || '').replace(/^#/, '') === normalizedKey;
+        return idMatch || numberMatch;
+      });
+      if (candidate) {
+        logger.debug(
+          {
+            orderId,
+            doctorEmail,
+            hasLineItems: Array.isArray(candidate?.lineItems) ? candidate.lineItems.length : 0,
+          },
+          'Sales rep detail fetched via Woo email fallback',
+        );
+        return candidate;
+      }
+    } catch (error) {
+      logger.error({ err: error, orderId, doctorEmail }, 'WooCommerce email fallback failed');
+    }
+  }
+
+  return null;
+};
+
 const syncOrderToMySql = async (order) => {
   if (!order) {
     return { status: 'skipped', reason: 'missing_order' };
@@ -1436,4 +1553,5 @@ module.exports = {
   cancelOrder,
   startOrderSyncJob,
   syncOrdersToMySql,
+  getWooOrderDetail,
 };

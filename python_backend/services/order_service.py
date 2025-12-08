@@ -12,7 +12,7 @@ from ..repositories import (
     sales_rep_repository,
     referral_code_repository,
 )
-from ..integrations import ship_engine, stripe_payments, woo_commerce
+from ..integrations import ship_engine, ship_station, stripe_payments, woo_commerce
 from . import referral_service
 
 logger = logging.getLogger(__name__)
@@ -501,20 +501,26 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
 
 
 def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
+    logger.info("[SalesRep] Fetch start salesRepId=%s includeDoctors=%s", sales_rep_id, include_doctors)
     users = user_repository.get_all()
     normalized_sales_rep_id = str(sales_rep_id)
     role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
+    rep_records = {rep.get("id"): rep for rep in sales_rep_repository.get_all()}
+    # Allow matching by legacyUserId to catch migrated reps
+    legacy_map = {rep.get("legacyUserId"): rep_id for rep_id, rep in rep_records.items() if rep.get("legacyUserId")}
+    allowed_rep_ids = {normalized_sales_rep_id}
+    if normalized_sales_rep_id in legacy_map:
+        allowed_rep_ids.add(legacy_map[normalized_sales_rep_id])
+    # Also allow doctors tied directly to sales_reps table ids (in case user id differs)
+    allowed_rep_ids.update(rep_records.keys())
 
     doctors = []
     for user in users:
         role = (user.get("role") or "").lower()
         if role not in ("doctor", "test_doctor"):
             continue
-        if str(user.get("salesRepId") or "") != normalized_sales_rep_id:
-            continue
-        # Only attach doctors to real sales reps; if the "rep" is actually an admin,
-        # still include these for the admin's personal tracker but not in rep rollups.
-        if role_lookup.get(normalized_sales_rep_id) not in ("sales_rep", "rep", "admin"):
+        doctor_sales_rep = str(user.get("salesRepId") or "")
+        if doctor_sales_rep not in allowed_rep_ids:
             continue
         doctors.append(user)
 
@@ -523,33 +529,118 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
             "id": doc.get("id"),
             "name": doc.get("name") or doc.get("email") or "Doctor",
             "email": doc.get("email"),
+            "phone": doc.get("phone"),
+            "profileImageUrl": doc.get("profileImageUrl"),
+            "address1": doc.get("officeAddressLine1"),
+            "address2": doc.get("officeAddressLine2"),
+            "city": doc.get("officeCity"),
+            "state": doc.get("officeState"),
+            "postalCode": doc.get("officePostalCode"),
+            "country": doc.get("officeCountry"),
         }
         for doc in doctors
     }
 
     summaries: List[Dict] = []
     seen_keys = set()
-    for doctor in doctors:
-        doctor_id = doctor.get("id")
-        doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
-        doctor_email = doctor.get("email")
 
-        for order in order_repository.find_by_user_id(doctor_id):
-            key = f"local:{order.get('id')}"
-            if key in seen_keys:
+    # WooCommerce orders (if configured)
+    woo_enabled = woo_commerce.is_configured()
+    logger.info(
+        "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
+        sales_rep_id,
+        len(doctors),
+        woo_enabled,
+        [d.get("email") for d in doctors],
+    )
+    if woo_enabled:
+        for doctor in doctors:
+            doctor_id = doctor.get("id")
+            doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
+            doctor_email = (doctor.get("email") or "").strip()
+            # gather possible doctor emails (no sales rep email fallback)
+            candidate_emails = []
+            primary_email = doctor_email.lower()
+            if primary_email:
+                candidate_emails.append(primary_email)
+            for key in (
+                "doctorEmail",
+                "userEmail",
+                "contactEmail",
+                "billingEmail",
+                "wooEmail",
+                "officeEmail",
+            ):
+                val = (doctor.get(key) or "").strip().lower()
+                if val:
+                    candidate_emails.append(val)
+            # lists of alternates if present
+            for key in ("emails", "alternateEmails", "altEmails", "aliases"):
+                val = doctor.get(key)
+                if isinstance(val, list):
+                    for item in val:
+                        email_candidate = (item or "").strip().lower()
+                        if email_candidate:
+                            candidate_emails.append(email_candidate)
+            # dedupe
+            normalized_emails = []
+            for em in candidate_emails:
+                if em and em not in normalized_emails:
+                    normalized_emails.append(em)
+
+            if not normalized_emails:
+                logger.info(
+                    "[SalesRep] Skipping Woo fetch; missing doctor email salesRepId=%s doctorId=%s",
+                    sales_rep_id,
+                    doctor_id,
+                )
                 continue
-            seen_keys.add(key)
-            summaries.append(
-                {
-                    **order,
-                    "doctorId": doctor_id,
-                    "doctorName": doctor_name,
-                    "doctorEmail": doctor_email,
-                    "source": order.get("source") or "local",
-                }
-            )
+
+            woo_orders: List[Dict] = []
+            for email_candidate in normalized_emails:
+                try:
+                    orders_for_email = woo_commerce.fetch_orders_by_email(email_candidate, per_page=50)
+                    logger.info(
+                        "[SalesRep] Woo orders fetched salesRepId=%s doctorId=%s email=%s count=%s",
+                        sales_rep_id,
+                        doctor_id,
+                        email_candidate,
+                        len(orders_for_email),
+                    )
+                    woo_orders.extend(orders_for_email)
+                except Exception:
+                    logger.warning(
+                        "Failed to load Woo orders for doctor email salesRepId=%s doctorId=%s email=%s",
+                        sales_rep_id,
+                        doctor_id,
+                        email_candidate,
+                        exc_info=True,
+                    )
+
+            for woo_order in woo_orders:
+                key = f"woo:{woo_order.get('id')}"
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                summaries.append(
+                    {
+                        **woo_order,
+                        "doctorId": doctor_id,
+                        "doctorName": doctor_name,
+                        "doctorEmail": doctor_email,
+                        "source": "woocommerce",
+                    }
+                )
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
+
+    logger.info(
+        "[SalesRep] Fetch complete salesRepId=%s doctorCount=%s orderCount=%s sampleOrders=%s",
+        sales_rep_id,
+        len(doctors),
+        len(summaries),
+        [o.get("id") or o.get("number") for o in summaries[:5]],
+    )
 
     return (
         {
@@ -560,6 +651,123 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
         if include_doctors
         else summaries
     )
+
+
+def _normalize_order_identifier(order_id: str) -> List[str]:
+    """
+    Build candidate identifiers (id and number) from an incoming order id/number string.
+    Strips prefixes like 'woo-' and extracts digits for Woo lookups.
+    """
+    if not order_id:
+        return []
+    raw = str(order_id).strip()
+    candidates = [raw]
+    if raw.lower().startswith("woo-"):
+        candidates.append(raw.split("-", 1)[1])
+    digits_only = re.sub(r"[^\d]", "", raw)
+    if digits_only and digits_only not in candidates:
+        candidates.append(digits_only)
+    return [c for c in candidates if c]
+
+
+def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dict]:
+    """
+    Fetch a single Woo order detail and ensure it belongs to a doctor tied to this sales rep.
+    """
+    if not order_id:
+        return None
+    if not woo_commerce.is_configured():
+        return None
+
+    candidates = _normalize_order_identifier(order_id)
+    woo_order = None
+    logger.debug(
+        "[SalesRep] Order detail lookup start",
+        extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
+    )
+    for candidate in candidates:
+        woo_order = woo_commerce.fetch_order(candidate)
+        if woo_order:
+            break
+    if woo_order is None:
+        for candidate in candidates:
+            woo_order = woo_commerce.fetch_order_by_number(candidate)
+            if woo_order:
+                break
+    if not woo_order:
+        return None
+
+    mapped = woo_commerce._map_woo_order_summary(woo_order)
+    try:
+        logger.debug(
+            "[SalesRep] Order detail mapped",
+            extra={
+                "orderId": order_id,
+                "salesRepId": sales_rep_id,
+                "mappedId": mapped.get("id"),
+                "mappedNumber": mapped.get("number"),
+                "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
+                "mappedWooOrderId": mapped.get("wooOrderId"),
+                "billingEmail": (woo_order.get("billing") or {}).get("email"),
+            },
+        )
+    except Exception:
+        pass
+
+    # Enrich with ShipStation status/tracking when available
+    shipstation_info = None
+    try:
+        shipstation_info = ship_station.fetch_order_status(mapped.get("number") or mapped.get("wooOrderNumber"))
+    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+        logger.warning(
+            "ShipStation status lookup failed",
+            exc_info=True,
+            extra={"orderId": order_id, "status": getattr(exc, "status", None)},
+        )
+    except Exception:  # pragma: no cover - unexpected path
+        logger.warning(
+            "ShipStation status lookup failed (unexpected)",
+            exc_info=True,
+            extra={"orderId": order_id},
+        )
+
+    if shipstation_info:
+        mapped.setdefault("integrationDetails", {})
+        mapped["integrationDetails"]["shipStation"] = shipstation_info
+        ship_status = (shipstation_info.get("status") or "").lower()
+        if ship_status == "shipped":
+            mapped["status"] = mapped.get("status") or "shipped"
+            mapped.setdefault("shippingEstimate", {})
+            mapped["shippingEstimate"]["status"] = "shipped"
+            if shipstation_info.get("shipDate"):
+                mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
+        if shipstation_info.get("trackingNumber"):
+            mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+
+    # Associate doctor by billing email
+    billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
+    doctor = user_repository.find_by_email(billing_email) if billing_email else None
+    if doctor:
+        mapped["doctorId"] = doctor.get("id")
+        mapped["doctorName"] = doctor.get("name") or billing_email
+        mapped["doctorEmail"] = doctor.get("email")
+        mapped["doctorSalesRepId"] = doctor.get("salesRepId")
+    try:
+        logger.debug(
+            "[SalesRep] Order detail return",
+            extra={
+                "orderId": order_id,
+                "salesRepId": sales_rep_id,
+                "returnId": mapped.get("id"),
+                "returnNumber": mapped.get("number"),
+                "returnWooOrderNumber": mapped.get("wooOrderNumber"),
+                "returnWooOrderId": mapped.get("wooOrderId"),
+            },
+        )
+    except Exception:
+        pass
+
+    return mapped
 
 
 def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):

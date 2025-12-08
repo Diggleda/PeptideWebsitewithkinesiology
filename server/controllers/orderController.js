@@ -49,6 +49,27 @@ const getOrdersForSalesRep = async (req, res, next) => {
   }
 };
 
+const getSalesRepOrderDetail = async (req, res, next) => {
+  try {
+    const role = (req.user?.role || '').toLowerCase();
+    if (role !== 'sales_rep' && role !== 'rep' && role !== 'admin') {
+      return res.status(403).json({ error: 'Sales rep access required' });
+    }
+    const { orderId } = req.params;
+    const doctorEmail = typeof req.query?.doctorEmail === 'string' ? req.query.doctorEmail : null;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+    const detail = await orderService.getWooOrderDetail({ orderId, doctorEmail });
+    if (!detail) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json(detail);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const cancelOrder = async (req, res, next) => {
   try {
     const result = await orderService.cancelOrder({
@@ -97,6 +118,7 @@ module.exports = {
   createOrder,
   getOrders,
   getOrdersForSalesRep,
+  getSalesRepOrderDetail,
   getSalesByRepForAdmin,
   cancelOrder,
   estimateOrderTotals,

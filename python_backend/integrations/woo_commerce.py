@@ -57,6 +57,24 @@ def _parse_woo_id(raw):
         return None
 
 
+def _normalize_woo_order_id(value: Optional[object]) -> Optional[str]:
+    """
+    Best-effort normalization of Woo order identifiers (id/number).
+    Accepts formats like "woo-392", "#392", "Order #392", or plain ints.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return text
+    match = re.search(r"(\d+)", text)
+    if match:
+        return match.group(1)
+    return text
+
+
 def build_line_items(items):
     line_items = []
     for item in items or []:
@@ -609,15 +627,34 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             return fallback
 
     meta_data = order.get("meta_data") or []
-    peppro_order_id = _meta_value(meta_data, "peppro_order_id")
+    peppro_order_id_raw = _meta_value(meta_data, "peppro_order_id")
+    peppro_order_id = str(peppro_order_id_raw).strip() if peppro_order_id_raw is not None else None
     shipping_estimate = _map_shipping_estimate(order, meta_data)
     shipping_total = _num(order.get("shipping_total"), _num(_meta_value(meta_data, "peppro_shipping_total"), 0.0))
     invoice_url = _build_invoice_url(order.get("id"), order.get("order_key"))
     first_shipping_line = (order.get("shipping_lines") or [None])[0] or {}
+    raw_number = order.get("number")
+    woo_number = str(raw_number).strip() if raw_number is not None else None
+    raw_id = order.get("id")
+    woo_order_id = str(raw_id).strip() if raw_id is not None else None
+    public_number = woo_number or woo_order_id
+    identifier = public_number or f"woo-{uuid4().hex[:8]}"
 
-    return {
-        "id": str(order.get("id") or ""),
-        "number": str(order.get("number") or order.get("id") or ""),
+    if not public_number:
+        # Trace situations where we fall back to a generated identifier.
+        try:
+            logger.debug(
+                "Woo map summary missing number/id; using fallback",
+                extra={"raw_id": raw_id, "raw_number": raw_number, "fallback_identifier": identifier},
+            )
+        except Exception:
+            pass
+
+    mapped = {
+        "id": identifier,
+        "wooOrderId": woo_order_id or identifier,
+        "wooOrderNumber": public_number or identifier,
+        "number": public_number or identifier,
         "status": order.get("status"),
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
         "currency": order.get("currency") or "USD",
@@ -654,14 +691,32 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         ],
         "integrationDetails": {
             "wooCommerce": {
-                "wooOrderNumber": order.get("number") or order.get("id"),
-                "pepproOrderId": str(peppro_order_id) if peppro_order_id else None,
+                "wooOrderId": woo_order_id,
+                "wooOrderNumber": public_number or identifier,
+                "pepproOrderId": peppro_order_id,
                 "status": order.get("status"),
                 "invoiceUrl": invoice_url,
                 "shippingLine": first_shipping_line,
             }
         },
     }
+    try:
+        logger.debug(
+            "Woo map summary",
+            extra={
+                "raw_id": raw_id,
+                "raw_number": raw_number,
+                "peppro_order_id": peppro_order_id,
+                "mapped_id": mapped.get("id"),
+                "mapped_number": mapped.get("number"),
+                "mapped_woo_order_number": mapped.get("wooOrderNumber"),
+                "mapped_woo_order_id": mapped.get("wooOrderId"),
+            },
+        )
+    except Exception:
+        # Best-effort logging only; never block mapping.
+        pass
+    return mapped
 
 
 def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
@@ -675,13 +730,28 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
     try:
         response = fetch_catalog("orders", {"per_page": size, "orderby": "date", "order": "desc"})
         payload = response if isinstance(response, list) else []
-        return [
-            _map_woo_order_summary(order)
-            for order in payload
-            if isinstance(order, dict)
-            and isinstance((order.get("billing") or {}).get("email"), str)
-            and (order.get("billing") or {}).get("email").strip().lower() == trimmed
-        ]
+        mapped_orders: List[Dict[str, Any]] = []
+        for order in payload:
+            if not isinstance(order, dict):
+                continue
+            billing_email = (order.get("billing") or {}).get("email")
+            if not isinstance(billing_email, str):
+                continue
+            if billing_email.strip().lower() != trimmed:
+                continue
+            mapped = _map_woo_order_summary(order)
+            mapped_orders.append(mapped)
+        logger.debug(
+            "Woo fetch by email",
+            extra={
+                "email": email,
+                "requested_per_page": per_page,
+                "returned": len(mapped_orders),
+                "raw_count": len(payload),
+                "sample": mapped_orders[:3],
+            },
+        )
+        return mapped_orders
     except IntegrationError:
         raise
     except Exception as exc:

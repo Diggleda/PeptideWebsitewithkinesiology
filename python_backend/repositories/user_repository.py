@@ -65,7 +65,9 @@ def _ensure_defaults(user: Dict) -> Dict:
 
 
 def _using_mysql() -> bool:
-    return bool(get_config().mysql.get("enabled"))
+    if not get_config().mysql.get("enabled"):
+        raise RuntimeError("MySQL must be enabled for user repository access")
+    return True
 
 
 def _load() -> List[Dict]:
