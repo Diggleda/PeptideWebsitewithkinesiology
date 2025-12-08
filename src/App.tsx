@@ -2750,6 +2750,9 @@ export default function App() {
     const orders = coerceNumber(lead?.referredContactTotalOrders) ?? 0;
     return orders > 0;
   }, []);
+  const userId = user?.id || null;
+  const userRole = user?.role || null;
+  const userSalesRepId = user?.salesRepId || null;
   const [salesTrackingOrders, setSalesTrackingOrders] = useState<
     AccountOrderSummary[]
   >([]);
@@ -3792,7 +3795,9 @@ export default function App() {
   );
 
   const fetchSalesTrackingOrders = useCallback(async () => {
-    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+    const role = userRole;
+    const salesRepId = userSalesRepId || userId;
+    if (!role || (!isRep(role) && !isAdmin(role))) {
       setSalesTrackingOrders([]);
       setSalesTrackingDoctors(new Map());
       setSalesRepSalesSummary([]);
@@ -3808,8 +3813,8 @@ export default function App() {
 
     try {
       console.log("[Sales Tracking] Fetch start", {
-        role: user.role || null,
-        salesRepId: user.salesRepId || null,
+        role: role || null,
+        salesRepId: salesRepId || null,
       });
       let orders: AccountOrderSummary[] = [];
       const doctorLookup = new Map<
@@ -3829,8 +3834,8 @@ export default function App() {
       >();
 
       const response = await ordersAPI.getForSalesRep({
-        salesRepId: user.salesRepId || user.id || undefined,
-        scope: isAdmin(user.role) ? "mine" : "mine",
+        salesRepId: salesRepId || undefined,
+        scope: isAdmin(role) ? "mine" : "mine",
       });
       if (
         response &&
@@ -4096,10 +4101,16 @@ export default function App() {
     } finally {
       setSalesTrackingLoading(false);
     }
-  }, [user, resolveOrderDoctorId, isRep, isAdmin, salesRepDoctorsById, enrichMissingOrderDetails]);
+  }, [
+    userId,
+    userRole,
+    userSalesRepId,
+    resolveOrderDoctorId,
+    enrichMissingOrderDetails,
+  ]);
 
   useEffect(() => {
-    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+    if (!userRole || (!isRep(userRole) && !isAdmin(userRole))) {
       return;
     }
     fetchSalesTrackingOrders();
@@ -4109,7 +4120,7 @@ export default function App() {
     return () => {
       window.clearInterval(pollHandle);
     };
-  }, [fetchSalesTrackingOrders, salesRepDoctorIds, user, isRep, isAdmin]);
+  }, [fetchSalesTrackingOrders, userRole]);
 
   const salesTrackingSummary = useMemo(() => {
     if (salesTrackingOrders.length === 0) {
@@ -7090,35 +7101,37 @@ export default function App() {
                     Live orders grouped by your doctors.
                   </p>
                 </div>
-                <div className="sales-rep-card-controls sales-metric-controls">
+                <div className="sales-rep-card-controls">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => fetchSalesTrackingOrders()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void fetchSalesTrackingOrders();
+                    }}
                     disabled={salesTrackingLoading}
                     className="gap-2"
+                    title="Refresh your sales data"
                   >
                     <RefreshCw
                       className={`h-4 w-4 ${salesTrackingLoading ? "animate-spin" : ""}`}
                     />
                     Refresh
                   </Button>
-                  <div className="sales-metric-pill-group">
-                    <div className="sales-metric-pill">
-                      <p className="sales-metric-label">Orders</p>
-                      <p className="sales-metric-value">
-                        {salesTrackingSummary?.totalOrders ?? 0}
-                      </p>
-                    </div>
-                    <div className="sales-metric-pill">
-                      <p className="sales-metric-label">Total Revenue</p>
-                      <p className="sales-metric-value">
-                        {formatCurrency(
-                          salesTrackingSummary?.totalRevenue ?? 0,
-                        )}
-                      </p>
-                    </div>
-                  </div>
+                </div>
+              </div>
+              <div className="sales-metric-pill-group sales-metric-controls">
+                <div className="sales-metric-pill">
+                  <p className="sales-metric-label">Orders</p>
+                  <p className="sales-metric-value">
+                    {salesTrackingSummary?.totalOrders ?? 0}
+                  </p>
+                </div>
+                <div className="sales-metric-pill">
+                  <p className="sales-metric-label">Total Revenue</p>
+                  <p className="sales-metric-value">
+                    {formatCurrency(salesTrackingSummary?.totalRevenue ?? 0)}
+                  </p>
                 </div>
               </div>
               <div className="sales-rep-lead-grid">
@@ -7371,7 +7384,10 @@ export default function App() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => refreshReferralData({ showLoading: true })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void refreshReferralData({ showLoading: true });
+                    }}
                     disabled={referralDataLoading}
                     className="gap-2"
                   >
@@ -10046,6 +10062,19 @@ export default function App() {
                     ? formatDate(shipping.estimatedArrivalDate)
                     : "—";
 
+                const formatShippingCode = (value?: string | null) => {
+                  if (!value) return null;
+                  return value
+                    .replace(/^ups_/i, "UPS ")
+                    .replace(/_/g, " ")
+                    .trim()
+                    .replace(/\s+/g, " ")
+                    .replace(/\b(\w)/g, (m) => m.toUpperCase());
+                };
+                const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
+                const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
+                const trackingLabel = (salesOrderDetail as any)?.trackingNumber || null;
+
                 return (
               <div className="space-y-6">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-slate-700">
@@ -10095,18 +10124,22 @@ export default function App() {
                         </h4>
                         {renderAddressLines(shippingAddress)}
                         <div className="text-sm text-slate-700 space-y-1">
-                          {shipping?.serviceType && (
+                          {shippingServiceLabel && (
                             <p>
                               <span className="font-semibold">Service:</span>{" "}
-                              {shipping.serviceType}
+                              {shippingServiceLabel}
                             </p>
                           )}
-                          {shipping?.carrierId && (
+                          {shippingCarrierLabel && (
                             <p>
                               <span className="font-semibold">Carrier:</span>{" "}
-                              {shipping.carrierId}
+                              {shippingCarrierLabel}
                             </p>
                           )}
+                          <p>
+                            <span className="font-semibold">Tracking:</span>{" "}
+                            {trackingLabel || "Provided when shipped"}
+                          </p>
                           {Number.isFinite(shippingTotal) && (
                             <p>
                               <span className="font-semibold">Shipping:</span>{" "}
@@ -10149,12 +10182,12 @@ export default function App() {
                               key={line.id || `${line.sku}-${idx}`}
                               className="flex items-start gap-3 rounded-lg border border-slate-100 p-3"
                             >
-                              <div className="w-16 h-16 rounded-md border border-slate-200 bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+                              <div className="w-16 h-16 aspect-square rounded-md border border-slate-200 bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
                                 {line.image ? (
                                   <img
                                     src={line.image}
                                     alt={line.name || "Item thumbnail"}
-                                    className="h-full w-full object-contain"
+                                    className="h-full w-full object-cover"
                                   />
                                 ) : (
                                   <Package className="h-5 w-5" />

@@ -13,6 +13,7 @@ from ..repositories import (
     referral_code_repository,
 )
 from ..integrations import ship_engine, ship_station, stripe_payments, woo_commerce
+from .. import storage
 from . import referral_service
 
 logger = logging.getLogger(__name__)
@@ -434,6 +435,10 @@ def get_orders_for_user(user_id: str):
 
     merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders, orders)
 
+    # Enrich Woo orders with ShipStation status/tracking
+    for woo_order in merged_woo_orders:
+        _enrich_with_shipstation(woo_order)
+
     return {
         "local": orders,
         "woo": merged_woo_orders,
@@ -622,15 +627,15 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)
-                summaries.append(
-                    {
-                        **woo_order,
-                        "doctorId": doctor_id,
-                        "doctorName": doctor_name,
-                        "doctorEmail": doctor_email,
-                        "source": "woocommerce",
-                    }
-                )
+                summary = {
+                    **woo_order,
+                    "doctorId": doctor_id,
+                    "doctorName": doctor_name,
+                    "doctorEmail": doctor_email,
+                    "source": "woocommerce",
+                }
+                _enrich_with_shipstation(summary)
+                summaries.append(summary)
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
 
@@ -668,6 +673,131 @@ def _normalize_order_identifier(order_id: str) -> List[str]:
     if digits_only and digits_only not in candidates:
         candidates.append(digits_only)
     return [c for c in candidates if c]
+
+
+def _persist_shipping_update(
+    order_id: Optional[str],
+    shipping_estimate: Optional[Dict],
+    tracking: Optional[str],
+    shipstation_info: Optional[Dict],
+) -> None:
+    """
+    Persist shipping metadata to primary store (MySQL) and best-effort to local JSON for testing.
+    """
+    if not order_id:
+        return
+    try:
+        existing = order_repository.find_by_id(str(order_id))
+    except Exception:
+        existing = None
+    if not existing:
+        return
+
+    merged = dict(existing)
+    if shipping_estimate:
+        current_est = _ensure_dict(merged.get("shippingEstimate"))
+        current_est.update(shipping_estimate)
+        merged["shippingEstimate"] = current_est
+    if tracking and not merged.get("trackingNumber"):
+        merged["trackingNumber"] = tracking
+
+    integrations = _ensure_dict(merged.get("integrationDetails") or merged.get("integrations"))
+    if shipstation_info:
+        integrations["shipStation"] = shipstation_info
+    merged["integrationDetails"] = integrations
+
+    try:
+        order_repository.update(merged)
+    except Exception:
+        logger.warning(
+            "Failed to persist shipping update to primary store",
+            exc_info=True,
+            extra={"orderId": order_id},
+        )
+
+    # Best-effort local JSON update for testing
+    try:
+        store = storage.order_store
+        if store:
+            orders = list(store.read())
+            updated = False
+            for idx, entry in enumerate(orders):
+                if str(entry.get("id")) == str(order_id):
+                    orders[idx] = {**entry, **merged}
+                    updated = True
+                    break
+            if not updated:
+                orders.append(merged)
+            store.write(orders)
+    except Exception:
+        logger.warning(
+            "Failed to persist shipping update to local JSON store",
+            exc_info=True,
+            extra={"orderId": order_id},
+        )
+
+
+def _enrich_with_shipstation(order: Dict) -> None:
+    """
+    Mutates order dict in-place with ShipStation status/tracking, and persists shipping metadata.
+    """
+    if not order:
+        return
+    order_number = order.get("number") or order.get("wooOrderNumber")
+    if not order_number:
+        return
+    info = None
+    try:
+        info = ship_station.fetch_order_status(order_number)
+    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+        logger.warning(
+            "ShipStation status lookup failed",
+            exc_info=True,
+            extra={"orderNumber": order_number, "status": getattr(exc, "status", None)},
+        )
+    except Exception:  # pragma: no cover - unexpected path
+        logger.warning("ShipStation status lookup failed (unexpected)", exc_info=True, extra={"orderNumber": order_number})
+    if not info:
+        return
+
+    try:
+        logger.info(
+            "[ShipStation] Status lookup",
+            extra={
+                "orderNumber": order_number,
+                "shipStationStatus": info.get("status"),
+                "trackingNumber": info.get("trackingNumber"),
+                "shipDate": info.get("shipDate"),
+            },
+        )
+    except Exception:
+        pass
+
+    integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+    integrations["shipStation"] = info
+    order["integrationDetails"] = integrations
+    ship_status = (info.get("status") or "").lower()
+    if ship_status == "shipped":
+        order["status"] = order.get("status") or "shipped"
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        estimate["status"] = "shipped"
+        if info.get("shipDate"):
+            estimate["shipDate"] = info["shipDate"]
+        order["shippingEstimate"] = estimate
+    if info.get("trackingNumber"):
+        order["trackingNumber"] = info["trackingNumber"]
+
+    peppro_order_id = (
+        _ensure_dict(order.get("integrationDetails") or {})
+        .get("wooCommerce", {})
+        .get("pepproOrderId")
+    ) or order.get("id")
+    _persist_shipping_update(
+        peppro_order_id,
+        order.get("shippingEstimate"),
+        order.get("trackingNumber"),
+        info,
+    )
 
 
 def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dict]:
@@ -735,14 +865,35 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
         mapped.setdefault("integrationDetails", {})
         mapped["integrationDetails"]["shipStation"] = shipstation_info
         ship_status = (shipstation_info.get("status") or "").lower()
+        carrier_code = shipstation_info.get("carrierCode")
+        service_code = shipstation_info.get("serviceCode")
         if ship_status == "shipped":
             mapped["status"] = mapped.get("status") or "shipped"
             mapped.setdefault("shippingEstimate", {})
             mapped["shippingEstimate"]["status"] = "shipped"
             if shipstation_info.get("shipDate"):
                 mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
+        mapped.setdefault("shippingEstimate", {})
+        if carrier_code:
+            # Prefer carrierCode for display (e.g., UPS)
+            mapped["shippingEstimate"]["carrierId"] = carrier_code
+            mapped["shippingCarrier"] = carrier_code
+        if service_code:
+            mapped["shippingEstimate"]["serviceType"] = service_code
+            mapped["shippingService"] = service_code
         if shipstation_info.get("trackingNumber"):
             mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+        peppro_order_id = (
+            _ensure_dict(mapped.get("integrationDetails") or {})
+            .get("wooCommerce", {})
+            .get("pepproOrderId")
+        ) or mapped.get("id")
+        _persist_shipping_update(
+            peppro_order_id,
+            mapped.get("shippingEstimate"),
+            mapped.get("trackingNumber"),
+            shipstation_info,
+        )
 
     # Associate doctor by billing email
     billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")

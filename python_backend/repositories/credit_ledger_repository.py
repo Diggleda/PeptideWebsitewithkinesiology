@@ -10,9 +10,7 @@ from .. import storage
 
 
 def _using_mysql() -> bool:
-    if not get_config().mysql.get("enabled"):
-        raise RuntimeError("MySQL must be enabled for credit ledger repository access")
-    return True
+    return bool(get_config().mysql.get("enabled"))
 
 
 def _get_store():

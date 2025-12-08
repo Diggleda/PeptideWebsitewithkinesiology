@@ -118,9 +118,7 @@ def _collect_sales_rep_aliases(candidate: str) -> set[str]:
 
 
 def _using_mysql() -> bool:
-    if not get_config().mysql.get("enabled"):
-        raise RuntimeError("MySQL must be enabled for referral repository access")
-    return True
+    return bool(get_config().mysql.get("enabled"))
 
 
 def _get_store():

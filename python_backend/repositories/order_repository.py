@@ -10,9 +10,7 @@ from .. import storage
 
 
 def _using_mysql() -> bool:
-    if not get_config().mysql.get("enabled"):
-        raise RuntimeError("MySQL must be enabled for order repository access")
-    return True
+    return bool(get_config().mysql.get("enabled"))
 
 
 def _get_store():
@@ -118,13 +116,18 @@ def update(order: Dict) -> Optional[Dict]:
                 user_id = %(user_id)s,
                 items = %(items)s,
                 total = %(total)s,
+                shipping_total = %(shipping_total)s,
+                shipping_carrier = %(shipping_carrier)s,
+                shipping_service = %(shipping_service)s,
                 referral_code = %(referral_code)s,
                 status = %(status)s,
                 referrer_bonus = %(referrer_bonus)s,
                 first_order_bonus = %(first_order_bonus)s,
                 integrations = %(integrations)s,
+                shipping_rate = %(shipping_rate)s,
                 shipping_address = %(shipping_address)s,
-                created_at = %(created_at)s
+                payload = %(payload)s,
+                updated_at = %(updated_at)s
             WHERE id = %(id)s
             """,
             params,
