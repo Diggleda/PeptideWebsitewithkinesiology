@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from flask import Blueprint, g, request
+from datetime import datetime
 
 from ..middleware.auth import require_auth
 from ..repositories import referral_code_repository, referral_repository, user_repository, sales_rep_repository
@@ -123,6 +124,29 @@ def doctor_ledger():
     return handle_action(action)
 
 
+@blueprint.delete("/doctor/referrals/<referral_id>")
+@require_auth
+def delete_doctor_referral(referral_id: str):
+
+    def action():
+        user = _ensure_user()
+        _require_doctor(user)
+        referral = referral_repository.find_by_id(referral_id)
+        # If missing or already removed, treat as success (idempotent)
+        if not referral:
+            return {"deleted": True}
+
+        status = (referral.get("status") or "").lower()
+        if status != "pending":
+            raise _error("REFERRAL_DELETE_NOT_ALLOWED", 409)
+
+        # Allow deletion even if ownership metadata is missing/mismatched (legacy data)
+        referral_repository.delete(referral_id)
+        return {"deleted": True}
+
+    return handle_action(action)
+
+
 @blueprint.get("/admin/dashboard")
 @require_auth
 def admin_dashboard():
@@ -144,10 +168,41 @@ def admin_dashboard():
             if scope_all and (user.get("role") or "").lower() == "admin"
             else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
         )
+        # Merge sales rep sales_code (SQL: sales_reps.sales_code) as an assigned code
+        rep = sales_rep_repository.find_by_id(target_sales_rep_id) or sales_rep_repository.find_by_email(user.get("email"))
+        rep_code = (rep.get("salesCode") or rep.get("sales_code") or "").strip().upper() if rep else ""
+        if rep_code and not any((c.get("code") or "").upper() == rep_code for c in codes):
+            now = datetime.utcnow().isoformat()
+            codes.append(
+                {
+                    "id": f"rep-code-{rep.get('id') or target_sales_rep_id}",
+                    "code": rep_code,
+                    "salesRepId": rep.get("id") if rep else target_sales_rep_id,
+                    "status": "assigned",
+                    "issuedAt": rep.get("updatedAt") or rep.get("updated_at") or rep.get("createdAt") or rep.get("created_at") or now,
+                    "updatedAt": rep.get("updatedAt") or rep.get("updated_at") or now,
+                    "referrerDoctorId": None,
+                    "referralId": None,
+                    "history": [
+                        {
+                            "action": "issued",
+                            "at": now,
+                            "by": rep.get("id") if rep else target_sales_rep_id,
+                            "status": "assigned",
+                            "source": "sales_rep",
+                        }
+                    ],
+                }
+            )
+        users = referral_service.list_accounts_for_sales_rep(
+            target_sales_rep_id,
+            scope_all=scope_all and (user.get("role") or "").lower() == "admin",
+        )
         return {
             "version": "backend_v1.7.16",
             "referrals": referrals,
             "codes": codes,
+            "users": users,
             "statuses": referral_service.get_referral_status_choices(),
         }
 
@@ -189,6 +244,32 @@ def admin_codes():
             for code in referral_code_repository.get_all()
             if str(code.get("salesRepId")) in target_ids
         ]
+        # Merge sales rep sales_code from SQL/JSON
+        rep = sales_rep_repository.find_by_id(user.get("salesRepId") or user.get("id")) or sales_rep_repository.find_by_email(user.get("email"))
+        rep_code = (rep.get("salesCode") or rep.get("sales_code") or "").strip().upper() if rep else ""
+        if rep_code and not any((c.get("code") or "").upper() == rep_code for c in codes):
+            now = datetime.utcnow().isoformat()
+            codes.append(
+                {
+                    "id": f"rep-code-{rep.get('id') if rep else user.get('id')}",
+                    "code": rep_code,
+                    "salesRepId": rep.get("id") if rep else user.get("id"),
+                    "status": "assigned",
+                    "issuedAt": rep.get("updatedAt") or rep.get("updated_at") or rep.get("createdAt") or rep.get("created_at") or now,
+                    "updatedAt": rep.get("updatedAt") or rep.get("updated_at") or now,
+                    "referrerDoctorId": None,
+                    "referralId": None,
+                    "history": [
+                        {
+                            "action": "issued",
+                            "at": now,
+                            "by": rep.get("id") if rep else user.get("id"),
+                            "status": "assigned",
+                            "source": "sales_rep",
+                        }
+                    ],
+                }
+            )
         return {"codes": codes}
 
     return handle_action(action)

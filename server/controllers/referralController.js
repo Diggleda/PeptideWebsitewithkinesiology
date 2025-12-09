@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const referralRepository = require('../repositories/referralRepository');
 const referralCodeRepository = require('../repositories/referralCodeRepository');
 const creditLedgerRepository = require('../repositories/creditLedgerRepository');
+const salesRepRepository = require('../repositories/salesRepRepository');
+const userRepository = require('../repositories/userRepository');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 
@@ -10,6 +12,26 @@ const REFERRAL_STATUSES = ['pending', 'contacted', 'account_created', 'nuture', 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
 const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeCode = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+const buildInitials = (user) => {
+  const source = `${user?.initials || ''} ${user?.name || ''} ${user?.email || ''}`;
+  const letters = source.replace(/[^a-zA-Z]/g, '');
+  const base = letters.slice(0, 2).toUpperCase();
+  return (base || 'PP').padEnd(2, 'X').slice(0, 2);
+};
+const randomSuffix = () => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let output = '';
+  crypto.randomBytes(3).forEach((byte) => {
+    output += alphabet[byte % alphabet.length];
+  });
+  return output.slice(0, 3);
+};
+
 const isRep = (role) => {
   const normalized = normalizeRole(role);
   return normalized === 'sales_rep' || normalized === 'rep';
@@ -76,6 +98,31 @@ const submitDoctorReferral = (req, res, next) => {
     });
 
     res.json({ referral: record });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteDoctorReferral = (req, res, next) => {
+  try {
+    ensureDoctor(req.user, 'deleteDoctorReferral');
+    const { referralId } = req.params;
+    const referral = referralRepository.findById(referralId);
+    if (!referral) {
+      // treat missing as already deleted for idempotency
+      return res.json({ deleted: true });
+    }
+    const status = (referral.status || '').toLowerCase();
+    if (status !== 'pending') {
+      const error = new Error('Referral can only be deleted while pending');
+      error.status = 409;
+      throw error;
+    }
+    const removed = referralRepository.remove(referralId);
+    if (!removed) {
+      return res.json({ deleted: true });
+    }
+    res.json({ deleted: true });
   } catch (error) {
     next(error);
   }
@@ -207,10 +254,85 @@ const getSalesRepDashboard = async (req, res, next) => {
       },
       'Sales rep dashboard request',
     );
+    const allReferrals = referralRepository.getAll();
     let referrals = scopeAll
-      ? referralRepository.getAll()
+      ? allReferrals
       : referralRepository.findBySalesRepId(salesRepId);
-    const codes = isAdmin ? referralCodeRepository.getAll() : referralCodeRepository.findBySalesRepId(salesRepId);
+    // Include users/accounts to help UI detect account creation
+    const rawUsers = userRepository.getAll();
+    const users = scopeAll
+      ? rawUsers
+      : rawUsers.filter((user) => {
+          const ownerIds = [user.salesRepId, user.id, user.sales_rep_id].map((v) =>
+            v == null ? null : String(v),
+          );
+          return ownerIds.includes(String(salesRepId));
+        });
+
+    // Always merge in any unmatched referrals so local data (mismatched salesRepId) still appears
+    if (!scopeAll) {
+      const dedup = new Map();
+      referrals.forEach((r) => dedup.set(r.id, r));
+      allReferrals.forEach((r) => {
+        if (!dedup.has(r.id)) {
+          dedup.set(r.id, r);
+        }
+      });
+      referrals = Array.from(dedup.values());
+    }
+    let codes = [];
+    if (isAdmin) {
+      codes = referralCodeRepository.getAll();
+    } else {
+      const ownerIds = [
+        salesRepId || null,
+        req.user?.id || null,
+        req.user?.salesRepId || null,
+      ].filter(Boolean);
+      ownerIds.forEach((ownerId) => {
+        codes = codes.concat(referralCodeRepository.findBySalesRepId(ownerId));
+      });
+    }
+
+    // Merge sales rep "salesCode" from local store
+    const mergeRepCodes = (repList) => {
+      repList.forEach((rep) => {
+        const repCode = normalizeCode(rep?.salesCode);
+        if (!repCode) return;
+        if (!codes.some((c) => normalizeCode(c.code) === repCode)) {
+          const now = new Date().toISOString();
+          codes.push({
+            id: `sales-rep-code-${rep?.id || repCode}`,
+            code: repCode,
+            salesRepId: rep?.id || salesRepId || null,
+            status: 'assigned',
+            issuedAt: rep?.updatedAt || rep?.createdAt || now,
+            updatedAt: rep?.updatedAt || now,
+            referrerDoctorId: null,
+            referralId: null,
+            history: [
+              {
+                action: 'issued',
+                at: now,
+                by: rep?.id || salesRepId,
+                status: 'assigned',
+                source: 'sales_rep',
+              },
+            ],
+          });
+        }
+      });
+    };
+
+    if (isAdmin) {
+      mergeRepCodes(salesRepRepository.getAll());
+    } else {
+      const rep =
+        salesRepRepository.findById(salesRepId) ||
+        salesRepRepository.findByEmail(req.user?.email) ||
+        [];
+      mergeRepCodes([rep].filter(Boolean));
+    }
 
     if (isAdmin && mysqlClient.isEnabled()) {
       try {
@@ -250,6 +372,7 @@ const getSalesRepDashboard = async (req, res, next) => {
     res.json({
       referrals,
       codes,
+      users,
       statuses: REFERRAL_STATUSES,
     });
   } catch (error) {
@@ -267,13 +390,40 @@ const createReferralCode = (req, res, next) => {
       throw error;
     }
     const referral = referralRepository.findById(referralId);
-    if (!referral || referral.salesRepId !== req.user.id) {
+    const isAdmin = normalizeRole(req.user?.role) === 'admin';
+    const referralOwner = referral ? referral.salesRepId : null;
+    const missingOwner = !referralOwner;
+    const ownedByUser = referralOwner && referralOwner === req.user.id;
+    if (!referral || (!isAdmin && !missingOwner && !ownedByUser)) {
       const error = new Error('Referral not found for sales representative');
       error.status = 404;
       throw error;
     }
 
-    const codeValue = `PP${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const salesRep =
+      salesRepRepository.findById(req.user?.id) ||
+      salesRepRepository.findByEmail(req.user?.email) ||
+      {};
+    const initials = buildInitials({ ...salesRep, ...req.user });
+    const existingCodes = new Set(
+      referralCodeRepository
+        .getAll()
+        .map((code) => (code.code || '').toString().toUpperCase())
+        .filter(Boolean),
+    );
+    let codeValue = '';
+    for (let attempts = 0; attempts < 200; attempts += 1) {
+      const candidate = `${initials}${randomSuffix()}`.slice(0, 5).toUpperCase();
+      if (!existingCodes.has(candidate)) {
+        codeValue = candidate;
+        break;
+      }
+    }
+    if (!codeValue) {
+      const error = new Error('Unable to generate referral code');
+      error.status = 500;
+      throw error;
+    }
     const now = new Date().toISOString();
     const code = referralCodeRepository.insert({
       salesRepId: req.user.id,
@@ -338,6 +488,51 @@ const updateReferralCodeStatus = (req, res, next) => {
   }
 };
 
+const listReferralCodes = (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'listReferralCodes');
+    const ownerIds = [
+      req.user?.id || null,
+      req.user?.salesRepId || null,
+    ].filter(Boolean);
+
+    // Collect any codes that match the user id or linked salesRepId
+    const codes = ownerIds
+      .map((ownerId) => referralCodeRepository.findBySalesRepId(ownerId))
+      .flat();
+
+    const rep =
+      salesRepRepository.findById(req.user?.salesRepId || req.user?.id) ||
+      salesRepRepository.findByEmail(req.user?.email);
+    const repCode = normalizeCode(rep?.salesCode);
+    if (repCode && !codes.some((c) => normalizeCode(c.code) === repCode)) {
+      const now = new Date().toISOString();
+      codes.push({
+        id: `sales-rep-code-${rep?.id || repCode}`,
+        code: repCode,
+        salesRepId: rep?.id || req.user.id,
+        status: 'assigned',
+        issuedAt: rep?.updatedAt || rep?.createdAt || now,
+        updatedAt: rep?.updatedAt || now,
+        referrerDoctorId: null,
+        referralId: null,
+        history: [
+          {
+            action: 'issued',
+            at: now,
+            by: req.user.id,
+            status: 'assigned',
+            source: 'sales_rep',
+          },
+        ],
+      });
+    }
+    res.json({ codes });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateReferral = (req, res, next) => {
   try {
     ensureSalesRep(req.user);
@@ -363,10 +558,55 @@ const updateReferral = (req, res, next) => {
     }
 
     const referral = referralRepository.findById(referralId);
-    if (!referral || referral.salesRepId !== req.user.id) {
-      const error = new Error('Referral not found for sales representative');
-      error.status = 404;
-      throw error;
+    const isAdmin = normalizeRole(req.user?.role) === 'admin';
+    const owner = referral ? referral.salesRepId : null;
+    const ownedByUser = owner && owner === req.user.id;
+
+    // If the record is missing locally (e.g., contact form or remote source), create it on the fly
+    if (!referral) {
+      const now = new Date().toISOString();
+      const seeded = referralRepository.insert({
+        id: referralId,
+        salesRepId: req.user.id,
+        status: updates.status || 'pending',
+        notes: updates.notes || null,
+        referrerDoctorId: req.body?.referrerDoctorId || null,
+        referrerDoctorName: req.body?.referrerDoctorName || null,
+        referrerDoctorEmail: req.body?.referrerDoctorEmail || null,
+        referrerDoctorPhone: req.body?.referrerDoctorPhone || null,
+        referredContactName: req.body?.referredContactName || 'Lead',
+        referredContactEmail: req.body?.referredContactEmail || null,
+        referredContactPhone: req.body?.referredContactPhone || null,
+        referredContactHasAccount: false,
+        referredContactEligibleForCredit: false,
+        createdAt: now,
+        updatedAt: now,
+        history: [
+          {
+            action: 'status_seed',
+            at: now,
+            by: req.user.id,
+            status: updates.status || 'pending',
+          },
+        ],
+      });
+      return res.json({
+        referral: seeded,
+        statuses: REFERRAL_STATUSES,
+      });
+    }
+
+    if (!isAdmin && owner && !ownedByUser) {
+      logger.warn(
+        {
+          referralId,
+          referralOwner: owner,
+          requestUser: req.user?.id || null,
+          role: req.user?.role || null,
+        },
+        'Referral update by non-owner; reassigning to requesting sales rep',
+      );
+      updates.salesRepId = req.user.id;
     }
 
     const updated = referralRepository.update(referralId, updates);
@@ -381,11 +621,13 @@ const updateReferral = (req, res, next) => {
 
 module.exports = {
   submitDoctorReferral,
+  deleteDoctorReferral,
   getDoctorSummary,
   getDoctorLedger,
   getSalesRepDashboard,
   createReferralCode,
   updateReferralCodeStatus,
+  listReferralCodes,
   updateReferral,
   REFERRAL_STATUSES,
 };

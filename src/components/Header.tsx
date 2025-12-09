@@ -707,14 +707,7 @@ export function Header({
         })
         .filter((code, index, array) => code.length > 0 && array.indexOf(code) === index)
     : [];
-  const directReferralCode = (() => {
-    const raw = localUser?.referralCode ?? user.referralCode ?? null;
-    if (raw === null || raw === undefined) {
-      return '';
-    }
-    return String(raw).trim().toUpperCase();
-  })();
-  const primaryReferralCode = directReferralCode || normalizedReferralCodes[0] || null;
+  const primaryReferralCode = normalizedReferralCodes[0] || null;
   const canShowReferralCode = (accountIsAdmin || accountIsSalesRep) && Boolean(primaryReferralCode);
 
   // Account tab underline indicator (shared bar that moves to active tab)

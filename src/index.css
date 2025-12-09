@@ -3756,6 +3756,10 @@ html {
 }
 
 @media (max-width: 640px) {
+  .active-prospects-list-scroll .lead-list {
+    min-width: 0;
+  }
+
   .lead-list-item {
     flex-direction: column;
   }

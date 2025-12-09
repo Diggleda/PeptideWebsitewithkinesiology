@@ -55,6 +55,33 @@ def _sum_weight_ounces(items: List[Dict]) -> float:
     return max(total, 8.0)
 
 
+def _aggregate_dimensions(items: List[Dict]) -> Optional[Dict]:
+    length = None
+    width = None
+    height = None
+
+    for item in items or []:
+        q = float(item.get("quantity") or 0) or 0
+        l = _coerce_inventory_number(item.get("length"))
+        w = _coerce_inventory_number(item.get("width"))
+        h = _coerce_inventory_number(item.get("height"))
+        if l and (length is None or l > length):
+            length = l
+        if w and (width is None or w > width):
+            width = w
+        if h:
+            height = (height or 0) + h * max(q, 1)
+
+    if length and width and height:
+        return {
+            "length": length,
+            "width": width,
+            "height": height,
+            "units": "inches",
+        }
+    return None
+
+
 def _ship_from() -> Dict:
     cfg = get_config().ship_station.get("ship_from") or {}
     return {
@@ -94,49 +121,114 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
     headers, auth = _http_args()
     cfg = get_config().ship_station
     ship_from = _ship_from()
-    payload = {
-        "carrierCode": cfg.get("carrier_code") or None,
-        "serviceCode": cfg.get("service_code") or None,
-        "packageCode": cfg.get("package_code") or None,
-        "confirmation": "none",
-        "fromCity": ship_from["city"],
-        "fromState": ship_from["state"],
-        "fromPostalCode": ship_from["postal_code"],
-        "fromCountry": ship_from["country"],
-        "toCity": shipping_address.get("city"),
-        "toState": shipping_address.get("state"),
-        "toPostalCode": shipping_address.get("postalCode"),
-        "toCountry": shipping_address.get("country") or "US",
-        "weight": {
-            "value": _sum_weight_ounces(items or []),
-            "units": "ounces",
-        },
-    }
+    def build_payload(carrier_code: Optional[str], service_code: Optional[str], strip_service: bool = False) -> Dict:
+        effective_service = None if strip_service else (service_code or None)
+        payload = {
+            "carrierCode": carrier_code,
+            "serviceCode": effective_service,
+            "packageCode": cfg.get("package_code") or None,
+            "confirmation": "none",
+            "fromCity": ship_from["city"],
+            "fromState": ship_from["state"],
+            "fromPostalCode": ship_from["postal_code"],
+            "fromCountry": ship_from["country"],
+            "toCity": shipping_address.get("city"),
+            "toState": shipping_address.get("state"),
+            "toPostalCode": shipping_address.get("postalCode"),
+            "toCountry": shipping_address.get("country") or "US",
+            "weight": {
+                "value": _sum_weight_ounces(items or []),
+                "units": "ounces",
+            },
+        }
+        dimensions = _aggregate_dimensions(items or [])
+        if dimensions:
+            payload["dimensions"] = dimensions
+        else:
+            # Some carriers (e.g., FedEx One Balance) reject rate requests without dimensions.
+            payload["dimensions"] = {"length": 9, "width": 6, "height": 2, "units": "inches"}
+        return {k: v for k, v in payload.items() if v not in (None, "", {})}
 
-    # remove None values ShipStation rejects
-    payload = {k: v for k, v in payload.items() if v not in (None, "", {})}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/shipments/getrates",
-            json=payload,
-            headers=headers,
-            auth=auth,
-            timeout=15,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:  # pragma: no cover
+    def _extract_response(exc: requests.RequestException):
         data = None
+        status = getattr(exc.response, "status_code", None)
         if exc.response is not None:
             try:
                 data = exc.response.json()
             except Exception:
                 data = exc.response.text
-        logger.error("ShipStation rate request failed", exc_info=True)
-        raise IntegrationError("Failed to retrieve ShipStation rates", response=data, status=502) from exc
+        return data, status
 
-    data = response.json()
-    return data if isinstance(data, list) else []
+    def attempt(payload_variant: Dict):
+        resp = requests.post(
+            f"{API_BASE_URL}/shipments/getrates",
+            json=payload_variant,
+            headers=headers,
+            auth=auth,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp
+
+    configured_carrier = cfg.get("carrier_code") or "ups_walleted"
+    service_code = cfg.get("service_code") or None
+    carriers_to_try: List[str] = [configured_carrier]
+
+    if not carriers_to_try:
+        raise IntegrationError("ShipStation carrier is not configured", status=400)
+
+    collected_rates: List[Dict] = []
+    last_error = None
+    last_status = None
+    last_response = None
+
+    for carrier_code in carriers_to_try:
+        payload = build_payload(carrier_code, service_code, strip_service=False)
+        try:
+            resp = attempt(payload)
+            data = resp.json()
+            if isinstance(data, list):
+                collected_rates.extend(data)
+            continue
+        except requests.RequestException as exc:  # pragma: no cover
+            data, status = _extract_response(exc)
+            logger.warning(
+                "ShipStation rate request failed; retrying without serviceCode (carrier=%s, status=%s, response=%s, payload=%s)",
+                carrier_code,
+                status,
+                data,
+                payload,
+                exc_info=True,
+            )
+            try:
+                retry_payload = build_payload(carrier_code, service_code, strip_service=True)
+                resp = attempt(retry_payload)
+                data = resp.json()
+                if isinstance(data, list):
+                    collected_rates.extend(data)
+                continue
+            except requests.RequestException as retry_exc:  # pragma: no cover
+                retry_data, retry_status = _extract_response(retry_exc)
+                last_error = retry_exc
+                last_status = retry_status or status
+                last_response = retry_data or data
+                logger.error(
+                    "ShipStation rate request failed after retry (carrier=%s, status=%s, response=%s, payload=%s)",
+                    carrier_code,
+                    retry_status,
+                    retry_data,
+                    retry_payload,
+                    exc_info=True,
+                )
+
+    if collected_rates:
+        return collected_rates
+
+    raise IntegrationError(
+        "Failed to retrieve ShipStation rates",
+        response=last_response,
+        status=last_status or 502,
+    ) from last_error or None
 
 
 def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:

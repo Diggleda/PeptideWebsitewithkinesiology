@@ -529,6 +529,19 @@ export const referralAPI = {
     });
   },
 
+  deleteDoctorReferral: async (referralId: string) => {
+    try {
+      return await fetchWithAuth(`${API_BASE_URL}/referrals/doctor/referrals/${referralId}`, {
+        method: 'DELETE',
+      });
+    } catch (error: any) {
+      if (error?.status === 404) {
+        return { deleted: true };
+      }
+      throw error;
+    }
+  },
+
   getReferralCodes: async () => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/codes`);
   },

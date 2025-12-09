@@ -36,6 +36,9 @@ def _text_contains_address_issue(text: Optional[str]) -> bool:
 
 
 def _friendly_rate_error(message: str, response_payload, status: int) -> str:
+    if status >= 500:
+        return "Shipping provider is unavailable. Please try again in a moment."
+
     default = "Unable to calculate shipping for that address."
     if status == 400:
         return "Address cannot be identified."
@@ -73,6 +76,97 @@ def _normalize_string(value) -> str:
     return str(value).strip()
 
 
+def _normalize_country(value) -> str:
+    if value is None:
+        return "US"
+    text = str(value).strip()
+    if not text:
+        return "US"
+    lowered = text.lower()
+    if lowered in (
+        "us",
+        "usa",
+        "u.s.",
+        "u.s.a.",
+        "united states",
+        "united states of america",
+        "america",
+    ):
+        return "US"
+    if lowered in ("ca", "canada"):
+        return "CA"
+    if len(text) == 2:
+        return text.upper()
+    return text[:2].upper()
+
+
+def _normalize_state(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    states = {
+        "alabama": "AL",
+        "alaska": "AK",
+        "arizona": "AZ",
+        "arkansas": "AR",
+        "california": "CA",
+        "colorado": "CO",
+        "connecticut": "CT",
+        "delaware": "DE",
+        "district of columbia": "DC",
+        "florida": "FL",
+        "georgia": "GA",
+        "hawaii": "HI",
+        "idaho": "ID",
+        "illinois": "IL",
+        "indiana": "IN",
+        "iowa": "IA",
+        "kansas": "KS",
+        "kentucky": "KY",
+        "louisiana": "LA",
+        "maine": "ME",
+        "maryland": "MD",
+        "massachusetts": "MA",
+        "michigan": "MI",
+        "minnesota": "MN",
+        "mississippi": "MS",
+        "missouri": "MO",
+        "montana": "MT",
+        "nebraska": "NE",
+        "nevada": "NV",
+        "new hampshire": "NH",
+        "new jersey": "NJ",
+        "new mexico": "NM",
+        "new york": "NY",
+        "north carolina": "NC",
+        "north dakota": "ND",
+        "ohio": "OH",
+        "oklahoma": "OK",
+        "oregon": "OR",
+        "pennsylvania": "PA",
+        "rhode island": "RI",
+        "south carolina": "SC",
+        "south dakota": "SD",
+        "tennessee": "TN",
+        "texas": "TX",
+        "utah": "UT",
+        "vermont": "VT",
+        "virginia": "VA",
+        "washington": "WA",
+        "west virginia": "WV",
+        "wisconsin": "WI",
+        "wyoming": "WY",
+    }
+    lowered = text.lower()
+    if lowered in states:
+        return states[lowered]
+    if len(text) == 2:
+        return text.upper()
+    return text[:2].upper()
+
+
 def _sanitize_address(raw: Dict) -> Dict:
     return {
         "name": _normalize_string(raw.get("name")) or None,
@@ -80,9 +174,9 @@ def _sanitize_address(raw: Dict) -> Dict:
         "addressLine1": _normalize_string(raw.get("addressLine1")),
         "addressLine2": _normalize_string(raw.get("addressLine2")),
         "city": _normalize_string(raw.get("city")),
-        "state": _normalize_string(raw.get("state")),
+        "state": _normalize_state(raw.get("state")),
         "postalCode": _normalize_string(raw.get("postalCode")),
-        "country": _normalize_string(raw.get("country")) or "US",
+        "country": _normalize_country(raw.get("country")),
         "phone": _normalize_string(raw.get("phone")) or None,
     }
 
@@ -108,6 +202,21 @@ def _normalize_items(raw_items) -> List[Dict]:
     if not isinstance(raw_items, list):
         return normalized
     for item in raw_items:
+        length = _coerce_positive_number(
+            item.get("length")
+            or item.get("lengthIn")
+            or item.get("l")
+        )
+        width = _coerce_positive_number(
+            item.get("width")
+            or item.get("widthIn")
+            or item.get("w")
+        )
+        height = _coerce_positive_number(
+            item.get("height")
+            or item.get("heightIn")
+            or item.get("h")
+        )
         try:
             quantity = float(item.get("quantity") or 0)
             weight = float(item.get("weightOz") or 0)
@@ -116,7 +225,15 @@ def _normalize_items(raw_items) -> List[Dict]:
             weight = 0
         if quantity <= 0:
             continue
-        normalized.append({"quantity": quantity, "weightOz": max(weight, 0)})
+        normalized.append(
+            {
+                "quantity": quantity,
+                "weightOz": max(weight, 0),
+                "length": length,
+                "width": width,
+                "height": height,
+            }
+        )
     return normalized
 
 
@@ -296,15 +413,18 @@ def get_rates(shipping_address: Dict, items) -> Dict:
     )
 
     raw_rates = None
+    shipstation_error = None
     if shipstation_cfg:
         logger.info("Using ShipStation for rate estimate", extra={"address_fingerprint": fingerprint})
         try:
             raw_rates = ship_station.estimate_rates(address, normalized_items)
         except ship_station.IntegrationError as exc:
+            shipstation_error = exc
             logger.error("ShipStation rate estimate failed", exc_info=True)
-            friendly = _friendly_rate_error(str(exc), getattr(exc, "response", None), getattr(exc, "status", 502))
-            raise ShippingError(friendly, status=getattr(exc, "status", 502)) from exc
-    elif shipengine_cfg:
+            if shipengine_cfg:
+                logger.info("Falling back to ShipEngine after ShipStation error", extra={"address_fingerprint": fingerprint})
+
+    if raw_rates is None and shipengine_cfg:
         logger.info("Using ShipEngine for rate estimate", extra={"address_fingerprint": fingerprint})
         try:
             raw_rates = ship_engine.estimate_rates(address, total_weight)
@@ -320,7 +440,7 @@ def get_rates(shipping_address: Dict, items) -> Dict:
                         error_message = errors
             friendly = _friendly_rate_error(error_message, getattr(exc, "response", None), getattr(exc, "status", 502))
             raise ShippingError(friendly, status=getattr(exc, "status", 502)) from exc
-    else:
+    elif raw_rates is None and not shipstation_cfg:
         cfg = get_config()
         logger.warning(
             "Shipping is not configured (both providers disabled/missing credentials)",
@@ -333,6 +453,26 @@ def get_rates(shipping_address: Dict, items) -> Dict:
             "Shipping is not configured (ShipStation and ShipEngine are both disabled/missing credentials)",
             status=503,
         )
+    elif raw_rates is None and shipstation_error:
+        friendly = _friendly_rate_error(
+            str(shipstation_error),
+            getattr(shipstation_error, "response", None),
+            getattr(shipstation_error, "status", 502),
+        )
+        logger.warning(
+            "ShipStation unavailable; returning graceful error payload",
+            extra={
+                "address_fingerprint": fingerprint,
+                "status": getattr(shipstation_error, "status", 502),
+            },
+        )
+        return {
+            "success": False,
+            "rates": [],
+            "addressFingerprint": fingerprint,
+            "error": friendly,
+            "provider": "shipstation",
+        }
 
     rates = _normalize_rates(raw_rates or [], fingerprint)
 

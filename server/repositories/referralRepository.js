@@ -47,6 +47,16 @@ const update = (id, updates) => {
   return updated;
 };
 
+const remove = (id) => {
+  const records = getAll();
+  const next = records.filter((referral) => referral.id !== id);
+  if (next.length === records.length) {
+    return false;
+  }
+  referralStore.write(next);
+  return true;
+};
+
 module.exports = {
   getAll,
   findById,
@@ -54,4 +64,5 @@ module.exports = {
   findBySalesRepId,
   insert,
   update,
+  remove,
 };

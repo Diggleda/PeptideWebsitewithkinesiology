@@ -37,6 +37,23 @@ const findByEmail = (email) => {
   return reps.find((rep) => normalizeEmail(rep.email) === normalized) || null;
 };
 
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const findById = (id) => {
+  const target = normalizeId(id);
+  if (!target) return null;
+  const reps = load();
+  return (
+    reps.find(
+      (rep) =>
+        normalizeId(rep.id) === target || normalizeId(rep.salesRepId) === target,
+    ) || null
+  );
+};
+
 const getAll = () => load();
 
 const save = (records) => {
@@ -57,6 +74,7 @@ const update = (rep) => {
 
 module.exports = {
   getAll,
+  findById,
   findByEmail,
   update,
 };

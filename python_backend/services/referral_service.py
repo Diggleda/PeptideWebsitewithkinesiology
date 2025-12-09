@@ -116,6 +116,21 @@ def _collect_existing_codes() -> set[str]:
     return existing
 
 
+def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> List[Dict]:
+    """
+    Return user/account records to help clients detect account creation for referrals.
+    """
+    all_users = user_repository.get_all()
+    if scope_all:
+        return all_users
+    target = str(sales_rep_id)
+    return [
+        user
+        for user in all_users
+        if str(user.get("salesRepId") or user.get("sales_rep_id")) == target
+    ]
+
+
 def _is_contact_form_id(referral_id: str) -> bool:
     return isinstance(referral_id, str) and referral_id.startswith("contact_form:")
 
@@ -145,6 +160,10 @@ def _enrich_referral(referral: Dict) -> Dict:
     )
     enriched["referredContactTotalOrders"] = contact_order_count
     enriched["referredContactEligibleForCredit"] = contact_order_count > 0
+    # Promote status to account_created when an account exists but status is still early-stage
+    status = (enriched.get("status") or "").lower()
+    if enriched["referredContactHasAccount"] and status in ("pending", "contact_form", "contacted"):
+        enriched["status"] = "account_created"
 
     return enriched
 
@@ -286,6 +305,8 @@ def create_manual_prospect(data: Dict) -> Dict:
     if not sales_rep_id:
         raise _service_error("SALES_REP_REQUIRED", 400)
 
+    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+
     contact_name = _sanitize_text(data.get("name"))
     if not contact_name:
         raise _service_error("CONTACT_NAME_REQUIRED", 400)
@@ -299,7 +320,7 @@ def create_manual_prospect(data: Dict) -> Dict:
         {
             "id": _generate_manual_id(),
             "referrerDoctorId": None,
-            "salesRepId": sales_rep_id,
+            "salesRepId": resolved_sales_rep_id,
             "referredContactName": contact_name,
             "referredContactEmail": contact_email,
             "referredContactPhone": contact_phone,
@@ -320,7 +341,8 @@ def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
         raise _service_error("NOT_MANUAL_PROSPECT", 400)
     resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
     record_sales_rep_id = referral.get("salesRepId")
-    if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip():
+    normalized_record = _resolve_user_id(record_sales_rep_id) or record_sales_rep_id
+    if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip() and str(normalized_record or "").strip() != str(resolved_sales_rep_id or "").strip():
         raise _service_error("REFERRAL_NOT_FOUND", 404)
     referral_repository.delete(referral_id)
 

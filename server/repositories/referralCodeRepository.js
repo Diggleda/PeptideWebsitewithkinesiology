@@ -5,7 +5,15 @@ const getAll = () => referralCodeStore.read();
 
 const findById = (id) => getAll().find((code) => code.id === id) || null;
 
-const findBySalesRepId = (salesRepId) => getAll().filter((code) => code.salesRepId === salesRepId);
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const findBySalesRepId = (salesRepId) => {
+  const target = normalizeId(salesRepId);
+  return getAll().filter((code) => normalizeId(code.salesRepId) === target);
+};
 
 const findByCode = (codeValue) => getAll().find((code) => code.code === codeValue) || null;
 
