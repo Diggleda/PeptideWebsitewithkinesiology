@@ -3323,7 +3323,7 @@ html {
 }
 
 .referrals-table-scroll::-webkit-scrollbar {
-  width: 0.55rem;
+  width: 0.35rem;
 }
 
 .referrals-table-scroll::-webkit-scrollbar-thumb {
@@ -3336,14 +3336,14 @@ html {
 }
 
 .referrals-table-container {
-  min-width: 560px;
-  padding: 1.6rem 1.75rem;
+  min-width: 680px;
+  padding: 1.6rem 1.85rem;
   border: 1px solid rgba(255, 255, 255, 0.52);
   box-shadow: 0 24px 60px -46px rgba(7, 27, 27, 0.55);
 }
 
 .referrals-table {
-  --referral-columns: minmax(0, 2.25fr) minmax(150px, 1fr) minmax(130px, 1fr);
+  --referral-columns: minmax(0, 2fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(130px, 0.8fr);
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -3403,6 +3403,10 @@ html {
   gap: 0.15rem;
 }
 
+.referrals-table__cell--actions {
+  justify-content: flex-end;
+}
+
 .referral-contact {
   display: flex;
   flex-direction: column;
@@ -3420,6 +3424,55 @@ html {
   font-size: 0.75rem;
   color: rgba(7, 27, 27, 0.55);
   word-break: break-word;
+}
+
+.credit-activity,
+.referrals-table-container {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .referrals-table-scroll {
+    max-height: none;
+    padding-right: 0.2rem;
+  }
+  .referrals-table-container {
+    min-width: 100%;
+    padding: 1.1rem 1rem;
+  }
+  .referrals-table__header {
+    display: none;
+  }
+  .referrals-table__row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    row-gap: 0.85rem;
+    padding: 1rem 1rem 0.9rem;
+  }
+  .referrals-table__cell--date,
+  .referrals-table__cell--actions {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .referrals-table {
+    gap: 0.8rem;
+  }
+  .referrals-table__cell[data-label] {
+    display: block;
+  }
+  .referrals-table__cell[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(7, 27, 27, 0.55);
+    margin-bottom: 0.25rem;
+    line-height: 1.2;
+  }
+  .referrals-table__cell[data-label] > * {
+    min-width: 0;
+  }
 }
 
 .referral-date {
@@ -3485,10 +3538,14 @@ html {
   flex-wrap: wrap;
 }
 
+.sales-rep-leads-title {
+  width: 100%;
+}
+
 .sales-rep-lead-grid {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .lead-panel {
@@ -3506,6 +3563,18 @@ html {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.referral-card-header {
+  align-items: center;
+}
+
+.referrals-list-wrapper {
+  margin-top: 0.75rem;
+}
+
+.referrals-subtitle {
+  margin-top: 0.25rem;
 }
 
 .lead-panel-count {
@@ -3526,6 +3595,27 @@ html {
   align-items: center;
 }
 
+.lead-panel-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.lead-panel-divider {
+  width: 100%;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    rgba(148, 163, 184, 0.3),
+    rgba(148, 163, 184, 0.5),
+    rgba(148, 163, 184, 0.3)
+  );
+}
+
 .lead-panel-empty {
   font-size: 0.85rem;
   color: rgb(100, 116, 139);
@@ -3543,6 +3633,8 @@ html {
 
 .lead-list-scroll {
   overflow-x: auto;
+  overflow-y: visible;
+  padding-top: 0.5rem;
   padding-bottom: 0.4rem;
 }
 
@@ -3984,8 +4076,8 @@ html {
 }
 
 .sales-rep-chart-body {
-  margin-top: 1.25rem;
-  height: 280px;
+  margin-top: 0.75rem;
+  height: 240px;
 }
 
 .sales-rep-chart-empty {
@@ -5081,7 +5173,7 @@ html {
   position: relative;
   border-radius: 1rem;
   padding: 0.5rem 0.75rem;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.5);
   overflow: hidden;
 }
 
@@ -5091,7 +5183,7 @@ html {
   border-radius: 0.85rem;
   position: relative;
   overflow: hidden;
-  background: rgba(95, 179, 249, 0.12);
+  background: rgba(95, 179, 249, 0.08);
 }
 
 .news-loading-thumb::after {
@@ -5099,14 +5191,14 @@ html {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(95, 179, 249, 0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(95, 179, 249, 0.25), transparent);
   animation: news-swipe 1.2s ease-in-out infinite;
 }
 
 .news-loading-line {
   height: 10px;
   border-radius: 999px;
-  background: rgba(95, 179, 249, 0.12);
+  background: rgba(95, 179, 249, 0.08);
 }
 
 .news-loading-shimmer {
@@ -5119,7 +5211,7 @@ html {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(95, 179, 249, 0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(95, 179, 249, 0.25), transparent);
   animation: news-swipe 1.2s ease-in-out infinite;
 }
 

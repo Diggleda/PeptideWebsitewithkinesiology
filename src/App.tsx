@@ -50,6 +50,7 @@ import {
   YAxis,
   Tooltip,
   Bar,
+  LabelList,
 } from "recharts@2.15.2";
 import {
   authAPI,
@@ -2765,6 +2766,9 @@ export default function App() {
   const [collapsedSalesDoctorIds, setCollapsedSalesDoctorIds] = useState<
     Set<string>
   >(new Set());
+  const [collapsedReferralIds, setCollapsedReferralIds] = useState<
+    Set<string>
+  >(new Set());
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
@@ -2810,6 +2814,17 @@ export default function App() {
         next.delete(doctorId);
       } else {
         next.add(doctorId);
+      }
+      return next;
+    });
+  }, []);
+  const toggleReferralCollapse = useCallback((referralId: string) => {
+    setCollapsedReferralIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(referralId)) {
+        next.delete(referralId);
+      } else {
+        next.add(referralId);
       }
       return next;
     });
@@ -3185,6 +3200,9 @@ export default function App() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [doctorDeletingReferralId, setDoctorDeletingReferralId] = useState<
+    string | null
+  >(null);
   const [showManualProspectModal, setShowManualProspectModal] = useState(false);
   const [manualProspectSubmitting, setManualProspectSubmitting] =
     useState(false);
@@ -3356,14 +3374,12 @@ export default function App() {
   }, [salesRepDashboard, normalizedReferrals]);
 
   const referralFilterStatuses = useMemo(() => {
-    const defaults = REFERRAL_STATUS_FLOW.filter(
-      (stage) => !REFERRAL_LEAD_STATUS_KEYS.has(stage.key),
-    ).map((stage) => stage.key);
+    const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
     const dynamic = salesRepStatusOptions
       .map((status) => status.toLowerCase())
-      .filter((status) => !isLeadStatus(status) && status !== "contact_form");
+      .filter(Boolean);
     return Array.from(new Set([...defaults, ...dynamic]));
-  }, [salesRepStatusOptions, isLeadStatus]);
+  }, [salesRepStatusOptions]);
 
   const leadStatusOptions = useMemo(() => {
     const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
@@ -3433,6 +3449,15 @@ export default function App() {
   const referralQueue = useMemo(() => {
     return referralRecords.filter((referral) => !isLeadStatus(referral.status));
   }, [referralRecords, isLeadStatus]);
+
+  const activeProspectFilterOptions = useMemo(() => {
+    const keys = new Set<string>();
+    contactFormPipeline.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
+    referralLeadEntries.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
+    return ["all", ...Array.from(keys)];
+  }, [contactFormPipeline, referralLeadEntries]);
+
+  const [activeProspectFilter, setActiveProspectFilter] = useState<string>("all");
 
   const accountProspectEntries = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -3648,16 +3673,26 @@ export default function App() {
     );
   }, [contactFormEntries, hasLeadPlacedOrder, historicReferralEntries]);
 
+  const filteredActiveProspects = useMemo(() => {
+    if (activeProspectFilter === "all") {
+      return contactFormPipeline;
+    }
+    const key = activeProspectFilter.toLowerCase();
+    return contactFormPipeline.filter(
+      (entry) => sanitizeReferralStatus(entry.status) === key,
+    );
+  }, [activeProspectFilter, contactFormPipeline]);
+
   const filteredSalesRepReferrals = useMemo(() => {
     const normalizedFilter = salesRepStatusFilter.toLowerCase();
-    const allReferrals = referralQueue;
+    // Only show pending referrals in this list
+    const allReferrals = referralRecords.filter(
+      (referral) => sanitizeReferralStatus(referral.status) === "pending",
+    );
     console.debug("[Referral] Filter compute", {
       filter: normalizedFilter,
       total: allReferrals.length,
     });
-    if (normalizedFilter === "contact_form") {
-      return [];
-    }
     if (normalizedFilter === "all") {
       return allReferrals;
     }
@@ -3669,7 +3704,18 @@ export default function App() {
       count: filtered.length,
     });
     return filtered;
-  }, [referralQueue, salesRepStatusFilter]);
+  }, [referralRecords, salesRepStatusFilter]);
+
+  // Default referrals collapsed; recollapse new items when list changes
+  useEffect(() => {
+    const next = new Set<string>();
+    filteredSalesRepReferrals.forEach((ref) => {
+      if (ref.id) {
+        next.add(String(ref.id));
+      }
+    });
+    setCollapsedReferralIds(next);
+  }, [filteredSalesRepReferrals]);
 
   const salesRepChartData = useMemo(() => {
     const counts = normalizedReferrals.reduce<Record<string, number>>(
@@ -4433,6 +4479,32 @@ export default function App() {
       closeManualProspectModal,
       refreshReferralData,
     ],
+  );
+
+  const handleDeleteDoctorReferral = useCallback(
+    async (referralId: string) => {
+      if (!window.confirm("Delete this referral? This cannot be undone.")) {
+        return;
+      }
+      try {
+        setDoctorDeletingReferralId(referralId);
+        await referralAPI.deleteDoctorReferral(referralId);
+        setDoctorReferrals((prev) =>
+          prev.filter((referral) => referral.id !== referralId),
+        );
+        toast.success("Referral deleted.");
+      } catch (error: any) {
+        console.error("[Referral] Doctor referral delete failed", error);
+        toast.error(
+          typeof error?.message === "string"
+            ? error.message
+            : "Unable to delete referral right now.",
+        );
+      } finally {
+        setDoctorDeletingReferralId(null);
+      }
+    },
+    [],
   );
 
   const handleReferralCredit = useCallback(
@@ -6533,6 +6605,7 @@ export default function App() {
                             <span role="columnheader">Colleague</span>
                             <span role="columnheader">Submitted</span>
                             <span role="columnheader">Status</span>
+                            <span role="columnheader">Actions</span>
                           </div>
                           <div
                             className="referrals-table__body"
@@ -6559,6 +6632,7 @@ export default function App() {
                                   <div
                                     className="referrals-table__cell"
                                     role="cell"
+                                    data-label="Colleague"
                                   >
                                     <div className="referral-contact">
                                       <span className="referral-contact__name">
@@ -6576,6 +6650,7 @@ export default function App() {
                                   <div
                                     className="referrals-table__cell referrals-table__cell--date"
                                     role="cell"
+                                    data-label="Submitted"
                                   >
                                     <span className="referral-date">
                                       {formatDate(referral.createdAt)}
@@ -6588,7 +6663,11 @@ export default function App() {
                                       )}
                                     </span>
                                   </div>
-                                  <div className="referrals-table__cell" role="cell">
+                                  <div
+                                    className="referrals-table__cell"
+                                    role="cell"
+                                    data-label="Status"
+                                  >
                                     <div className="flex flex-col items-start">
                                       <span className="referral-status-badge">
                                         {referralStatusLabel}
@@ -6604,6 +6683,27 @@ export default function App() {
                                         </p>
                                       )}
                                     </div>
+                                  </div>
+                                  <div
+                                    className="referrals-table__cell referrals-table__cell--actions"
+                                    role="cell"
+                                    data-label="Actions"
+                                  >
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleDeleteDoctorReferral(referral.id)
+                                      }
+                                      disabled={
+                                        doctorDeletingReferralId === referral.id
+                                      }
+                                    >
+                                      {doctorDeletingReferralId === referral.id
+                                        ? "Deleting…"
+                                        : "Delete"}
+                                    </Button>
                                   </div>
                                 </div>
                               );
@@ -7018,16 +7118,16 @@ export default function App() {
               </div>
             </div>
           )}
-          <div className="sales-rep-combined-chart">
-            <div className="sales-rep-chart-header">
-              <div>
-                <h3>Pipeline</h3>
-                <p>Track lead volume as contacts advance through each stage.</p>
+          {combinedLeadEntries.length > 0 && hasChartData && (
+            <div className="sales-rep-combined-chart">
+              <div className="sales-rep-chart-header">
+                <div>
+                  <h3>Pipeline</h3>
+                  <p>Track lead volume as contacts advance through each stage.</p>
+                </div>
               </div>
-            </div>
-            <div className="sales-rep-chart-body">
-              {hasChartData ? (
-                <ResponsiveContainer width="100%" height={260}>
+              <div className="sales-rep-chart-body">
+                <ResponsiveContainer width="100%" height={230}>
                   <BarChart
                     data={salesRepChartData}
                     margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
@@ -7079,18 +7179,43 @@ export default function App() {
                       radius={[10, 10, 6, 6]}
                       fill="url(#statusBar)"
                       barSize={32}
-                    />
+                    >
+                      <LabelList
+                        dataKey="count"
+                        position="insideTop"
+                        fill="#ffffff"
+                        fontSize={12}
+                        offset={7}
+                        formatter={(value: any) =>
+                          typeof value === "number" ? value : Number(value) || 0
+                        }
+                        style={{ textShadow: "0 1px 4px rgba(15, 23, 42, 0.35)" }}
+                        content={(props: any) => {
+                          const val = Number(props.value) || 0;
+                          if (val === 0) return null;
+                          const { x, width } = props;
+                          const cx = x + width / 2;
+                          const cy = (props.y || 0) + 12;
+                          return (
+                            <text
+                              x={cx}
+                              y={cy}
+                              textAnchor="middle"
+                              fill="#ffffff"
+                              fontSize={12}
+                              style={{ textShadow: "0 1px 4px rgba(15, 23, 42, 0.35)" }}
+                            >
+                              {val}
+                            </text>
+                          );
+                        }}
+                      />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="sales-rep-chart-empty">
-                  <p className="text-sm text-slate-600">
-                    No referral activity yet. Keep an eye here as leads arrive.
-                  </p>
-                </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="sales-rep-dashboard-grid">
             <div className="sales-rep-leads-card sales-rep-combined-card">
@@ -7294,13 +7419,21 @@ export default function App() {
                               (order as any).date_created_gmt ||
                               order.updatedAt ||
                               null;
-                            const arrivalDate =
-                              order?.shippingEstimate?.estimatedArrivalDate ||
-                              (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
-                              (order as any)?.shippingEstimate?.estimated_delivery_date ||
-                              (order as any)?.shipping?.estimatedArrivalDate ||
-                              (order as any)?.shipping?.estimated_delivery_date ||
-                              null;
+                            const isShipped =
+                              ((order as any)?.shippingEstimate?.status ||
+                                (order as any)?.shipping?.status ||
+                                order.status ||
+                                "")
+                                .toString()
+                                .toLowerCase() === "shipped";
+                            const arrivalDate = isShipped
+                              ? order?.shippingEstimate?.estimatedArrivalDate ||
+                                (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
+                                (order as any)?.shippingEstimate?.estimated_delivery_date ||
+                                (order as any)?.shipping?.estimatedArrivalDate ||
+                                (order as any)?.shipping?.estimated_delivery_date ||
+                                null
+                              : null;
                             const isHydrated =
                               Boolean(placedDate) && Boolean(arrivalDate);
                             const orderKey = String(order.id || order.number || "");
@@ -7418,18 +7551,33 @@ export default function App() {
                         Combination of referral and contact form prospects.
                       </p>
                     </div>
-                    <span className="lead-panel-count">
-                      {combinedLeadEntries.length}{" "}
-                      {combinedLeadEntries.length === 1
-                        ? "Prospect"
-                        : "Prospects"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={activeProspectFilter}
+                        onChange={(e) => setActiveProspectFilter(e.target.value)}
+                        className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                      >
+                        {activeProspectFilterOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option === "all"
+                              ? "All statuses"
+                              : humanizeReferralStatus(option)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="lead-panel-count">
+                        {filteredActiveProspects.length}{" "}
+                        {filteredActiveProspects.length === 1
+                          ? "Prospect"
+                          : "Prospects"}
+                      </span>
+                    </div>
                   </div>
-                  {referralDataLoading && combinedLeadEntries.length === 0 ? (
+                  {referralDataLoading && filteredActiveProspects.length === 0 ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
                       Loading prospects…
                     </p>
-                  ) : combinedLeadEntries.length === 0 ? (
+                  ) : filteredActiveProspects.length === 0 ? (
                     <p className="lead-panel-empty text-sm text-slate-500">
                       Nobody yet. Update a referral or contact form status to
                       move it here.
@@ -7437,7 +7585,7 @@ export default function App() {
                   ) : (
                     <div className="lead-list-scroll">
                       <ul className="lead-list">
-                        {combinedLeadEntries.map(({ kind, record }) => {
+                        {filteredActiveProspects.map(({ kind, record }) => {
                           const isUpdating =
                             adminActionState.updatingReferral === record.id;
                           const normalizedStatus =
@@ -7642,92 +7790,107 @@ export default function App() {
                       </select>
                     </div>
                   </div>
-                  <div className="sales-rep-table-wrapper">
-                    <table className="min-w-[720px] divide-y divide-slate-200/70">
-                      <thead className="bg-slate-50/70">
-                        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                          <th className="px-4 py-3">Referrer</th>
-                          <th className="px-4 py-3">Lead</th>
-                          <th className="px-4 py-3">Notes from Referrer</th>
-                          <th className="px-4 py-3 whitespace-nowrap">
-                            Submitted
-                          </th>
-                          <th className="px-4 py-3">Status Tracker</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200/60">
-                        {referralDataLoading ? (
-                          <tr>
-                            <td
-                              colSpan={5}
-                              className="px-4 py-6 text-center text-sm text-slate-500"
+                  <div className="lead-list-scroll">
+                    {referralDataLoading ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        Loading referrals…
+                      </p>
+                    ) : filteredSalesRepReferrals.length === 0 ? (
+                      <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
+                        No referrals match this filter.
+                      </p>
+                    ) : (
+                      <ul className="lead-list">
+                        {filteredSalesRepReferrals.map((referral) => {
+                          const isUpdating =
+                            adminActionState.updatingReferral === referral.id;
+                          const isCrediting =
+                            creditingReferralId === referral.id;
+                          const referralStatusOptions =
+                            REFERRAL_STATUS_FLOW.map((stage) => stage.key);
+                          const normalizedStatus = sanitizeReferralStatus(
+                            referral.status,
+                          );
+                          const referralDisplayName =
+                            referral.referrerDoctorName || "User";
+                          const referralCreditTimestamp =
+                            referral.creditIssuedAt || null;
+                          const referralCreditAmount =
+                            referral.creditIssuedAmount != null
+                              ? referral.creditIssuedAmount
+                              : 50;
+                          const referralEligibleForCredit = Boolean(
+                            referral.referredContactEligibleForCredit,
+                          );
+                          const manualLead = isManualEntry(referral);
+                          const isCollapsed = collapsedReferralIds.has(referral.id);
+                          const capitalizeName = (value?: string | null) => {
+                            if (!value) return value;
+                            return value
+                              .split(" ")
+                              .map((part) =>
+                                part ? part.charAt(0).toUpperCase() + part.slice(1) : part,
+                              )
+                              .join(" ");
+                          };
+                          const refName =
+                            capitalizeName(referral.referredContactName) ||
+                            referral.referredContactEmail ||
+                            "Lead";
+                          const referrerName =
+                            capitalizeName(referral.referrerDoctorName) || "Referrer";
+                          const referrerEmail = referral.referrerDoctorEmail || "—";
+                          const referrerPhone = referral.referrerDoctorPhone || "—";
+                          const refereeEmail = referral.referredContactEmail || "—";
+                          const refereePhone = referral.referredContactPhone || "—";
+                          return (
+                            <li
+                              key={referral.id}
+                              className="lead-list-item flex-col gap-3"
                             >
-                              Loading referrals…
-                            </td>
-                          </tr>
-                        ) : filteredSalesRepReferrals.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={5}
-                              className="px-4 py-6 text-center text-sm text-slate-500"
-                            >
-                              No referrals match this filter.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredSalesRepReferrals.map((referral) => {
-                            const isUpdating =
-                              adminActionState.updatingReferral === referral.id;
-                            const isCrediting =
-                              creditingReferralId === referral.id;
-                            const referralStatusOptions =
-                              REFERRAL_STATUS_FLOW.map((stage) => stage.key);
-                            const normalizedStatus = sanitizeReferralStatus(
-                              referral.status,
-                            );
-                            const referralDisplayName =
-                              referral.referrerDoctorName || "User";
-                            const referralCreditTimestamp =
-                              referral.creditIssuedAt || null;
-                            const referralCreditAmount =
-                              referral.creditIssuedAmount != null
-                                ? referral.creditIssuedAmount
-                                : 50;
-                            const referralEligibleForCredit = Boolean(
-                              referral.referredContactEligibleForCredit,
-                            );
-                            const manualLead = isManualEntry(referral);
-                            return (
-                              <tr key={referral.id} className="align-top">
-                                <td className="px-4 py-4">
-                                  <div className="font-semibold text-slate-900">
-                                    {referral.referrerDoctorName ?? "—"}
+                              <div
+                                className="lead-panel-header referral-card-header cursor-pointer items-center"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => toggleReferralCollapse(referral.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    toggleReferralCollapse(referral.id);
+                                  }
+                                }}
+                                aria-expanded={!isCollapsed}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <ChevronRight
+                                    className="h-4 w-4 text-slate-500"
+                                    aria-hidden="true"
+                                    style={{
+                                      transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)",
+                                      transition:
+                                        "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
+                                      transformOrigin: "center",
+                                    }}
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="lead-list-name">
+                                      {referrerName} <span className="text-slate-500 font-normal">referred</span> {refName}
+                                    </p>
                                   </div>
-                                  <div className="text-xs text-slate-500">
-                                    {referral.referrerDoctorEmail ?? "—"}
+                                </div>
+                                <div className="text-right text-xs text-slate-500 space-y-1 min-w-[180px]">
+                                  <div>Submitted {formatDateTime(referral.createdAt)}</div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Updated {formatDateTime(referral.updatedAt)}
                                   </div>
-                                  {referral.referrerDoctorPhone && (
-                                    <div className="text-xs text-slate-500">
-                                      {referral.referrerDoctorPhone}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-4 py-4">
-                                  <div className="font-medium text-slate-900">
-                                    {referral.referredContactName || "—"}
-                                  </div>
-                                  {referral.referredContactEmail && (
-                                    <div className="text-xs text-slate-500">
-                                      {referral.referredContactEmail}
-                                    </div>
-                                  )}
-                                  {referral.referredContactPhone && (
-                                    <div className="text-xs text-slate-500">
-                                      {referral.referredContactPhone}
-                                    </div>
-                                  )}
+                                </div>
+                              </div>
+
+                              {!isCollapsed && (
+                                <>
+                                  <div className="flex flex-wrap gap-2">
                                   {manualLead && (
-                                    <span className="lead-source-pill lead-source-pill--manual mt-2">
+                                    <span className="lead-source-pill lead-source-pill--manual">
                                       Manual
                                     </span>
                                   )}
@@ -7738,61 +7901,58 @@ export default function App() {
                                       ? "Account Created"
                                       : "No Account Yet"}
                                   </span>
-                                </td>
-                                <td className="px-4 py-4">
+                                </div>
+
+                                <div className="text-sm text-slate-700 leading-relaxed bg-slate-50/80 border border-slate-200/70 rounded-lg p-3">
                                   {referral.notes ? (
-                                    <div className="max-w-md text-sm text-slate-600 whitespace-pre-wrap">
-                                      {referral.notes}
-                                    </div>
+                                    <span className="whitespace-pre-wrap">
+                                      Notes from {referrerName}: {referral.notes}
+                                    </span>
                                   ) : (
                                     <span className="text-xs italic text-slate-400">
                                       No notes
                                     </span>
                                   )}
-                                </td>
-                                <td className="px-4 py-4 text-sm text-slate-600">
-                                  <div>
-                                    {formatDateTime(referral.createdAt)}
-                                  </div>
-                                  <div className="text-xs text-slate-400">
-                                    Updated {formatDateTime(referral.updatedAt)}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-4">
-                                  <div className="flex flex-col gap-2">
-                                    <select
-                                      value={normalizedStatus}
-                                      onChange={(event) => {
-                                        const nextValue = event.target.value;
-                                        if (
-                                          manualLead &&
-                                          nextValue === MANUAL_PROSPECT_DELETE_VALUE
-                                        ) {
-                                          handleDeleteManualProspect(
+                                </div>
+
+                                  <div className="flex flex-wrap items-start justify-between gap-3 w-full">
+                                    <div className="min-w-[200px] space-y-1">
+                                      <p className="lead-list-detail">Referee Email: {refereeEmail}</p>
+                                      <p className="lead-list-detail">Referee Phone: {refereePhone}</p>
+                                      <p className="lead-list-detail">Referrer Email: {referrerEmail}</p>
+                                      <p className="lead-list-detail">Referrer Phone: {referrerPhone}</p>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-2 min-w-[240px] ml-auto">
+                                      <select
+                                        value={normalizedStatus}
+                                        onChange={(event) => {
+                                          const nextValue = event.target.value;
+                                          if (
+                                            manualLead &&
+                                            nextValue === MANUAL_PROSPECT_DELETE_VALUE
+                                          ) {
+                                            handleDeleteManualProspect(referral.id);
+                                            return;
+                                          }
+                                          handleUpdateReferralStatus(
                                             referral.id,
+                                            nextValue,
                                           );
-                                          return;
-                                        }
-                                        handleUpdateReferralStatus(
-                                          referral.id,
-                                          nextValue,
-                                        );
-                                      }}
-                                      disabled={isUpdating}
-                                      className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                                    >
-                                      {manualLead && (
-                                        <option value={MANUAL_PROSPECT_DELETE_VALUE}>
-                                          Delete
-                                        </option>
-                                      )}
-                                      {referralStatusOptions.map((status) => (
-                                        <option key={status} value={status}>
-                                          {humanizeReferralStatus(status)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <div className="flex flex-col gap-2 items-end min-w-[220px]">
+                                        }}
+                                        disabled={isUpdating}
+                                        className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                                      >
+                                        {manualLead && (
+                                          <option value={MANUAL_PROSPECT_DELETE_VALUE}>
+                                            Delete
+                                          </option>
+                                        )}
+                                        {referralStatusOptions.map((status) => (
+                                          <option key={status} value={status}>
+                                            {humanizeReferralStatus(status)}
+                                          </option>
+                                        ))}
+                                      </select>
                                       {normalizedStatus === "converted" &&
                                         !referralCreditTimestamp &&
                                         referralEligibleForCredit && (
@@ -7821,19 +7981,18 @@ export default function App() {
                                           {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
                                         </div>
                                       )}
-                                      <div className="text-xs text-slate-500 text-right">
-                                        Updated{" "}
-                                        {formatDateTime(referral.updatedAt)}
+                                      <div className="text-[11px] text-slate-500 text-right">
+                                        Updated {formatDateTime(referral.updatedAt)}
                                       </div>
                                     </div>
                                   </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
                 </section>
                 {isAdmin(user?.role) && (
@@ -7953,75 +8112,7 @@ export default function App() {
                   </section>
                 )}
               </div>
-              {historicProspectEntries.length > 0 && (
-                <>
-                  <hr className="lead-divider" />
-                  <section className="lead-panel">
-                    <div className="lead-panel-header">
-                      <div>
-                        <h4>Historic Prospects</h4>
-                      <p className="text-sm text-slate-500">
-                        Credited referrals are archived here for easy reference.
-                      </p>
-                    </div>
-                    <span className="lead-panel-count">
-                      {historicProspectEntries.length}{" "}
-                      {historicProspectEntries.length === 1
-                        ? "record"
-                        : "records"}
-                    </span>
-                  </div>
-                  <div className="lead-list-scroll">
-                    <ul className="lead-list">
-                      {historicProspectEntries.map(({ record }) => (
-                        <li key={record.id} className="lead-list-item">
-                          <div className="lead-list-meta">
-                            <div className="lead-list-name">
-                              {record.referredContactName ||
-                                record.referredContactEmail ||
-                                "—"}
-                            </div>
-                            {record.referredContactEmail && (
-                              <div className="lead-list-detail">
-                                {record.referredContactEmail}
-                              </div>
-                            )}
-                            {record.referredContactPhone && (
-                              <div className="lead-list-detail">
-                                {record.referredContactPhone}
-                              </div>
-                            )}
-                            <span
-                              className={`lead-source-pill ${
-                                isManualEntry(record)
-                                  ? "lead-source-pill--manual"
-                                  : "lead-source-pill--referral"
-                              }`}
-                            >
-                              {isManualEntry(record) ? "Manual" : "Referral"}
-                            </span>
-                          </div>
-                          <div className="lead-list-actions text-right min-w-[220px]">
-                            <div className="text-xs font-semibold text-emerald-600 break-words">
-                              {`Credited ${record.referrerDoctorName || "User"} ${formatCurrency(
-                                record.creditIssuedAmount ?? 50,
-                              )}`}
-                            </div>
-                            <div className="lead-updated text-right">
-                              {record.creditIssuedAt
-                                ? `Issued ${formatDateTime(record.creditIssuedAt)}`
-                                : record.updatedAt
-                                  ? `Updated ${formatDateTime(record.updatedAt)}`
-                                  : formatDateTime(record.createdAt)}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  </section>
-                </>
-              )}
+              {/* Historic prospects removed; credited referrals appear in Sales */}
             </div>
           </div>
         </div>
@@ -10057,8 +10148,12 @@ export default function App() {
                   (salesOrderDetail as any).date_created ||
                   salesOrderDetail.updatedAt ||
                   null;
+                const isShippedDetail =
+                  ((shipping as any)?.status || salesOrderDetail.status || "")
+                    .toString()
+                    .toLowerCase() === "shipped";
                 const expectedDelivery =
-                  shipping?.estimatedArrivalDate
+                  isShippedDetail && shipping?.estimatedArrivalDate
                     ? formatDate(shipping.estimatedArrivalDate)
                     : "—";
 
