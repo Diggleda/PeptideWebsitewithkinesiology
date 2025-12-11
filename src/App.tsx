@@ -325,6 +325,17 @@ const parseMaybeJson = (value: any) => {
   return value;
 };
 
+const buildTrackingUrl = (tracking: string, carrier?: string | null) => {
+  if (!tracking) return null;
+  const code = (carrier || "").toLowerCase();
+  const encoded = encodeURIComponent(tracking);
+  if (code.includes("ups")) return `https://www.ups.com/track?loc=en_US&tracknum=${encoded}`;
+  if (code.includes("usps")) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encoded}`;
+  if (code.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${encoded}`;
+  if (code.includes("dhl")) return `https://www.dhl.com/en/express/tracking.html?AWB=${encoded}`;
+  return `https://www.google.com/search?q=${encoded}`;
+};
+
 const resolveTrackingNumber = (order: any): string | null => {
   if (!order) return null;
 
@@ -10601,6 +10612,16 @@ export default function App() {
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
+                const trackingHref = trackingLabel
+                  ? buildTrackingUrl(
+                      trackingLabel,
+                      shipping?.carrierId ||
+                        shipping?.carrier_id ||
+                        (shippingServiceLabel || "").toLowerCase().includes("ups")
+                        ? "ups"
+                        : null,
+                    )
+                  : null;
 
                 return (
               <div className="space-y-6">
@@ -10703,7 +10724,18 @@ export default function App() {
                           )}
                           <p>
                             <span className="font-semibold">Tracking:</span>{" "}
-                            {trackingLabel || "Provided when shipped"}
+                            {trackingHref ? (
+                              <a
+                                href={trackingHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[rgb(26,85,173)] hover:underline"
+                              >
+                                {trackingLabel}
+                              </a>
+                            ) : (
+                              trackingLabel || "Provided when shipped"
+                            )}
                           </p>
                           {Number.isFinite(shippingTotal) && (
                             <p>
