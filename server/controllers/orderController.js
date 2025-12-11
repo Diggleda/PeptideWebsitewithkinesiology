@@ -1,3 +1,4 @@
+const { logger } = require('../config/logger');
 const orderService = require('../services/orderService');
 
 const createOrder = async (req, res, next) => {
@@ -22,6 +23,20 @@ const createOrder = async (req, res, next) => {
 const getOrders = async (req, res, next) => {
   try {
     const orders = await orderService.getOrdersForUser(req.user.id);
+    const sample = Array.isArray(orders?.woo) && orders.woo.length > 0 ? orders.woo[0] : null;
+    logger.info(
+      {
+        userId: req.user.id,
+        wooCount: Array.isArray(orders?.woo) ? orders.woo.length : 0,
+        sampleOrderId: sample?.id || sample?.number || null,
+        sampleTracking:
+          sample?.trackingNumber
+          || sample?.integrationDetails?.shipStation?.trackingNumber
+          || null,
+        sampleShipStationStatus: sample?.integrationDetails?.shipStation?.status || null,
+      },
+      'API /orders response snapshot',
+    );
     res.json(orders);
   } catch (error) {
     next(error);
@@ -43,6 +58,21 @@ const getOrdersForSalesRep = async (req, res, next) => {
       alternateSalesRepIds:
         requestedSalesRepId && req.user?.id && requestedSalesRepId !== req.user.id ? [req.user.id] : [],
     });
+    const sample = Array.isArray(response?.orders) && response.orders.length > 0 ? response.orders[0] : null;
+    logger.info(
+      {
+        salesRepId: requestedSalesRepId,
+        scope,
+        orderCount: Array.isArray(response?.orders) ? response.orders.length : 0,
+        sampleOrderId: sample?.id || sample?.number || null,
+        sampleTracking:
+          sample?.trackingNumber
+          || sample?.integrationDetails?.shipStation?.trackingNumber
+          || null,
+        sampleShipStationStatus: sample?.integrationDetails?.shipStation?.status || null,
+      },
+      'API /orders/sales-rep response snapshot',
+    );
     res.json(response);
   } catch (error) {
     next(error);

@@ -439,6 +439,20 @@ def get_orders_for_user(user_id: str):
     for woo_order in merged_woo_orders:
         _enrich_with_shipstation(woo_order)
 
+    try:
+        sample = merged_woo_orders[0] if merged_woo_orders else {}
+        logger.info(
+            "[Orders] User response snapshot userId=%s wooCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            user_id,
+            len(merged_woo_orders),
+            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
+            sample.get("trackingNumber")
+            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
+            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
+        )
+    except Exception:
+        pass
+
     return {
         "local": orders,
         "woo": merged_woo_orders,
@@ -647,6 +661,34 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
         [o.get("id") or o.get("number") for o in summaries[:5]],
     )
 
+    try:
+        sample = summaries[0] if summaries else {}
+        logger.info(
+            "[SalesRep] Response snapshot salesRepId=%s orderCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            sales_rep_id,
+            len(summaries),
+            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
+            sample.get("trackingNumber")
+            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
+            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
+        )
+    except Exception:
+        pass
+
+    try:
+        sample = summaries[0] if summaries else {}
+        logger.info(
+            "[SalesRep] Response snapshot salesRepId=%s orderCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            sales_rep_id,
+            len(summaries),
+            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
+            sample.get("trackingNumber")
+            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
+            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
+        )
+    except Exception:
+        pass
+
     return (
         {
             "orders": summaries,
@@ -762,13 +804,11 @@ def _enrich_with_shipstation(order: Dict) -> None:
 
     try:
         logger.info(
-            "[ShipStation] Status lookup",
-            extra={
-                "orderNumber": order_number,
-                "shipStationStatus": info.get("status"),
-                "trackingNumber": info.get("trackingNumber"),
-                "shipDate": info.get("shipDate"),
-            },
+            "[ShipStation] Status lookup order=%s status=%s tracking=%s shipDate=%s",
+            order_number,
+            info.get("status"),
+            info.get("trackingNumber"),
+            info.get("shipDate"),
         )
     except Exception:
         pass

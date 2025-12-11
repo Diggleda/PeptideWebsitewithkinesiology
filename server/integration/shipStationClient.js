@@ -120,6 +120,12 @@ const getHttpClient = () => {
   return axios.create(config);
 };
 
+const safeString = (value) => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  return str.length > 0 ? str : null;
+};
+
 const buildOrderItems = (items = []) => items.map((item, index) => {
   const lineItemKey = item.cartItemId || item.id || item.productId || `item-${index + 1}`;
   const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
@@ -223,6 +229,118 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
   }
 
   return payload;
+};
+
+/**
+ * Fetch ShipStation order status + basic shipment info for a given order number.
+ * Mirrors the Python backend's fetch_order_status helper.
+ */
+const fetchOrderStatus = async (orderNumber) => {
+  const normalized = safeString(orderNumber);
+  if (!isConfigured() || !normalized) {
+    return null;
+  }
+
+  let order = null;
+  try {
+    const client = getHttpClient();
+    const response = await client.get('/orders', {
+      params: {
+        orderNumber: normalized,
+        pageSize: 1,
+      },
+    });
+    const data = response.data || {};
+    const orders = Array.isArray(data.orders) ? data.orders : [];
+    if (!orders.length) {
+      return null;
+    }
+    [order] = orders;
+  } catch (error) {
+    const statusCode = error.response?.status ?? error.status ?? 502;
+    let responsePayload = null;
+    try {
+      responsePayload = error.response?.data || null;
+    } catch {
+      responsePayload = null;
+    }
+    logger.error(
+      {
+        err: error,
+        status: statusCode,
+        response: responsePayload,
+        orderNumber: normalized,
+      },
+      'ShipStation order lookup failed',
+    );
+    const integrationError = new Error('ShipStation order lookup failed');
+    integrationError.status = statusCode;
+    integrationError.cause = responsePayload || error;
+    throw integrationError;
+  }
+
+  if (!order) {
+    return null;
+  }
+
+  let trackingNumber = safeString(order.trackingNumber);
+
+  // Older ShipStation payloads may embed shipments under the order.
+  const shipments = Array.isArray(order.shipments) ? order.shipments : [];
+  for (const shipment of shipments) {
+    if (shipment && safeString(shipment.trackingNumber)) {
+      trackingNumber = safeString(shipment.trackingNumber);
+      break;
+    }
+  }
+
+  // If tracking is still missing, best-effort lookup via shipments endpoint.
+  if (!trackingNumber) {
+    try {
+      const client = getHttpClient();
+      const shipmentResp = await client.get('/shipments', {
+        params: {
+          orderNumber: normalized,
+          pageSize: 5,
+        },
+      });
+      const shipmentData = shipmentResp.data || {};
+      const shipmentList = Array.isArray(shipmentData.shipments) ? shipmentData.shipments : [];
+      let nonVoidedTracking = null;
+      let anyTracking = null;
+      for (const shipment of shipmentList) {
+        const candidate = shipment ? safeString(shipment.trackingNumber) : null;
+        if (!candidate) {
+          continue;
+        }
+        if (!anyTracking) {
+          anyTracking = candidate;
+        }
+        if (!shipment.voided && !nonVoidedTracking) {
+          nonVoidedTracking = candidate;
+        }
+      }
+      trackingNumber = nonVoidedTracking || anyTracking || trackingNumber;
+    } catch (lookupError) {
+      logger.warn(
+        {
+          err: lookupError,
+          orderNumber: normalized,
+        },
+        'ShipStation shipment tracking lookup failed',
+      );
+    }
+  }
+
+  return {
+    status: safeString(order.orderStatus),
+    shipDate: safeString(order.shipDate),
+    trackingNumber,
+    carrierCode: safeString(order.carrierCode),
+    serviceCode: safeString(order.serviceCode),
+    orderNumber: safeString(order.orderNumber),
+    orderId: order.orderId || order.id || null,
+  };
 };
 
 /**
@@ -406,4 +524,5 @@ module.exports = {
   estimateRates,
   forwardOrder,
   fetchProductBySku,
+  fetchOrderStatus,
 };

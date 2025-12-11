@@ -323,6 +323,133 @@ const buildLocalOrderSummary = (order) => {
   };
 };
 
+const ensurePlainObject = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return { ...value };
+};
+
+const resolveShipStationOrderNumber = (order) => {
+  if (!order || typeof order !== 'object') {
+    return null;
+  }
+  const candidates = [];
+  if (order.number) {
+    candidates.push(order.number);
+  }
+  if (order.wooOrderNumber) {
+    candidates.push(order.wooOrderNumber);
+  }
+  if (order.woo_order_number) {
+    candidates.push(order.woo_order_number);
+  }
+  if (order.integrationDetails?.wooCommerce?.wooOrderNumber) {
+    candidates.push(order.integrationDetails.wooCommerce.wooOrderNumber);
+  }
+  const metaData = Array.isArray(order.meta_data) ? order.meta_data : [];
+  const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
+  if (pepproMeta && pepproMeta.value !== undefined && pepproMeta.value !== null) {
+    candidates.push(pepproMeta.value);
+  }
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const str = String(candidate).trim();
+    if (str.length > 0) {
+      return str;
+    }
+  }
+  return null;
+};
+
+const enrichOrderWithShipStation = async (order) => {
+  if (!order || !shipStationClient.isConfigured()) {
+    return order;
+  }
+
+  const orderNumber = resolveShipStationOrderNumber(order);
+  if (!orderNumber) {
+    return order;
+  }
+
+  let info = null;
+  try {
+    // eslint-disable-next-line no-await-in-loop
+    info = await shipStationClient.fetchOrderStatus(orderNumber);
+  } catch (error) {
+    logger.warn(
+      {
+        err: error,
+        orderNumber,
+      },
+      'ShipStation status lookup failed for order',
+    );
+    return order;
+  }
+
+  if (!info) {
+    return order;
+  }
+
+  logger.info(
+    {
+      orderNumber,
+      shipStationStatus: info.status || null,
+      shipStationTracking: info.trackingNumber || null,
+      shipStationShipDate: info.shipDate || null,
+    },
+    'ShipStation enrichment result',
+  );
+
+  const integrations = ensurePlainObject(order.integrationDetails || order.integrations);
+  integrations.shipStation = info;
+
+  const shippingEstimate = ensurePlainObject(order.shippingEstimate || order.shipping_estimate);
+  const shipStatus = (info.status || '').toString().toLowerCase();
+  const existingStatus = (order.status || '').toString().toLowerCase();
+  const isCanceled = existingStatus.includes('cancel') || existingStatus === 'trash';
+
+  const nextOrder = {
+    ...order,
+    integrationDetails: integrations,
+    integrations: order.integrations || integrations,
+  };
+
+  if (shipStatus && !isCanceled) {
+    nextOrder.status = shipStatus;
+  }
+
+  if (shipStatus === 'shipped') {
+    if (!shippingEstimate.status) {
+      shippingEstimate.status = 'shipped';
+    }
+    if (info.shipDate && !shippingEstimate.shipDate) {
+      shippingEstimate.shipDate = info.shipDate;
+    }
+  }
+
+  if (info.carrierCode && !shippingEstimate.carrierId) {
+    shippingEstimate.carrierId = info.carrierCode;
+  }
+  if (info.serviceCode && !shippingEstimate.serviceType) {
+    shippingEstimate.serviceType = info.serviceCode;
+  }
+
+  const hasEstimateFields = Object.keys(shippingEstimate).length > 0;
+
+  nextOrder.shippingEstimate = hasEstimateFields
+    ? shippingEstimate
+    : (order.shippingEstimate || order.shipping_estimate || null);
+
+  if (!nextOrder.trackingNumber && info.trackingNumber) {
+    nextOrder.trackingNumber = info.trackingNumber;
+  }
+
+  return nextOrder;
+};
+
 const normalizeWooOrderId = (rawId) => {
   if (!rawId) {
     return null;
@@ -1166,19 +1293,27 @@ const getOrdersForUser = async (userId) => {
     try {
       wooOrders = await wooCommerceClient.fetchOrdersByEmail(email, { perPage: 20 });
       if (Array.isArray(wooOrders) && wooOrders.length > 0) {
-        wooOrders = wooOrders.map((order) => {
+        const enriched = [];
+        // Preserve Stripe/local payment metadata while enriching with ShipStation status/tracking.
+        // eslint-disable-next-line no-restricted-syntax
+        for (const rawOrder of wooOrders) {
+          const order = await enrichOrderWithShipStation(rawOrder);
           const pepproOrderId = order?.integrationDetails?.wooCommerce?.pepproOrderId
             || order?.integrationDetails?.wooCommerce?.peppro_order_id
             || null;
           if (!pepproOrderId) {
-            return order;
+            enriched.push(order);
+            // eslint-disable-next-line no-continue
+            continue;
           }
           const localOrder = orderRepository.findById(pepproOrderId);
           if (!localOrder) {
-            return order;
+            enriched.push(order);
+            // eslint-disable-next-line no-continue
+            continue;
           }
           const stripeMeta = localOrder.integrationDetails?.stripe || null;
-          return {
+          enriched.push({
             ...order,
             paymentMethod: localOrder.paymentMethod || order.paymentMethod,
             paymentDetails:
@@ -1191,8 +1326,9 @@ const getOrdersForUser = async (userId) => {
               ...(order.integrationDetails || {}),
               stripe: stripeMeta || order.integrationDetails?.stripe || null,
             },
-          };
-        });
+          });
+        }
+        wooOrders = enriched;
       }
     } catch (error) {
       logger.error(
@@ -1206,6 +1342,20 @@ const getOrdersForUser = async (userId) => {
       };
     }
   }
+
+  const sampleWoo = Array.isArray(wooOrders) && wooOrders.length > 0 ? wooOrders[0] : null;
+  logger.info(
+    {
+      userId,
+      wooCount: Array.isArray(wooOrders) ? wooOrders.length : 0,
+      sampleOrderId: sampleWoo?.id || sampleWoo?.number || null,
+      sampleTracking: sampleWoo?.trackingNumber
+        || sampleWoo?.integrationDetails?.shipStation?.trackingNumber
+        || null,
+      sampleShipStationStatus: sampleWoo?.integrationDetails?.shipStation?.status || null,
+    },
+    'User orders response snapshot',
+  );
 
   return {
     local: localSummaries,
@@ -1297,9 +1447,13 @@ const getOrdersForSalesRep = async (
       },
       'Sales rep fetch: using MySQL order source',
     );
-    sqlOrders.forEach((order) => {
+    // Enrich each SQL-backed order with ShipStation metadata when configured.
+    // eslint-disable-next-line no-restricted-syntax
+    for (const rawOrder of sqlOrders) {
+      // eslint-disable-next-line no-await-in-loop
+      const order = await enrichOrderWithShipStation(rawOrder);
       const key = `sql:${order.id}`;
-      if (seenKeys.has(key)) return;
+      if (seenKeys.has(key)) continue;
       seenKeys.add(key);
       summaries.push({
         ...buildLocalOrderSummary(order),
@@ -1309,7 +1463,7 @@ const getOrdersForSalesRep = async (
         doctorProfileImageUrl: doctorLookup.get(normalizeId(order.userId))?.profileImageUrl || null,
         source: 'mysql',
       });
-    });
+    }
   } else if (wooCommerceClient?.isConfigured?.()) {
     for (const doctor of doctors) {
       const doctorEmail = (doctor.email || '').trim().toLowerCase();
@@ -1325,11 +1479,14 @@ const getOrdersForSalesRep = async (
           },
           'Sales rep fetch: WooCommerce orders loaded for doctor',
         );
-        wooOrders.forEach((wooOrder) => {
-          const summary = buildWooOrderSummary(wooOrder);
-          if (!summary) return;
+        // eslint-disable-next-line no-restricted-syntax
+        for (const wooOrder of wooOrders) {
+          const baseSummary = buildWooOrderSummary(wooOrder);
+          if (!baseSummary) continue;
+          // eslint-disable-next-line no-await-in-loop
+          const summary = await enrichOrderWithShipStation(baseSummary);
           const key = `woo:${summary.id || summary.number}`;
-          if (seenKeys.has(key)) return;
+          if (seenKeys.has(key)) continue;
           seenKeys.add(key);
           summaries.push({
             ...summary,
@@ -1339,7 +1496,7 @@ const getOrdersForSalesRep = async (
             doctorProfileImageUrl: doctorLookup.get(doctor.id)?.profileImageUrl || doctor.profileImageUrl || null,
             source: 'woo',
           });
-        });
+        }
       } catch (error) {
         logger.error({ err: error, doctorEmail }, 'Failed to fetch WooCommerce orders for doctor');
       }
@@ -1360,6 +1517,18 @@ const getOrdersForSalesRep = async (
     const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bTime - aTime;
   });
+
+  const sample = summaries[0] || null;
+  logger.info(
+    {
+      salesRepId: normalizedSalesRepId,
+      orders: summaries.length,
+      sampleOrderId: sample?.id || sample?.number || null,
+      sampleTracking: sample?.trackingNumber || sample?.integrationDetails?.shipStation?.trackingNumber || null,
+      sampleShipStationStatus: sample?.integrationDetails?.shipStation?.status || null,
+    },
+    'Sales rep orders response snapshot',
+  );
 
   return includeDoctors
     ? {
@@ -1445,7 +1614,8 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
   const numericId = normalizeWooOrderId(orderId) || orderId;
   try {
     const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
-    const summary = buildWooOrderSummary(wooOrder);
+    const baseSummary = buildWooOrderSummary(wooOrder);
+    const summary = await enrichOrderWithShipStation(baseSummary);
     logger.debug(
       {
         orderId: numericId,
@@ -1477,7 +1647,8 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
           },
           'Sales rep detail fetched via Woo email fallback',
         );
-        return candidate;
+        const enrichedCandidate = await enrichOrderWithShipStation(candidate);
+        return enrichedCandidate;
       }
     } catch (error) {
       logger.error({ err: error, orderId, doctorEmail }, 'WooCommerce email fallback failed');

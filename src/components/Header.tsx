@@ -124,6 +124,7 @@ interface AccountShippingEstimate {
 interface AccountOrderSummary {
   id: string;
   number?: string | null;
+  trackingNumber?: string | null;
   status?: string | null;
   currency?: string | null;
   total?: number | null;
@@ -249,6 +250,81 @@ const parseMaybeJson = (value: any) => {
     }
   }
   return value;
+};
+
+const buildTrackingUrl = (tracking: string, carrier?: string | null) => {
+  if (!tracking) return null;
+  const code = (carrier || '').toLowerCase();
+  const encoded = encodeURIComponent(tracking);
+  if (code.includes('ups')) return `https://www.ups.com/track?loc=en_US&tracknum=${encoded}`;
+  if (code.includes('usps')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encoded}`;
+  if (code.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${encoded}`;
+  if (code.includes('dhl')) return `https://www.dhl.com/en/express/tracking.html?AWB=${encoded}`;
+  return `https://www.google.com/search?q=${encoded}`;
+};
+
+const resolveTrackingNumber = (order: any): string | null => {
+  if (!order) return null;
+
+  const orderLabel =
+    order?.number ||
+    order?.id ||
+    order?.wooOrderNumber ||
+    order?.orderNumber ||
+    'unknown';
+
+  let tracking: string | null = null;
+
+  const direct =
+    order?.trackingNumber ||
+    order?.tracking_number ||
+    order?.tracking ||
+    null;
+  if (direct) {
+    tracking = String(direct);
+  }
+
+  if (!tracking) {
+    const integrations = parseMaybeJson(order.integrationDetails || order.integrations);
+    const shipStation = parseMaybeJson(integrations?.shipStation || integrations?.shipstation);
+
+    const shipStationDirect =
+      shipStation?.trackingNumber ||
+      shipStation?.tracking_number ||
+      shipStation?.tracking ||
+      null;
+    if (shipStationDirect) {
+      tracking = String(shipStationDirect);
+    }
+
+    if (!tracking) {
+      const shipments =
+        shipStation?.shipments ||
+        shipStation?.shipment ||
+        shipStation?.data?.shipments ||
+        [];
+
+      if (Array.isArray(shipments)) {
+        const pickTracking = (entry: any) =>
+          entry?.trackingNumber || entry?.tracking_number || entry?.tracking || null;
+        const nonVoided = shipments.find(
+          (entry) => entry && entry.voided === false && pickTracking(entry),
+        );
+        const anyEntry = shipments.find((entry) => entry && pickTracking(entry));
+        const candidate = nonVoided || anyEntry;
+        if (candidate) {
+          tracking = String(pickTracking(candidate));
+        }
+      }
+    }
+  }
+
+  if (tracking) {
+    console.info('[Tracking] Resolved tracking number', { order: orderLabel, tracking });
+    return tracking;
+  }
+
+  return null;
 };
 
 const SHIPPED_STATUS_KEYWORDS = [
@@ -498,6 +574,48 @@ const humanizeOrderStatus = (status?: string | null) => {
     .split(/[_\s]+/)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
+};
+
+const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined): string | null => {
+  if (!order) return null;
+  const shippingStatus =
+    (order.shippingEstimate as any)?.status ||
+    (order.integrationDetails as any)?.shipStation?.status;
+  const candidate = shippingStatus || order.status || null;
+  if (!candidate) return null;
+  const str = String(candidate).trim();
+  return str.length > 0 ? str : null;
+};
+
+const describeOrderStatus = (order: AccountOrderSummary | null | undefined): string => {
+  const raw = resolveOrderStatusSource(order);
+  if (!raw) return 'Pending';
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'trash' || normalized === 'canceled' || normalized === 'cancelled') {
+    return 'Canceled';
+  }
+  if (normalized === 'refunded') {
+    return 'Refunded';
+  }
+  if (normalized === 'awaiting_shipment' || normalized === 'awaiting shipment') {
+    return 'Shipping Soon';
+  }
+  if (normalized === 'processing' || normalized === 'completed' || normalized === 'complete') {
+    return 'Shipping Soon';
+  }
+  if (normalized === 'shipped') {
+    return 'Shipped';
+  }
+  if (normalized.includes('out_for_delivery') || normalized.includes('out-for-delivery')) {
+    return 'Out for Delivery';
+  }
+  if (normalized.includes('in_transit') || normalized.includes('in-transit')) {
+    return 'In Transit';
+  }
+  if (normalized.includes('delivered')) {
+    return 'Delivered';
+  }
+  return humanizeOrderStatus(raw);
 };
 
 const formatRelativeMinutes = (value?: string | null) => {
@@ -1632,7 +1750,9 @@ export function Header({
     return (
       <div className="space-y-4 pb-4">
       {visibleOrders.map((order) => {
-        const status = humanizeOrderStatus(order.status);
+        const status = describeOrderStatus(order);
+        const trackingNumber = resolveTrackingNumber(order);
+        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
             const statusNormalized = (order.status || '').toLowerCase();
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
@@ -1733,7 +1853,7 @@ export function Header({
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
-                      <p className="text-sm font-semibold text-slate-900">{status}</p>
+                      <p className="text-sm font-semibold text-slate-900">{statusDisplay}</p>
                     </div>
                     {showExpectedDelivery && (
                       <div className="space-y-1">
@@ -1886,13 +2006,10 @@ export function Header({
 
     const expectedDelivery = formatExpectedDelivery(selectedOrder);
     const showExpectedDeliveryDetails = Boolean(
-      expectedDelivery && isShipmentInTransit(selectedOrder.status),
+      expectedDelivery && (isShipmentInTransit(selectedOrder.status) || !selectedOrder.status),
     );
     const shippingMethod =
       formatShippingMethod(selectedOrder.shippingEstimate) ||
-      titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
-    const shippingCarrier =
-      titleCase(selectedOrder.shippingEstimate?.carrierId) ||
       titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
     const shippingRate =
       selectedOrder.shippingEstimate?.rate ??
@@ -1900,6 +2017,13 @@ export function Header({
 
     const wooShippingAddress = convertWooAddress(wooResponse?.shipping || wooPayload?.shipping);
     const wooBillingAddress = convertWooAddress(wooResponse?.billing || wooPayload?.billing);
+    const trackingNumber = resolveTrackingNumber(selectedOrder);
+    const wooService = wooShippingLine?.method_title || wooShippingLine?.method_id || '';
+    const carrierCode =
+      selectedOrder.shippingEstimate?.carrierId ||
+      integrationDetails?.shipStation?.carrierCode ||
+      (wooService?.toLowerCase().includes('ups') ? 'ups' : null);
+    const trackingHref = trackingNumber ? buildTrackingUrl(trackingNumber, carrierCode) : null;
 
     const shippingAddress =
       parseAddress(selectedOrder.shippingAddress) ||
@@ -1991,7 +2115,7 @@ export function Header({
             </div>
             <div className="space-y-1 text-right">
               <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Status</p>
-              <p className="text-base font-semibold text-slate-900">{humanizeOrderStatus(selectedOrder.status)}</p>
+              <p className="text-base font-semibold text-slate-900">{describeOrderStatus(selectedOrder)}</p>
             </div>
           </div>
           <div className="px-6 py-5 grid gap-4 md:grid-cols-3 text-sm text-slate-700">
@@ -2020,14 +2144,26 @@ export function Header({
               <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
               {renderAddressLines(shippingAddress)}
               <div className="text-sm text-slate-700 space-y-1">
+                {trackingNumber && (
+                  <p>
+                    <span className="font-semibold">Tracking:</span>{' '}
+                    {trackingHref ? (
+                      <a
+                        href={trackingHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[rgb(26,85,173)] hover:underline"
+                      >
+                        {trackingNumber}
+                      </a>
+                    ) : (
+                      trackingNumber
+                    )}
+                  </p>
+                )}
                 {shippingMethod && (
                   <p>
                     <span className="font-semibold">Service:</span> {shippingMethod}
-                  </p>
-                )}
-                {shippingCarrier && (
-                  <p>
-                    <span className="font-semibold">Carrier:</span> {shippingCarrier}
                   </p>
                 )}
                 {Number.isFinite(shippingTotal) && (

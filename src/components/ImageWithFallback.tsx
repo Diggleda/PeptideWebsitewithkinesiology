@@ -4,7 +4,8 @@ const ERROR_IMG_SRC =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODgiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIuMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIzLjciPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjU2IiBoZWlnaHQ9IjU2IiByeD0iNiIvPjxwYXRoIGQ9Im0xNiA1OCAxNi0xOCAzMiAzMiIvPjxjaXJjbGUgY3g9IjUzIiBjeT0iMzUiIHI9IjciLz48L3N2Zz4KCg=='
 
 export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [didError, setDidError] = useState(false)
+  const [didError, setDidError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const {
     alt,
     style,
@@ -13,18 +14,25 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     decoding = 'async',
     referrerPolicy = 'no-referrer',
     crossOrigin = 'anonymous',
+    src,
     ...rest
   } = props
 
   useEffect(() => {
-    setDidError(false)
-  }, [props.src])
+    setDidError(false);
+    setIsLoaded(false);
+  }, [src]);
 
   const handleError = () => {
-    setDidError(true)
-  }
+    setDidError(true);
+    setIsLoaded(true);
+  };
 
-  const PLACEHOLDER = '/Placeholder.png'
+  const handleLoad = () => {
+    setIsLoaded(true);
+  };
+
+  const PLACEHOLDER = '/Placeholder.png';
 
   if (didError) {
     return (
@@ -41,23 +49,31 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
           referrerPolicy={referrerPolicy}
           crossOrigin={crossOrigin}
           {...rest}
+          onLoad={handleLoad}
         />
       </div>
     );
   }
 
   return (
-    <img
-      src={PLACEHOLDER}
-      alt={alt}
-      loading={loading}
-      decoding={decoding}
-      referrerPolicy={referrerPolicy}
-      crossOrigin={crossOrigin}
-      className={`block ${className ?? ''}`}
-      style={style}
-      {...rest}
-      onError={handleError}
-    />
+    <div className="relative block h-full w-full overflow-hidden" style={style}>
+      {!isLoaded && !didError && (
+        <div className="image-skeleton" aria-hidden="true" />
+      )}
+      <img
+        src={src || PLACEHOLDER}
+        alt={alt}
+        loading={loading}
+        decoding={decoding}
+        referrerPolicy={referrerPolicy}
+        crossOrigin={crossOrigin}
+        className={`block object-contain transition-opacity duration-300 ${
+          isLoaded ? 'opacity-100' : 'opacity-0'
+        } ${className ?? ''}`}
+        {...rest}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
   );
 }

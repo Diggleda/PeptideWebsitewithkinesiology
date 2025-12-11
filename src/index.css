@@ -229,6 +229,31 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
+.image-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(148, 163, 184, 0.25),
+    rgba(148, 163, 184, 0.12)
+  );
+  overflow: hidden;
+}
+
+.image-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255, 255, 255, 0.85),
+    transparent
+  );
+  animation: catalog-shimmer 1.6s ease-in-out infinite;
+}
+
 .catalog-loading-state {
   width: 100%;
   display: flex;

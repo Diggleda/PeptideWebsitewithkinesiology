@@ -277,6 +277,7 @@ interface AccountShippingEstimate {
 interface AccountOrderSummary {
   id: string;
   number?: string | null;
+  trackingNumber?: string | null;
   status?: string | null;
   currency?: string | null;
   total?: number | null;
@@ -302,6 +303,154 @@ interface AccountOrderSummary {
   wooOrderId?: string | null;
   cancellationId?: string | null;
 }
+
+const humanizeAccountOrderStatus = (status?: string | null): string => {
+  if (!status) return "Pending";
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "trash") return "Canceled";
+  return status
+    .split(/[_\s]+/)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+};
+
+const parseMaybeJson = (value: any) => {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
+const resolveTrackingNumber = (order: any): string | null => {
+  if (!order) return null;
+
+  const orderLabel =
+    order?.number ||
+    order?.id ||
+    order?.wooOrderNumber ||
+    order?.orderNumber ||
+    "unknown";
+
+  let tracking: string | null = null;
+
+  const direct =
+    order?.trackingNumber ||
+    order?.tracking_number ||
+    order?.tracking ||
+    null;
+  if (direct) {
+    tracking = String(direct);
+  }
+
+  if (!tracking) {
+    const integrations = parseMaybeJson(order.integrationDetails || order.integrations);
+    const shipStation = parseMaybeJson(integrations?.shipStation || integrations?.shipstation);
+
+    const shipStationDirect =
+      shipStation?.trackingNumber ||
+      shipStation?.tracking_number ||
+      shipStation?.tracking ||
+      null;
+    if (shipStationDirect) {
+      tracking = String(shipStationDirect);
+    }
+
+    if (!tracking) {
+      const shipments =
+        shipStation?.shipments ||
+        shipStation?.shipment ||
+        shipStation?.data?.shipments ||
+        [];
+
+      if (Array.isArray(shipments)) {
+        const pickTracking = (entry: any) =>
+          entry?.trackingNumber || entry?.tracking_number || entry?.tracking || null;
+        const nonVoided = shipments.find(
+          (entry) => entry && entry.voided === false && pickTracking(entry),
+        );
+        const anyEntry = shipments.find((entry) => entry && pickTracking(entry));
+        const candidate = nonVoided || anyEntry;
+        if (candidate) {
+          tracking = String(pickTracking(candidate));
+        }
+      }
+    }
+  }
+
+  if (tracking) {
+    console.info("[Tracking] Resolved tracking number", { order: orderLabel, tracking });
+    return tracking;
+  }
+
+  return null;
+};
+
+const resolveSalesOrderStatusSource = (
+  order?: AccountOrderSummary | null,
+): string | null => {
+  if (!order) return null;
+  const shippingStatus =
+    (order.shippingEstimate as any)?.status ||
+    (order.integrationDetails as any)?.shipStation?.status;
+  const candidate = shippingStatus || order.status || null;
+  if (!candidate) return null;
+  const str = String(candidate).trim();
+  return str.length > 0 ? str : null;
+};
+
+const describeSalesOrderStatus = (
+  order?: AccountOrderSummary | null,
+): string => {
+  const raw = resolveSalesOrderStatusSource(order);
+  if (!raw) return "Pending";
+  const normalized = raw.trim().toLowerCase();
+  if (
+    normalized === "trash" ||
+    normalized === "canceled" ||
+    normalized === "cancelled"
+  ) {
+    return "Canceled";
+  }
+  if (normalized === "refunded") {
+    return "Refunded";
+  }
+  if (
+    normalized === "awaiting_shipment" ||
+    normalized === "awaiting shipment"
+  ) {
+    return "Shipping Soon";
+  }
+  if (
+    normalized === "processing" ||
+    normalized === "completed" ||
+    normalized === "complete"
+  ) {
+    return "Shipping Soon";
+  }
+  if (normalized === "shipped") {
+    return "Shipped";
+  }
+  if (
+    normalized.includes("out_for_delivery") ||
+    normalized.includes("out-for-delivery")
+  ) {
+    return "Out for Delivery";
+  }
+  if (
+    normalized.includes("in_transit") ||
+    normalized.includes("in-transit")
+  ) {
+    return "In Transit";
+  }
+  if (normalized.includes("delivered")) {
+    return "Delivered";
+  }
+  return humanizeAccountOrderStatus(raw);
+};
 
 const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v1";
 
@@ -874,6 +1023,7 @@ const normalizeAccountOrdersResponse = (
         registerLocalEntry({
           id: identifier,
           number: order?.number || identifier,
+          trackingNumber: resolveTrackingNumber(order),
           status:
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
@@ -929,6 +1079,7 @@ const normalizeAccountOrdersResponse = (
         const wooEntry: AccountOrderSummary = {
           id: identifier,
           number: order?.number || identifier,
+          trackingNumber: resolveTrackingNumber(order),
           wooOrderNumber: normalizeStringField(order?.number),
           wooOrderId:
             normalizeWooOrderId(order?.id) ||
@@ -1066,7 +1217,7 @@ const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
 const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
 const CATALOG_RETRY_DELAY_MS = 4000;
-const CATALOG_POLL_INTERVAL_MS = 0.5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
+const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
 
 const SALES_REP_PIPELINE = [
   {
@@ -4858,6 +5009,7 @@ export default function App() {
     }
 
     let cancelled = false;
+
     const scheduleRetry = (background = false) => {
       if (catalogRetryTimeoutRef.current) {
         window.clearTimeout(catalogRetryTimeoutRef.current);
@@ -4880,7 +5032,10 @@ export default function App() {
       setCatalogError(null);
       try {
         const [wooProducts, wooCategories] = await Promise.all([
-          listProducts<WooProduct[]>({ per_page: 48, status: "publish" }),
+          listProducts<WooProduct[]>({
+            per_page: 96,
+            status: "publish",
+          }),
           listCategories<WooCategory[]>({ per_page: 100 }),
         ]);
 
@@ -7658,6 +7813,7 @@ export default function App() {
                             const arrivalLabel = arrivalDate
                               ? `Expected delivery ${formatDate(arrivalDate as string)}`
                               : "Expected delivery unavailable";
+                            const statusLabel = describeSalesOrderStatus(order as any);
                             return (
                               <li
                                 key={order.id}
@@ -7681,7 +7837,7 @@ export default function App() {
                                           {formatCurrency(order.total)}
                                         </div>
                                         <span className="sales-tracking-row-status">
-                                          {order.status ?? "Pending"}
+                                          {statusLabel}
                                         </span>
                                       </div>
                                     )}
@@ -10444,7 +10600,7 @@ export default function App() {
                 };
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
-                const trackingLabel = (salesOrderDetail as any)?.trackingNumber || null;
+                const trackingLabel = resolveTrackingNumber(salesOrderDetail);
 
                 return (
               <div className="space-y-6">
@@ -10475,7 +10631,51 @@ export default function App() {
                           Status
                         </p>
                         <Badge variant="secondary" className="uppercase">
-                          {salesOrderDetail.status || "Pending"}
+                          {(() => {
+                            const rawStatus =
+                              (shipping as any)?.status ||
+                              salesOrderDetail.status ||
+                              "Pending";
+                            const normalized = rawStatus
+                              .toString()
+                              .trim()
+                              .toLowerCase();
+                            if (
+                              normalized === "awaiting_shipment" ||
+                              normalized === "awaiting shipment"
+                            ) {
+                              return "Shipping Soon";
+                            }
+                            if (
+                              normalized === "processing" ||
+                              normalized === "completed" ||
+                              normalized === "complete"
+                            ) {
+                              return "Shipping Soon";
+                            }
+                            if (normalized === "shipped") {
+                              return "Shipped";
+                            }
+                            if (
+                              normalized.includes("out_for_delivery") ||
+                              normalized.includes("out-for-delivery")
+                            ) {
+                              return "Out for Delivery";
+                            }
+                            if (
+                              normalized.includes("in_transit") ||
+                              normalized.includes("in-transit")
+                            ) {
+                              return "In Transit";
+                            }
+                            if (normalized.includes("delivered")) {
+                              return "Delivered";
+                            }
+                            if (normalized === "refunded") {
+                              return "Refunded";
+                            }
+                            return rawStatus;
+                          })()}
                         </Badge>
                       </div>
                       <div>

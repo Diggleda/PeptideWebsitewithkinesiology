@@ -318,16 +318,51 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
         return None
     order = orders[0] or {}
     shipments = order.get("shipments") or []
-    tracking = None
-    if isinstance(shipments, list) and shipments:
-        for shipment in shipments:
-            tracking = shipment.get("trackingNumber") or tracking
-            if tracking:
-                break
+
+    def _pick_tracking(entries):
+        if not isinstance(entries, list):
+            return None
+        def extract(entry):
+            if not entry:
+                return None
+            return entry.get("trackingNumber") or entry.get("tracking_number") or entry.get("tracking")
+        # prefer non-voided first
+        for entry in entries:
+            if entry and entry.get("voided") is False:
+                t = extract(entry)
+                if t:
+                    return t
+        # fallback to any entry
+        for entry in entries:
+            t = extract(entry)
+            if t:
+                return t
+        return None
+
+    tracking = _pick_tracking(shipments) or order.get("trackingNumber")
+
+    # If tracking still missing, query shipments endpoint as a fallback (covers voided labels too).
+    if not tracking:
+        try:
+            shipment_resp = requests.get(
+                f"{API_BASE_URL}/shipments",
+                params={"orderNumber": str(order_number).strip(), "page": 1, "pageSize": 5},
+                headers=headers,
+                auth=auth,
+                timeout=10,
+            )
+            shipment_resp.raise_for_status()
+            shipment_payload = shipment_resp.json() or {}
+            shipment_list = shipment_payload.get("shipments") if isinstance(shipment_payload, dict) else None
+            tracking = _pick_tracking(shipment_list)
+        except requests.RequestException:
+            # non-fatal; just leave tracking as None
+            pass
+
     return {
         "status": order.get("orderStatus"),
         "shipDate": order.get("shipDate"),
-        "trackingNumber": tracking or order.get("trackingNumber"),
+        "trackingNumber": tracking,
         "carrierCode": order.get("carrierCode"),
         "serviceCode": order.get("serviceCode"),
         "orderNumber": order.get("orderNumber"),
