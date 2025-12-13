@@ -367,6 +367,11 @@ body {
   margin: auto;
 }
 
+.peppro-placeholder-img {
+  transform: scale(0.75);
+  transform-origin: center;
+}
+
 .product-image-frame--flush {
   border-radius: inherit;
   border-bottom-left-radius: 0;

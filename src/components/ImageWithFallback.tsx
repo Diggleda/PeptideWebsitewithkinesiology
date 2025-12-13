@@ -72,7 +72,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
         crossOrigin={crossOrigin}
         className={`block object-contain transition-opacity duration-300 ${
           isPlaceholder || isLoaded ? 'opacity-100' : 'opacity-0'
-        } ${className ?? ''}`}
+        } ${isPlaceholder ? 'peppro-placeholder-img' : ''} ${className ?? ''}`}
         {...rest}
         onLoad={handleLoad}
         onError={handleError}

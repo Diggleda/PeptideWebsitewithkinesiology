@@ -1248,6 +1248,31 @@ const VARIANT_PREFETCH_CONCURRENCY = (() => {
   return 6;
 })();
 
+const BACKGROUND_VARIANT_PREFETCH_ENABLED =
+  String((import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH || "")
+    .toLowerCase()
+    .trim() !== "false";
+const BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 1500;
+})();
+const BACKGROUND_VARIANT_PREFETCH_DELAY_MS = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH_DELAY_MS || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 650;
+})();
+
 const SALES_REP_PIPELINE = [
   {
     key: "pending_combined",
@@ -2076,11 +2101,13 @@ interface LazyCatalogProductCardProps {
     variationId: string | undefined | null,
     quantity: number,
   ) => void;
+  onEnsureVariants?: (product: Product) => Promise<unknown> | void;
 }
 
 const LazyCatalogProductCard = ({
   product,
   onAddToCart,
+  onEnsureVariants,
 }: LazyCatalogProductCardProps) => {
   const [isVisible, setIsVisible] = useState(false);
   const placeholderRef = useRef<HTMLDivElement | null>(null);
@@ -2116,6 +2143,11 @@ const LazyCatalogProductCard = ({
     return (
       <ProductCard
         product={cardProduct}
+        onEnsureVariants={
+          typeof onEnsureVariants === "function"
+            ? () => onEnsureVariants(product)
+            : undefined
+        }
         onAddToCart={(productId, variationId, quantity) =>
           onAddToCart(productId, variationId, quantity)
         }
@@ -3700,6 +3732,72 @@ export default function App() {
     null,
   );
   const catalogFetchInFlightRef = useRef(false);
+  const backgroundVariantPrefetchTokenRef = useRef(0);
+  const backgroundVariantPrefetchRunningRef = useRef(false);
+  const backgroundVariantPrefetchSeedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!BACKGROUND_VARIANT_PREFETCH_ENABLED) {
+      return;
+    }
+    if (!Array.isArray(catalogProducts) || catalogProducts.length === 0) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const seed = catalogProducts.map((p) => p.id).join("|");
+    if (backgroundVariantPrefetchSeedRef.current === seed) {
+      return;
+    }
+    backgroundVariantPrefetchSeedRef.current = seed;
+
+    backgroundVariantPrefetchTokenRef.current += 1;
+    const token = backgroundVariantPrefetchTokenRef.current;
+    backgroundVariantPrefetchRunningRef.current = true;
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+    const run = async () => {
+      await sleep(BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS);
+      if (backgroundVariantPrefetchTokenRef.current !== token) {
+        return;
+      }
+
+      const candidates = catalogProducts.filter((product) => {
+        const isVariable = (product.type ?? "").toLowerCase() === "variable";
+        return isVariable && (!product.variants || product.variants.length === 0);
+      });
+
+      for (const product of candidates) {
+        if (backgroundVariantPrefetchTokenRef.current !== token) {
+          break;
+        }
+        try {
+          // Load gently; don't block UI and don't spam Woo.
+          // eslint-disable-next-line no-await-in-loop
+          await ensureCatalogProductHasVariants(product);
+        } catch {
+          // ignore; on-demand selection can retry
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(BACKGROUND_VARIANT_PREFETCH_DELAY_MS);
+      }
+    };
+
+    void run().finally(() => {
+      if (backgroundVariantPrefetchTokenRef.current === token) {
+        backgroundVariantPrefetchRunningRef.current = false;
+      }
+    });
+
+    return () => {
+      backgroundVariantPrefetchTokenRef.current += 1;
+      backgroundVariantPrefetchRunningRef.current = false;
+    };
+  }, [catalogProducts, ensureCatalogProductHasVariants]);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
@@ -7659,10 +7757,10 @@ export default function App() {
 	              >
 	                <p className="mx-auto max-w-sm leading-relaxed">
 	                  <span className="text-base text-slate-900 block mb-1">
-	                    Fetching…
+	                    Fetching Products…
 	                  </span>
 	                  <span className="text-sm text-slate-800 block">
-	                    Loading categories
+	                    Take a conscious beath :D
 	                  </span>
 	                </p>
 	              </div>
@@ -7724,11 +7822,12 @@ export default function App() {
 		                <LazyCatalogProductCard
 		                  key={product.id}
 		                  product={product}
+		                  onEnsureVariants={ensureCatalogProductHasVariants}
 		                  onAddToCart={(productId, variationId, qty) =>
 		                    handleAddToCart(productId, qty, undefined, variationId)
 		                  }
 		                />
-	              ))}
+		              ))}
 	            </div>
           ) : (
             <div className="catalog-loading-state py-12">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
@@ -34,15 +34,18 @@ export interface Product {
 interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string, variationId: string, quantity: number) => void;
+  onEnsureVariants?: () => Promise<unknown> | void;
 }
 
-export function ProductCard({ product, onAddToCart }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductCardProps) {
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation>(
     product.variations?.[0] || { id: 'default', strength: 'Standard', basePrice: 0 },
   );
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [variantsLoading, setVariantsLoading] = useState(false);
+  const variantsLoadTriggeredRef = useRef(false);
 
   useEffect(() => {
     if (!Array.isArray(product.variations) || product.variations.length === 0) {
@@ -106,6 +109,27 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
     }
   };
 
+  const needsVariants =
+    Array.isArray(product.variations) &&
+    product.variations.length === 1 &&
+    product.variations[0]?.id === '__peppro_needs_variant__';
+
+  const triggerVariantLoad = async () => {
+    if (!needsVariants || typeof onEnsureVariants !== 'function') {
+      return;
+    }
+    if (variantsLoadTriggeredRef.current || variantsLoading) {
+      return;
+    }
+    variantsLoadTriggeredRef.current = true;
+    try {
+      setVariantsLoading(true);
+      await onEnsureVariants();
+    } finally {
+      setVariantsLoading(false);
+    }
+  };
+
   const categoryLabel = product.category?.trim() || 'PepPro Catalog';
 
   const productMeta = (
@@ -144,11 +168,14 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
             id={`variation-${product.id}`}
             value={selectedVariation.id}
             onChange={(e) => handleVariationChange(e.target.value)}
+            onFocus={() => void triggerVariantLoad()}
+            onMouseDown={() => void triggerVariantLoad()}
+            disabled={variantsLoading}
             className="w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select"
             >
             {product.variations.map((variation) => (
               <option key={variation.id} value={variation.id}>
-                {variation.strength}
+                {variantsLoading ? 'Loading options…' : variation.strength}
               </option>
             ))}
           </select>
