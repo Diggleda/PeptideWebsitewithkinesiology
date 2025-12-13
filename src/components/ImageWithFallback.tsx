@@ -18,10 +18,15 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     ...rest
   } = props
 
+  const PLACEHOLDER = '/Peppro_IconLogo_Transparent_NoBuffer.png';
+  const normalizedSrc = typeof src === 'string' ? src.trim() : '';
+  const effectiveSrc = normalizedSrc ? normalizedSrc : PLACEHOLDER;
+  const isPlaceholder = effectiveSrc === PLACEHOLDER;
+
   useEffect(() => {
     setDidError(false);
-    setIsLoaded(false);
-  }, [src]);
+    setIsLoaded(isPlaceholder);
+  }, [effectiveSrc, isPlaceholder]);
 
   const handleError = () => {
     setDidError(true);
@@ -31,8 +36,6 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
   const handleLoad = () => {
     setIsLoaded(true);
   };
-
-  const PLACEHOLDER = '/Peppro_IconLogo_Transparent_NoBuffer.png';
 
   if (didError) {
     return (
@@ -57,18 +60,18 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
 
   return (
     <div className="relative block h-full w-full overflow-hidden" style={style}>
-      {!isLoaded && !didError && (
+      {!isLoaded && !didError && !isPlaceholder && (
         <div className="image-skeleton" aria-hidden="true" />
       )}
       <img
-        src={src || PLACEHOLDER}
+        src={effectiveSrc}
         alt={alt}
         loading={loading}
         decoding={decoding}
         referrerPolicy={referrerPolicy}
         crossOrigin={crossOrigin}
         className={`block object-contain transition-opacity duration-300 ${
-          isLoaded ? 'opacity-100' : 'opacity-0'
+          isPlaceholder || isLoaded ? 'opacity-100' : 'opacity-0'
         } ${className ?? ''}`}
         {...rest}
         onLoad={handleLoad}
