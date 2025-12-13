@@ -693,6 +693,7 @@ export function Header({
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -1467,9 +1468,25 @@ export function Header({
         placeholder="Search peptides..."
         value={searchQuery}
         onChange={(e) => handleSearchChange(e.target.value)}
-        className={`glass squircle-sm pl-10 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
+        ref={searchInputRef}
+        className={`glass squircle-sm pl-10 pr-10 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
         style={{ borderColor: translucentSecondary, minWidth: '100%' }}
       />
+      {searchQuery.trim().length > 0 && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => {
+            handleSearchChange('');
+            requestAnimationFrame(() => {
+              searchInputRef.current?.focus();
+            });
+          }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-600 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)]"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 
