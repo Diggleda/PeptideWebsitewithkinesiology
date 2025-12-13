@@ -64,6 +64,7 @@ export default defineConfig({
   server: {
     host: true,              // listen on 0.0.0.0 (needed on Replit)
     port: 3000,
+    strictPort: !isReplit,   // avoid silently hopping ports (breaks backend/api base in local dev)
     open: false,
     // allow any *.replit.dev (and legacy *.repl.co) hostnames:
     allowedHosts: [/\.replit\.dev$/, /\.repl\.co$/],

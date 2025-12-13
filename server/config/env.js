@@ -60,6 +60,7 @@ const resolvePath = (value, fallback) => {
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: toNumber(process.env.PORT, 3001),
+  allowPortFallback: process.env.ALLOW_PORT_FALLBACK === 'true',
   jwtSecret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
   dataDir: resolvePath(process.env.DATA_DIR, 'server-data'),
   cors: {

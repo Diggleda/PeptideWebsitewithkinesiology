@@ -1228,7 +1228,11 @@ const PEPTIDE_NEWS_PLACEHOLDER_IMAGE =
 const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
 const CATALOG_RETRY_DELAY_MS = 4000;
+const CATALOG_RETRY_FAST_DELAY_MS = 900;
+const CATALOG_EMPTY_RESULT_RETRY_MAX = 3;
+const CATALOG_EMPTY_RESULT_RETRY_DELAY_MS = 1200;
 const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
+const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
@@ -1251,7 +1255,7 @@ const VARIANT_PREFETCH_CONCURRENCY = (() => {
 const BACKGROUND_VARIANT_PREFETCH_ENABLED =
   String((import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH || "")
     .toLowerCase()
-    .trim() !== "false";
+    .trim() === "true";
 const BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS || "",
@@ -1271,6 +1275,42 @@ const BACKGROUND_VARIANT_PREFETCH_DELAY_MS = (() => {
     return parsed;
   }
   return 650;
+})();
+
+const VARIANT_POLL_INTERVAL_MS = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_VARIANT_POLL_INTERVAL_MS || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 3500;
+})();
+
+const IMAGE_PREFETCH_ENABLED =
+  String((import.meta as any).env?.VITE_IMAGE_PREFETCH_ENABLED || "")
+    .toLowerCase()
+    .trim() !== "false";
+const IMAGE_PREFETCH_CONCURRENCY = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_IMAGE_PREFETCH_CONCURRENCY || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(Math.max(parsed, 1), 12);
+  }
+  return 4;
+})();
+const IMAGE_PREFETCH_DELAY_MS = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_IMAGE_PREFETCH_DELAY_MS || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 150;
 })();
 
 const SALES_REP_PIPELINE = [
@@ -1929,11 +1969,9 @@ const mapWooProductToProduct = (
   const variantImages = variantList
     .map((variant) => variant.image)
     .filter((src): src is string => Boolean(src));
-  const combinedImages = [...variantImages, ...imageSources].filter(
+  let galleryImages = [...variantImages, ...imageSources].filter(
     (src, index, self) => Boolean(src) && self.indexOf(src) === index,
   ) as string[];
-  const galleryImages =
-    combinedImages.length > 0 ? combinedImages : [WOO_PLACEHOLDER_IMAGE];
   const variantSummary = hasVariants
     ? (() => {
         const labels = variantList
@@ -1954,6 +1992,11 @@ const mapWooProductToProduct = (
   const fallbackVariationCount = Array.isArray(product.variations)
     ? product.variations.length
     : 0;
+  if (isVariableProduct && (!hasVariants || variantImages.length === 0)) {
+    galleryImages = [WOO_PLACEHOLDER_IMAGE];
+  } else if (galleryImages.length === 0) {
+    galleryImages = [WOO_PLACEHOLDER_IMAGE];
+  }
 
   return {
     id: `woo-${product.id}`,
@@ -1999,6 +2042,11 @@ const toCardProduct = (product: Product): CardProduct => {
   const needsVariantSelection =
     (product.type ?? "").toLowerCase() === "variable" &&
     (!product.variants || product.variants.length === 0);
+  const baseImage = needsVariantSelection ? WOO_PLACEHOLDER_IMAGE : product.image;
+  const baseImages =
+    needsVariantSelection || !product.images || product.images.length === 0
+      ? [WOO_PLACEHOLDER_IMAGE]
+      : product.images;
   const variations =
     product.variants && product.variants.length > 0
       ? product.variants.map((variant) => ({
@@ -2035,8 +2083,8 @@ const toCardProduct = (product: Product): CardProduct => {
     id: product.id,
     name: product.name,
     category: product.category,
-    image: product.image,
-    images: product.images,
+    image: baseImage,
+    images: baseImages,
     inStock: product.inStock,
     manufacturer: product.manufacturer,
     weightOz: product.weightOz ?? null,
@@ -2101,7 +2149,10 @@ interface LazyCatalogProductCardProps {
     variationId: string | undefined | null,
     quantity: number,
   ) => void;
-  onEnsureVariants?: (product: Product) => Promise<unknown> | void;
+  onEnsureVariants?: (
+    product: Product,
+    options?: { force?: boolean },
+  ) => Promise<unknown> | void;
 }
 
 const LazyCatalogProductCard = ({
@@ -2145,7 +2196,7 @@ const LazyCatalogProductCard = ({
         product={cardProduct}
         onEnsureVariants={
           typeof onEnsureVariants === "function"
-            ? () => onEnsureVariants(product)
+            ? (opts) => onEnsureVariants(product, opts)
             : undefined
         }
         onAddToCart={(productId, variationId, quantity) =>
@@ -2266,13 +2317,36 @@ export default function App() {
   const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
     new Map(),
   );
+  const variationRetryRef = useRef<Map<number, { attempt: number; nextAt: number }>>(
+    new Map(),
+  );
   const variantPrefetchActiveRef = useRef(0);
   const variantPrefetchQueueRef = useRef<Array<() => void>>([]);
+  const variantPrefetchQueuedRef = useRef<Set<number>>(new Set());
+  const imagePrefetchActiveRef = useRef(0);
+  const imagePrefetchQueueRef = useRef<string[]>([]);
+  const imagePrefetchStateRef = useRef<
+    Map<
+      string,
+      {
+        firstSeenAt: number;
+        attempt: number;
+        nextAt: number;
+        queued: boolean;
+        inFlight: boolean;
+        loaded: boolean;
+      }
+    >
+  >(new Map());
 
   const ensureCatalogProductHasVariants = useCallback(
-    async (product: Product): Promise<Product> => {
+    async (product: Product, options?: { force?: boolean }): Promise<Product> => {
       const isVariable = (product.type ?? "").toLowerCase() === "variable";
-      if (!isVariable || (product.variants && product.variants.length > 0)) {
+      const shouldForce = options?.force === true;
+      if (!isVariable) {
+        return product;
+      }
+      if (!shouldForce && product.variants && product.variants.length > 0) {
         return product;
       }
 
@@ -2285,16 +2359,39 @@ export default function App() {
         return product;
       }
 
-      const cached = variationCacheRef.current.get(wooId);
+      let cached = variationCacheRef.current.get(wooId);
+      if (cached && cached.length === 0) {
+        variationCacheRef.current.delete(wooId);
+        cached = undefined;
+      }
       let rawWooProduct = wooProductCacheRef.current.get(wooId);
 
+      const retryState = variationRetryRef.current.get(wooId);
+      if (retryState && Date.now() < retryState.nextAt && !shouldForce) {
+        return product;
+      }
+      if (shouldForce) {
+        variationRetryRef.current.delete(wooId);
+      }
+
+      const bumpRetry = () => {
+        const prev = variationRetryRef.current.get(wooId);
+        const attempt = (prev?.attempt ?? 0) + 1;
+        const delayMs = Math.min(60000, 1500 * Math.pow(1.8, attempt - 1));
+        variationRetryRef.current.set(wooId, {
+          attempt,
+          nextAt: Date.now() + delayMs,
+        });
+      };
+
       const loadVariations = async () => {
-        if (cached) {
+        if (cached && !shouldForce) {
           return cached;
         }
         const response = await listProductVariations<WooVariation[]>(wooId, {
           per_page: 100,
           status: "publish",
+          ...(shouldForce ? { force: true } : null),
         });
         return Array.isArray(response) ? response : [];
       };
@@ -2305,8 +2402,11 @@ export default function App() {
           inFlight ??
           (async () => {
             const variations = await loadVariations();
-            variationCacheRef.current.set(wooId, variations);
-            persistVariationCache();
+            // Don't persist empty responses for variable products; they're often transient.
+            if (variations.length > 0) {
+              variationCacheRef.current.set(wooId, variations);
+              persistVariationCache();
+            }
             return variations;
           })();
         if (!inFlight) {
@@ -2317,7 +2417,7 @@ export default function App() {
 
         if (!rawWooProduct) {
           try {
-            const fetched = await getProduct<WooProduct>(wooId);
+            const fetched = await getProduct<WooProduct>(wooId, shouldForce ? { force: true } : {});
             if (fetched && typeof fetched === "object" && "id" in fetched) {
               rawWooProduct = fetched;
               wooProductCacheRef.current.set(wooId, fetched);
@@ -2334,6 +2434,16 @@ export default function App() {
         }
 
         const nextProduct = mapWooProductToProduct(rawWooProduct, resolved);
+        if (
+          isVariable &&
+          (!nextProduct.variants || nextProduct.variants.length === 0) &&
+          Array.isArray(rawWooProduct.variations) &&
+          rawWooProduct.variations.length > 0
+        ) {
+          bumpRetry();
+          return product;
+        }
+        variationRetryRef.current.delete(wooId);
         setCatalogProducts((prev) =>
           prev.map((item) => (item.id === product.id ? nextProduct : item)),
         );
@@ -2343,6 +2453,7 @@ export default function App() {
         return nextProduct;
       } catch (error) {
         variationFetchInFlightRef.current.delete(wooId);
+        bumpRetry();
         console.warn("[Catalog] Failed to load variants for product", {
           productId: product.id,
           wooId,
@@ -2360,6 +2471,17 @@ export default function App() {
       if (!isVariable || (product.variants && product.variants.length > 0)) {
         return;
       }
+      const wooId =
+        typeof product.wooId === "number"
+          ? product.wooId
+          : Number.parseInt(String(product.id).replace(/[^\d]/g, ""), 10);
+      if (!Number.isFinite(wooId)) {
+        return;
+      }
+      if (variantPrefetchQueuedRef.current.has(wooId)) {
+        return;
+      }
+      variantPrefetchQueuedRef.current.add(wooId);
 
       const startNext = () => {
         while (
@@ -2382,6 +2504,7 @@ export default function App() {
               0,
               variantPrefetchActiveRef.current - 1,
             );
+            variantPrefetchQueuedRef.current.delete(wooId);
             startNext();
           });
       });
@@ -2390,6 +2513,123 @@ export default function App() {
     },
     [ensureCatalogProductHasVariants],
   );
+
+  const enqueueImagePrefetch = useCallback((src: string) => {
+    if (!IMAGE_PREFETCH_ENABLED) return;
+    if (typeof window === "undefined") return;
+    if (!src) return;
+    const trimmed = src.trim();
+    if (!trimmed) return;
+    if (trimmed === WOO_PLACEHOLDER_IMAGE) return;
+    if (trimmed.startsWith("data:")) return;
+
+    const state =
+      imagePrefetchStateRef.current.get(trimmed) ??
+      ({
+        firstSeenAt: Date.now(),
+        attempt: 0,
+        nextAt: 0,
+        queued: false,
+        inFlight: false,
+        loaded: false,
+      } as const);
+
+    if (!imagePrefetchStateRef.current.has(trimmed)) {
+      imagePrefetchStateRef.current.set(trimmed, { ...state });
+    }
+
+    const current = imagePrefetchStateRef.current.get(trimmed);
+    if (!current || current.loaded || current.inFlight || current.queued) {
+      return;
+    }
+    if (Date.now() < current.nextAt) {
+      return;
+    }
+
+    current.queued = true;
+    imagePrefetchQueueRef.current.push(trimmed);
+  }, []);
+
+  const runImagePrefetchQueue = useCallback(() => {
+    if (!IMAGE_PREFETCH_ENABLED) return;
+    if (typeof window === "undefined") return;
+
+    const startNext = () => {
+      while (
+        imagePrefetchActiveRef.current < IMAGE_PREFETCH_CONCURRENCY &&
+        imagePrefetchQueueRef.current.length > 0
+      ) {
+        const url = imagePrefetchQueueRef.current.shift();
+        if (!url) continue;
+        const state = imagePrefetchStateRef.current.get(url);
+        if (!state || state.loaded || state.inFlight) {
+          continue;
+        }
+        if (Date.now() < state.nextAt) {
+          state.queued = false;
+          continue;
+        }
+
+        state.queued = false;
+        state.inFlight = true;
+        state.attempt += 1;
+        imagePrefetchActiveRef.current += 1;
+
+        const img = new Image();
+        const timeoutMs = 20000;
+        const timeoutId = window.setTimeout(() => {
+          img.onload = null;
+          img.onerror = null;
+          const current = imagePrefetchStateRef.current.get(url);
+          if (current) {
+            current.inFlight = false;
+            const delayMs = Math.min(120000, 1200 * Math.pow(1.8, current.attempt - 1));
+            current.nextAt = Date.now() + delayMs;
+            window.setTimeout(() => {
+              enqueueImagePrefetch(url);
+              startNext();
+            }, delayMs + 5);
+          }
+          imagePrefetchActiveRef.current = Math.max(0, imagePrefetchActiveRef.current - 1);
+          startNext();
+        }, timeoutMs);
+
+        img.onload = () => {
+          window.clearTimeout(timeoutId);
+          img.onload = null;
+          img.onerror = null;
+          const current = imagePrefetchStateRef.current.get(url);
+          if (current) {
+            current.loaded = true;
+            current.inFlight = false;
+          }
+          imagePrefetchActiveRef.current = Math.max(0, imagePrefetchActiveRef.current - 1);
+          window.setTimeout(startNext, IMAGE_PREFETCH_DELAY_MS);
+        };
+        img.onerror = () => {
+          window.clearTimeout(timeoutId);
+          img.onload = null;
+          img.onerror = null;
+          const current = imagePrefetchStateRef.current.get(url);
+          if (current) {
+            current.inFlight = false;
+            const delayMs = Math.min(120000, 1200 * Math.pow(1.8, current.attempt - 1));
+            current.nextAt = Date.now() + delayMs;
+            window.setTimeout(() => {
+              enqueueImagePrefetch(url);
+              startNext();
+            }, delayMs + 5);
+          }
+          imagePrefetchActiveRef.current = Math.max(0, imagePrefetchActiveRef.current - 1);
+          startNext();
+        };
+
+        img.src = url;
+      }
+    };
+
+    startNext();
+  }, [enqueueImagePrefetch]);
 
   const referralSummaryCooldownRef = useRef<number | null>(null);
   const prevUserRef = useRef<User | null>(null);
@@ -3724,10 +3964,17 @@ export default function App() {
     null,
   );
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const catalogProductsRef = useRef<Product[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [catalogTypes, setCatalogTypes] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogRetryUntil, setCatalogRetryUntil] = useState<number | null>(null);
+  const [catalogEmptyReady, setCatalogEmptyReady] = useState(false);
+  const [catalogTransientIssue, setCatalogTransientIssue] = useState(false);
+  const catalogFailureCountRef = useRef(0);
+  const catalogEmptyResultRetryCountRef = useRef(0);
+  const catalogEmptyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const catalogRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -3735,6 +3982,42 @@ export default function App() {
   const backgroundVariantPrefetchTokenRef = useRef(0);
   const backgroundVariantPrefetchRunningRef = useRef(false);
   const backgroundVariantPrefetchSeedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    catalogProductsRef.current = catalogProducts;
+  }, [catalogProducts]);
+
+  useEffect(() => {
+    if (!IMAGE_PREFETCH_ENABLED) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!Array.isArray(catalogProducts) || catalogProducts.length === 0) {
+      return;
+    }
+
+    for (const product of catalogProducts) {
+      if (product.image) {
+        enqueueImagePrefetch(product.image);
+      }
+      if (Array.isArray(product.images)) {
+        for (const src of product.images) {
+          if (src) enqueueImagePrefetch(src);
+        }
+      }
+      if (Array.isArray(product.variants)) {
+        for (const variant of product.variants) {
+          if (variant?.image) {
+            enqueueImagePrefetch(variant.image);
+          }
+        }
+      }
+    }
+
+    runImagePrefetchQueue();
+  }, [catalogProducts, enqueueImagePrefetch, runImagePrefetchQueue]);
 
   useEffect(() => {
     if (!BACKGROUND_VARIANT_PREFETCH_ENABLED) {
@@ -3798,6 +4081,41 @@ export default function App() {
       backgroundVariantPrefetchRunningRef.current = false;
     };
   }, [catalogProducts, ensureCatalogProductHasVariants]);
+
+  useEffect(() => {
+    if (!BACKGROUND_VARIANT_PREFETCH_ENABLED) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const products = catalogProductsRef.current;
+      if (!Array.isArray(products) || products.length === 0) {
+        return;
+      }
+      for (const product of products) {
+        const isVariable = (product.type ?? "").toLowerCase() === "variable";
+        if (!isVariable) continue;
+        if (product.variants && product.variants.length > 0) continue;
+        prefetchCatalogProductVariants(product);
+      }
+    }, VARIANT_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [prefetchCatalogProductVariants]);
+
+  useEffect(() => {
+    if (!IMAGE_PREFETCH_ENABLED) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      runImagePrefetchQueue();
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [runImagePrefetchQueue]);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
@@ -5262,49 +5580,62 @@ export default function App() {
 
     let cancelled = false;
 
-	    const scheduleRetry = (
-	      background = false,
-	      delayMs: number = CATALOG_RETRY_DELAY_MS,
-	    ) => {
-	      if (catalogRetryTimeoutRef.current) {
-	        window.clearTimeout(catalogRetryTimeoutRef.current);
-	      }
-        if (CATALOG_DEBUG) {
-          console.info("[Catalog] Retry scheduled", { background, delayMs });
-        }
-	      catalogRetryTimeoutRef.current = window.setTimeout(() => {
-	        void loadCatalog(background);
-	      }, delayMs);
-	    };
-
-		    const loadCatalog = async (background = false) => {
-		      if (cancelled || catalogFetchInFlightRef.current) {
-		        return;
+		    const scheduleRetry = (
+		      background = false,
+		      delayMs: number = CATALOG_RETRY_DELAY_MS,
+		    ) => {
+		      if (catalogRetryTimeoutRef.current) {
+		        window.clearTimeout(catalogRetryTimeoutRef.current);
 		      }
-
-	      catalogFetchInFlightRef.current = true;
-	      catalogRetryTimeoutRef.current = null;
-	      if (!background) {
-	        setCatalogLoading(true);
-	      }
-	      setCatalogError(null);
-        const startedAt = Date.now();
+          if (!background) {
+            setCatalogRetryUntil(Date.now() + delayMs);
+            setCatalogTransientIssue(true);
+          }
 	        if (CATALOG_DEBUG) {
-	          console.info("[Catalog] Load started", {
-	            background,
+	          console.info("[Catalog] Retry scheduled", { background, delayMs });
+	        }
+		      catalogRetryTimeoutRef.current = window.setTimeout(() => {
+		        void loadCatalog(background);
+		      }, delayMs);
+		    };
+
+			    const loadCatalog = async (background = false) => {
+			      if (cancelled || catalogFetchInFlightRef.current) {
+			        return;
+			      }
+
+		      catalogFetchInFlightRef.current = true;
+		      catalogRetryTimeoutRef.current = null;
+          if (!background) {
+            setCatalogRetryUntil(null);
+            setCatalogEmptyReady(false);
+            catalogEmptyResultRetryCountRef.current = 0;
+          }
+		      if (!background) {
+		        setCatalogLoading(true);
+		      }
+		      setCatalogError(null);
+          if (!background) {
+            // Keep the UI calm during cold-start retries; only show an error after repeated failures.
+            setCatalogTransientIssue(false);
+          }
+	        const startedAt = Date.now();
+		        if (CATALOG_DEBUG) {
+		          console.info("[Catalog] Load started", {
+		            background,
               build: FRONTEND_BUILD_ID,
 	            apiBase: (import.meta.env.VITE_API_URL as string | undefined) || "",
 	            wooProxy:
 	              (import.meta.env.VITE_WOO_PROXY_URL as string | undefined) || "",
 	          });
 	        }
-		      try {
+			      try {
             ensureVariationCacheReady();
 
-            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
-              const perPage = 100;
-              const maxPages = 25;
-              const items: WooProduct[] = [];
+	            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
+	              const perPage = 100;
+	              const maxPages = 25;
+	              const items: WooProduct[] = [];
               for (let page = 1; page <= maxPages; page += 1) {
                 const pageStartedAt = Date.now();
                 // eslint-disable-next-line no-await-in-loop
@@ -5335,11 +5666,11 @@ export default function App() {
                   break;
                 }
               }
-              if (CATALOG_DEBUG && items.length === 0) {
-                console.warn("[Catalog] No Woo products returned");
-              }
-              return items;
-            };
+	              if (CATALOG_DEBUG && items.length === 0) {
+	                console.warn("[Catalog] No Woo products returned");
+	              }
+	              return items;
+	            };
 
             const [wooProducts, wooCategories] = await Promise.all([
               fetchAllPublishedProducts(),
@@ -5453,16 +5784,9 @@ export default function App() {
 	          )
 	          .map((item) => {
 	            try {
-              const id =
-                typeof item.id === "number"
-                  ? item.id
-                  : Number.parseInt(String(item.id).replace(/[^\d]/g, ""), 10);
-              const cachedVariations = Number.isFinite(id)
-                ? variationCacheRef.current.get(id)
-                : undefined;
 	              return mapWooProductToProduct(
 	                item,
-	                Array.isArray(cachedVariations) ? cachedVariations : [],
+	                [],
 	              );
 	            } catch (error) {
                 mapFailures += 1;
@@ -5508,53 +5832,79 @@ export default function App() {
             });
           }
 
-	        const hadBaseProducts = applyCatalogState(baseProducts);
-        if (hadBaseProducts) {
-          if (CATALOG_DEBUG) {
-            console.info("[Catalog] Catalog state applied", {
-              products: baseProducts.length,
-              categories: catalogCategories.length || categoryNamesFromApi.length,
-              durationMs: Date.now() - startedAt,
-            });
-          }
-          setCatalogLoading(false);
-        }
+		        const hadBaseProducts = applyCatalogState(baseProducts);
+            if (CATALOG_DEBUG) {
+              console.info("[Catalog] Catalog state applied", {
+                products: baseProducts.length,
+                categories: catalogCategories.length || categoryNamesFromApi.length,
+                durationMs: Date.now() - startedAt,
+              });
+            }
+            if (!background) {
+              // If Woo returns an empty catalog during cold-start, retry quickly a few times
+              // before allowing the UI to render "No products found".
+              if (!hadBaseProducts && baseProducts.length === 0 && catalogProducts.length === 0) {
+                if (catalogEmptyResultRetryCountRef.current < CATALOG_EMPTY_RESULT_RETRY_MAX) {
+                  catalogEmptyResultRetryCountRef.current += 1;
+                  const delayMs = Math.max(
+                    CATALOG_EMPTY_RESULT_RETRY_DELAY_MS,
+                    CATALOG_RETRY_FAST_DELAY_MS,
+                  );
+                  setCatalogTransientIssue(true);
+                  scheduleRetry(false, delayMs);
+                  return;
+                }
+              }
 
-        setCatalogLoading(false);
-        if (CATALOG_DEBUG) {
-          console.info("[Catalog] Load complete (state)", {
-            products: baseProducts.length,
-            categories: catalogCategories.length,
-            loading: false,
-          });
-        }
-      } catch (error) {
-		        if (!cancelled) {
-              const message =
-                typeof (error as any)?.message === "string" &&
-                (error as any).message.trim().length > 0
-                  ? (error as any).message
-                  : "Catalog fetch failed";
-              setCatalogError(message);
-		          console.error("[Catalog] Catalog fetch failed", { message, error });
-	          if (!background) {
-	            setCatalogProducts([]);
-	            setCatalogCategories([]);
-	            setCatalogTypes([]);
-	            setCatalogLoading(false);
-	          }
-	          scheduleRetry(background);
+              setCatalogLoading(false);
+              if (hadBaseProducts) {
+                catalogFailureCountRef.current = 0;
+                setCatalogTransientIssue(false);
+              }
+            }
+	        if (CATALOG_DEBUG) {
+	          console.info("[Catalog] Load complete (state)", {
+	            products: baseProducts.length,
+	            categories: catalogCategories.length,
+	            loading: false,
+	          });
 	        }
-	      } finally {
-          if (CATALOG_DEBUG) {
-            console.info("[Catalog] Load finished", {
-              background,
-              durationMs: Date.now() - startedAt,
-            });
-          }
-	        catalogFetchInFlightRef.current = false;
-	      }
-	    };
+	      } catch (error) {
+			        if (!cancelled) {
+	              const message =
+	                typeof (error as any)?.message === "string" &&
+	                (error as any).message.trim().length > 0
+	                  ? (error as any).message
+	                  : "Catalog fetch failed";
+                if (!background) {
+                  catalogFailureCountRef.current += 1;
+                  // Retry quickly on the first failure; back off on subsequent failures.
+                  const fastRetry =
+                    catalogFailureCountRef.current === 1
+                      ? CATALOG_RETRY_FAST_DELAY_MS
+                      : CATALOG_RETRY_DELAY_MS;
+                  // Only surface a scary error state after multiple consecutive failures.
+                  if (catalogFailureCountRef.current >= 2) {
+                    setCatalogError(message);
+                  } else {
+                    setCatalogTransientIssue(true);
+                  }
+                  scheduleRetry(false, fastRetry);
+                  return;
+                }
+			          console.error("[Catalog] Catalog fetch failed", { message, error });
+		          scheduleRetry(background);
+		        }
+		      } finally {
+	        if (CATALOG_DEBUG) {
+	          console.info("[Catalog] Load finished", {
+	            background,
+	            durationMs: Date.now() - startedAt,
+	          });
+	        }
+		        catalogFetchInFlightRef.current = false;
+		      }
+		    };
 
     void loadCatalog(false);
 
@@ -5569,7 +5919,37 @@ export default function App() {
       }
       window.clearInterval(intervalId);
     };
-  }, [ensureVariationCacheReady, persistVariationCache]);
+	  }, [ensureVariationCacheReady, persistVariationCache]);
+
+  useEffect(() => {
+    if (catalogEmptyTimerRef.current) {
+      window.clearTimeout(catalogEmptyTimerRef.current);
+      catalogEmptyTimerRef.current = null;
+    }
+    if (catalogLoading) {
+      setCatalogEmptyReady(false);
+      return;
+    }
+    // Only apply the grace period when the *base* catalog is empty (initial load / retry).
+    if (catalogProducts.length > 0) {
+      setCatalogEmptyReady(false);
+      return;
+    }
+    if (catalogRetryUntil && Date.now() < catalogRetryUntil) {
+      setCatalogEmptyReady(false);
+      return;
+    }
+    catalogEmptyTimerRef.current = window.setTimeout(() => {
+      setCatalogEmptyReady(true);
+      catalogEmptyTimerRef.current = null;
+    }, CATALOG_EMPTY_STATE_GRACE_MS);
+    return () => {
+      if (catalogEmptyTimerRef.current) {
+        window.clearTimeout(catalogEmptyTimerRef.current);
+        catalogEmptyTimerRef.current = null;
+      }
+    };
+  }, [catalogLoading, catalogProducts.length, catalogRetryUntil]);
 
   useEffect(() => {
     if (!user) {
@@ -7700,9 +8080,9 @@ export default function App() {
     );
   };
 
-  const renderProductSection = () => {
-    const formattedSearch = searchQuery.trim();
-    const itemLabel =
+	  const renderProductSection = () => {
+	    const formattedSearch = searchQuery.trim();
+	    const itemLabel =
       filteredProducts.length === 1
         ? "1 item"
         : `${filteredProducts.length} items`;
@@ -7722,14 +8102,23 @@ export default function App() {
     if (stripeIsTestMode) {
       statusChips.push({ key: "stripe", label: "Stripe test mode" });
     }
-    if (catalogLoading) {
-      statusChips.push({ key: "loading", label: "loading-icon" });
-    }
-    if (catalogError) {
-      statusChips.push({ key: "error", label: "Woo sync issue" });
-    }
-    const showSkeletonGrid = catalogLoading && filteredProducts.length === 0;
-    const productSkeletons = Array.from({ length: 6 });
+	    if (catalogLoading) {
+	      statusChips.push({ key: "loading", label: "loading-icon" });
+	    }
+	    const retryPending =
+	      typeof catalogRetryUntil === "number" && Date.now() < catalogRetryUntil;
+	    if (catalogError && !retryPending) {
+	      statusChips.push({ key: "error", label: "Woo sync issue" });
+	    }
+      if (!catalogError && catalogTransientIssue && !catalogLoading && retryPending) {
+        statusChips.push({ key: "reconnecting", label: "Reconnecting…" });
+      }
+	    const showSkeletonGrid =
+	      (catalogLoading ||
+	        (catalogProducts.length === 0 && !catalogEmptyReady) ||
+	        retryPending) &&
+	      filteredProducts.length === 0;
+	    const productSkeletons = Array.from({ length: 6 });
 
     return (
       <div
@@ -7760,7 +8149,7 @@ export default function App() {
 	                    Fetching Products…
 	                  </span>
 	                  <span className="text-sm text-slate-800 block">
-	                    Take a conscious beath :D
+	                    No better time to take a few conscious breaths...
 	                  </span>
 	                </p>
 	              </div>
@@ -7829,22 +8218,30 @@ export default function App() {
 		                />
 		              ))}
 	            </div>
-          ) : (
-            <div className="catalog-loading-state py-12">
-              <div className="glass-card squircle-lg p-8 max-w-md text-center">
-                <h3 className="mb-2">
-                  {catalogLoading ? "Fetching products…" : "No products found"}
-                </h3>
-                <p className="text-gray-600">
-                  {catalogLoading
-                    ? "Please wait while we load the catalog."
-                    : "Try adjusting your filters or search terms."}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+	          ) : (
+	            <div className="catalog-loading-state py-12">
+	              <div className="glass-card squircle-lg p-8 max-w-md text-center">
+	                <h3 className="mb-2">
+	                  {catalogLoading ||
+	                  retryPending ||
+	                  (catalogProducts.length === 0 && !catalogEmptyReady)
+	                    ? "Fetching products…"
+	                    : "No products found"}
+	                </h3>
+	                <p className="text-gray-600">
+	                  {catalogLoading ||
+	                  retryPending ||
+	                  (catalogProducts.length === 0 && !catalogEmptyReady)
+	                    ? retryPending
+	                      ? "Reconnecting to WooCommerce…"
+	                      : "Please wait while we load the catalog."
+	                    : "Try adjusting your filters or search terms."}
+	                </p>
+	              </div>
+	            </div>
+	          )}
+	        </div>
+	      </div>
     );
   };
 

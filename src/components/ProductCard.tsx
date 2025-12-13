@@ -7,6 +7,61 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { ShoppingCart, Minus, Plus } from 'lucide-react';
 
+const AUTO_OPEN_STRENGTH_ENABLED =
+  String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH || '').toLowerCase().trim() === 'true';
+const AUTO_OPEN_STRENGTH_DELAY_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH_DELAY_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 250;
+})();
+
+const AUTO_OPEN_STRENGTH_PACE_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH_PACE_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 500;
+})();
+
+// Off by default; enable only when explicitly set to true.
+const AUTO_CYCLE_STRENGTH_ENABLED =
+  String((import.meta as any).env?.VITE_AUTO_CYCLE_STRENGTH || '').toLowerCase().trim() === 'true';
+const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_CYCLE_STRENGTH_DELAY_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 175;
+})();
+
+const autoOpenQueue: Array<() => Promise<void>> = [];
+let autoOpenActive = false;
+const runAutoOpenQueue = () => {
+  if (autoOpenActive) return;
+  if (autoOpenQueue.length === 0) return;
+  autoOpenActive = true;
+  const next = autoOpenQueue.shift();
+  if (!next) {
+    autoOpenActive = false;
+    return;
+  }
+  void next()
+    .catch(() => {})
+    .finally(() => {
+      autoOpenActive = false;
+      runAutoOpenQueue();
+    });
+};
+const enqueueAutoOpen = (fn: () => Promise<void>) => {
+  autoOpenQueue.push(fn);
+  runAutoOpenQueue();
+};
+
 export interface ProductVariation {
   id: string;
   strength: string; // e.g., "10mg", "20mg", "50mg"
@@ -34,18 +89,29 @@ export interface Product {
 interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string, variationId: string, quantity: number) => void;
-  onEnsureVariants?: () => Promise<unknown> | void;
+  onEnsureVariants?: (options?: { force?: boolean }) => Promise<unknown> | void;
 }
+
+const pickDefaultVariation = (variations: ProductVariation[] | undefined | null) => {
+  if (!Array.isArray(variations) || variations.length === 0) {
+    return { id: 'default', strength: 'Standard', basePrice: 0 } as ProductVariation;
+  }
+  return variations.find((variation) => Boolean(variation?.image)) ?? variations[0];
+};
 
 export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductCardProps) {
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation>(
-    product.variations?.[0] || { id: 'default', strength: 'Standard', basePrice: 0 },
+    pickDefaultVariation(product.variations),
   );
+  const [uiVariationId, setUiVariationId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [bulkOpen, setBulkOpen] = useState(false);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const variantsLoadTriggeredRef = useRef(false);
+  const userInteractedRef = useRef(false);
+  const autoCycleDoneRef = useRef<string | null>(null);
+  const autoOpenDoneRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!Array.isArray(product.variations) || product.variations.length === 0) {
@@ -54,10 +120,72 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     setSelectedVariation((prev) => {
       const next =
         product.variations.find((variation) => variation.id === prev.id) ??
-        product.variations[0];
-      return next;
+        (product.variations.find((variation) => Boolean(variation?.image)) ??
+          product.variations[0]);
+      if (!next) {
+        return prev;
+      }
+      return next.id === prev.id ? prev : next;
     });
+
+    if (!userInteractedRef.current) {
+      setUiVariationId('');
+    } else {
+      setUiVariationId((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const exists = product.variations.some((variation) => variation.id === prev);
+        return exists ? prev : '';
+      });
+    }
   }, [product.id, product.variations]);
+
+  useEffect(() => {
+    if (!AUTO_CYCLE_STRENGTH_ENABLED) {
+      return;
+    }
+    if (variantsLoading) {
+      return;
+    }
+    if (userInteractedRef.current) {
+      return;
+    }
+    if (!Array.isArray(product.variations) || product.variations.length < 2) {
+      return;
+    }
+    if (autoCycleDoneRef.current === product.id) {
+      return;
+    }
+
+    // Only cycle once per product, and only through variants that have an image.
+    const candidates = product.variations.filter((variation) => Boolean(variation?.image));
+    if (candidates.length === 0) {
+      return;
+    }
+
+    autoCycleDoneRef.current = product.id;
+    let cancelled = false;
+
+    const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+    const run = async () => {
+      for (const variation of candidates) {
+        if (cancelled || userInteractedRef.current) return;
+        setSelectedVariation(variation);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(AUTO_CYCLE_STRENGTH_DELAY_MS);
+      }
+      if (cancelled || userInteractedRef.current) return;
+      setSelectedVariation(pickDefaultVariation(product.variations));
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product.id, product.variations, variantsLoading]);
 
   const bulkTiers = product.bulkPricingTiers ?? [];
   const quantityButtonClasses = 'h-8 w-8 squircle-sm';
@@ -102,33 +230,77 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     setBulkOpen(true);
   };
 
+  const needsVariants =
+    Array.isArray(product.variations) &&
+    product.variations.length === 1 &&
+    product.variations[0]?.id === '__peppro_needs_variant__';
+
+  const canLoadVariants =
+    typeof onEnsureVariants === 'function' &&
+    (needsVariants || product.variations.some((variation) => String(variation.id).startsWith('woo-variation-')));
+
+  const triggerVariantLoad = async (options?: { force?: boolean }) => {
+    if (!canLoadVariants) {
+      return;
+    }
+    const isForce = options?.force === true;
+    if (variantsLoading) {
+      return;
+    }
+    if (!isForce && variantsLoadTriggeredRef.current) {
+      return;
+    }
+    if (!isForce) {
+      variantsLoadTriggeredRef.current = true;
+    }
+    try {
+      setVariantsLoading(true);
+      await onEnsureVariants(options);
+    } finally {
+      setVariantsLoading(false);
+    }
+  };
+
   const handleVariationChange = (variationId: string) => {
+    userInteractedRef.current = true;
+    setUiVariationId(variationId);
+    if (!variationId || variationId === '__peppro_needs_variant__') {
+      void triggerVariantLoad({ force: true });
+      return;
+    }
     const variation = product.variations?.find((v) => v.id === variationId);
     if (variation) {
       setSelectedVariation(variation);
     }
   };
 
-  const needsVariants =
-    Array.isArray(product.variations) &&
-    product.variations.length === 1 &&
-    product.variations[0]?.id === '__peppro_needs_variant__';
-
-  const triggerVariantLoad = async () => {
+  useEffect(() => {
+    if (!AUTO_OPEN_STRENGTH_ENABLED) {
+      return;
+    }
     if (!needsVariants || typeof onEnsureVariants !== 'function') {
       return;
     }
-    if (variantsLoadTriggeredRef.current || variantsLoading) {
+    if (variantsLoading || variantsLoadTriggeredRef.current) {
       return;
     }
-    variantsLoadTriggeredRef.current = true;
-    try {
-      setVariantsLoading(true);
-      await onEnsureVariants();
-    } finally {
-      setVariantsLoading(false);
+    if (userInteractedRef.current) {
+      return;
     }
-  };
+    if (autoOpenDoneRef.current === product.id) {
+      return;
+    }
+    autoOpenDoneRef.current = product.id;
+
+    enqueueAutoOpen(async () => {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_DELAY_MS));
+      if (userInteractedRef.current) {
+        return;
+      }
+      await triggerVariantLoad();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_PACE_MS));
+    });
+  }, [needsVariants, onEnsureVariants, product.id, variantsLoading]);
 
   const categoryLabel = product.category?.trim() || 'PepPro Catalog';
 
@@ -166,16 +338,27 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         <div className="relative">
           <select
             id={`variation-${product.id}`}
-            value={selectedVariation.id}
+            value={uiVariationId}
             onChange={(e) => handleVariationChange(e.target.value)}
-            onFocus={() => void triggerVariantLoad()}
-            onMouseDown={() => void triggerVariantLoad()}
+            onFocus={() => {
+              userInteractedRef.current = true;
+              void triggerVariantLoad({ force: true });
+            }}
+            onMouseDown={() => {
+              userInteractedRef.current = true;
+              void triggerVariantLoad({ force: true });
+            }}
             disabled={variantsLoading}
             className="w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select"
             >
+            {!uiVariationId && (
+              <option value="" disabled>
+                {variantsLoading ? 'Loading variants…' : 'Select strength'}
+              </option>
+            )}
             {product.variations.map((variation) => (
               <option key={variation.id} value={variation.id}>
-                {variantsLoading ? 'Loading options…' : variation.strength}
+                {variantsLoading ? 'Loading variants…' : variation.strength}
               </option>
             ))}
           </select>

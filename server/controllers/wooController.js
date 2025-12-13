@@ -206,10 +206,50 @@ const proxyCatalog = async (req, res, next) => {
       throw createHttpError(`Unsupported WooCommerce endpoint: ${requestedEndpoint}`, 404);
     }
 
+    const forceParam = String(req.query?.force || '').toLowerCase().trim();
+    const forceFresh = forceParam === '1' || forceParam === 'true' || forceParam === 'yes';
+
     const ttlSeconds = cacheTtlSecondsForEndpoint(requestedEndpoint);
     const cacheKey = buildCacheKey(requestedEndpoint, req.query);
     const now = Date.now();
     const cached = catalogCache.get(cacheKey);
+
+    if (forceFresh) {
+      try {
+        const data = await wooCommerceClient.fetchCatalog(requestedEndpoint, req.query);
+        res.set('Cache-Control', 'no-store');
+        res.set('X-PepPro-Cache', 'BYPASS');
+        res.json(data);
+        return;
+      } catch (error) {
+        // If the live fetch fails, fall back to the freshest cached snapshot we have.
+        if (cached && cached.data !== undefined) {
+          serveCachedResponse({
+            res,
+            requestedEndpoint,
+            startedAt,
+            ttlSeconds,
+            cacheLabel: 'FORCE_STALE',
+            data: cached.data,
+          });
+          return;
+        }
+        const diskCached = await readDiskCache(cacheKey);
+        if (diskCached && diskCached.data !== undefined) {
+          serveCachedResponse({
+            res,
+            requestedEndpoint,
+            startedAt,
+            ttlSeconds,
+            cacheLabel: 'FORCE_DISK',
+            data: diskCached.data,
+          });
+          return;
+        }
+        throw error;
+      }
+    }
+
     if (cached && cached.expiresAt > now) {
       serveCachedResponse({
         res,

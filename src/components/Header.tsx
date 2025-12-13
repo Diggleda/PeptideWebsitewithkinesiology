@@ -1465,28 +1465,31 @@ export function Header({
       />
       <Input
         type="text"
+        inputMode="search"
+        enterKeyHint="search"
         placeholder="Search peptides..."
         value={searchQuery}
         onChange={(e) => handleSearchChange(e.target.value)}
         ref={searchInputRef}
-        className={`glass squircle-sm pl-10 pr-10 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
+        className={`glass squircle-sm pl-10 pr-12 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
         style={{ borderColor: translucentSecondary, minWidth: '100%' }}
       />
-      {searchQuery.trim().length > 0 && (
-        <button
-          type="button"
-          aria-label="Clear search"
+	      {searchQuery.trim().length > 0 && (
+	        <button
+	          type="button"
+	          aria-label="Clear search"
           onClick={() => {
             handleSearchChange('');
             requestAnimationFrame(() => {
-              searchInputRef.current?.focus();
-            });
-          }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-600 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)]"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      )}
+	              searchInputRef.current?.focus();
+	            });
+	          }}
+	          className="absolute right-3 left-auto top-1/2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-900/70 transition-colors hover:bg-white/50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.4)]"
+            style={{ right: '0.75rem', left: 'auto' }}
+	        >
+	          <X className="h-4 w-4" />
+	        </button>
+	      )}
     </div>
   );
 
