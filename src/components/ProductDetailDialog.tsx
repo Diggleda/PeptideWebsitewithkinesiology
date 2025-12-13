@@ -29,7 +29,9 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
-  console.debug('[ProductDetailDialog] Render', { isOpen, hasProduct: Boolean(product) });
+  if (String((import.meta as any).env?.VITE_UI_DEBUG || '').toLowerCase() === 'true') {
+    console.debug('[ProductDetailDialog] Render', { isOpen, hasProduct: Boolean(product) });
+  }
 
   const tabs = useMemo(() => (
     [
@@ -40,6 +42,10 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
 
   const variantOptions = product?.variants ?? [];
   const showVariantSelector = variantOptions.length > 0;
+  const isVariantSelectionLoading =
+    Boolean(product) &&
+    (product?.type ?? '').toLowerCase() === 'variable' &&
+    !showVariantSelector;
   const activeVariant = showVariantSelector
     ? variantOptions.find((variant) => variant.id === selectedVariantId) ?? variantOptions[0] ?? null
     : null;
@@ -430,11 +436,15 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                   {/* Add to Cart Button */}
                   <Button
                     onClick={handleAddToCart}
-                    disabled={!isInStock}
+                    disabled={!isInStock || isVariantSelectionLoading}
                     className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ShoppingCart className="mr-2 h-5 w-5" />
-                    {isInStock ? 'Add to Cart' : 'Out of Stock'}
+                    {isVariantSelectionLoading
+                      ? 'Loading options…'
+                      : isInStock
+                        ? 'Add to Cart'
+                        : 'Out of Stock'}
                   </Button>
                 </div>
               </div>

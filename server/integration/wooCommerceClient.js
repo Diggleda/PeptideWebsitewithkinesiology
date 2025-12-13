@@ -1,5 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 const { calculateEstimatedArrivalDate } = require('../services/shippingValidation');
@@ -15,7 +17,71 @@ const RETRIABLE_NETWORK_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN
 const MAX_WOO_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 750;
 
+const KEEP_ALIVE_MAX_SOCKETS = (() => {
+  return 30;
+})();
+
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: KEEP_ALIVE_MAX_SOCKETS,
+  maxFreeSockets: 10,
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: KEEP_ALIVE_MAX_SOCKETS,
+  maxFreeSockets: 10,
+});
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const summarizeWooError = (error) => {
+  if (!error) {
+    return { message: 'Unknown error' };
+  }
+  const status = error.response?.status ?? error.status;
+  const code = error.code || error.cause?.code;
+  const message = error.message || error.cause?.message || String(error);
+  const method = error.config?.method;
+  const url = error.config?.url;
+  const baseURL = error.config?.baseURL;
+  const params = error.config?.params;
+  return {
+    message,
+    status: typeof status === 'number' ? status : undefined,
+    code: code ? String(code) : undefined,
+    method: method ? String(method).toUpperCase() : undefined,
+    url: url ? String(url) : undefined,
+    baseURL: baseURL ? String(baseURL) : undefined,
+    params: params && typeof params === 'object' ? params : undefined,
+    stack: error.stack,
+  };
+};
+
+const summarizeWooResponseData = (data) => {
+  if (data === undefined || data === null) {
+    return undefined;
+  }
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.length > 800 ? `${trimmed.slice(0, 800)}…` : trimmed;
+  }
+  if (Array.isArray(data)) {
+    return { type: 'array', length: data.length };
+  }
+  if (typeof data === 'object') {
+    const keys = Object.keys(data);
+    return { type: 'object', keys: keys.slice(0, 25) };
+  }
+  return undefined;
+};
+
+const buildWooErrorCause = (error) => (
+  summarizeWooResponseData(error?.response?.data) ?? summarizeWooError(error)
+);
 
 const shouldRetryWooError = (error) => {
   if (!error) {
@@ -26,11 +92,31 @@ const shouldRetryWooError = (error) => {
     return true;
   }
   const status = error.response?.status ?? error.status;
-  if (typeof status === 'number' && status >= 500) {
+  if (typeof status === 'number' && (status === 408 || status === 429 || status >= 500)) {
     return true;
   }
   const message = (error.message || error.cause?.message || '').toLowerCase();
   return message.includes('timeout') || message.includes('timed out');
+};
+
+const parseRetryAfterMs = (error) => {
+  const raw = error?.response?.headers?.['retry-after'];
+  if (!raw) {
+    return null;
+  }
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) {
+    return null;
+  }
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber) && asNumber > 0) {
+    return Math.min(asNumber * 1000, 15000);
+  }
+  const asDate = Date.parse(String(value));
+  if (Number.isFinite(asDate)) {
+    return Math.min(Math.max(asDate - Date.now(), 0), 15000);
+  }
+  return null;
 };
 
 const executeWithRetry = async (operation, { label = 'woo_request', maxAttempts = MAX_WOO_REQUEST_ATTEMPTS } = {}) => {
@@ -45,7 +131,7 @@ const executeWithRetry = async (operation, { label = 'woo_request', maxAttempts 
       const shouldRetry = shouldRetryWooError(error) && attempt < maxAttempts;
       logger.warn(
         {
-          err: error,
+          err: summarizeWooError(error),
           label,
           attempt,
           maxAttempts,
@@ -53,15 +139,18 @@ const executeWithRetry = async (operation, { label = 'woo_request', maxAttempts 
         },
         'WooCommerce request failed',
       );
-      if (!shouldRetry) {
-        break;
-      }
-      const delay = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 5000);
-      await sleep(delay);
-    }
-  }
-  throw lastError;
-};
+	      if (!shouldRetry) {
+	        break;
+	      }
+	      const retryAfterMs = parseRetryAfterMs(error);
+	      const delay = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 5000);
+	      const jitter = Math.round(Math.random() * 250);
+	      const delayMs = Math.max(retryAfterMs ?? delay, delay) + jitter;
+	      await sleep(delayMs);
+	    }
+	  }
+	  throw lastError;
+	};
 
 const shouldAutoSubmitOrders = env.wooCommerce.autoSubmitOrders === true;
 const MAX_WOO_ORDER_FETCH = 200;
@@ -158,6 +247,8 @@ const getClient = () => {
     headers: {
       'Content-Type': 'application/json',
     },
+    httpAgent,
+    httpsAgent,
     timeout: DEFAULT_WOO_TIMEOUT_MS,
   });
 };
@@ -176,6 +267,8 @@ const getSiteClient = () => {
     headers: {
       'Content-Type': 'application/json',
     },
+    httpAgent,
+    httpsAgent,
     timeout: DEFAULT_WOO_TIMEOUT_MS,
   });
 };
@@ -393,9 +486,9 @@ const forwardOrder = async ({ order, customer }) => {
       },
     };
   } catch (error) {
-    logger.error({ err: error, orderId: order.id }, 'Failed to create WooCommerce order');
+    logger.error({ err: summarizeWooError(error), orderId: order.id }, 'Failed to create WooCommerce order');
     const integrationError = new Error('WooCommerce order creation failed');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     throw integrationError;
   }
 };
@@ -470,7 +563,7 @@ const calculateOrderTaxes = async ({ order, customer }) => {
       if (statusCode !== 404) {
         break;
       }
-      logger.warn({ err: error?.response?.data || error?.message || error, endpoint }, 'Woo tax endpoint returned 404, trying next');
+      logger.warn({ err: summarizeWooError(error), endpoint }, 'Woo tax endpoint returned 404, trying next');
     }
   }
 
@@ -481,7 +574,7 @@ const calculateOrderTaxes = async ({ order, customer }) => {
     if (statusCode === 404) {
       taxCalculationSupported = false;
       if (!taxCalculationWarningLogged) {
-        logger.warn({ err: error }, 'WooCommerce tax calculation endpoint unavailable; using fallback strategy');
+        logger.warn({ err: summarizeWooError(error) }, 'WooCommerce tax calculation endpoint unavailable; using fallback strategy');
         taxCalculationWarningLogged = true;
       }
       const integrationError = new Error('WooCommerce tax calculation endpoint unavailable');
@@ -489,9 +582,9 @@ const calculateOrderTaxes = async ({ order, customer }) => {
       integrationError.code = 'WOO_TAX_UNSUPPORTED';
       throw integrationError;
     }
-    logger.error({ err: error, orderId: order?.id }, 'Failed to calculate WooCommerce taxes');
+    logger.error({ err: summarizeWooError(error), orderId: order?.id }, 'Failed to calculate WooCommerce taxes');
     const integrationError = new Error('WooCommerce tax calculation failed');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = statusCode ?? 502;
     throw integrationError;
   }
@@ -682,10 +775,10 @@ const fetchOrdersByEmail = async (email, { perPage = 10 } = {}) => {
 
     return collected.slice(0, MAX_WOO_ORDER_FETCH);
   } catch (error) {
-    logger.error({ err: error }, 'Failed to fetch WooCommerce orders');
+    logger.error({ err: summarizeWooError(error) }, 'Failed to fetch WooCommerce orders');
     const fetchError = new Error('WooCommerce order lookup failed');
     fetchError.status = error.response?.status ?? 502;
-    fetchError.cause = error.response?.data || error;
+    fetchError.cause = buildWooErrorCause(error);
     throw fetchError;
   }
 };
@@ -720,9 +813,9 @@ const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
       },
     };
   } catch (error) {
-    logger.error({ err: error, wooOrderId }, 'Failed to mark WooCommerce order paid');
+    logger.error({ err: summarizeWooError(error), wooOrderId }, 'Failed to mark WooCommerce order paid');
     const integrationError = new Error('Failed to update WooCommerce order status');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = error.response?.status ?? 502;
     throw integrationError;
   }
@@ -760,9 +853,9 @@ const cancelOrder = async ({ wooOrderId, reason, statusOverride }) => {
       label: `cancel_order_${wooOrderId}`,
     });
   } catch (error) {
-    logger.error({ err: error, wooOrderId }, 'Failed to cancel WooCommerce order');
+    logger.error({ err: summarizeWooError(error), wooOrderId }, 'Failed to cancel WooCommerce order');
     const integrationError = new Error('Failed to cancel WooCommerce order');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = error.response?.status ?? error.status ?? 502;
     integrationError.code = error.code || error.cause?.code;
     throw integrationError;
@@ -779,7 +872,7 @@ const fetchOrderById = async (wooOrderId) => {
     return response.data;
   } catch (error) {
     const integrationError = new Error('Failed to fetch WooCommerce order');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = error.response?.status ?? 502;
     throw integrationError;
   }
@@ -800,10 +893,10 @@ const findProductBySku = async (sku) => {
     const products = Array.isArray(response.data) ? response.data : [];
     return products[0] || null;
   } catch (error) {
-    logger.error({ err: error, sku }, 'Failed to fetch WooCommerce product by SKU');
+    logger.error({ err: summarizeWooError(error), sku }, 'Failed to fetch WooCommerce product by SKU');
     const integrationError = new Error('WooCommerce product lookup failed');
     integrationError.status = error.response?.status ?? 502;
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     throw integrationError;
   }
 };
@@ -825,9 +918,9 @@ const addOrderNote = async ({ wooOrderId, note, isCustomerNote = false }) => {
       },
     };
   } catch (error) {
-    logger.error({ err: error, wooOrderId }, 'Failed to append WooCommerce order note');
+    logger.error({ err: summarizeWooError(error), wooOrderId }, 'Failed to append WooCommerce order note');
     const integrationError = new Error('Failed to append WooCommerce order note');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = error.response?.status ?? 502;
     throw integrationError;
   }
@@ -858,10 +951,10 @@ const updateProductInventory = async (productId, { stock_quantity: stockQuantity
       },
     };
   } catch (error) {
-    logger.error({ err: error, productId }, 'Failed to update WooCommerce inventory');
+    logger.error({ err: summarizeWooError(error), productId }, 'Failed to update WooCommerce inventory');
     const integrationError = new Error('WooCommerce inventory update failed');
     integrationError.status = error.response?.status ?? 502;
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     throw integrationError;
   }
 };
@@ -884,9 +977,9 @@ const fetchTaxRates = async ({ country, state, postcode, city, taxClass } = {}) 
     });
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
-    logger.error({ err: error }, 'Failed to fetch WooCommerce tax rates');
+    logger.error({ err: summarizeWooError(error) }, 'Failed to fetch WooCommerce tax rates');
     const integrationError = new Error('WooCommerce tax lookup failed');
-    integrationError.cause = error.response?.data || error;
+    integrationError.cause = buildWooErrorCause(error);
     integrationError.status = error.response?.status ?? 502;
     throw integrationError;
   }
@@ -908,19 +1001,20 @@ module.exports = {
     const client = getClient();
 
     try {
-      const response = await client.get(`/${normalizedEndpoint}`, {
-        params: sanitizeQueryParams(query),
-      });
+      const response = await executeWithRetry(
+        () => client.get(`/${normalizedEndpoint}`, { params: sanitizeQueryParams(query) }),
+        { label: `woo_catalog:${normalizedEndpoint}` },
+      );
 
       return response.data;
     } catch (error) {
       logger.error(
-        { err: error, endpoint: normalizedEndpoint },
+        { err: summarizeWooError(error), endpoint: normalizedEndpoint },
         'WooCommerce catalog fetch failed',
       );
       const fetchError = new Error('WooCommerce catalog request failed');
       fetchError.status = error.response?.status ?? 502;
-      fetchError.cause = error.response?.data || error;
+      fetchError.cause = buildWooErrorCause(error);
       throw fetchError;
     }
   },

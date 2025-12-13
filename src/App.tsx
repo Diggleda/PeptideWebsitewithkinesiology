@@ -74,11 +74,12 @@ import {
   SalesRepDashboard,
   CreditLedgerEntry,
 } from "./types/referral";
-import {
-  listProducts,
-  listCategories,
-  listProductVariations,
-} from "./lib/wooClient";
+	import {
+	  listProducts,
+	  listCategories,
+	  listProductVariations,
+	  getProduct,
+	} from "./lib/wooClient";
 import { proxifyWooMediaUrl } from "./lib/mediaProxy";
 import {
   beginPasskeyAuthentication,
@@ -463,7 +464,7 @@ const describeSalesOrderStatus = (
   return humanizeAccountOrderStatus(raw);
 };
 
-const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v1";
+const VARIATION_CACHE_STORAGE_KEY = "peppro_variation_cache_v2";
 
 const normalizeAddressPart = (value?: string | null) => {
   if (typeof value === "string") {
@@ -554,8 +555,7 @@ const deriveShippingAddressFromOrders = (
   return undefined;
 };
 
-const WOO_PLACEHOLDER_IMAGE =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2395C5F9'/%3E%3Cstop offset='100%25' stop-color='%235FB3F9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='rgba(255,255,255,0.75)'%3EWoo Product%3C/text%3E%3C/svg%3E";
+const WOO_PLACEHOLDER_IMAGE = "/Peppro_IconLogo_Transparent_NoBuffer.png";
 
 const normalizeWooImageUrl = (value?: string | null): string | null => {
   if (typeof value !== "string") {
@@ -1229,6 +1229,24 @@ const MIN_NEWS_LOADING_MS = 600;
 const LOGIN_KEEPALIVE_INTERVAL_MS = 60000;
 const CATALOG_RETRY_DELAY_MS = 4000;
 const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000; // quietly refresh Woo catalog every 5 minutes
+const CATALOG_DEBUG =
+  String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
+  "true";
+const FRONTEND_BUILD_ID = "2025-12-12T23:35:00Z";
+
+if (typeof window !== "undefined") {
+  (window as any).__PEPPRO_BUILD__ = FRONTEND_BUILD_ID;
+}
+const VARIANT_PREFETCH_CONCURRENCY = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_VARIANT_PREFETCH_CONCURRENCY || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(Math.max(parsed, 1), 12);
+  }
+  return 6;
+})();
 
 const SALES_REP_PIPELINE = [
   {
@@ -1732,6 +1750,27 @@ const mapWooProductToProduct = (
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
+  const parseMinPriceFromPriceHtml = (value?: string | null) => {
+    if (!value) {
+      return undefined;
+    }
+    const stripped = stripHtml(value);
+    if (!stripped) {
+      return undefined;
+    }
+    const matches = stripped.match(/(\d[\d,]*)(\.\d+)?/g);
+    if (!matches || matches.length === 0) {
+      return undefined;
+    }
+    const numbers = matches
+      .map((match) => Number.parseFloat(match.replace(/,/g, "")))
+      .filter((num) => Number.isFinite(num) && num > 0);
+    if (numbers.length === 0) {
+      return undefined;
+    }
+    return Math.min(...numbers);
+  };
+
   const normalizeAttributes = (attributes?: WooVariationAttribute[]) =>
     (attributes ?? [])
       .map((attr) => {
@@ -1842,7 +1881,10 @@ const mapWooProductToProduct = (
   const minVariantPrice =
     variantPrices.length > 0 ? Math.min(...variantPrices) : undefined;
   const basePrice =
-    parsePrice(product.price) ?? parsePrice(product.regular_price) ?? 0;
+    parsePrice(product.price) ??
+    parsePrice(product.regular_price) ??
+    parseMinPriceFromPriceHtml(product.price_html) ??
+    0;
   const price = hasVariants ? (minVariantPrice ?? basePrice) : basePrice;
   const baseOriginalPrice = parsePrice(product.regular_price);
   const originalPrice =
@@ -1883,6 +1925,11 @@ const mapWooProductToProduct = (
     ? (variantList.find((variant) => variant.inStock)?.id ?? variantList[0]?.id)
     : undefined;
 
+  const isVariableProduct = String(product.type || "").toLowerCase() === "variable";
+  const fallbackVariationCount = Array.isArray(product.variations)
+    ? product.variations.length
+    : 0;
+
   return {
     id: `woo-${product.id}`,
     wooId: Number.isFinite(wooProductId) ? wooProductId : undefined,
@@ -1902,7 +1949,9 @@ const mapWooProductToProduct = (
     prescription: false,
     dosage: hasVariants
       ? `${variantList.length} option${variantList.length === 1 ? "" : "s"} available`
-      : "See details",
+      : isVariableProduct && fallbackVariationCount > 0
+        ? `${fallbackVariationCount} option${fallbackVariationCount === 1 ? "" : "s"} available`
+        : "See details",
     manufacturer:
       stripHtml(typeof manufacturerMeta === "string" ? manufacturerMeta : "") ||
       "",
@@ -1922,6 +1971,9 @@ const mapWooProductToProduct = (
 };
 
 const toCardProduct = (product: Product): CardProduct => {
+  const needsVariantSelection =
+    (product.type ?? "").toLowerCase() === "variable" &&
+    (!product.variants || product.variants.length === 0);
   const variations =
     product.variants && product.variants.length > 0
       ? product.variants.map((variant) => ({
@@ -1934,15 +1986,25 @@ const toCardProduct = (product: Product): CardProduct => {
           image: variant.image,
           weightOz: variant.weightOz ?? null,
         }))
-      : [
-          {
-            id: product.id,
-            strength: product.dosage || "Standard",
-            basePrice: product.price,
-            image: product.image,
-            weightOz: product.weightOz ?? null,
-          },
-        ];
+      : needsVariantSelection
+        ? [
+            {
+              id: "__peppro_needs_variant__",
+              strength: "Select strength",
+              basePrice: product.price,
+              image: product.image,
+              weightOz: product.weightOz ?? null,
+            },
+          ]
+        : [
+            {
+              id: product.id,
+              strength: product.dosage || "Standard",
+              basePrice: product.price,
+              image: product.image,
+              weightOz: product.weightOz ?? null,
+            },
+          ];
 
   return {
     id: product.id,
@@ -1985,7 +2047,9 @@ const formatPreviewCurrency = (value?: number | null) => {
 const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
   <div className="glass-card squircle-xl p-5 flex flex-col gap-3 min-h-[16rem]" aria-live="polite">
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-semibold text-slate-500">{product.category || "PepPro Catalog"}</span>
+      <span className="text-xs font-semibold text-slate-500">
+        {product.category || "Uncategorized"}
+      </span>
       {product.price && (
         <span className="text-sm font-bold text-slate-900">{formatPreviewCurrency(product.price)}</span>
       )}
@@ -2007,10 +2071,17 @@ const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
 
 interface LazyCatalogProductCardProps {
   product: Product;
-  onAddToCart: (productId: string, variationId: string | undefined | null, quantity: number) => void;
+  onAddToCart: (
+    productId: string,
+    variationId: string | undefined | null,
+    quantity: number,
+  ) => void;
 }
 
-const LazyCatalogProductCard = ({ product, onAddToCart }: LazyCatalogProductCardProps) => {
+const LazyCatalogProductCard = ({
+  product,
+  onAddToCart,
+}: LazyCatalogProductCardProps) => {
   const [isVisible, setIsVisible] = useState(false);
   const placeholderRef = useRef<HTMLDivElement | null>(null);
 
@@ -2059,62 +2130,7 @@ const LazyCatalogProductCard = ({ product, onAddToCart }: LazyCatalogProductCard
   );
 };
 
-type VariationFetchOptions = {
-  cache?: Map<number, WooVariation[]>;
-  concurrency?: number;
-};
-
-const fetchProductVariations = async (
-  products: WooProduct[],
-  options: VariationFetchOptions = {},
-): Promise<Map<number, WooVariation[]>> => {
-  const variationMap = new Map<number, WooVariation[]>();
-  if (products.length === 0) {
-    return variationMap;
-  }
-
-  const queue = [...products];
-  const cache = options.cache;
-  const concurrency = Math.max(
-    1,
-    Math.min(options.concurrency ?? 12, queue.length),
-  );
-
-  const workers = Array.from({ length: concurrency }, () =>
-    (async function worker() {
-      while (queue.length > 0) {
-        const nextProduct = queue.shift();
-        if (!nextProduct) {
-          break;
-        }
-        const cached = cache?.get(nextProduct.id);
-        if (cached) {
-          variationMap.set(nextProduct.id, cached);
-          continue;
-        }
-        try {
-          const variations = await listProductVariations<WooVariation[]>(
-            nextProduct.id,
-            { per_page: 100, status: "publish" },
-          );
-          const normalized = Array.isArray(variations) ? variations : [];
-          variationMap.set(nextProduct.id, normalized);
-          cache?.set(nextProduct.id, normalized);
-        } catch (error) {
-          console.warn("[Catalog] Failed to load variations", {
-            productId: nextProduct.id,
-            error,
-          });
-          variationMap.set(nextProduct.id, []);
-          cache?.set(nextProduct.id, []);
-        }
-      }
-    })(),
-  );
-
-  await Promise.all(workers);
-  return variationMap;
-};
+// (Removed eager variation prefetching for faster catalog loads.)
 
 declare global {
   interface Window {
@@ -2160,6 +2176,7 @@ export default function App() {
     useState(false);
   const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
   const variationCacheLoadedRef = useRef(false);
+  const wooProductCacheRef = useRef<Map<number, WooProduct>>(new Map());
   const ensureVariationCacheReady = useCallback(() => {
     if (variationCacheLoadedRef.current) {
       return;
@@ -2170,9 +2187,9 @@ export default function App() {
     }
     variationCacheLoadedRef.current = true;
     try {
-      const raw = window.sessionStorage.getItem(
-        VARIATION_CACHE_STORAGE_KEY,
-      );
+      const raw =
+        window.localStorage.getItem(VARIATION_CACHE_STORAGE_KEY) ||
+        window.sessionStorage.getItem(VARIATION_CACHE_STORAGE_KEY);
       if (!raw) {
         return;
       }
@@ -2206,14 +2223,142 @@ export default function App() {
       variationCacheRef.current.forEach((value, key) => {
         payload[String(key)] = value;
       });
-      window.sessionStorage.setItem(
-        VARIATION_CACHE_STORAGE_KEY,
-        JSON.stringify({ data: payload, ts: Date.now() }),
-      );
+      const serialized = JSON.stringify({ data: payload, ts: Date.now() });
+      window.localStorage.setItem(VARIATION_CACHE_STORAGE_KEY, serialized);
+      window.sessionStorage.setItem(VARIATION_CACHE_STORAGE_KEY, serialized);
     } catch (error) {
       console.debug("[Catalog] Failed to persist variation cache", error);
     }
   }, []);
+
+  const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
+    new Map(),
+  );
+  const variantPrefetchActiveRef = useRef(0);
+  const variantPrefetchQueueRef = useRef<Array<() => void>>([]);
+
+  const ensureCatalogProductHasVariants = useCallback(
+    async (product: Product): Promise<Product> => {
+      const isVariable = (product.type ?? "").toLowerCase() === "variable";
+      if (!isVariable || (product.variants && product.variants.length > 0)) {
+        return product;
+      }
+
+      ensureVariationCacheReady();
+      const wooId =
+        typeof product.wooId === "number"
+          ? product.wooId
+          : Number.parseInt(String(product.id).replace(/[^\d]/g, ""), 10);
+      if (!Number.isFinite(wooId)) {
+        return product;
+      }
+
+      const cached = variationCacheRef.current.get(wooId);
+      let rawWooProduct = wooProductCacheRef.current.get(wooId);
+
+      const loadVariations = async () => {
+        if (cached) {
+          return cached;
+        }
+        const response = await listProductVariations<WooVariation[]>(wooId, {
+          per_page: 100,
+          status: "publish",
+        });
+        return Array.isArray(response) ? response : [];
+      };
+
+      try {
+        const inFlight = variationFetchInFlightRef.current.get(wooId);
+        const promise =
+          inFlight ??
+          (async () => {
+            const variations = await loadVariations();
+            variationCacheRef.current.set(wooId, variations);
+            persistVariationCache();
+            return variations;
+          })();
+        if (!inFlight) {
+          variationFetchInFlightRef.current.set(wooId, promise);
+        }
+        const resolved = await promise;
+        variationFetchInFlightRef.current.delete(wooId);
+
+        if (!rawWooProduct) {
+          try {
+            const fetched = await getProduct<WooProduct>(wooId);
+            if (fetched && typeof fetched === "object" && "id" in fetched) {
+              rawWooProduct = fetched;
+              wooProductCacheRef.current.set(wooId, fetched);
+            }
+          } catch (error) {
+            console.debug("[Catalog] Failed to fetch Woo product payload", {
+              wooId,
+              error,
+            });
+          }
+        }
+        if (!rawWooProduct) {
+          return product;
+        }
+
+        const nextProduct = mapWooProductToProduct(rawWooProduct, resolved);
+        setCatalogProducts((prev) =>
+          prev.map((item) => (item.id === product.id ? nextProduct : item)),
+        );
+        setSelectedProduct((prev) =>
+          prev?.id === product.id ? nextProduct : prev,
+        );
+        return nextProduct;
+      } catch (error) {
+        variationFetchInFlightRef.current.delete(wooId);
+        console.warn("[Catalog] Failed to load variants for product", {
+          productId: product.id,
+          wooId,
+          error,
+        });
+        return product;
+      }
+    },
+    [ensureVariationCacheReady, persistVariationCache],
+  );
+
+  const prefetchCatalogProductVariants = useCallback(
+    (product: Product) => {
+      const isVariable = (product.type ?? "").toLowerCase() === "variable";
+      if (!isVariable || (product.variants && product.variants.length > 0)) {
+        return;
+      }
+
+      const startNext = () => {
+        while (
+          variantPrefetchActiveRef.current < VARIANT_PREFETCH_CONCURRENCY &&
+          variantPrefetchQueueRef.current.length > 0
+        ) {
+          const next = variantPrefetchQueueRef.current.shift();
+          if (next) {
+            variantPrefetchActiveRef.current += 1;
+            next();
+          }
+        }
+      };
+
+      variantPrefetchQueueRef.current.push(() => {
+        void ensureCatalogProductHasVariants(product)
+          .catch(() => {})
+          .finally(() => {
+            variantPrefetchActiveRef.current = Math.max(
+              0,
+              variantPrefetchActiveRef.current - 1,
+            );
+            startNext();
+          });
+      });
+
+      startNext();
+    },
+    [ensureCatalogProductHasVariants],
+  );
+
   const referralSummaryCooldownRef = useRef<number | null>(null);
   const prevUserRef = useRef<User | null>(null);
   const [showLandingLoginPassword, setShowLandingLoginPassword] =
@@ -4977,9 +5122,7 @@ export default function App() {
     authAPI.logout();
   }, []);
 
-  useEffect(() => {
-    ensureVariationCacheReady();
-  }, [ensureVariationCacheReady]);
+  // Variation cache is loaded lazily when a variable product is opened/needed.
 
   useEffect(() => {
     let cancelled = false;
@@ -5021,42 +5164,153 @@ export default function App() {
 
     let cancelled = false;
 
-    const scheduleRetry = (background = false) => {
-      if (catalogRetryTimeoutRef.current) {
-        window.clearTimeout(catalogRetryTimeoutRef.current);
-      }
-      catalogRetryTimeoutRef.current = window.setTimeout(() => {
-        void loadCatalog(background);
-      }, CATALOG_RETRY_DELAY_MS);
-    };
-
-    const loadCatalog = async (background = false) => {
-      if (cancelled || catalogFetchInFlightRef.current) {
-        return;
-      }
-
-      catalogFetchInFlightRef.current = true;
-      catalogRetryTimeoutRef.current = null;
-      if (!background) {
-        setCatalogLoading(true);
-      }
-      setCatalogError(null);
-      try {
-        const [wooProducts, wooCategories] = await Promise.all([
-          listProducts<WooProduct[]>({
-            per_page: 96,
-            status: "publish",
-          }),
-          listCategories<WooCategory[]>({ per_page: 100 }),
-        ]);
-
-        if (cancelled) {
-          return;
+	    const scheduleRetry = (
+	      background = false,
+	      delayMs: number = CATALOG_RETRY_DELAY_MS,
+	    ) => {
+	      if (catalogRetryTimeoutRef.current) {
+	        window.clearTimeout(catalogRetryTimeoutRef.current);
+	      }
+        if (CATALOG_DEBUG) {
+          console.info("[Catalog] Retry scheduled", { background, delayMs });
         }
+	      catalogRetryTimeoutRef.current = window.setTimeout(() => {
+	        void loadCatalog(background);
+	      }, delayMs);
+	    };
+
+		    const loadCatalog = async (background = false) => {
+		      if (cancelled || catalogFetchInFlightRef.current) {
+		        return;
+		      }
+
+	      catalogFetchInFlightRef.current = true;
+	      catalogRetryTimeoutRef.current = null;
+	      if (!background) {
+	        setCatalogLoading(true);
+	      }
+	      setCatalogError(null);
+        const startedAt = Date.now();
+	        if (CATALOG_DEBUG) {
+	          console.info("[Catalog] Load started", {
+	            background,
+              build: FRONTEND_BUILD_ID,
+	            apiBase: (import.meta.env.VITE_API_URL as string | undefined) || "",
+	            wooProxy:
+	              (import.meta.env.VITE_WOO_PROXY_URL as string | undefined) || "",
+	          });
+	        }
+		      try {
+            ensureVariationCacheReady();
+
+            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
+              const perPage = 100;
+              const maxPages = 25;
+              const items: WooProduct[] = [];
+              for (let page = 1; page <= maxPages; page += 1) {
+                const pageStartedAt = Date.now();
+                // eslint-disable-next-line no-await-in-loop
+                const batch = await listProducts<WooProduct[]>({
+                  per_page: perPage,
+                  page,
+                  status: "publish",
+                });
+                if (!Array.isArray(batch) || batch.length === 0) {
+                  if (CATALOG_DEBUG) {
+                    console.info("[Catalog] Products page empty", {
+                      page,
+                      durationMs: Date.now() - pageStartedAt,
+                    });
+                  }
+                  break;
+                }
+                items.push(...batch);
+                if (CATALOG_DEBUG) {
+                  console.info("[Catalog] Products page loaded", {
+                    page,
+                    count: batch.length,
+                    total: items.length,
+                    durationMs: Date.now() - pageStartedAt,
+                  });
+                }
+                if (batch.length < perPage) {
+                  break;
+                }
+              }
+              if (CATALOG_DEBUG && items.length === 0) {
+                console.warn("[Catalog] No Woo products returned");
+              }
+              return items;
+            };
+
+            const [wooProducts, wooCategories] = await Promise.all([
+              fetchAllPublishedProducts(),
+              listCategories<WooCategory[]>({ per_page: 100 }),
+            ]);
+
+            if (cancelled) {
+              return;
+            }
+
+            if (CATALOG_DEBUG) {
+              console.info("[Catalog] Woo base payload loaded", {
+                products: Array.isArray(wooProducts) ? wooProducts.length : 0,
+                categories: Array.isArray(wooCategories) ? wooCategories.length : 0,
+                durationMs: Date.now() - startedAt,
+              });
+            }
+
+            const categoryNamesFromApi = Array.isArray(wooCategories)
+              ? wooCategories
+                  .map((category) => category?.name?.trim())
+                  .filter(
+                    (name): name is string =>
+                      Boolean(name) && !name.toLowerCase().includes("subscription"),
+                  )
+              : [];
+            if (categoryNamesFromApi.length > 0) {
+              setCatalogCategories(categoryNamesFromApi);
+              if (CATALOG_DEBUG) {
+                console.info("[Catalog] Categories set from API", {
+                  categories: categoryNamesFromApi,
+                });
+              }
+            } else if (CATALOG_DEBUG) {
+              console.info("[Catalog] Categories empty after filter", {
+                rawCategories: Array.isArray(wooCategories)
+                  ? wooCategories.map((category) => category?.name)
+                  : [],
+              });
+            }
+
+	        wooProductCacheRef.current = new Map<number, WooProduct>(
+	          (wooProducts ?? [])
+	            .filter((item): item is WooProduct =>
+              Boolean(item && typeof item === "object" && "id" in item),
+            )
+            .map((item) => {
+              const id =
+                typeof item.id === "number"
+                  ? item.id
+                  : Number.parseInt(String(item.id).replace(/[^\d]/g, ""), 10);
+              if (!Number.isFinite(id)) {
+                return null;
+              }
+              return [id, item] as const;
+            })
+            .filter((entry): entry is readonly [number, WooProduct] =>
+              Boolean(entry),
+            ),
+        );
 
         const applyCatalogState = (products: Product[]) => {
           if (!products || products.length === 0) {
             return false;
+          }
+          if (CATALOG_DEBUG) {
+            console.info("[Catalog] Applying catalog state", {
+              products: products.length,
+            });
           }
           setCatalogProducts(products);
           const categoriesFromProducts = Array.from(
@@ -5070,15 +5324,6 @@ export default function App() {
                 ),
             ),
           );
-          const categoryNamesFromApi = Array.isArray(wooCategories)
-            ? wooCategories
-                .map((category) => category?.name?.trim())
-                .filter(
-                  (name): name is string =>
-                    Boolean(name) &&
-                    !name.toLowerCase().includes("subscription"),
-                )
-            : [];
           const nextCategories =
             categoriesFromProducts.length > 0
               ? categoriesFromProducts
@@ -5097,85 +5342,121 @@ export default function App() {
           return true;
         };
 
-        const baseProducts = (wooProducts ?? [])
-          .filter((item): item is WooProduct =>
-            Boolean(item && typeof item === "object" && "id" in item),
-          )
-          .map((item) => mapWooProductToProduct(item, []))
-          .filter((product): product is Product => Boolean(product && product.name));
+          let mapFailures = 0;
+          const sampleMapFailures: Array<{
+            id?: unknown;
+            name?: unknown;
+            message?: string;
+          }> = [];
 
-        const hadBaseProducts = applyCatalogState(baseProducts);
-        if (hadBaseProducts) {
-          setCatalogLoading(false);
-        }
+	        const baseProducts = (wooProducts ?? [])
+	          .filter((item): item is WooProduct =>
+	            Boolean(item && typeof item === "object" && "id" in item),
+	          )
+	          .map((item) => {
+	            try {
+              const id =
+                typeof item.id === "number"
+                  ? item.id
+                  : Number.parseInt(String(item.id).replace(/[^\d]/g, ""), 10);
+              const cachedVariations = Number.isFinite(id)
+                ? variationCacheRef.current.get(id)
+                : undefined;
+	              return mapWooProductToProduct(
+	                item,
+	                Array.isArray(cachedVariations) ? cachedVariations : [],
+	              );
+	            } catch (error) {
+                mapFailures += 1;
+                if (sampleMapFailures.length < 5) {
+                  sampleMapFailures.push({
+                    id: (item as any)?.id,
+                    name: (item as any)?.name,
+                    message:
+                      typeof (error as any)?.message === "string"
+                        ? (error as any).message
+                        : undefined,
+                  });
+                }
+	              console.warn(
+	                "[Catalog] Failed to map Woo product",
+	                (item as any)?.id,
+	                error,
+	              );
+	              return null;
+	            }
+	          })
+	          .filter((product): product is Product => Boolean(product && product.name));
 
-        const variableProducts = (wooProducts ?? []).filter(
-          (item): item is WooProduct =>
-            Boolean(
-              item && typeof item === "object" && item.type === "variable",
-            ),
-        );
-        ensureVariationCacheReady();
-        const variationMap =
-          variableProducts.length > 0
-            ? await fetchProductVariations(variableProducts, {
-                cache: variationCacheRef.current,
-                concurrency: 12,
-              })
-            : new Map<number, WooVariation[]>();
-        if (variableProducts.length > 0) {
-          persistVariationCache();
-        }
+	        if (CATALOG_DEBUG) {
+	          console.info("[Catalog] Base products mapped", {
+	            count: baseProducts.length,
+              mapFailures,
+              sampleMapFailures,
+	          });
+	        }
 
-        if (cancelled) {
-          return;
-        }
-
-        const mappedProducts = (wooProducts ?? [])
-          .filter((item): item is WooProduct =>
-            Boolean(item && typeof item === "object" && "id" in item),
-          )
-          .map((item) =>
-            mapWooProductToProduct(item, variationMap.get(item.id) ?? []),
-          )
-          .filter((product) => product && product.name);
-
-        if (applyCatalogState(mappedProducts)) {
-          setCatalogLoading(false);
-          catalogFetchInFlightRef.current = false;
-          return;
-        }
-
-        if (Array.isArray(wooCategories) && wooCategories.length > 0) {
-          const categoryNames = wooCategories
-            .map((category) => category?.name?.trim())
-            .filter(
-              (name): name is string =>
-                Boolean(name) && !name.toLowerCase().includes("subscription"),
-            );
-          if (categoryNames.length > 0) {
-            setCatalogCategories(categoryNames);
+          if (Array.isArray(wooProducts) && wooProducts.length > 0 && baseProducts.length === 0) {
+            const mappingError =
+              mapFailures > 0
+                ? `Catalog mapping failed for ${mapFailures} products.`
+                : "Catalog mapping produced 0 products.";
+            setCatalogError(mappingError);
+            console.error("[Catalog] Mapping resulted in empty catalog", {
+              mappingError,
+              wooCount: wooProducts.length,
+              mapFailures,
+              sampleMapFailures,
+            });
           }
+
+	        const hadBaseProducts = applyCatalogState(baseProducts);
+        if (hadBaseProducts) {
+          if (CATALOG_DEBUG) {
+            console.info("[Catalog] Catalog state applied", {
+              products: baseProducts.length,
+              categories: catalogCategories.length || categoryNamesFromApi.length,
+              durationMs: Date.now() - startedAt,
+            });
+          }
+          setCatalogLoading(false);
         }
 
         setCatalogLoading(false);
-        scheduleRetry(background);
-      } catch (error) {
-        if (!cancelled) {
-          console.warn("[Catalog] Catalog fetch failed", error);
-          if (!background) {
-            setCatalogProducts([]);
-            setCatalogCategories([]);
-            setCatalogTypes([]);
-            setCatalogError(null);
-            setCatalogLoading(false);
-          }
-          scheduleRetry(background);
+        if (CATALOG_DEBUG) {
+          console.info("[Catalog] Load complete (state)", {
+            products: baseProducts.length,
+            categories: catalogCategories.length,
+            loading: false,
+          });
         }
-      } finally {
-        catalogFetchInFlightRef.current = false;
-      }
-    };
+      } catch (error) {
+		        if (!cancelled) {
+              const message =
+                typeof (error as any)?.message === "string" &&
+                (error as any).message.trim().length > 0
+                  ? (error as any).message
+                  : "Catalog fetch failed";
+              setCatalogError(message);
+		          console.error("[Catalog] Catalog fetch failed", { message, error });
+	          if (!background) {
+	            setCatalogProducts([]);
+	            setCatalogCategories([]);
+	            setCatalogTypes([]);
+	            setCatalogLoading(false);
+	          }
+	          scheduleRetry(background);
+	        }
+	      } finally {
+          if (CATALOG_DEBUG) {
+            console.info("[Catalog] Load finished", {
+              background,
+              durationMs: Date.now() - startedAt,
+            });
+          }
+	        catalogFetchInFlightRef.current = false;
+	      }
+	    };
 
     void loadCatalog(false);
 
@@ -5335,6 +5616,29 @@ export default function App() {
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    if (!CATALOG_DEBUG) {
+      return;
+    }
+    console.info("[CatalogState] Snapshot", {
+      loading: catalogLoading,
+      error: catalogError,
+      products: catalogProducts.length,
+      categories: catalogCategories.length,
+      types: catalogTypes.length,
+      filters,
+      searchQuery: searchQuery.trim(),
+    });
+  }, [
+    catalogLoading,
+    catalogError,
+    catalogProducts,
+    catalogCategories,
+    catalogTypes,
+    filters,
+    searchQuery,
+  ]);
 
   useEffect(() => {
     setFilters((prev) => {
@@ -5980,6 +6284,21 @@ export default function App() {
     const product = catalogProducts.find((item) => item.id === productId);
     if (!product) return;
 
+    if (variantId === "__peppro_needs_variant__") {
+      variantId = null;
+    }
+
+    const isVariable = (product.type ?? "").toLowerCase() === "variable";
+    if (isVariable && (!product.variants || product.variants.length === 0)) {
+      console.debug("[Cart] Variant required, opening product details", {
+        productId,
+      });
+      setSelectedProduct(product);
+      setProductDetailOpen(true);
+      void ensureCatalogProductHasVariants(product);
+      return;
+    }
+
     const quantityToAdd = Math.max(1, Math.floor(quantity));
     let resolvedVariant: ProductVariant | null = null;
 
@@ -5997,6 +6316,7 @@ export default function App() {
         );
         setSelectedProduct(product);
         setProductDetailOpen(true);
+        void ensureCatalogProductHasVariants(product);
         return;
       }
     }
@@ -6043,7 +6363,8 @@ export default function App() {
       return;
     }
 
-    const nextCart: CartItem[] = [];
+    void (async () => {
+      const nextCart: CartItem[] = [];
     const addOrMergeCartItem = (
       product: Product,
       variant: ProductVariant | null,
@@ -6071,11 +6392,42 @@ export default function App() {
       let matchedProduct: Product | undefined;
       let matchedVariant: ProductVariant | null = null;
 
-      if (sku) {
+      const wooProductId = Number(line.productId ?? NaN);
+      const wooVariationId = Number(line.variantId ?? NaN);
+
+      if (Number.isFinite(wooProductId)) {
+        matchedProduct =
+          catalogProducts.find((product) => product.wooId === wooProductId) ??
+          catalogProducts.find((product) => product.id === `woo-${wooProductId}`);
+
+        if (matchedProduct) {
+          matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+          if (Number.isFinite(wooVariationId) && matchedProduct.variants?.length) {
+            matchedVariant =
+              matchedProduct.variants.find(
+                (variant) => variant.wooId === wooVariationId,
+              ) ?? null;
+          }
+          if (!matchedVariant && sku && matchedProduct.variants?.length) {
+            matchedVariant =
+              matchedProduct.variants.find(
+                (variant) => (variant.sku || "").trim() === sku,
+              ) ?? null;
+          }
+        }
+      }
+
+      if (!matchedProduct && sku) {
+        matchedProduct = catalogProducts.find(
+          (product) => (product.sku || "").trim() === sku,
+        );
+      }
+
+      if (!matchedProduct && sku) {
         for (const product of catalogProducts) {
-          const variant = product.variants?.find(
-            (v) => v.sku && v.sku.trim() === sku,
-          );
+          if (!product.variants?.length) continue;
+          const variant =
+            product.variants.find((v) => (v.sku || "").trim() === sku) ?? null;
           if (variant) {
             matchedProduct = product;
             matchedVariant = variant;
@@ -6122,12 +6474,11 @@ export default function App() {
           );
         }
 
-        if (
-          matchedProduct &&
-          variantLabel &&
-          matchedProduct.variants &&
-          matchedProduct.variants.length > 0
-        ) {
+        if (matchedProduct && (matchedProduct.type ?? "").toLowerCase() === "variable") {
+          matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+        }
+
+        if (matchedProduct && variantLabel && matchedProduct.variants?.length) {
           const variants = matchedProduct.variants;
           const normalizedLabel = variantLabel;
           // 1) Exact label match.
@@ -6160,11 +6511,14 @@ export default function App() {
         continue;
       }
 
+      if ((matchedProduct.type ?? "").toLowerCase() === "variable") {
+        matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+      }
+
       // If product has variants but none matched, fall back to a sensible default.
       if (
         !matchedVariant &&
-        matchedProduct.variants &&
-        matchedProduct.variants.length > 0
+        matchedProduct.variants?.length
       ) {
         matchedVariant =
           matchedProduct.variants.find((variant) => variant.inStock) ??
@@ -6194,6 +6548,7 @@ export default function App() {
         color: "#ffffff",
       },
     });
+    })();
   };
 
   const handleRefreshNews = async () => {
@@ -7298,14 +7653,21 @@ export default function App() {
                 typeCounts={{}}
               />
             ) : (
-              <div className='glass-card squircle-lg px-10 py-8 lg:px-16 lg:py-10 text-sm text-slate-700 text-center font-["Lexend",_var(--font-sans)]' aria-live="polite">
-                <p className="mx-auto max-w-sm leading-relaxed">
-                  <span className="text-base text-slate-900 block mb-1">Fetching Catelogue…</span>
-                  <span className="text-sm text-slate-800 block">Please wait while we load the products</span>
-                </p>
-              </div>
-            )}
-          </div>
+	              <div
+	                className='glass-card squircle-lg px-10 py-8 lg:px-16 lg:py-10 text-sm text-slate-700 text-center font-["Lexend",_var(--font-sans)]'
+	                aria-live="polite"
+	              >
+	                <p className="mx-auto max-w-sm leading-relaxed">
+	                  <span className="text-base text-slate-900 block mb-1">
+	                    Fetching…
+	                  </span>
+	                  <span className="text-sm text-slate-800 block">
+	                    Loading categories
+	                  </span>
+	                </p>
+	              </div>
+	            )}
+	          </div>
         )}
 
         {/* Products Grid */}
@@ -7356,18 +7718,18 @@ export default function App() {
                 <CatalogSkeletonCard key={`catalog-skeleton-${index}`} />
               ))}
             </div>
-          ) : filteredProducts.length > 0 ? (
-            <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredProducts.map((product) => (
-                <LazyCatalogProductCard
-                  key={product.id}
-                  product={product}
-                  onAddToCart={(productId, variationId, qty) =>
-                    handleAddToCart(productId, qty, undefined, variationId)
-                  }
-                />
-              ))}
-            </div>
+	          ) : filteredProducts.length > 0 ? (
+	            <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+		              {filteredProducts.map((product) => (
+		                <LazyCatalogProductCard
+		                  key={product.id}
+		                  product={product}
+		                  onAddToCart={(productId, variationId, qty) =>
+		                    handleAddToCart(productId, qty, undefined, variationId)
+		                  }
+		                />
+	              ))}
+	            </div>
           ) : (
             <div className="catalog-loading-state py-12">
               <div className="glass-card squircle-lg p-8 max-w-md text-center">
@@ -8578,6 +8940,10 @@ export default function App() {
     console.debug("[Product] View details", { productId: product.id });
     setSelectedProduct(product);
     setProductDetailOpen(true);
+    const isVariable = (product.type ?? "").toLowerCase() === "variable";
+    if (isVariable && (!product.variants || product.variants.length === 0)) {
+      void ensureCatalogProductHasVariants(product);
+    }
   };
 
   const handleCloseProductDetail = () => {
@@ -8585,6 +8951,16 @@ export default function App() {
     setProductDetailOpen(false);
     setSelectedProduct(null);
   };
+
+  useEffect(() => {
+    if (!productDetailOpen || !selectedProduct) {
+      return;
+    }
+    const isVariable = (selectedProduct.type ?? "").toLowerCase() === "variable";
+    if (isVariable && (!selectedProduct.variants || selectedProduct.variants.length === 0)) {
+      void ensureCatalogProductHasVariants(selectedProduct);
+    }
+  }, [productDetailOpen, selectedProduct, ensureCatalogProductHasVariants]);
 
   // Filter and search products
   const filteredProductCatalog = useMemo(

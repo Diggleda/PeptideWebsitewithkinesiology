@@ -13,7 +13,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     loading = 'lazy',
     decoding = 'async',
     referrerPolicy = 'no-referrer',
-    crossOrigin = 'anonymous',
+    crossOrigin,
     src,
     ...rest
   } = props
@@ -32,7 +32,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     setIsLoaded(true);
   };
 
-  const PLACEHOLDER = '/Placeholder.png';
+  const PLACEHOLDER = '/Peppro_IconLogo_Transparent_NoBuffer.png';
 
   if (didError) {
     return (

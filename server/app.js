@@ -16,23 +16,67 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 
+const buildCorsOptions = () => {
+  const allowList = Array.isArray(env.cors?.allowList) ? env.cors.allowList : [];
+  const allowAll = allowList.includes('*');
+  if (allowAll) {
+    return { origin: true, credentials: true };
+  }
+
+  const isDev = env.nodeEnv !== 'production';
+
+  const isDevLocalOrigin = (origin) => {
+    if (!origin || typeof origin !== 'string') {
+      return false;
+    }
+    const trimmed = origin.trim();
+    if (!trimmed || trimmed === 'null') {
+      return isDev;
+    }
+    try {
+      const parsed = new URL(trimmed);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return false;
+      }
+      const host = parsed.hostname;
+      if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+        return true;
+      }
+      // Common private LAN ranges (for phone/tablet testing).
+      if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true;
+      if (/^192\.168\.\d+\.\d+$/.test(host)) return true;
+      if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  return {
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (allowList.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      if (isDev && isDevLocalOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+  };
+};
+
 const createApp = () => {
   const app = express();
 
-  const corsOptions = Array.isArray(env.cors.allowList) && env.cors.allowList.length > 0
-    ? {
-      origin: env.cors.allowList.includes('*')
-        ? true
-        : env.cors.allowList,
-      credentials: true,
-    }
-    : undefined;
-
-  if (corsOptions) {
-    app.use(cors(corsOptions));
-  } else {
-    app.use(cors());
-  }
+  const corsOptions = buildCorsOptions();
+  app.use(cors(corsOptions));
 
   // Stripe webhook needs the raw body for signature verification.
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
@@ -42,13 +86,7 @@ const createApp = () => {
 
   // Handle CORS preflight for all API routes without redirecting.
   // Express 5 disallows plain "*" path strings; use a regex matcher instead.
-  app.options(/.*/, (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization');
-    res.status(204).end();
-  });
+  app.options(/.*/, cors(corsOptions));
 
   app.use((req, res, next) => {
     logger.debug({ method: req.method, path: req.path }, 'Incoming request');

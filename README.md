@@ -43,6 +43,7 @@ Vite only exposes variables prefixed with `VITE_`. Copy `.env.example` to `.env.
 | `VITE_API_URL` | Base URL of the Express API (without the trailing `/api`; defaults to `http://localhost:3001`). |
 | `VITE_WOO_PROXY_URL` | Optional override for the catalog proxy. Leave blank to use `${VITE_API_URL}/api/woo`. |
 | `VITE_WOO_PROXY_TOKEN` | Shared secret when using a legacy PHP proxy (`token` query param). Safe to leave blank when calling the Express proxy. |
+| `VITE_VARIANT_PREFETCH_CONCURRENCY` | Optional override for how many Woo variation requests are prefetched in parallel for visible variable products (default `6`, clamped `1`–`12`). |
 
 ### Testing on phones/tablets (LAN)
 

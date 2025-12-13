@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
@@ -43,6 +43,18 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [bulkOpen, setBulkOpen] = useState(false);
+
+  useEffect(() => {
+    if (!Array.isArray(product.variations) || product.variations.length === 0) {
+      return;
+    }
+    setSelectedVariation((prev) => {
+      const next =
+        product.variations.find((variation) => variation.id === prev.id) ??
+        product.variations[0];
+      return next;
+    });
+  }, [product.id, product.variations]);
 
   const bulkTiers = product.bulkPricingTiers ?? [];
   const quantityButtonClasses = 'h-8 w-8 squircle-sm';

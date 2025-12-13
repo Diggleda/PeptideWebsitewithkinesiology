@@ -3,6 +3,16 @@ import { API_BASE_URL } from '../services/api';
 const DEFAULT_PHP_PROXY = '/api/woo.php';
 const DEFAULT_PROXY_TOKEN = 'a-long-random-string-to-serve-as-proxy-token';
 const WOO_DISABLED = String((import.meta as any).env?.VITE_WOO_DISABLED || '').toLowerCase() === 'true';
+const WOO_DEBUG =
+  String((import.meta as any).env?.VITE_WOO_DEBUG || '').toLowerCase() === 'true';
+const WOO_REQUEST_TIMEOUT_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_WOO_REQUEST_TIMEOUT_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 30000;
+})();
 
 const resolveProxyBase = () => {
   const configuredProxy = ((import.meta.env.VITE_WOO_PROXY_URL as string | undefined) || '').trim();
@@ -97,12 +107,63 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
     // @ts-ignore
     return (Array.isArray([]) ? [] : {}) as T;
   }
-  const res = await fetch(buildURL(endpoint, params), { method: 'GET' });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Woo ${endpoint} failed: ${res.status} ${text}`);
+  const url = buildURL(endpoint, params);
+  const safeUrlForLogging = (() => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.searchParams.has('token')) {
+        parsed.searchParams.set('token', 'REDACTED');
+      }
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  })();
+  const startedAt = Date.now();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller
+    ? globalThis.setTimeout(() => controller.abort(), WOO_REQUEST_TIMEOUT_MS)
+    : null;
+  try {
+    if (WOO_DEBUG) {
+      console.info('[Woo] GET', { endpoint, url: safeUrlForLogging, params });
+    }
+    const res = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller?.signal,
+    });
+    if (WOO_DEBUG) {
+      console.info('[Woo] GET complete', {
+        endpoint,
+        status: res.status,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Woo ${endpoint} failed: ${res.status} ${text}`);
+    }
+    return res.json() as Promise<T>;
+  } catch (error: any) {
+    if (WOO_DEBUG) {
+      const message =
+        typeof error?.message === 'string' && error.message.trim().length > 0
+          ? error.message
+          : 'Unknown error';
+      console.warn('[Woo] GET failed', {
+        endpoint,
+        url: safeUrlForLogging,
+        message,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      globalThis.clearTimeout(timeoutId);
+    }
   }
-  return res.json() as Promise<T>;
 }
 
 // Example domain functions
@@ -114,5 +175,8 @@ export const listCategories = <T = unknown>(opts: QueryParams = {}) =>
 
 export const listProductVariations = <T = unknown>(productId: number, opts: QueryParams = {}) =>
   WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>(`products/${productId}/variations`, { per_page: 100, status: 'publish', ...opts });
+
+export const getProduct = <T = unknown>(productId: number | string, opts: QueryParams = {}) =>
+  WOO_DISABLED ? (Promise.resolve(null) as unknown as Promise<T>) : wooGet<T>(`products/${productId}`, { ...opts });
 
 export type { QueryParams };

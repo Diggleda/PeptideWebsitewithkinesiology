@@ -4,7 +4,16 @@ export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
 
   if (!configured) {
-    return 'http://localhost:3001/api';
+    // In dev we expect the API on localhost:3001 by default.
+    if (import.meta.env.DEV) {
+      return 'http://localhost:3001/api';
+    }
+    // In production, default to same-origin so deployments that serve the API under `/api`
+    // work without requiring a rebuild-time env var.
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}/api`;
+    }
+    return '/api';
   }
 
   const normalized = configured.replace(/\/+$/, '');
