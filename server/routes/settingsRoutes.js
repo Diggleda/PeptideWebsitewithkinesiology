@@ -86,4 +86,77 @@ router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
   });
 });
 
+const parseActivityWindow = (raw) => {
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (normalized === 'hour' || normalized === '1h' || normalized === 'last_hour') return 'hour';
+  if (normalized === 'day' || normalized === '1d' || normalized === 'last_day') return 'day';
+  if (normalized === '3days' || normalized === '3d' || normalized === '3_days') return '3days';
+  if (normalized === 'week' || normalized === '7d' || normalized === 'last_week') return 'week';
+  if (normalized === 'month' || normalized === '30d' || normalized === 'last_month') return 'month';
+  if (normalized === '6months' || normalized === '6mo' || normalized === 'half_year') return '6months';
+  if (normalized === 'year' || normalized === '12mo' || normalized === '365d' || normalized === 'last_year') return 'year';
+  return 'day';
+};
+
+const windowMs = (windowKey) => {
+  switch (windowKey) {
+    case 'hour':
+      return 60 * 60 * 1000;
+    case 'day':
+      return 24 * 60 * 60 * 1000;
+    case '3days':
+      return 3 * 24 * 60 * 60 * 1000;
+    case 'week':
+      return 7 * 24 * 60 * 60 * 1000;
+    case 'month':
+      return 30 * 24 * 60 * 60 * 1000;
+    case '6months':
+      return 182 * 24 * 60 * 60 * 1000;
+    case 'year':
+      return 365 * 24 * 60 * 60 * 1000;
+    default:
+      return 24 * 60 * 60 * 1000;
+  }
+};
+
+const normalizeUserRole = (role) => String(role || '').trim().toLowerCase() || 'unknown';
+
+router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
+  const windowKey = parseActivityWindow(req.query?.window);
+  const cutoffMs = Date.now() - windowMs(windowKey);
+
+  const users = userRepository.getAll();
+  const recent = users
+    .filter((user) => {
+      const raw = user?.lastLoginAt;
+      if (!raw) return false;
+      const ts = Date.parse(raw);
+      if (Number.isNaN(ts)) return false;
+      return ts >= cutoffMs;
+    })
+    .map((user) => ({
+      id: user.id,
+      name: user.name || null,
+      email: user.email || null,
+      role: normalizeUserRole(user.role),
+      lastLoginAt: user.lastLoginAt || null,
+    }))
+    .sort((a, b) => Date.parse(b.lastLoginAt || '') - Date.parse(a.lastLoginAt || ''));
+
+  const byRole = recent.reduce((acc, user) => {
+    const role = user.role || 'unknown';
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
+
+  res.json({
+    window: windowKey,
+    generatedAt: new Date().toISOString(),
+    cutoff: new Date(cutoffMs).toISOString(),
+    total: recent.length,
+    byRole,
+    users: recent,
+  });
+});
+
 module.exports = router;

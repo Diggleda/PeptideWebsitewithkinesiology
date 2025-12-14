@@ -342,6 +342,12 @@ export const settingsAPI = {
       body: JSON.stringify({ testMode }),
     });
   },
+  getUserActivity: async (window: string) => {
+    const query = window ? `?window=${encodeURIComponent(window)}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/user-activity${query}`, {
+      method: 'GET',
+    });
+  },
 };
 
 // Orders API

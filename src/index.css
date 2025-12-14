@@ -4035,9 +4035,6 @@ html {
   .sales-tracking-row-details {
     width: 100%;
   }
-  .sales-rep-chart-body {
-    height: 240px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -4111,7 +4108,7 @@ html {
 
 .sales-rep-chart-body {
   margin-top: 0.75rem;
-  height: 240px;
+  height: auto;
 }
 
 .sales-rep-chart-empty {

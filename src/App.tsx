@@ -4082,6 +4082,71 @@ export default function App() {
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [shopEnabled, setShopEnabled] = useState(true);
+  type UserActivityWindow =
+    | "hour"
+    | "day"
+    | "3days"
+    | "week"
+    | "month"
+    | "6months"
+    | "year";
+  type UserActivityReport = {
+    window: UserActivityWindow;
+    generatedAt: string;
+    cutoff: string;
+    total: number;
+    byRole: Record<string, number>;
+    users: Array<{
+      id: string;
+      name: string | null;
+      email: string | null;
+      role: string;
+      lastLoginAt: string | null;
+    }>;
+  };
+  const [userActivityWindow, setUserActivityWindow] =
+    useState<UserActivityWindow>("day");
+  const [userActivityReport, setUserActivityReport] =
+    useState<UserActivityReport | null>(null);
+  const [userActivityLoading, setUserActivityLoading] = useState(false);
+  const [userActivityError, setUserActivityError] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!isAdmin(user?.role)) {
+      setUserActivityReport(null);
+      setUserActivityLoading(false);
+      setUserActivityError(null);
+      return;
+    }
+    let cancelled = false;
+    setUserActivityLoading(true);
+    setUserActivityError(null);
+    const fetchUserActivity = async () => {
+      try {
+        const report = (await settingsAPI.getUserActivity(
+          userActivityWindow,
+        )) as any;
+        if (cancelled) return;
+        setUserActivityReport(report as UserActivityReport);
+      } catch (error) {
+        if (cancelled) return;
+        setUserActivityReport(null);
+        setUserActivityError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load user activity.",
+        );
+      } finally {
+        if (!cancelled) setUserActivityLoading(false);
+      }
+    };
+    fetchUserActivity();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role, userActivityWindow]);
   const referralRefreshInFlight = useRef(false);
   const [adminActionState, setAdminActionState] = useState<{
     updatingReferral: string | null;
@@ -8419,6 +8484,173 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">
+                    Admin Settings
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    Configure storefront availability and Stripe mode.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-500">
+                  <span className="mr-2">
+                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                  <span>
+                    Stripe: {stripeModeEffective === "test" ? "Test" : "Live"}
+                  </span>
+                </div>
+              </div>
+
+	              <div className="flex flex-col gap-3 mb-4">
+	                <label className="flex items-center gap-2 text-sm text-slate-700">
+	                  <input
+	                    type="checkbox"
+	                    checked={shopEnabled}
+	                    onChange={(e) => handleShopToggle(e.target.checked)}
+	                    className="brand-checkbox"
+	                  />
+	                  <span>Enable Shop button for users</span>
+	                </label>
+	                <label className="flex items-center gap-2 text-sm text-slate-700">
+	                  <input
+	                    type="checkbox"
+	                    checked={stripeModeEffective === "test"}
+	                    onChange={(e) =>
+	                      handleStripeTestModeToggle(e.target.checked)
+	                    }
+	                    className="brand-checkbox"
+	                  />
+	                  <span>Stripe test mode</span>
+	                </label>
+	              </div>
+
+                <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900">
+                        Recent Logins
+                      </h4>
+                      <p className="text-sm text-slate-600">
+                        Users who logged in within the selected window.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="admin-user-activity-window"
+                        className="text-xs text-slate-500 uppercase tracking-wide"
+                      >
+                        Window
+                      </label>
+                      <select
+                        id="admin-user-activity-window"
+                        value={userActivityWindow}
+                        onChange={(e) =>
+                          setUserActivityWindow(
+                            e.target.value as UserActivityWindow,
+                          )
+                        }
+                        className="shipping-rate-select w-auto text-sm"
+                      >
+                        <option value="hour">Last hour</option>
+                        <option value="day">Last day</option>
+                        <option value="3days">Last 3 days</option>
+                        <option value="week">Last week</option>
+                        <option value="month">Last month</option>
+                        <option value="6months">Last 6 months</option>
+                        <option value="year">Last year</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {userActivityError && (
+                    <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                      {userActivityError}
+                    </div>
+                  )}
+
+                  {userActivityLoading ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      Loading user activity…
+                    </div>
+                  ) : userActivityReport ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {[
+                          { key: "admin", label: "Admins" },
+                          { key: "sales_rep", label: "Sales reps" },
+                          { key: "doctor", label: "Doctors" },
+                          { key: "test_doctor", label: "Test doctors" },
+                        ].map((role) => (
+                          <span
+                            key={role.key}
+                            className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+                          >
+                            {role.label}: {userActivityReport.byRole?.[role.key] || 0}
+                          </span>
+                        ))}
+                      </div>
+
+                      {userActivityReport.users.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-slate-500">
+                          No logins in this window.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto max-h-[320px] overflow-y-auto rounded-md border border-slate-200/70">
+                          <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
+                            <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+                              <tr>
+                                <th className="px-4 py-2 text-left">Name</th>
+                                <th className="px-4 py-2 text-left">Email</th>
+                                <th className="px-4 py-2 text-left">Role</th>
+                                <th className="px-4 py-2 text-left">
+                                  Last login
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white/70">
+                              {userActivityReport.users.map((entry) => (
+                                <tr key={entry.id}>
+                                  <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                                    {entry.name || "—"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-slate-600">
+                                    {entry.email || "—"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-slate-700">
+                                    {entry.role}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-slate-700">
+                                    {entry.lastLoginAt
+                                      ? new Date(entry.lastLoginAt).toLocaleString()
+                                      : "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div className="text-xs text-slate-500">
+                        Cutoff:{" "}
+                        {userActivityReport.cutoff
+                          ? new Date(userActivityReport.cutoff).toLocaleString()
+                          : "—"}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      No user activity loaded.
+                    </div>
+                  )}
+                </div>
+	            </div>
+	          )}
+
+          {isAdmin(user?.role) && (
+            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
                     Sales by Sales Rep
                   </h3>
                   <p className="text-sm text-slate-600">
@@ -8474,20 +8706,20 @@ export default function App() {
               </div>
             </div>
           )}
-          {hasChartData && (
-            <div className="sales-rep-combined-chart">
-              <div className="sales-rep-chart-header">
-                <div>
-                  <h3>Pipeline</h3>
-                  <p>Track lead volume as contacts advance through each stage.</p>
-                </div>
-              </div>
-              <div className="sales-rep-chart-body">
-                <ResponsiveContainer width="100%" height={230}>
-                  <BarChart
-                    data={salesRepChartData}
-                    margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
-                  >
+	          {hasChartData && (
+	            <div className="sales-rep-combined-chart">
+	              <div className="sales-rep-chart-header">
+	                <div>
+	                  <h3>Your Pipeline</h3>
+	                  <p>Track lead volume as contacts advance through each stage.</p>
+	                </div>
+	              </div>
+	              <div className="sales-rep-chart-body">
+	                <ResponsiveContainer width="100%" height={210}>
+	                  <BarChart
+	                    data={salesRepChartData}
+	                    margin={{ top: 16, right: 12, left: -14, bottom: 0 }}
+	                  >
                     <defs>
                       <linearGradient
                         id="statusBar"
@@ -8512,17 +8744,21 @@ export default function App() {
                       strokeDasharray="3 3"
                       stroke="rgba(148, 163, 184, 0.3)"
                     />
-                    <XAxis
-                      dataKey="label"
-                      interval={0}
-                      tick={<PipelineXAxisTick />}
-                      tickLine={false}
-                      height={90}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: 12, fill: "#334155" }}
-                    />
+	                    <XAxis
+	                      dataKey="label"
+	                      interval={0}
+	                      tick={<PipelineXAxisTick />}
+	                      tickLine={false}
+	                      height={58}
+	                      tickMargin={0}
+	                      padding={{ left: 0, right: 0 }}
+	                    />
+	                    <YAxis
+	                      allowDecimals={false}
+	                      tick={{ fontSize: 12, fill: "#334155" }}
+	                      width={34}
+	                      tickMargin={2}
+	                    />
                     <Tooltip
                       cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
                       formatter={(value: number) => [
@@ -10214,37 +10450,11 @@ export default function App() {
                               aria-hidden="true"
                             />
                           </Button>
-                          {isRep(user?.role) && (
+                          {(isRep(user?.role) || isAdmin(user?.role)) && (
                             <span className="text-[11px] text-slate-600 italic">
                               Shop for physicians:{" "}
                               {shopEnabled ? "Enabled" : "Disabled"}
                             </span>
-                          )}
-                          {isAdmin(user?.role) && (
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={shopEnabled}
-                                onChange={(e) =>
-                                  handleShopToggle(e.target.checked)
-                                }
-                                className="h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
-                              />
-                              <span>Enable Shop button for users</span>
-                            </label>
-                          )}
-                          {isAdmin(user?.role) && (
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={stripeModeEffective === "test"}
-                                onChange={(e) =>
-                                  handleStripeTestModeToggle(e.target.checked)
-                                }
-                                className="h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
-                              />
-                              <span>Stripe test mode</span>
-                            </label>
                           )}
                         </div>
                         {/* Regional contact info for doctors */}
