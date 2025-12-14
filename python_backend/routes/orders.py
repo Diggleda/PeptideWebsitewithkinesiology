@@ -89,6 +89,12 @@ def admin_sales_by_rep():
             setattr(err, "status", 403)
             raise err
         exclude_id = g.current_user.get("id")
-        return order_service.get_sales_by_rep(exclude_sales_rep_id=exclude_id)
+        period_start = request.args.get("periodStart") or request.args.get("start") or None
+        period_end = request.args.get("periodEnd") or request.args.get("end") or None
+        return order_service.get_sales_by_rep(
+            exclude_sales_rep_id=exclude_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
 
     return handle_action(action)

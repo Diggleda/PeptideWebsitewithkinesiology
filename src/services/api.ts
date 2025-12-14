@@ -435,8 +435,15 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
-  getSalesByRepForAdmin: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/orders/admin/sales-rep-summary`);
+  getSalesByRepForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.periodStart) params.set('periodStart', options.periodStart);
+    if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/orders/admin/sales-rep-summary?${query}`
+      : `${API_BASE_URL}/orders/admin/sales-rep-summary`;
+    return fetchWithAuth(url);
   },
 
   getSalesRepOrderDetail: async (orderId: string | number, doctorEmailOrId?: string | null) => {

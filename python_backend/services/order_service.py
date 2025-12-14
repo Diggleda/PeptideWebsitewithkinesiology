@@ -1170,8 +1170,72 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
     return mapped
 
 
-def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
+def get_sales_by_rep(
+    exclude_sales_rep_id: Optional[str] = None,
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+):
     global _sales_by_rep_summary_inflight
+
+    from datetime import timedelta, timezone
+
+    def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            # Accept date-only values (YYYY-MM-DD).
+            if len(text) == 10 and text[4] == "-" and text[7] == "-":
+                text = f"{text}T00:00:00+00:00"
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    def _period_bounds(now: datetime) -> tuple[datetime, datetime]:
+        # Bi-weekly windows anchored to the 1st of the month:
+        # - Days 1-14
+        # - Days 15-28
+        # - Day 29 -> end of month (short final window)
+        first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Compute start offset by 14-day buckets (0-based).
+        bucket = int((now.day - 1) / 14)
+        start = first + timedelta(days=bucket * 14)
+        # Next boundary is either next bucket or month end.
+        next_bucket_days = (bucket + 1) * 14
+        # Month end boundary is the 1st of next month.
+        if first.month == 12:
+            next_month = first.replace(year=first.year + 1, month=1)
+        else:
+            next_month = first.replace(month=first.month + 1)
+        month_days = int((next_month - first).days)
+        end = first + timedelta(days=min(next_bucket_days, month_days))
+        return start, end
+
+    now_utc = datetime.now(timezone.utc)
+    parsed_start = _parse_iso_datetime(period_start)
+    parsed_end = _parse_iso_datetime(period_end)
+    if parsed_start is None or parsed_end is None:
+        computed_start, computed_end = _period_bounds(now_utc)
+        start_dt = parsed_start or computed_start
+        end_dt = parsed_end or computed_end
+    else:
+        start_dt = parsed_start
+        end_dt = parsed_end
+    if end_dt <= start_dt:
+        # Safety fallback to computed window.
+        start_dt, end_dt = _period_bounds(now_utc)
+    period_meta = {
+        "periodStart": start_dt.isoformat(),
+        "periodEnd": end_dt.isoformat(),
+    }
+    period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
 
     def _meta_value(meta: object, key: str):
         if not isinstance(meta, list):
@@ -1205,7 +1269,7 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
             except Exception:
                 return 0.0
 
-    def _compute_summary() -> List[Dict]:
+    def _compute_summary() -> Dict[str, Any]:
         users = user_repository.get_all()
         reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
         rep_records_list = sales_rep_repository.get_all()
@@ -1261,6 +1325,7 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
         counted_house = 0
         skipped_status = 0
         skipped_refunded = 0
+        skipped_outside_period = 0
 
         # WooCommerce is the source of truth for order history.
         per_page = 100
@@ -1285,6 +1350,22 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
                 meta_data = woo_order.get("meta_data") or []
                 if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
                     skipped_refunded += 1
+                    continue
+
+                # Filter to the requested/computed biweekly period.
+                created_raw = (
+                    woo_order.get("date_created_gmt")
+                    or woo_order.get("date_created")
+                    or woo_order.get("date")
+                    or None
+                )
+                created_at = _parse_iso_datetime(str(created_raw)) if created_raw else None
+                if not created_at:
+                    # If unknown, skip rather than misattribute outside period.
+                    skipped_outside_period += 1
+                    continue
+                if created_at < start_dt or created_at >= end_dt:
+                    skipped_outside_period += 1
                     continue
 
                 rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
@@ -1372,6 +1453,10 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
             )
 
         summary.sort(key=lambda r: float(r.get("totalRevenue") or 0), reverse=True)
+        totals_all = {
+            "totalOrders": int(sum(int(r.get("totalOrders") or 0) for r in summary)),
+            "totalRevenue": float(sum(float(r.get("totalRevenue") or 0) for r in summary)),
+        }
         logger.info(
             "[SalesByRep] Summary computed",
             extra={
@@ -1383,6 +1468,9 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
                 "countedHouse": counted_house,
                 "skippedStatus": skipped_status,
                 "skippedRefunded": skipped_refunded,
+                "skippedOutsidePeriod": skipped_outside_period,
+                "periodStart": period_meta["periodStart"],
+                "periodEnd": period_meta["periodEnd"],
                 "debugSamples": debug_samples,
             },
         )
@@ -1393,7 +1481,7 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
             )
         except Exception:
             pass
-        return summary
+        return {"orders": summary, "totals": totals_all, **period_meta}
 
     now_ms = int(time.time() * 1000)
     cached = None
@@ -1401,10 +1489,13 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
     with _sales_by_rep_summary_lock:
         cached = _sales_by_rep_summary_cache.get("data")
         expires_at = int(_sales_by_rep_summary_cache.get("expiresAtMs") or 0)
-        if isinstance(cached, list) and expires_at > now_ms:
+        cache_key = _sales_by_rep_summary_cache.get("key")
+        if isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
             if exclude_sales_rep_id:
                 exclude_id = str(exclude_sales_rep_id)
-                return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+                rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                return {**cached, "orders": filtered}
             return cached
         inflight_event = _sales_by_rep_summary_inflight
         if inflight_event is None:
@@ -1418,10 +1509,13 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
         inflight_event.wait(timeout=35)
         with _sales_by_rep_summary_lock:
             cached = _sales_by_rep_summary_cache.get("data")
-            if isinstance(cached, list):
+            cache_key = _sales_by_rep_summary_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
                 if exclude_sales_rep_id:
                     exclude_id = str(exclude_sales_rep_id)
-                    return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+                    rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    return {**cached, "orders": filtered}
                 return cached
 
     try:
@@ -1429,10 +1523,11 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
         now_ms = int(time.time() * 1000)
         with _sales_by_rep_summary_lock:
             _sales_by_rep_summary_cache["data"] = summary
+            _sales_by_rep_summary_cache["key"] = period_cache_key
             _sales_by_rep_summary_cache["fetchedAtMs"] = now_ms
             _sales_by_rep_summary_cache["expiresAtMs"] = now_ms + (_SALES_BY_REP_SUMMARY_TTL_SECONDS * 1000)
         # Best-effort persistence for admins (optional columns).
-        for row in summary:
+        for row in summary.get("orders") if isinstance(summary, dict) else []:
             rep_id = row.get("salesRepId")
             if not rep_id or rep_id == "__house__":
                 continue
@@ -1445,13 +1540,15 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
                 continue
         if exclude_sales_rep_id:
             exclude_id = str(exclude_sales_rep_id)
-            return [row for row in summary if str(row.get("salesRepId")) != exclude_id]
+            rows = summary.get("orders") if isinstance(summary, dict) else []
+            filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+            return {**summary, "orders": filtered}
         return summary
     except Exception as exc:
         # Serve stale cached data if available.
         with _sales_by_rep_summary_lock:
             cached = _sales_by_rep_summary_cache.get("data")
-            if isinstance(cached, list) and cached:
+            if isinstance(cached, dict) and cached.get("orders"):
                 logger.warning(
                     "[SalesByRep] Using cached summary after failure",
                     exc_info=True,
@@ -1459,7 +1556,9 @@ def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
                 )
                 if exclude_sales_rep_id:
                     exclude_id = str(exclude_sales_rep_id)
-                    return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+                    rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    return {**cached, "orders": filtered}
                 return cached
         raise
     finally:

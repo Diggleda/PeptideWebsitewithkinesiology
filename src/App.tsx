@@ -43,6 +43,7 @@ import {
   Loader2,
   Plus,
   Package,
+  Download,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -1264,7 +1265,7 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.8.87";
+const FRONTEND_BUILD_ID = "v1.8.88";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -3984,6 +3985,13 @@ export default function App() {
       totalRevenue: number;
     }[]
   >([]);
+  const [salesRepSalesSummaryMeta, setSalesRepSalesSummaryMeta] = useState<{
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    totals?: { totalOrders: number; totalRevenue: number } | null;
+  } | null>(null);
+  const [salesRepSalesCsvDownloadedAt, setSalesRepSalesCsvDownloadedAt] =
+    useState<string | null>(null);
   const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<
     string | null
   >(null);
@@ -4021,6 +4029,57 @@ export default function App() {
       (value, index, array) => value.length > 0 && array.indexOf(value) === index,
     );
   }, [normalizedDashboardCodes, userReferralCodes]);
+
+  const downloadSalesBySalesRepCsv = useCallback(() => {
+    try {
+      const exportedAt = new Date();
+      const exportedAtIso = exportedAt.toISOString();
+      const escapeCsv = (value: unknown) => {
+        if (value === null || value === undefined) return "";
+        const text = String(value);
+        if (/[",\n\r]/.test(text)) {
+          return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+      };
+
+      const rows = [
+        ["Sales Rep", "Email", "Orders", "Revenue"].join(","),
+        ...salesRepSalesSummary.map((rep) =>
+          [
+            escapeCsv(rep.salesRepName || ""),
+            escapeCsv(rep.salesRepEmail || ""),
+            escapeCsv(Number(rep.totalOrders || 0)),
+            escapeCsv(Number(rep.totalRevenue || 0).toFixed(2)),
+          ].join(","),
+        ),
+      ];
+
+      const csv = rows.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+      const periodStart = salesRepSalesSummaryMeta?.periodStart
+        ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
+        : null;
+      const periodEnd = salesRepSalesSummaryMeta?.periodEnd
+        ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
+        : null;
+      const periodLabel =
+        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+      link.href = url;
+      link.download = `sales-by-sales-rep${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setSalesRepSalesCsvDownloadedAt(exportedAtIso);
+    } catch (error) {
+      console.error("[Sales by Sales Rep] CSV export failed", error);
+      toast.error("Unable to download report right now.");
+    }
+  }, [salesRepSalesSummary, salesRepSalesSummaryMeta?.periodEnd, salesRepSalesSummaryMeta?.periodStart]);
 
   useEffect(() => {
     if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
@@ -5310,16 +5369,26 @@ export default function App() {
             : Array.isArray((salesSummaryResponse as any)?.orders)
               ? (salesSummaryResponse as any).orders
               : [];
+          const meta =
+            salesSummaryResponse && typeof salesSummaryResponse === "object"
+              ? {
+                  periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
+                  periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
+                  totals: (salesSummaryResponse as any)?.totals ?? null,
+                }
+              : null;
           const filteredSummary = summaryArray.filter(
             (rep: any) => rep.salesRepId !== user.id,
           );
           setSalesRepSalesSummary(filteredSummary as any);
+          setSalesRepSalesSummaryMeta(meta);
         } catch (adminError: any) {
           const message =
             typeof adminError?.message === "string"
               ? adminError.message
               : "Unable to load sales summary";
           setSalesRepSalesSummaryError(message);
+          setSalesRepSalesSummaryMeta(null);
         }
       }
 
@@ -8889,28 +8958,97 @@ export default function App() {
 	            </div>
 	          )}
 
-          {isAdmin(user?.role) && (
-            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Sales by Sales Rep
-                  </h3>
-                  <p className="text-sm text-slate-600">
-                    Orders placed by doctors assigned to each rep.
-                  </p>
-                </div>
-                <span className="text-xs text-slate-500">
-                  Fetched{" "}
-                  {salesTrackingLastUpdated
-                    ? new Date(salesTrackingLastUpdated).toLocaleTimeString()
-                    : "—"}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                {salesRepSalesSummaryError ? (
-                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
-                    {salesRepSalesSummaryError}
+	          {isAdmin(user?.role) && (
+	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+	                <div>
+	                  <h3 className="text-lg font-semibold text-slate-900">
+	                    Sales by Sales Rep
+	                  </h3>
+	                  <p className="text-sm text-slate-600">
+	                    Orders placed by doctors assigned to each rep.
+	                  </p>
+	                </div>
+	                <div className="flex flex-col items-start sm:items-end gap-2">
+	                  <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
+	                    {(() => {
+	                      const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+	                      const totals = metaTotals
+	                        ? metaTotals
+	                        : {
+	                            totalOrders: salesRepSalesSummary.reduce(
+	                              (sum, row) => sum + (Number(row.totalOrders) || 0),
+	                              0,
+	                            ),
+	                            totalRevenue: salesRepSalesSummary.reduce(
+	                              (sum, row) => sum + (Number(row.totalRevenue) || 0),
+	                              0,
+	                            ),
+	                          };
+	                      const hasTotals =
+	                        typeof totals.totalOrders === "number" &&
+	                        typeof totals.totalRevenue === "number";
+	                      if (!hasTotals) return null;
+	                      return (
+	                        <>
+	                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+	                            Orders: {totals.totalOrders}
+	                          </span>
+	                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+	                            Revenue: {formatCurrency(totals.totalRevenue)}
+	                          </span>
+	                        </>
+	                      );
+	                    })()}
+	                  </div>
+	                  <div className="text-xs text-slate-500">
+	                    {(() => {
+	                      const start = salesRepSalesSummaryMeta?.periodStart
+	                        ? new Date(String(salesRepSalesSummaryMeta.periodStart))
+	                        : null;
+	                      const end = salesRepSalesSummaryMeta?.periodEnd
+	                        ? new Date(String(salesRepSalesSummaryMeta.periodEnd))
+	                        : null;
+	                      if (!start || Number.isNaN(start.getTime())) return "Period: —";
+	                      if (!end || Number.isNaN(end.getTime())) {
+	                        return `Period: ${start.toLocaleDateString()}`;
+	                      }
+	                      // Display inclusive end date for readability.
+	                      const endDisplay = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+	                      return `Period: ${start.toLocaleDateString()} – ${endDisplay.toLocaleDateString()}`;
+	                    })()}
+	                  </div>
+	                  <div className="flex items-center gap-2">
+	                    <Button
+	                      type="button"
+	                      variant="outline"
+	                      className="gap-2"
+	                      onClick={downloadSalesBySalesRepCsv}
+	                      disabled={salesRepSalesSummary.length === 0}
+	                      title="Download CSV"
+	                    >
+	                      <Download className="h-4 w-4" aria-hidden="true" />
+	                      Download CSV
+	                    </Button>
+	                    <span className="text-xs text-slate-500">
+	                      Fetched{" "}
+	                      {salesTrackingLastUpdated
+	                        ? new Date(salesTrackingLastUpdated).toLocaleTimeString()
+	                        : "—"}
+	                    </span>
+	                  </div>
+	                  <span className="text-xs text-slate-500">
+	                    Last download{" "}
+	                    {salesRepSalesCsvDownloadedAt
+	                      ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString()
+	                      : "—"}
+	                  </span>
+	                </div>
+	              </div>
+	              <div className="overflow-x-auto">
+	                {salesRepSalesSummaryError ? (
+	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+	                    {salesRepSalesSummaryError}
                   </div>
                 ) : salesRepSalesSummary.length === 0 ? (
                   <div className="px-4 py-3 text-sm text-slate-500">
