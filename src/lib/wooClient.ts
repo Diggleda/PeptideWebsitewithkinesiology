@@ -130,7 +130,8 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
     }
     const res = await fetch(url, {
       method: 'GET',
-      cache: 'no-store',
+      // Allow browser to use HTTP caching headers from the backend proxy (reduces server load).
+      cache: 'default',
       signal: controller?.signal,
     });
     if (WOO_DEBUG) {

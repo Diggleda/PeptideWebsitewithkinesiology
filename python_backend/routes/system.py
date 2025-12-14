@@ -2,12 +2,108 @@ from __future__ import annotations
 
 from flask import Blueprint
 
+import os
+import platform
+import shutil
+from pathlib import Path
+
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
 from ..utils.http import handle_action
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
+
+def _read_linux_meminfo() -> dict | None:
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        meminfo_path = Path("/proc/meminfo")
+        if not meminfo_path.exists():
+            return None
+        parsed: dict[str, int] = {}
+        for line in meminfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if ":" not in line:
+                continue
+            key, rest = line.split(":", 1)
+            value = rest.strip().split(" ", 1)[0]
+            if value.isdigit():
+                parsed[key.strip()] = int(value)
+        # Values are kB.
+        total_kb = parsed.get("MemTotal")
+        avail_kb = parsed.get("MemAvailable") or parsed.get("MemFree")
+        if not total_kb or not avail_kb:
+            return None
+        used_kb = max(0, total_kb - avail_kb)
+        used_pct = round((used_kb / total_kb) * 100, 2) if total_kb else None
+        return {
+            "totalMb": round(total_kb / 1024, 2),
+            "availableMb": round(avail_kb / 1024, 2),
+            "usedPercent": used_pct,
+        }
+    except Exception:
+        return None
+
+
+def _process_memory_mb() -> float | None:
+    try:
+        import resource  # type: ignore
+
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        maxrss = getattr(usage, "ru_maxrss", None)
+        if maxrss is None:
+            return None
+        # On Linux it's kilobytes; on macOS it's bytes.
+        if platform.system().lower() == "darwin":
+            return round(float(maxrss) / (1024 * 1024), 2)
+        return round(float(maxrss) / 1024, 2)
+    except Exception:
+        return None
+
+
+def _disk_usage(path: str) -> dict | None:
+    try:
+        usage = shutil.disk_usage(path)
+        total = float(usage.total)
+        used = float(usage.used)
+        free = float(usage.free)
+        used_pct = round((used / total) * 100, 2) if total else None
+        return {
+            "totalGb": round(total / (1024**3), 2),
+            "freeGb": round(free / (1024**3), 2),
+            "usedPercent": used_pct,
+        }
+    except Exception:
+        return None
+
+
+def _server_usage() -> dict:
+    cpu_count = os.cpu_count() or 0
+    load_avg = None
+    load_pct = None
+    try:
+        if hasattr(os, "getloadavg"):
+            one, five, fifteen = os.getloadavg()
+            load_avg = {"1m": round(one, 2), "5m": round(five, 2), "15m": round(fifteen, 2)}
+            if cpu_count > 0:
+                load_pct = round((one / cpu_count) * 100, 2)
+    except Exception:
+        load_avg = None
+
+    config = get_config()
+    data_dir = str(getattr(config, "data_dir", None) or Path.cwd())
+
+    return {
+        "cpu": {
+            "count": cpu_count or None,
+            "loadAvg": load_avg,
+            "loadPercent": load_pct,
+        },
+        "memory": _read_linux_meminfo(),
+        "disk": _disk_usage(data_dir),
+        "process": {"maxRssMb": _process_memory_mb()},
+        "platform": platform.platform(),
+    }
 
 
 @blueprint.get("/health")
@@ -18,6 +114,7 @@ def health():
             "status": "ok",
             "message": "Server is running",
             "build": config.backend_build,
+            "usage": _server_usage(),
             "timestamp": _now(),
         }
 

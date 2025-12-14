@@ -30,6 +30,9 @@ _MAX_IN_MEMORY_CACHE_KEYS = 500
 _BACKGROUND_REFRESH_CONCURRENCY = int(os.environ.get("WOO_PROXY_BACKGROUND_REFRESH_CONCURRENCY", "4").strip() or 4)
 _BACKGROUND_REFRESH_CONCURRENCY = max(1, min(_BACKGROUND_REFRESH_CONCURRENCY, 16))
 _background_refresh_semaphore = threading.BoundedSemaphore(_BACKGROUND_REFRESH_CONCURRENCY)
+_WOO_HTTP_CONCURRENCY = int(os.environ.get("WOO_HTTP_CONCURRENCY", "4").strip() or 4)
+_WOO_HTTP_CONCURRENCY = max(1, min(_WOO_HTTP_CONCURRENCY, 16))
+_woo_http_semaphore = threading.BoundedSemaphore(_WOO_HTTP_CONCURRENCY)
 _orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
 _orders_by_email_cache_lock = threading.Lock()
 _ORDERS_BY_EMAIL_TTL_SECONDS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_TTL_SECONDS", "30").strip() or 30)
@@ -123,7 +126,18 @@ def _fetch_catalog_http(
     max_attempts = 4
     for attempt in range(max_attempts):
         try:
-            response = requests.get(url, params=cleaned, auth=auth, timeout=timeout)
+            acquired = _woo_http_semaphore.acquire(timeout=25)
+            if not acquired:
+                err = IntegrationError("WooCommerce is busy, please retry")
+                setattr(err, "status", 503)
+                raise err
+            try:
+                response = requests.get(url, params=cleaned, auth=auth, timeout=timeout)
+            finally:
+                try:
+                    _woo_http_semaphore.release()
+                except ValueError:
+                    pass
             if response.status_code >= 400:
                 if attempt < max_attempts - 1 and _should_retry_status(response.status_code):
                     raise requests.HTTPError(response=response)
@@ -997,15 +1011,26 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
     url = f"{base_url}/wp-json/{api_version}/{normalized}"
 
     try:
-        response = requests.get(
-            url,
-            params=_sanitize_params(params or {}),
-            auth=HTTPBasicAuth(
-                _strip(config.woo_commerce.get("consumer_key")),
-                _strip(config.woo_commerce.get("consumer_secret")),
-            ),
-            timeout=10,
-        )
+        acquired = _woo_http_semaphore.acquire(timeout=25)
+        if not acquired:
+            err = IntegrationError("WooCommerce is busy, please retry")
+            setattr(err, "status", 503)
+            raise err
+        try:
+            response = requests.get(
+                url,
+                params=_sanitize_params(params or {}),
+                auth=HTTPBasicAuth(
+                    _strip(config.woo_commerce.get("consumer_key")),
+                    _strip(config.woo_commerce.get("consumer_secret")),
+                ),
+                timeout=10,
+            )
+        finally:
+            try:
+                _woo_http_semaphore.release()
+            except ValueError:
+                pass
         response.raise_for_status()
         # Try JSON; fall back to text if necessary.
         try:

@@ -673,20 +673,45 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     normalized_sales_rep_id = str(sales_rep_id)
     role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
     rep_records = {rep.get("id"): rep for rep in sales_rep_repository.get_all()}
-    # Allow matching by legacyUserId to catch migrated reps
-    legacy_map = {rep.get("legacyUserId"): rep_id for rep_id, rep in rep_records.items() if rep.get("legacyUserId")}
+    # Allow matching by legacyUserId to catch migrated reps (but only for the logged-in rep).
+    legacy_map = {
+        str(rep.get("legacyUserId")).strip(): rep_id
+        for rep_id, rep in rep_records.items()
+        if rep.get("legacyUserId")
+    }
     allowed_rep_ids = {normalized_sales_rep_id}
-    if normalized_sales_rep_id in legacy_map:
-        allowed_rep_ids.add(legacy_map[normalized_sales_rep_id])
-    # Also allow doctors tied directly to sales_reps table ids (in case user id differs)
-    allowed_rep_ids.update(rep_records.keys())
+
+    rep_record_id = legacy_map.get(normalized_sales_rep_id)
+    if rep_record_id:
+        allowed_rep_ids.add(rep_record_id)
+
+    direct_rep_record = rep_records.get(normalized_sales_rep_id) if normalized_sales_rep_id else None
+    if isinstance(direct_rep_record, dict):
+        legacy_user_id = str(direct_rep_record.get("legacyUserId") or "").strip()
+        if legacy_user_id:
+            allowed_rep_ids.add(legacy_user_id)
+
+    if rep_record_id and isinstance(rep_records.get(rep_record_id), dict):
+        legacy_user_id = str(rep_records.get(rep_record_id).get("legacyUserId") or "").strip()
+        if legacy_user_id:
+            allowed_rep_ids.add(legacy_user_id)
+
+    rep_user = next((u for u in users if str(u.get("id")) == normalized_sales_rep_id), None)
+    rep_user_email = (rep_user.get("email") or "").strip().lower() if isinstance(rep_user, dict) else ""
+    if rep_user_email:
+        for rep_id, rep in rep_records.items():
+            if (rep.get("email") or "").strip().lower() == rep_user_email:
+                allowed_rep_ids.add(str(rep_id))
+                legacy_user_id = str(rep.get("legacyUserId") or "").strip()
+                if legacy_user_id:
+                    allowed_rep_ids.add(legacy_user_id)
 
     doctors = []
     for user in users:
         role = (user.get("role") or "").lower()
         if role not in ("doctor", "test_doctor"):
             continue
-        doctor_sales_rep = str(user.get("salesRepId") or "")
+        doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "")
         if doctor_sales_rep not in allowed_rep_ids:
             continue
         doctors.append(user)

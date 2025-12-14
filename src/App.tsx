@@ -63,6 +63,7 @@ import {
   checkServerHealth,
   passwordResetAPI,
   settingsAPI,
+  API_BASE_URL,
 } from "./services/api";
 import physiciansChoiceHtml from "./content/landing/physicians-choice.html?raw";
 import careComplianceHtml from "./content/landing/care-compliance.html?raw";
@@ -1258,7 +1259,17 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.8.79";
+const FRONTEND_BUILD_ID = "v1.8.82";
+const CATALOG_PAGE_CONCURRENCY = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(Math.max(parsed, 1), 4);
+  }
+  return 2;
+})();
 
 if (typeof window !== "undefined") {
   (window as any).__PEPPRO_BUILD__ = FRONTEND_BUILD_ID;
@@ -3701,6 +3712,9 @@ export default function App() {
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<
     number | null
   >(null);
+  const salesTrackingFetchKeyRef = useRef<string | null>(null);
+  const salesTrackingLastFetchAtRef = useRef<number>(0);
+  const salesTrackingInFlightRef = useRef<boolean>(false);
 
   useEffect(() => {
     salesTrackingOrdersRef.current = salesTrackingOrders;
@@ -4072,6 +4086,65 @@ export default function App() {
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [shopEnabled, setShopEnabled] = useState(true);
+  type ServerHealthPayload = {
+    status?: string;
+    message?: string;
+    build?: string;
+    timestamp?: string;
+    usage?: {
+      cpu?: { count?: number | null; loadAvg?: Record<string, number> | null; loadPercent?: number | null } | null;
+      memory?: { totalMb?: number; availableMb?: number; usedPercent?: number } | null;
+      disk?: { totalGb?: number; freeGb?: number; usedPercent?: number } | null;
+      process?: { maxRssMb?: number; rssMb?: number } | null;
+      platform?: string | null;
+    } | null;
+  };
+  const [serverHealthPayload, setServerHealthPayload] =
+    useState<ServerHealthPayload | null>(null);
+  const [serverHealthLoading, setServerHealthLoading] = useState(false);
+  const [serverHealthError, setServerHealthError] = useState<string | null>(null);
+  const serverHealthInFlightRef = useRef(false);
+  const serverHealthLastFetchedAtRef = useRef<number>(0);
+
+  const fetchServerHealth = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!user || !isAdmin(user.role) || postLoginHold) {
+        return;
+      }
+      const now = Date.now();
+      const ttlMs = 30_000;
+      if (!options?.force && now - serverHealthLastFetchedAtRef.current < ttlMs) {
+        return;
+      }
+      if (serverHealthInFlightRef.current) {
+        return;
+      }
+      serverHealthInFlightRef.current = true;
+      serverHealthLastFetchedAtRef.current = now;
+      setServerHealthLoading(true);
+      setServerHealthError(null);
+      try {
+        const res = await fetch(`${API_BASE_URL}/health?_ts=${Date.now()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error(`Health check failed (${res.status})`);
+        }
+        const payload = (await res.json()) as ServerHealthPayload;
+        setServerHealthPayload(payload);
+      } catch (error: any) {
+        setServerHealthError(
+          typeof error?.message === "string" ? error.message : "Unable to load server health.",
+        );
+      } finally {
+        setServerHealthLoading(false);
+        serverHealthInFlightRef.current = false;
+      }
+    },
+    [user?.id, user?.role, postLoginHold],
+  );
   type UserActivityWindow =
     | "hour"
     | "day"
@@ -4137,6 +4210,16 @@ export default function App() {
       cancelled = true;
     };
   }, [user?.role, userActivityWindow]);
+
+  useEffect(() => {
+    if (!user || !isAdmin(user.role) || postLoginHold) {
+      setServerHealthPayload(null);
+      setServerHealthLoading(false);
+      setServerHealthError(null);
+      return;
+    }
+    void fetchServerHealth();
+  }, [user?.id, user?.role, postLoginHold, fetchServerHealth]);
   const referralRefreshInFlight = useRef(false);
   const [adminActionState, setAdminActionState] = useState<{
     updatingReferral: string | null;
@@ -4941,7 +5024,7 @@ export default function App() {
     [salesRepDoctorsById],
   );
 
-  const fetchSalesTrackingOrders = useCallback(async () => {
+  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
     const role = userRole;
     const salesRepId = userSalesRepId || userId;
     if (!role || (!isRep(role) && !isAdmin(role))) {
@@ -4953,6 +5036,29 @@ export default function App() {
       setSalesTrackingLoading(false);
       return;
     }
+    if (postLoginHold) {
+      return;
+    }
+
+    const now = Date.now();
+    const cacheTtlMs = 25_000;
+    const fetchKey = `${String(role || "").toLowerCase()}:${String(salesRepId || "")}`;
+    const isKeyChanged = salesTrackingFetchKeyRef.current !== fetchKey;
+    if (isKeyChanged) {
+      salesTrackingFetchKeyRef.current = fetchKey;
+      salesTrackingLastFetchAtRef.current = 0;
+    }
+
+    const shouldForce = options?.force === true || isKeyChanged;
+    const elapsedMs = now - salesTrackingLastFetchAtRef.current;
+    if (!shouldForce && elapsedMs > 0 && elapsedMs < cacheTtlMs) {
+      return;
+    }
+    if (salesTrackingInFlightRef.current) {
+      return;
+    }
+    salesTrackingInFlightRef.current = true;
+    salesTrackingLastFetchAtRef.current = now;
 
     setSalesTrackingLoading(true);
     setSalesTrackingError(null);
@@ -5253,27 +5359,29 @@ export default function App() {
       setSalesTrackingError(message);
     } finally {
       setSalesTrackingLoading(false);
+      salesTrackingInFlightRef.current = false;
     }
   }, [
     userId,
     userRole,
     userSalesRepId,
+    postLoginHold,
     resolveOrderDoctorId,
     enrichMissingOrderDetails,
   ]);
 
   useEffect(() => {
-    if (!userRole || (!isRep(userRole) && !isAdmin(userRole))) {
+    if (postLoginHold || !userRole || (!isRep(userRole) && !isAdmin(userRole))) {
       return;
     }
     fetchSalesTrackingOrders();
     const pollHandle = window.setInterval(() => {
       void fetchSalesTrackingOrders();
-    }, 30000);
+    }, 25000);
     return () => {
       window.clearInterval(pollHandle);
     };
-  }, [fetchSalesTrackingOrders, userRole]);
+  }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
 
   const salesTrackingSummary = useMemo(() => {
     if (salesTrackingOrders.length === 0) {
@@ -5845,45 +5953,66 @@ export default function App() {
 			      try {
             ensureVariationCacheReady();
 
-	            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
-	              const perPage = 100;
-	              const maxPages = 25;
-	              const items: WooProduct[] = [];
-              for (let page = 1; page <= maxPages; page += 1) {
-                const pageStartedAt = Date.now();
-                // eslint-disable-next-line no-await-in-loop
-                const batch = await listProducts<WooProduct[]>({
-                  per_page: perPage,
-                  page,
-                  status: "publish",
-                });
-                if (!Array.isArray(batch) || batch.length === 0) {
-                  if (CATALOG_DEBUG) {
-                    console.info("[Catalog] Products page empty", {
-                      page,
-                      durationMs: Date.now() - pageStartedAt,
-                    });
-                  }
-                  break;
-                }
-                items.push(...batch);
-                if (CATALOG_DEBUG) {
-                  console.info("[Catalog] Products page loaded", {
-                    page,
-                    count: batch.length,
-                    total: items.length,
-                    durationMs: Date.now() - pageStartedAt,
-                  });
-                }
-                if (batch.length < perPage) {
-                  break;
-                }
-              }
-	              if (CATALOG_DEBUG && items.length === 0) {
-	                console.warn("[Catalog] No Woo products returned");
+		            const fetchAllPublishedProducts = async (): Promise<WooProduct[]> => {
+		              const perPage = 100;
+		              const maxPages = 25;
+		              const items: WooProduct[] = [];
+	              const fetchPage = async (page: number) => {
+	                const pageStartedAt = Date.now();
+	                const batch = await listProducts<WooProduct[]>({
+	                  per_page: perPage,
+	                  page,
+	                  status: "publish",
+	                });
+	                if (CATALOG_DEBUG) {
+	                  console.info("[Catalog] Products page loaded", {
+	                    page,
+	                    count: Array.isArray(batch) ? batch.length : 0,
+	                    durationMs: Date.now() - pageStartedAt,
+	                  });
+	                }
+	                return batch;
+	              };
+
+	              for (let page = 1; page <= maxPages; page += CATALOG_PAGE_CONCURRENCY) {
+	                const pages = Array.from(
+	                  { length: CATALOG_PAGE_CONCURRENCY },
+	                  (_, idx) => page + idx,
+	                ).filter((p) => p <= maxPages);
+
+	                // eslint-disable-next-line no-await-in-loop
+	                const batches = await Promise.all(
+	                  pages.map((p) => fetchPage(p)),
+	                );
+
+	                let reachedEnd = false;
+	                for (let idx = 0; idx < batches.length; idx += 1) {
+	                  const batch = batches[idx];
+	                  const currentPage = pages[idx];
+	                  if (!Array.isArray(batch) || batch.length === 0) {
+	                    if (CATALOG_DEBUG) {
+	                      console.info("[Catalog] Products page empty", {
+	                        page: currentPage,
+	                      });
+	                    }
+	                    reachedEnd = true;
+	                    break;
+	                  }
+	                  items.push(...batch);
+	                  if (batch.length < perPage) {
+	                    reachedEnd = true;
+	                    break;
+	                  }
+	                }
+	                if (reachedEnd) {
+	                  break;
+	                }
 	              }
-	              return items;
-	            };
+		              if (CATALOG_DEBUG && items.length === 0) {
+		                console.warn("[Catalog] No Woo products returned");
+		              }
+		              return items;
+		            };
 
             const [wooProducts, wooCategories] = await Promise.all([
               fetchAllPublishedProducts(),
@@ -8497,49 +8626,134 @@ export default function App() {
             </p>
           )}
 
-          {isAdmin(user?.role) && (
-            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Admin Settings
-                  </h3>
-                  <p className="text-sm text-slate-600">
-                    Configure storefront availability and Stripe mode.
-                  </p>
-                </div>
-                <div className="text-xs text-slate-500">
-                  <span className="mr-2">
-                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                  <span>
-                    Stripe: {stripeModeEffective === "test" ? "Test" : "Live"}
-                  </span>
-                </div>
-              </div>
-
-	              <div className="flex flex-col gap-3 mb-4">
-	                <label className="flex items-center gap-2 text-sm text-slate-700">
-	                  <input
-	                    type="checkbox"
-	                    checked={shopEnabled}
-	                    onChange={(e) => handleShopToggle(e.target.checked)}
-	                    className="brand-checkbox"
-	                  />
-	                  <span>Enable Shop button for users</span>
-	                </label>
-	                <label className="flex items-center gap-2 text-sm text-slate-700">
-	                  <input
-	                    type="checkbox"
-	                    checked={stripeModeEffective === "test"}
-	                    onChange={(e) =>
-	                      handleStripeTestModeToggle(e.target.checked)
-	                    }
-	                    className="brand-checkbox"
-	                  />
-	                  <span>Stripe test mode</span>
-	                </label>
+	          {isAdmin(user?.role) && (
+	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+	                <div>
+	                  <h3 className="text-lg font-semibold text-slate-900">
+	                    Admin Settings
+	                  </h3>
+	                  <p className="text-sm text-slate-600">
+	                    Configure storefront availability and Stripe mode.
+	                  </p>
+	                </div>
+	                <div className="text-xs text-slate-500">
+	                  <span className="mr-2">
+	                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
+	                  </span>
+	                  <span>
+	                    Stripe: {stripeModeEffective === "test" ? "Test" : "Live"}
+	                  </span>
+	                </div>
 	              </div>
+
+                <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900">
+                        Server Health
+                      </h4>
+                      <p className="text-sm text-slate-600">
+                        Quick usage snapshot (load, memory, disk).
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void fetchServerHealth({ force: true })}
+                      disabled={serverHealthLoading}
+                      className="gap-2"
+                      title="Refresh server health"
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${
+                          serverHealthLoading ? "animate-spin" : ""
+                        }`}
+                      />
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {serverHealthError && (
+                    <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+                      {serverHealthError}
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    {(() => {
+                      const usage = serverHealthPayload?.usage || null;
+                      const cpu = usage?.cpu || null;
+                      const mem = usage?.memory || null;
+                      const disk = usage?.disk || null;
+                      const cpuLabel =
+                        cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
+                          ? `CPU load: ${cpu.loadPercent}%`
+                          : cpu?.loadAvg
+                            ? `Load avg: ${cpu.loadAvg["1m"] ?? "—"}`
+                            : "CPU load: —";
+                      const memLabel =
+                        mem?.usedPercent !== null && mem?.usedPercent !== undefined
+                          ? `Memory: ${mem.usedPercent}%`
+                          : "Memory: —";
+                      const diskLabel =
+                        disk?.usedPercent !== null && disk?.usedPercent !== undefined
+                          ? `Disk: ${disk.usedPercent}%`
+                          : "Disk: —";
+                      const rssLabel = (() => {
+                        const rss =
+                          usage?.process?.maxRssMb ?? usage?.process?.rssMb ?? null;
+                        if (typeof rss === "number" && Number.isFinite(rss)) {
+                          return `App RSS: ${rss.toFixed(0)} MB`;
+                        }
+                        return "App RSS: —";
+                      })();
+                      const buildLabel = serverHealthPayload?.build
+                        ? `Build: ${serverHealthPayload.build}`
+                        : null;
+                      const tsLabel = serverHealthPayload?.timestamp
+                        ? `Updated: ${new Date(serverHealthPayload.timestamp).toLocaleTimeString()}`
+                        : null;
+
+                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, buildLabel, tsLabel].filter(
+                        (x): x is string => typeof x === "string" && x.trim().length > 0,
+                      );
+                      return pills.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+                        >
+                          {label}
+                        </span>
+                      ));
+                    })()}
+                  </div>
+                </div>
+	
+		              <div className="flex flex-col gap-3 mb-4">
+		                <div className="flex items-center gap-2 text-sm text-slate-700">
+		                  <input
+		                    type="checkbox"
+                        aria-label="Enable Shop button for users"
+		                    checked={shopEnabled}
+		                    onChange={(e) => handleShopToggle(e.target.checked)}
+		                    className="brand-checkbox"
+		                  />
+		                  <span className="cursor-default select-none">Enable Shop button for users</span>
+		                </div>
+		                <div className="flex items-center gap-2 text-sm text-slate-700">
+		                  <input
+		                    type="checkbox"
+                        aria-label="Stripe test mode"
+		                    checked={stripeModeEffective === "test"}
+		                    onChange={(e) =>
+		                      handleStripeTestModeToggle(e.target.checked)
+		                    }
+		                    className="brand-checkbox"
+		                  />
+		                  <span className="cursor-default select-none">Stripe test mode</span>
+		                </div>
+		              </div>
 
                 <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -8839,17 +9053,17 @@ export default function App() {
                       </p>
                     </div>
                     <div className="sales-rep-card-controls">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void fetchSalesTrackingOrders();
-                        }}
-                        disabled={salesTrackingLoading}
-                        className="gap-2"
-                        title="Refresh your sales data"
-                      >
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        onClick={(e) => {
+	                          e.stopPropagation();
+	                          void fetchSalesTrackingOrders({ force: true });
+	                        }}
+	                        disabled={salesTrackingLoading}
+	                        className="gap-2"
+	                        title="Refresh your sales data"
+	                      >
                         <RefreshCw
                           className={`h-4 w-4 ${
                             salesTrackingLoading ? "animate-spin" : ""
