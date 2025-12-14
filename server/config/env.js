@@ -71,7 +71,7 @@ const env = {
     // so default to 50mb to comfortably support ~25-35mb binary images.
     limit: process.env.BODY_LIMIT || '50mb',
   },
-  backendBuild: process.env.BACKEND_BUILD || '2024.10.01-02',
+  backendBuild: process.env.BACKEND_BUILD || 'v1.8.79',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   wooCommerce: {
     storeUrl: process.env.WC_STORE_URL || '',

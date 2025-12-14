@@ -27,6 +27,9 @@ _catalog_cache: Dict[str, Dict[str, Any]] = {}
 _catalog_cache_lock = threading.Lock()
 _inflight: Dict[str, Dict[str, Any]] = {}
 _MAX_IN_MEMORY_CACHE_KEYS = 500
+_BACKGROUND_REFRESH_CONCURRENCY = int(os.environ.get("WOO_PROXY_BACKGROUND_REFRESH_CONCURRENCY", "4").strip() or 4)
+_BACKGROUND_REFRESH_CONCURRENCY = max(1, min(_BACKGROUND_REFRESH_CONCURRENCY, 16))
+_background_refresh_semaphore = threading.BoundedSemaphore(_BACKGROUND_REFRESH_CONCURRENCY)
 _orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
 _orders_by_email_cache_lock = threading.Lock()
 _ORDERS_BY_EMAIL_TTL_SECONDS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_TTL_SECONDS", "30").strip() or 30)
@@ -42,6 +45,8 @@ def _cache_ttl_seconds_for_endpoint(endpoint: str) -> int:
     if endpoint == "products":
         return 5 * 60
     if re.match(r"^products/[^/]+/variations$", endpoint):
+        return 5 * 60
+    if re.match(r"^products/[^/]+/variations/[^/]+$", endpoint):
         return 5 * 60
     if re.match(r"^products/[^/]+$", endpoint):
         return 5 * 60
@@ -169,7 +174,9 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
       - ttlSeconds
     """
     if not is_configured():
-        raise IntegrationError("WooCommerce is not configured")
+        err = IntegrationError("WooCommerce is not configured")
+        setattr(err, "status", 503)
+        raise err
 
     ttl_seconds = _cache_ttl_seconds_for_endpoint(endpoint)
     raw_params = params or {}
@@ -179,6 +186,7 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     allow_stale = (
         normalized_endpoint in ("products", "products/categories")
         or re.match(r"^products/[^/]+/variations$", normalized_endpoint) is not None
+        or re.match(r"^products/[^/]+/variations/[^/]+$", normalized_endpoint) is not None
         or re.match(r"^products/[^/]+$", normalized_endpoint) is not None
     )
     cache_key = _build_cache_key(endpoint, params)
@@ -206,7 +214,15 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
 
         if inflight and event is not None:
             # Another request is already fetching this key.
-            pass
+            if (
+                inflight.get("background") is True
+                and allow_stale
+                and cached
+                and cached.get("expiresAt", 0) <= now_ms
+                and now_ms - cached.get("expiresAt", 0) <= _WOO_PROXY_MAX_STALE_MS
+            ):
+                # Do not block user requests behind a background refresh: serve stale immediately.
+                return cached.get("data"), {"cache": "STALE", "ttlSeconds": ttl_seconds}
         elif (
             allow_stale
             and cached
@@ -319,6 +335,8 @@ def _start_background_refresh(cache_key: str, endpoint: str, params: Optional[Ma
     with _catalog_cache_lock:
         if cache_key in _inflight:
             return
+        if not _background_refresh_semaphore.acquire(blocking=False):
+            return
         event = threading.Event()
         _inflight[cache_key] = {"event": event, "data": None, "error": None, "leader": True, "background": True}
     threading.Thread(
@@ -330,7 +348,7 @@ def _start_background_refresh(cache_key: str, endpoint: str, params: Optional[Ma
 
 def _refresh_proxy_cache(cache_key: str, endpoint: str, params: Optional[Mapping[str, Any]], ttl_seconds: int) -> None:
     try:
-        data = _fetch_catalog_http(endpoint, params)
+        data = _fetch_catalog_http(endpoint, params, suppress_log=True)
         now_ms = int(time.time() * 1000)
         expires_at = now_ms + ttl_seconds * 1000
         with _catalog_cache_lock:
@@ -347,9 +365,15 @@ def _refresh_proxy_cache(cache_key: str, endpoint: str, params: Optional[Mapping
         with _catalog_cache_lock:
             inflight = _inflight.get(cache_key)
             if inflight:
-                inflight["error"] = RuntimeError("Woo proxy background refresh failed")
+                inflight["error"] = None
                 inflight["event"].set()
                 _inflight.pop(cache_key, None)
+    finally:
+        try:
+            _background_refresh_semaphore.release()
+        except ValueError:
+            # Defensive: should not happen, but avoid crashing background thread.
+            pass
 
 
 class IntegrationError(RuntimeError):
@@ -962,7 +986,9 @@ def fetch_catalog(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> 
       - "products/categories"
     """
     if not is_configured():
-        raise IntegrationError("WooCommerce is not configured")
+        err = IntegrationError("WooCommerce is not configured")
+        setattr(err, "status", 503)
+        raise err
 
     config = get_config()
     base_url = _strip(config.woo_commerce.get("store_url") or "").rstrip("/")

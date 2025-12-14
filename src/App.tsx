@@ -1258,7 +1258,7 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "2025-12-12T23:35:00Z";
+const FRONTEND_BUILD_ID = "v1.8.79";
 
 if (typeof window !== "undefined") {
   (window as any).__PEPPRO_BUILD__ = FRONTEND_BUILD_ID;

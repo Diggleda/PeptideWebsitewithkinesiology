@@ -100,7 +100,7 @@ def load_config() -> AppConfig:
         data_dir=_resolve_path(os.environ.get("DATA_DIR"), "server-data"),
         cors_allow_list=cors_allow_list,
         body_limit=os.environ.get("BODY_LIMIT", "1mb"),
-        backend_build=os.environ.get("BACKEND_BUILD", "2024.10.01-02"),
+        backend_build=os.environ.get("BACKEND_BUILD", "v1.8.79"),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
             "store_url": _s(os.environ.get("WC_STORE_URL")),

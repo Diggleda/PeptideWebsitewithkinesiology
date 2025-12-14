@@ -732,6 +732,13 @@ export function Header({
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [orderLineImageCache, setOrderLineImageCache] = useState<Record<string, string | null>>({});
+  const orderLineImageCacheRef = useRef<Record<string, string | null>>({});
+  const orderLineImageInflightRef = useRef<Set<string>>(new Set());
+  const orderLineImagePrefetchRef = useRef<{
+    active: number;
+    queue: Array<() => void>;
+  }>({ active: 0, queue: [] });
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1160,6 +1167,9 @@ export function Header({
   useEffect(() => {
     cachedAccountOrdersRef.current = cachedAccountOrders;
   }, [cachedAccountOrders]);
+  useEffect(() => {
+    orderLineImageCacheRef.current = orderLineImageCache;
+  }, [orderLineImageCache]);
 
   useEffect(() => {
     if (!cancellingOrderId) {
@@ -1510,6 +1520,191 @@ export function Header({
       toast.info('Cancellation submitted. It may take a moment for the order status to update.');
     })();
   }, [onCancelOrder, onRefreshOrders, selectedOrder]);
+
+  const storeOrderLineImageCacheEntry = useCallback((key: string, url: string | null) => {
+    if (!key) return;
+    setOrderLineImageCache((prev) => {
+      if (Object.is(prev[key], url)) {
+        return prev;
+      }
+      const next = { ...prev, [key]: url };
+      orderLineImageCacheRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const extractWooLineItemsFromOrder = useCallback((order: AccountOrderSummary | null | undefined) => {
+    if (!order) return [];
+    const integrationDetails = parseMaybeJson((order as any).integrationDetails);
+    const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
+    const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+    const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+    if (Array.isArray(wooResponse?.line_items)) {
+      return wooResponse.line_items;
+    }
+    if (Array.isArray(wooPayload?.line_items)) {
+      return wooPayload.line_items;
+    }
+    return [];
+  }, []);
+
+  const extractOrderLineImageKey = useCallback((line: AccountOrderLineItem | null | undefined) => {
+    if (!line) return null;
+    const productId =
+      normalizeIdValue(line.productId) ||
+      normalizeIdValue((line as any)?.product_id);
+    if (!productId) return null;
+    const variationId =
+      normalizeIdValue(line.variantId) ||
+      normalizeIdValue((line as any)?.variation_id);
+    const key = variationId ? `${productId}:${variationId}` : `${productId}:0`;
+    return { productId, variationId: variationId || null, key };
+  }, []);
+
+  const runWithOrderLineImagePrefetchLimit = useCallback(async (task: () => Promise<void>) => {
+    const limit = 4;
+    const state = orderLineImagePrefetchRef.current;
+    return new Promise<void>((resolve) => {
+      const run = () => {
+        state.active += 1;
+        Promise.resolve()
+          .then(task)
+          .catch(() => undefined)
+          .finally(() => {
+            state.active = Math.max(0, state.active - 1);
+            const next = state.queue.shift();
+            if (next) {
+              next();
+            }
+            resolve();
+          });
+      };
+
+      if (state.active < limit) {
+        run();
+        return;
+      }
+
+      state.queue.push(run);
+    });
+  }, []);
+
+  const ensureOrderLineImageLoaded = useCallback(
+    async (line: AccountOrderLineItem, wooLineItems: any[] = []) => {
+      const existingInline = resolveOrderLineImage(line, wooLineItems);
+      const ids = extractOrderLineImageKey(line);
+      if (!ids) {
+        return;
+      }
+
+      if (existingInline) {
+        storeOrderLineImageCacheEntry(ids.key, existingInline);
+        return;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(orderLineImageCacheRef.current, ids.key)) {
+        return;
+      }
+      if (orderLineImageInflightRef.current.has(ids.key)) {
+        return;
+      }
+
+      orderLineImageInflightRef.current.add(ids.key);
+      try {
+        await runWithOrderLineImagePrefetchLimit(async () => {
+          const api = await import('../services/api');
+          let resolved: string | null = null;
+
+          if (ids.variationId) {
+            try {
+              const variation = await api.wooAPI.getProductVariation(ids.productId, ids.variationId);
+              resolved =
+                normalizeImageSource((variation as any)?.image) ||
+                normalizeImageSource((variation as any)?.images?.[0]) ||
+                null;
+            } catch {
+              // ignore variation lookup failures
+            }
+          }
+
+          if (!resolved) {
+            try {
+              const product = await api.wooAPI.getProduct(ids.productId);
+              resolved =
+                normalizeImageSource((product as any)?.images?.[0]) ||
+                normalizeImageSource((product as any)?.image) ||
+                null;
+            } catch {
+              // ignore product lookup failures
+            }
+          }
+
+          storeOrderLineImageCacheEntry(ids.key, resolved);
+        });
+      } finally {
+        orderLineImageInflightRef.current.delete(ids.key);
+      }
+    },
+    [extractOrderLineImageKey, runWithOrderLineImagePrefetchLimit, storeOrderLineImageCacheEntry],
+  );
+
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'orders') {
+      return;
+    }
+
+    const visibleOrders = cachedAccountOrders
+      .filter((order) => {
+        const source = (order.source || '').toLowerCase();
+        const hasWooIntegration = Boolean(
+          (order.integrationDetails as any)?.wooCommerce ||
+          (order.integrationDetails as any)?.woocommerce,
+        );
+        return source === 'woocommerce' || hasWooIntegration;
+      })
+      .filter((order) => {
+        if (showCanceledOrders) {
+          return true;
+        }
+        const status = order.status ? String(order.status).trim().toLowerCase() : '';
+        return status !== 'canceled' && status !== 'trash';
+      });
+
+    const queued = new Set<string>();
+    for (const order of visibleOrders) {
+      const wooLineItems = extractWooLineItemsFromOrder(order);
+      const lines = Array.isArray(order.lineItems) ? order.lineItems : [];
+      for (const line of lines) {
+        const ids = extractOrderLineImageKey(line);
+        if (!ids) continue;
+        if (queued.has(ids.key)) continue;
+        queued.add(ids.key);
+        void ensureOrderLineImageLoaded(line, wooLineItems);
+        if (queued.size >= 40) {
+          return;
+        }
+      }
+    }
+  }, [
+    welcomeOpen,
+    accountTab,
+    cachedAccountOrders,
+    showCanceledOrders,
+    ensureOrderLineImageLoaded,
+    extractWooLineItemsFromOrder,
+    extractOrderLineImageKey,
+  ]);
+
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'orders' || !selectedOrder) {
+      return;
+    }
+    const wooLineItems = extractWooLineItemsFromOrder(selectedOrder);
+    const lines = Array.isArray(selectedOrder.lineItems) ? selectedOrder.lineItems : [];
+    lines.forEach((line) => {
+      void ensureOrderLineImageLoaded(line, wooLineItems);
+    });
+  }, [welcomeOpen, accountTab, selectedOrder, ensureOrderLineImageLoaded, extractWooLineItemsFromOrder]);
 
   const handleCopyReferralCode = useCallback(async () => {
     if (!primaryReferralCode) return;
@@ -2029,15 +2224,20 @@ export function Header({
                       </div>
                     </div>
 
-                    {order.lineItems && order.lineItems.length > 0 && (
-                      <div className="space-y-3">
-                        {order.lineItems.map((line, idx) => {
-                          const lineImage = resolveOrderLineImage(line, wooLineItems);
-                          return (
-                            <div
-                              key={line.id || `${line.sku}-${idx}`}
-                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
-                              style={{ maxHeight: '120px' }}
+	                    {order.lineItems && order.lineItems.length > 0 && (
+	                      <div className="space-y-3">
+	                        {order.lineItems.map((line, idx) => {
+	                          const ids = extractOrderLineImageKey(line);
+	                          const cachedImage = ids ? orderLineImageCache[ids.key] : null;
+	                          const lineImage =
+	                            typeof cachedImage === 'string' && cachedImage.trim().length > 0
+	                              ? cachedImage
+	                              : resolveOrderLineImage(line, wooLineItems);
+	                          return (
+	                            <div
+	                              key={line.id || `${line.sku}-${idx}`}
+	                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
+	                              style={{ maxHeight: '120px' }}
                             >
                               <div className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
                                    style={{ maxHeight: '120px' }}>
@@ -2326,16 +2526,21 @@ export function Header({
             <h4 className="text-base font-semibold text-slate-900">Items</h4>
             {lineItems.length > 0 ? (
               <div className="space-y-4">
-                {lineItems.map((line, idx) => {
-                  const quantity = Number(line.quantity) || 0;
-                  const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
-                  const unitPrice = quantity > 0 ? lineTotal / quantity : parseWooMoney(line.price, lineTotal);
-                  const lineImage = resolveOrderLineImage(line, wooLineItems);
-                  return (
-                    <div
-                      key={line.id || `${line.sku}-${idx}`}
-                      className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
-                    >
+	                {lineItems.map((line, idx) => {
+	                  const quantity = Number(line.quantity) || 0;
+	                  const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
+	                  const unitPrice = quantity > 0 ? lineTotal / quantity : parseWooMoney(line.price, lineTotal);
+	                  const ids = extractOrderLineImageKey(line);
+	                  const cachedImage = ids ? orderLineImageCache[ids.key] : null;
+	                  const lineImage =
+	                    typeof cachedImage === 'string' && cachedImage.trim().length > 0
+	                      ? cachedImage
+	                      : resolveOrderLineImage(line, wooLineItems);
+	                  return (
+	                    <div
+	                      key={line.id || `${line.sku}-${idx}`}
+	                      className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
+	                    >
                       <div className="w-20 h-20 max-h-[120px] rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
                         {lineImage ? (
                           <img

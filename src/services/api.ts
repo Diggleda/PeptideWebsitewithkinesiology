@@ -457,6 +457,34 @@ export const ordersAPI = {
   },
 };
 
+export const wooAPI = {
+  getProduct: async (productId: string | number) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+  },
+
+  getProductVariation: async (productId: string | number, variationId: string | number) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    if (!variationId) {
+      throw new Error('variationId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/variations/${encodeURIComponent(String(variationId))}`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+    );
+  },
+};
+
 export const shippingAPI = {
   getRates: async (payload: { shippingAddress: any; items: any[] }) => {
     return fetchWithAuth(`${API_BASE_URL}/shipping/rates`, {

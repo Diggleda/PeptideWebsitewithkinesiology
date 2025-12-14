@@ -66,6 +66,36 @@ def list_product_variations(product_id: int):
         return json_error(exc)
 
 
+@blueprint.get("/products/<int:product_id>")
+def get_product(product_id: int):
+    try:
+        endpoint = f"products/{product_id}"
+        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, request.args)
+        return _json_with_cache_headers(
+            data,
+            cache=str(meta.get("cache") or "MISS"),
+            ttl_seconds=int(meta.get("ttlSeconds") or 60),
+            no_store=bool(meta.get("noStore")),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return json_error(exc)
+
+
+@blueprint.get("/products/<int:product_id>/variations/<int:variation_id>")
+def get_product_variation(product_id: int, variation_id: int):
+    try:
+        endpoint = f"products/{product_id}/variations/{variation_id}"
+        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, request.args)
+        return _json_with_cache_headers(
+            data,
+            cache=str(meta.get("cache") or "MISS"),
+            ttl_seconds=int(meta.get("ttlSeconds") or 60),
+            no_store=bool(meta.get("noStore")),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return json_error(exc)
+
+
 @blueprint.post("/webhook")
 def handle_webhook():
     try:
