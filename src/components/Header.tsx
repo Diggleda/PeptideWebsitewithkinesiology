@@ -166,7 +166,7 @@ interface HeaderProps {
   accountOrdersLoading?: boolean;
   accountOrdersError?: string | null;
   ordersLastSyncedAt?: string | null;
-  onRefreshOrders?: () => void;
+  onRefreshOrders?: () => Promise<unknown> | void;
   accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number; order?: AccountOrderSummary } | null;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
@@ -576,8 +576,30 @@ const humanizeOrderStatus = (status?: string | null) => {
     .join(' ');
 };
 
+const normalizeStringField = (value: unknown) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const isTerminalOrderStatus = (status?: string | null) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  return (
+    normalized === 'refunded' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled' ||
+    normalized === 'trash'
+  );
+};
+
 const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined): string | null => {
   if (!order) return null;
+  if (isTerminalOrderStatus(order.status ? String(order.status) : null)) {
+    const str = String(order.status || '').trim();
+    return str.length > 0 ? str : null;
+  }
   const shippingStatus =
     (order.shippingEstimate as any)?.status ||
     (order.integrationDetails as any)?.shipStation?.status;
@@ -589,22 +611,22 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
 
 const describeOrderStatus = (order: AccountOrderSummary | null | undefined): string => {
   const raw = resolveOrderStatusSource(order);
-  if (!raw) return 'Pending';
-  const normalized = raw.trim().toLowerCase();
+  const statusRaw = raw ? String(raw) : '';
+  const normalized = statusRaw.trim().toLowerCase();
   if (normalized === 'trash' || normalized === 'canceled' || normalized === 'cancelled') {
     return 'Canceled';
   }
   if (normalized === 'refunded') {
     return 'Refunded';
   }
-  if (normalized === 'awaiting_shipment' || normalized === 'awaiting shipment') {
-    return 'Shipping Soon';
-  }
-  if (normalized === 'processing' || normalized === 'completed' || normalized === 'complete') {
-    return 'Shipping Soon';
-  }
+
+  const tracking = typeof order?.trackingNumber === 'string' ? order.trackingNumber.trim() : '';
+  const eta = (order?.shippingEstimate as any)?.estimatedArrivalDate || null;
+  const hasEta = typeof eta === 'string' && eta.trim().length > 0;
+
   if (normalized === 'shipped') {
-    return 'Shipped';
+    if (tracking && !hasEta) return 'Shipping Soon';
+    return tracking ? 'Shipped' : 'Shipped';
   }
   if (normalized.includes('out_for_delivery') || normalized.includes('out-for-delivery')) {
     return 'Out for Delivery';
@@ -615,6 +637,24 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
   if (normalized.includes('delivered')) {
     return 'Delivered';
   }
+
+  if (tracking && !hasEta) {
+    return 'Shipping Soon';
+  }
+  if (tracking && hasEta) {
+    return 'Shipped';
+  }
+  if (normalized === 'processing') {
+    return 'Processing';
+  }
+  if (normalized === 'completed' || normalized === 'complete') {
+    return 'Completed';
+  }
+  if (normalized === 'awaiting_shipment' || normalized === 'awaiting shipment') {
+    return 'Processing';
+  }
+
+  if (!raw) return 'Pending';
   return humanizeOrderStatus(raw);
 };
 
@@ -690,6 +730,7 @@ export function Header({
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
+  const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
@@ -1116,6 +1157,29 @@ export function Header({
       setCachedAccountOrders(incoming);
     }
   }, [accountOrders, accountOrdersLoading]);
+  useEffect(() => {
+    cachedAccountOrdersRef.current = cachedAccountOrders;
+  }, [cachedAccountOrders]);
+
+  useEffect(() => {
+    if (!cancellingOrderId) {
+      return;
+    }
+    const matchesCancellationKey = (order: AccountOrderSummary) => {
+      const key = order?.cancellationId || order?.wooOrderId || order?.id;
+      return key ? String(key) === String(cancellingOrderId) : false;
+    };
+    const match = cachedAccountOrders.find(matchesCancellationKey);
+    if (match && isTerminalOrderStatus(match.status ? String(match.status) : null)) {
+      const selectedCancellationId = selectedOrder
+        ? selectedOrder.cancellationId || selectedOrder.wooOrderId || selectedOrder.id
+        : null;
+      if (selectedCancellationId && String(selectedCancellationId) === String(cancellingOrderId)) {
+        setSelectedOrder(null);
+      }
+      setCancellingOrderId((current) => (current === cancellingOrderId ? null : current));
+    }
+  }, [cancellingOrderId, cachedAccountOrders, selectedOrder]);
 
   // Auto-refresh orders when the orders tab is open
   useEffect(() => {
@@ -1397,21 +1461,55 @@ export function Header({
     setCancellingOrderId(orderId);
     try {
       await onCancelOrder(orderId);
-      const selectedCancellationId = selectedOrder
-        ? selectedOrder.cancellationId || selectedOrder.wooOrderId || selectedOrder.id
-        : null;
-      if (selectedCancellationId && selectedCancellationId === orderId) {
-        setSelectedOrder(null);
-      }
     } catch (error: any) {
       const message = typeof error?.message === 'string' && error.message.trim().length > 0
         ? error.message
         : 'Unable to cancel this order right now.';
       toast.error(message);
-    } finally {
       setCancellingOrderId((current) => (current === orderId ? null : current));
+      return;
     }
-  }, [onCancelOrder, selectedOrder]);
+
+    const isTerminalCancelStatus = (status?: string | null) => {
+      const normalized = String(status || '').trim().toLowerCase();
+      return (
+        normalized === 'refunded' ||
+        normalized === 'cancelled' ||
+        normalized === 'canceled' ||
+        normalized === 'trash'
+      );
+    };
+    const matchesCancellationKey = (order: AccountOrderSummary) => {
+      const key = order?.cancellationId || order?.wooOrderId || order?.id;
+      return key ? String(key) === String(orderId) : false;
+    };
+    const selectedCancellationId = selectedOrder
+      ? selectedOrder.cancellationId || selectedOrder.wooOrderId || selectedOrder.id
+      : null;
+
+    void (async () => {
+      const started = Date.now();
+      const timeoutMs = 180_000;
+      const intervalMs = 1500;
+      while (Date.now() - started < timeoutMs) {
+        try {
+          await Promise.resolve(onRefreshOrders?.());
+        } catch {
+          // ignore refresh errors during polling
+        }
+        const match = cachedAccountOrdersRef.current.find(matchesCancellationKey);
+        if (match && isTerminalCancelStatus(match.status)) {
+          if (selectedCancellationId && String(selectedCancellationId) === String(orderId)) {
+            setSelectedOrder(null);
+          }
+          setCancellingOrderId((current) => (current === orderId ? null : current));
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+      toast.info('Cancellation submitted. It may take a moment for the order status to update.');
+    })();
+  }, [onCancelOrder, onRefreshOrders, selectedOrder]);
 
   const handleCopyReferralCode = useCallback(async () => {
     if (!primaryReferralCode) return;
@@ -1785,8 +1883,11 @@ export function Header({
               cancellationKey && cancellingOrderId === cancellationKey
             );
             const wooOrderNumber =
-              (order.integrationDetails as any)?.wooCommerce?.wooOrderNumber ||
-              (order.integrationDetails as any)?.wooCommerce?.pepproOrderId ||
+              normalizeStringField(order.wooOrderNumber) ||
+              normalizeStringField((order.integrationDetails as any)?.wooCommerce?.response?.number) ||
+              normalizeStringField((order.integrationDetails as any)?.wooCommerce?.wooOrderNumber) ||
+              normalizeStringField((order.integrationDetails as any)?.woocommerce?.response?.number) ||
+              normalizeStringField((order.integrationDetails as any)?.woocommerce?.wooOrderNumber) ||
               null;
             const orderNumberValue = wooOrderNumber || order.number || order.id || 'Order';
             const orderNumberLabel = `Order #${orderNumberValue}`;
@@ -2655,7 +2756,12 @@ export function Header({
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                   <div className="space-y-2 sm:w-36 sm:pb-0">
-                    <Label htmlFor="suffix">Suffix</Label>
+                    <Label htmlFor="suffix">
+                      <span>Suffix</span>
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        Optional
+                      </span>
+                    </Label>
                     <select
                       id="suffix"
                       value={signupSuffix}

@@ -174,7 +174,8 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             return value.replace(tzinfo=timezone.utc).isoformat()
         return str(value)
 
-    return {
+    payload = parse_json(row.get("payload"), {})
+    order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
         "items": parse_json(row.get("items"), []),
@@ -193,6 +194,11 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "createdAt": fmt_datetime(row.get("created_at")),
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
+    if isinstance(payload, dict) and payload:
+        for key, value in payload.items():
+            if key not in order:
+                order[key] = value
+    return order
 
 
 def _to_db_params(order: Dict) -> Dict:

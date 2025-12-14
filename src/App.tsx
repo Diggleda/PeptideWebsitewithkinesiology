@@ -406,6 +406,16 @@ const resolveSalesOrderStatusSource = (
   order?: AccountOrderSummary | null,
 ): string | null => {
   if (!order) return null;
+  const normalizedOrderStatus = String(order.status || "").trim().toLowerCase();
+  if (
+    normalizedOrderStatus === "refunded" ||
+    normalizedOrderStatus === "cancelled" ||
+    normalizedOrderStatus === "canceled" ||
+    normalizedOrderStatus === "trash"
+  ) {
+    const status = String(order.status || "").trim();
+    return status.length > 0 ? status : null;
+  }
   const shippingStatus =
     (order.shippingEstimate as any)?.status ||
     (order.integrationDetails as any)?.shipStation?.status;
@@ -419,8 +429,8 @@ const describeSalesOrderStatus = (
   order?: AccountOrderSummary | null,
 ): string => {
   const raw = resolveSalesOrderStatusSource(order);
-  if (!raw) return "Pending";
-  const normalized = raw.trim().toLowerCase();
+  const statusRaw = raw ? String(raw) : "";
+  const normalized = statusRaw.trim().toLowerCase();
   if (
     normalized === "trash" ||
     normalized === "canceled" ||
@@ -431,21 +441,14 @@ const describeSalesOrderStatus = (
   if (normalized === "refunded") {
     return "Refunded";
   }
-  if (
-    normalized === "awaiting_shipment" ||
-    normalized === "awaiting shipment"
-  ) {
-    return "Shipping Soon";
-  }
-  if (
-    normalized === "processing" ||
-    normalized === "completed" ||
-    normalized === "complete"
-  ) {
-    return "Shipping Soon";
-  }
+
+  const tracking = resolveTrackingNumber(order) || "";
+  const eta = (order?.shippingEstimate as any)?.estimatedArrivalDate || null;
+  const hasEta = typeof eta === "string" && eta.trim().length > 0;
+
   if (normalized === "shipped") {
-    return "Shipped";
+    if (tracking && !hasEta) return "Shipping Soon";
+    return tracking ? "Shipped" : "Shipped";
   }
   if (
     normalized.includes("out_for_delivery") ||
@@ -462,6 +465,24 @@ const describeSalesOrderStatus = (
   if (normalized.includes("delivered")) {
     return "Delivered";
   }
+
+  if (tracking && !hasEta) {
+    return "Shipping Soon";
+  }
+  if (tracking && hasEta) {
+    return "Shipped";
+  }
+  if (normalized === "processing") {
+    return "Processing";
+  }
+  if (normalized === "completed" || normalized === "complete") {
+    return "Completed";
+  }
+  if (normalized === "awaiting_shipment" || normalized === "awaiting shipment") {
+    return "Processing";
+  }
+
+  if (!raw) return "Pending";
   return humanizeAccountOrderStatus(raw);
 };
 
@@ -2199,56 +2220,20 @@ const LazyCatalogProductCard = ({
   onAddToCart,
   onEnsureVariants,
 }: LazyCatalogProductCardProps) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const placeholderRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (isVisible) return;
-    const node = placeholderRef.current;
-    if (!node || typeof IntersectionObserver === "undefined") {
-      setIsVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsVisible(true);
-            observer.disconnect();
-          }
-        });
-      },
-      { rootMargin: "300px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [isVisible]);
-
-  const cardProduct = useMemo(() => {
-    if (!isVisible) return null;
-    return toCardProduct(product);
-  }, [isVisible, product]);
-
-  if (cardProduct) {
-    return (
-      <ProductCard
-        product={cardProduct}
-        onEnsureVariants={
-          typeof onEnsureVariants === "function"
-            ? (opts) => onEnsureVariants(product, opts)
-            : undefined
-        }
-        onAddToCart={(productId, variationId, quantity) =>
-          onAddToCart(productId, variationId, quantity)
-        }
-      />
-    );
-  }
+  const cardProduct = useMemo(() => toCardProduct(product), [product]);
 
   return (
-    <div ref={placeholderRef}>
-      <CatalogTextPreviewCard product={product} />
-    </div>
+    <ProductCard
+      product={cardProduct}
+      onEnsureVariants={
+        typeof onEnsureVariants === "function"
+          ? (opts) => onEnsureVariants(product, opts)
+          : undefined
+      }
+      onAddToCart={(productId, variationId, quantity) =>
+        onAddToCart(productId, variationId, quantity)
+      }
+    />
   );
 };
 
@@ -2284,9 +2269,11 @@ export default function App() {
     return getStripeMode();
   }, [stripeSettings?.stripeMode]);
   const stripePublishableKey = useMemo(() => {
-    const fromServer = (stripeSettings?.publishableKey || "").trim();
-    return fromServer || ENV_STRIPE_PUBLISHABLE_KEY;
-  }, [stripeSettings?.publishableKey]);
+    if (stripeSettings) {
+      return (stripeSettings.publishableKey || "").trim();
+    }
+    return ENV_STRIPE_PUBLISHABLE_KEY;
+  }, [stripeSettings]);
   const stripeClientPromise = useMemo(() => {
     if (!stripePublishableKey) {
       return null;
@@ -11103,7 +11090,10 @@ export default function App() {
                                   htmlFor="landing-suffix"
                                   className="text-sm font-medium"
                                 >
-                                  Suffix
+                                  <span>Suffix</span>
+                                  <span className="ml-2 text-xs font-normal text-gray-500">
+                                    Optional
+                                  </span>
                                 </label>
                                 <select
                                   id="landing-suffix"
@@ -11368,16 +11358,18 @@ export default function App() {
             </div>
           )}
 
-          {/* Main Content */}
-          {user && !postLoginHold && (
-            <main
-              className="w-full py-12 mobile-safe-area"
-              style={{ marginTop: "2.4rem" }}
-            >
-              {isRep(user.role) || isAdmin(user.role)
-                ? renderSalesRepDashboard()
-                : renderDoctorDashboard()}
-              {renderProductSection()}
+	          {/* Main Content */}
+	          {user && !postLoginHold && (
+	            <main
+	              className="w-full pb-12 mobile-safe-area"
+	              style={{
+	                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
+	              }}
+	            >
+	              {isRep(user.role) || isAdmin(user.role)
+	                ? renderSalesRepDashboard()
+	                : renderDoctorDashboard()}
+	              {renderProductSection()}
             </main>
           )}
         </div>
@@ -11388,11 +11380,11 @@ export default function App() {
       {/* Checkout Modal */}
       {stripeClientPromise ? (
         <Elements stripe={stripeClientPromise} key={stripePublishableKey || "stripe"}>
-          <CheckoutModal
-            isOpen={checkoutOpen}
-            onClose={() => setCheckoutOpen(false)}
-            cartItems={cartItems}
-            onCheckout={handleCheckout}
+	          <CheckoutModal
+	            isOpen={checkoutOpen}
+	            onClose={() => setCheckoutOpen(false)}
+	            cartItems={cartItems}
+	            onCheckout={handleCheckout}
             onClearCart={() => setCartItems([])}
             onPaymentSuccess={() => {
               const requestToken = Date.now();
@@ -11414,14 +11406,15 @@ export default function App() {
             physicianName={user?.npiVerification?.name || user?.name || null}
             customerEmail={user?.email || null}
             customerName={user?.name || null}
-            defaultShippingAddress={checkoutDefaultShippingAddress}
-            availableCredits={availableReferralCredits}
-            stripeAvailable={true}
-          />
-        </Elements>
-      ) : (
-        <CheckoutModal
-          isOpen={checkoutOpen}
+	            defaultShippingAddress={checkoutDefaultShippingAddress}
+	            availableCredits={availableReferralCredits}
+	            stripeAvailable={true}
+	            stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
+	          />
+	        </Elements>
+	      ) : (
+	        <CheckoutModal
+	          isOpen={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
           cartItems={cartItems}
           onCheckout={handleCheckout}
@@ -11446,11 +11439,12 @@ export default function App() {
           physicianName={user?.npiVerification?.name || user?.name || null}
           customerEmail={user?.email || null}
           customerName={user?.name || null}
-          defaultShippingAddress={checkoutDefaultShippingAddress}
-          availableCredits={availableReferralCredits}
-          stripeAvailable={false}
-        />
-      )}
+	          defaultShippingAddress={checkoutDefaultShippingAddress}
+	          availableCredits={availableReferralCredits}
+	          stripeAvailable={false}
+	          stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
+	        />
+	      )}
 
       <Dialog
         open={showManualProspectModal}

@@ -15,6 +15,7 @@ from ..repositories import (
 from ..integrations import ship_engine, ship_station, stripe_payments, woo_commerce
 from .. import storage
 from . import referral_service
+from . import settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +84,10 @@ def _extract_woo_order_id(local_order: Optional[Dict]) -> Optional[str]:
         local_order.get("wooOrderId"),
         local_order.get("woo_order_id"),
     ]
-    details = local_order.get("integrationDetails") or {}
-    woo_details = details.get("wooCommerce") or {}
-    response = woo_details.get("response") or {}
-    payload = woo_details.get("payload") or {}
+    details = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
+    woo_details = _ensure_dict(details.get("wooCommerce") or details.get("woocommerce"))
+    response = _ensure_dict(woo_details.get("response"))
+    payload = _ensure_dict(woo_details.get("payload"))
     candidates.extend(
         [
             response.get("id"),
@@ -98,6 +99,33 @@ def _extract_woo_order_id(local_order: Optional[Dict]) -> Optional[str]:
         if normalized:
             return normalized
     return None
+
+
+def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
+    rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
+    if not rep_id:
+        return {}
+
+    rep = sales_rep_repository.find_by_id(rep_id)
+    if not rep:
+        rep_user = user_repository.find_by_id(rep_id)
+        if rep_user and (rep_user.get("role") or "").lower() == "sales_rep":
+            rep = {
+                "id": rep_user.get("id"),
+                "name": rep_user.get("name") or "Sales Rep",
+                "email": rep_user.get("email"),
+            }
+
+    name = (rep.get("name") or "").strip() if isinstance(rep, dict) else ""
+    email = (rep.get("email") or "").strip() if isinstance(rep, dict) else ""
+    sales_code = (rep.get("salesCode") or rep.get("sales_code") or "").strip() if isinstance(rep, dict) else ""
+
+    return {
+        "id": (rep.get("id") if isinstance(rep, dict) else None) or rep_id,
+        "name": name or None,
+        "email": email or None,
+        "salesCode": sales_code or None,
+    }
 
 
 def create_order(
@@ -118,6 +146,8 @@ def create_order(
     user = user_repository.find_by_id(user_id)
     if not user:
         raise _service_error("User not found", 404)
+
+    sales_rep_ctx = _resolve_sales_rep_context(user)
 
     now = datetime.now(timezone.utc).isoformat()
     shipping_address = shipping_address or {}
@@ -140,6 +170,10 @@ def create_order(
         "status": "pending",
         "createdAt": now,
         "physicianCertificationAccepted": bool(physician_certified),
+        "doctorSalesRepId": sales_rep_ctx.get("id"),
+        "doctorSalesRepName": sales_rep_ctx.get("name"),
+        "doctorSalesRepEmail": sales_rep_ctx.get("email"),
+        "doctorSalesRepCode": sales_rep_ctx.get("salesCode"),
     }
 
     # Auto-apply available referral credits to this order
@@ -184,6 +218,25 @@ def create_order(
             order["wooOrderId"] = woo_response.get("id")
             order["wooOrderKey"] = woo_response.get("orderKey")
             order["wooOrderNumber"] = woo_response.get("number")
+            try:
+                woo_commerce.update_order_metadata(
+                    {
+                        "woo_order_id": order.get("wooOrderId"),
+                        "order_key": order.get("wooOrderKey"),
+                        "peppro_order_id": order.get("id"),
+                        "sales_rep_id": order.get("doctorSalesRepId"),
+                        "sales_rep_name": order.get("doctorSalesRepName"),
+                        "sales_rep_email": order.get("doctorSalesRepEmail"),
+                        "sales_rep_code": order.get("doctorSalesRepCode"),
+                        "stripe_mode": settings_service.get_effective_stripe_mode(),
+                    }
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to attach initial metadata to Woo order",
+                    exc_info=True,
+                    extra={"orderId": order.get("id"), "wooOrderId": order.get("wooOrderId")},
+                )
         # On successful Woo order creation, finalize referral credit deduction
         if order.get("appliedReferralCredit"):
             try:
@@ -203,6 +256,40 @@ def create_order(
             integrations["stripe"] = stripe_payments.create_payment_intent(order)
             if integrations["stripe"].get("paymentIntentId"):
                 order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
+                try:
+                    woo_commerce.update_order_metadata(
+                        {
+                            "woo_order_id": order.get("wooOrderId"),
+                            "payment_intent_id": order.get("paymentIntentId"),
+                            "order_key": order.get("wooOrderKey"),
+                            "peppro_order_id": order.get("id"),
+                            "sales_rep_id": order.get("doctorSalesRepId"),
+                            "sales_rep_name": order.get("doctorSalesRepName"),
+                            "sales_rep_email": order.get("doctorSalesRepEmail"),
+                            "sales_rep_code": order.get("doctorSalesRepCode"),
+                            "stripe_mode": settings_service.get_effective_stripe_mode(),
+                            "payment_method": "stripe",
+                            "payment_method_title": "Stripe Onsite",
+                        }
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to attach Stripe metadata to Woo order",
+                        exc_info=True,
+                        extra={
+                            "orderId": order.get("id"),
+                            "wooOrderId": order.get("wooOrderId"),
+                            "paymentIntentId": order.get("paymentIntentId"),
+                        },
+                    )
+            else:
+                try:
+                    print(
+                        f"[order_service] stripe intent not created: order_id={order.get('id')} stripe={integrations.get('stripe')}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
         except Exception as exc:  # pragma: no cover - network error path
             logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
             integrations["stripe"] = {
@@ -268,10 +355,16 @@ def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
         local_candidate = _normalize_woo_order_id(order.get("wooOrderId") or order.get("woo_order_id"))
         if local_candidate and local_candidate == target:
             return order
-        details = order.get("integrationDetails") or {}
-        woo_details = details.get("wooCommerce") or {}
+        local_number = _normalize_woo_order_id(order.get("wooOrderNumber") or order.get("woo_order_number"))
+        if local_number and local_number == target:
+            return order
+        details = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        woo_details = _ensure_dict(details.get("wooCommerce") or details.get("woocommerce"))
         detail_candidate = _normalize_woo_order_id(
-            woo_details.get("wooOrderNumber") or woo_details.get("woo_order_number")
+            woo_details.get("wooOrderNumber")
+            or woo_details.get("woo_order_number")
+            or _ensure_dict(woo_details.get("payload")).get("number")
+            or _ensure_dict(woo_details.get("response")).get("number")
         )
         if detail_candidate and detail_candidate == target:
             return order
@@ -328,23 +421,32 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
         except Exception:
             total_amount = None
 
+    did_refund = False
+    refund_amount = None
+    woo_refund = None
+
     if payment_intent_id:
+        intent_status = None
+        charged_amount_cents = None
         try:
             intent_data = stripe_payments.retrieve_payment_intent(payment_intent_id)
             intent = (intent_data or {}).get("intent") or {}
+            intent_status = str(intent.get("status") or "").strip().lower() or None
             amount_received = intent.get("amount_received")
-            amount_total = intent.get("amount")
             charges = (intent.get("charges") or {}).get("data") or []
             if isinstance(amount_received, int) and amount_received > 0:
-                intent_amount_cents = amount_received
-            elif isinstance(amount_total, int) and amount_total > 0:
-                intent_amount_cents = amount_total
+                charged_amount_cents = amount_received
             else:
                 for charge in reversed(charges):
-                    candidate = charge.get("amount") or charge.get("amount_captured")
+                    paid = charge.get("paid")
+                    charge_status = str(charge.get("status") or "").strip().lower()
+                    if paid is not True and charge_status != "succeeded":
+                        continue
+                    candidate = charge.get("amount_captured") or charge.get("amount")
                     if isinstance(candidate, int) and candidate > 0:
-                        intent_amount_cents = candidate
+                        charged_amount_cents = candidate
                         break
+            intent_amount_cents = charged_amount_cents
         except Exception as exc:  # pragma: no cover - retrieval failure path
             logger.error(
                 "Failed to retrieve Stripe PaymentIntent before refund",
@@ -352,30 +454,80 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                 extra={"orderId": order_id, "paymentIntentId": payment_intent_id},
             )
 
-        fallback_amount_cents = (
-            int(round(total_amount * 100)) if total_amount and total_amount > 0 else None
-        )
-        target_amount_cents = None
-        if intent_amount_cents is not None:
+        if intent_amount_cents is None or intent_amount_cents <= 0:
+            logger.info(
+                "Stripe refund skipped (no successful charge)",
+                extra={"orderId": order_id, "paymentIntentId": payment_intent_id, "intentStatus": intent_status},
+            )
+        else:
+            fallback_amount_cents = (
+                int(round(total_amount * 100)) if total_amount and total_amount > 0 else None
+            )
             target_amount_cents = (
                 min(intent_amount_cents, fallback_amount_cents)
                 if fallback_amount_cents
                 else intent_amount_cents
             )
-        try:
-            stripe_refund = stripe_payments.refund_payment_intent(
-                payment_intent_id,
-                amount_cents=target_amount_cents,
-                reason=reason or None,
-                metadata={"peppro_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
-            )
-        except Exception as exc:  # pragma: no cover - network path
-            logger.error("Stripe refund failed during cancellation", exc_info=True, extra={"orderId": order_id})
-            raise _service_error("Unable to refund this order right now. Please try again soon.", 502)
+            try:
+                stripe_refund = stripe_payments.refund_payment_intent(
+                    payment_intent_id,
+                    amount_cents=target_amount_cents,
+                    reason=reason or None,
+                    metadata={"peppro_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
+                )
+                did_refund = bool(stripe_refund) and stripe_refund.get("status") not in (None, "skipped")
+                if did_refund:
+                    try:
+                        refund_amount = float(stripe_refund.get("amount") or 0) / 100.0
+                    except Exception:
+                        refund_amount = None
+                    try:
+                        woo_commerce.update_order_metadata(
+                            {
+                                "woo_order_id": str(woo_order_id),
+                                "payment_intent_id": payment_intent_id,
+                                "peppro_order_id": local_order.get("id") if local_order else None,
+                                "refunded": True,
+                                "stripe_refund_id": stripe_refund.get("id") if isinstance(stripe_refund, dict) else None,
+                                "refund_amount": refund_amount,
+                                "refund_currency": stripe_refund.get("currency") if isinstance(stripe_refund, dict) else None,
+                                "refund_created_at": datetime.utcnow().isoformat(),
+                            }
+                        )
+                    except Exception:
+                        logger.warning(
+                            "WooCommerce order refund metadata update failed",
+                            exc_info=True,
+                            extra={"orderId": order_id, "wooOrderId": woo_order_id},
+                        )
+            except Exception as exc:  # pragma: no cover - network path
+                logger.error("Stripe refund failed during cancellation", exc_info=True, extra={"orderId": order_id})
+                raise _service_error("Unable to refund this order right now. Please try again soon.", 502)
 
     woo_result = None
     try:
-        woo_result = woo_commerce.cancel_order(woo_order_id, reason or "")
+        if did_refund and refund_amount and refund_amount > 0:
+            try:
+                woo_refund = woo_commerce.create_refund(
+                    woo_order_id=str(woo_order_id),
+                    amount=float(refund_amount),
+                    reason=reason or "Refunded via PepPro (Stripe)",
+                    metadata={
+                        "stripe_payment_intent": payment_intent_id,
+                        "peppro_order_id": local_order.get("id") if local_order else None,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "WooCommerce refund record creation failed",
+                    exc_info=True,
+                    extra={"orderId": order_id, "wooOrderId": woo_order_id},
+                )
+        woo_result = woo_commerce.cancel_order(
+            woo_order_id,
+            reason or "",
+            status_override="refunded" if did_refund else None,
+        )
     except woo_commerce.IntegrationError as exc:  # pragma: no cover - network path
         logger.error("WooCommerce cancellation failed", exc_info=True, extra={"orderId": order_id})
         status = getattr(exc, "status", 502)
@@ -393,14 +545,15 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
 
     # Mirror status locally if we have a record; do not block on missing or mismatched ownership.
     if local_order:
-        local_order["status"] = "refunded" if stripe_refund else "cancelled"
+        local_order["status"] = "refunded" if did_refund else "cancelled"
         local_order["cancellationReason"] = reason or ""
         order_repository.update(local_order)
 
     return {
-        "status": "refunded" if stripe_refund else (woo_result.get("status") if isinstance(woo_result, dict) else "cancelled"),
+        "status": "refunded" if did_refund else (woo_result.get("status") if isinstance(woo_result, dict) else "cancelled"),
         "order": local_order,
         "wooCancellation": woo_result,
+        "wooRefund": woo_refund,
         "stripeRefund": stripe_refund,
     }
 
@@ -410,11 +563,6 @@ def get_orders_for_user(user_id: str):
     if not user:
         raise _service_error("User not found", 404)
 
-    raw_orders = order_repository.find_by_user_id(user_id)
-    orders: List[Dict] = []
-    for entry in raw_orders:
-        hydrated = stripe_payments.ensure_order_card_summary(entry) or entry
-        orders.append(hydrated)
     woo_orders = []
     woo_error = None
 
@@ -433,7 +581,7 @@ def get_orders_for_user(user_id: str):
             logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
             woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
 
-    merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders, orders)
+    merged_woo_orders = woo_orders
 
     # Enrich Woo orders with ShipStation status/tracking
     for woo_order in merged_woo_orders:
@@ -454,7 +602,7 @@ def get_orders_for_user(user_id: str):
         pass
 
     return {
-        "local": orders,
+        "local": [],
         "woo": merged_woo_orders,
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
         "wooError": woo_error,

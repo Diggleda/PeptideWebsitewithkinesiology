@@ -106,11 +106,11 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   onCheckout: (payload: {
     shippingAddress: ShippingAddress;
-  shippingRate: ShippingRate | null;
-  shippingTotal: number;
-  physicianCertificationAccepted: boolean;
-  taxTotal?: number | null;
-}) => Promise<CheckoutResult | void> | CheckoutResult | void;
+    shippingRate: ShippingRate | null;
+    shippingTotal: number;
+    physicianCertificationAccepted: boolean;
+    taxTotal?: number | null;
+  }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
   onUpdateItemQuantity: (cartItemId: string, quantity: number) => void;
@@ -123,6 +123,7 @@ interface CheckoutModalProps {
   defaultShippingAddress?: ShippingAddress | null;
   availableCredits?: number;
   stripeAvailable?: boolean;
+  stripeOnsiteEnabled?: boolean;
 }
 
 const formatCardNumber = (value: string) =>
@@ -173,9 +174,12 @@ export function CheckoutModal({
   defaultShippingAddress,
   availableCredits = 0,
   stripeAvailable,
+  stripeOnsiteEnabled: stripeOnsiteEnabledFromServer,
 }: CheckoutModalProps) {
   const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
-  const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
+  const stripeOnsiteEnabled = typeof stripeOnsiteEnabledFromServer === 'boolean'
+    ? stripeOnsiteEnabledFromServer
+    : import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
   const stripeReady = stripeOnsiteEnabled && Boolean(stripeAvailable);
   const stripe = useStripe();
   const elements = useElements();
@@ -185,9 +189,6 @@ export function CheckoutModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
   const [cardholderName, setCardholderName] = useState(defaultCardholderName);
   const cardholderAutofillRef = useRef(defaultCardholderName);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -328,14 +329,7 @@ export function CheckoutModal({
     .map((value) => normalizeAddressField(value).toUpperCase())
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
-  const isPaymentValid = stripeReady
-    ? cardholderName.trim().length >= 2
-    : Boolean(
-      isValidCardNumber(cardNumber)
-      && isValidExpiry(expiry)
-      && isValidCvv(cvv)
-      && cardholderName.trim().length >= 2,
-    );
+  const isPaymentValid = stripeReady ? cardholderName.trim().length >= 2 : true;
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = false;
   const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate;
@@ -427,6 +421,17 @@ export function CheckoutModal({
         || null;
       const shouldUseStripe = stripeReady && Boolean(clientSecret);
 
+      console.debug('[CheckoutModal] Checkout integrations', {
+        stripeReady,
+        stripeOnsiteEnabled,
+        stripeIntentId,
+        hasClientSecret: Boolean(clientSecret),
+        stripeStatus: stripeInfo?.status || null,
+        stripeReason: stripeInfo?.reason || null,
+        stripeMessage: stripeInfo?.message || null,
+        paymentUrl,
+      });
+
       if (shouldUseStripe) {
         if (!stripe || !elements) {
           throw new Error('Payment form is not ready. Please refresh and try again.');
@@ -441,6 +446,9 @@ export function CheckoutModal({
             billing_details: {
               name: cardholderName || customerName || 'PepPro Customer',
               email: customerEmail || undefined,
+              address: {
+                postal_code: shippingAddress?.postalCode || undefined,
+              },
             },
           },
         });
@@ -452,8 +460,27 @@ export function CheckoutModal({
           throw new Error('Payment did not complete. Please try again.');
         }
         console.debug('[CheckoutModal] Stripe payment confirmed', { stripeIntentId, intentStatus });
+        if (stripeIntentId) {
+          try {
+            await paymentsAPI.confirmStripeIntent(stripeIntentId);
+          } catch (confirmError) {
+            console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
+            toast.info('Payment received, but order sync is still pending. If you do not receive an email shortly, contact support.');
+          }
+        }
       } else if (stripeReady && !clientSecret) {
-        console.warn('[CheckoutModal] Stripe onsite enabled but no clientSecret returned');
+        console.warn('[CheckoutModal] Stripe onsite enabled but no clientSecret returned', stripeInfo);
+        if (paymentUrl && wooRedirectEnabled) {
+          toast.info('Redirecting to complete payment…');
+          window.location.assign(paymentUrl);
+          return;
+        }
+        const reasonText = stripeInfo?.message || stripeInfo?.reason || 'Stripe payment is unavailable right now.';
+        throw new Error(reasonText);
+      } else if (!stripeReady && paymentUrl && wooRedirectEnabled) {
+        toast.info('Redirecting to complete payment…');
+        window.location.assign(paymentUrl);
+        return;
       }
 
       setCheckoutStatus('success');
@@ -481,13 +508,6 @@ export function CheckoutModal({
         // Redirect to store checkout only when explicitly enabled.
         toast.info('Redirecting to complete payment…');
       }
-        if (stripeIntentId) {
-          try {
-            await paymentsAPI.confirmStripeIntent(stripeIntentId);
-          } catch (confirmError) {
-            console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
-          }
-        }
     } catch (error: any) {
       if (createdOrderId) {
         try {
@@ -575,20 +595,17 @@ export function CheckoutModal({
   };
 
   // Reset state when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      // referral fields removed
-      setQuantityInputs({});
-      setIsProcessing(false);
-      setBulkOpenMap({});
-      setTermsAccepted(false);
-      setCardNumber('');
-      setExpiry('');
-      setCvv('');
-      setCardholderName(defaultCardholderName);
-      cardholderAutofillRef.current = defaultCardholderName;
-      setCheckoutStatus('idle');
-      setCheckoutStatusMessage(null);
+	  useEffect(() => {
+	    if (!isOpen) {
+	      // referral fields removed
+	      setQuantityInputs({});
+	      setIsProcessing(false);
+	      setBulkOpenMap({});
+	      setTermsAccepted(false);
+	      setCardholderName(defaultCardholderName);
+	      cardholderAutofillRef.current = defaultCardholderName;
+	      setCheckoutStatus('idle');
+	      setCheckoutStatusMessage(null);
       setShippingRates(null);
       setSelectedRateIndex(null);
       setShippingRateError(null);
@@ -1032,78 +1049,12 @@ useEffect(() => {
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="cardNumber">Card Number</Label>
-                      <Input
-                        id="cardNumber"
-                        name="cc-number"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="cc-number"
-                        placeholder="1234 5678 9012 3456"
-                        className="squircle-sm mt-1 bg-slate-50 border-2"
-                        value={formatCardNumber(cardNumber)}
-                        onChange={(event) => {
-                          const digits = event.target.value.replace(/\D/g, '').slice(0, 19);
-                          setCardNumber(digits);
-                        }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="expiry">Expiry Date</Label>
-                        <Input
-                          id="expiry"
-                          name="cc-exp"
-                          autoComplete="cc-exp"
-                          placeholder="MM/YY"
-                          className="squircle-sm mt-1 bg-slate-50 border-2"
-                          value={expiry}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, '').slice(0, 4);
-                            let formatted = digits;
-                            if (digits.length > 2) {
-                              formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
-                            }
-                            setExpiry(formatted);
-                          }}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="cvv">CVV</Label>
-                        <Input
-                          id="cvv"
-                          name="cc-csc"
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="cc-csc"
-                          placeholder="123"
-                          className="squircle-sm mt-1 bg-slate-50 border-2"
-                          value={cvv}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, '').slice(0, 4);
-                            setCvv(digits);
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="name">Cardholder Name</Label>
-                      <Input
-                        id="name"
-                        name="cc-name"
-                        autoComplete="cc-name"
-                        placeholder="John Doe"
-                        className="squircle-sm mt-1 bg-slate-50 border-2"
-                        value={cardholderName}
-                        onChange={(event) => setCardholderName(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+	                ) : (
+	                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+	                    Stripe onsite checkout is currently unavailable. After you place your order, you'll be redirected to complete payment.
+	                  </div>
+	                )}
+	              </div>
 
               <div className="flex items-center gap-3 pt-2">
                 <input

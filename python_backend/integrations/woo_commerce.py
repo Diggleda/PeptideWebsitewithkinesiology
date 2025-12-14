@@ -27,6 +27,12 @@ _catalog_cache: Dict[str, Dict[str, Any]] = {}
 _catalog_cache_lock = threading.Lock()
 _inflight: Dict[str, Dict[str, Any]] = {}
 _MAX_IN_MEMORY_CACHE_KEYS = 500
+_orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
+_orders_by_email_cache_lock = threading.Lock()
+_ORDERS_BY_EMAIL_TTL_SECONDS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_TTL_SECONDS", "30").strip() or 30)
+_ORDERS_BY_EMAIL_TTL_SECONDS = max(5, min(_ORDERS_BY_EMAIL_TTL_SECONDS, 300))
+_ORDERS_BY_EMAIL_MAX_STALE_MS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_MAX_STALE_MS", str(15 * 60 * 1000)).strip() or 0)
+_ORDERS_BY_EMAIL_MAX_STALE_MS = _ORDERS_BY_EMAIL_MAX_STALE_MS if _ORDERS_BY_EMAIL_MAX_STALE_MS > 0 else 15 * 60 * 1000
 
 
 def _cache_ttl_seconds_for_endpoint(endpoint: str) -> int:
@@ -93,7 +99,17 @@ def _should_retry_status(status: Optional[int]) -> bool:
     return status in (408, 429, 500, 502, 503, 504)
 
 
-def _fetch_catalog_http(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> Any:
+def _build_private_cache_key(prefix: str, payload: Dict[str, Any]) -> str:
+    normalized_prefix = (prefix or "").strip() or "cache"
+    return f"{normalized_prefix}::{json.dumps(payload, sort_keys=True, separators=(',', ':'))}"
+
+
+def _fetch_catalog_http(
+    endpoint: str,
+    params: Optional[Mapping[str, Any]] = None,
+    *,
+    suppress_log: bool = False,
+) -> Any:
     base_url, api_version, auth, timeout = _client_config()
     normalized = endpoint.lstrip("/")
     url = f"{base_url}/wp-json/{api_version}/{normalized}"
@@ -125,11 +141,17 @@ def _fetch_catalog_http(endpoint: str, params: Optional[Mapping[str, Any]] = Non
                     data = exc.response.json()
                 except Exception:
                     data = exc.response.text
-            logger.error(
-                "WooCommerce catalog fetch failed",
-                exc_info=True,
-                extra={"endpoint": endpoint, "status": status},
-            )
+            if suppress_log:
+                logger.warning(
+                    "WooCommerce catalog fetch failed",
+                    extra={"endpoint": endpoint, "status": status},
+                )
+            else:
+                logger.error(
+                    "WooCommerce catalog fetch failed",
+                    exc_info=True,
+                    extra={"endpoint": endpoint, "status": status},
+                )
             err = IntegrationError("WooCommerce catalog request failed", response=data)
             setattr(err, "status", status if status is not None else 502)
             raise err
@@ -153,7 +175,12 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     raw_params = params or {}
     force_param = str(getattr(raw_params, "get", lambda _k, _d=None: None)("force", "") or "").strip().lower()
     force_fresh = force_param in ("1", "true", "yes")
-    allow_stale = endpoint.lstrip("/") in ("products", "products/categories")
+    normalized_endpoint = endpoint.lstrip("/")
+    allow_stale = (
+        normalized_endpoint in ("products", "products/categories")
+        or re.match(r"^products/[^/]+/variations$", normalized_endpoint) is not None
+        or re.match(r"^products/[^/]+$", normalized_endpoint) is not None
+    )
     cache_key = _build_cache_key(endpoint, params)
     now_ms = int(time.time() * 1000)
 
@@ -432,6 +459,15 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
     shipping_estimate = order.get("shippingEstimate") or {}
+    sales_rep_id = (
+        order.get("doctorSalesRepId")
+        or order.get("salesRepId")
+        or customer.get("salesRepId")
+        or customer.get("sales_rep_id")
+    )
+    sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")
+    sales_rep_email = order.get("doctorSalesRepEmail") or order.get("salesRepEmail")
+    sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
     method_code = shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate"
     method_title = shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping"
     shipping_lines.append(
@@ -467,6 +503,24 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "phone": address.get("phone") or "",
     }
 
+    meta_data = [
+        {"key": "peppro_order_id", "value": order.get("id")},
+        {"key": "peppro_total", "value": order.get("total")},
+        {"key": "peppro_created_at", "value": order.get("createdAt")},
+        {"key": "peppro_shipping_total", "value": shipping_total},
+        {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
+        {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},
+        {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
+    ]
+    if sales_rep_id:
+        meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
+    if sales_rep_name:
+        meta_data.append({"key": "peppro_sales_rep_name", "value": sales_rep_name})
+    if sales_rep_email:
+        meta_data.append({"key": "peppro_sales_rep_email", "value": sales_rep_email})
+    if sales_rep_code:
+        meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
+
     return {
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
@@ -475,15 +529,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,
-        "meta_data": [
-            {"key": "peppro_order_id", "value": order.get("id")},
-            {"key": "peppro_total", "value": order.get("total")},
-            {"key": "peppro_created_at", "value": order.get("createdAt")},
-            {"key": "peppro_shipping_total", "value": shipping_total},
-            {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
-            {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},
-            {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
-        ],
+        "meta_data": meta_data,
         "billing": billing_address,
         "shipping": shipping_address,
     }
@@ -636,6 +682,98 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
         raise IntegrationError("Failed to mark Woo order paid", response=data) from exc
 
 
+def update_order_metadata(details: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Update WooCommerce order fields/meta without marking it as paid.
+
+    Useful for attaching `stripe_payment_intent`, `order_key`, or other PepPro metadata
+    immediately after order creation (even before payment succeeds).
+    """
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    woo_order_id = details.get("woo_order_id") or details.get("wooOrderId") or details.get("id")
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
+
+    meta: list[dict] = []
+    if details.get("payment_intent_id"):
+        meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
+        meta.append({"key": "peppro_payment_intent", "value": details.get("payment_intent_id")})
+    if details.get("order_key"):
+        meta.append({"key": "order_key", "value": details.get("order_key")})
+    if details.get("peppro_order_id"):
+        meta.append({"key": "peppro_order_id", "value": details.get("peppro_order_id")})
+    if details.get("stripe_mode"):
+        meta.append({"key": "peppro_stripe_mode", "value": details.get("stripe_mode")})
+    if details.get("sales_rep_id"):
+        meta.append({"key": "peppro_sales_rep_id", "value": details.get("sales_rep_id")})
+    if details.get("sales_rep_name"):
+        meta.append({"key": "peppro_sales_rep_name", "value": details.get("sales_rep_name")})
+    if details.get("sales_rep_email"):
+        meta.append({"key": "peppro_sales_rep_email", "value": details.get("sales_rep_email")})
+    if details.get("sales_rep_code"):
+        meta.append({"key": "peppro_sales_rep_code", "value": details.get("sales_rep_code")})
+    if details.get("refunded") is not None:
+        meta.append({"key": "peppro_refunded", "value": "true" if details.get("refunded") else "false"})
+    if details.get("stripe_refund_id"):
+        meta.append({"key": "peppro_stripe_refund_id", "value": details.get("stripe_refund_id")})
+    if details.get("refund_amount") is not None:
+        meta.append({"key": "peppro_refund_amount", "value": details.get("refund_amount")})
+    if details.get("refund_currency"):
+        meta.append({"key": "peppro_refund_currency", "value": details.get("refund_currency")})
+    if details.get("refund_created_at"):
+        meta.append({"key": "peppro_refund_created_at", "value": details.get("refund_created_at")})
+
+    payload: Dict[str, Any] = {"meta_data": meta}
+    if details.get("payment_method"):
+        payload["payment_method"] = details.get("payment_method")
+    if details.get("payment_method_title"):
+        payload["payment_method_title"] = details.get("payment_method_title")
+
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+    try:
+        response = requests.put(
+            url,
+            json=payload,
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {
+            "status": "success",
+            "response": {"id": body.get("id"), "status": body.get("status")},
+            "meta": meta,
+        }
+    except requests.RequestException as exc:
+        data = None
+        status_code = getattr(exc.response, "status_code", None)
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.error(
+            "Failed to update Woo order metadata",
+            exc_info=True,
+            extra={"wooOrderId": woo_order_id, "status": status_code},
+        )
+        try:
+            print(
+                f"WOO_COMMERCE_META_UPDATE_ERROR woo_order_id={woo_order_id} status={status_code} response={data} payload={payload}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        raise IntegrationError("Failed to update Woo order metadata", response=data) from exc
+
+
 def cancel_order(woo_order_id: str, reason: str = "", status_override: Optional[str] = None) -> Dict[str, Any]:
     """
     Cancel a WooCommerce order. Returns a status payload; does not raise on 404.
@@ -682,6 +820,88 @@ def cancel_order(woo_order_id: str, reason: str = "", status_override: Optional[
             return {"status": "not_found", "wooOrderId": woo_order_id}
         logger.error("Failed to cancel Woo order", exc_info=True, extra={"wooOrderId": woo_order_id})
         raise IntegrationError("Failed to cancel Woo order", response=data) from exc
+
+
+def create_refund(
+    woo_order_id: str,
+    amount: float,
+    reason: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Create a WooCommerce refund record for an order.
+
+    This does NOT trigger the payment gateway refund (we already refunded in Stripe);
+    it records the refund in Woo so the order reflects the refund state.
+    """
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+    try:
+        amount_value = float(amount or 0)
+    except Exception:
+        amount_value = 0.0
+    if amount_value <= 0:
+        return {"status": "skipped", "reason": "invalid_amount"}
+
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}/refunds"
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+
+    payload: Dict[str, Any] = {
+        "amount": f"{amount_value:.2f}",
+        "reason": reason or "Refunded via PepPro",
+        "api_refund": False,
+    }
+    if isinstance(metadata, dict) and metadata:
+        payload["meta_data"] = [{"key": k, "value": v} for k, v in metadata.items() if k]
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {
+            "status": "success",
+            "response": {
+                "id": body.get("id"),
+                "amount": body.get("amount"),
+                "reason": body.get("reason"),
+            },
+        }
+    except requests.RequestException as exc:
+        data = None
+        status_code = getattr(exc.response, "status_code", None)
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        if status_code == 404:
+            logger.warning("Woo order not found while creating refund", extra={"wooOrderId": woo_order_id})
+            return {"status": "not_found", "wooOrderId": woo_order_id}
+        logger.error(
+            "Failed to create WooCommerce refund",
+            exc_info=True,
+            extra={"wooOrderId": woo_order_id, "status": status_code},
+        )
+        try:
+            print(
+                f"WOO_COMMERCE_REFUND_ERROR woo_order_id={woo_order_id} status={status_code} response={data} payload={payload}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        raise IntegrationError("Failed to create WooCommerce refund", response=data) from exc
 
 
 # ---- Catalog proxy helpers -------------------------------------------------
@@ -897,6 +1117,20 @@ def _meta_value(meta: List[Dict[str, Any]], key: str) -> Optional[Any]:
     return None
 
 
+def _is_truthy(value: Any) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0
+        except Exception:
+            return False
+    text = str(value).strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _map_shipping_estimate(order: Dict[str, Any], meta: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not isinstance(order, dict):
         return None
@@ -1026,6 +1260,10 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         # Best-effort logging only; never block mapping.
         pass
+
+    if _is_truthy(_meta_value(meta_data, "peppro_refunded")):
+        mapped["status"] = "refunded"
+        mapped["integrationDetails"]["wooCommerce"]["status"] = "refunded"
     return mapped
 
 
@@ -1037,8 +1275,32 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
         return []
 
     size = max(1, min(per_page, 50))
+    cache_key = _build_private_cache_key(
+        "orders_by_email",
+        {"email": trimmed, "per_page": size, "orderby": "date", "order": "desc"},
+    )
+    now_ms = int(time.time() * 1000)
+
+    with _orders_by_email_cache_lock:
+        cached = _orders_by_email_cache.get(cache_key)
+        if cached and cached.get("expiresAt", 0) > now_ms:
+            return cached.get("data") or []
+
+    disk_cached = _read_disk_cache(cache_key)
+    if disk_cached and isinstance(disk_cached, dict):
+        expires_at = int(disk_cached.get("expiresAt") or 0)
+        if expires_at > now_ms:
+            data = disk_cached.get("data") or []
+            with _orders_by_email_cache_lock:
+                _orders_by_email_cache[cache_key] = {"data": data, "expiresAt": expires_at}
+            return data
+
     try:
-        response = fetch_catalog("orders", {"per_page": size, "orderby": "date", "order": "desc"})
+        response = _fetch_catalog_http(
+            "orders",
+            {"per_page": size, "orderby": "date", "order": "desc"},
+            suppress_log=True,
+        )
         payload = response if isinstance(response, list) else []
         mapped_orders: List[Dict[str, Any]] = []
         for order in payload:
@@ -1051,6 +1313,13 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
                 continue
             mapped = _map_woo_order_summary(order)
             mapped_orders.append(mapped)
+
+        now_ms = int(time.time() * 1000)
+        expires_at = now_ms + (_ORDERS_BY_EMAIL_TTL_SECONDS * 1000)
+        with _orders_by_email_cache_lock:
+            _orders_by_email_cache[cache_key] = {"data": mapped_orders, "expiresAt": expires_at}
+        _write_disk_cache(cache_key, {"data": mapped_orders, "fetchedAt": now_ms, "expiresAt": expires_at})
+
         logger.debug(
             "Woo fetch by email",
             extra={
@@ -1062,7 +1331,28 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
             },
         )
         return mapped_orders
-    except IntegrationError:
+    except IntegrationError as exc:
+        status = getattr(exc, "status", None)
+        if _should_retry_status(status):
+            with _orders_by_email_cache_lock:
+                cached = _orders_by_email_cache.get(cache_key)
+                if cached:
+                    expires_at = int(cached.get("expiresAt") or 0)
+                    if now_ms - expires_at <= _ORDERS_BY_EMAIL_MAX_STALE_MS:
+                        logger.warning(
+                            "WooCommerce orders fetch failed; serving cached orders",
+                            extra={"email": trimmed, "status": status},
+                        )
+                        return cached.get("data") or []
+            disk_cached = _read_disk_cache(cache_key)
+            if disk_cached and isinstance(disk_cached, dict):
+                fetched_at = int(disk_cached.get("fetchedAt") or 0)
+                if now_ms - fetched_at <= _ORDERS_BY_EMAIL_MAX_STALE_MS:
+                    logger.warning(
+                        "WooCommerce orders fetch failed; serving cached orders from disk",
+                        extra={"email": trimmed, "status": status},
+                    )
+                    return disk_cached.get("data") or []
         raise
     except Exception as exc:
         logger.error("Failed to fetch WooCommerce orders by email", exc_info=True, extra={"email": email})

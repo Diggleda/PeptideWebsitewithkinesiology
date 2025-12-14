@@ -35,20 +35,77 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
     """Create a Stripe PaymentIntent for an order. Returns a status payload suitable for the API."""
     config = get_config()
     if not config.stripe.get("onsite_enabled"):
+        try:
+            print(
+                "[stripe] create_payment_intent skipped: onsite_enabled is false",
+                flush=True,
+            )
+        except Exception:
+            pass
         return {"status": "skipped", "reason": "stripe_disabled"}
     secret_key = settings_service.resolve_stripe_secret_key()
     if not secret_key:
+        try:
+            mode = settings_service.get_effective_stripe_mode()
+            config = get_config()
+            raw_live = str(config.stripe.get("secret_key_live") or config.stripe.get("secret_key") or "").strip()
+            raw_test = str(config.stripe.get("secret_key_test") or "").strip()
+            live_prefix = raw_live[:10] if raw_live else ""
+            test_prefix = raw_test[:10] if raw_test else ""
+            print(
+                f"[stripe] create_payment_intent error: missing or invalid secret key for mode (mode={mode}) live_present={bool(raw_live)} live_prefix={live_prefix} test_present={bool(raw_test)} test_prefix={test_prefix}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        mode = None
+        try:
+            mode = settings_service.get_effective_stripe_mode()
+        except Exception:
+            mode = None
+        if mode == "live":
+            return {"status": "error", "message": "Stripe is set to live but a live secret key (sk_live...) is not configured on the server."}
+        if mode == "test":
+            return {"status": "error", "message": "Stripe is set to test but a test secret key (sk_test...) is not configured on the server."}
         return {"status": "error", "message": "Stripe not configured"}
     if stripe is None:
+        try:
+            print(
+                "[stripe] create_payment_intent error: Stripe SDK not installed on server",
+                flush=True,
+            )
+        except Exception:
+            pass
         return {"status": "error", "message": "Stripe SDK not installed on server"}
 
     stripe.api_key = secret_key
+    try:
+        mode = settings_service.get_effective_stripe_mode()
+        key_prefix = str(secret_key).strip()[:10]
+        print(
+            f"[stripe] create_payment_intent begin: mode={mode} key_prefix={key_prefix} order_id={order.get('id')} woo_order_id={order.get('wooOrderId')}",
+            flush=True,
+        )
+    except Exception:
+        pass
     amount = int(round(float(order.get("total", 0)) * 100))
     currency = "usd"
     metadata = {
         "peppro_order_id": order.get("id"),
         "user_id": order.get("userId"),
     }
+    sales_rep_id = order.get("doctorSalesRepId") or order.get("salesRepId")
+    sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")
+    sales_rep_email = order.get("doctorSalesRepEmail") or order.get("salesRepEmail")
+    sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
+    if sales_rep_id:
+        metadata["peppro_sales_rep_id"] = str(sales_rep_id)
+    if sales_rep_name:
+        metadata["peppro_sales_rep_name"] = str(sales_rep_name)
+    if sales_rep_email:
+        metadata["peppro_sales_rep_email"] = str(sales_rep_email)
+    if sales_rep_code:
+        metadata["peppro_sales_rep_code"] = str(sales_rep_code)
     woo_order_id = order.get("wooOrderId")
     if woo_order_id:
         metadata["woo_order_id"] = woo_order_id
@@ -87,6 +144,13 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as exc:  # pragma: no cover - network error path
         logger.error("Stripe PaymentIntent creation failed", exc_info=True, extra={"orderId": order.get("id")})
+        try:
+            print(
+                f"[stripe] create_payment_intent failed: order_id={order.get('id')} exc={exc}",
+                flush=True,
+            )
+        except Exception:
+            pass
         raise StripeIntegrationError("Stripe PaymentIntent creation failed", response=getattr(exc, "json_body", None))
 
 
@@ -115,6 +179,15 @@ def retrieve_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
 
     stripe.api_key = secret_key
     try:
+        mode = settings_service.get_effective_stripe_mode()
+        key_prefix = str(secret_key).strip()[:10]
+        print(
+            f"[stripe] retrieve_payment_intent begin: mode={mode} key_prefix={key_prefix} payment_intent_id={payment_intent_id}",
+            flush=True,
+        )
+    except Exception:
+        pass
+    try:
         intent = stripe.PaymentIntent.retrieve(
             payment_intent_id,
             expand=[
@@ -128,6 +201,13 @@ def retrieve_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
         return {"status": intent.get("status"), "intent": intent}
     except Exception as exc:
         logger.error("Stripe PaymentIntent retrieve failed", exc_info=True, extra={"paymentIntentId": payment_intent_id})
+        try:
+            print(
+                f"[stripe] retrieve_payment_intent failed: payment_intent_id={payment_intent_id} exc={exc}",
+                flush=True,
+            )
+        except Exception:
+            pass
         raise StripeIntegrationError("Stripe PaymentIntent retrieve failed", status=500, response=getattr(exc, "json_body", None))
 
 
@@ -364,6 +444,15 @@ def refund_payment_intent(payment_intent_id: str, amount_cents: Optional[int] = 
 
     stripe.api_key = secret_key
     try:
+        mode = settings_service.get_effective_stripe_mode()
+        key_prefix = str(secret_key).strip()[:10]
+        print(
+            f"[stripe] refund_payment_intent begin: mode={mode} key_prefix={key_prefix} payment_intent_id={payment_intent_id} amount_cents={amount_cents}",
+            flush=True,
+        )
+    except Exception:
+        pass
+    try:
         params: Dict[str, Any] = {"payment_intent": payment_intent_id}
         if amount_cents is not None:
             params["amount"] = int(amount_cents)
@@ -379,5 +468,12 @@ def refund_payment_intent(payment_intent_id: str, amount_cents: Optional[int] = 
           "status": refund.get("status"),
         }
     except Exception as exc:
+        message = str(exc) if exc is not None else ""
+        if "does not have a successful charge to refund" in message:
+            logger.info(
+                "Stripe refund skipped (no successful charge)",
+                extra={"paymentIntentId": payment_intent_id},
+            )
+            return {"status": "skipped", "reason": "no_successful_charge"}
         logger.error("Stripe refund failed", exc_info=True, extra={"paymentIntentId": payment_intent_id})
         raise StripeIntegrationError("Stripe refund failed", status=502, response=getattr(exc, "json_body", None)) from exc
