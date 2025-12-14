@@ -1,0 +1,24 @@
+"filename", "language", "TypeScript", "TypeScript JSX", "Python", "PostCSS", "JavaScript", "comment", "blank", "total"
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/build_flatten_tmp/assets/index-B2gQfu6Y.js", "JavaScript", 0, 0, 0, 0, 645, 6, 57, 708
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/build_flatten_tmp/assets/index-BYIve8M2.css", "PostCSS", 0, 0, 0, 1, 0, 0, 1, 2
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/build_flatten_tmp/assets/index-CKqAHkEp.css", "PostCSS", 0, 0, 0, -1, 0, 0, -1, -2
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/build_flatten_tmp/assets/index-vzM8aVhp.js", "JavaScript", 0, 0, 0, 0, -645, -6, -57, -708
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/config.py", "Python", 0, 0, 10, 0, 0, 0, 0, 10
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/database/mysql_schema.py", "Python", 0, 0, 5, 0, 0, 0, 0, 5
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/integrations/stripe_payments.py", "Python", 0, 0, 3, 0, 0, 0, 0, 3
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/integrations/woo_commerce.py", "Python", 0, 0, 21, 0, 0, 0, 1, 22
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/repositories/order_repository.py", "Python", 0, 0, 20, 0, 0, 12, 2, 34
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/repositories/sales_rep_repository.py", "Python", 0, 0, 52, 0, 0, 10, 5, 67
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/routes/orders.py", "Python", 0, 0, 7, 0, 0, 0, 1, 8
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/routes/settings.py", "Python", 0, 0, 10, 0, 0, 0, 0, 10
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/routes/system.py", "Python", 0, 0, 84, 0, 0, 2, 11, 97
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/services/order_service.py", "Python", 0, 0, 251, 0, 0, 2, 22, 275
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/python_backend/utils/http.py", "Python", 0, 0, 26, 0, 0, 0, 4, 30
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/server/app.js", "JavaScript", 0, 0, 0, 0, 22, 0, 1, 23
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/server/controllers/systemController.js", "JavaScript", 0, 0, 0, 0, 26, 0, 4, 30
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/src/App.tsx", "TypeScript JSX", 0, 175, 0, 0, 0, 1, 7, 183
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/src/components/CheckoutModal.tsx", "TypeScript JSX", 0, 2, 0, 0, 0, 0, 0, 2
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/src/components/Header.tsx", "TypeScript JSX", 0, -4, 0, 0, 0, 0, 0, -4
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/src/lib/publicText.ts", "TypeScript", 60, 0, 0, 0, 0, 1, 14, 75
+"/Users/diggleda/Library/Mobile Documents/com~apple~CloudDocs/Protixa/PepPro App/src/services/api.ts", "TypeScript", 8, 0, 0, 0, 0, 0, 1, 9
+"Total", "-", 68, 173, 489, 0, 48, 28, 73, 879

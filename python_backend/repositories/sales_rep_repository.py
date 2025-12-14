@@ -57,6 +57,11 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized["referralCredits"] = float(normalized.get("referralCredits") or 0)
     normalized["totalReferrals"] = int(normalized.get("totalReferrals") or 0)
     normalized["visits"] = int(normalized.get("visits") or 0)
+    normalized["totalRevenueToDate"] = float(normalized.get("totalRevenueToDate") or normalized.get("total_revenue_to_date") or 0)
+    normalized.setdefault(
+        "totalRevenueUpdatedAt",
+        normalized.get("totalRevenueUpdatedAt") or normalized.get("total_revenue_updated_at") or None,
+    )
 
     created_at = normalized.get("createdAt") or _now()
     normalized["createdAt"] = created_at
@@ -276,6 +281,8 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "referralCredits": row.get("referral_credits"),
             "totalReferrals": row.get("total_referrals"),
             "visits": row.get("visits"),
+            "totalRevenueToDate": row.get("total_revenue_to_date"),
+            "totalRevenueUpdatedAt": fmt_datetime(row.get("total_revenue_updated_at")),
             "lastLoginAt": fmt_datetime(row.get("last_login_at")),
             "mustResetPassword": row.get("must_reset_password"),
             "firstOrderBonusGrantedAt": fmt_datetime(row.get("first_order_bonus_granted_at")),
@@ -312,12 +319,72 @@ def _to_db_params(rep: Dict) -> Dict:
         "referral_credits": float(rep.get("referralCredits") or 0),
         "total_referrals": int(rep.get("totalReferrals") or 0),
         "visits": int(rep.get("visits") or 0),
+        "total_revenue_to_date": float(rep.get("totalRevenueToDate") or 0),
+        "total_revenue_updated_at": parse_dt(rep.get("totalRevenueUpdatedAt")),
         "last_login_at": parse_dt(rep.get("lastLoginAt")),
         "must_reset_password": 1 if rep.get("mustResetPassword") else 0,
         "first_order_bonus_granted_at": parse_dt(rep.get("firstOrderBonusGrantedAt")),
         "created_at": parse_dt(rep.get("createdAt")),
         "updated_at": parse_dt(rep.get("updatedAt")),
     }
+
+
+def update_revenue_summary(rep_id: str, total_revenue_to_date: float, updated_at: Optional[str] = None) -> Optional[Dict]:
+    """
+    Best-effort helper: persists an aggregate revenue number for dashboards.
+    Safe on older schemas (will no-op if the columns aren't present).
+    """
+    rep_id = str(rep_id or "").strip()
+    if not rep_id:
+        return None
+    timestamp = updated_at or _now()
+
+    if _using_mysql():
+        def parse_dt(value):
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value.replace(tzinfo=None)
+            value = str(value)
+            if value.endswith("Z"):
+                value = value[:-1]
+            value = value.replace("T", " ")
+            return value[:26]
+
+        try:
+            mysql_client.execute(
+                """
+                UPDATE sales_reps
+                SET
+                    total_revenue_to_date = %(total_revenue_to_date)s,
+                    total_revenue_updated_at = %(total_revenue_updated_at)s
+                WHERE id = %(id)s
+                """,
+                {
+                    "id": rep_id,
+                    "total_revenue_to_date": float(total_revenue_to_date or 0),
+                    "total_revenue_updated_at": parse_dt(timestamp),
+                },
+            )
+        except Exception:
+            return find_by_id(rep_id)
+        return find_by_id(rep_id)
+
+    reps = _load()
+    for index, existing in enumerate(reps):
+        if str(existing.get("id")) == rep_id:
+            merged = _ensure_defaults(
+                {
+                    **existing,
+                    "totalRevenueToDate": float(total_revenue_to_date or 0),
+                    "totalRevenueUpdatedAt": timestamp,
+                    "updatedAt": _now(),
+                }
+            )
+            reps[index] = merged
+            _save(reps)
+            return merged
+    return None
 
 
 def _generate_id() -> str:

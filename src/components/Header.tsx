@@ -2210,19 +2210,16 @@ export function Header({
                   <div className="space-y-4 flex-1 min-w-0">
                     <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
                       <div className="flex-1 min-w-0 space-y-1">
-                        <p className="text-base font-bold text-slate-900 break-words">
-                          <span className="mr-2">{orderNumberLabel}</span>
-                          {showItemCount && (
-                            <span className="text-slate-700 font-semibold hidden sm:inline">
-                              {itemLabel}
-                            </span>
-                          )}
-                        </p>
-                        {showItemCount && (
-                          <p className="text-sm text-slate-600 sm:hidden">{itemLabel}</p>
-                        )}
-                      </div>
-                    </div>
+	                        <p className="text-base font-bold text-slate-900 break-words">
+	                          <span className="mr-2">{orderNumberLabel}</span>
+	                          {showItemCount && (
+	                            <span className="text-slate-700 font-semibold">
+	                              {itemLabel}
+	                            </span>
+	                          )}
+	                        </p>
+	                      </div>
+	                    </div>
 
 	                    {order.lineItems && order.lineItems.length > 0 && (
 	                      <div className="space-y-3">
@@ -2233,15 +2230,14 @@ export function Header({
 	                            typeof cachedImage === 'string' && cachedImage.trim().length > 0
 	                              ? cachedImage
 	                              : resolveOrderLineImage(line, wooLineItems);
-	                          return (
-	                            <div
-	                              key={line.id || `${line.sku}-${idx}`}
-	                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
-	                              style={{ maxHeight: '120px' }}
-                            >
-                              <div className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
-                                   style={{ maxHeight: '120px' }}>
-                                {lineImage ? (
+		                          return (
+		                            <div
+		                              key={line.id || `${line.sku}-${idx}`}
+		                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
+		                            >
+		                              <div className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
+		                                   style={{ maxHeight: '120px' }}>
+		                                {lineImage ? (
                                   <img
                                     src={lineImage}
                                     alt={line.name || 'Item thumbnail'}
@@ -2404,14 +2400,13 @@ export function Header({
       if (stripeMeta?.cardLast4) {
         return `${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`;
       }
-      if (
-        typeof fallbackPayment === 'string'
-        && fallbackPayment.trim().length > 0
-        && !/stripe onsite/i.test(fallbackPayment)
-      ) {
+      if (typeof fallbackPayment === 'string' && fallbackPayment.trim().length > 0) {
+        if (/stripe onsite/i.test(fallbackPayment)) {
+          return 'Card payment';
+        }
         return fallbackPayment;
       }
-      return fallbackPayment;
+      return null;
     })();
 
     return (

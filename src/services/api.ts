@@ -1,4 +1,5 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
+import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText';
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
@@ -131,6 +132,13 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       }
     }
 
+    errorMessage = sanitizeServiceNames(errorMessage);
+    if (typeof errorDetails === 'string') {
+      errorDetails = sanitizeServiceNames(errorDetails);
+    } else if (errorDetails && typeof errorDetails === 'object') {
+      sanitizePayloadMessages(errorDetails as any);
+    }
+
     const error = new Error(errorMessage);
     (error as any).status = response.status;
     (error as any).details = errorDetails;
@@ -163,10 +171,11 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       return null;
     }
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      return sanitizePayloadMessages(parsed);
     } catch (error) {
       console.warn('[fetchWithAuth] Failed to parse JSON response', { error });
-      return text;
+      return sanitizeServiceNames(text);
     }
   }
 

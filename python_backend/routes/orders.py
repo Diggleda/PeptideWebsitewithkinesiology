@@ -82,5 +82,13 @@ def cancel_order(order_id: str):
 @blueprint.get("/admin/sales-rep-summary")
 @require_auth
 def admin_sales_by_rep():
-    exclude_id = g.current_user.get("id")
-    return handle_action(lambda: order_service.get_sales_by_rep(exclude_sales_rep_id=exclude_id))
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        exclude_id = g.current_user.get("id")
+        return order_service.get_sales_by_rep(exclude_sales_rep_id=exclude_id)
+
+    return handle_action(action)

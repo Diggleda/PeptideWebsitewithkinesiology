@@ -159,6 +159,9 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_rate LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_id VARCHAR(32) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_number VARCHAR(64) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_key VARCHAR(64) NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_at DATETIME NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_amount DECIMAL(12,2) NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_by VARCHAR(190) NULL",
@@ -171,6 +174,8 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_state VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
     ]
     for stmt in migrations:
         try:

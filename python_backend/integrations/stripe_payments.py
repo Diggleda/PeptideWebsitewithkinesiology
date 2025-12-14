@@ -316,6 +316,7 @@ def ensure_order_card_summary(order: Optional[Dict[str, Any]]) -> Optional[Dict[
 def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
     result = retrieve_payment_intent(payment_intent_id)
     intent = result.get("intent") or {}
+    card_summary = _extract_card_summary(intent) or {}
     metadata = intent.get("metadata") or {}
     order_id = metadata.get("peppro_order_id")
     order = order_repository.find_by_id(order_id) if order_id else None
@@ -330,6 +331,8 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
                     "woo_order_id": woo_order_id,
                     "payment_intent_id": payment_intent_id,
                     "order_key": order_key,
+                    "card_last4": card_summary.get("last4"),
+                    "card_brand": card_summary.get("brand"),
                 }
             )
         except Exception as exc:
@@ -354,18 +357,18 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
                 "wooUpdate": woo_update,
             }
         )
-        card_summary = _extract_card_summary(intent)
-        if card_summary:
+        card_summary_local = card_summary or _extract_card_summary(intent) or {}
+        if card_summary_local:
             logger.info(
                 "Stripe card summary applied to order",
                 extra={
                     "orderId": order.get("id"),
                     "paymentIntentId": payment_intent_id,
-                    "cardBrand": card_summary.get("brand"),
-                    "cardLast4": card_summary.get("last4"),
+                    "cardBrand": card_summary_local.get("brand"),
+                    "cardLast4": card_summary_local.get("last4"),
                 },
             )
-        applied = _apply_card_summary(order, card_summary, stripe_meta)
+        applied = _apply_card_summary(order, card_summary_local, stripe_meta)
         order["paymentMethod"] = applied["paymentMethod"] or order.get("paymentMethod") or "Card on file"
         order["paymentDetails"] = (
             applied["paymentDetails"]

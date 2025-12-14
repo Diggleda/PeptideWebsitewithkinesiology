@@ -100,7 +100,7 @@ def load_config() -> AppConfig:
         data_dir=_resolve_path(os.environ.get("DATA_DIR"), "server-data"),
         cors_allow_list=cors_allow_list,
         body_limit=os.environ.get("BODY_LIMIT", "1mb"),
-        backend_build=os.environ.get("BACKEND_BUILD", "v1.8.82"),
+        backend_build=os.environ.get("BACKEND_BUILD", "v1.8.87"),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
             "store_url": _s(os.environ.get("WC_STORE_URL")),
@@ -133,8 +133,18 @@ def load_config() -> AppConfig:
             "secret_key": "",  # resolved below
             "webhook_secret": _s(os.environ.get("STRIPE_WEBHOOK_SECRET")),
             # Browser publishable keys (pk_*) — safe to expose.
-            "publishable_key_live": _s(os.environ.get("VITE_STRIPE_PUBLISHABLE_KEY")),
-            "publishable_key_test": _s(os.environ.get("VITE_STRIPE_PUBLISHABLE_TEST_KEY")),
+            "publishable_key_live": _s(
+                os.environ.get("VITE_STRIPE_PUBLISHABLE_KEY")
+                or os.environ.get("STRIPE_PUBLISHABLE_KEY")
+                or os.environ.get("STRIPE_PUBLISHABLE_KEY_LIVE")
+                or ""
+            ),
+            "publishable_key_test": _s(
+                os.environ.get("VITE_STRIPE_PUBLISHABLE_TEST_KEY")
+                or os.environ.get("STRIPE_PUBLISHABLE_TEST_KEY")
+                or os.environ.get("STRIPE_PUBLISHABLE_KEY_TEST")
+                or ""
+            ),
             "publishable_key": "",
         },
         referral={

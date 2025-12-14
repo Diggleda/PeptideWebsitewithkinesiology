@@ -19,6 +19,7 @@ import { toast } from 'sonner@2.0.3';
 import { ordersAPI, paymentsAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
+import { sanitizeServiceNames } from '../lib/publicText';
 
 interface CheckoutResult {
   success?: boolean;
@@ -475,8 +476,9 @@ export function CheckoutModal({
           window.location.assign(paymentUrl);
           return;
         }
-        const reasonText = stripeInfo?.message || stripeInfo?.reason || 'Stripe payment is unavailable right now.';
-        throw new Error(reasonText);
+        const reasonTextRaw =
+          stripeInfo?.message || stripeInfo?.reason || 'Payment is unavailable right now.';
+        throw new Error(sanitizeServiceNames(String(reasonTextRaw)));
       } else if (!stripeReady && paymentUrl && wooRedirectEnabled) {
         toast.info('Redirecting to complete payment…');
         window.location.assign(paymentUrl);
@@ -1051,7 +1053,7 @@ useEffect(() => {
                   </div>
 	                ) : (
 	                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-	                    Stripe onsite checkout is currently unavailable. After you place your order, you'll be redirected to complete payment.
+		                    On-site checkout is currently unavailable. After you place your order, you'll be redirected to complete payment.
 	                  </div>
 	                )}
 	              </div>

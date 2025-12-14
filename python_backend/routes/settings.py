@@ -55,6 +55,16 @@ def get_stripe():
         mysql_enabled = bool(config.mysql.get("enabled"))
         settings_logger = __import__("logging").getLogger("peppro.settings")
         settings_logger.debug("Stripe settings requested", extra={"mode": mode, "mysqlEnabled": mysql_enabled})
+        try:
+            resolved = settings_service.resolve_stripe_publishable_key(mode)
+            live_key = str(config.stripe.get("publishable_key_live") or "").strip()
+            test_key = str(config.stripe.get("publishable_key_test") or "").strip()
+            print(
+                f"[payments] settings publishable: mode={mode} resolved_prefix={(resolved or '')[:8]} live_present={bool(live_key)} test_present={bool(test_key)}",
+                flush=True,
+            )
+        except Exception:
+            pass
         return {
             "stripeMode": mode,
             "stripeTestMode": mode == "test",

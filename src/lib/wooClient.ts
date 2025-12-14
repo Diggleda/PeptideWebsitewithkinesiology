@@ -102,7 +102,7 @@ function buildURL(endpoint: string, params: QueryParams = {}): string {
 export async function wooGet<T = unknown>(endpoint: string, params: QueryParams = {}): Promise<T> {
   if (WOO_DISABLED) {
     if (typeof console !== 'undefined' && console.warn) {
-      console.warn('[WooCommerce] Frontend Woo access is disabled via VITE_WOO_DISABLED');
+      console.warn('[Catalog] Frontend catalog access is disabled via VITE_WOO_DISABLED');
     }
     // @ts-ignore
     return (Array.isArray([]) ? [] : {}) as T;
@@ -126,7 +126,7 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
     : null;
   try {
     if (WOO_DEBUG) {
-      console.info('[Woo] GET', { endpoint, url: safeUrlForLogging, params });
+      console.info('[Catalog] GET', { endpoint, url: safeUrlForLogging, params });
     }
     const res = await fetch(url, {
       method: 'GET',
@@ -135,7 +135,7 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
       signal: controller?.signal,
     });
     if (WOO_DEBUG) {
-      console.info('[Woo] GET complete', {
+      console.info('[Catalog] GET complete', {
         endpoint,
         status: res.status,
         durationMs: Date.now() - startedAt,
@@ -143,7 +143,7 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Woo ${endpoint} failed: ${res.status} ${text}`);
+      throw new Error(`Catalog request failed (${res.status}): ${text}`);
     }
     return res.json() as Promise<T>;
   } catch (error: any) {
@@ -152,7 +152,7 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
         typeof error?.message === 'string' && error.message.trim().length > 0
           ? error.message
           : 'Unknown error';
-      console.warn('[Woo] GET failed', {
+      console.warn('[Catalog] GET failed', {
         endpoint,
         url: safeUrlForLogging,
         message,

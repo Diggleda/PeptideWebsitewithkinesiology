@@ -443,7 +443,12 @@ const describeSalesOrderStatus = (
     return "Refunded";
   }
 
-  const tracking = resolveTrackingNumber(order) || "";
+  // Match doctor-facing status logic: do not infer tracking from integrations for the status label.
+  // (The sales-rep view can still display tracking elsewhere if needed.)
+  const tracking =
+    typeof (order as any)?.trackingNumber === "string"
+      ? String((order as any).trackingNumber).trim()
+      : "";
   const eta = (order?.shippingEstimate as any)?.estimatedArrivalDate || null;
   const hasEta = typeof eta === "string" && eta.trim().length > 0;
 
@@ -1259,7 +1264,7 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.8.82";
+const FRONTEND_BUILD_ID = "v1.8.87";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2279,12 +2284,18 @@ export default function App() {
     }
     return getStripeMode();
   }, [stripeSettings?.stripeMode]);
-  const stripePublishableKey = useMemo(() => {
-    if (stripeSettings) {
-      return (stripeSettings.publishableKey || "").trim();
-    }
-    return ENV_STRIPE_PUBLISHABLE_KEY;
-  }, [stripeSettings]);
+	  const stripePublishableKey = useMemo(() => {
+	    const candidate = stripeSettings
+	      ? (stripeSettings.publishableKey || "").trim()
+	      : ENV_STRIPE_PUBLISHABLE_KEY;
+
+	    const mode = (stripeModeEffective || "").toLowerCase().trim();
+	    if (mode === "live") {
+	      return candidate.startsWith("pk_live") ? candidate : "";
+	    }
+	    // default to test
+	    return candidate.startsWith("pk_test") ? candidate : "";
+	  }, [stripeSettings, stripeModeEffective]);
   const stripeClientPromise = useMemo(() => {
     if (!stripePublishableKey) {
       return null;
@@ -8441,17 +8452,17 @@ export default function App() {
         label: `Search • “${formattedSearch}”`,
       });
     }
-    if (stripeIsTestMode) {
-      statusChips.push({ key: "stripe", label: "Stripe test mode" });
-    }
+	    if (stripeIsTestMode) {
+	      statusChips.push({ key: "stripe", label: "Payment test mode" });
+	    }
 	    if (catalogLoading) {
 	      statusChips.push({ key: "loading", label: "loading-icon" });
 	    }
 	    const retryPending =
 	      typeof catalogRetryUntil === "number" && Date.now() < catalogRetryUntil;
-	    if (catalogError && !retryPending) {
-	      statusChips.push({ key: "error", label: "Woo sync issue" });
-	    }
+		    if (catalogError && !retryPending) {
+		      statusChips.push({ key: "error", label: "Store sync issue" });
+		    }
       if (!catalogError && catalogTransientIssue && !catalogLoading && retryPending) {
         statusChips.push({ key: "reconnecting", label: "Reconnecting…" });
       }
@@ -8574,10 +8585,10 @@ export default function App() {
 	                  {catalogLoading ||
 	                  retryPending ||
 	                  (catalogProducts.length === 0 && !catalogEmptyReady)
-	                    ? retryPending
-	                      ? "Reconnecting to WooCommerce…"
-	                      : "Please wait while we load the catalog."
-	                    : "Try adjusting your filters or search terms."}
+		                    ? retryPending
+		                      ? "Reconnecting to store…"
+		                      : "Please wait while we load the catalog."
+		                    : "Try adjusting your filters or search terms."}
 	                </p>
 	              </div>
 	            </div>
@@ -8633,17 +8644,17 @@ export default function App() {
 	                  <h3 className="text-lg font-semibold text-slate-900">
 	                    Admin Settings
 	                  </h3>
-	                  <p className="text-sm text-slate-600">
-	                    Configure storefront availability and Stripe mode.
-	                  </p>
+		                  <p className="text-sm text-slate-600">
+		                    Configure storefront availability and payment mode.
+		                  </p>
 	                </div>
 	                <div className="text-xs text-slate-500">
 	                  <span className="mr-2">
 	                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
 	                  </span>
-	                  <span>
-	                    Stripe: {stripeModeEffective === "test" ? "Test" : "Live"}
-	                  </span>
+		                  <span>
+		                    Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
+		                  </span>
 	                </div>
 	              </div>
 
@@ -8742,17 +8753,17 @@ export default function App() {
 		                  <span className="cursor-default select-none">Enable Shop button for users</span>
 		                </div>
 		                <div className="flex items-center gap-2 text-sm text-slate-700">
-		                  <input
-		                    type="checkbox"
-                        aria-label="Stripe test mode"
-		                    checked={stripeModeEffective === "test"}
-		                    onChange={(e) =>
-		                      handleStripeTestModeToggle(e.target.checked)
-		                    }
-		                    className="brand-checkbox"
-		                  />
-		                  <span className="cursor-default select-none">Stripe test mode</span>
-		                </div>
+			                  <input
+			                    type="checkbox"
+	                        aria-label="Payment test mode"
+			                    checked={stripeModeEffective === "test"}
+			                    onChange={(e) =>
+			                      handleStripeTestModeToggle(e.target.checked)
+			                    }
+			                    className="brand-checkbox"
+			                  />
+			                  <span className="cursor-default select-none">Payment test mode</span>
+			                </div>
 		              </div>
 
                 <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-4">
@@ -12027,10 +12038,32 @@ export default function App() {
                   typeof salesOrderDetail.total === "number"
                     ? salesOrderDetail.total
                     : subtotal + shippingTotal + taxTotal;
-                const paymentDisplay =
-                  salesOrderDetail.paymentDetails ||
-                  salesOrderDetail.paymentMethod ||
-                  null;
+	                const paymentDisplay =
+	                  (() => {
+	                    const integrations = (salesOrderDetail as any).integrationDetails || (salesOrderDetail as any).integrations || {};
+	                    const stripeMeta = integrations?.stripe || integrations?.Stripe || null;
+	                    const last4 =
+	                      stripeMeta?.cardLast4 ||
+	                      stripeMeta?.card_last4 ||
+	                      stripeMeta?.last4 ||
+	                      null;
+	                    const brand =
+	                      stripeMeta?.cardBrand ||
+	                      stripeMeta?.card_brand ||
+	                      stripeMeta?.brand ||
+	                      null;
+	                    if (last4) {
+	                      return `${brand || "Card"} •••• ${last4}`;
+	                    }
+	                    const fallback =
+	                      salesOrderDetail.paymentDetails ||
+	                      salesOrderDetail.paymentMethod ||
+	                      null;
+	                    if (typeof fallback === "string" && /stripe onsite/i.test(fallback)) {
+	                      return "Card payment";
+	                    }
+	                    return fallback;
+	                  })();
                 const renderAddressLines = (address: any) => {
                   if (!address) return <p className="text-sm text-slate-500">—</p>;
                   const lines = [
@@ -12118,58 +12151,14 @@ export default function App() {
                           )}
                         </p>
                       </div>
-                      <div>
-                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
-                          Status
-                        </p>
-                        <Badge variant="secondary" className="uppercase">
-                          {(() => {
-                            const rawStatus =
-                              (shipping as any)?.status ||
-                              salesOrderDetail.status ||
-                              "Pending";
-                            const normalized = rawStatus
-                              .toString()
-                              .trim()
-                              .toLowerCase();
-                            if (
-                              normalized === "awaiting_shipment" ||
-                              normalized === "awaiting shipment"
-                            ) {
-                              return "Shipping Soon";
-                            }
-                            if (
-                              normalized === "processing" ||
-                              normalized === "completed" ||
-                              normalized === "complete"
-                            ) {
-                              return "Shipping Soon";
-                            }
-                            if (normalized === "shipped") {
-                              return "Shipped";
-                            }
-                            if (
-                              normalized.includes("out_for_delivery") ||
-                              normalized.includes("out-for-delivery")
-                            ) {
-                              return "Out for Delivery";
-                            }
-                            if (
-                              normalized.includes("in_transit") ||
-                              normalized.includes("in-transit")
-                            ) {
-                              return "In Transit";
-                            }
-                            if (normalized.includes("delivered")) {
-                              return "Delivered";
-                            }
-                            if (normalized === "refunded") {
-                              return "Refunded";
-                            }
-                            return rawStatus;
-                          })()}
-                        </Badge>
-                      </div>
+	                      <div>
+	                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
+	                          Status
+	                        </p>
+	                        <Badge variant="secondary" className="uppercase">
+	                          {describeSalesOrderStatus(salesOrderDetail as any)}
+	                        </Badge>
+	                      </div>
                       <div>
                         <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
                           Expected delivery

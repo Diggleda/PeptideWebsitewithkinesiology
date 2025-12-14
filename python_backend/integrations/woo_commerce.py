@@ -246,6 +246,11 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
             # Serve stale immediately; refresh in background (deduped).
             _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
             return cached.get("data"), {"cache": "STALE", "ttlSeconds": ttl_seconds}
+        elif allow_stale and cached and cached.get("expiresAt", 0) <= now_ms:
+            # Last resort: serve very stale data rather than failing hard (e.g. after deploys or
+            # prolonged upstream outages). A background refresh will still be attempted.
+            _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
+            return cached.get("data"), {"cache": "VERY_STALE", "ttlSeconds": ttl_seconds}
 
     # If there's an in-flight fetch, wait for it (outside lock).
     if event is not None:
@@ -279,6 +284,22 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
             # Serve stale from disk and refresh (deduped).
             _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
             return data, {"cache": "DISK_STALE", "ttlSeconds": ttl_seconds}
+    elif allow_stale and disk_cached and isinstance(disk_cached, dict) and "data" in disk_cached:
+        # Serve whatever we have on disk (even if older than max stale) and refresh in background.
+        data = disk_cached.get("data")
+        try:
+            fetched_at = int(disk_cached.get("fetchedAt") or 0)
+        except Exception:
+            fetched_at = 0
+        # Keep a short in-memory TTL to avoid stampedes while refresh is attempted.
+        expires_at = now_ms + min(ttl_seconds, 30) * 1000
+        with _catalog_cache_lock:
+            _set_in_memory_cache(cache_key, data, expires_at)
+        _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
+        meta: Dict[str, Any] = {"cache": "DISK_VERY_STALE", "ttlSeconds": ttl_seconds}
+        if fetched_at > 0:
+            meta["staleMs"] = max(0, now_ms - fetched_at)
+        return data, meta
 
     # No cache available: synchronous fetch with in-flight dedupe.
     with _catalog_cache_lock:
@@ -685,8 +706,18 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
         meta.append({"key": "stripe_payment_intent", "value": details.get("payment_intent_id")})
     if details.get("order_key"):
         meta.append({"key": "order_key", "value": details.get("order_key")})
+    if details.get("card_last4"):
+        meta.append({"key": "peppro_card_last4", "value": details.get("card_last4")})
+    if details.get("card_brand"):
+        meta.append({"key": "peppro_card_brand", "value": details.get("card_brand")})
     timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
     now_iso = datetime.utcnow().isoformat()
+    card_last4 = str(details.get("card_last4") or "").strip()
+    card_brand = str(details.get("card_brand") or "").strip()
+    if card_last4:
+        payment_method_title = f"{card_brand or 'Card'} •••• {card_last4}"
+    else:
+        payment_method_title = "Card payment"
     try:
         response = requests.put(
             url,
@@ -694,7 +725,7 @@ def mark_order_paid(details: Dict[str, Any]) -> Dict[str, Any]:
                 "status": "processing",
                 "set_paid": True,
                 "payment_method": "stripe",
-                "payment_method_title": "Stripe Onsite",
+                "payment_method_title": payment_method_title,
                 # Explicitly set paid date to help Woo → ShipStation exports.
                 "date_paid": now_iso,
                 "date_paid_gmt": now_iso,
@@ -1245,6 +1276,13 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
+    card_last4 = _meta_value(meta_data, "peppro_card_last4")
+    card_brand = _meta_value(meta_data, "peppro_card_brand")
+    if card_last4:
+        payment_label = f"{card_brand or 'Card'} •••• {card_last4}"
+    else:
+        payment_label = order.get("payment_method_title") or order.get("payment_method")
+
     mapped = {
         "id": identifier,
         "wooOrderId": woo_order_id or identifier,
@@ -1253,7 +1291,8 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "status": order.get("status"),
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
         "currency": order.get("currency") or "USD",
-        "paymentMethod": order.get("payment_method_title") or order.get("payment_method"),
+        "paymentMethod": payment_label,
+        "paymentDetails": payment_label,
         "shippingTotal": shipping_total,
         "createdAt": order.get("date_created") or order.get("date_created_gmt"),
         "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
@@ -1292,7 +1331,11 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
                 "status": order.get("status"),
                 "invoiceUrl": invoice_url,
                 "shippingLine": first_shipping_line,
-            }
+            },
+            "stripe": {
+                "cardBrand": card_brand,
+                "cardLast4": card_last4,
+            },
         },
     }
     try:

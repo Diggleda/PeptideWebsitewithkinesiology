@@ -144,6 +144,37 @@ def update(order: Dict) -> Optional[Dict]:
     return None
 
 
+def update_woo_fields(order_id: str, woo_order_id: Optional[str], woo_order_number: Optional[str], woo_order_key: Optional[str]) -> None:
+    """
+    Best-effort: store Woo order identifiers in dedicated SQL columns for easy querying.
+    Safe on older schemas (no-op if columns are missing).
+    """
+    if not order_id:
+        return
+    if not _using_mysql():
+        return
+    try:
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET
+                woo_order_id = %(woo_order_id)s,
+                woo_order_number = %(woo_order_number)s,
+                woo_order_key = %(woo_order_key)s
+            WHERE id = %(id)s
+            """,
+            {
+                "id": order_id,
+                "woo_order_id": woo_order_id,
+                "woo_order_number": woo_order_number,
+                "woo_order_key": woo_order_key,
+            },
+        )
+    except Exception:
+        # Columns might not exist on older installs; ignore.
+        return
+
+
 def _generate_id() -> str:
     from time import time
 
@@ -191,6 +222,9 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "referrerBonus": parse_json(row.get("referrer_bonus"), None),
         "firstOrderBonus": parse_json(row.get("first_order_bonus"), None),
         "integrations": parse_json(row.get("integrations"), {}),
+        "wooOrderId": row.get("woo_order_id") or None,
+        "wooOrderNumber": row.get("woo_order_number") or None,
+        "wooOrderKey": row.get("woo_order_key") or None,
         "createdAt": fmt_datetime(row.get("created_at")),
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }

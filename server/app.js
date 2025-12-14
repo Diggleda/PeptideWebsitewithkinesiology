@@ -16,6 +16,29 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 
+const sanitizePublicMessage = (message) => {
+  if (!message || typeof message !== 'string') {
+    return message;
+  }
+  const replacements = [
+    [/\bwoocommerce\b/gi, 'store'],
+    [/\bwoo\s*commerce\b/gi, 'store'],
+    [/\bwoo\b/gi, 'store'],
+    [/\bstripe\b/gi, 'payment provider'],
+    [/\bcloudflare\b/gi, 'network provider'],
+    [/\bgodaddy\b/gi, 'hosting provider'],
+    [/\bshipstation\b/gi, 'shipping provider'],
+    [/\bshipengine\b/gi, 'shipping provider'],
+  ];
+  let output = message;
+  for (const [pattern, replacement] of replacements) {
+    output = output.replace(pattern, replacement);
+  }
+  output = output.replace(/\bstore\s+store\b/gi, 'store');
+  output = output.replace(/\bpayment provider\s+payment provider\b/gi, 'payment provider');
+  return output;
+};
+
 const buildCorsOptions = () => {
   const allowList = Array.isArray(env.cors?.allowList) ? env.cors.allowList : [];
   const allowAll = allowList.includes('*');
@@ -126,7 +149,7 @@ const createApp = () => {
   app.use((err, req, res, _next) => {
     logger.error({ err, path: req.path }, 'Unhandled application error');
     res.status(err.status || 500).json({
-      error: err.message || 'Internal server error',
+      error: sanitizePublicMessage(err.message || 'Internal server error'),
     });
   });
 

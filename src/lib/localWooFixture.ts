@@ -9,7 +9,7 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
     const p = list[0];
     if (!p) return null;
 
-    const category = (p.categories?.[0]?.name as string) || 'WooCommerce';
+    const category = (p.categories?.[0]?.name as string) || 'Store';
     const image = (p.images?.[0]?.src as string) || '';
     const gallery = Array.isArray(p.images) ? p.images.map((im: any) => im?.src).filter(Boolean) : [];
 
@@ -66,7 +66,7 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       inStock: true,
       prescription: false,
       dosage: options.length ? `${options.length} options` : 'See details',
-      manufacturer: 'Woo Fixture',
+      manufacturer: 'Fixture',
       type: p.type,
       description: '',
       variants: variants.length ? variants : undefined,

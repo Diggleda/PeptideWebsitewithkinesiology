@@ -109,12 +109,21 @@ def _server_usage() -> dict:
 @blueprint.get("/health")
 def health():
     def action():
-        config = get_config()
+        try:
+            config = get_config()
+            build = config.backend_build
+            usage = _server_usage()
+            status = "ok"
+        except Exception:
+            # Never allow health checks to 500; return a degraded payload instead.
+            build = os.environ.get("BACKEND_BUILD", "unknown")
+            usage = None
+            status = "degraded"
         return {
-            "status": "ok",
+            "status": status,
             "message": "Server is running",
-            "build": config.backend_build,
-            "usage": _server_usage(),
+            "build": build,
+            "usage": usage,
             "timestamp": _now(),
         }
 

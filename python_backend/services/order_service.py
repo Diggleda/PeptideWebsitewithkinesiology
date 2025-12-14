@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 import json
 import re
@@ -18,6 +20,15 @@ from . import referral_service
 from . import settings_service
 
 logger = logging.getLogger(__name__)
+
+_SALES_BY_REP_SUMMARY_TTL_SECONDS = 25
+_sales_by_rep_summary_lock = threading.Lock()
+_sales_by_rep_summary_inflight: Optional[threading.Event] = None
+_sales_by_rep_summary_cache: Dict[str, object] = {
+    "data": None,
+    "fetchedAtMs": 0,
+    "expiresAtMs": 0,
+}
 
 
 def _ensure_dict(value):
@@ -219,6 +230,22 @@ def create_order(
             order["wooOrderKey"] = woo_response.get("orderKey")
             order["wooOrderNumber"] = woo_response.get("number")
             try:
+                order_repository.update_woo_fields(
+                    order_id=order.get("id"),
+                    woo_order_id=order.get("wooOrderId"),
+                    woo_order_number=order.get("wooOrderNumber"),
+                    woo_order_key=order.get("wooOrderKey"),
+                )
+            except Exception:
+                pass
+            try:
+                print(
+                    f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+            try:
                 woo_commerce.update_order_metadata(
                     {
                         "woo_order_id": order.get("wooOrderId"),
@@ -257,21 +284,21 @@ def create_order(
             if integrations["stripe"].get("paymentIntentId"):
                 order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
                 try:
-                    woo_commerce.update_order_metadata(
-                        {
-                            "woo_order_id": order.get("wooOrderId"),
-                            "payment_intent_id": order.get("paymentIntentId"),
-                            "order_key": order.get("wooOrderKey"),
-                            "peppro_order_id": order.get("id"),
-                            "sales_rep_id": order.get("doctorSalesRepId"),
-                            "sales_rep_name": order.get("doctorSalesRepName"),
-                            "sales_rep_email": order.get("doctorSalesRepEmail"),
-                            "sales_rep_code": order.get("doctorSalesRepCode"),
-                            "stripe_mode": settings_service.get_effective_stripe_mode(),
-                            "payment_method": "stripe",
-                            "payment_method_title": "Stripe Onsite",
-                        }
-                    )
+	                    woo_commerce.update_order_metadata(
+	                        {
+	                            "woo_order_id": order.get("wooOrderId"),
+	                            "payment_intent_id": order.get("paymentIntentId"),
+	                            "order_key": order.get("wooOrderKey"),
+	                            "peppro_order_id": order.get("id"),
+	                            "sales_rep_id": order.get("doctorSalesRepId"),
+	                            "sales_rep_name": order.get("doctorSalesRepName"),
+	                            "sales_rep_email": order.get("doctorSalesRepEmail"),
+	                            "sales_rep_code": order.get("doctorSalesRepCode"),
+	                            "stripe_mode": settings_service.get_effective_stripe_mode(),
+	                            "payment_method": "stripe",
+	                            "payment_method_title": "Card payment",
+	                        }
+	                    )
                 except Exception:
                     logger.warning(
                         "Failed to attach Stripe metadata to Woo order",
@@ -1144,57 +1171,305 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
 
 
 def get_sales_by_rep(exclude_sales_rep_id: Optional[str] = None):
-    users = user_repository.get_all()
-    reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
-    rep_records = {rep.get("id"): rep for rep in sales_rep_repository.get_all()}
-    user_lookup = {u.get("id"): u for u in users}
-    doctors = [
-        u
-        for u in users
-        if (u.get("role") or "").lower() in ("doctor", "test_doctor") and u.get("salesRepId")
-    ]
+    global _sales_by_rep_summary_inflight
 
-    valid_rep_ids = {rep.get("id") for rep in reps}
-    doctor_to_rep = {
-        doc.get("id"): doc.get("salesRepId")
-        for doc in doctors
-        if doc.get("salesRepId") in valid_rep_ids
-    }
-    rep_totals: Dict[str, Dict[str, float]] = {}
+    def _meta_value(meta: object, key: str):
+        if not isinstance(meta, list):
+            return None
+        for entry in meta:
+            if isinstance(entry, dict) and entry.get("key") == key:
+                return entry.get("value")
+        return None
 
-    # Local orders
-    for order in order_repository.get_all():
-        rep_id = doctor_to_rep.get(order.get("userId"))
-        if not rep_id:
-            continue
-        if exclude_sales_rep_id and rep_id == exclude_sales_rep_id:
-            continue
-        current = rep_totals.get(rep_id, {"totalOrders": 0, "totalRevenue": 0})
-        current["totalOrders"] += 1
-        current["totalRevenue"] += float(order.get("total") or 0)
-        rep_totals[rep_id] = current
+    def _is_truthy(value: object) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        if isinstance(value, (int, float)):
+            try:
+                return float(value) != 0
+            except Exception:
+                return False
+        text = str(value).strip().lower()
+        return text in ("1", "true", "yes", "y", "on")
 
-    # No WooCommerce aggregation; MySQL/local orders are the source of truth
+    def _safe_float(value: object) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except Exception:
+            try:
+                return float(str(value).strip() or 0)
+            except Exception:
+                return 0.0
 
-    rep_lookup = {rep.get("id"): rep for rep in reps}
-    summary = []
-    for rep_id, totals in rep_totals.items():
-        rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
-        rep_record = rep_records.get(rep_id) or {}
-        # Fallback: derive name/email from any user with matching id; otherwise use id
-        summary.append(
-            {
-                "salesRepId": rep_id,
-                "salesRepName": rep.get("name") or rep_record.get("name") or rep.get("email") or rep_id or "Sales Rep",
-                "salesRepEmail": rep.get("email") or rep_record.get("email"),
-                "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
-                "totalOrders": totals["totalOrders"],
-                "totalRevenue": totals["totalRevenue"],
-            }
+    def _compute_summary() -> List[Dict]:
+        users = user_repository.get_all()
+        reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+        rep_records_list = sales_rep_repository.get_all()
+        rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
+        user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
+
+        # Used as a fallback when older Woo orders are missing meta.
+        doctors_by_email = {}
+        for u in users:
+            if (u.get("role") or "").lower() not in ("doctor", "test_doctor"):
+                continue
+            email = (u.get("email") or "").strip().lower()
+            if email:
+                doctors_by_email[email] = u
+
+        valid_rep_ids = {str(rep.get("id")) for rep in reps if rep.get("id")}
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if rep_id:
+                valid_rep_ids.add(str(rep_id))
+
+        # Many parts of the system may store a rep reference as legacyUserId (or other alias).
+        alias_to_rep_id: Dict[str, str] = {}
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            rep_id_str = str(rep_id)
+            alias_to_rep_id[rep_id_str] = rep_id_str
+            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            if legacy_id:
+                alias_to_rep_id[str(legacy_id)] = rep_id_str
+
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_id_str = str(rep_id)
+                alias_to_rep_id[rep_id_str] = rep_id_str
+
+        logger.info(
+            "[SalesByRep] Begin aggregation",
+            extra={
+                "validRepCount": len(valid_rep_ids),
+                "userReps": len(reps),
+                "repoReps": len(rep_records_list),
+            },
         )
 
-    summary.sort(key=lambda r: r["totalRevenue"], reverse=True)
-    return summary
+        rep_totals: Dict[str, Dict[str, float]] = {}
+        house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0}
+        debug_samples: List[Dict[str, object]] = []
+        counted_rep = 0
+        counted_house = 0
+        skipped_status = 0
+        skipped_refunded = 0
+
+        # WooCommerce is the source of truth for order history.
+        per_page = 100
+        max_pages = 25
+        orders_seen = 0
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            if not orders:
+                break
+
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
+                    continue
+                status = str(woo_order.get("status") or "").strip().lower()
+                if status not in ("processing", "completed"):
+                    skipped_status += 1
+                    continue
+                meta_data = woo_order.get("meta_data") or []
+                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
+                    skipped_refunded += 1
+                    continue
+
+                rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
+                rep_id = str(rep_id).strip() if rep_id is not None else ""
+                if rep_id and rep_id not in valid_rep_ids:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                if not rep_id:
+                    billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                    doctor = doctors_by_email.get(billing_email)
+                    rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                    if rep_id and rep_id not in valid_rep_ids:
+                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                total = _safe_float(woo_order.get("total"))
+
+                if rep_id and rep_id in valid_rep_ids:
+                    current = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
+                    current["totalOrders"] += 1.0
+                    current["totalRevenue"] += total
+                    rep_totals[rep_id] = current
+                    counted_rep += 1
+                else:
+                    house_totals["totalOrders"] += 1.0
+                    house_totals["totalRevenue"] += total
+                    counted_house += 1
+
+                if len(debug_samples) < 10:
+                    debug_samples.append(
+                        {
+                            "wooId": woo_order.get("id"),
+                            "wooNumber": woo_order.get("number"),
+                            "status": status,
+                            "repId": rep_id or None,
+                            "metaRepId": _meta_value(meta_data, "peppro_sales_rep_id"),
+                            "billingEmail": ((woo_order.get("billing") or {}) or {}).get("email"),
+                            "total": total,
+                        }
+                    )
+
+                orders_seen += 1
+
+            if len(orders) < per_page:
+                break
+
+        rep_lookup: Dict[str, Dict] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_lookup[str(rep_id)] = rep
+        for rep_id, rep_record in rep_records.items():
+            rep_lookup.setdefault(rep_id, rep_record)
+
+        summary: List[Dict] = []
+        for rep_id in sorted(valid_rep_ids):
+            totals = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
+            rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
+            rep_record = rep_records.get(rep_id) or {}
+            summary.append(
+                {
+                    "salesRepId": rep_id,
+                    "salesRepName": rep.get("name")
+                    or rep_record.get("name")
+                    or rep.get("email")
+                    or rep_record.get("email")
+                    or rep_id
+                    or "Sales Rep",
+                    "salesRepEmail": rep.get("email") or rep_record.get("email"),
+                    "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
+                    "totalOrders": int(totals["totalOrders"]),
+                    "totalRevenue": float(totals["totalRevenue"]),
+                }
+            )
+
+        if house_totals["totalOrders"] > 0:
+            summary.append(
+                {
+                    "salesRepId": "__house__",
+                    "salesRepName": "House / Contact Form",
+                    "salesRepEmail": None,
+                    "salesRepPhone": None,
+                    "totalOrders": int(house_totals["totalOrders"]),
+                    "totalRevenue": float(house_totals["totalRevenue"]),
+                }
+            )
+
+        summary.sort(key=lambda r: float(r.get("totalRevenue") or 0), reverse=True)
+        logger.info(
+            "[SalesByRep] Summary computed",
+            extra={
+                "rows": len(summary),
+                "ordersSeen": orders_seen,
+                "maxPages": max_pages,
+                "perPage": per_page,
+                "countedRep": counted_rep,
+                "countedHouse": counted_house,
+                "skippedStatus": skipped_status,
+                "skippedRefunded": skipped_refunded,
+                "debugSamples": debug_samples,
+            },
+        )
+        try:
+            print(
+                f"[sales_by_rep] rows={len(summary)} orders_seen={orders_seen} counted_rep={counted_rep} counted_house={counted_house} reps={len(valid_rep_ids)} samples={debug_samples}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        return summary
+
+    now_ms = int(time.time() * 1000)
+    cached = None
+    inflight_event = None
+    with _sales_by_rep_summary_lock:
+        cached = _sales_by_rep_summary_cache.get("data")
+        expires_at = int(_sales_by_rep_summary_cache.get("expiresAtMs") or 0)
+        if isinstance(cached, list) and expires_at > now_ms:
+            if exclude_sales_rep_id:
+                exclude_id = str(exclude_sales_rep_id)
+                return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+            return cached
+        inflight_event = _sales_by_rep_summary_inflight
+        if inflight_event is None:
+            inflight_event = threading.Event()
+            _sales_by_rep_summary_inflight = inflight_event
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader and inflight_event is not None:
+        inflight_event.wait(timeout=35)
+        with _sales_by_rep_summary_lock:
+            cached = _sales_by_rep_summary_cache.get("data")
+            if isinstance(cached, list):
+                if exclude_sales_rep_id:
+                    exclude_id = str(exclude_sales_rep_id)
+                    return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+                return cached
+
+    try:
+        summary = _compute_summary()
+        now_ms = int(time.time() * 1000)
+        with _sales_by_rep_summary_lock:
+            _sales_by_rep_summary_cache["data"] = summary
+            _sales_by_rep_summary_cache["fetchedAtMs"] = now_ms
+            _sales_by_rep_summary_cache["expiresAtMs"] = now_ms + (_SALES_BY_REP_SUMMARY_TTL_SECONDS * 1000)
+        # Best-effort persistence for admins (optional columns).
+        for row in summary:
+            rep_id = row.get("salesRepId")
+            if not rep_id or rep_id == "__house__":
+                continue
+            try:
+                sales_rep_repository.update_revenue_summary(
+                    str(rep_id),
+                    float(row.get("totalRevenue") or 0),
+                )
+            except Exception:
+                continue
+        if exclude_sales_rep_id:
+            exclude_id = str(exclude_sales_rep_id)
+            return [row for row in summary if str(row.get("salesRepId")) != exclude_id]
+        return summary
+    except Exception as exc:
+        # Serve stale cached data if available.
+        with _sales_by_rep_summary_lock:
+            cached = _sales_by_rep_summary_cache.get("data")
+            if isinstance(cached, list) and cached:
+                logger.warning(
+                    "[SalesByRep] Using cached summary after failure",
+                    exc_info=True,
+                    extra={"error": str(exc)},
+                )
+                if exclude_sales_rep_id:
+                    exclude_id = str(exclude_sales_rep_id)
+                    return [row for row in cached if str(row.get("salesRepId")) != exclude_id]
+                return cached
+        raise
+    finally:
+        with _sales_by_rep_summary_lock:
+            if _sales_by_rep_summary_inflight is not None:
+                try:
+                    _sales_by_rep_summary_inflight.set()
+                except Exception:
+                    pass
+            _sales_by_rep_summary_inflight = None
 
 
 def _service_error(message: str, status: int) -> Exception:
