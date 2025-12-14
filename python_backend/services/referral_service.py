@@ -30,6 +30,8 @@ REFERRAL_STATUS_CHOICES = [
     "contact_form",
 ]
 
+LEAD_TYPE_CHOICES = ("referral", "contact_form", "manual")
+
 LEGACY_STATUS_ALIASES = {
     "follow_up": "nuture",
     "nurture": "nuture",
@@ -122,17 +124,194 @@ def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> L
     """
     all_users = user_repository.get_all()
     if scope_all:
+        doctors = [u for u in all_users if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
+        updated_doctors = backfill_lead_types_for_doctors(doctors)
+        doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
+        if doctor_by_id:
+            all_users = [doctor_by_id.get(str(u.get("id")), u) for u in all_users]
         return all_users
     target = str(sales_rep_id)
-    return [
+    scoped = [
         user
         for user in all_users
         if str(user.get("salesRepId") or user.get("sales_rep_id")) == target
     ]
+    doctors = [u for u in scoped if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
+    updated_doctors = backfill_lead_types_for_doctors(doctors)
+    doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
+    if doctor_by_id:
+        scoped = [doctor_by_id.get(str(u.get("id")), u) for u in scoped]
+    return scoped
 
 
 def _is_contact_form_id(referral_id: str) -> bool:
     return isinstance(referral_id, str) and referral_id.startswith("contact_form:")
+
+
+def _normalize_lead_type(value: Optional[str]) -> Optional[str]:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in LEAD_TYPE_CHOICES else None
+
+def _fetch_contact_form_ids_by_email(emails: List[str]) -> Dict[str, str]:
+    """Return mapping of normalized email -> contact_form:<id> for the earliest submission."""
+    normalized = sorted({(_sanitize_email(e) or "") for e in emails if e})
+    normalized = [e for e in normalized if e]
+    if not normalized:
+        return {}
+    try:
+        placeholders = ", ".join([f"%(email_{idx})s" for idx in range(len(normalized))])
+    except Exception:
+        placeholders = ""
+    params = {f"email_{idx}": email for idx, email in enumerate(normalized)}
+    if not placeholders:
+        return {}
+    try:
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT id, email, created_at
+            FROM contact_forms
+            WHERE LOWER(email) IN ({placeholders})
+            ORDER BY created_at ASC
+            """,
+            params,
+        )
+    except Exception:
+        return {}
+    mapping: Dict[str, str] = {}
+    for row in rows or []:
+        email = _sanitize_email(row.get("email"))
+        if not email or email in mapping:
+            continue
+        if row.get("id") is None:
+            continue
+        mapping[email] = f"contact_form:{row.get('id')}"
+    return mapping
+
+
+def _fetch_manual_prospect_ids_by_email(emails: List[str]) -> Dict[str, str]:
+    """Return mapping of normalized email -> manual referral id (manual:...) if present."""
+    normalized = {(_sanitize_email(e) or "") for e in emails if e}
+    normalized = {e for e in normalized if e}
+    if not normalized:
+        return {}
+    mapping: Dict[str, str] = {}
+    try:
+        # Prefer MySQL for efficiency.
+        placeholders = ", ".join([f"%(email_{idx})s" for idx in range(len(normalized))])
+        params = {f"email_{idx}": email for idx, email in enumerate(sorted(normalized))}
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT id, referred_contact_email
+            FROM referrals
+            WHERE id LIKE 'manual:%'
+              AND LOWER(referred_contact_email) IN ({placeholders})
+            """,
+            params,
+        )
+        for row in rows or []:
+            email = _sanitize_email(row.get("referred_contact_email"))
+            rid = row.get("id")
+            if email and rid and email not in mapping:
+                mapping[email] = str(rid)
+        return mapping
+    except Exception:
+        # Fall back to repository scan (JSON-store mode or older schema).
+        for record in referral_repository.get_all():
+            rid = str(record.get("id") or "")
+            if not rid.startswith("manual:"):
+                continue
+            email = _sanitize_email(record.get("referredContactEmail"))
+            if email and email in normalized and email not in mapping:
+                mapping[email] = rid
+        return mapping
+
+
+def lock_lead_type_for_doctor(
+    doctor: Dict,
+    *,
+    lead_type: str,
+    source: Optional[str] = None,
+    locked_at: Optional[str] = None,
+) -> Optional[Dict]:
+    """Set lead type once (never overwrite)."""
+    if not isinstance(doctor, dict) or not doctor.get("id"):
+        return None
+    existing = _normalize_lead_type(doctor.get("leadType"))
+    if existing:
+        return doctor
+    normalized = _normalize_lead_type(lead_type)
+    if not normalized:
+        return doctor
+    update = {
+        **doctor,
+        "leadType": normalized,
+        "leadTypeSource": _sanitize_text(source, 64) if source else doctor.get("leadTypeSource") or None,
+        "leadTypeLockedAt": locked_at or doctor.get("leadTypeLockedAt") or _now(),
+    }
+    return user_repository.update(update) or update
+
+
+def backfill_lead_types_for_doctors(doctors: List[Dict]) -> List[Dict]:
+    """Best-effort: ensure every doctor has a lead type set, without ever overwriting."""
+    if not isinstance(doctors, list) or not doctors:
+        return doctors or []
+
+    pending: List[Dict] = []
+    updated: Dict[str, Dict] = {}
+    for doctor in doctors:
+        if not isinstance(doctor, dict) or not doctor.get("id"):
+            continue
+        if _normalize_lead_type(doctor.get("leadType")):
+            continue
+        # Quick deterministic case.
+        if doctor.get("referrerDoctorId"):
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="referral",
+                source=f"referrerDoctorId:{doctor.get('referrerDoctorId')}",
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        pending.append(doctor)
+
+    if not pending:
+        return [updated.get(str(d.get("id")), d) for d in doctors]
+
+    emails = [d.get("email") for d in pending if d.get("email")]
+    contact_form_map = _fetch_contact_form_ids_by_email(emails)
+    manual_map = _fetch_manual_prospect_ids_by_email(emails)
+
+    for doctor in pending:
+        email = _sanitize_email(doctor.get("email"))
+        if not email:
+            saved = lock_lead_type_for_doctor(doctor, lead_type="manual", source="default")
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        if email in contact_form_map:
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="contact_form",
+                source=contact_form_map[email],
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        if email in manual_map:
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="manual",
+                source=manual_map[email],
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        saved = lock_lead_type_for_doctor(doctor, lead_type="manual", source="default")
+        if saved:
+            updated[str(doctor.get("id"))] = saved
+
+    return [updated.get(str(d.get("id")), d) for d in doctors]
 
 
 def _enrich_referral(referral: Dict) -> Dict:

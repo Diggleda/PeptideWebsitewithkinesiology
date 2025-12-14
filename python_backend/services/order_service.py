@@ -691,6 +691,12 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
             continue
         doctors.append(user)
 
+    # Ensure doctors have a stable lead type stored for commission tracking.
+    try:
+        doctors = referral_service.backfill_lead_types_for_doctors(doctors)
+    except Exception:
+        pass
+
     doctor_lookup = {
         doc.get("id"): {
             "id": doc.get("id"),
@@ -698,6 +704,9 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
             "email": doc.get("email"),
             "phone": doc.get("phone"),
             "profileImageUrl": doc.get("profileImageUrl"),
+            "leadType": doc.get("leadType"),
+            "leadTypeSource": doc.get("leadTypeSource"),
+            "leadTypeLockedAt": doc.get("leadTypeLockedAt"),
             "address1": doc.get("officeAddressLine1"),
             "address2": doc.get("officeAddressLine2"),
             "city": doc.get("officeCity"),

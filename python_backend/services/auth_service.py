@@ -161,6 +161,14 @@ def register(data: Dict) -> Dict:
         }
     )
 
+    # Lock lead type once so commission tracking is stable.
+    try:
+        updated = referral_service.backfill_lead_types_for_doctors([user])
+        if updated and isinstance(updated, list) and updated[0]:
+            user = updated[0]
+    except Exception:
+        pass
+
     if onboarding_record:
         referral_service.redeem_onboarding_code({"code": code, "doctorId": user["id"]})
 

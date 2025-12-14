@@ -3682,6 +3682,9 @@ export default function App() {
         email?: string | null;
         profileImageUrl?: string | null;
         phone?: string | null;
+        leadType?: string | null;
+        leadTypeSource?: string | null;
+        leadTypeLockedAt?: string | null;
         address1?: string | null;
         address2?: string | null;
         city?: string | null;
@@ -4968,6 +4971,9 @@ export default function App() {
           email?: string | null;
           profileImageUrl?: string | null;
           phone?: string | null;
+          leadType?: string | null;
+          leadTypeSource?: string | null;
+          leadTypeLockedAt?: string | null;
           address1?: string | null;
           address2?: string | null;
           city?: string | null;
@@ -5013,6 +5019,9 @@ export default function App() {
               doc.phone_number ||
               doc.contactPhone ||
               null,
+            leadType: doc.leadType || doc.lead_type || null,
+            leadTypeSource: doc.leadTypeSource || doc.lead_type_source || null,
+            leadTypeLockedAt: doc.leadTypeLockedAt || doc.lead_type_locked_at || null,
             address1: doc.address1 || doc.address_1 || null,
             address2: doc.address2 || doc.address_2 || null,
             city: doc.city || null,
@@ -5270,9 +5279,17 @@ export default function App() {
     if (salesTrackingOrders.length === 0) {
       return null;
     }
+    const shouldCountRevenueForStatus = (status?: string | null) => {
+      const normalized = String(status || "").toLowerCase().trim();
+      return (
+        normalized !== "cancelled" &&
+        normalized !== "canceled" &&
+        normalized !== "trash" &&
+        normalized !== "refunded"
+      );
+    };
     const activeOrders = salesTrackingOrders.filter((order) => {
-      const status = (order.status || "").toLowerCase();
-      return status !== "cancelled" && status !== "canceled";
+      return shouldCountRevenueForStatus(order.status);
     });
     const revenue = activeOrders.reduce(
       (sum, order) => sum + (coerceNumber(order.total) ?? 0),
@@ -5294,6 +5311,9 @@ export default function App() {
         doctorEmail?: string | null;
         doctorAvatar?: string | null;
         doctorPhone?: string | null;
+        leadType?: string | null;
+        leadTypeSource?: string | null;
+        leadTypeLockedAt?: string | null;
         doctorAddress?: string | null;
         orders: AccountOrderSummary[];
         total: number;
@@ -5313,6 +5333,9 @@ export default function App() {
         doctorInfo?.profileImageUrl ||
         (order as any).doctorProfileImageUrl ||
         null;
+      const leadType = doctorInfo?.leadType || null;
+      const leadTypeSource = doctorInfo?.leadTypeSource || null;
+      const leadTypeLockedAt = doctorInfo?.leadTypeLockedAt || null;
       const doctorAddress = (() => {
         const parts = [
           doctorInfo?.address1,
@@ -5347,6 +5370,9 @@ export default function App() {
             doctorEmail: doctorEmailFromOrder,
             doctorAvatar,
             doctorPhone,
+            leadType,
+            leadTypeSource,
+            leadTypeLockedAt,
             doctorAddress,
             orders: [] as AccountOrderSummary[],
             total: 0,
@@ -5356,7 +5382,12 @@ export default function App() {
         })();
       bucket.orders.push(order);
       const status = (order.status || "").toLowerCase();
-      if (status !== "cancelled" && status !== "canceled") {
+      if (
+        status !== "cancelled" &&
+        status !== "canceled" &&
+        status !== "trash" &&
+        status !== "refunded"
+      ) {
         bucket.total += coerceNumber(order.total) ?? 0;
       }
     }
@@ -8970,6 +9001,11 @@ export default function App() {
                                 <p className="lead-list-name">
                                   {bucket.doctorName}
                                 </p>
+                                {String(bucket.leadType || "").toLowerCase() === "contact_form" && (
+                                  <span className="lead-source-pill lead-source-pill--contact mt-1">
+                                    House / Contact Form
+                                  </span>
+                                )}
                                 {bucket.doctorEmail && (
                                   <p className="lead-list-detail">
                                     {bucket.doctorEmail}

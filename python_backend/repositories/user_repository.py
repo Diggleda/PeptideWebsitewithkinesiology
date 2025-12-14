@@ -28,6 +28,9 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("status", "active")
     normalized.setdefault("salesRepId", None)
     normalized.setdefault("referrerDoctorId", None)
+    normalized["leadType"] = (normalized.get("leadType") or None)
+    normalized["leadTypeSource"] = (normalized.get("leadTypeSource") or None)
+    normalized["leadTypeLockedAt"] = (normalized.get("leadTypeLockedAt") or None)
     normalized.setdefault("phone", None)
     normalized["officeAddressLine1"] = (normalized.get("officeAddressLine1") or None)
     normalized["officeAddressLine2"] = (normalized.get("officeAddressLine2") or None)
@@ -179,13 +182,15 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, sales_rep_id, referrer_doctor_id,
+            lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
             office_postal_code, office_country, profile_image_url, referral_credits, total_referrals, visits,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
+            %(referrer_doctor_id)s, %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
+            %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
             %(profile_image_url)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
@@ -199,6 +204,9 @@ def _mysql_insert(user: Dict) -> Dict:
             status = VALUES(status),
             sales_rep_id = VALUES(sales_rep_id),
             referrer_doctor_id = VALUES(referrer_doctor_id),
+            lead_type = VALUES(lead_type),
+            lead_type_source = VALUES(lead_type_source),
+            lead_type_locked_at = VALUES(lead_type_locked_at),
             phone = VALUES(phone),
             office_address_line1 = VALUES(office_address_line1),
             office_address_line2 = VALUES(office_address_line2),
@@ -242,6 +250,9 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             status = %(status)s,
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
+            lead_type = %(lead_type)s,
+            lead_type_source = %(lead_type_source)s,
+            lead_type_locked_at = %(lead_type_locked_at)s,
             phone = %(phone)s,
             office_address_line1 = %(office_address_line1)s,
             office_address_line2 = %(office_address_line2)s,
@@ -297,6 +308,9 @@ def _row_to_user(row: Dict) -> Dict:
             "status": row.get("status"),
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
+            "leadType": row.get("lead_type"),
+            "leadTypeSource": row.get("lead_type_source"),
+            "leadTypeLockedAt": fmt_datetime(row.get("lead_type_locked_at")),
             "phone": row.get("phone"),
             "officeAddressLine1": row.get("office_address_line1"),
             "officeAddressLine2": row.get("office_address_line2"),
@@ -343,6 +357,9 @@ def _to_db_params(user: Dict) -> Dict:
         "status": user.get("status"),
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
+        "lead_type": user.get("leadType"),
+        "lead_type_source": user.get("leadTypeSource"),
+        "lead_type_locked_at": parse_dt(user.get("leadTypeLockedAt")),
         "phone": user.get("phone"),
         "office_address_line1": user.get("officeAddressLine1"),
         "office_address_line2": user.get("officeAddressLine2"),
