@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - optional dependency
     stripe = None
 
 from ..services import get_config
+from ..services import settings_service
 from ..repositories import order_repository
 from . import woo_commerce
 
@@ -26,8 +27,8 @@ class StripeIntegrationError(RuntimeError):
 
 def is_configured() -> bool:
     config = get_config()
-    data = config.stripe
-    return bool(data.get("onsite_enabled") and data.get("secret_key"))
+    secret_key = settings_service.resolve_stripe_secret_key()
+    return bool(config.stripe.get("onsite_enabled") and secret_key)
 
 
 def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
@@ -35,12 +36,13 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
     config = get_config()
     if not config.stripe.get("onsite_enabled"):
         return {"status": "skipped", "reason": "stripe_disabled"}
-    if not config.stripe.get("secret_key"):
+    secret_key = settings_service.resolve_stripe_secret_key()
+    if not secret_key:
         return {"status": "error", "message": "Stripe not configured"}
     if stripe is None:
         return {"status": "error", "message": "Stripe SDK not installed on server"}
 
-    stripe.api_key = config.stripe.get("secret_key")
+    stripe.api_key = secret_key
     amount = int(round(float(order.get("total", 0)) * 100))
     currency = "usd"
     metadata = {
@@ -105,12 +107,13 @@ def retrieve_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
     config = get_config()
     if not config.stripe.get("onsite_enabled"):
         return {"status": "skipped", "reason": "stripe_disabled"}
-    if not config.stripe.get("secret_key"):
+    secret_key = settings_service.resolve_stripe_secret_key()
+    if not secret_key:
         raise StripeIntegrationError("Stripe not configured", status=500)
     if stripe is None:
         raise StripeIntegrationError("Stripe SDK not installed", status=500)
 
-    stripe.api_key = config.stripe.get("secret_key")
+    stripe.api_key = secret_key
     try:
         intent = stripe.PaymentIntent.retrieve(
             payment_intent_id,
@@ -353,12 +356,13 @@ def refund_payment_intent(payment_intent_id: str, amount_cents: Optional[int] = 
     config = get_config()
     if not config.stripe.get("onsite_enabled"):
         return {"status": "skipped", "reason": "stripe_disabled"}
-    if not config.stripe.get("secret_key"):
+    secret_key = settings_service.resolve_stripe_secret_key()
+    if not secret_key:
         raise StripeIntegrationError("Stripe not configured", status=500)
     if stripe is None:
         raise StripeIntegrationError("Stripe SDK not installed", status=500)
 
-    stripe.api_key = config.stripe.get("secret_key")
+    stripe.api_key = secret_key
     try:
         params: Dict[str, Any] = {"payment_intent": payment_intent_id}
         if amount_cents is not None:

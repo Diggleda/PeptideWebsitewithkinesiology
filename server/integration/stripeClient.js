@@ -1,25 +1,43 @@
 const Stripe = require('stripe');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
+const { getStripeModeSync } = require('../services/settingsService');
 
-let stripeClient = null;
+const stripeClients = new Map();
+
+const resolveSecretKey = (mode) => {
+  const normalized = String(mode || '').toLowerCase().trim() === 'live' ? 'live' : 'test';
+  const liveKey = env.stripe?.liveSecretKey || env.stripe?.secretKey || '';
+  const testKey = env.stripe?.testSecretKey || '';
+  if (normalized === 'live') {
+    return liveKey;
+  }
+  return testKey || liveKey;
+};
+
+const getEffectiveMode = () => getStripeModeSync();
 
 const getClient = () => {
-  if (!env.stripe.onsiteEnabled || !env.stripe.secretKey) {
+  const mode = getEffectiveMode();
+  const secretKey = resolveSecretKey(mode);
+  if (!env.stripe.onsiteEnabled || !secretKey) {
     const error = new Error('Stripe is not configured');
     error.status = 503;
     throw error;
   }
-  if (stripeClient) {
-    return stripeClient;
+  const cacheKey = `${mode}:${secretKey}`;
+  const existing = stripeClients.get(cacheKey);
+  if (existing) {
+    return existing;
   }
-  stripeClient = Stripe(env.stripe.secretKey, {
+  const created = Stripe(secretKey, {
     apiVersion: '2024-06-20',
   });
-  return stripeClient;
+  stripeClients.set(cacheKey, created);
+  return created;
 };
 
-const isConfigured = () => Boolean(env.stripe.onsiteEnabled && env.stripe.secretKey);
+const isConfigured = () => Boolean(env.stripe.onsiteEnabled && resolveSecretKey(getEffectiveMode()));
 const isTaxConfigured = () => Boolean(env.stripe.taxEnabled && isConfigured());
 
 const retrievePaymentIntent = async (paymentIntentId) => {

@@ -13,9 +13,12 @@ from ..utils.security import verify_woocommerce_webhook_signature
 
 blueprint = Blueprint("woo", __name__, url_prefix="/api/woo")
 
-def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int) -> Response:
+def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int, no_store: bool = False) -> Response:
     response = jsonify(data)
-    response.headers["Cache-Control"] = f"public, max-age={ttl_seconds}"
+    if no_store:
+        response.headers["Cache-Control"] = "no-store"
+    else:
+        response.headers["Cache-Control"] = f"public, max-age={ttl_seconds}"
     response.headers["X-PepPro-Cache"] = cache
     return response
 
@@ -28,6 +31,7 @@ def list_products():
             data,
             cache=str(meta.get("cache") or "MISS"),
             ttl_seconds=int(meta.get("ttlSeconds") or 60),
+            no_store=bool(meta.get("noStore")),
         )
     except Exception as exc:  # pragma: no cover - defensive
         return json_error(exc)
@@ -41,6 +45,7 @@ def list_categories():
             data,
             cache=str(meta.get("cache") or "MISS"),
             ttl_seconds=int(meta.get("ttlSeconds") or 60),
+            no_store=bool(meta.get("noStore")),
         )
     except Exception as exc:  # pragma: no cover - defensive
         return json_error(exc)
@@ -55,6 +60,7 @@ def list_product_variations(product_id: int):
             data,
             cache=str(meta.get("cache") or "MISS"),
             ttl_seconds=int(meta.get("ttlSeconds") or 60),
+            no_store=bool(meta.get("noStore")),
         )
     except Exception as exc:  # pragma: no cover - defensive
         return json_error(exc)

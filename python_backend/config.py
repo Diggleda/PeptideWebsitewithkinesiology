@@ -125,10 +125,17 @@ def load_config() -> AppConfig:
             "auto_create_labels": os.environ.get("SHIPENGINE_AUTO_CREATE_LABELS", "").lower() == "true",
         },
         stripe={
-            "onsite_enabled": os.environ.get("STRIPE_ONSITE_ENABLED", "").lower() == "true",
-            "secret_key": _s(os.environ.get("STRIPE_SECRET_KEY")),
+            "onsite_enabled": (os.environ.get("STRIPE_ONSITE_ENABLED") or os.environ.get("VITE_STRIPE_ONSITE_ENABLED") or "").lower() == "true",
+            # Frontend uses VITE_STRIPE_MODE; allow sharing one mode across services.
+            "mode": _s(os.environ.get("STRIPE_MODE") or os.environ.get("VITE_STRIPE_MODE") or "test"),
+            "secret_key_live": _s(os.environ.get("STRIPE_SECRET_KEY")),
+            "secret_key_test": _s(os.environ.get("STRIPE_SECRET_TEST_KEY")),
+            "secret_key": "",  # resolved below
             "webhook_secret": _s(os.environ.get("STRIPE_WEBHOOK_SECRET")),
-            "mode": _s(os.environ.get("STRIPE_MODE") or "test"),
+            # Browser publishable keys (pk_*) — safe to expose.
+            "publishable_key_live": _s(os.environ.get("VITE_STRIPE_PUBLISHABLE_KEY")),
+            "publishable_key_test": _s(os.environ.get("VITE_STRIPE_PUBLISHABLE_TEST_KEY")),
+            "publishable_key": "",
         },
         referral={
             "fixed_credit_amount": _to_float(os.environ.get("REFERRAL_FIRST_ORDER_CREDIT"), 250.0),
@@ -193,6 +200,19 @@ def load_config() -> AppConfig:
     )
 
     config.data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve Stripe secret key based on mode (defaults to test).
+    stripe_mode = (config.stripe.get("mode") or "test").strip().lower()
+    if stripe_mode == "live":
+        config.stripe["secret_key"] = config.stripe.get("secret_key_live") or ""
+    else:
+        config.stripe["secret_key"] = config.stripe.get("secret_key_test") or config.stripe.get("secret_key_live") or ""
+
+    # Resolve Stripe publishable key based on mode (defaults to test).
+    if stripe_mode == "live":
+        config.stripe["publishable_key"] = config.stripe.get("publishable_key_live") or ""
+    else:
+        config.stripe["publishable_key"] = config.stripe.get("publishable_key_test") or config.stripe.get("publishable_key_live") or ""
 
     return config
 

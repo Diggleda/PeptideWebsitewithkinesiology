@@ -109,10 +109,43 @@ const env = {
     || 'http://localhost:3000',
   stripe: {
     onsiteEnabled: process.env.STRIPE_ONSITE_ENABLED === 'true',
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    // Support switching between Stripe test/live without rewriting env files.
+    // - STRIPE_MODE=test  -> STRIPE_SECRET_TEST_KEY (fallback STRIPE_SECRET_KEY)
+    // - STRIPE_MODE=live  -> STRIPE_SECRET_KEY
+    // Frontend uses VITE_STRIPE_MODE; allow using one value across services.
+    mode: process.env.STRIPE_MODE || process.env.VITE_STRIPE_MODE || 'test',
+    secretKey: (() => {
+      const mode = String(
+        process.env.STRIPE_MODE || process.env.VITE_STRIPE_MODE || 'test',
+      )
+        .toLowerCase()
+        .trim();
+      const liveKey = process.env.STRIPE_SECRET_KEY || '';
+      const testKey = process.env.STRIPE_SECRET_TEST_KEY || '';
+      if (mode === 'live') {
+        return liveKey;
+      }
+      return testKey || liveKey;
+    })(),
+    liveSecretKey: process.env.STRIPE_SECRET_KEY || '',
+    testSecretKey: process.env.STRIPE_SECRET_TEST_KEY || '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-    mode: process.env.STRIPE_MODE || 'test',
-    publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+    // Publishable keys (browser) — safe to expose to Vite via VITE_ prefix.
+    publishableKey: (() => {
+      const mode = String(
+        process.env.STRIPE_MODE || process.env.VITE_STRIPE_MODE || 'test',
+      )
+        .toLowerCase()
+        .trim();
+      const liveKey = process.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+      const testKey = process.env.VITE_STRIPE_PUBLISHABLE_TEST_KEY || '';
+      if (mode === 'live') {
+        return liveKey;
+      }
+      return testKey || liveKey;
+    })(),
+    livePublishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+    testPublishableKey: process.env.VITE_STRIPE_PUBLISHABLE_TEST_KEY || '',
     taxEnabled: process.env.STRIPE_TAX_ENABLED === 'true',
     defaultTaxCode: process.env.STRIPE_TAX_CODE || '',
     shippingTaxCode: process.env.STRIPE_TAX_SHIPPING_CODE || '',

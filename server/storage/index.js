@@ -7,7 +7,10 @@ const salesRepStore = new JsonStore(env.dataDir, 'sales-reps.json', []);
 const referralStore = new JsonStore(env.dataDir, 'referrals.json', []);
 const referralCodeStore = new JsonStore(env.dataDir, 'referral-codes.json', []);
 const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
-const settingsStore = new JsonStore(env.dataDir, 'settings.json', { shopEnabled: true });
+const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
+  shopEnabled: true,
+  stripeMode: null,
+});
 
 const initStorage = () => {
   userStore.init();

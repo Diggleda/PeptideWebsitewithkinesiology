@@ -210,6 +210,8 @@ const proxyCatalog = async (req, res, next) => {
     const forceFresh = forceParam === '1' || forceParam === 'true' || forceParam === 'yes';
 
     const ttlSeconds = cacheTtlSecondsForEndpoint(requestedEndpoint);
+    const allowStale =
+      requestedEndpoint === 'products' || requestedEndpoint === 'products/categories';
     const cacheKey = buildCacheKey(requestedEndpoint, req.query);
     const now = Date.now();
     const cached = catalogCache.get(cacheKey);
@@ -217,6 +219,15 @@ const proxyCatalog = async (req, res, next) => {
     if (forceFresh) {
       try {
         const data = await wooCommerceClient.fetchCatalog(requestedEndpoint, req.query);
+        if (catalogCache.size > 500) {
+          catalogCache.clear();
+        }
+        catalogCache.set(cacheKey, { data, expiresAt: now + ttlSeconds * 1000 });
+        void writeDiskCache(cacheKey, {
+          data,
+          fetchedAt: now,
+          expiresAt: now + ttlSeconds * 1000,
+        });
         res.set('Cache-Control', 'no-store');
         res.set('X-PepPro-Cache', 'BYPASS');
         res.json(data);
@@ -276,7 +287,7 @@ const proxyCatalog = async (req, res, next) => {
       return;
     }
 
-    if (cached && cached.expiresAt <= now && now - cached.expiresAt <= MAX_STALE_MS) {
+    if (allowStale && cached && cached.expiresAt <= now && now - cached.expiresAt <= MAX_STALE_MS) {
       serveCachedResponse({
         res,
         requestedEndpoint,
@@ -304,6 +315,10 @@ const proxyCatalog = async (req, res, next) => {
     ) {
       const expiresAt = diskCached.expiresAt;
       const data = diskCached.data;
+      if (!allowStale && expiresAt <= now) {
+        // Don't serve expired snapshots for endpoints that impact pricing/images (e.g. variations).
+        // We'll fetch fresh instead.
+      } else {
       if (catalogCache.size > 500) {
         catalogCache.clear();
       }
@@ -326,6 +341,7 @@ const proxyCatalog = async (req, res, next) => {
         });
       }
       return;
+      }
     }
 
     const pending = (async () => wooCommerceClient.fetchCatalog(requestedEndpoint, req.query))();

@@ -7,15 +7,18 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { ShoppingCart, Minus, Plus } from 'lucide-react';
 
-const AUTO_OPEN_STRENGTH_ENABLED =
-  String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH || '').toLowerCase().trim() === 'true';
+const AUTO_OPEN_STRENGTH_ENABLED = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH ?? '').toLowerCase().trim();
+  if (!raw) return true; // default ON (can be disabled with VITE_AUTO_OPEN_STRENGTH=false)
+  return raw === 'true';
+})();
 const AUTO_OPEN_STRENGTH_DELAY_MS = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH_DELAY_MS || '').trim();
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
   if (Number.isFinite(parsed) && parsed >= 0) {
     return parsed;
   }
-  return 250;
+  return 750;
 })();
 
 const AUTO_OPEN_STRENGTH_PACE_MS = (() => {
@@ -38,6 +41,79 @@ const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
   }
   return 175;
 })();
+
+const PLACEHOLDER_VARIATION_ID = '__peppro_needs_variant__';
+const PLACEHOLDER_IMAGE_SRC = '/Peppro_IconLogo_Transparent_NoBuffer.png';
+
+const AUTO_OPEN_IMAGE_TIMEOUT_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_IMAGE_TIMEOUT_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 45000;
+})();
+
+const AUTO_OPEN_IMAGE_MAX_ATTEMPTS = (() => {
+  const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_IMAGE_MAX_ATTEMPTS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 1) {
+    return parsed;
+  }
+  return 10;
+})();
+
+const prefetchImageOnce = (src: string, timeoutMs: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    }, timeoutMs);
+    img.onload = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(true);
+    };
+    img.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(false);
+    };
+    img.src = src;
+  });
+
+const buildImageRetryUrl = (src: string, attempt: number) => {
+  const sep = src.includes('?') ? '&' : '?';
+  return `${src}${sep}_imgRetry=${Date.now()}_${attempt}`;
+};
+
+const waitForImageWithRetry = async (src: string, timeoutMs: number): Promise<boolean> => {
+  const trimmed = src.trim();
+  if (!trimmed || trimmed === PLACEHOLDER_IMAGE_SRC || trimmed.startsWith('data:')) {
+    return true;
+  }
+
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (Date.now() - startedAt < timeoutMs && attempt < AUTO_OPEN_IMAGE_MAX_ATTEMPTS) {
+    attempt += 1;
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await prefetchImageOnce(attempt === 1 ? trimmed : buildImageRetryUrl(trimmed, attempt), 25000);
+    if (ok) {
+      return true;
+    }
+    const delayMs = Math.min(60000, 900 * Math.pow(1.7, attempt - 1));
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+  }
+  return false;
+};
 
 const autoOpenQueue: Array<() => Promise<void>> = [];
 let autoOpenActive = false;
@@ -100,8 +176,18 @@ const pickDefaultVariation = (variations: ProductVariation[] | undefined | null)
 };
 
 export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductCardProps) {
+  const selectableVariations = useMemo(() => {
+    const variations = Array.isArray(product.variations) ? product.variations : [];
+    return variations.filter((variation) => variation?.id !== PLACEHOLDER_VARIATION_ID);
+  }, [product.variations]);
+
+  const needsVariants =
+    Array.isArray(product.variations) &&
+    product.variations.length === 1 &&
+    product.variations[0]?.id === PLACEHOLDER_VARIATION_ID;
+
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation>(
-    pickDefaultVariation(product.variations),
+    pickDefaultVariation(selectableVariations.length > 0 ? selectableVariations : product.variations),
   );
   const [uiVariationId, setUiVariationId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
@@ -114,31 +200,29 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
   const autoOpenDoneRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!Array.isArray(product.variations) || product.variations.length === 0) {
-      return;
-    }
+    const rawVariations = Array.isArray(product.variations) ? product.variations : [];
+    if (rawVariations.length === 0) return;
+
+    const nextSelectable = rawVariations.filter((variation) => variation?.id !== PLACEHOLDER_VARIATION_ID);
+    const resolvedForSelection = nextSelectable.length > 0 ? nextSelectable : rawVariations;
+
     setSelectedVariation((prev) => {
       const next =
-        product.variations.find((variation) => variation.id === prev.id) ??
-        (product.variations.find((variation) => Boolean(variation?.image)) ??
-          product.variations[0]);
-      if (!next) {
-        return prev;
-      }
-      return next.id === prev.id ? prev : next;
+        resolvedForSelection.find((variation) => variation.id === prev.id) ??
+        pickDefaultVariation(resolvedForSelection);
+      return next?.id === prev.id ? prev : next;
     });
 
-    if (!userInteractedRef.current) {
-      setUiVariationId('');
-    } else {
-      setUiVariationId((prev) => {
-        if (!prev) {
-          return prev;
-        }
-        const exists = product.variations.some((variation) => variation.id === prev);
-        return exists ? prev : '';
-      });
-    }
+    // Keep "Select strength" until variants are actually loaded, then switch the UI to a real variant id
+    // so the dropdown renders the option list consistently.
+    setUiVariationId((prev) => {
+      if (nextSelectable.length === 0) {
+        return '';
+      }
+      const exists = prev ? nextSelectable.some((variation) => variation.id === prev) : false;
+      if (exists) return prev;
+      return pickDefaultVariation(nextSelectable).id;
+    });
   }, [product.id, product.variations]);
 
   useEffect(() => {
@@ -230,11 +314,6 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     setBulkOpen(true);
   };
 
-  const needsVariants =
-    Array.isArray(product.variations) &&
-    product.variations.length === 1 &&
-    product.variations[0]?.id === '__peppro_needs_variant__';
-
   const canLoadVariants =
     typeof onEnsureVariants === 'function' &&
     (needsVariants || product.variations.some((variation) => String(variation.id).startsWith('woo-variation-')));
@@ -255,7 +334,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     }
     try {
       setVariantsLoading(true);
-      await onEnsureVariants(options);
+      return await onEnsureVariants(options);
     } finally {
       setVariantsLoading(false);
     }
@@ -264,11 +343,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
   const handleVariationChange = (variationId: string) => {
     userInteractedRef.current = true;
     setUiVariationId(variationId);
-    if (!variationId || variationId === '__peppro_needs_variant__') {
+    if (!variationId || variationId === PLACEHOLDER_VARIATION_ID) {
       void triggerVariantLoad({ force: true });
       return;
     }
-    const variation = product.variations?.find((v) => v.id === variationId);
+    const variation = selectableVariations?.find((v) => v.id === variationId);
     if (variation) {
       setSelectedVariation(variation);
     }
@@ -292,12 +371,39 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     }
     autoOpenDoneRef.current = product.id;
 
+    const shouldDelay = !autoOpenActive && autoOpenQueue.length === 0;
     enqueueAutoOpen(async () => {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_DELAY_MS));
+      if (shouldDelay && AUTO_OPEN_STRENGTH_DELAY_MS > 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_DELAY_MS));
+      }
       if (userInteractedRef.current) {
         return;
       }
-      await triggerVariantLoad();
+      const nextProduct = await triggerVariantLoad();
+      if (userInteractedRef.current) {
+        return;
+      }
+      const candidateImage = (() => {
+        const payload: any = nextProduct;
+        const variants = Array.isArray(payload?.variants) ? payload.variants : [];
+        const defaultVariantId =
+          typeof payload?.defaultVariantId === 'string' && payload.defaultVariantId.trim().length > 0
+            ? payload.defaultVariantId.trim()
+            : null;
+        const defaultVariant = defaultVariantId ? variants.find((v: any) => v?.id === defaultVariantId) : null;
+        const variantWithImage =
+          (defaultVariant &&
+          typeof (defaultVariant as any)?.image === 'string' &&
+          (defaultVariant as any).image.trim().length > 0
+            ? defaultVariant
+            : null) ??
+          variants.find((v: any) => typeof v?.image === 'string' && v.image.trim().length > 0);
+        const fallback = typeof payload?.image === 'string' ? payload.image : null;
+        return (variantWithImage?.image as string | undefined) ?? fallback ?? null;
+      })();
+      if (typeof candidateImage === 'string' && candidateImage.trim().length > 0) {
+        await waitForImageWithRetry(candidateImage.trim(), AUTO_OPEN_IMAGE_TIMEOUT_MS);
+      }
       await new Promise<void>((resolve) => window.setTimeout(resolve, AUTO_OPEN_STRENGTH_PACE_MS));
     });
   }, [needsVariants, onEnsureVariants, product.id, variantsLoading]);
@@ -342,21 +448,31 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
             onChange={(e) => handleVariationChange(e.target.value)}
             onFocus={() => {
               userInteractedRef.current = true;
-              void triggerVariantLoad({ force: true });
+              if (needsVariants || selectableVariations.length === 0) {
+                void triggerVariantLoad({ force: true });
+              }
+            }}
+            onClick={() => {
+              userInteractedRef.current = true;
+              if (needsVariants || selectableVariations.length === 0) {
+                void triggerVariantLoad({ force: true });
+              }
             }}
             onMouseDown={() => {
               userInteractedRef.current = true;
-              void triggerVariantLoad({ force: true });
+              if (needsVariants || selectableVariations.length === 0) {
+                void triggerVariantLoad({ force: true });
+              }
             }}
             disabled={variantsLoading}
             className="w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select"
             >
-            {!uiVariationId && (
+            {(needsVariants || !uiVariationId || selectableVariations.length === 0) && (
               <option value="" disabled>
                 {variantsLoading ? 'Loading variants…' : 'Select strength'}
               </option>
             )}
-            {product.variations.map((variation) => (
+            {selectableVariations.map((variation) => (
               <option key={variation.id} value={variation.id}>
                 {variantsLoading ? 'Loading variants…' : variation.strength}
               </option>

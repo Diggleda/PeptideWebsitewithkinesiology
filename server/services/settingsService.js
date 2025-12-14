@@ -1,9 +1,11 @@
 const mysqlClient = require('../database/mysqlClient');
 const { settingsStore } = require('../storage');
 const { logger } = require('../config/logger');
+const { env } = require('../config/env');
 
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
+  stripeMode: null, // null = follow env
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
@@ -11,6 +13,10 @@ const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
 const normalizeSettings = (settings = {}) => {
   const merged = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   merged.shopEnabled = Boolean(merged.shopEnabled);
+  const stripeMode = typeof merged.stripeMode === 'string'
+    ? merged.stripeMode.toLowerCase().trim()
+    : null;
+  merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
   return merged;
 };
 
@@ -27,7 +33,7 @@ const loadFromSql = async () => {
 
   try {
     const rows = await mysqlClient.fetchAll?.(
-      'SELECT `key`, `value_json` FROM settings WHERE `key` IN ("shopEnabled")',
+      'SELECT `key`, `value_json` FROM settings WHERE `key` IN ("shopEnabled","stripeMode")',
     );
     if (!rows || !Array.isArray(rows)) {
       return null;
@@ -35,8 +41,18 @@ const loadFromSql = async () => {
     const merged = { ...DEFAULT_SETTINGS };
     rows.forEach((row) => {
       if (!row || !row.key) return;
-      if (row.value_json && Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, row.key)) {
-        merged[row.key] = row.value_json;
+      if (!Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, row.key)) return;
+      if (Object.prototype.hasOwnProperty.call(row, 'value_json')) {
+        const raw = row.value_json;
+        if (typeof raw === 'string') {
+          try {
+            merged[row.key] = JSON.parse(raw);
+          } catch {
+            merged[row.key] = raw;
+          }
+        } else {
+          merged[row.key] = raw;
+        }
       }
     });
     return normalizeSettings(merged);
@@ -48,20 +64,33 @@ const loadFromSql = async () => {
 
 const persistToSql = async (settings) => {
   if (!mysqlClient.isEnabled()) {
+    logger.debug({ mysqlEnabled: false }, 'Settings persist skipped (MySQL disabled)');
     return;
   }
   const normalized = normalizeSettings(settings);
   try {
-    await mysqlClient.execute(
-      `
-        INSERT INTO settings (\`key\`, value_json, updated_at)
-        VALUES (:key, :value_json, NOW())
-        ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()
-      `,
-      { key: 'shopEnabled', value_json: normalized.shopEnabled },
+    logger.debug(
+      { keys: SETTINGS_KEYS, mysqlEnabled: true },
+      'Persisting settings to MySQL',
     );
+    for (const key of SETTINGS_KEYS) {
+      const valueJson = JSON.stringify(normalized[key]);
+      // eslint-disable-next-line no-await-in-loop
+      await mysqlClient.execute(
+        `
+          INSERT INTO settings (\`key\`, value_json, updated_at)
+          VALUES (:key, :value_json, NOW())
+          ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()
+        `,
+        { key, value_json: valueJson },
+      );
+      logger.debug({ key }, 'Settings key persisted to MySQL');
+    }
   } catch (error) {
-    logger.error({ err: error }, 'Failed to persist settings to MySQL');
+    logger.error(
+      { err: error, keys: SETTINGS_KEYS, mysqlEnabled: true },
+      'Failed to persist settings to MySQL',
+    );
   }
 };
 
@@ -86,10 +115,38 @@ const setShopEnabled = async (enabled) => {
   return next.shopEnabled;
 };
 
+const resolveStripeMode = (settings) => {
+  const override = settings?.stripeMode;
+  if (override === 'test' || override === 'live') {
+    return override;
+  }
+  const mode = String(env.stripe?.mode || 'test').toLowerCase().trim();
+  return mode === 'live' ? 'live' : 'test';
+};
+
+const getStripeMode = async () => {
+  const settings = await getSettings();
+  return resolveStripeMode(settings);
+};
+
+const getStripeModeSync = () => resolveStripeMode(loadFromStore());
+
+const setStripeMode = async (mode) => {
+  const normalizedMode = String(mode || '').toLowerCase().trim();
+  const value = normalizedMode === 'live' ? 'live' : 'test';
+  const next = normalizeSettings({ ...loadFromStore(), stripeMode: value });
+  persistToStore(next);
+  await persistToSql(next);
+  return resolveStripeMode(next);
+};
+
 module.exports = {
   getSettings,
   getShopEnabled,
   setShopEnabled,
+  getStripeMode,
+  getStripeModeSync,
+  setStripeMode,
   SETTINGS_KEYS,
   DEFAULT_SETTINGS,
 };

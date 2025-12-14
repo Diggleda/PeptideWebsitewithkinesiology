@@ -122,6 +122,7 @@ interface CheckoutModalProps {
   customerName?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
   availableCredits?: number;
+  stripeAvailable?: boolean;
 }
 
 const formatCardNumber = (value: string) =>
@@ -171,11 +172,11 @@ export function CheckoutModal({
   onPaymentSuccess,
   defaultShippingAddress,
   availableCredits = 0,
+  stripeAvailable,
 }: CheckoutModalProps) {
   const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
   const stripeOnsiteEnabled = import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
-  const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
-  const stripeReady = stripeOnsiteEnabled && Boolean(stripePublishableKey);
+  const stripeReady = stripeOnsiteEnabled && Boolean(stripeAvailable);
   const stripe = useStripe();
   const elements = useElements();
   const defaultCardholderName = (defaultShippingAddress?.name || physicianName || customerName || '').trim();

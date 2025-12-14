@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
+import { getStripeMode, getStripePublishableKey } from "./lib/stripeConfig";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -1774,6 +1775,35 @@ const parseWeightOz = (value?: string | null) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const parseStrengthFromSku = (sku?: string | null): string | null => {
+  if (typeof sku !== "string") {
+    return null;
+  }
+  const trimmed = sku.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const matches = Array.from(trimmed.matchAll(/(\d+(?:\.\d+)?)\s*mg/gi)).map(
+    (match) => `${match[1]}mg`,
+  );
+  if (matches.length === 0) {
+    return null;
+  }
+  const dedup: string[] = [];
+  for (const token of matches) {
+    if (dedup.length === 0 || dedup[dedup.length - 1] !== token) {
+      dedup.push(token);
+    }
+  }
+  if (dedup.length === 0) {
+    return null;
+  }
+  if (dedup.length === 1) {
+    return dedup[0];
+  }
+  return `${dedup[0]} / ${dedup[1]}`;
+};
+
 const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
@@ -1895,15 +1925,24 @@ const mapWooProductToProduct = (
       const price = parsedVariantPrice ?? fallbackPrice;
       const originalPrice = parsePrice(variation.regular_price);
       const attributes = normalizeAttributes(variation.attributes);
-      const label =
+      const attributeLabel =
         attributes.length > 0
           ? attributes
               .map((attr) => attr.value || attr.name)
               .filter(Boolean)
               .join(" • ")
-          : variation.sku
-            ? variation.sku
-            : `Variant ${variation.id}`;
+              .trim()
+          : "";
+      const skuStrength = parseStrengthFromSku(variation.sku);
+      const shouldPreferSkuStrength =
+        Boolean(skuStrength) &&
+        (!attributeLabel ||
+          attributeLabel.toLowerCase() === "option" ||
+          (attributeLabel.includes("/") && skuStrength && skuStrength !== attributeLabel));
+      const label = shouldPreferSkuStrength
+        ? (skuStrength as string)
+        : attributeLabel ||
+          (variation.sku ? variation.sku : `Variant ${variation.id}`);
       const variantId = Number.isFinite(wooVariationId)
         ? `woo-variation-${wooVariationId}`
         : `woo-variation-${variation.id}`;
@@ -2218,26 +2257,52 @@ const LazyCatalogProductCard = ({
 declare global {
   interface Window {
     __PEPPRO_STRIPE_PROMISE?: Promise<Stripe | null>;
+    __PEPPRO_STRIPE_PROMISES?: Record<string, Promise<Stripe | null>>;
   }
 }
 
-const STRIPE_PUBLISHABLE_KEY =
-  (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
-  "";
+const ENV_STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
 
 export default function App() {
+  const BROWSER_VARIATION_CACHE_ENABLED =
+    String((import.meta as any).env?.VITE_BROWSER_VARIATION_CACHE || "")
+      .toLowerCase()
+      .trim() === "true";
+  const [stripeSettings, setStripeSettings] = useState<{
+    stripeMode?: "test" | "live";
+    stripeTestMode?: boolean;
+    onsiteEnabled?: boolean;
+    publishableKey?: string;
+    publishableKeyLive?: string;
+    publishableKeyTest?: string;
+  } | null>(null);
+  const stripeModeEffective = useMemo(() => {
+    const serverMode = (stripeSettings?.stripeMode || "").toLowerCase().trim();
+    if (serverMode === "test" || serverMode === "live") {
+      return serverMode;
+    }
+    return getStripeMode();
+  }, [stripeSettings?.stripeMode]);
+  const stripePublishableKey = useMemo(() => {
+    const fromServer = (stripeSettings?.publishableKey || "").trim();
+    return fromServer || ENV_STRIPE_PUBLISHABLE_KEY;
+  }, [stripeSettings?.publishableKey]);
   const stripeClientPromise = useMemo(() => {
-    if (!STRIPE_PUBLISHABLE_KEY) {
+    if (!stripePublishableKey) {
       return null;
     }
     if (typeof window !== "undefined") {
-      if (!window.__PEPPRO_STRIPE_PROMISE) {
-        window.__PEPPRO_STRIPE_PROMISE = loadStripe(STRIPE_PUBLISHABLE_KEY);
+      if (!window.__PEPPRO_STRIPE_PROMISES) {
+        window.__PEPPRO_STRIPE_PROMISES = {};
       }
-      return window.__PEPPRO_STRIPE_PROMISE;
+      const cache = window.__PEPPRO_STRIPE_PROMISES;
+      if (!cache[stripePublishableKey]) {
+        cache[stripePublishableKey] = loadStripe(stripePublishableKey);
+      }
+      return cache[stripePublishableKey];
     }
-    return loadStripe(STRIPE_PUBLISHABLE_KEY);
-  }, []);
+    return loadStripe(stripePublishableKey);
+  }, [stripePublishableKey]);
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -2266,6 +2331,11 @@ export default function App() {
     }
     if (typeof window === "undefined") {
       variationCacheLoadedRef.current = true;
+      return;
+    }
+    if (!BROWSER_VARIATION_CACHE_ENABLED) {
+      variationCacheLoadedRef.current = true;
+      variationCacheRef.current.clear();
       return;
     }
     variationCacheLoadedRef.current = true;
@@ -2299,6 +2369,9 @@ export default function App() {
   }, []);
   const persistVariationCache = useCallback(() => {
     if (typeof window === "undefined") {
+      return;
+    }
+    if (!BROWSER_VARIATION_CACHE_ENABLED) {
       return;
     }
     try {
@@ -2359,7 +2432,9 @@ export default function App() {
         return product;
       }
 
-      let cached = variationCacheRef.current.get(wooId);
+      let cached = BROWSER_VARIATION_CACHE_ENABLED
+        ? variationCacheRef.current.get(wooId)
+        : undefined;
       if (cached && cached.length === 0) {
         variationCacheRef.current.delete(wooId);
         cached = undefined;
@@ -2384,8 +2459,12 @@ export default function App() {
         });
       };
 
+      const hasVariationImages = (list: WooVariation[]) =>
+        Array.isArray(list) &&
+        list.some((variation) => Boolean((variation as any)?.image?.src));
+
       const loadVariations = async () => {
-        if (cached && !shouldForce) {
+        if (cached && !shouldForce && hasVariationImages(cached)) {
           return cached;
         }
         const response = await listProductVariations<WooVariation[]>(wooId, {
@@ -2393,7 +2472,22 @@ export default function App() {
           status: "publish",
           ...(shouldForce ? { force: true } : null),
         });
-        return Array.isArray(response) ? response : [];
+        const resolved = Array.isArray(response) ? response : [];
+        // If we got variants but none have images, retry once against Woo (bypass cache).
+        if (!shouldForce && resolved.length > 0 && !hasVariationImages(resolved)) {
+          try {
+            const forced = await listProductVariations<WooVariation[]>(wooId, {
+              per_page: 100,
+              status: "publish",
+              force: true,
+            });
+            const forcedList = Array.isArray(forced) ? forced : [];
+            return forcedList.length > 0 ? forcedList : resolved;
+          } catch {
+            return resolved;
+          }
+        }
+        return resolved;
       };
 
       try {
@@ -2403,7 +2497,7 @@ export default function App() {
           (async () => {
             const variations = await loadVariations();
             // Don't persist empty responses for variable products; they're often transient.
-            if (variations.length > 0) {
+            if (variations.length > 0 && BROWSER_VARIATION_CACHE_ENABLED) {
               variationCacheRef.current.set(wooId, variations);
               persistVariationCache();
             }
@@ -2673,17 +2767,11 @@ export default function App() {
   const [passkeyAutopromptEnabled, setPasskeyAutopromptEnabled] =
     useState(PASSKEY_AUTOPROMPT);
   const stripeIsTestMode = useMemo(() => {
-    const explicitMode = (
-      import.meta.env.VITE_STRIPE_MODE ||
-      import.meta.env.STRIPE_MODE ||
-      ""
-    ).toLowerCase();
-    if (explicitMode === "test") {
+    if (stripeModeEffective === "test") {
       return true;
     }
-    const pk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
-    return pk.startsWith("pk_test");
-  }, []);
+    return stripePublishableKey.startsWith("pk_test");
+  }, [stripeModeEffective, stripePublishableKey]);
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
   const [landingLoginPending, setLandingLoginPending] = useState(false);
@@ -3291,6 +3379,25 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStripeSettings = async () => {
+      try {
+        const data = await settingsAPI.getStripeSettings();
+        if (cancelled) return;
+        if (data && typeof data === "object") {
+          setStripeSettings(data as any);
+        }
+      } catch (error) {
+        console.warn("[Stripe] Failed to load admin Stripe settings", error);
+      }
+    };
+    fetchStripeSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleShopToggle = useCallback(
     async (value: boolean) => {
       if (!isAdmin(user?.role)) {
@@ -3306,6 +3413,29 @@ export default function App() {
         await settingsAPI.updateShopStatus(value);
       } catch (error) {
         console.warn("[Shop] Failed to update shop toggle", error);
+      }
+    },
+    [user?.role],
+  );
+
+  const handleStripeTestModeToggle = useCallback(
+    async (enabled: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      const optimisticMode = enabled ? "test" : "live";
+      setStripeSettings((prev) => ({
+        ...(prev || {}),
+        stripeMode: optimisticMode,
+        stripeTestMode: enabled,
+      }));
+      try {
+        const updated = await settingsAPI.updateStripeTestMode(enabled);
+        if (updated && typeof updated === "object") {
+          setStripeSettings(updated as any);
+        }
+      } catch (error) {
+        console.warn("[Stripe] Failed to update Stripe test mode", error);
       }
     },
     [user?.role],
@@ -10103,6 +10233,19 @@ export default function App() {
                               <span>Enable Shop button for users</span>
                             </label>
                           )}
+                          {isAdmin(user?.role) && (
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={stripeModeEffective === "test"}
+                                onChange={(e) =>
+                                  handleStripeTestModeToggle(e.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-slate-300 text-[rgb(95,179,249)] focus:ring-[rgb(95,179,249)]"
+                              />
+                              <span>Stripe test mode</span>
+                            </label>
+                          )}
                         </div>
                         {/* Regional contact info for doctors */}
                         {!(isRep(user.role) || isAdmin(user.role)) && (
@@ -11034,7 +11177,7 @@ export default function App() {
 
       {/* Checkout Modal */}
       {stripeClientPromise ? (
-        <Elements stripe={stripeClientPromise}>
+        <Elements stripe={stripeClientPromise} key={stripePublishableKey || "stripe"}>
           <CheckoutModal
             isOpen={checkoutOpen}
             onClose={() => setCheckoutOpen(false)}
@@ -11063,6 +11206,7 @@ export default function App() {
             customerName={user?.name || null}
             defaultShippingAddress={checkoutDefaultShippingAddress}
             availableCredits={availableReferralCredits}
+            stripeAvailable={true}
           />
         </Elements>
       ) : (
@@ -11094,6 +11238,7 @@ export default function App() {
           customerName={user?.name || null}
           defaultShippingAddress={checkoutDefaultShippingAddress}
           availableCredits={availableReferralCredits}
+          stripeAvailable={false}
         />
       )}
 

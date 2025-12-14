@@ -1,88 +1,97 @@
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, request, g
 
-from ..storage import settings_store
+from ..middleware.auth import require_auth
+from ..services import get_config
+from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
-from ..database import mysql_client
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
 
-
-def _to_bool(value):
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    if isinstance(value, (int, float)):
-        return value != 0
-    text = str(value).strip().lower()
-    return text in ("1", "true", "yes", "on")
+def _is_admin() -> bool:
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
+    return role == "admin"
 
 
-def _get_settings():
-    # Prefer JSON store first (so manual edits to server-data/settings.json are honored),
-    # then MySQL, then default.
-    if settings_store:
-        try:
-            data = settings_store.read() or {}
-            if "shopEnabled" in data:
-                return {"shopEnabled": _to_bool(data.get("shopEnabled", False))}
-        except Exception:
-            pass
-
-    try:
-        row = mysql_client.fetch_one(
-            "SELECT value_json FROM settings WHERE `key` = %(key)s",
-            {"key": "shopEnabled"},
-        )
-        if row and "value_json" in row and row["value_json"] is not None:
-            return {"shopEnabled": _to_bool(row["value_json"])}
-    except Exception:
-        pass
-
-    return {"shopEnabled": False}
-
-
-def _write_settings(data):
-    # Write to MySQL and keep JSON in sync as a secondary store.
-    normalized = {"shopEnabled": _to_bool(data.get("shopEnabled", True))}
-    try:
-        mysql_client.execute(
-            """
-            INSERT INTO settings (`key`, value_json, updated_at)
-            VALUES (%(key)s, %(value)s, NOW())
-            ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()
-            """,
-            {"key": "shopEnabled", "value": normalized["shopEnabled"]},
-        )
-    except Exception:
-        pass
-
-    if settings_store:
-        try:
-            settings_store.write(normalized)
-        except Exception:
-            pass
+def _require_admin():
+    if not _is_admin():
+        err = RuntimeError("Admin access required")
+        setattr(err, "status", 403)
+        raise err
 
 
 @blueprint.get("/shop")
 def get_shop():
     def action():
-        settings = _get_settings()
+        settings = settings_service.get_settings()
         return {"shopEnabled": bool(settings.get("shopEnabled", True))}
 
     return handle_action(action)
 
 
 @blueprint.put("/shop")
+@require_auth
 def update_shop():
     def action():
+        _require_admin()
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
-        settings = _get_settings()
-        settings["shopEnabled"] = enabled
-        _write_settings(settings)
+        settings_service.update_settings({"shopEnabled": enabled})
         return {"shopEnabled": enabled}
+
+    return handle_action(action)
+
+
+@blueprint.get("/stripe")
+def get_stripe():
+    def action():
+        mode = settings_service.get_effective_stripe_mode()
+        config = get_config()
+        mysql_enabled = bool(config.mysql.get("enabled"))
+        settings_logger = __import__("logging").getLogger("peppro.settings")
+        settings_logger.debug("Stripe settings requested", extra={"mode": mode, "mysqlEnabled": mysql_enabled})
+        return {
+            "stripeMode": mode,
+            "stripeTestMode": mode == "test",
+            "onsiteEnabled": bool(config.stripe.get("onsite_enabled")),
+            "publishableKey": settings_service.resolve_stripe_publishable_key(mode),
+            "publishableKeyLive": str(config.stripe.get("publishable_key_live") or "").strip(),
+            "publishableKeyTest": str(config.stripe.get("publishable_key_test") or "").strip(),
+            "mysqlEnabled": mysql_enabled,
+        }
+
+    return handle_action(action)
+
+
+@blueprint.put("/stripe")
+@require_auth
+def update_stripe():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        raw_mode = payload.get("mode")
+        raw_test_mode = payload.get("testMode")
+        if isinstance(raw_mode, str):
+            mode = raw_mode.strip().lower()
+        else:
+            mode = "test" if bool(raw_test_mode) else "live"
+        if mode not in ("test", "live"):
+            mode = "test"
+        config = get_config()
+        mysql_enabled = bool(config.mysql.get("enabled"))
+        settings_logger = __import__("logging").getLogger("peppro.settings")
+        settings_logger.info("Stripe mode update requested", extra={"requestedMode": mode, "mysqlEnabled": mysql_enabled, "userId": (getattr(g, "current_user", None) or {}).get("id")})
+        settings_service.update_settings({"stripeMode": mode})
+        resolved_mode = settings_service.get_effective_stripe_mode()
+        return {
+            "stripeMode": resolved_mode,
+            "stripeTestMode": resolved_mode == "test",
+            "onsiteEnabled": bool(config.stripe.get("onsite_enabled")),
+            "publishableKey": settings_service.resolve_stripe_publishable_key(resolved_mode),
+            "publishableKeyLive": str(config.stripe.get("publishable_key_live") or "").strip(),
+            "publishableKeyTest": str(config.stripe.get("publishable_key_test") or "").strip(),
+            "mysqlEnabled": mysql_enabled,
+        }
 
     return handle_action(action)

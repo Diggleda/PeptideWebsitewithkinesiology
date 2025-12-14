@@ -150,8 +150,21 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
         raise IntegrationError("WooCommerce is not configured")
 
     ttl_seconds = _cache_ttl_seconds_for_endpoint(endpoint)
+    raw_params = params or {}
+    force_param = str(getattr(raw_params, "get", lambda _k, _d=None: None)("force", "") or "").strip().lower()
+    force_fresh = force_param in ("1", "true", "yes")
+    allow_stale = endpoint.lstrip("/") in ("products", "products/categories")
     cache_key = _build_cache_key(endpoint, params)
     now_ms = int(time.time() * 1000)
+
+    if force_fresh:
+        data = _fetch_catalog_http(endpoint, params)
+        expires_at = now_ms + ttl_seconds * 1000
+        with _catalog_cache_lock:
+            _set_in_memory_cache(cache_key, data, expires_at)
+            _inflight.pop(cache_key, None)
+        _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
+        return data, {"cache": "BYPASS", "ttlSeconds": ttl_seconds, "noStore": True}
 
     with _catalog_cache_lock:
         cached = _catalog_cache.get(cache_key)
@@ -167,7 +180,12 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
         if inflight and event is not None:
             # Another request is already fetching this key.
             pass
-        elif cached and cached.get("expiresAt", 0) <= now_ms and now_ms - cached.get("expiresAt", 0) <= _WOO_PROXY_MAX_STALE_MS:
+        elif (
+            allow_stale
+            and cached
+            and cached.get("expiresAt", 0) <= now_ms
+            and now_ms - cached.get("expiresAt", 0) <= _WOO_PROXY_MAX_STALE_MS
+        ):
             # Serve stale immediately; refresh in background (deduped).
             _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
             return cached.get("data"), {"cache": "STALE", "ttlSeconds": ttl_seconds}
@@ -196,13 +214,14 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     ):
         data = disk_cached.get("data")
         expires_at = int(disk_cached.get("expiresAt"))
-        with _catalog_cache_lock:
-            _set_in_memory_cache(cache_key, data, expires_at)
-        if expires_at > now_ms:
-            return data, {"cache": "DISK", "ttlSeconds": ttl_seconds}
-        # Serve stale from disk and refresh (deduped).
-        _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
-        return data, {"cache": "DISK_STALE", "ttlSeconds": ttl_seconds}
+        if allow_stale or expires_at > now_ms:
+            with _catalog_cache_lock:
+                _set_in_memory_cache(cache_key, data, expires_at)
+            if expires_at > now_ms:
+                return data, {"cache": "DISK", "ttlSeconds": ttl_seconds}
+            # Serve stale from disk and refresh (deduped).
+            _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
+            return data, {"cache": "DISK_STALE", "ttlSeconds": ttl_seconds}
 
     # No cache available: synchronous fetch with in-flight dedupe.
     with _catalog_cache_lock:

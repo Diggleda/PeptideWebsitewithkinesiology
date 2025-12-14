@@ -331,6 +331,17 @@ export const settingsAPI = {
       body: JSON.stringify({ enabled }),
     });
   },
+  getStripeSettings: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/stripe`, {
+      method: 'GET',
+    });
+  },
+  updateStripeTestMode: async (testMode: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/stripe`, {
+      method: 'PUT',
+      body: JSON.stringify({ testMode }),
+    });
+  },
 };
 
 // Orders API

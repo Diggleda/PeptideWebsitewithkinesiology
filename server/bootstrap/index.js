@@ -3,6 +3,7 @@ const { logger } = require('../config/logger');
 const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
 const { ensureSchema } = require('../database/mysqlSchema');
+const settingsService = require('../services/settingsService');
 
 const bootstrap = async () => {
   initStorage();
@@ -33,6 +34,14 @@ const bootstrap = async () => {
       { mysqlEnabled: false },
       'MySQL disabled; profile images will NOT be persisted to MySQL users table',
     );
+  }
+
+  // Hydrate the local settings cache from MySQL (if enabled) so downstream services
+  // can read from the file store without awaiting SQL on first request.
+  try {
+    await settingsService.getSettings();
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to hydrate settings during bootstrap');
   }
 };
 
