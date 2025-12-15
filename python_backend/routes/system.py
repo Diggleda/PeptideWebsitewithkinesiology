@@ -5,6 +5,8 @@ from flask import Blueprint
 import os
 import platform
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from ..services import get_config
@@ -106,6 +108,39 @@ def _server_usage() -> dict:
     }
 
 
+def _configured_worker_target() -> int | None:
+    """
+    Best-effort: surface the intended worker count from common env vars.
+    Useful for displaying in health checks; not guaranteed to equal live workers.
+    """
+    for key in ("WEB_CONCURRENCY", "GUNICORN_WORKERS", "PASSENGER_APP_POOL_SIZE"):
+        value = os.environ.get(key)
+        if value and str(value).strip().isdigit():
+            return int(value)
+    return None
+
+
+def _detect_worker_count() -> int | None:
+    """
+    Best-effort: try to count running worker processes. Falls back to None if unavailable.
+    """
+    try:
+        if not shutil.which("ps"):
+            return None
+        marker = "wsgi-loader.py"
+        proc_name = Path(sys.argv[0]).name
+        output = subprocess.check_output(["ps", "-eo", "cmd"], text=True, stderr=subprocess.DEVNULL)
+        matches = 0
+        for line in output.splitlines():
+            if marker in line:
+                matches += 1
+            elif proc_name and proc_name in line:
+                matches += 1
+        return matches if matches > 0 else None
+    except Exception:
+        return None
+
+
 @blueprint.get("/health")
 def health():
     def action():
@@ -114,16 +149,23 @@ def health():
             build = config.backend_build
             usage = _server_usage()
             status = "ok"
+            workers = {
+                "configured": _configured_worker_target(),
+                "detected": _detect_worker_count(),
+                "pid": os.getpid(),
+            }
         except Exception:
             # Never allow health checks to 500; return a degraded payload instead.
             build = os.environ.get("BACKEND_BUILD", "unknown")
             usage = None
             status = "degraded"
+            workers = None
         return {
             "status": status,
             "message": "Server is running",
             "build": build,
             "usage": usage,
+            "workers": workers,
             "timestamp": _now(),
         }
 

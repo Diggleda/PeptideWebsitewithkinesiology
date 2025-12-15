@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -29,6 +30,11 @@ _sales_by_rep_summary_cache: Dict[str, object] = {
     "fetchedAtMs": 0,
     "expiresAtMs": 0,
 }
+
+_SALES_REP_ORDERS_TTL_SECONDS = int(os.environ.get("SALES_REP_ORDERS_TTL_SECONDS", "20").strip() or 20)
+_SALES_REP_ORDERS_TTL_SECONDS = max(3, min(_SALES_REP_ORDERS_TTL_SECONDS, 120))
+_sales_rep_orders_cache_lock = threading.Lock()
+_sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
 
 
 def _ensure_dict(value):
@@ -694,8 +700,20 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
     return woo_orders
 
 
-def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
+def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, force: bool = False):
     logger.info("[SalesRep] Fetch start salesRepId=%s includeDoctors=%s", sales_rep_id, include_doctors)
+    cache_key = f"{str(sales_rep_id)}::{'withDoctors' if include_doctors else 'ordersOnly'}"
+    now = time.time()
+    if not force and _SALES_REP_ORDERS_TTL_SECONDS > 0:
+        with _sales_rep_orders_cache_lock:
+            cached = _sales_rep_orders_cache.get(cache_key)
+            if cached and float(cached.get("expiresAt") or 0) > now:
+                logger.info(
+                    "[SalesRep] Cache hit salesRepId=%s ttlSeconds=%s",
+                    sales_rep_id,
+                    _SALES_REP_ORDERS_TTL_SECONDS,
+                )
+                return cached.get("value")
     users = user_repository.get_all()
     normalized_sales_rep_id = str(sales_rep_id)
     role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
@@ -772,7 +790,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     summaries: List[Dict] = []
     seen_keys = set()
 
-    # WooCommerce orders (if configured)
+    # WooCommerce orders (if configured) - single paged pull, filter by doctor email.
     woo_enabled = woo_commerce.is_configured()
     logger.info(
         "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
@@ -782,12 +800,13 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
         [d.get("email") for d in doctors],
     )
     if woo_enabled:
+        # Build lookup: normalized email -> list of doctor metadata
+        email_to_doctors: Dict[str, List[Dict[str, object]]] = {}
         for doctor in doctors:
             doctor_id = doctor.get("id")
             doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
             doctor_email = (doctor.get("email") or "").strip()
-            # gather possible doctor emails (no sales rep email fallback)
-            candidate_emails = []
+            candidate_emails: List[str] = []
             primary_email = doctor_email.lower()
             if primary_email:
                 candidate_emails.append(primary_email)
@@ -802,7 +821,6 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
                 val = (doctor.get(key) or "").strip().lower()
                 if val:
                     candidate_emails.append(val)
-            # lists of alternates if present
             for key in ("emails", "alternateEmails", "altEmails", "aliases"):
                 val = doctor.get(key)
                 if isinstance(val, list):
@@ -810,12 +828,10 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
                         email_candidate = (item or "").strip().lower()
                         if email_candidate:
                             candidate_emails.append(email_candidate)
-            # dedupe
-            normalized_emails = []
+            normalized_emails: List[str] = []
             for em in candidate_emails:
                 if em and em not in normalized_emails:
                     normalized_emails.append(em)
-
             if not normalized_emails:
                 logger.info(
                     "[SalesRep] Skipping Woo fetch; missing doctor email salesRepId=%s doctorId=%s",
@@ -823,42 +839,63 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
                     doctor_id,
                 )
                 continue
+            for em in normalized_emails:
+                email_to_doctors.setdefault(em, []).append(
+                    {
+                        "id": doctor_id,
+                        "name": doctor_name,
+                        "email": doctor_email,
+                    }
+                )
 
-            woo_orders: List[Dict] = []
-            for email_candidate in normalized_emails:
-                try:
-                    orders_for_email = woo_commerce.fetch_orders_by_email(email_candidate, per_page=50)
-                    logger.info(
-                        "[SalesRep] Woo orders fetched salesRepId=%s doctorId=%s email=%s count=%s",
-                        sales_rep_id,
-                        doctor_id,
-                        email_candidate,
-                        len(orders_for_email),
-                    )
-                    woo_orders.extend(orders_for_email)
-                except Exception:
-                    logger.warning(
-                        "Failed to load Woo orders for doctor email salesRepId=%s doctorId=%s email=%s",
-                        sales_rep_id,
-                        doctor_id,
-                        email_candidate,
-                        exc_info=True,
-                    )
+        per_page = 50
+        max_pages = 20
+        orders_seen = 0
+        pages_fetched = 0
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            pages_fetched += 1
+            if not orders:
+                break
 
-            for woo_order in woo_orders:
-                key = f"woo:{woo_order.get('id')}"
-                if key in seen_keys:
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
                     continue
-                seen_keys.add(key)
-                summary = {
-                    **woo_order,
-                    "doctorId": doctor_id,
-                    "doctorName": doctor_name,
-                    "doctorEmail": doctor_email,
-                    "source": "woocommerce",
-                }
-                _enrich_with_shipstation(summary)
-                summaries.append(summary)
+                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                if not billing_email or billing_email not in email_to_doctors:
+                    continue
+
+                for doctor_meta in email_to_doctors.get(billing_email, []):
+                    key = f"woo:{woo_order.get('id')}"
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    mapped = woo_commerce._map_woo_order_summary(woo_order)
+                    summary = {
+                        **mapped,
+                        "doctorId": doctor_meta.get("id"),
+                        "doctorName": doctor_meta.get("name"),
+                        "doctorEmail": doctor_meta.get("email"),
+                        "source": "woocommerce",
+                    }
+                    _enrich_with_shipstation(summary)
+                    summaries.append(summary)
+                    orders_seen += 1
+
+            if len(orders) < per_page:
+                break
+
+        logger.info(
+            "[SalesRep] Woo orders fetched via paged pull salesRepId=%s pages=%s perPage=%s matchedOrders=%s",
+            sales_rep_id,
+            pages_fetched,
+            per_page,
+            orders_seen,
+        )
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
 
@@ -884,21 +921,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
     except Exception:
         pass
 
-    try:
-        sample = summaries[0] if summaries else {}
-        logger.info(
-            "[SalesRep] Response snapshot salesRepId=%s orderCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
-            sales_rep_id,
-            len(summaries),
-            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
-            sample.get("trackingNumber")
-            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
-            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
-        )
-    except Exception:
-        pass
-
-    return (
+    result = (
         {
             "orders": summaries,
             "doctors": list(doctor_lookup.values()),
@@ -907,6 +930,13 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False):
         if include_doctors
         else summaries
     )
+    if _SALES_REP_ORDERS_TTL_SECONDS > 0:
+        with _sales_rep_orders_cache_lock:
+            _sales_rep_orders_cache[cache_key] = {
+                "value": result,
+                "expiresAt": now + _SALES_REP_ORDERS_TTL_SECONDS,
+            }
+    return result
 
 
 def _normalize_order_identifier(order_id: str) -> List[str]:
@@ -1058,51 +1088,63 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
     if not woo_commerce.is_configured():
         return None
 
-    candidates = _normalize_order_identifier(order_id)
-    woo_order = None
-    logger.debug(
-        "[SalesRep] Order detail lookup start",
-        extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
-    )
-    for candidate in candidates:
-        woo_order = woo_commerce.fetch_order(candidate)
-        if woo_order:
-            break
-    if woo_order is None:
+    try:
+        candidates = _normalize_order_identifier(order_id)
+        woo_order = None
+        logger.debug(
+            "[SalesRep] Order detail lookup start",
+            extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
+        )
         for candidate in candidates:
-            woo_order = woo_commerce.fetch_order_by_number(candidate)
+            woo_order = woo_commerce.fetch_order(candidate)
             if woo_order:
                 break
-    if not woo_order:
-        return None
-
-    mapped = woo_commerce._map_woo_order_summary(woo_order)
-    try:
-        logger.debug(
-            "[SalesRep] Order detail mapped",
-            extra={
-                "orderId": order_id,
-                "salesRepId": sales_rep_id,
-                "mappedId": mapped.get("id"),
-                "mappedNumber": mapped.get("number"),
-                "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
-                "mappedWooOrderId": mapped.get("wooOrderId"),
-                "billingEmail": (woo_order.get("billing") or {}).get("email"),
-            },
-        )
+        if woo_order is None:
+            for candidate in candidates:
+                woo_order = woo_commerce.fetch_order_by_number(candidate)
+                if woo_order:
+                    break
+        if not woo_order:
+            return None
     except Exception:
-        pass
+        # Avoid returning a 500 when the store is having issues; surface a clean 503.
+        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+
+    try:
+        mapped = woo_commerce._map_woo_order_summary(woo_order)
+        try:
+            logger.debug(
+                "[SalesRep] Order detail mapped",
+                extra={
+                    "orderId": order_id,
+                    "salesRepId": sales_rep_id,
+                    "mappedId": mapped.get("id"),
+                    "mappedNumber": mapped.get("number"),
+                    "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
+                    "mappedWooOrderId": mapped.get("wooOrderId"),
+                    "billingEmail": (woo_order.get("billing") or {}).get("email"),
+                },
+            )
+        except Exception:
+            pass
+    except Exception:
+        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
 
     # Enrich with ShipStation status/tracking when available
     shipstation_info = None
     try:
-        shipstation_info = ship_station.fetch_order_status(mapped.get("number") or mapped.get("wooOrderNumber"))
+        shipstation_info = ship_station.fetch_order_status(
+            mapped.get("number") or mapped.get("wooOrderNumber")
+        )
     except ship_station.IntegrationError as exc:  # pragma: no cover - network path
         logger.warning(
             "ShipStation status lookup failed",
             exc_info=True,
             extra={"orderId": order_id, "status": getattr(exc, "status", None)},
         )
+    except Exception:
+        # Non-fatal enrichment failure.
+        shipstation_info = None
     except Exception:  # pragma: no cover - unexpected path
         logger.warning(
             "ShipStation status lookup failed (unexpected)",
@@ -1515,8 +1557,16 @@ def get_sales_by_rep(
                     exclude_id = str(exclude_sales_rep_id)
                     rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
                     filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
-                    return {**cached, "orders": filtered}
-                return cached
+                    return {**cached, "orders": filtered, "stale": True}
+                return {**cached, "stale": True}
+        # If the leader could not populate cache in time, do not stampede the upstream.
+        return {
+            "orders": [],
+            "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            **period_meta,
+            "stale": True,
+            "error": "Sales summary is temporarily unavailable.",
+        }
 
     try:
         summary = _compute_summary()
@@ -1548,7 +1598,7 @@ def get_sales_by_rep(
         # Serve stale cached data if available.
         with _sales_by_rep_summary_lock:
             cached = _sales_by_rep_summary_cache.get("data")
-            if isinstance(cached, dict) and cached.get("orders"):
+            if isinstance(cached, dict):
                 logger.warning(
                     "[SalesByRep] Using cached summary after failure",
                     exc_info=True,
@@ -1558,9 +1608,16 @@ def get_sales_by_rep(
                     exclude_id = str(exclude_sales_rep_id)
                     rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
                     filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
-                    return {**cached, "orders": filtered}
-                return cached
-        raise
+                    return {**cached, "orders": filtered, "stale": True, "error": "Sales summary is temporarily unavailable."}
+                return {**cached, "stale": True, "error": "Sales summary is temporarily unavailable."}
+        # No cached data yet; return an empty/stale response instead of a 500.
+        return {
+            "orders": [],
+            "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            **period_meta,
+            "stale": True,
+            "error": "Sales summary is temporarily unavailable.",
+        }
     finally:
         with _sales_by_rep_summary_lock:
             if _sales_by_rep_summary_inflight is not None:

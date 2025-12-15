@@ -8,6 +8,8 @@ from urllib.parse import urljoin
 
 import requests
 
+from ..utils import http_client
+
 try:
     from bs4 import BeautifulSoup  # type: ignore
 except ImportError:  # pragma: no cover
@@ -62,7 +64,7 @@ def _fetch_page_html() -> Optional[str]:
 
     for endpoint in endpoints:
         try:
-            response = requests.get(endpoint, headers=headers, timeout=10)
+            response = http_client.get(endpoint, headers=headers, timeout=10)
             if response.status_code >= 400:
                 logger.warning("Peptide news request failed: %s %s", endpoint, response.status_code)
                 continue

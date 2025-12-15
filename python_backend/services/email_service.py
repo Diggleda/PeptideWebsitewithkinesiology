@@ -9,6 +9,7 @@ import logging
 import requests
 
 from . import get_config
+from ..utils import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ def _send_via_sendgrid(
     }
 
     timeout = settings.get("timeout") or 15
-    response = requests.post(settings["endpoint"], json=payload, headers=headers, timeout=timeout)
+    response = http_client.post(settings["endpoint"], json=payload, headers=headers, timeout=timeout)
     if response.status_code >= 400:
         logger.error(
             "SendGrid API call failed",

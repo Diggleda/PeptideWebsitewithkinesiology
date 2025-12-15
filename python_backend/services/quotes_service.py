@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import requests
 
 from . import get_config
+from ..utils import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def _fetch_quotes() -> List[Dict]:
         headers["Authorization"] = f"Bearer {secret}"
 
     try:
-        response = requests.get(source_url, headers=headers, timeout=10)
+        response = http_client.get(source_url, headers=headers, timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - network errors
         logger.error("Failed to fetch quotes", exc_info=True)
@@ -98,9 +99,23 @@ def _pick_quote(quotes: List[Dict], avoid_id: Optional[str]) -> Dict:
 
 
 def get_daily_quote() -> Dict:
-    quotes = _fetch_quotes()
     cache = _load_cache()
     today = date.today().isoformat()
+
+    try:
+        quotes = _fetch_quotes()
+    except Exception:
+        # When the quote feed is down, serve last known cached quote if available.
+        if isinstance(cache, dict):
+            cached_text = cache.get("text")
+            if isinstance(cached_text, str) and cached_text.strip():
+                return {
+                    "text": cached_text.strip(),
+                    "author": cache.get("author"),
+                    "stale": True,
+                }
+        # Final fallback that never fails the UI.
+        return {"text": "Excellence is an attitude.", "author": "PepPro", "stale": True}
 
     if cache and cache.get("date") == today:
         cached_id = cache.get("id")
@@ -110,10 +125,22 @@ def get_daily_quote() -> Dict:
 
     yesterday_id = cache.get("id") if cache and cache.get("date") != today else None
     selection = _pick_quote(quotes, yesterday_id)
-    _store_cache({"date": today, "id": selection.get("id")})
+    # Store both id + resolved content so we can serve it if the feed is down later.
+    _store_cache(
+        {
+            "date": today,
+            "id": selection.get("id"),
+            "text": selection.get("text"),
+            "author": selection.get("author"),
+        }
+    )
     return {"text": selection.get("text"), "author": selection.get("author")}
 
 
 def list_quotes() -> Dict:
-    quotes = _fetch_quotes()
-    return {"quotes": quotes}
+    try:
+        quotes = _fetch_quotes()
+        return {"quotes": quotes}
+    except Exception:
+        # Avoid hard failure when the feed is down.
+        return {"quotes": [], "stale": True}

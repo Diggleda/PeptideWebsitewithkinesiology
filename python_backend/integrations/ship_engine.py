@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import requests
 
 from ..services import get_config
+from ..utils import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def forward_shipment(order: Dict, customer: Dict) -> Dict:
     }
 
     try:
-        response = requests.post(f"{API_BASE_URL}/labels", json=payload, headers=headers, timeout=10)
+        response = http_client.post(f"{API_BASE_URL}/labels", json=payload, headers=headers, timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:
         data = None
@@ -151,7 +152,7 @@ def estimate_rates(address: Dict, total_weight_oz: float) -> List[Dict]:
     payload = {key: value for key, value in payload.items() if value not in (None, "", [])}
 
     try:
-        response = requests.post(f"{API_BASE_URL}/rates/estimate", json=payload, headers=headers, timeout=10)
+        response = http_client.post(f"{API_BASE_URL}/rates/estimate", json=payload, headers=headers, timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - network errors
         data = None

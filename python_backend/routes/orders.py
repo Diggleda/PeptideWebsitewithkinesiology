@@ -55,7 +55,8 @@ def list_orders_for_sales_rep():
         override = request.args.get("salesRepId") or None
         if override:
             sales_rep_id = override
-        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=True)
+        force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
+        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=True, force=force)
 
     return handle_action(action)
 

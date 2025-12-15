@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
+import time
 from typing import Dict, List, Optional
 
 import requests
 
 from ..services import get_config
+from ..utils import http_client
 
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = "https://ssapi.shipstation.com"
+_ORDER_STATUS_CACHE_TTL_SECONDS = int(
+    os.environ.get("SHIPSTATION_STATUS_TTL_SECONDS", "60").strip() or 60
+)
+_ORDER_STATUS_CACHE_TTL_SECONDS = max(10, min(_ORDER_STATUS_CACHE_TTL_SECONDS, 10 * 60))
+_order_status_cache: Dict[str, Dict[str, object]] = {}
+_order_status_cache_lock = threading.Lock()
 
 
 class IntegrationError(RuntimeError):
@@ -160,7 +170,7 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
         return data, status
 
     def attempt(payload_variant: Dict):
-        resp = requests.post(
+        resp = http_client.post(
             f"{API_BASE_URL}/shipments/getrates",
             json=payload_variant,
             headers=headers,
@@ -243,7 +253,7 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
     }
 
     try:
-        response = requests.get(
+        response = http_client.get(
             f"{API_BASE_URL}/products",
             params=params,
             headers=headers,
@@ -292,11 +302,18 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
     if not order_number or not is_configured():
         return None
 
+    normalized = str(order_number).strip()
+    now = time.time()
+    with _order_status_cache_lock:
+        cached = _order_status_cache.get(normalized)
+        if cached and float(cached.get("expiresAt") or 0) > now:
+            return cached.get("value")  # type: ignore[return-value]
+
     headers, auth = _http_args()
     try:
-        resp = requests.get(
+        resp = http_client.get(
             f"{API_BASE_URL}/orders",
-            params={"orderNumber": str(order_number).strip(), "pageSize": 1},
+            params={"orderNumber": normalized, "pageSize": 1},
             headers=headers,
             auth=auth,
             timeout=10,
@@ -344,9 +361,9 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
     # If tracking still missing, query shipments endpoint as a fallback (covers voided labels too).
     if not tracking:
         try:
-            shipment_resp = requests.get(
+            shipment_resp = http_client.get(
                 f"{API_BASE_URL}/shipments",
-                params={"orderNumber": str(order_number).strip(), "page": 1, "pageSize": 5},
+                params={"orderNumber": normalized, "page": 1, "pageSize": 5},
                 headers=headers,
                 auth=auth,
                 timeout=10,
@@ -359,7 +376,7 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
             # non-fatal; just leave tracking as None
             pass
 
-    return {
+    result = {
         "status": order.get("orderStatus"),
         "shipDate": order.get("shipDate"),
         "trackingNumber": tracking,
@@ -368,3 +385,9 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
         "orderNumber": order.get("orderNumber"),
         "orderId": order.get("orderId"),
     }
+    with _order_status_cache_lock:
+        _order_status_cache[normalized] = {
+            "value": result,
+            "expiresAt": now + _ORDER_STATUS_CACHE_TTL_SECONDS,
+        }
+    return result

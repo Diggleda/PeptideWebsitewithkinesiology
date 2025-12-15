@@ -7,6 +7,7 @@ from .routes import register_blueprints
 from .services import configure_services
 from .database import init_database
 from .middleware.request_logging import init_request_logging
+from .middleware.rate_limit import init_rate_limit
 
 
 def create_app() -> Flask:
@@ -30,6 +31,7 @@ def create_app() -> Flask:
     init_storage(config)
 
     init_request_logging(app)
+    init_rate_limit(app)
     register_blueprints(app, config)
 
     return app

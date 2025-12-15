@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { toast } from "sonner@2.0.3";
@@ -167,6 +168,16 @@ const isDoctorRole = (role?: string | null) => {
 };
 
 const noop = () => {};
+
+const isPageVisible = () => {
+  if (typeof document === "undefined") return true;
+  return !document.hidden;
+};
+
+const isOnline = () => {
+  if (typeof navigator === "undefined") return true;
+  return navigator.onLine !== false;
+};
 
 interface CartItem {
   id: string;
@@ -1265,7 +1276,7 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.8.88";
+const FRONTEND_BUILD_ID = "v1.8.95";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2297,9 +2308,9 @@ export default function App() {
 	    // default to test
 	    return candidate.startsWith("pk_test") ? candidate : "";
 	  }, [stripeSettings, stripeModeEffective]);
-  const stripeClientPromise = useMemo(() => {
+  const stripeClientPromise = useMemo((): Promise<Stripe | null> => {
     if (!stripePublishableKey) {
-      return null;
+      return Promise.resolve(null);
     }
     if (typeof window !== "undefined") {
       if (!window.__PEPPRO_STRIPE_PROMISES) {
@@ -2657,6 +2668,7 @@ export default function App() {
   const runImagePrefetchQueue = useCallback(() => {
     if (!IMAGE_PREFETCH_ENABLED) return;
     if (typeof window === "undefined") return;
+    if (!isPageVisible()) return;
 
     const startNext = () => {
       while (
@@ -3141,6 +3153,9 @@ export default function App() {
 
     const sendKeepAlive = async () => {
       if (cancelled) {
+        return;
+      }
+      if (!isPageVisible() || !isOnline()) {
         return;
       }
       try {
@@ -3718,6 +3733,7 @@ export default function App() {
     >
   >(new Map());
   const [salesTrackingLoading, setSalesTrackingLoading] = useState(false);
+  const [salesTrackingRefreshing, setSalesTrackingRefreshing] = useState(false);
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(
     null,
   );
@@ -3727,6 +3743,12 @@ export default function App() {
   const salesTrackingFetchKeyRef = useRef<string | null>(null);
   const salesTrackingLastFetchAtRef = useRef<number>(0);
   const salesTrackingInFlightRef = useRef<boolean>(false);
+  const salesTrackingOrderSignatureRef = useRef<Map<string, string>>(new Map());
+  const salesOrderDetailFetchedAtRef = useRef<Map<string, number>>(new Map());
+  const [salesOrderRefreshingIds, setSalesOrderRefreshingIds] = useState<
+    Set<string>
+  >(new Set());
+  const salesOrderRefreshingClearHandleRef = useRef<number | null>(null);
 
   useEffect(() => {
     salesTrackingOrdersRef.current = salesTrackingOrders;
@@ -3902,8 +3924,20 @@ export default function App() {
   );
 
   const enrichMissingOrderDetails = useCallback(
-    async (ordersToEnrich: AccountOrderSummary[]) => {
+    async (
+      ordersToEnrich: AccountOrderSummary[],
+      options?: { onlyIds?: Set<string>; force?: boolean },
+    ) => {
+      const DETAIL_TTL_MS = 10 * 60 * 1000;
+      const now = Date.now();
+      const onlyIds = options?.onlyIds;
+      const force = options?.force === true;
+
       const needsDetail = ordersToEnrich.filter((order) => {
+        const key = String(order.id || order.number || "");
+        if (!key) return false;
+        if (onlyIds && !onlyIds.has(key)) return false;
+
         const hasPlaced =
           Boolean(
             order.createdAt ||
@@ -3918,7 +3952,15 @@ export default function App() {
             (order as any)?.shipping?.estimatedArrivalDate ||
             (order as any)?.shipping?.estimated_delivery_date,
         );
-        return !hasPlaced || !hasEta;
+        if (hasPlaced && hasEta) return false;
+
+        if (!force) {
+          const lastFetchedAt = salesOrderDetailFetchedAtRef.current.get(key) || 0;
+          if (lastFetchedAt > 0 && now - lastFetchedAt < DETAIL_TTL_MS) {
+            return false;
+          }
+        }
+        return true;
       });
 
       if (needsDetail.length === 0) return;
@@ -3934,9 +3976,29 @@ export default function App() {
       );
       setSalesOrderHydratingIds(ids);
 
-      await Promise.all(
-        needsDetail.map(async (order) => {
+      const MAX_DETAIL_CONCURRENCY = 3;
+      const runWithConcurrency = async <T,>(
+        items: T[],
+        limit: number,
+        worker: (item: T) => Promise<void>,
+      ) => {
+        const queue = [...items];
+        const runners = Array.from({ length: Math.max(1, limit) }, async () => {
+          while (queue.length > 0) {
+            const next = queue.shift();
+            if (!next) break;
+            await worker(next);
+          }
+        });
+        await Promise.all(runners);
+      };
+
+      await runWithConcurrency(needsDetail, MAX_DETAIL_CONCURRENCY, async (order) => {
           try {
+            const key = String(order.id || order.number || "");
+            if (key) {
+              salesOrderDetailFetchedAtRef.current.set(key, now);
+            }
             const detail = await ordersAPI.getSalesRepOrderDetail(
               order.wooOrderId || order.id || order.number || "",
               (order as any)?.doctorEmail ||
@@ -3962,8 +4024,7 @@ export default function App() {
                   : String(error),
             });
           }
-        }),
-      );
+        });
 
       const elapsed =
         (typeof performance !== "undefined" && typeof performance.now === "function"
@@ -3990,11 +4051,17 @@ export default function App() {
     periodEnd?: string | null;
     totals?: { totalOrders: number; totalRevenue: number } | null;
   } | null>(null);
+  const [salesRepSalesSummaryLastFetchedAt, setSalesRepSalesSummaryLastFetchedAt] =
+    useState<number | null>(null);
+  const [salesRepSalesSummaryLoading, setSalesRepSalesSummaryLoading] =
+    useState(false);
   const [salesRepSalesCsvDownloadedAt, setSalesRepSalesCsvDownloadedAt] =
     useState<string | null>(null);
   const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<
     string | null
   >(null);
+  const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>("");
+  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>("");
   const [userReferralCodes, setUserReferralCodes] = useState<string[]>([]);
   const normalizeReferralCodeValue = useCallback((value: unknown): string => {
     if (typeof value === "string") {
@@ -4080,6 +4147,46 @@ export default function App() {
       toast.error("Unable to download report right now.");
     }
   }, [salesRepSalesSummary, salesRepSalesSummaryMeta?.periodEnd, salesRepSalesSummaryMeta?.periodStart]);
+
+  const refreshSalesBySalesRepSummary = useCallback(async () => {
+    if (!user || !isAdmin(user.role)) return;
+    setSalesRepSalesSummaryLoading(true);
+    setSalesRepSalesSummaryError(null);
+    try {
+      const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
+        periodStart: salesRepPeriodStart || undefined,
+        periodEnd: salesRepPeriodEnd || undefined,
+      });
+      const summaryArray = Array.isArray(salesSummaryResponse)
+        ? salesSummaryResponse
+        : Array.isArray((salesSummaryResponse as any)?.orders)
+          ? (salesSummaryResponse as any).orders
+          : [];
+      const meta =
+        salesSummaryResponse && typeof salesSummaryResponse === "object"
+          ? {
+              periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
+              periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
+              totals: (salesSummaryResponse as any)?.totals ?? null,
+            }
+          : null;
+      const filteredSummary = summaryArray.filter(
+        (rep: any) => rep.salesRepId !== user.id,
+      );
+      setSalesRepSalesSummary(filteredSummary as any);
+      setSalesRepSalesSummaryMeta(meta);
+      setSalesRepSalesSummaryLastFetchedAt(Date.now());
+    } catch (adminError: any) {
+      const message =
+        typeof adminError?.message === "string"
+          ? adminError.message
+          : "Unable to load sales summary";
+      setSalesRepSalesSummaryError(message);
+      setSalesRepSalesSummaryMeta(null);
+    } finally {
+      setSalesRepSalesSummaryLoading(false);
+    }
+  }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
   useEffect(() => {
     if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
@@ -4428,6 +4535,9 @@ export default function App() {
       return;
     }
     const timer = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
       const products = catalogProductsRef.current;
       if (!Array.isArray(products) || products.length === 0) {
         return;
@@ -4450,6 +4560,9 @@ export default function App() {
       return;
     }
     const timer = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
       runImagePrefetchQueue();
     }, 1200);
     return () => window.clearInterval(timer);
@@ -5104,6 +5217,7 @@ export default function App() {
       setSalesTrackingError(null);
       setSalesRepSalesSummaryError(null);
       setSalesTrackingLoading(false);
+      setSalesTrackingRefreshing(false);
       return;
     }
     if (postLoginHold) {
@@ -5114,6 +5228,7 @@ export default function App() {
     const cacheTtlMs = 25_000;
     const fetchKey = `${String(role || "").toLowerCase()}:${String(salesRepId || "")}`;
     const isKeyChanged = salesTrackingFetchKeyRef.current !== fetchKey;
+    const hasExistingOrders = salesTrackingOrdersRef.current.length > 0;
     if (isKeyChanged) {
       salesTrackingFetchKeyRef.current = fetchKey;
       salesTrackingLastFetchAtRef.current = 0;
@@ -5130,7 +5245,9 @@ export default function App() {
     salesTrackingInFlightRef.current = true;
     salesTrackingLastFetchAtRef.current = now;
 
-    setSalesTrackingLoading(true);
+    const shouldShowInitialLoading = !hasExistingOrders || isKeyChanged;
+    setSalesTrackingLoading(shouldShowInitialLoading);
+    setSalesTrackingRefreshing(options?.force === true && !shouldShowInitialLoading);
     setSalesTrackingError(null);
     setSalesRepSalesSummaryError(null);
 
@@ -5298,9 +5415,31 @@ export default function App() {
               (order as any)?.shipping?.estimated_delivery_date,
             ) ||
             null;
-          const shippingEstimate = {
-            ...(order.shippingEstimate || (order as any).shippingEstimate || {}),
+          const rawShippingEstimate =
+            order.shippingEstimate || (order as any).shippingEstimate || null;
+          const shippingEstimateBase =
+            rawShippingEstimate && typeof rawShippingEstimate === "object"
+              ? { ...(rawShippingEstimate as any) }
+              : {};
+          const normalizedShippingEstimate = {
+            ...shippingEstimateBase,
             estimatedArrivalDate: estimatedArrival,
+          };
+          const hasShippingEstimateData =
+            Boolean(estimatedArrival) ||
+            Object.values(normalizedShippingEstimate).some(
+              (value) => value !== null && value !== undefined && String(value).length > 0,
+            );
+          const shippingEstimate = hasShippingEstimateData
+            ? normalizedShippingEstimate
+            : null;
+          const coerceShippingEstimate = (value: any) => {
+            if (!value || typeof value !== "object") return null;
+            const values = Object.values(value as any);
+            const hasData = values.some(
+              (v) => v !== null && v !== undefined && String(v).length > 0,
+            );
+            return hasData ? value : null;
           };
 
           const existing = existingByKey.get(key);
@@ -5310,9 +5449,7 @@ export default function App() {
                   ...existing,
                   ...order,
                   shippingEstimate:
-                    shippingEstimate ||
-                    (existing as any).shippingEstimate ||
-                    null,
+                    shippingEstimate ?? (existing as any).shippingEstimate ?? null,
                   createdAt: createdAt || (existing as any).createdAt || null,
                   updatedAt: updatedAt || (existing as any).updatedAt || null,
                   lineItems:
@@ -5326,7 +5463,10 @@ export default function App() {
             ...merged,
             createdAt: merged.createdAt || createdAt,
             updatedAt: merged.updatedAt || updatedAt,
-            shippingEstimate: merged.shippingEstimate || shippingEstimate || null,
+            shippingEstimate:
+              coerceShippingEstimate((merged as any).shippingEstimate) ??
+              shippingEstimate ??
+              null,
             doctorId,
             doctorEmail:
               doctorInfo?.email ||
@@ -5361,39 +5501,84 @@ export default function App() {
           return bTime - aTime;
         });
 
-      if (isAdmin(user.role)) {
-        try {
-          const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin();
-          const summaryArray = Array.isArray(salesSummaryResponse)
-            ? salesSummaryResponse
-            : Array.isArray((salesSummaryResponse as any)?.orders)
-              ? (salesSummaryResponse as any).orders
-              : [];
-          const meta =
-            salesSummaryResponse && typeof salesSummaryResponse === "object"
-              ? {
-                  periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
-                  periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
-                  totals: (salesSummaryResponse as any)?.totals ?? null,
-                }
-              : null;
-          const filteredSummary = summaryArray.filter(
-            (rep: any) => rep.salesRepId !== user.id,
-          );
-          setSalesRepSalesSummary(filteredSummary as any);
-          setSalesRepSalesSummaryMeta(meta);
-        } catch (adminError: any) {
-          const message =
-            typeof adminError?.message === "string"
-              ? adminError.message
-              : "Unable to load sales summary";
-          setSalesRepSalesSummaryError(message);
-          setSalesRepSalesSummaryMeta(null);
+      if (isAdmin(role)) {
+        void refreshSalesBySalesRepSummary();
+      }
+
+      const buildSignature = (order: AccountOrderSummary) => {
+        const key = String(order.id || order.number || "");
+        const createdAt =
+          order.createdAt ||
+          (order as any).dateCreated ||
+          (order as any).date_created ||
+          (order as any).date_created_gmt ||
+          "";
+        const updatedAt = order.updatedAt || (order as any).dateModified || "";
+        const eta =
+          order?.shippingEstimate?.estimatedArrivalDate ||
+          (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
+          (order as any)?.shippingEstimate?.estimated_delivery_date ||
+          "";
+        const shipStatus =
+          (order as any)?.shippingEstimate?.status ||
+          (order as any)?.shipping?.status ||
+          "";
+        return [
+          key,
+          String(order.number || ""),
+          String(order.status || ""),
+          String(order.total || ""),
+          String(createdAt || ""),
+          String(updatedAt || ""),
+          String(eta || ""),
+          String(shipStatus || ""),
+        ].join("|");
+      };
+
+      const prevSig = salesTrackingOrderSignatureRef.current;
+      const nextSig = new Map<string, string>();
+      const changedIds = new Set<string>();
+      for (const order of normalizedOrders) {
+        const key = String(order.id || order.number || "");
+        if (!key) continue;
+        const sig = buildSignature(order);
+        nextSig.set(key, sig);
+        if (prevSig.get(key) !== sig) {
+          changedIds.add(key);
+        }
+      }
+      if (prevSig.size !== nextSig.size) {
+        // Handle removals without needing per-id diff.
+        changedIds.add("__list_changed__");
+      }
+      salesTrackingOrderSignatureRef.current = nextSig;
+
+      const shouldUpdateOrders =
+        shouldShowInitialLoading ||
+        changedIds.size > 0 ||
+        salesTrackingOrdersRef.current.length !== normalizedOrders.length;
+
+      setSalesTrackingDoctors(doctorLookup);
+      if (shouldUpdateOrders) {
+        setSalesTrackingOrders(normalizedOrders);
+      }
+
+      if (!shouldShowInitialLoading && changedIds.size > 0) {
+        const idsToShimmer = new Set(
+          [...changedIds].filter((id) => id !== "__list_changed__"),
+        );
+        if (idsToShimmer.size > 0) {
+          setSalesOrderRefreshingIds(idsToShimmer);
+          if (salesOrderRefreshingClearHandleRef.current) {
+            window.clearTimeout(salesOrderRefreshingClearHandleRef.current);
+          }
+          salesOrderRefreshingClearHandleRef.current = window.setTimeout(() => {
+            setSalesOrderRefreshingIds(new Set());
+            salesOrderRefreshingClearHandleRef.current = null;
+          }, 650);
         }
       }
 
-      setSalesTrackingDoctors(doctorLookup);
-      setSalesTrackingOrders(normalizedOrders);
       const newlySeenDoctorIds: string[] = [];
       normalizedOrders.forEach((order) => {
         const docId = resolveOrderDoctorId(order) || order.userId || order.id;
@@ -5415,7 +5600,9 @@ export default function App() {
         newlySeenDoctorIds.forEach((id) => next.add(id));
         setCollapsedSalesDoctorIds(next);
       }
-      setSalesTrackingLastUpdated(Date.now());
+      if (shouldUpdateOrders) {
+        setSalesTrackingLastUpdated(Date.now());
+      }
       console.log("[Sales Tracking] Orders loaded", {
         count: normalizedOrders.length,
         doctors: doctorLookup.size,
@@ -5429,7 +5616,11 @@ export default function App() {
             arrival: normalizedOrders[0].shippingEstimate?.estimatedArrivalDate,
           },
       });
-      void enrichMissingOrderDetails(normalizedOrders);
+      void enrichMissingOrderDetails(normalizedOrders, {
+        onlyIds:
+          shouldShowInitialLoading || options?.force === true ? undefined : changedIds,
+        force: options?.force === true,
+      });
     } catch (error: any) {
       const message =
         typeof error?.message === "string"
@@ -5439,6 +5630,7 @@ export default function App() {
       setSalesTrackingError(message);
     } finally {
       setSalesTrackingLoading(false);
+      setSalesTrackingRefreshing(false);
       salesTrackingInFlightRef.current = false;
     }
   }, [
@@ -5448,6 +5640,7 @@ export default function App() {
     postLoginHold,
     resolveOrderDoctorId,
     enrichMissingOrderDetails,
+    refreshSalesBySalesRepSummary,
   ]);
 
   useEffect(() => {
@@ -5456,6 +5649,9 @@ export default function App() {
     }
     fetchSalesTrackingOrders();
     const pollHandle = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
       void fetchSalesTrackingOrders();
     }, 25000);
     return () => {
@@ -6331,6 +6527,9 @@ export default function App() {
     void loadCatalog(false);
 
     const intervalId = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
       void loadCatalog(true);
     }, CATALOG_POLL_INTERVAL_MS);
 
@@ -8794,8 +8993,20 @@ export default function App() {
                       const tsLabel = serverHealthPayload?.timestamp
                         ? `Updated: ${new Date(serverHealthPayload.timestamp).toLocaleTimeString()}`
                         : null;
+                      const workerLabel = (() => {
+                        const workers = serverHealthPayload?.workers;
+                        const detected = workers?.detected;
+                        const configured = workers?.configured;
+                        if (typeof detected === "number" && detected > 0) {
+                          return `Workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
+                        }
+                        if (typeof configured === "number" && configured > 0) {
+                          return `Workers: target ${configured}`;
+                        }
+                        return null;
+                      })();
 
-                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, buildLabel, tsLabel].filter(
+                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
                         (x): x is string => typeof x === "string" && x.trim().length > 0,
                       );
                       return pills.map((label) => (
@@ -8958,131 +9169,220 @@ export default function App() {
 	            </div>
 	          )}
 
-	          {isAdmin(user?.role) && (
-	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-	                <div>
-	                  <h3 className="text-lg font-semibold text-slate-900">
-	                    Sales by Sales Rep
-	                  </h3>
-	                  <p className="text-sm text-slate-600">
-	                    Orders placed by doctors assigned to each rep.
-	                  </p>
-	                </div>
-	                <div className="flex flex-col items-start sm:items-end gap-2">
-	                  <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
-	                    {(() => {
-	                      const metaTotals = salesRepSalesSummaryMeta?.totals || null;
-	                      const totals = metaTotals
-	                        ? metaTotals
-	                        : {
-	                            totalOrders: salesRepSalesSummary.reduce(
-	                              (sum, row) => sum + (Number(row.totalOrders) || 0),
-	                              0,
-	                            ),
-	                            totalRevenue: salesRepSalesSummary.reduce(
-	                              (sum, row) => sum + (Number(row.totalRevenue) || 0),
-	                              0,
-	                            ),
-	                          };
-	                      const hasTotals =
-	                        typeof totals.totalOrders === "number" &&
-	                        typeof totals.totalRevenue === "number";
-	                      if (!hasTotals) return null;
-	                      return (
-	                        <>
-	                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-	                            Orders: {totals.totalOrders}
-	                          </span>
-	                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-	                            Revenue: {formatCurrency(totals.totalRevenue)}
-	                          </span>
-	                        </>
-	                      );
-	                    })()}
-	                  </div>
-	                  <div className="text-xs text-slate-500">
-	                    {(() => {
-	                      const start = salesRepSalesSummaryMeta?.periodStart
-	                        ? new Date(String(salesRepSalesSummaryMeta.periodStart))
-	                        : null;
-	                      const end = salesRepSalesSummaryMeta?.periodEnd
-	                        ? new Date(String(salesRepSalesSummaryMeta.periodEnd))
-	                        : null;
-	                      if (!start || Number.isNaN(start.getTime())) return "Period: —";
-	                      if (!end || Number.isNaN(end.getTime())) {
-	                        return `Period: ${start.toLocaleDateString()}`;
-	                      }
-	                      // Display inclusive end date for readability.
-	                      const endDisplay = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-	                      return `Period: ${start.toLocaleDateString()} – ${endDisplay.toLocaleDateString()}`;
-	                    })()}
-	                  </div>
-	                  <div className="flex items-center gap-2">
-	                    <Button
-	                      type="button"
-	                      variant="outline"
-	                      className="gap-2"
-	                      onClick={downloadSalesBySalesRepCsv}
-	                      disabled={salesRepSalesSummary.length === 0}
-	                      title="Download CSV"
-	                    >
-	                      <Download className="h-4 w-4" aria-hidden="true" />
-	                      Download CSV
-	                    </Button>
-	                    <span className="text-xs text-slate-500">
-	                      Fetched{" "}
-	                      {salesTrackingLastUpdated
-	                        ? new Date(salesTrackingLastUpdated).toLocaleTimeString()
-	                        : "—"}
-	                    </span>
-	                  </div>
-	                  <span className="text-xs text-slate-500">
-	                    Last download{" "}
-	                    {salesRepSalesCsvDownloadedAt
-	                      ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString()
-	                      : "—"}
-	                  </span>
-	                </div>
-	              </div>
-	              <div className="overflow-x-auto">
-	                {salesRepSalesSummaryError ? (
-	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
-	                    {salesRepSalesSummaryError}
+			          {isAdmin(user?.role) && (
+			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+			              <div className="flex flex-col gap-3 mb-4">
+				                <div className="flex items-start justify-between gap-3">
+				                  <div className="min-w-0">
+				                    <div className="flex items-center gap-2 flex-wrap">
+				                      <h3 className="text-lg font-semibold text-slate-900">
+				                        Sales by Sales Rep
+				                      </h3>
+				                      <div className="flex flex-col items-start gap-1">
+				                        <Button
+				                          type="button"
+				                          variant="outline"
+				                          size="sm"
+				                          className="gap-2"
+				                          onClick={() => void refreshSalesBySalesRepSummary()}
+				                          disabled={salesRepSalesSummaryLoading}
+				                          aria-busy={salesRepSalesSummaryLoading}
+				                          title="Refresh sales summary"
+				                        >
+				                          <RefreshCw
+				                            className={`h-4 w-4 ${
+				                              salesRepSalesSummaryLoading
+				                                ? "animate-spin"
+				                                : ""
+				                            }`}
+				                            aria-hidden="true"
+				                          />
+				                          {salesRepSalesSummaryLoading
+				                            ? "Refreshing..."
+				                            : "Refresh"}
+				                        </Button>
+				                        <span className="text-[11px] text-slate-500">
+				                          Last fetched{" "}
+				                          {(() => {
+				                            const ts =
+				                              salesRepSalesSummaryLastFetchedAt ??
+				                              salesTrackingLastUpdated ??
+				                              null;
+				                            return ts
+				                              ? new Date(ts).toLocaleTimeString()
+				                              : "—";
+				                          })()}
+				                        </span>
+				                      </div>
+				                    </div>
+				                  </div>
+				                  <div className="flex flex-col items-end gap-1">
+				                    <Button
+				                      type="button"
+				                      variant="outline"
+				                      className="gap-2"
+				                      onClick={downloadSalesBySalesRepCsv}
+				                      disabled={salesRepSalesSummary.length === 0}
+				                      title="Download CSV"
+				                    >
+				                      <Download className="h-4 w-4" aria-hidden="true" />
+				                      Download CSV
+				                    </Button>
+				                    <span className="text-[11px] text-slate-500">
+				                      Last downloaded{" "}
+				                      {salesRepSalesCsvDownloadedAt
+				                        ? new Date(
+				                            salesRepSalesCsvDownloadedAt,
+				                          ).toLocaleString()
+				                        : "—"}
+				                    </span>
+				                  </div>
+				                </div>
+			
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-600">
+                      Orders placed by doctors assigned to each rep.
+                    </p>
+                    <form
+                      className="mt-2 flex flex-col sm:flex-row sm:items-end gap-2 text-sm"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void refreshSalesBySalesRepSummary();
+                      }}
+                    >
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                        Start
+                        <Input
+                          type="date"
+                          value={salesRepPeriodStart}
+                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                        End
+                        <Input
+                          type="date"
+                          value={salesRepPeriodEnd}
+                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
+                        />
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="outline"
+                          disabled={salesRepSalesSummaryLoading}
+                          className="whitespace-nowrap"
+                        >
+                          Apply
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="whitespace-nowrap"
+                          onClick={() => {
+                            setSalesRepPeriodStart("");
+                            setSalesRepPeriodEnd("");
+                            void refreshSalesBySalesRepSummary();
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <div className="flex flex-col items-start sm:items-end gap-2 sm:text-right">
+			                    <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
+			                      {(() => {
+			                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+			                        const totals = metaTotals
+			                          ? metaTotals
+			                          : {
+			                              totalOrders: salesRepSalesSummary.reduce(
+			                                (sum, row) => sum + (Number(row.totalOrders) || 0),
+			                                0,
+			                              ),
+			                              totalRevenue: salesRepSalesSummary.reduce(
+			                                (sum, row) => sum + (Number(row.totalRevenue) || 0),
+			                                0,
+			                              ),
+			                            };
+			                        const hasTotals =
+			                          typeof totals.totalOrders === "number" &&
+			                          typeof totals.totalRevenue === "number";
+			                        if (!hasTotals) return null;
+			                        return (
+			                          <>
+			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+			                              Orders: {totals.totalOrders}
+			                            </span>
+			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+			                              Revenue: {formatCurrency(totals.totalRevenue)}
+			                            </span>
+			                          </>
+			                        );
+			                      })()}
+			                    </div>
+				                  {/* Fetched/download timestamps shown under buttons above */}
+				                </div>
+				              </div>
+			              </div>
+              <div
+                className="w-full max-w-full overflow-x-auto -mx-4 sm:mx-0"
+                style={{ WebkitOverflowScrolling: "touch" }}
+                role="region"
+                aria-label="Sales by sales rep table"
+              >
+                {salesRepSalesSummaryError ? (
+                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                    {salesRepSalesSummaryError}
                   </div>
                 ) : salesRepSalesSummary.length === 0 ? (
                   <div className="px-4 py-3 text-sm text-slate-500">
                     No sales recorded yet.
                   </div>
                 ) : (
-                  <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
-                    <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Sales Rep</th>
-                        <th className="px-4 py-2 text-left">Email</th>
-                        <th className="px-4 py-2 text-right">Orders</th>
-                        <th className="px-4 py-2 text-right">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {salesRepSalesSummary.map((rep) => (
-                        <tr key={rep.salesRepId}>
-                          <td className="px-4 py-3 text-sm font-medium text-slate-800">
-                            {rep.salesRepName}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600">
-                            {rep.salesRepEmail || "—"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right text-slate-800">
-                            {rep.totalOrders}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900">
-                            {formatCurrency(rep.totalRevenue || 0)}
-                          </td>
+                  <div className="min-w-max px-4 sm:px-0">
+                    <table className="w-max min-w-[760px] divide-y divide-slate-200/70">
+                      <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+                        <tr>
+                          <th className="px-4 py-2 text-left whitespace-nowrap">
+                            Sales Rep
+                          </th>
+                          <th className="px-4 py-2 text-left whitespace-nowrap">
+                            Email
+                          </th>
+                          <th className="px-4 py-2 text-right whitespace-nowrap">
+                            Orders
+                          </th>
+                          <th className="px-4 py-2 text-right whitespace-nowrap">
+                            Revenue
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesRepSalesSummary.map((rep) => (
+                          <tr key={rep.salesRepId}>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">
+                              {rep.salesRepName}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                              {rep.salesRepEmail || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+                              {rep.totalOrders}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                              {formatCurrency(rep.totalRevenue || 0)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>
@@ -9209,13 +9509,15 @@ export default function App() {
 	                          e.stopPropagation();
 	                          void fetchSalesTrackingOrders({ force: true });
 	                        }}
-	                        disabled={salesTrackingLoading}
+	                        disabled={salesTrackingLoading || salesTrackingRefreshing}
 	                        className="gap-2"
 	                        title="Refresh your sales data"
 	                      >
                         <RefreshCw
                           className={`h-4 w-4 ${
-                            salesTrackingLoading ? "animate-spin" : ""
+                            salesTrackingLoading || salesTrackingRefreshing
+                              ? "animate-spin"
+                              : ""
                           }`}
                         />
                         Refresh
@@ -9418,16 +9720,11 @@ export default function App() {
                                 (order as any)?.shipping?.estimated_delivery_date ||
                                 null
                               : null;
-                            const isHydrated =
-                              Boolean(placedDate) && Boolean(arrivalDate);
                             const orderKey = String(order.id || order.number || "");
                             const isHydrating =
-                              salesTrackingLoading ||
-                              salesOrderHydratingIds.has(orderKey);
-                            const showShimmer =
-                              !isHydrated &&
-                              (salesOrderHydratingIds.has(orderKey) ||
-                                salesTrackingLoading);
+                              salesOrderHydratingIds.has(orderKey) ||
+                              salesOrderRefreshingIds.has(orderKey);
+                            const showShimmer = isHydrating;
                             const placedLabel = placedDate
                               ? `Order placed ${formatDateTime(placedDate as string)}`
                               : "Order placed Unknown date";
@@ -11773,47 +12070,13 @@ export default function App() {
           )}
         </div>
 
-        <LegalFooter showContactCTA={!user} />
+      <LegalFooter showContactCTA={!user} />
       </div>
 
       {/* Checkout Modal */}
-      {stripeClientPromise ? (
-        <Elements stripe={stripeClientPromise} key={stripePublishableKey || "stripe"}>
-	          <CheckoutModal
-	            isOpen={checkoutOpen}
-	            onClose={() => setCheckoutOpen(false)}
-	            cartItems={cartItems}
-	            onCheckout={handleCheckout}
-            onClearCart={() => setCartItems([])}
-            onPaymentSuccess={() => {
-              const requestToken = Date.now();
-              setAccountModalRequest({
-                tab: "orders",
-                open: true,
-                token: requestToken,
-              });
-              setTimeout(() => {
-                setAccountModalRequest((prev) =>
-                  prev && prev.token === requestToken ? null : prev,
-                );
-              }, 2500);
-            }}
-            onUpdateItemQuantity={handleUpdateCartItemQuantity}
-            onRemoveItem={handleRemoveCartItem}
-            isAuthenticated={Boolean(user)}
-            onRequireLogin={handleRequireLogin}
-            physicianName={user?.npiVerification?.name || user?.name || null}
-            customerEmail={user?.email || null}
-            customerName={user?.name || null}
-	            defaultShippingAddress={checkoutDefaultShippingAddress}
-	            availableCredits={availableReferralCredits}
-	            stripeAvailable={true}
-	            stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
-	          />
-	        </Elements>
-	      ) : (
-	        <CheckoutModal
-	          isOpen={checkoutOpen}
+      <Elements stripe={stripeClientPromise} key={stripePublishableKey || "stripe"}>
+        <CheckoutModal
+          isOpen={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
           cartItems={cartItems}
           onCheckout={handleCheckout}
@@ -11838,12 +12101,12 @@ export default function App() {
           physicianName={user?.npiVerification?.name || user?.name || null}
           customerEmail={user?.email || null}
           customerName={user?.name || null}
-	          defaultShippingAddress={checkoutDefaultShippingAddress}
-	          availableCredits={availableReferralCredits}
-	          stripeAvailable={false}
-	          stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
-	        />
-	      )}
+          defaultShippingAddress={checkoutDefaultShippingAddress}
+          availableCredits={availableReferralCredits}
+          stripeAvailable={Boolean(stripePublishableKey)}
+          stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
+        />
+      </Elements>
 
       <Dialog
         open={showManualProspectModal}
@@ -12127,7 +12390,14 @@ export default function App() {
         }}
       >
         <DialogContent className="max-w-4xl">
-          {salesOrderDetailLoading && renderSalesOrderSkeleton()}
+          {salesOrderDetailLoading && (
+            <>
+              <VisuallyHidden>
+                <DialogTitle>Loading order details</DialogTitle>
+              </VisuallyHidden>
+              {renderSalesOrderSkeleton()}
+            </>
+          )}
           {!salesOrderDetailLoading && salesOrderDetail && (
             <>
               <DialogHeader>

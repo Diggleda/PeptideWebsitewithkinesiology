@@ -6,6 +6,8 @@ from typing import Dict, Optional
 
 import requests
 
+from ..utils import http_client
+
 CMS_NPI_REGISTRY_URL = "https://npiregistry.cms.hhs.gov/api/"
 CMS_API_VERSION = "2.1"
 
@@ -73,7 +75,7 @@ def verify_npi(npi_number: str) -> Dict:
         raise NpiInvalidError("NPI_INVALID")
 
     try:
-        response = requests.get(
+        response = http_client.get(
             CMS_NPI_REGISTRY_URL,
             params={"version": CMS_API_VERSION, "number": normalized},
             timeout=7,
