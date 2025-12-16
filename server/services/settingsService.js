@@ -6,9 +6,25 @@ const { env } = require('../config/env');
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
   stripeMode: null, // null = follow env
+  salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
+
+const normalizeIsoTimestamp = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+};
 
 const normalizeSettings = (settings = {}) => {
   const merged = { ...DEFAULT_SETTINGS, ...(settings || {}) };
@@ -17,6 +33,9 @@ const normalizeSettings = (settings = {}) => {
     ? merged.stripeMode.toLowerCase().trim()
     : null;
   merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
+  merged.salesBySalesRepCsvDownloadedAt = normalizeIsoTimestamp(
+    merged.salesBySalesRepCsvDownloadedAt,
+  );
   return merged;
 };
 
@@ -32,8 +51,9 @@ const loadFromSql = async () => {
   }
 
   try {
+    const keysSql = SETTINGS_KEYS.map((key) => `"${key}"`).join(',');
     const rows = await mysqlClient.fetchAll?.(
-      'SELECT `key`, `value_json` FROM settings WHERE `key` IN ("shopEnabled","stripeMode")',
+      `SELECT \`key\`, \`value_json\` FROM settings WHERE \`key\` IN (${keysSql})`,
     );
     if (!rows || !Array.isArray(rows)) {
       return null;
@@ -80,7 +100,9 @@ const persistToSql = async (settings) => {
         `
           INSERT INTO settings (\`key\`, value_json, updated_at)
           VALUES (:key, :value_json, NOW())
-          ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()
+          ON DUPLICATE KEY UPDATE
+            updated_at = IF(value_json <=> VALUES(value_json), updated_at, NOW()),
+            value_json = VALUES(value_json)
         `,
         { key, value_json: valueJson },
       );
@@ -140,6 +162,22 @@ const setStripeMode = async (mode) => {
   return resolveStripeMode(next);
 };
 
+const getSalesBySalesRepCsvDownloadedAt = async () => {
+  const settings = await getSettings();
+  return settings.salesBySalesRepCsvDownloadedAt || null;
+};
+
+const setSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
+  const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const next = normalizeSettings({
+    ...loadFromStore(),
+    salesBySalesRepCsvDownloadedAt: normalized,
+  });
+  persistToStore(next);
+  await persistToSql(next);
+  return next.salesBySalesRepCsvDownloadedAt;
+};
+
 module.exports = {
   getSettings,
   getShopEnabled,
@@ -147,6 +185,8 @@ module.exports = {
   getStripeMode,
   getStripeModeSync,
   setStripeMode,
+  getSalesBySalesRepCsvDownloadedAt,
+  setSalesBySalesRepCsvDownloadedAt,
   SETTINGS_KEYS,
   DEFAULT_SETTINGS,
 };

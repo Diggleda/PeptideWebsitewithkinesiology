@@ -37,6 +37,67 @@ _sales_rep_orders_cache_lock = threading.Lock()
 _sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
 
 
+def _compute_allowed_sales_rep_ids(
+    sales_rep_id: str,
+    users: List[Dict],
+    rep_records: Dict[str, Dict],
+) -> set[str]:
+    normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    allowed_rep_ids: set[str] = {normalized_sales_rep_id} if normalized_sales_rep_id else set()
+
+    legacy_map = {
+        str(rep.get("legacyUserId")).strip(): str(rep_id)
+        for rep_id, rep in rep_records.items()
+        if rep.get("legacyUserId")
+    }
+
+    rep_record_id = legacy_map.get(normalized_sales_rep_id)
+    if rep_record_id:
+        allowed_rep_ids.add(str(rep_record_id))
+
+    def add_legacy_user_id(rep: Dict | None):
+        if not isinstance(rep, dict):
+            return
+        legacy_user_id = str(rep.get("legacyUserId") or "").strip()
+        if legacy_user_id:
+            allowed_rep_ids.add(str(legacy_user_id))
+
+    direct_rep_record = rep_records.get(normalized_sales_rep_id) if normalized_sales_rep_id else None
+    add_legacy_user_id(direct_rep_record if isinstance(direct_rep_record, dict) else None)
+    add_legacy_user_id(rep_records.get(str(rep_record_id)) if rep_record_id else None)
+
+    rep_user = next((u for u in users if str(u.get("id")) == normalized_sales_rep_id), None)
+    rep_user_email = (rep_user.get("email") or "").strip().lower() if isinstance(rep_user, dict) else ""
+    if rep_user_email:
+        for rep_id, rep in rep_records.items():
+            if (rep.get("email") or "").strip().lower() == rep_user_email:
+                allowed_rep_ids.add(str(rep_id))
+                add_legacy_user_id(rep)
+
+    rep_email_candidates = set()
+    if rep_user_email:
+        rep_email_candidates.add(rep_user_email)
+    for record in (
+        direct_rep_record if isinstance(direct_rep_record, dict) else None,
+        rep_records.get(str(rep_record_id)) if rep_record_id else None,
+    ):
+        if isinstance(record, dict):
+            email = (record.get("email") or "").strip().lower()
+            if email:
+                rep_email_candidates.add(email)
+
+    if rep_email_candidates:
+        for user in users:
+            email = (user.get("email") or "").strip().lower()
+            if not email or email not in rep_email_candidates:
+                continue
+            role = (user.get("role") or "").lower()
+            if role in ("sales_rep", "rep", "admin"):
+                allowed_rep_ids.add(str(user.get("id")))
+
+    return allowed_rep_ids
+
+
 def _ensure_dict(value):
     if isinstance(value, dict):
         return dict(value)
@@ -715,41 +776,8 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                 )
                 return cached.get("value")
     users = user_repository.get_all()
-    normalized_sales_rep_id = str(sales_rep_id)
-    role_lookup = {u.get("id"): (u.get("role") or "").lower() for u in users}
-    rep_records = {rep.get("id"): rep for rep in sales_rep_repository.get_all()}
-    # Allow matching by legacyUserId to catch migrated reps (but only for the logged-in rep).
-    legacy_map = {
-        str(rep.get("legacyUserId")).strip(): rep_id
-        for rep_id, rep in rep_records.items()
-        if rep.get("legacyUserId")
-    }
-    allowed_rep_ids = {normalized_sales_rep_id}
-
-    rep_record_id = legacy_map.get(normalized_sales_rep_id)
-    if rep_record_id:
-        allowed_rep_ids.add(rep_record_id)
-
-    direct_rep_record = rep_records.get(normalized_sales_rep_id) if normalized_sales_rep_id else None
-    if isinstance(direct_rep_record, dict):
-        legacy_user_id = str(direct_rep_record.get("legacyUserId") or "").strip()
-        if legacy_user_id:
-            allowed_rep_ids.add(legacy_user_id)
-
-    if rep_record_id and isinstance(rep_records.get(rep_record_id), dict):
-        legacy_user_id = str(rep_records.get(rep_record_id).get("legacyUserId") or "").strip()
-        if legacy_user_id:
-            allowed_rep_ids.add(legacy_user_id)
-
-    rep_user = next((u for u in users if str(u.get("id")) == normalized_sales_rep_id), None)
-    rep_user_email = (rep_user.get("email") or "").strip().lower() if isinstance(rep_user, dict) else ""
-    if rep_user_email:
-        for rep_id, rep in rep_records.items():
-            if (rep.get("email") or "").strip().lower() == rep_user_email:
-                allowed_rep_ids.add(str(rep_id))
-                legacy_user_id = str(rep.get("legacyUserId") or "").strip()
-                if legacy_user_id:
-                    allowed_rep_ids.add(legacy_user_id)
+    rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+    allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
 
     doctors = []
     for user in users:
@@ -1190,6 +1218,17 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
     billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
     doctor = user_repository.find_by_email(billing_email) if billing_email else None
     if doctor:
+        users = user_repository.get_all()
+        rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+
+        doctor_sales_rep = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "")
+        if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
+            raise _service_error("Order not found", 404)
+    else:
+        # If we can't associate to a known doctor, don't leak order detail to arbitrary reps.
+        raise _service_error("Order not found", 404)
+    if doctor:
         mapped["doctorId"] = doctor.get("id")
         mapped["doctorName"] = doctor.get("name") or billing_email
         mapped["doctorEmail"] = doctor.get("email")
@@ -1318,6 +1357,39 @@ def get_sales_by_rep(
         rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
         user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
 
+        def _norm_email(value: object) -> str:
+            return str(value or "").strip().lower()
+
+        # Canonicalize sales rep ids so we don't double-count reps that exist in both
+        # `users` and `sales_reps` with different ids. Prefer `users` as the source of truth
+        # for display names (sales reps manage their own name there).
+        user_rep_id_by_email: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            email = _norm_email(rep.get("email"))
+            if rep_id and email:
+                user_rep_id_by_email[email] = str(rep_id)
+
+        # Map any known alias id (sales_reps.id, legacy_user_id, user.id) -> canonical user id when possible.
+        alias_to_rep_id: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_id_str = str(rep_id)
+                alias_to_rep_id[rep_id_str] = rep_id_str
+
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            rep_id_str = str(rep_id)
+            rep_email = _norm_email(rep.get("email"))
+            canonical = user_rep_id_by_email.get(rep_email) or rep_id_str
+            alias_to_rep_id[rep_id_str] = canonical
+            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            if legacy_id:
+                alias_to_rep_id[str(legacy_id)] = canonical
+
         # Used as a fallback when older Woo orders are missing meta.
         doctors_by_email = {}
         for u in users:
@@ -1327,29 +1399,11 @@ def get_sales_by_rep(
             if email:
                 doctors_by_email[email] = u
 
-        valid_rep_ids = {str(rep.get("id")) for rep in reps if rep.get("id")}
+        valid_rep_ids = {alias_to_rep_id[str(rep.get("id"))] for rep in reps if rep.get("id")}
         for rep in rep_records_list:
             rep_id = rep.get("id")
             if rep_id:
-                valid_rep_ids.add(str(rep_id))
-
-        # Many parts of the system may store a rep reference as legacyUserId (or other alias).
-        alias_to_rep_id: Dict[str, str] = {}
-        for rep in rep_records_list:
-            rep_id = rep.get("id")
-            if not rep_id:
-                continue
-            rep_id_str = str(rep_id)
-            alias_to_rep_id[rep_id_str] = rep_id_str
-            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
-            if legacy_id:
-                alias_to_rep_id[str(legacy_id)] = rep_id_str
-
-        for rep in reps:
-            rep_id = rep.get("id")
-            if rep_id:
-                rep_id_str = str(rep_id)
-                alias_to_rep_id[rep_id_str] = rep_id_str
+                valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
 
         logger.info(
             "[SalesByRep] Begin aggregation",
@@ -1412,14 +1466,14 @@ def get_sales_by_rep(
 
                 rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
-                if rep_id and rep_id not in valid_rep_ids:
+                if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 if not rep_id:
                     billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
                     doctor = doctors_by_email.get(billing_email)
                     rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
-                    if rep_id and rep_id not in valid_rep_ids:
+                    if rep_id:
                         rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 total = _safe_float(woo_order.get("total"))
@@ -1454,22 +1508,29 @@ def get_sales_by_rep(
                 break
 
         rep_lookup: Dict[str, Dict] = {}
+        # Seed with canonical user rep records.
         for rep in reps:
             rep_id = rep.get("id")
             if rep_id:
                 rep_lookup[str(rep_id)] = rep
+        # Fill in any remaining reps from sales_reps (canonicalized).
         for rep_id, rep_record in rep_records.items():
-            rep_lookup.setdefault(rep_id, rep_record)
+            canonical = alias_to_rep_id.get(rep_id, rep_id)
+            rep_lookup.setdefault(canonical, rep_record)
 
         summary: List[Dict] = []
         for rep_id in sorted(valid_rep_ids):
             totals = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
             rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
             rep_record = rep_records.get(rep_id) or {}
+            # Prefer the user's name if available (sales reps edit their own name there).
+            user_rec = user_lookup.get(rep_id) or {}
+            preferred_name = (user_rec.get("name") or "").strip() if isinstance(user_rec, dict) else ""
             summary.append(
                 {
                     "salesRepId": rep_id,
-                    "salesRepName": rep.get("name")
+                    "salesRepName": preferred_name
+                    or rep.get("name")
                     or rep_record.get("name")
                     or rep.get("email")
                     or rep_record.get("email")
@@ -1582,8 +1643,16 @@ def get_sales_by_rep(
             if not rep_id or rep_id == "__house__":
                 continue
             try:
+                target_id = str(rep_id)
+                record = sales_rep_repository.find_by_id(target_id)
+                if not record:
+                    email = row.get("salesRepEmail")
+                    if isinstance(email, str) and email.strip():
+                        record = sales_rep_repository.find_by_email(email)
+                        if record and record.get("id"):
+                            target_id = str(record.get("id"))
                 sales_rep_repository.update_revenue_summary(
-                    str(rep_id),
+                    target_id,
                     float(row.get("totalRevenue") or 0),
                 )
             except Exception:

@@ -111,6 +111,39 @@ def update_stripe():
     return handle_action(action)
 
 
+@blueprint.get("/reports")
+@require_auth
+def get_reports():
+    def action():
+        _require_admin()
+        settings = settings_service.get_settings()
+        downloaded_at = settings.get("salesBySalesRepCsvDownloadedAt")
+        return {
+            "salesBySalesRepCsvDownloadedAt": downloaded_at if isinstance(downloaded_at, str) else None
+        }
+
+    return handle_action(action)
+
+
+@blueprint.put("/reports")
+@require_auth
+def update_reports():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        raw = payload.get("salesBySalesRepCsvDownloadedAt") or payload.get("downloadedAt")
+        parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+        stamp = (
+            parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if parsed
+            else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
+        updated = settings_service.update_settings({"salesBySalesRepCsvDownloadedAt": stamp})
+        return {"salesBySalesRepCsvDownloadedAt": updated.get("salesBySalesRepCsvDownloadedAt")}
+
+    return handle_action(action)
+
+
 def _parse_activity_window(raw: str | None) -> str:
     normalized = str(raw or "").strip().lower()
     if normalized in ("hour", "1h", "last_hour"):

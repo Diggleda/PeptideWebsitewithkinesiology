@@ -33,6 +33,15 @@ Key variables:
 - `DATA_DIR`: Where JSON storage files live (`server-data` by default).
 - `JWT_SECRET`: Secret used to sign login tokens.
 - `CORS_ALLOW_ORIGINS`: Comma-separated list of allowed origins (use `*` to allow all).
+- `RATE_LIMIT_*`: Simple in-memory rate limiting (recommended in production).
+- `ORDER_SYNC_ENABLED`: Toggles the background MySQL sync job (defaults to enabled).
+- `LOG_PRETTY`: Pretty-print logs for local development.
+
+### Reliability & Security Defaults
+
+- **Request IDs**: Every API response includes `X-Request-Id` (and error bodies include `requestId`) to make logs + support tickets traceable.
+- **Idempotent order creation**: `POST /api/orders` supports an `Idempotency-Key` header; the frontend automatically sends one for checkout so safe retries don’t create duplicate orders.
+- **Log redaction**: Backend logging redacts common secret locations (auth headers, API keys) to avoid leaking credentials in logs.
 
 ## Frontend Environment
 
@@ -44,6 +53,15 @@ Vite only exposes variables prefixed with `VITE_`. Copy `.env.example` to `.env.
 | `VITE_WOO_PROXY_URL` | Optional override for the catalog proxy. Leave blank to use `${VITE_API_URL}/api/woo`. |
 | `VITE_WOO_PROXY_TOKEN` | Shared secret when using a legacy PHP proxy (`token` query param). Safe to leave blank when calling the Express proxy. |
 | `VITE_VARIANT_PREFETCH_CONCURRENCY` | Optional override for how many Woo variation requests are prefetched in parallel for visible variable products (default `6`, clamped `1`–`12`). |
+
+### Universal builds (staging + prod)
+
+To deploy the same static frontend bundle to multiple domains (e.g. `peppro.net` and `staging.peppro.net`):
+
+- Prefer serving the API under `/api` on the **same origin** as the frontend.
+- Leave `VITE_API_URL` unset at build time (so the app uses `window.location.origin + "/api"` in production).
+
+If you explicitly need a cross-origin API base in production, set `VITE_ALLOW_CROSS_ORIGIN_API=true`.
 
 ### Testing on phones/tablets (LAN)
 

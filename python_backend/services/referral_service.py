@@ -111,10 +111,6 @@ def _collect_existing_codes() -> set[str]:
         code = rep.get("salesCode")
         if code:
             existing.add(str(code).upper())
-    for record in referral_code_repository.get_all():
-        code = record.get("code")
-        if code:
-            existing.add(code.upper())
     return existing
 
 
@@ -400,62 +396,36 @@ def _generate_unique_code(sales_rep_id: str) -> str:
 
 def create_onboarding_code(data: Dict) -> Dict:
     sales_rep_id = data.get("salesRepId")
-    referrer_doctor_id = data.get("referrerDoctorId")
-    referral_id = data.get("referralId")
-    created_by = data.get("createdBy", "system")
-    timestamp = _now()
+    rep = _ensure_sales_rep(sales_rep_id)
+    existing = (rep.get("salesCode") or "").strip().upper()
+    if existing:
+        return referral_code_repository.find_by_code(existing) or {"code": existing, "salesRepId": rep.get("id")}
+
     code = _generate_unique_code(sales_rep_id)
-    return referral_code_repository.insert(
-        {
-            "salesRepId": sales_rep_id,
-            "referrerDoctorId": referrer_doctor_id,
-            "referralId": referral_id,
-            "code": code,
-            "status": "available",
-            "issuedAt": timestamp,
-            "history": [
-                {
-                    "action": "generated",
-                    "at": timestamp,
-                    "by": created_by,
-                }
-            ],
-        }
-    )
+    sales_rep_repository.update({"id": rep.get("id"), "salesCode": code})
+    return referral_code_repository.find_by_code(code) or {"code": code, "salesRepId": rep.get("id")}
+
+
+def regenerate_sales_rep_code(sales_rep_id: str, created_by: str = "system") -> Dict:
+    rep = _ensure_sales_rep(sales_rep_id)
+    code = _generate_unique_code(sales_rep_id)
+    sales_rep_repository.update({"id": rep.get("id"), "salesCode": code})
+    record = referral_code_repository.find_by_code(code) or {"code": code, "salesRepId": rep.get("id")}
+    history = record.get("history", []) if isinstance(record, dict) else []
+    if isinstance(record, dict):
+        record["history"] = [
+            *history,
+            {"action": "rotated", "at": _now(), "by": created_by},
+        ]
+    return record
 
 
 def redeem_onboarding_code(payload: Dict) -> Dict:
     code = (payload.get("code") or "").strip().upper()
-    doctor_id = payload.get("doctorId")
     record = referral_code_repository.find_by_code(code)
     if not record:
         raise _service_error("REFERRAL_CODE_UNKNOWN", 404)
-    if record.get("status") != "available":
-        raise _service_error("REFERRAL_CODE_UNAVAILABLE", 409)
-
-    timestamp = _now()
-    updated = referral_code_repository.update(
-        {
-            **record,
-            "doctorId": doctor_id,
-            "status": "retired",
-            "redeemedAt": timestamp,
-            "history": [*record.get("history", []), {"action": "redeemed", "at": timestamp, "doctorId": doctor_id}],
-        }
-    )
-
-    if record.get("referralId"):
-        referral = referral_repository.find_by_id(record["referralId"])
-        if referral:
-            referral_repository.update(
-                {
-                    **referral,
-                    "status": "converted",
-                    "convertedDoctorId": doctor_id,
-                    "convertedAt": timestamp,
-                }
-            )
-    return updated
+    return record
 
 
 def get_onboarding_code(code: str) -> Optional[Dict]:

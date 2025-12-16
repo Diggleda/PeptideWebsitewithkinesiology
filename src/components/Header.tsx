@@ -10,6 +10,7 @@ import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
+import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -1193,15 +1194,42 @@ export function Header({
 
   // Auto-refresh orders when the orders tab is open
   useEffect(() => {
-    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
-      return undefined;
-    }
-    onRefreshOrders();
+	    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
+	      return undefined;
+	    }
+	    let cancelled = false;
+	    let inFlight = false;
+	    const leaderKey = 'orders-auto-refresh';
+	    const leaderTtlMs = 45_000;
+
+    const shouldRefresh = () => {
+      if (typeof document !== 'undefined' && document.hidden) return false;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+      return true;
+    };
+
+	    const runRefresh = async () => {
+	      if (cancelled || inFlight) return;
+	      if (!shouldRefresh()) return;
+	      if (!isTabLeader(leaderKey, leaderTtlMs)) return;
+	      inFlight = true;
+	      try {
+	        await Promise.resolve(onRefreshOrders());
+	      } finally {
+	        inFlight = false;
+	      }
+	    };
+
+    void runRefresh();
     const intervalId = window.setInterval(() => {
-      onRefreshOrders();
-    }, 10000);
-    return () => window.clearInterval(intervalId);
-  }, [welcomeOpen, accountTab, onRefreshOrders, user]);
+      void runRefresh();
+    }, 20000);
+	    return () => {
+	      cancelled = true;
+	      releaseTabLeadership(leaderKey);
+	      window.clearInterval(intervalId);
+	    };
+	  }, [welcomeOpen, accountTab, onRefreshOrders, user]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -2031,6 +2059,7 @@ export function Header({
   );
 
   const renderOrdersList = () => {
+    const repView = Boolean(localUser && isRep(localUser.role));
     const visibleOrders = cachedAccountOrders
       .filter((order) => {
         const source = (order.source || '').toLowerCase();
@@ -2069,7 +2098,7 @@ export function Header({
             const statusNormalized = (order.status || '').toLowerCase();
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
-            const canCancel = Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
+            const canCancel = !repView && Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
             const cancellationKey =
               order.cancellationId ||
               order.wooOrderId ||
@@ -2208,17 +2237,25 @@ export function Header({
               <div className="px-6 pt-5 pb-5">
                 <div className="order-card-body flex flex-col gap-4 pt-4 md:flex-row md:items-start md:gap-6">
                   <div className="space-y-4 flex-1 min-w-0">
-                    <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0 space-y-1">
-	                        <p className="text-base font-bold text-slate-900 break-words">
-	                          <span className="mr-2">{orderNumberLabel}</span>
-	                          {showItemCount && (
-	                            <span className="text-slate-700 font-semibold">
-	                              {itemLabel}
-	                            </span>
-	                          )}
-	                        </p>
-	                      </div>
+	                    <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
+	                      <div className="flex-1 min-w-0 space-y-1">
+		                        <p className="text-base font-bold text-slate-900 break-words">
+		                          <span className="mr-2">{orderNumberLabel}</span>
+		                          {showItemCount && (
+		                            <span className="text-slate-700 font-semibold">
+		                              {itemLabel}
+		                            </span>
+		                          )}
+		                        </p>
+                          {repView && (order.doctorName || order.doctorEmail) && (
+                            <p className="text-sm text-slate-700 break-words">
+                              <span className="font-semibold">
+                                {order.doctorName || "Doctor"}
+                              </span>
+                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
+                            </p>
+                          )}
+		                      </div>
 	                    </div>
 
 	                    {order.lineItems && order.lineItems.length > 0 && (
@@ -2263,22 +2300,26 @@ export function Header({
                     )}
                   </div>
                   <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full"
-                      onClick={() => {
-                        if (onBuyOrderAgain) {
-                          onBuyOrderAgain(order);
-                        } else {
-                          setSelectedOrder(order);
-                        }
-                      }}
-                    >
-                      <ShoppingCart className="h-4 w-4" aria-hidden="true" />
-                      Buy it again
-                    </Button>
+	                    <Button
+	                      type="button"
+	                      size="sm"
+	                      variant="outline"
+	                      className="header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full"
+	                      onClick={() => {
+	                        if (onBuyOrderAgain) {
+	                          onBuyOrderAgain(order);
+	                        } else {
+	                          setSelectedOrder(order);
+	                        }
+	                      }}
+	                    >
+	                      {repView ? (
+	                        <Eye className="h-4 w-4" aria-hidden="true" />
+	                      ) : (
+	                        <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+	                      )}
+	                      {repView ? 'View order' : 'Buy it again'}
+	                    </Button>
                     {canCancel && (
                       <button
                         type="button"
@@ -2612,72 +2653,68 @@ export function Header({
   };
 
   const accountOrdersPanel = localUser ? (
-    !isRep(localUser.role) ? (
-      <div className="space-y-4">
-        {/* Header Section */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex-1 min-w-[1px]" />
-            <div className="flex items-center gap-2">
-              {ordersLastSyncedAt && (
-                <span className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)]">
-                  {formatRelativeMinutes(ordersLastSyncedAt)}
-                </span>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onToggleShowCanceled?.()}
-                className="glass squircle-sm btn-hover-lighter border border-[rgb(95,179,249)] bg-white text-slate-900 shadow-[0_8px_18px_rgba(95,179,249,0.14)] my-0 h-7 py-0 leading-none gap-1"
-              >
-                {showCanceledOrders ? (
-                  <>
-                    <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
-                    Hide canceled
-                  </>
-                ) : (
-                  <>
-                    <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
-                    Show canceled
-                  </>
-                )}
-              </Button>
-            </div>
+    <div className="space-y-4">
+      {/* Header Section */}
+      <div className="flex flex-col gap-4">
+        {isRep(localUser.role) && (
+          <div className="glass-card squircle-md p-4 border border-[rgba(95,179,249,0.35)] bg-white/80">
+            <p className="text-sm text-slate-700">
+              Showing orders for doctors assigned to you.
+            </p>
           </div>
-
-          {accountOrdersError && (
-            <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/50">
-              <p className="text-sm text-red-700 font-medium">{accountOrdersError}</p>
-            </div>
-          )}
-
-          {catalogLoading && (
-            <div className="glass-card squircle-md p-4 border border-[rgba(95,179,249,0.35)] bg-white/80 flex items-center gap-3">
-              <RefreshCw className="h-4 w-4 text-[rgb(95,179,249)] animate-spin" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
-                <p className="text-xs text-slate-600">Please hold while we sync the catalog data.</p>
-              </div>
-            </div>
-          )}
-
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex-1 min-w-[1px]" />
+          <div className="flex items-center gap-2">
+            {ordersLastSyncedAt && (
+              <span className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)]">
+                {formatRelativeMinutes(ordersLastSyncedAt)}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onToggleShowCanceled?.()}
+              className="glass squircle-sm btn-hover-lighter border border-[rgb(95,179,249)] bg-white text-slate-900 shadow-[0_8px_18px_rgba(95,179,249,0.14)] my-0 h-7 py-0 leading-none gap-1"
+            >
+              {showCanceledOrders ? (
+                <>
+                  <EyeOff className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Hide canceled
+                </>
+              ) : (
+                <>
+                  <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Show canceled
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
-        {/* Orders Content */}
-        <div className="relative">
+        {accountOrdersError && (
+          <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/50">
+            <p className="text-sm text-red-700 font-medium">{accountOrdersError}</p>
+          </div>
+        )}
+
+        {catalogLoading && (
+          <div className="glass-card squircle-md p-4 border border-[rgba(95,179,249,0.35)] bg-white/80 flex items-center gap-3">
+            <RefreshCw className="h-4 w-4 text-[rgb(95,179,249)] animate-spin" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Loading product and order catelogue…</p>
+              <p className="text-xs text-slate-600">Please hold while we sync the catalog data.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Orders Content */}
+      <div className="relative">
         {selectedOrder ? renderOrderDetails() : renderOrdersList()}
       </div>
-      </div>
-    ) : (
-      <div className="glass-card squircle-lg p-8 border border-[var(--brand-glass-border-2)] text-center">
-        <Package className="h-12 w-12 mx-auto mb-3 text-slate-400" />
-        <p className="text-sm font-medium text-slate-700 mb-1">Sales Rep View</p>
-        <p className="text-sm text-slate-600">
-          Order history and tracking details for your sales rep profile will appear here soon.
-        </p>
-      </div>
-    )
+    </div>
   ) : null;
 
   const activeAccountPanel =

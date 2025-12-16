@@ -69,6 +69,7 @@ import {
 } from "./services/api";
 import physiciansChoiceHtml from "./content/landing/physicians-choice.html?raw";
 import careComplianceHtml from "./content/landing/care-compliance.html?raw";
+import { isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
 import { AuthActionResult } from "./types/auth";
@@ -1276,7 +1277,7 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.8.95";
+const FRONTEND_BUILD_ID = "v1.9.09";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2988,6 +2989,13 @@ export default function App() {
         setAccountOrdersError(null);
         return [];
       }
+      if (isRep(user.role)) {
+        // Sales reps use the sales tracking endpoint for order visibility.
+        setAccountOrders([]);
+        setAccountOrdersSyncedAt(null);
+        setAccountOrdersError(null);
+        return [];
+      }
       setAccountOrdersLoading(true);
       setAccountOrdersError(null);
       try {
@@ -3099,7 +3107,9 @@ export default function App() {
       setAccountOrdersError(null);
       return;
     }
-    loadAccountOrders();
+    if (!isRep(user.role)) {
+      loadAccountOrders();
+    }
   }, [user?.id, loadAccountOrders]);
 
   useEffect(() => {
@@ -3150,12 +3160,17 @@ export default function App() {
     }
 
     let cancelled = false;
+    const leaderKey = "login-keepalive";
+    const leaderTtlMs = Math.max(20_000, LOGIN_KEEPALIVE_INTERVAL_MS * 2);
 
     const sendKeepAlive = async () => {
       if (cancelled) {
         return;
       }
       if (!isPageVisible() || !isOnline()) {
+        return;
+      }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
         return;
       }
       try {
@@ -3174,6 +3189,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      releaseTabLeadership(leaderKey);
       window.clearInterval(intervalId);
     };
   }, [user]);
@@ -4097,7 +4113,32 @@ export default function App() {
     );
   }, [normalizedDashboardCodes, userReferralCodes]);
 
-  const downloadSalesBySalesRepCsv = useCallback(() => {
+  useEffect(() => {
+    if (!user || !isAdmin(user.role)) {
+      setSalesRepSalesCsvDownloadedAt(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const reportSettings = await settingsAPI.getReportSettings();
+        const downloadedAt =
+          typeof (reportSettings as any)?.salesBySalesRepCsvDownloadedAt === "string"
+            ? String((reportSettings as any).salesBySalesRepCsvDownloadedAt)
+            : null;
+        if (!cancelled) {
+          setSalesRepSalesCsvDownloadedAt(downloadedAt);
+        }
+      } catch (error) {
+        console.debug("[Sales by Sales Rep] Failed to load report settings", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.role]);
+
+  const downloadSalesBySalesRepCsv = useCallback(async () => {
     try {
       const exportedAt = new Date();
       const exportedAtIso = exportedAt.toISOString();
@@ -4142,11 +4183,27 @@ export default function App() {
       link.remove();
       URL.revokeObjectURL(url);
       setSalesRepSalesCsvDownloadedAt(exportedAtIso);
+      if (user && isAdmin(user.role)) {
+        try {
+          await settingsAPI.setSalesBySalesRepCsvDownloadedAt(exportedAtIso);
+        } catch (error) {
+          console.debug(
+            "[Sales by Sales Rep] Failed to persist CSV download timestamp",
+            error,
+          );
+        }
+      }
     } catch (error) {
       console.error("[Sales by Sales Rep] CSV export failed", error);
       toast.error("Unable to download report right now.");
     }
-  }, [salesRepSalesSummary, salesRepSalesSummaryMeta?.periodEnd, salesRepSalesSummaryMeta?.periodStart]);
+  }, [
+    salesRepSalesSummary,
+    salesRepSalesSummaryMeta?.periodEnd,
+    salesRepSalesSummaryMeta?.periodStart,
+    user,
+    user?.role,
+  ]);
 
   const refreshSalesBySalesRepSummary = useCallback(async () => {
     if (!user || !isAdmin(user.role)) return;
@@ -5633,28 +5690,39 @@ export default function App() {
       setSalesTrackingRefreshing(false);
       salesTrackingInFlightRef.current = false;
     }
-  }, [
-    userId,
-    userRole,
-    userSalesRepId,
-    postLoginHold,
-    resolveOrderDoctorId,
-    enrichMissingOrderDetails,
-    refreshSalesBySalesRepSummary,
-  ]);
+	  }, [
+	    userId,
+	    userRole,
+	    userSalesRepId,
+	    postLoginHold,
+	    resolveOrderDoctorId,
+	    enrichMissingOrderDetails,
+	    refreshSalesBySalesRepSummary,
+	  ]);
+
+  const refreshSalesRepOrdersForHeader = useCallback(async () => {
+    await fetchSalesTrackingOrders({ force: true });
+  }, [fetchSalesTrackingOrders]);
 
   useEffect(() => {
     if (postLoginHold || !userRole || (!isRep(userRole) && !isAdmin(userRole))) {
       return;
     }
     fetchSalesTrackingOrders();
+    const leaderKey = "sales-tracking-poll";
+    const pollIntervalMs = 25000;
+    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
     const pollHandle = window.setInterval(() => {
       if (!isPageVisible()) {
         return;
       }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
       void fetchSalesTrackingOrders();
-    }, 25000);
+    }, pollIntervalMs);
     return () => {
+      releaseTabLeadership(leaderKey);
       window.clearInterval(pollHandle);
     };
   }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
@@ -6524,22 +6592,28 @@ export default function App() {
 		      }
 		    };
 
-    void loadCatalog(false);
+	    void loadCatalog(false);
 
-    const intervalId = window.setInterval(() => {
-      if (!isPageVisible()) {
-        return;
-      }
-      void loadCatalog(true);
-    }, CATALOG_POLL_INTERVAL_MS);
+	    const leaderKey = "catalog-background-poll";
+	    const leaderTtlMs = Math.max(45_000, CATALOG_POLL_INTERVAL_MS * 2);
+	    const intervalId = window.setInterval(() => {
+	      if (!isPageVisible()) {
+	        return;
+	      }
+	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+	        return;
+	      }
+	      void loadCatalog(true);
+	    }, CATALOG_POLL_INTERVAL_MS);
 
-    return () => {
-      cancelled = true;
-      if (catalogRetryTimeoutRef.current) {
-        window.clearTimeout(catalogRetryTimeoutRef.current);
-      }
-      window.clearInterval(intervalId);
-    };
+	    return () => {
+	      cancelled = true;
+	      releaseTabLeadership(leaderKey);
+	      if (catalogRetryTimeoutRef.current) {
+	        window.clearTimeout(catalogRetryTimeoutRef.current);
+	      }
+	      window.clearInterval(intervalId);
+	    };
 	  }, [ensureVariationCacheReady, persistVariationCache]);
 
   useEffect(() => {
@@ -8959,12 +9033,13 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    {(() => {
-                      const usage = serverHealthPayload?.usage || null;
-                      const cpu = usage?.cpu || null;
-                      const mem = usage?.memory || null;
-                      const disk = usage?.disk || null;
+	                  <div className="sales-rep-table-wrapper">
+	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
+	                      {(() => {
+	                      const usage = serverHealthPayload?.usage || null;
+	                      const cpu = usage?.cpu || null;
+	                      const mem = usage?.memory || null;
+	                      const disk = usage?.disk || null;
                       const cpuLabel =
                         cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
                           ? `CPU load: ${cpu.loadPercent}%`
@@ -8993,32 +9068,33 @@ export default function App() {
                       const tsLabel = serverHealthPayload?.timestamp
                         ? `Updated: ${new Date(serverHealthPayload.timestamp).toLocaleTimeString()}`
                         : null;
-                      const workerLabel = (() => {
-                        const workers = serverHealthPayload?.workers;
-                        const detected = workers?.detected;
-                        const configured = workers?.configured;
-                        if (typeof detected === "number" && detected > 0) {
-                          return `Workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
-                        }
-                        if (typeof configured === "number" && configured > 0) {
-                          return `Workers: target ${configured}`;
-                        }
-                        return null;
-                      })();
+	                      const workerLabel = (() => {
+	                        const workers = serverHealthPayload?.workers;
+	                        const detected = workers?.detected;
+	                        const configured = workers?.configured;
+	                        if (typeof detected === "number" && detected > 0) {
+	                          return `Backend workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
+	                        }
+	                        if (typeof configured === "number" && configured > 0) {
+	                          return `Backend workers: target ${configured}`;
+	                        }
+	                        return null;
+	                      })();
 
-                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
-                        (x): x is string => typeof x === "string" && x.trim().length > 0,
-                      );
-                      return pills.map((label) => (
-                        <span
-                          key={label}
-                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-                        >
-                          {label}
-                        </span>
-                      ));
-                    })()}
-                  </div>
+	                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
+	                        (x): x is string => typeof x === "string" && x.trim().length > 0,
+	                      );
+	                      return pills.map((label) => (
+	                        <span
+	                          key={label}
+	                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+	                        >
+	                          {label}
+	                        </span>
+	                      ));
+	                      })()}
+	                    </div>
+	                  </div>
                 </div>
 	
 		              <div className="flex flex-col gap-3 mb-4">
@@ -9112,46 +9188,56 @@ export default function App() {
                         ))}
                       </div>
 
-                      {userActivityReport.users.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-slate-500">
-                          No logins in this window.
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto max-h-[320px] overflow-y-auto rounded-md border border-slate-200/70">
-                          <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
-                            <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-                              <tr>
-                                <th className="px-4 py-2 text-left">Name</th>
-                                <th className="px-4 py-2 text-left">Email</th>
-                                <th className="px-4 py-2 text-left">Role</th>
-                                <th className="px-4 py-2 text-left">
-                                  Last login
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white/70">
-                              {userActivityReport.users.map((entry) => (
-                                <tr key={entry.id}>
-                                  <td className="px-4 py-3 text-sm font-medium text-slate-800">
-                                    {entry.name || "—"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-slate-600">
-                                    {entry.email || "—"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-slate-700">
-                                    {entry.role}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-slate-700">
-                                    {entry.lastLoginAt
-                                      ? new Date(entry.lastLoginAt).toLocaleString()
-                                      : "—"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
+	                      {userActivityReport.users.length === 0 ? (
+	                        <div className="px-4 py-3 text-sm text-slate-500">
+	                          No logins in this window.
+	                        </div>
+	                      ) : (
+	                        <div className="sales-rep-table-wrapper">
+	                          <div className="max-h-[320px] overflow-y-auto">
+	                            <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
+	                              <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+	                                <tr>
+	                                  <th className="px-4 py-2 text-left">
+	                                    Name
+	                                  </th>
+	                                  <th className="px-4 py-2 text-left">
+	                                    Email
+	                                  </th>
+	                                  <th className="px-4 py-2 text-left">
+	                                    Role
+	                                  </th>
+	                                  <th className="px-4 py-2 text-left">
+	                                    Last login
+	                                  </th>
+	                                </tr>
+	                              </thead>
+	                              <tbody className="divide-y divide-slate-100 bg-white/70">
+	                                {userActivityReport.users.map((entry) => (
+	                                  <tr key={entry.id}>
+	                                    <td className="px-4 py-3 text-sm font-medium text-slate-800">
+	                                      {entry.name || "—"}
+	                                    </td>
+	                                    <td className="px-4 py-3 text-sm text-slate-600">
+	                                      {entry.email || "—"}
+	                                    </td>
+	                                    <td className="px-4 py-3 text-sm text-slate-700">
+	                                      {entry.role}
+	                                    </td>
+	                                    <td className="px-4 py-3 text-sm text-slate-700">
+	                                      {entry.lastLoginAt
+	                                        ? new Date(
+	                                            entry.lastLoginAt,
+	                                          ).toLocaleString()
+	                                        : "—"}
+	                                    </td>
+	                                  </tr>
+	                                ))}
+	                              </tbody>
+	                            </table>
+	                          </div>
+	                        </div>
+	                      )}
 
                       <div className="text-xs text-slate-500">
                         Cutoff:{" "}
@@ -9172,23 +9258,23 @@ export default function App() {
 			          {isAdmin(user?.role) && (
 			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
 			              <div className="flex flex-col gap-3 mb-4">
-				                <div className="flex items-start justify-between gap-3">
-				                  <div className="min-w-0">
-				                    <div className="flex items-center gap-2 flex-wrap">
-				                      <h3 className="text-lg font-semibold text-slate-900">
-				                        Sales by Sales Rep
-				                      </h3>
-				                      <div className="flex flex-col items-start gap-1">
-				                        <Button
+					                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+					                  <div className="min-w-0">
+					                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+					                      <h3 className="text-lg font-semibold text-slate-900">
+					                        Sales by Sales Rep
+					                      </h3>
+					                      <div className="flex flex-col items-start gap-1">
+					                        <Button
 				                          type="button"
-				                          variant="outline"
-				                          size="sm"
-				                          className="gap-2"
-				                          onClick={() => void refreshSalesBySalesRepSummary()}
-				                          disabled={salesRepSalesSummaryLoading}
-				                          aria-busy={salesRepSalesSummaryLoading}
-				                          title="Refresh sales summary"
-				                        >
+					                          variant="outline"
+					                          size="sm"
+					                          className="gap-2 w-full justify-center sm:w-auto"
+					                          onClick={() => void refreshSalesBySalesRepSummary()}
+					                          disabled={salesRepSalesSummaryLoading}
+					                          aria-busy={salesRepSalesSummaryLoading}
+					                          title="Refresh sales summary"
+					                        >
 				                          <RefreshCw
 				                            className={`h-4 w-4 ${
 				                              salesRepSalesSummaryLoading
@@ -9212,19 +9298,19 @@ export default function App() {
 				                              ? new Date(ts).toLocaleTimeString()
 				                              : "—";
 				                          })()}
-				                        </span>
-				                      </div>
-				                    </div>
-				                  </div>
-				                  <div className="flex flex-col items-end gap-1">
-				                    <Button
-				                      type="button"
-				                      variant="outline"
-				                      className="gap-2"
-				                      onClick={downloadSalesBySalesRepCsv}
-				                      disabled={salesRepSalesSummary.length === 0}
-				                      title="Download CSV"
-				                    >
+					                        </span>
+					                      </div>
+					                    </div>
+					                  </div>
+					                  <div className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
+					                    <Button
+					                      type="button"
+					                      variant="outline"
+					                      className="gap-2 w-full justify-center sm:w-auto"
+					                      onClick={downloadSalesBySalesRepCsv}
+					                      disabled={salesRepSalesSummary.length === 0}
+					                      title="Download CSV"
+					                    >
 				                      <Download className="h-4 w-4" aria-hidden="true" />
 				                      Download CSV
 				                    </Button>
@@ -9317,10 +9403,10 @@ export default function App() {
 			                        return (
 			                          <>
 			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-			                              Orders: {totals.totalOrders}
+			                              Total Orders: {totals.totalOrders}
 			                            </span>
 			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-			                              Revenue: {formatCurrency(totals.totalRevenue)}
+			                              Total Revenue: {formatCurrency(totals.totalRevenue)}
 			                            </span>
 			                          </>
 			                        );
@@ -9330,12 +9416,7 @@ export default function App() {
 				                </div>
 				              </div>
 			              </div>
-              <div
-                className="w-full max-w-full overflow-x-auto -mx-4 sm:mx-0"
-                style={{ WebkitOverflowScrolling: "touch" }}
-                role="region"
-                aria-label="Sales by sales rep table"
-              >
+	              <div className="sales-rep-table-wrapper" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
                   <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
@@ -9345,43 +9426,49 @@ export default function App() {
                     No sales recorded yet.
                   </div>
                 ) : (
-                  <div className="min-w-max px-4 sm:px-0">
-                    <table className="w-max min-w-[760px] divide-y divide-slate-200/70">
-                      <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-                        <tr>
-                          <th className="px-4 py-2 text-left whitespace-nowrap">
-                            Sales Rep
-                          </th>
-                          <th className="px-4 py-2 text-left whitespace-nowrap">
-                            Email
-                          </th>
-                          <th className="px-4 py-2 text-right whitespace-nowrap">
-                            Orders
-                          </th>
-                          <th className="px-4 py-2 text-right whitespace-nowrap">
-                            Revenue
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
+	                  <div className="w-full" style={{ minWidth: 780 }}>
+	                    <div className="overflow-hidden rounded-xl">
+	                      <div
+	                        className="grid items-center gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                        style={{
+	                          gridTemplateColumns:
+	                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr)",
+	                        }}
+	                      >
+	                        <div className="whitespace-nowrap">Sales Rep</div>
+	                        <div className="whitespace-nowrap">Email</div>
+	                        <div className="whitespace-nowrap text-right">Orders</div>
+	                        <div className="whitespace-nowrap text-right">Revenue</div>
+	                      </div>
+                      <ul className="divide-y divide-slate-200/70">
                         {salesRepSalesSummary.map((rep) => (
-                          <tr key={rep.salesRepId}>
-                            <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">
+                          <li
+                            key={rep.salesRepId}
+                            className="grid items-center gap-3 px-4 py-3"
+                            style={{
+                              gridTemplateColumns:
+                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr)",
+                            }}
+                          >
+                            <div className="text-sm font-semibold text-slate-900">
                               {rep.salesRepName}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                            </div>
+                            <div
+                              className="text-sm text-slate-700 truncate"
+                              title={rep.salesRepEmail || ""}
+                            >
                               {rep.salesRepEmail || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+                            </div>
+                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
                               {rep.totalOrders}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                            </div>
+                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
                               {formatCurrency(rep.totalRevenue || 0)}
-                            </td>
-                          </tr>
+                            </div>
+                          </li>
                         ))}
-                      </tbody>
-                    </table>
+                      </ul>
+                    </div>
                   </div>
                 )}
               </div>
@@ -10685,12 +10772,24 @@ export default function App() {
       )}
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Header - Only show when logged in */}
-        {user && !postLoginHold && (
-          <Header
-            user={user}
-            onLogin={handleLogin}
-            onLogout={handleLogout}
-            cartItems={totalCartItems}
+	        {user && !postLoginHold && (
+	          (() => {
+	            const repView = isRep(user.role);
+	            const headerOrders = repView ? salesTrackingOrders : accountOrders;
+	            const headerOrdersLoading = repView ? salesTrackingLoading : accountOrdersLoading;
+	            const headerOrdersError = repView ? salesTrackingError : accountOrdersError;
+	            const headerOrdersLastSyncedAt = repView
+	              ? (typeof salesTrackingLastUpdated === "number" && salesTrackingLastUpdated > 0
+	                  ? new Date(salesTrackingLastUpdated).toISOString()
+	                  : null)
+	              : accountOrdersSyncedAt;
+	            const headerRefreshOrders = repView ? refreshSalesRepOrdersForHeader : loadAccountOrders;
+	            return (
+	          <Header
+	            user={user}
+	            onLogin={handleLogin}
+	            onLogout={handleLogout}
+	            cartItems={totalCartItems}
             onSearch={handleSearch}
             onCreateAccount={handleCreateAccount}
             onCartClick={() => setCheckoutOpen(true)}
@@ -10703,21 +10802,23 @@ export default function App() {
               );
               setPostLoginHold(true);
             }}
-            onUserUpdated={(next) => setUser(next as User)}
-            accountOrders={accountOrders}
-            accountOrdersLoading={accountOrdersLoading}
-            accountOrdersError={accountOrdersError}
-            ordersLastSyncedAt={accountOrdersSyncedAt}
-            onRefreshOrders={loadAccountOrders}
-            showCanceledOrders={showCanceledOrders}
-            onToggleShowCanceled={toggleShowCanceledOrders}
-            accountModalRequest={accountModalRequest}
-            onBuyOrderAgain={handleBuyOrderAgain}
-            onCancelOrder={handleCancelOrder}
-            referralCodes={referralCodesForHeader}
-            catalogLoading={catalogLoading}
-          />
-        )}
+	            onUserUpdated={(next) => setUser(next as User)}
+	            accountOrders={headerOrders}
+	            accountOrdersLoading={headerOrdersLoading}
+	            accountOrdersError={headerOrdersError}
+	            ordersLastSyncedAt={headerOrdersLastSyncedAt}
+	            onRefreshOrders={headerRefreshOrders}
+	            showCanceledOrders={showCanceledOrders}
+	            onToggleShowCanceled={toggleShowCanceledOrders}
+	            accountModalRequest={accountModalRequest}
+	            onBuyOrderAgain={repView ? undefined : handleBuyOrderAgain}
+	            onCancelOrder={repView ? undefined : handleCancelOrder}
+	            referralCodes={referralCodesForHeader}
+	            catalogLoading={catalogLoading}
+	          />
+	            );
+	          })()
+	        )}
 
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}

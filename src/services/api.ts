@@ -3,6 +3,7 @@ import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
+  const allowCrossOrigin = String((import.meta as any).env?.VITE_ALLOW_CROSS_ORIGIN_API || '').toLowerCase() === 'true';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -18,7 +19,28 @@ export const API_BASE_URL = (() => {
   }
 
   const normalized = configured.replace(/\/+$/, '');
-  return normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
+  const normalizedWithApi = normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
+
+  // Guardrail: in production builds, default to same-origin to keep a single bundle portable
+  // across staging/prod domains. Allow explicit cross-origin only when opted-in.
+  if (import.meta.env.PROD && !allowCrossOrigin && typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      if (/^https?:\/\//i.test(normalizedWithApi)) {
+        const parsed = new URL(normalizedWithApi);
+        const current = new URL(window.location.origin);
+        if (parsed.origin !== current.origin) {
+          if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[API] Ignoring cross-origin VITE_API_URL in production bundle; defaulting to same-origin /api');
+          }
+          return `${window.location.origin}/api`;
+        }
+      }
+    } catch {
+      // If parsing fails, fall through to returning the configured value.
+    }
+  }
+
+  return normalizedWithApi;
 })();
 
 // Helper function to get auth token
@@ -357,6 +379,116 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getReportSettings: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
+      method: 'GET',
+    });
+  },
+  setSalesBySalesRepCsvDownloadedAt: async (downloadedAt: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
+      method: 'PUT',
+      body: JSON.stringify({ salesBySalesRepCsvDownloadedAt: downloadedAt }),
+    });
+  },
+};
+
+type CheckoutIdempotencyRecord = {
+  key: string;
+  fingerprint: string;
+  createdAt: number;
+};
+
+const CHECKOUT_IDEMPOTENCY_STORAGE_KEY = 'peppro_checkout_idempotency_v1';
+const CHECKOUT_IDEMPOTENCY_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+const generateIdempotencyKey = () => {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+};
+
+const safeReadCheckoutIdempotencyRecord = (): CheckoutIdempotencyRecord | null => {
+  try {
+    const raw = sessionStorage.getItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CheckoutIdempotencyRecord>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.key !== 'string' || !parsed.key.trim()) return null;
+    if (typeof parsed.fingerprint !== 'string' || !parsed.fingerprint.trim()) return null;
+    if (typeof parsed.createdAt !== 'number' || !Number.isFinite(parsed.createdAt)) return null;
+    return { key: parsed.key, fingerprint: parsed.fingerprint, createdAt: parsed.createdAt };
+  } catch {
+    return null;
+  }
+};
+
+const safeWriteCheckoutIdempotencyRecord = (record: CheckoutIdempotencyRecord) => {
+  try {
+    sessionStorage.setItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+};
+
+const clearCheckoutIdempotencyRecord = () => {
+  try {
+    sessionStorage.removeItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const buildOrderFingerprint = (payload: {
+  items: any[];
+  total: number;
+  referralCode?: string;
+  shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
+  taxTotal?: number | null;
+}) => {
+  const normalizedItems = Array.isArray(payload.items)
+    ? payload.items
+      .map((item, index) => ({
+        productId: item?.productId ?? item?.id ?? item?.sku ?? `item-${index}`,
+        variationId: item?.variationId ?? item?.variantId ?? item?.variation?.id ?? null,
+        quantity: Number(item?.quantity) || 0,
+        price: Number(item?.price) || 0,
+      }))
+      .sort((a, b) => `${a.productId}:${a.variationId ?? ''}`.localeCompare(`${b.productId}:${b.variationId ?? ''}`))
+    : [];
+
+  const shippingAddress = payload.shipping?.address || null;
+  const shippingPostalCode = shippingAddress?.postalCode || shippingAddress?.postcode || null;
+  const shippingCountry = shippingAddress?.country || null;
+  const shippingState = shippingAddress?.state || null;
+
+  return JSON.stringify({
+    items: normalizedItems,
+    total: Number(payload.total) || 0,
+    referralCode: payload.referralCode || null,
+    taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
+    shipping: {
+      postalCode: shippingPostalCode,
+      country: shippingCountry,
+      state: shippingState,
+      shippingTotal: payload.shipping?.shippingTotal ?? null,
+    },
+  });
+};
+
+const getOrCreateCheckoutIdempotencyKey = (fingerprint: string) => {
+  const now = Date.now();
+  const existing = safeReadCheckoutIdempotencyRecord();
+  if (existing && existing.fingerprint === fingerprint && now - existing.createdAt < CHECKOUT_IDEMPOTENCY_TTL_MS) {
+    return existing.key;
+  }
+  const key = generateIdempotencyKey();
+  safeWriteCheckoutIdempotencyRecord({ key, fingerprint, createdAt: now });
+  return key;
 };
 
 // Orders API
@@ -375,8 +507,20 @@ export const ordersAPI = {
     },
     taxTotal?: number | null,
   ) => {
-    return fetchWithAuth(`${API_BASE_URL}/orders/`, {
+    const fingerprint = buildOrderFingerprint({
+      items,
+      total,
+      referralCode,
+      shipping,
+      taxTotal,
+    });
+    const idempotencyKey = getOrCreateCheckoutIdempotencyKey(fingerprint);
+
+    const response = await fetchWithAuth(`${API_BASE_URL}/orders/`, {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': idempotencyKey,
+      },
       body: JSON.stringify({
         items,
         total,
@@ -388,6 +532,11 @@ export const ordersAPI = {
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),
     });
+
+    if (response && typeof response === 'object' && (response as any).success === true) {
+      clearCheckoutIdempotencyRecord();
+    }
+    return response;
   },
 
   estimateTotals: async (

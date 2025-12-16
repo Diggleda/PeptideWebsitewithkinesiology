@@ -71,8 +71,16 @@ const env = {
     // so default to 50mb to comfortably support ~25-35mb binary images.
     limit: process.env.BODY_LIMIT || '50mb',
   },
-  backendBuild: process.env.BACKEND_BUILD || 'v1.8.95',
+  backendBuild: process.env.BACKEND_BUILD || 'v1.9.09',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+  logPretty: process.env.LOG_PRETTY === 'true',
+  rateLimit: {
+    enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
+    windowSeconds: Math.max(10, Math.min(toNumber(process.env.RATE_LIMIT_WINDOW_SECONDS, 60), 10 * 60)),
+    maxRequests: Math.max(30, Math.min(toNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 300), 5000)),
+    maxRequestsExpensive: Math.max(10, Math.min(toNumber(process.env.RATE_LIMIT_MAX_REQUESTS_EXPENSIVE, 80), 1000)),
+    maxRequestsAuth: Math.max(5, Math.min(toNumber(process.env.RATE_LIMIT_MAX_REQUESTS_AUTH, 40), 500)),
+  },
   wooCommerce: {
     storeUrl: process.env.WC_STORE_URL || '',
     consumerKey: process.env.WC_CONSUMER_KEY || '',
@@ -172,6 +180,7 @@ const env = {
     },
   },
   orderSync: {
+    enabled: process.env.ORDER_SYNC_ENABLED !== 'false',
     // Background task to keep MySQL in sync with WooCommerce/local orders
     intervalMs: toNumber(process.env.ORDER_SYNC_INTERVAL_MS, 5 * 60 * 1000),
   },

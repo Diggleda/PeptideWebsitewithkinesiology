@@ -6,6 +6,15 @@ const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
 const { startOrderSyncJob } = require('./services/orderService');
 
+const assertSecureRuntimeConfig = () => {
+  if (env.nodeEnv !== 'production') {
+    return;
+  }
+  if (!process.env.JWT_SECRET || env.jwtSecret === 'your-secret-key-change-in-production') {
+    throw new Error('JWT_SECRET must be set to a strong value in production');
+  }
+};
+
 const isPortAvailable = async (port) => new Promise((resolve) => {
   const tester = net.createServer()
     .once('error', () => resolve(false))
@@ -30,6 +39,7 @@ const findAvailablePort = async (startPort, attempts = 5) => {
 
 const start = async () => {
   try {
+    assertSecureRuntimeConfig();
     await bootstrap();
 
     let port = env.port;

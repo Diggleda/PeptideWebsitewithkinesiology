@@ -3,8 +3,12 @@ const orderService = require('../services/orderService');
 
 const createOrder = async (req, res, next) => {
   try {
+    const idempotencyKey = typeof req.get === 'function'
+      ? (req.get('idempotency-key') || '').trim()
+      : '';
     const result = await orderService.createOrder({
       userId: req.user.id,
+      idempotencyKey: idempotencyKey || null,
       items: req.body.items,
       total: req.body.total,
       shippingAddress: req.body.shippingAddress,

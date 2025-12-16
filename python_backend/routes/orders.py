@@ -50,13 +50,19 @@ def list_orders():
 @require_auth
 def list_orders_for_sales_rep():
     def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role not in ("sales_rep", "rep", "admin"):
+            err = ValueError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
         sales_rep_id = g.current_user.get("id")
         # Optional override: allow explicit salesRepId query param for admins
         override = request.args.get("salesRepId") or None
-        if override:
+        if override and role == "admin":
             sales_rep_id = override
         force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
-        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=True, force=force)
+        include_doctors = (request.args.get("includeDoctors") or "").strip().lower() not in ("0", "false", "no")
+        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=include_doctors, force=force)
 
     return handle_action(action)
 
@@ -65,6 +71,11 @@ def list_orders_for_sales_rep():
 @require_auth
 def get_sales_rep_order_detail(order_id: str):
     def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role not in ("sales_rep", "rep", "admin"):
+            err = ValueError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
         sales_rep_id = g.current_user.get("id")
         return order_service.get_sales_rep_order_detail(order_id, sales_rep_id)
 

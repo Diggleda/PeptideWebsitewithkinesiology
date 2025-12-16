@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const crypto = require('crypto');
 const { router: paymentRoutes, handleStripeWebhook } = require('./routes/paymentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orderRoutes');
@@ -15,6 +16,8 @@ const contactRoutes = require('./routes/contactRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
+const { requestContext } = require('./config/requestContext');
+const { rateLimit } = require('./middleware/rateLimit');
 
 const sanitizePublicMessage = (message) => {
   if (!message || typeof message !== 'string') {
@@ -37,6 +40,53 @@ const sanitizePublicMessage = (message) => {
   output = output.replace(/\bstore\s+store\b/gi, 'store');
   output = output.replace(/\bpayment provider\s+payment provider\b/gi, 'payment provider');
   return output;
+};
+
+const generateRequestId = () => {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = crypto.randomBytes(16);
+  return bytes.toString('hex');
+};
+
+const normalizeRequestId = (value) => {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/^[a-zA-Z0-9._-]{1,200}$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+};
+
+const defaultCodeForStatus = (status) => {
+  switch (status) {
+    case 400:
+      return 'BAD_REQUEST';
+    case 401:
+      return 'UNAUTHORIZED';
+    case 403:
+      return 'FORBIDDEN';
+    case 404:
+      return 'NOT_FOUND';
+    case 409:
+      return 'CONFLICT';
+    case 413:
+      return 'PAYLOAD_TOO_LARGE';
+    case 415:
+      return 'UNSUPPORTED_MEDIA_TYPE';
+    case 422:
+      return 'UNPROCESSABLE_ENTITY';
+    case 429:
+      return 'RATE_LIMITED';
+    default:
+      return status >= 500 ? 'INTERNAL_ERROR' : 'ERROR';
+  }
 };
 
 const buildCorsOptions = () => {
@@ -98,8 +148,37 @@ const buildCorsOptions = () => {
 const createApp = () => {
   const app = express();
 
+  app.use((req, res, next) => {
+    const requestId = normalizeRequestId(req.headers['x-request-id']) || generateRequestId();
+    res.setHeader('X-Request-Id', requestId);
+    req.requestId = requestId;
+    requestContext.run({ requestId }, () => next());
+  });
+
+  app.use((req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => {
+      if (payload && typeof payload === 'object' && !Array.isArray(payload) && 'error' in payload) {
+        const status = res.statusCode || 500;
+        const currentCode = payload.code;
+        const nextPayload = {
+          ...payload,
+          requestId: payload.requestId ?? req.requestId ?? null,
+          code: typeof currentCode === 'string' && currentCode.trim()
+            ? currentCode
+            : defaultCodeForStatus(status),
+        };
+        return originalJson(nextPayload);
+      }
+      return originalJson(payload);
+    };
+    next();
+  });
+
   const corsOptions = buildCorsOptions();
   app.use(cors(corsOptions));
+
+  app.use(rateLimit);
 
   // Stripe webhook needs the raw body for signature verification.
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
@@ -146,10 +225,21 @@ const createApp = () => {
   app.use('/api/settings', settingsRoutes);
   app.use('/api', systemRoutes);
 
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+  });
+
   app.use((err, req, res, _next) => {
-    logger.error({ err, path: req.path }, 'Unhandled application error');
-    res.status(err.status || 500).json({
-      error: sanitizePublicMessage(err.message || 'Internal server error'),
+    const status = Number.isFinite(err?.status) ? err.status : 500;
+    const isProduction = env.nodeEnv === 'production';
+    const isClientError = status >= 400 && status < 500;
+    const exposeMessage = isClientError || !isProduction;
+    const publicMessage = exposeMessage ? err?.message : 'Internal server error';
+    logger.error({ err, path: req.path, status }, 'Unhandled application error');
+    res.status(status).json({
+      error: sanitizePublicMessage(publicMessage || 'Internal server error'),
+      code: typeof err?.code === 'string' ? err.code : undefined,
+      details: isClientError && err?.details !== undefined ? err.details : undefined,
     });
   });
 

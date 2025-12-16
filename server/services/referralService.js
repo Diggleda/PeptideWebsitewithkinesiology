@@ -16,8 +16,11 @@ const generateReferralCode = () => {
   throw new Error('Unable to generate unique referral code');
 };
 
-const applyReferralCredit = ({ referralCode, total, purchaserId }) => {
+const applyReferralCredit = ({ referralCode, total, purchaserId, orderId }) => {
   if (!referralCode) {
+    return null;
+  }
+  if (!Number.isFinite(total) || total <= 0) {
     return null;
   }
 
@@ -26,11 +29,21 @@ const applyReferralCredit = ({ referralCode, total, purchaserId }) => {
     return null;
   }
 
+  const creditedOrders = Array.isArray(referrer.referralOrdersCredited)
+    ? referrer.referralOrdersCredited.filter(Boolean).map(String)
+    : [];
+  if (orderId && creditedOrders.includes(String(orderId))) {
+    return null;
+  }
+
   const commission = Number.parseFloat((total * 0.05).toFixed(2));
   const updated = userRepository.update({
     ...referrer,
     referralCredits: (referrer.referralCredits || 0) + commission,
     totalReferrals: (referrer.totalReferrals || 0) + 1,
+    ...(orderId
+      ? { referralOrdersCredited: [...creditedOrders.slice(-999), String(orderId)] }
+      : {}),
   });
 
   if (!updated) {

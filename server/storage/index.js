@@ -10,6 +10,7 @@ const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
 const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
   shopEnabled: true,
   stripeMode: null,
+  salesBySalesRepCsvDownloadedAt: null,
 });
 
 const initStorage = () => {

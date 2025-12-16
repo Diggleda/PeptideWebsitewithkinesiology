@@ -54,6 +54,15 @@ def _resolve_path(value: Optional[str], fallback: str) -> Path:
     return BASE_DIR / candidate
 
 
+def _to_bool(value: Optional[str], fallback: bool = False) -> bool:
+    if value is None:
+        return fallback
+    text = str(value).strip().lower()
+    if text == "":
+        return fallback
+    return text in ("1", "true", "yes", "on")
+
+
 @dataclass
 class AppConfig:
     node_env: str
@@ -100,7 +109,7 @@ def load_config() -> AppConfig:
         data_dir=_resolve_path(os.environ.get("DATA_DIR"), "server-data"),
         cors_allow_list=cors_allow_list,
         body_limit=os.environ.get("BODY_LIMIT", "1mb"),
-        backend_build=os.environ.get("BACKEND_BUILD", "v1.8.95"),
+        backend_build=os.environ.get("BACKEND_BUILD", "v1.9.09"),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
             "store_url": _s(os.environ.get("WC_STORE_URL")),
@@ -184,6 +193,9 @@ def load_config() -> AppConfig:
             "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE"), 8),
             "ssl": os.environ.get("MYSQL_SSL", "").lower() == "true",
             "timezone": os.environ.get("MYSQL_TIMEZONE", "Z"),
+            "connect_timeout": _to_int(os.environ.get("MYSQL_CONNECT_TIMEOUT_SECONDS"), 5),
+            "read_timeout": _to_int(os.environ.get("MYSQL_READ_TIMEOUT_SECONDS"), 15),
+            "write_timeout": _to_int(os.environ.get("MYSQL_WRITE_TIMEOUT_SECONDS"), 15),
         },
         integrations={
             "google_sheets_secret": os.environ.get("GOOGLE_SHEETS_WEBHOOK_SECRET", ""),

@@ -43,7 +43,11 @@ def init_storage(config) -> None:
     credit_ledger_store = _make_store(config, "credit-ledger.json", [])
     contact_form_store = _make_store(config, "contact-forms.json", [])
     contact_form_status_store = _make_store(config, "contact-form-statuses.json", {})
-    settings_store = _make_store(config, "settings.json", {"shopEnabled": True, "stripeMode": None})
+    settings_store = _make_store(
+        config,
+        "settings.json",
+        {"shopEnabled": True, "stripeMode": None, "salesBySalesRepCsvDownloadedAt": None},
+    )
 
     for store in (
         user_store,

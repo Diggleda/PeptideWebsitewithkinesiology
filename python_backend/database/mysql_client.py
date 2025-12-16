@@ -48,6 +48,9 @@ def _get_connection() -> pymysql.connections.Connection:
         autocommit=False,
         charset="utf8mb4",
         ssl=ssl_params,
+        connect_timeout=max(1, int(mysql_config.get("connect_timeout", 5) or 5)),
+        read_timeout=max(1, int(mysql_config.get("read_timeout", 15) or 15)),
+        write_timeout=max(1, int(mysql_config.get("write_timeout", 15) or 15)),
     )
 
     _thread_local.connection = connection

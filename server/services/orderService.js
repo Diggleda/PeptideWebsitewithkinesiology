@@ -11,8 +11,57 @@ const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
+const crypto = require('crypto');
 
-const sanitizeOrder = (order) => ({ ...order });
+const sanitizeOrder = (order) => {
+  if (!order || typeof order !== 'object') {
+    return order;
+  }
+  const { idempotencyKey: _idempotencyKey, ...rest } = order;
+  return { ...rest };
+};
+
+const inFlightOrders = new Map();
+
+const generateOrderId = () => {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+};
+
+const buildIdempotentOrderId = ({ userId, idempotencyKey }) => {
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${userId}:${idempotencyKey}`, 'utf8')
+    .digest('hex');
+  return `ord_${hash.slice(0, 24)}`;
+};
+
+const normalizeIdempotencyKey = (value) => {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/^[a-zA-Z0-9._-]{1,200}$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+};
+
+const buildReferralMessageFromOrder = (order) => {
+  if (!order?.referrerBonus?.referrerName) {
+    return null;
+  }
+  const commission = Number(order.referrerBonus?.commission);
+  if (!Number.isFinite(commission)) {
+    return null;
+  }
+  return `${order.referrerBonus.referrerName} earned $${commission.toFixed(2)} commission!`;
+};
 
 const normalizeId = (value) => {
   if (value === null || value === undefined) return null;
@@ -557,8 +606,10 @@ const calculateTaxFromRates = ({ rates, itemsSubtotal, shippingTotal }) => {
   return accumulatedTax;
 };
 
-const createOrder = async ({
+const createOrderInternal = async ({
   userId,
+  idempotencyKey,
+  orderId,
   items,
   total,
   referralCode,
@@ -609,7 +660,7 @@ const createOrder = async ({
 
   const now = new Date().toISOString();
   const order = {
-    id: Date.now().toString(),
+    id: orderId || generateOrderId(),
     userId,
     items,
     total: computedTotal,
@@ -623,12 +674,14 @@ const createOrder = async ({
     status: 'pending',
     createdAt: now,
     physicianCertificationAccepted: Boolean(physicianCertification),
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 
   const referralResult = referralService.applyReferralCredit({
     referralCode,
-    total,
+    total: computedTotal,
     purchaserId: userId,
+    orderId: order.id,
   });
 
   if (referralResult) {
@@ -788,6 +841,82 @@ const createOrder = async ({
       : null,
     integrations,
   };
+};
+
+const createOrder = async ({
+  userId,
+  idempotencyKey,
+  items,
+  total,
+  referralCode,
+  shippingAddress,
+  shippingEstimate,
+  shippingTotal,
+  physicianCertification,
+  taxTotal,
+}) => {
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+  if (idempotencyKey && !normalizedIdempotencyKey) {
+    const error = new Error('Invalid Idempotency-Key header');
+    error.status = 400;
+    error.code = 'INVALID_IDEMPOTENCY_KEY';
+    throw error;
+  }
+
+  if (!normalizedIdempotencyKey) {
+    return createOrderInternal({
+      userId,
+      idempotencyKey: null,
+      orderId: null,
+      items,
+      total,
+      referralCode,
+      shippingAddress,
+      shippingEstimate,
+      shippingTotal,
+      physicianCertification,
+      taxTotal,
+    });
+  }
+
+  const orderId = buildIdempotentOrderId({ userId, idempotencyKey: normalizedIdempotencyKey });
+  const existingOrder = orderRepository.findById(orderId)
+    || orderRepository.findByUserIdAndIdempotencyKey(userId, normalizedIdempotencyKey);
+  if (existingOrder) {
+    return {
+      success: true,
+      order: sanitizeOrder(existingOrder),
+      message: buildReferralMessageFromOrder(existingOrder),
+      integrations: existingOrder.integrationDetails || {},
+    };
+  }
+
+  const inFlightKey = `${userId}:${normalizedIdempotencyKey}`;
+  const existingPromise = inFlightOrders.get(inFlightKey);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const promise = createOrderInternal({
+    userId,
+    idempotencyKey: normalizedIdempotencyKey,
+    orderId,
+    items,
+    total,
+    referralCode,
+    shippingAddress,
+    shippingEstimate,
+    shippingTotal,
+    physicianCertification,
+    taxTotal,
+  });
+
+  inFlightOrders.set(inFlightKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightOrders.delete(inFlightKey);
+  }
 };
 
 const allowZeroTaxFallback = process.env.ALLOW_ZERO_TAX_FALLBACK !== 'false';
@@ -1699,6 +1828,10 @@ const syncOrdersToMySql = async () => {
 };
 
 const startOrderSyncJob = () => {
+  if (env.orderSync?.enabled === false) {
+    logger.info('Background order sync disabled by ORDER_SYNC_ENABLED=false');
+    return;
+  }
   if (orderSyncTimer) {
     return;
   }

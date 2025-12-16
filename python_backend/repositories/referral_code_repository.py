@@ -4,20 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from ..services import get_config
-from ..database import mysql_client
-from .. import storage
-
-
-def _using_mysql() -> bool:
-    return bool(get_config().mysql.get("enabled"))
-
-
-def _get_store():
-    store = storage.referral_code_store
-    if store is None:
-        raise RuntimeError("referral_code_store is not initialised")
-    return store
+from . import sales_rep_repository
 
 
 def _normalize_code(code: str) -> str:
@@ -36,123 +23,98 @@ def _ensure_defaults(record: Dict) -> Dict:
     return normalized
 
 
-def _load() -> List[Dict]:
-    if _using_mysql():
-        rows = mysql_client.fetch_all("SELECT * FROM referral_codes")
-        return [_row_to_record(row) for row in rows]
-    return [_ensure_defaults(record) for record in _get_store().read()]
+_REP_CODE_PREFIX = "rep-code-"
 
 
-def _save(records: List[Dict]) -> None:
-    if _using_mysql():
-        raise RuntimeError("Direct save not available with MySQL backend")
-    _get_store().write([_ensure_defaults(record) for record in records])
+def _rep_code_id(rep_id: str) -> str:
+    return f"{_REP_CODE_PREFIX}{rep_id}"
+
+
+def _rep_id_from_code_id(code_id: str) -> Optional[str]:
+    if not code_id:
+        return None
+    raw = str(code_id).strip()
+    if raw.startswith(_REP_CODE_PREFIX):
+        return raw[len(_REP_CODE_PREFIX) :] or None
+    return raw or None
+
+
+def _rep_to_code_record(rep: Optional[Dict]) -> Optional[Dict]:
+    if not rep:
+        return None
+    rep_id = rep.get("id")
+    if not rep_id:
+        return None
+    code = _normalize_code(rep.get("salesCode") or rep.get("sales_code") or "")
+    if not code:
+        return None
+
+    created_at = rep.get("createdAt") or rep.get("created_at") or _now()
+    updated_at = rep.get("updatedAt") or rep.get("updated_at") or created_at
+    issued_at = rep.get("updatedAt") or rep.get("updated_at") or created_at
+    return _ensure_defaults(
+        {
+            "id": _rep_code_id(str(rep_id)),
+            "salesRepId": str(rep_id),
+            "code": code,
+            "status": "assigned",
+            "issuedAt": issued_at,
+            "updatedAt": updated_at,
+            "createdAt": created_at,
+            "referrerDoctorId": None,
+            "referralId": None,
+            "doctorId": None,
+            "redeemedAt": None,
+            "history": [
+                {
+                    "action": "assigned",
+                    "at": issued_at or created_at,
+                    "by": str(rep_id),
+                    "status": "assigned",
+                    "source": "sales_rep",
+                }
+            ],
+        }
+    )
 
 
 def get_all() -> List[Dict]:
-    return _load()
+    records: List[Dict] = []
+    for rep in sales_rep_repository.get_all():
+        record = _rep_to_code_record(rep)
+        if record:
+            records.append(record)
+    return records
 
 
 def find_by_id(record_id: str) -> Optional[Dict]:
-    if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM referral_codes WHERE id = %(id)s", {"id": record_id})
-        return _row_to_record(row)
-    return next((record for record in _load() if record.get("id") == record_id), None)
+    rep_id = _rep_id_from_code_id(record_id)
+    if not rep_id:
+        return None
+    rep = sales_rep_repository.find_by_id(rep_id)
+    return _rep_to_code_record(rep)
 
 
 def find_by_code(code: str) -> Optional[Dict]:
     candidate = _normalize_code(code)
-    if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM referral_codes WHERE code = %(code)s", {"code": candidate})
-        return _row_to_record(row)
-    return next((record for record in _load() if record.get("code") == candidate), None)
+    if not candidate:
+        return None
+    rep = sales_rep_repository.find_by_sales_code(candidate)
+    return _rep_to_code_record(rep)
 
 
 def find_available_by_rep(sales_rep_id: str) -> List[Dict]:
-    if _using_mysql():
-        rows = mysql_client.fetch_all(
-            "SELECT * FROM referral_codes WHERE sales_rep_id = %(sales_rep_id)s AND status = 'available'",
-            {"sales_rep_id": sales_rep_id},
-        )
-        return [_row_to_record(row) for row in rows]
-    return [
-        record
-        for record in _load()
-        if record.get("salesRepId") == sales_rep_id and record.get("status") == "available"
-    ]
+    rep = sales_rep_repository.find_by_id(sales_rep_id)
+    record = _rep_to_code_record(rep)
+    return [record] if record else []
 
 
 def insert(record: Dict) -> Dict:
-    if _using_mysql():
-        normalized = _ensure_defaults(record)
-        params = _to_db_params(normalized)
-        mysql_client.execute(
-            """
-            INSERT INTO referral_codes (
-                id, sales_rep_id, referrer_doctor_id, referral_id, doctor_id,
-                code, status, issued_at, redeemed_at, history, created_at, updated_at
-            ) VALUES (
-                %(id)s, %(sales_rep_id)s, %(referrer_doctor_id)s, %(referral_id)s, %(doctor_id)s,
-                %(code)s, %(status)s, %(issued_at)s, %(redeemed_at)s, %(history)s, %(created_at)s, %(updated_at)s
-            )
-            ON DUPLICATE KEY UPDATE
-                sales_rep_id = VALUES(sales_rep_id),
-                referrer_doctor_id = VALUES(referrer_doctor_id),
-                referral_id = VALUES(referral_id),
-                doctor_id = VALUES(doctor_id),
-                status = VALUES(status),
-                issued_at = VALUES(issued_at),
-                redeemed_at = VALUES(redeemed_at),
-                history = VALUES(history),
-                updated_at = VALUES(updated_at)
-            """,
-            params,
-        )
-        return find_by_id(normalized["id"])
-
-    records = _load()
-    normalized = _ensure_defaults(record)
-    normalized["updatedAt"] = _now()
-    records.append(normalized)
-    _save(records)
-    return normalized
+    raise RuntimeError("Referral codes are stored on sales reps (sales_reps.sales_code); update the sales rep instead.")
 
 
 def update(record: Dict) -> Optional[Dict]:
-    if _using_mysql():
-        existing = find_by_id(record.get("id"))
-        if not existing:
-            return None
-        merged = _ensure_defaults({**existing, **record, "updatedAt": _now()})
-        params = _to_db_params(merged)
-        mysql_client.execute(
-            """
-            UPDATE referral_codes
-            SET
-                sales_rep_id = %(sales_rep_id)s,
-                referrer_doctor_id = %(referrer_doctor_id)s,
-                referral_id = %(referral_id)s,
-                doctor_id = %(doctor_id)s,
-                code = %(code)s,
-                status = %(status)s,
-                issued_at = %(issued_at)s,
-                redeemed_at = %(redeemed_at)s,
-                history = %(history)s,
-                updated_at = %(updated_at)s
-            WHERE id = %(id)s
-            """,
-            params,
-        )
-        return find_by_id(merged["id"])
-
-    records = _load()
-    for index, existing in enumerate(records):
-        if existing.get("id") == record.get("id"):
-            updated = _ensure_defaults({**existing, **record, "updatedAt": _now()})
-            records[index] = updated
-            _save(records)
-            return updated
-    return None
+    raise RuntimeError("Referral codes are stored on sales reps (sales_reps.sales_code); update the sales rep instead.")
 
 
 def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:

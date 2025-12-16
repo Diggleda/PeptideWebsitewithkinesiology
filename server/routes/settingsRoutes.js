@@ -1,6 +1,13 @@
 const { Router } = require('express');
 const { authenticate } = require('../middleware/authenticate');
-const { getShopEnabled, setShopEnabled, getStripeMode, setStripeMode } = require('../services/settingsService');
+const {
+  getShopEnabled,
+  setShopEnabled,
+  getStripeMode,
+  setStripeMode,
+  getSalesBySalesRepCsvDownloadedAt,
+  setSalesBySalesRepCsvDownloadedAt,
+} = require('../services/settingsService');
 const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
@@ -58,6 +65,17 @@ router.get('/stripe', async (_req, res) => {
     publishableKeyTest: env.stripe?.testPublishableKey || '',
     mysqlEnabled: mysqlClient.isEnabled(),
   });
+});
+
+router.get('/reports', authenticate, requireAdmin, async (_req, res) => {
+  const downloadedAt = await getSalesBySalesRepCsvDownloadedAt();
+  res.json({ salesBySalesRepCsvDownloadedAt: downloadedAt });
+});
+
+router.put('/reports', authenticate, requireAdmin, async (req, res) => {
+  const downloadedAt = req.body?.salesBySalesRepCsvDownloadedAt || req.body?.downloadedAt;
+  const updated = await setSalesBySalesRepCsvDownloadedAt(downloadedAt);
+  res.json({ salesBySalesRepCsvDownloadedAt: updated });
 });
 
 router.put('/stripe', authenticate, requireAdmin, async (req, res) => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import json
 from typing import Any, Dict, Optional
+from datetime import datetime, timezone
 
 from ..database import mysql_client
 from ..services import get_config
@@ -14,6 +15,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
     # "test" | "live" | None (None = follow env)
     "stripeMode": None,
+    # ISO timestamp (admin report)
+    "salesBySalesRepCsvDownloadedAt": None,
 }
 
 _STRIPE_SECRET_PREFIXES = {
@@ -69,10 +72,32 @@ def _normalize_mode(value: Any) -> Optional[str]:
     return None
 
 
+def _normalize_iso_timestamp(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.astimezone(timezone.utc)
+        return parsed.isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return None
+
+
 def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
     merged["stripeMode"] = _normalize_mode(merged.get("stripeMode"))
+    merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
+        merged.get("salesBySalesRepCsvDownloadedAt")
+    )
     return merged
 
 
@@ -93,9 +118,12 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
         logger.debug("Settings SQL read skipped (MySQL disabled)")
         return None
     try:
+        keys = list(DEFAULT_SETTINGS.keys())
+        placeholders = ",".join([f"%({f'k{i+1}'})s" for i in range(len(keys))])
+        params = {f"k{i+1}": keys[i] for i in range(len(keys))}
         rows = mysql_client.fetch_all(
-            "SELECT `key`, value_json FROM settings WHERE `key` IN (%(k1)s,%(k2)s)",
-            {"k1": "shopEnabled", "k2": "stripeMode"},
+            f"SELECT `key`, value_json FROM settings WHERE `key` IN ({placeholders})",
+            params,
         )
         if not rows or not isinstance(rows, list):
             return None
@@ -143,7 +171,9 @@ def _persist_to_sql(settings: Dict[str, Any]) -> None:
                 """
                 INSERT INTO settings (`key`, value_json, updated_at)
                 VALUES (%(key)s, %(value)s, NOW())
-                ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()
+                ON DUPLICATE KEY UPDATE
+                  updated_at = IF(value_json <=> VALUES(value_json), updated_at, NOW()),
+                  value_json = VALUES(value_json)
                 """,
                 {"key": key, "value": value_json},
             )
