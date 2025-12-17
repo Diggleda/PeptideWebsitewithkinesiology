@@ -502,6 +502,7 @@ export const ordersAPI = {
       estimate?: any;
       shippingTotal?: number | null;
     },
+    expectedShipmentWindow?: string | null,
     options?: {
       physicianCertification?: boolean;
     },
@@ -528,6 +529,7 @@ export const ordersAPI = {
         shippingAddress: shipping?.address,
         shippingEstimate: shipping?.estimate,
         shippingTotal: shipping?.shippingTotal ?? null,
+        expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),

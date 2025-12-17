@@ -17,6 +17,7 @@ export interface ProductVariant {
   originalPrice?: number;
   sku?: string;
   inStock: boolean;
+  stockQuantity?: number | null;
   attributes: ProductVariantAttribute[];
   image?: string;
   description?: string;
@@ -41,6 +42,7 @@ export interface Product {
   image: string;
   images: string[];
   inStock: boolean;
+  stockQuantity?: number | null;
   prescription: boolean;
   dosage: string;
   manufacturer: string;

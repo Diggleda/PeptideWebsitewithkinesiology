@@ -213,6 +213,7 @@ interface WooVariation {
   price?: string;
   regular_price?: string;
   stock_status?: string;
+  stock_quantity?: number | null;
   image?: WooImage | null;
   attributes?: WooVariationAttribute[];
   description?: string | null;
@@ -230,6 +231,7 @@ interface WooProduct {
   images?: WooImage[];
   categories?: WooCategory[];
   stock_status?: string;
+  stock_quantity?: number | null;
   average_rating?: string;
   rating_count?: number;
   sku?: string;
@@ -318,6 +320,7 @@ interface AccountOrderSummary {
   wooOrderNumber?: string | null;
   wooOrderId?: string | null;
   cancellationId?: string | null;
+  expectedShipmentWindow?: string | null;
 }
 
 const humanizeAccountOrderStatus = (status?: string | null): string => {
@@ -466,7 +469,7 @@ const describeSalesOrderStatus = (
   const hasEta = typeof eta === "string" && eta.trim().length > 0;
 
   if (normalized === "shipped") {
-    if (tracking && !hasEta) return "Shipping Soon";
+    if (tracking && !hasEta) return "Processing";
     return tracking ? "Shipped" : "Shipped";
   }
   if (
@@ -486,19 +489,19 @@ const describeSalesOrderStatus = (
   }
 
   if (tracking && !hasEta) {
-    return "Shipping Soon";
+    return "Processing";
   }
   if (tracking && hasEta) {
     return "Shipped";
   }
   if (normalized === "processing") {
-    return "Processing";
+    return "Order Received";
   }
   if (normalized === "completed" || normalized === "complete") {
     return "Completed";
   }
   if (normalized === "awaiting_shipment" || normalized === "awaiting shipment") {
-    return "Processing";
+    return "Order Received";
   }
 
   if (!raw) return "Pending";
@@ -1277,7 +1280,9 @@ const CATALOG_EMPTY_STATE_GRACE_MS = 4500;
 const CATALOG_DEBUG =
   String((import.meta as any).env?.VITE_CATALOG_DEBUG || "").toLowerCase() ===
   "true";
-const FRONTEND_BUILD_ID = "v1.9.09";
+const FRONTEND_BUILD_ID =
+  String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
+  "v1.9.11";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -1300,13 +1305,27 @@ const VARIANT_PREFETCH_CONCURRENCY = (() => {
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.min(Math.max(parsed, 1), 12);
   }
-  return 6;
+  return 1;
 })();
 
-const BACKGROUND_VARIANT_PREFETCH_ENABLED =
-  String((import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH || "")
-    .toLowerCase()
-    .trim() === "true";
+// Disabled by default in production to avoid hammering the store/backend when Woo is degraded.
+// Enable only when explicitly opted-in via env.
+const BACKGROUND_VARIANT_PREFETCH_ENABLED = (() => {
+  const enabled =
+    String((import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH || "")
+      .toLowerCase()
+      .trim() === "true";
+  if (!enabled) return false;
+  // Extra guardrail: require explicit opt-in in production builds.
+  if ((import.meta as any).env?.PROD) {
+    return (
+      String((import.meta as any).env?.VITE_ALLOW_BACKGROUND_VARIANT_PREFETCH || "")
+        .toLowerCase()
+        .trim() === "true"
+    );
+  }
+  return true;
+})();
 const BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_BACKGROUND_VARIANT_PREFETCH_START_DELAY_MS || "",
@@ -1336,7 +1355,18 @@ const VARIANT_POLL_INTERVAL_MS = (() => {
   if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
-  return 3500;
+  return 30000;
+})();
+
+const REFERRAL_BACKGROUND_MIN_INTERVAL_MS = (() => {
+  const raw = String(
+    (import.meta as any).env?.VITE_REFERRAL_BACKGROUND_MIN_INTERVAL_MS || "",
+  ).trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 30_000;
 })();
 
 const IMAGE_PREFETCH_ENABLED =
@@ -1858,6 +1888,17 @@ const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
 ): Product => {
+  const parseStockQuantity = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+    return Math.floor(parsed);
+  };
+
   const imageSources = (product.images ?? [])
     .map((image) => normalizeWooImageUrl(image?.src))
     .filter((src): src is string => Boolean(src));
@@ -2011,6 +2052,7 @@ const mapWooProductToProduct = (
           originalPrice && originalPrice > price ? originalPrice : undefined,
         sku: variation.sku?.trim() || undefined,
         inStock: (variation.stock_status ?? "").toLowerCase() !== "outofstock",
+        stockQuantity: parseStockQuantity((variation as any)?.stock_quantity),
         attributes,
         image: normalizeWooImageUrl(variation.image?.src) ?? undefined,
         description: stripHtml(variation.description ?? "") || undefined,
@@ -2103,6 +2145,7 @@ const mapWooProductToProduct = (
     inStock: hasVariants
       ? variantList.some((variant) => variant.inStock)
       : (product.stock_status ?? "").toLowerCase() !== "outofstock",
+    stockQuantity: parseStockQuantity((product as any)?.stock_quantity),
     prescription: false,
     dosage: hasVariants
       ? `${variantList.length} option${variantList.length === 1 ? "" : "s"} available`
@@ -2147,6 +2190,7 @@ const toCardProduct = (product: Product): CardProduct => {
           basePrice: variant.price,
           image: variant.image,
           weightOz: variant.weightOz ?? null,
+          stockQuantity: variant.stockQuantity ?? null,
         }))
       : needsVariantSelection
         ? [
@@ -2156,6 +2200,7 @@ const toCardProduct = (product: Product): CardProduct => {
               basePrice: product.price,
               image: product.image,
               weightOz: product.weightOz ?? null,
+              stockQuantity: null,
             },
           ]
         : [
@@ -2165,6 +2210,7 @@ const toCardProduct = (product: Product): CardProduct => {
               basePrice: product.price,
               image: product.image,
               weightOz: product.weightOz ?? null,
+              stockQuantity: product.stockQuantity ?? null,
             },
           ];
 
@@ -2175,6 +2221,7 @@ const toCardProduct = (product: Product): CardProduct => {
     image: baseImage,
     images: baseImages,
     inStock: product.inStock,
+    stockQuantity: product.stockQuantity ?? null,
     manufacturer: product.manufacturer,
     weightOz: product.weightOz ?? null,
     variations,
@@ -2415,6 +2462,8 @@ export default function App() {
   const variationRetryRef = useRef<Map<number, { attempt: number; nextAt: number }>>(
     new Map(),
   );
+  const wooBackoffUntilRef = useRef(0);
+  const wooBackoffAttemptRef = useRef(0);
   const variantPrefetchActiveRef = useRef(0);
   const variantPrefetchQueueRef = useRef<Array<() => void>>([]);
   const variantPrefetchQueuedRef = useRef<Set<number>>(new Set());
@@ -2442,6 +2491,9 @@ export default function App() {
         return product;
       }
       if (!shouldForce && product.variants && product.variants.length > 0) {
+        return product;
+      }
+      if (!shouldForce && Date.now() < wooBackoffUntilRef.current) {
         return product;
       }
 
@@ -2560,6 +2612,8 @@ export default function App() {
           return product;
         }
         variationRetryRef.current.delete(wooId);
+        wooBackoffAttemptRef.current = 0;
+        wooBackoffUntilRef.current = 0;
         setCatalogProducts((prev) =>
           prev.map((item) => (item.id === product.id ? nextProduct : item)),
         );
@@ -2570,6 +2624,28 @@ export default function App() {
       } catch (error) {
         variationFetchInFlightRef.current.delete(wooId);
         bumpRetry();
+        const status =
+          typeof (error as any)?.status === "number" ? (error as any).status : null;
+        const message =
+          typeof (error as any)?.message === "string" ? (error as any).message : "";
+        const shouldBackoff =
+          status === 429 ||
+          status === 500 ||
+          status === 502 ||
+          status === 503 ||
+          status === 504 ||
+          message === "Failed to fetch";
+        if (!shouldForce && shouldBackoff) {
+          wooBackoffAttemptRef.current += 1;
+          const attempt = Math.min(8, wooBackoffAttemptRef.current);
+          const delayMs = Math.min(5 * 60 * 1000, 2000 * Math.pow(2, attempt - 1));
+          wooBackoffUntilRef.current = Date.now() + delayMs;
+          console.warn("[Catalog] Woo backoff engaged", {
+            status,
+            attempt,
+            delayMs,
+          });
+        }
         console.warn("[Catalog] Failed to load variants for product", {
           productId: product.id,
           wooId,
@@ -2585,6 +2661,9 @@ export default function App() {
     (product: Product) => {
       const isVariable = (product.type ?? "").toLowerCase() === "variable";
       if (!isVariable || (product.variants && product.variants.length > 0)) {
+        return;
+      }
+      if (Date.now() < wooBackoffUntilRef.current) {
         return;
       }
       const wooId =
@@ -2613,6 +2692,15 @@ export default function App() {
       };
 
       variantPrefetchQueueRef.current.push(() => {
+        if (Date.now() < wooBackoffUntilRef.current) {
+          variantPrefetchActiveRef.current = Math.max(
+            0,
+            variantPrefetchActiveRef.current - 1,
+          );
+          variantPrefetchQueuedRef.current.delete(wooId);
+          startNext();
+          return;
+        }
         void ensureCatalogProductHasVariants(product)
           .catch(() => {})
           .finally(() => {
@@ -4455,6 +4543,7 @@ export default function App() {
     void fetchServerHealth();
   }, [user?.id, user?.role, postLoginHold, fetchServerHealth]);
   const referralRefreshInFlight = useRef(false);
+  const referralLastRefreshAtRef = useRef(0);
   const [adminActionState, setAdminActionState] = useState<{
     updatingReferral: string | null;
     error: string | null;
@@ -5885,6 +5974,19 @@ export default function App() {
         return;
       }
 
+      const shouldShowLoading = options?.showLoading ?? true;
+      const now = Date.now();
+      if (!shouldShowLoading) {
+        const last = referralLastRefreshAtRef.current;
+        if (last > 0 && now - last < REFERRAL_BACKGROUND_MIN_INTERVAL_MS) {
+          console.debug("[Referral] refreshReferralData throttled", {
+            sinceMs: now - last,
+            minIntervalMs: REFERRAL_BACKGROUND_MIN_INTERVAL_MS,
+          });
+          return;
+        }
+      }
+
       if (
         referralSummaryCooldownRef.current &&
         referralSummaryCooldownRef.current > Date.now()
@@ -5901,8 +6003,6 @@ export default function App() {
         return;
       }
 
-      const shouldShowLoading = options?.showLoading ?? true;
-
       if (referralRefreshInFlight.current) {
         if (shouldShowLoading) {
           setReferralDataLoading(true);
@@ -5911,6 +6011,7 @@ export default function App() {
       }
 
       referralRefreshInFlight.current = true;
+      referralLastRefreshAtRef.current = now;
 
       if (shouldShowLoading) {
         setReferralDataLoading(true);
@@ -6025,6 +6126,29 @@ export default function App() {
     [user, setUser, referralPollingSuppressed, hasAuthToken],
   );
 
+  const tracedRefreshReferralData = useCallback(
+    async (trigger: string, options?: { showLoading?: boolean }) => {
+      const userSnapshot = user
+        ? { id: user.id, role: user.role }
+        : { id: null, role: null };
+      const showLoading = options?.showLoading ?? true;
+      console.debug("[Referral] refreshReferralData invoke", {
+        trigger,
+        showLoading,
+        user: userSnapshot,
+        suppressed: referralPollingSuppressed,
+        postLoginHold,
+        ts: Date.now(),
+        stack:
+          typeof Error !== "undefined"
+            ? new Error("refreshReferralData stack").stack
+            : undefined,
+      });
+      return refreshReferralData(options);
+    },
+    [user, referralPollingSuppressed, postLoginHold, refreshReferralData],
+  );
+
   const handleManualProspectSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -6043,7 +6167,9 @@ export default function App() {
         });
         toast.success("Prospect added successfully.");
         closeManualProspectModal();
-        await refreshReferralData({ showLoading: false });
+        await tracedRefreshReferralData("manual-prospect-submit", {
+          showLoading: false,
+        });
       } catch (error: any) {
         console.error("[Referral] Manual prospect create failed", error);
         const message =
@@ -6058,7 +6184,7 @@ export default function App() {
     [
       manualProspectForm,
       closeManualProspectModal,
-      refreshReferralData,
+      tracedRefreshReferralData,
     ],
   );
 
@@ -6110,7 +6236,9 @@ export default function App() {
           referralId: referral.id,
         });
         toast.success(`Credited ${doctorName} $50`);
-        await refreshReferralData({ showLoading: false });
+        await tracedRefreshReferralData("manual-credit", {
+          showLoading: false,
+        });
       } catch (error: any) {
         console.error("[Referral] Manual credit failed", error);
         const message =
@@ -6122,7 +6250,7 @@ export default function App() {
         setCreditingReferralId(null);
       }
     },
-    [refreshReferralData],
+    [tracedRefreshReferralData],
   );
 
   const formatDate = useCallback((value?: string | null) => {
@@ -6853,7 +6981,9 @@ export default function App() {
 
     (async () => {
       if (!cancelled) {
-        await refreshReferralData({ showLoading: true });
+        await tracedRefreshReferralData("user-change-initial-load", {
+          showLoading: true,
+        });
       }
     })();
 
@@ -6906,18 +7036,20 @@ export default function App() {
 
     const refreshIfActive = () => {
       if (!cancelled) {
-        refreshReferralData({ showLoading: false });
+        tracedRefreshReferralData("visibility/focus", { showLoading: false });
       }
     };
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        refreshIfActive();
+        tracedRefreshReferralData("visibilitychange:visible", {
+          showLoading: false,
+        });
       }
     };
 
     const handleFocus = () => {
-      refreshIfActive();
+      tracedRefreshReferralData("window:focus", { showLoading: false });
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -6933,7 +7065,7 @@ export default function App() {
     user?.role,
     postLoginHold,
     referralPollingSuppressed,
-    refreshReferralData,
+    tracedRefreshReferralData,
   ]);
 
   useEffect(
@@ -7777,6 +7909,7 @@ export default function App() {
     shippingAddress: any;
     shippingRate: any;
     shippingTotal: number;
+    expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
   }) => {
@@ -7832,6 +7965,7 @@ export default function App() {
           estimate: options?.shippingRate,
           shippingTotal: options?.shippingTotal ?? null,
         },
+        options?.expectedShipmentWindow ?? null,
         {
           physicianCertification:
             options?.physicianCertificationAccepted === true,
@@ -7970,7 +8104,9 @@ export default function App() {
         notes: "",
       });
       setReferralSearchTerm("");
-      await refreshReferralData({ showLoading: true });
+      await tracedRefreshReferralData("doctor-referral-submit", {
+        showLoading: true,
+      });
     } catch (error: any) {
       console.warn("[Referral] Submission failed", error);
       setReferralStatusMessage({
@@ -8049,7 +8185,9 @@ export default function App() {
         }));
         await referralAPI.deleteManualProspect(referralId);
         toast.success("Manual prospect deleted.");
-        await refreshReferralData({ showLoading: false });
+        await tracedRefreshReferralData("manual-prospect-delete", {
+          showLoading: false,
+        });
       } catch (error: any) {
         console.error("[Referral] Manual prospect delete failed", error);
         const message =
@@ -8065,7 +8203,7 @@ export default function App() {
         }));
       }
     },
-    [refreshReferralData],
+    [tracedRefreshReferralData],
   );
 
   const renderDoctorDashboard = () => {
@@ -9690,7 +9828,7 @@ export default function App() {
                     return (
                       <section key={bucket.doctorId} className="lead-panel">
                         <div
-                          className="lead-panel-header cursor-pointer items-center"
+                          className="lead-panel-header sales-doctor-row cursor-pointer items-center"
                           role="button"
                           tabIndex={0}
                           onClick={() => toggleSalesDoctorCollapse(bucket.doctorId)}
@@ -9822,11 +9960,11 @@ export default function App() {
                             return (
                               <li
                                 key={order.id}
-                                className="lead-list-item cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
+                                className="lead-list-item sales-order-card cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
                                 onClick={() => openSalesOrderDetails(order)}
                                 aria-busy={showShimmer}
                               >
-                                <div className="flex flex-col gap-2 w-full">
+                                <div className="sales-order-card-content flex flex-col gap-2 w-full">
                                   <div className="flex items-center justify-between gap-3 flex-wrap">
                                     <div className="lead-list-name">
                                       Order #{order.number ?? order.id}
@@ -9890,7 +10028,9 @@ export default function App() {
                         variant="outline"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void refreshReferralData({ showLoading: true });
+                          void tracedRefreshReferralData("sales-rep-manual-refresh", {
+                            showLoading: true,
+                          });
                         }}
                         disabled={referralDataLoading}
                         className="gap-2"
@@ -12604,10 +12744,18 @@ export default function App() {
                   (salesOrderDetail as any).date_created ||
                   salesOrderDetail.updatedAt ||
                   null;
+                const normalizedStatus = String(
+                  (shipping as any)?.status || salesOrderDetail.status || "",
+                )
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+                const expectedShipmentWindow =
+                  (salesOrderDetail as any).expectedShipmentWindow ||
+                  (salesOrderDetail as any).expected_shipment_window ||
+                  null;
                 const isShippedDetail =
-                  ((shipping as any)?.status || salesOrderDetail.status || "")
-                    .toString()
-                    .toLowerCase() === "shipped";
+                  normalizedStatus === "shipped";
                 const expectedDelivery =
                   isShippedDetail && shipping?.estimatedArrivalDate
                     ? formatDate(shipping.estimatedArrivalDate)
@@ -12625,6 +12773,9 @@ export default function App() {
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
+                const showExpectedShipmentWindow = Boolean(
+                  expectedShipmentWindow && !(normalizedStatus === "shipped" && Boolean(trackingLabel)),
+                );
                 const trackingHref = trackingLabel
                   ? buildTrackingUrl(
                       trackingLabel,
@@ -12719,6 +12870,12 @@ export default function App() {
                             <p>
                               <span className="font-semibold">Expected:</span>{" "}
                               {expectedDelivery}
+                            </p>
+                          )}
+                          {showExpectedShipmentWindow && (
+                            <p>
+                              <span className="font-semibold">Estimated ship window:</span>{" "}
+                              {expectedShipmentWindow}
                             </p>
                           )}
                         </div>

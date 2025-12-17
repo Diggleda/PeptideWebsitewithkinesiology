@@ -3599,6 +3599,37 @@ html {
   gap: 0.75rem;
 }
 
+.sales-doctor-row {
+  width: 100%;
+}
+
+.sales-order-card {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .sales-doctor-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 1rem;
+  }
+
+  .sales-doctor-row > * {
+    flex: 0 0 auto;
+  }
+
+  .sales-order-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sales-order-card-content {
+    width: max-content !important;
+    min-width: 100%;
+  }
+}
+
 .referral-card-header {
   align-items: center;
 }
@@ -4352,6 +4383,7 @@ html {
   margin-top: 2rem;
   padding-left: clamp(0.5rem, 2vw, 1.5rem);
   padding-right: clamp(0.5rem, 2vw, 1.5rem);
+  padding-bottom: 2rem;
   /* Sticky offset for catalog filter within this section */
   --catalog-sticky-top: 0px;
 }
@@ -4365,6 +4397,7 @@ html {
   .products-layout {
     gap: 1.5rem;
     padding-inline: clamp(0.25rem, 2vw, 0.75rem);
+    padding-bottom: 1.5rem;
   }
 }
 

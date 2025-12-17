@@ -143,6 +143,7 @@ export interface ProductVariation {
   strength: string; // e.g., "10mg", "20mg", "50mg"
   basePrice: number;
   image?: string;
+  stockQuantity?: number | null;
 }
 
 export interface BulkPricingTier {
@@ -157,6 +158,7 @@ export interface Product {
   image: string;
   images?: string[];
   inStock: boolean;
+  stockQuantity?: number | null;
   manufacturer: string;
   variations: ProductVariation[];
   bulkPricingTiers: BulkPricingTier[];

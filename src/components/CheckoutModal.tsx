@@ -101,6 +101,34 @@ const formatShippingServiceLabel = (rate: ShippingRate) => {
   return titled;
 };
 
+const addBusinessDays = (start: Date, days: number) => {
+  const next = new Date(start);
+  let remaining = Math.max(0, Math.floor(days));
+  while (remaining > 0) {
+    next.setDate(next.getDate() + 1);
+    const day = next.getDay(); // 0 Sun, 6 Sat
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+  return next;
+};
+
+const getHourInTimeZone = (value: Date, timeZone: string) => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(value);
+    const hourPart = parts.find((part) => part.type === 'hour')?.value;
+    const parsed = hourPart ? Number.parseInt(hourPart, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -109,6 +137,7 @@ interface CheckoutModalProps {
     shippingAddress: ShippingAddress;
     shippingRate: ShippingRate | null;
     shippingTotal: number;
+    expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
@@ -346,6 +375,78 @@ export function CheckoutModal({
 
   // No-op referral handling removed
 
+  const requiresBackorder = useMemo(() => {
+    type Aggregate = { requested: number; inStock: boolean; stockQuantity: number | null };
+    const aggregates = new Map<string, Aggregate>();
+
+    for (const item of cartItems) {
+      const product = item.product;
+      const variant = item.variant ?? null;
+      const key =
+        typeof variant?.wooId === 'number'
+          ? `variant:${variant.wooId}`
+          : typeof product.wooId === 'number'
+            ? `product:${product.wooId}`
+            : `product:${product.id}`;
+      const existing = aggregates.get(key) ?? {
+        requested: 0,
+        inStock: true,
+        stockQuantity: null,
+      };
+      existing.requested += Math.max(0, Number(item.quantity) || 0);
+      const lineInStock = variant ? variant.inStock : product.inStock;
+      existing.inStock = existing.inStock && lineInStock !== false;
+      const qtyCandidate = variant?.stockQuantity ?? product.stockQuantity ?? null;
+      if (typeof qtyCandidate === 'number' && Number.isFinite(qtyCandidate) && qtyCandidate >= 0) {
+        existing.stockQuantity =
+          existing.stockQuantity == null ? Math.floor(qtyCandidate) : Math.min(existing.stockQuantity, Math.floor(qtyCandidate));
+      }
+      aggregates.set(key, existing);
+    }
+
+    for (const entry of aggregates.values()) {
+      if (!entry.inStock) return true;
+      if (entry.stockQuantity != null && entry.requested > entry.stockQuantity) return true;
+    }
+    return false;
+  }, [cartItems]);
+
+  const deliveryEstimate = useMemo(() => {
+    if (!selectedShippingRate) return null;
+
+    const now = new Date();
+    const cutoffHourLocal = 13;
+    const pacificHour = getHourInTimeZone(now, 'America/Los_Angeles');
+    const isAfterCutoff = (pacificHour ?? now.getHours()) >= cutoffHourLocal;
+
+    const backorderDays = requiresBackorder ? 3 : 0;
+    const processingMinDays = isAfterCutoff ? 2 : 1;
+    const processingMaxDays = isAfterCutoff ? 3 : 2;
+    const shipMinDays = backorderDays + processingMinDays;
+    const shipMaxDays = backorderDays + processingMaxDays;
+
+    const shipMinDate = addBusinessDays(now, shipMinDays);
+    const shipMaxDate = addBusinessDays(now, shipMaxDays);
+
+    const shipWindowLabel =
+      shipMinDate.toDateString() === shipMaxDate.toDateString()
+        ? shipMinDate.toLocaleDateString()
+        : `${shipMinDate.toLocaleDateString()}–${shipMaxDate.toLocaleDateString()}`;
+
+    const mathParts: string[] = [];
+    if (backorderDays) {
+      mathParts.push('3 business day backorder');
+    }
+    mathParts.push(`${processingMinDays}–${processingMaxDays} business day processing`);
+    const mathText = `${mathParts.join(' + ')}${isAfterCutoff ? ' (order placed after 1pm PT)' : ''}`;
+
+    return {
+      shipWindowLabel,
+      mathText,
+      disclaimer: 'Carrier transit begins after shipment and is not guaranteed.',
+    };
+  }, [requiresBackorder, selectedShippingRate]);
+
   const handleGetRates = async () => {
     if (!shippingAddressComplete) {
       const message = 'Enter the full shipping address before requesting shipping rates.';
@@ -404,6 +505,7 @@ export function CheckoutModal({
         shippingAddress,
         shippingRate: selectedShippingRate,
         shippingTotal: shippingCost,
+        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
         physicianCertificationAccepted: termsAccepted,
         taxTotal: taxAmount,
       });
@@ -998,17 +1100,18 @@ useEffect(() => {
                     </select>
                     {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
                       <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                        {shippingRates[selectedRateIndex].estimatedDeliveryDays != null && (
-                          <p>
-                            Est. {shippingRates[selectedRateIndex].estimatedDeliveryDays} business day
-                            {shippingRates[selectedRateIndex].estimatedDeliveryDays === 1 ? '' : 's'}
-                          </p>
-                        )}
-                        {shippingRates[selectedRateIndex].deliveryDateGuaranteed && (
-                          <p>
-                            Guaranteed by{' '}
-                            {new Date(shippingRates[selectedRateIndex].deliveryDateGuaranteed!).toLocaleDateString()}
-                          </p>
+                        {deliveryEstimate && (
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-800">
+                              Estimated Shipping window: {deliveryEstimate.shipWindowLabel}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              {deliveryEstimate.mathText}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {deliveryEstimate.disclaimer}
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

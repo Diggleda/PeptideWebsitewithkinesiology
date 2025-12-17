@@ -1,0 +1,1053 @@
+from __future__ import annotations
+
+import logging
+import re
+import secrets
+from datetime import datetime
+from time import time
+from typing import Dict, List, Optional
+
+from ..repositories import (
+    contact_form_status_repository,
+    credit_ledger_repository,
+    order_repository,
+    referral_code_repository,
+    referral_repository,
+    sales_rep_repository,
+    user_repository,
+)
+from ..database import mysql_client
+from . import get_config
+logger = logging.getLogger(__name__)
+
+ALLOWED_SUFFIX_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+REFERRAL_STATUS_CHOICES = [
+    "pending",
+    "contacted",
+    "account_created",
+    "nuture",
+    "converted",
+    "contact_form",
+]
+
+LEAD_TYPE_CHOICES = ("referral", "contact_form", "manual")
+
+LEGACY_STATUS_ALIASES = {
+    "follow_up": "nuture",
+    "nurture": "nuture",
+    "code_issued": "account_created",
+    "account_created": "account_created",
+    "closed": "pending",
+    "not_interested": "pending",
+    "disqualified": "pending",
+    "rejected": "pending",
+    "in_review": "account_created",
+}
+
+
+def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]:
+    if value is None:
+        return None
+    text = re.sub(r"[\r\n\t]+", " ", str(value)).strip()
+    if not text:
+        return None
+    return text[:max_length]
+
+
+def _sanitize_email(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    candidate = re.sub(r"\s+", "", str(value).lower())
+    if re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", candidate or ""):
+        return candidate
+    return None
+
+
+def _sanitize_phone(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"[^0-9+()\-\s]", "", str(value)).strip()
+    return cleaned[:32] if cleaned else None
+
+
+def _sanitize_notes(value: Optional[str]) -> Optional[str]:
+    return _sanitize_text(value, 600)
+
+
+def _normalize_status_candidate(status: Optional[str]) -> Optional[str]:
+    if status is None:
+        return None
+    normalized = (status or "").strip().lower()
+    if not normalized:
+        return None
+    return LEGACY_STATUS_ALIASES.get(normalized, normalized)
+
+
+def _sanitize_referral_status(status: Optional[str], fallback: str) -> str:
+    candidate = _normalize_status_candidate(status)
+    normalized_fallback = _normalize_status_candidate(fallback) or "pending"
+    if candidate is None:
+        return normalized_fallback
+    if candidate in REFERRAL_STATUS_CHOICES:
+        return candidate
+    return normalized_fallback
+
+
+def _normalize_initials(initials: str) -> str:
+    letters = "".join(ch for ch in (initials or "") if ch.isalpha())
+    return (letters[:2].upper() or "XX").ljust(2, "X")[:2]
+
+
+def _random_suffix() -> str:
+    suffix = []
+    for byte in secrets.token_bytes(3):
+        suffix.append(ALLOWED_SUFFIX_CHARS[byte % len(ALLOWED_SUFFIX_CHARS)])
+    return "".join(suffix)
+
+
+def _collect_existing_codes() -> set[str]:
+    existing = set()
+    for rep in sales_rep_repository.get_all():
+        code = rep.get("salesCode")
+        if code:
+            existing.add(str(code).upper())
+    return existing
+
+
+def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> List[Dict]:
+    """
+    Return user/account records to help clients detect account creation for referrals.
+    """
+    all_users = user_repository.get_all()
+    if scope_all:
+        doctors = [u for u in all_users if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
+        updated_doctors = backfill_lead_types_for_doctors(doctors)
+        doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
+        if doctor_by_id:
+            all_users = [doctor_by_id.get(str(u.get("id")), u) for u in all_users]
+        return all_users
+    target = str(sales_rep_id)
+    scoped = [
+        user
+        for user in all_users
+        if str(user.get("salesRepId") or user.get("sales_rep_id")) == target
+    ]
+    doctors = [u for u in scoped if (u.get("role") or "").lower() in ("doctor", "test_doctor")]
+    updated_doctors = backfill_lead_types_for_doctors(doctors)
+    doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
+    if doctor_by_id:
+        scoped = [doctor_by_id.get(str(u.get("id")), u) for u in scoped]
+    return scoped
+
+
+def _is_contact_form_id(referral_id: str) -> bool:
+    return isinstance(referral_id, str) and referral_id.startswith("contact_form:")
+
+
+def _normalize_lead_type(value: Optional[str]) -> Optional[str]:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in LEAD_TYPE_CHOICES else None
+
+def _fetch_contact_form_ids_by_email(emails: List[str]) -> Dict[str, str]:
+    """Return mapping of normalized email -> contact_form:<id> for the earliest submission."""
+    normalized = sorted({(_sanitize_email(e) or "") for e in emails if e})
+    normalized = [e for e in normalized if e]
+    if not normalized:
+        return {}
+    try:
+        placeholders = ", ".join([f"%(email_{idx})s" for idx in range(len(normalized))])
+    except Exception:
+        placeholders = ""
+    params = {f"email_{idx}": email for idx, email in enumerate(normalized)}
+    if not placeholders:
+        return {}
+    try:
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT id, email, created_at
+            FROM contact_forms
+            WHERE LOWER(email) IN ({placeholders})
+            ORDER BY created_at ASC
+            """,
+            params,
+        )
+    except Exception:
+        return {}
+    mapping: Dict[str, str] = {}
+    for row in rows or []:
+        email = _sanitize_email(row.get("email"))
+        if not email or email in mapping:
+            continue
+        if row.get("id") is None:
+            continue
+        mapping[email] = f"contact_form:{row.get('id')}"
+    return mapping
+
+
+def _fetch_manual_prospect_ids_by_email(emails: List[str]) -> Dict[str, str]:
+    """Return mapping of normalized email -> manual referral id (manual:...) if present."""
+    normalized = {(_sanitize_email(e) or "") for e in emails if e}
+    normalized = {e for e in normalized if e}
+    if not normalized:
+        return {}
+    mapping: Dict[str, str] = {}
+    try:
+        # Prefer MySQL for efficiency.
+        placeholders = ", ".join([f"%(email_{idx})s" for idx in range(len(normalized))])
+        params = {f"email_{idx}": email for idx, email in enumerate(sorted(normalized))}
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT id, referred_contact_email
+            FROM referrals
+            WHERE id LIKE 'manual:%'
+              AND LOWER(referred_contact_email) IN ({placeholders})
+            """,
+            params,
+        )
+        for row in rows or []:
+            email = _sanitize_email(row.get("referred_contact_email"))
+            rid = row.get("id")
+            if email and rid and email not in mapping:
+                mapping[email] = str(rid)
+        return mapping
+    except Exception:
+        # Fall back to repository scan (JSON-store mode or older schema).
+        for record in referral_repository.get_all():
+            rid = str(record.get("id") or "")
+            if not rid.startswith("manual:"):
+                continue
+            email = _sanitize_email(record.get("referredContactEmail"))
+            if email and email in normalized and email not in mapping:
+                mapping[email] = rid
+        return mapping
+
+
+def lock_lead_type_for_doctor(
+    doctor: Dict,
+    *,
+    lead_type: str,
+    source: Optional[str] = None,
+    locked_at: Optional[str] = None,
+) -> Optional[Dict]:
+    """Set lead type once (never overwrite)."""
+    if not isinstance(doctor, dict) or not doctor.get("id"):
+        return None
+    existing = _normalize_lead_type(doctor.get("leadType"))
+    if existing:
+        return doctor
+    normalized = _normalize_lead_type(lead_type)
+    if not normalized:
+        return doctor
+    update = {
+        **doctor,
+        "leadType": normalized,
+        "leadTypeSource": _sanitize_text(source, 64) if source else doctor.get("leadTypeSource") or None,
+        "leadTypeLockedAt": locked_at or doctor.get("leadTypeLockedAt") or _now(),
+    }
+    return user_repository.update(update) or update
+
+
+def backfill_lead_types_for_doctors(doctors: List[Dict]) -> List[Dict]:
+    """Best-effort: ensure every doctor has a lead type set, without ever overwriting."""
+    if not isinstance(doctors, list) or not doctors:
+        return doctors or []
+
+    pending: List[Dict] = []
+    updated: Dict[str, Dict] = {}
+    for doctor in doctors:
+        if not isinstance(doctor, dict) or not doctor.get("id"):
+            continue
+        if _normalize_lead_type(doctor.get("leadType")):
+            continue
+        # Quick deterministic case.
+        if doctor.get("referrerDoctorId"):
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="referral",
+                source=f"referrerDoctorId:{doctor.get('referrerDoctorId')}",
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        pending.append(doctor)
+
+    if not pending:
+        return [updated.get(str(d.get("id")), d) for d in doctors]
+
+    emails = [d.get("email") for d in pending if d.get("email")]
+    contact_form_map = _fetch_contact_form_ids_by_email(emails)
+    manual_map = _fetch_manual_prospect_ids_by_email(emails)
+
+    for doctor in pending:
+        email = _sanitize_email(doctor.get("email"))
+        if not email:
+            saved = lock_lead_type_for_doctor(doctor, lead_type="manual", source="default")
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        if email in contact_form_map:
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="contact_form",
+                source=contact_form_map[email],
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        if email in manual_map:
+            saved = lock_lead_type_for_doctor(
+                doctor,
+                lead_type="manual",
+                source=manual_map[email],
+            )
+            if saved:
+                updated[str(doctor.get("id"))] = saved
+            continue
+        saved = lock_lead_type_for_doctor(doctor, lead_type="manual", source="default")
+        if saved:
+            updated[str(doctor.get("id"))] = saved
+
+    return [updated.get(str(d.get("id")), d) for d in doctors]
+
+
+def _enrich_referral(referral: Dict) -> Dict:
+    enriched = dict(referral)
+    doctor = user_repository.find_by_id(referral.get("referrerDoctorId")) if referral.get("referrerDoctorId") else None
+    if doctor:
+        enriched["referrerDoctorName"] = doctor.get("name")
+        enriched["referrerDoctorEmail"] = doctor.get("email")
+        enriched["referrerDoctorPhone"] = doctor.get("phone")
+    else:
+        enriched["referrerDoctorName"] = None
+        enriched["referrerDoctorEmail"] = None
+        enriched["referrerDoctorPhone"] = None
+    enriched["notes"] = referral.get("notes") or None
+
+    contact_account, contact_order_count = _resolve_referred_contact_account(referral)
+    enriched["referredContactHasAccount"] = bool(contact_account)
+    enriched["referredContactAccountId"] = contact_account.get("id") if contact_account else None
+    enriched["referredContactAccountName"] = contact_account.get("name") if contact_account else None
+    enriched["referredContactAccountEmail"] = contact_account.get("email") if contact_account else None
+    enriched["referredContactAccountCreatedAt"] = (
+        contact_account.get("createdAt") or contact_account.get("created_at")
+        if contact_account
+        else None
+    )
+    enriched["referredContactTotalOrders"] = contact_order_count
+    enriched["referredContactEligibleForCredit"] = contact_order_count > 0
+    # Promote status to account_created when an account exists but status is still early-stage
+    status = (enriched.get("status") or "").lower()
+    if enriched["referredContactHasAccount"] and status in ("pending", "contact_form", "contacted"):
+        enriched["status"] = "account_created"
+
+    return enriched
+
+
+def _resolve_referred_contact_account(referral: Dict):
+    contact_account = None
+    order_count = 0
+
+    converted_doctor_id = referral.get("convertedDoctorId")
+    if converted_doctor_id:
+        contact_account = user_repository.find_by_id(str(converted_doctor_id))
+
+    if (contact_account is None) and referral.get("referredContactEmail"):
+        contact_account = user_repository.find_by_email(referral.get("referredContactEmail"))
+
+    if contact_account and contact_account.get("id"):
+        try:
+            order_count = count_orders_for_doctor(contact_account.get("id"))
+        except Exception:
+            order_count = 0
+
+    return contact_account, order_count
+
+
+def _ensure_sales_rep(sales_rep_id: Optional[str]) -> Dict:
+    if not sales_rep_id:
+        raise _service_error("SALES_REP_REQUIRED", 400)
+    rep = sales_rep_repository.find_by_id(sales_rep_id)
+    if rep:
+        return rep
+
+    user = user_repository.find_by_id(sales_rep_id)
+    if user and user.get("role") == "sales_rep":
+        return sales_rep_repository.insert(
+            {
+                "id": sales_rep_id,
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "phone": user.get("phone"),
+            }
+        )
+    raise _service_error("SALES_REP_NOT_FOUND", 404)
+
+
+def _generate_unique_code(sales_rep_id: str) -> str:
+    rep = _ensure_sales_rep(sales_rep_id)
+    initials = _normalize_initials(rep.get("initials") or rep.get("name"))
+    existing = _collect_existing_codes()
+    for _ in range(200):
+        candidate = f"{initials}{_random_suffix()}"
+        if candidate not in existing:
+            return candidate
+    raise _service_error("UNABLE_TO_GENERATE_CODE", 500)
+
+
+def create_onboarding_code(data: Dict) -> Dict:
+    sales_rep_id = data.get("salesRepId")
+    rep = _ensure_sales_rep(sales_rep_id)
+    existing = (rep.get("salesCode") or "").strip().upper()
+    if existing:
+        return referral_code_repository.find_by_code(existing) or {"code": existing, "salesRepId": rep.get("id")}
+
+    code = _generate_unique_code(sales_rep_id)
+    sales_rep_repository.update({"id": rep.get("id"), "salesCode": code})
+    return referral_code_repository.find_by_code(code) or {"code": code, "salesRepId": rep.get("id")}
+
+
+def regenerate_sales_rep_code(sales_rep_id: str, created_by: str = "system") -> Dict:
+    rep = _ensure_sales_rep(sales_rep_id)
+    code = _generate_unique_code(sales_rep_id)
+    sales_rep_repository.update({"id": rep.get("id"), "salesCode": code})
+    record = referral_code_repository.find_by_code(code) or {"code": code, "salesRepId": rep.get("id")}
+    history = record.get("history", []) if isinstance(record, dict) else []
+    if isinstance(record, dict):
+        record["history"] = [
+            *history,
+            {"action": "rotated", "at": _now(), "by": created_by},
+        ]
+    return record
+
+
+def redeem_onboarding_code(payload: Dict) -> Dict:
+    code = (payload.get("code") or "").strip().upper()
+    record = referral_code_repository.find_by_code(code)
+    if not record:
+        raise _service_error("REFERRAL_CODE_UNKNOWN", 404)
+    return record
+
+
+def get_onboarding_code(code: str) -> Optional[Dict]:
+    return referral_code_repository.find_by_code(code)
+
+
+def record_referral_submission(data: Dict) -> Dict:
+    timestamp = _now()
+    return referral_repository.insert(
+        {
+            "referrerDoctorId": data.get("referrerDoctorId"),
+            "salesRepId": data.get("salesRepId"),
+            "referredContactName": data.get("contactName"),
+            "referredContactEmail": data.get("contactEmail"),
+            "referredContactPhone": data.get("contactPhone"),
+            "status": "pending",
+            "notes": data.get("notes"),
+            "createdAt": timestamp,
+            "updatedAt": timestamp,
+        }
+    )
+
+
+def create_manual_prospect(data: Dict) -> Dict:
+    sales_rep_id = (data.get("salesRepId") or "").strip()
+    if not sales_rep_id:
+        raise _service_error("SALES_REP_REQUIRED", 400)
+
+    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+
+    contact_name = _sanitize_text(data.get("name"))
+    if not contact_name:
+        raise _service_error("CONTACT_NAME_REQUIRED", 400)
+
+    contact_email = _sanitize_email(data.get("email"))
+    contact_phone = _sanitize_phone(data.get("phone"))
+    notes = _sanitize_notes(data.get("notes"))
+    status = _sanitize_referral_status(data.get("status"), "pending")
+
+    record = referral_repository.insert(
+        {
+            "id": _generate_manual_id(),
+            "referrerDoctorId": None,
+            "salesRepId": resolved_sales_rep_id,
+            "referredContactName": contact_name,
+            "referredContactEmail": contact_email,
+            "referredContactPhone": contact_phone,
+            "status": status,
+            "notes": notes,
+        }
+    )
+    return _enrich_referral(record)
+
+
+def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
+    if not referral_id:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    referral = referral_repository.find_by_id(referral_id)
+    if not referral:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    if not str(referral.get("id") or "").startswith("manual:"):
+        raise _service_error("NOT_MANUAL_PROSPECT", 400)
+    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+    record_sales_rep_id = referral.get("salesRepId")
+    normalized_record = _resolve_user_id(record_sales_rep_id) or record_sales_rep_id
+    if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip() and str(normalized_record or "").strip() != str(resolved_sales_rep_id or "").strip():
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    referral_repository.delete(referral_id)
+
+
+def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
+    """Resolve a caller-supplied identifier to a canonical user id.
+
+    Identifiers may arrive as database ids, legacy JSON ids, or even emails
+    (when older clients still send the email address). We always consult the
+    primary user store so downstream calls rely on the authoritative user id
+    when fetching referral records.
+    """
+
+    if not identifier:
+        return None
+
+    user = user_repository.find_by_id(identifier)
+    if user:
+        if (user.get("role") or "").lower() == "sales_rep" and user.get("salesRepId"):
+            return user.get("salesRepId")
+        return user.get("id")
+
+    rep = sales_rep_repository.find_by_id(identifier)
+    if rep:
+        return rep.get("id")
+
+    # Some clients still hand us an email address. Fall back to resolving
+    # through the user table to obtain the correct id.
+    if "@" in identifier:
+        user = user_repository.find_by_email(identifier)
+        if user:
+            return user.get("id")
+        rep = sales_rep_repository.find_by_email(identifier)
+        if rep:
+            return rep.get("id")
+
+    return None
+
+
+def list_referrals_for_doctor(doctor_identifier: str):
+    doctor_id = _resolve_user_id(doctor_identifier)
+    if not doctor_id:
+        return []
+    return referral_repository.find_by_referrer(doctor_id)
+
+
+def _resolve_sales_rep_aliases(identifiers: List[str]) -> set[str]:
+    aliases: set[str] = set()
+
+    for candidate in identifiers:
+        if not candidate:
+            continue
+        try:
+            aliases.update(referral_repository._collect_sales_rep_aliases(candidate))  # type: ignore[attr-defined]
+        except AttributeError:
+            # Fallback for environments where the helper is unavailable.
+            normalized = referral_repository._normalize_identifier(candidate) if hasattr(referral_repository, "_normalize_identifier") else None  # type: ignore[attr-defined]
+            if normalized:
+                aliases.add(normalized)
+
+    if not aliases:
+        for candidate in identifiers:
+            if not candidate:
+                continue
+            if hasattr(referral_repository, "_normalize_identifier"):
+                normalized = referral_repository._normalize_identifier(candidate)  # type: ignore[attr-defined]
+            else:
+                normalized = str(candidate).strip() or None
+            if normalized:
+                aliases.add(normalized)
+
+    return aliases
+
+
+def _referral_matches_aliases(referral: Dict, aliases: set[str]) -> bool:
+    if not aliases:
+        return False
+
+    def matches(value) -> bool:
+        if not value:
+            return False
+        if hasattr(referral_repository, "_normalize_identifier"):
+            normalized = referral_repository._normalize_identifier(value)  # type: ignore[attr-defined]
+        else:
+            normalized = str(value).strip().lower() if "@" in str(value) else str(value).strip()
+        return bool(normalized) and normalized in aliases
+
+    if matches(referral.get("salesRepId")):
+        return True
+
+    doctor_id = referral.get("referrerDoctorId")
+    if doctor_id:
+        doctor = user_repository.find_by_id(doctor_id)
+        if doctor:
+            if matches(doctor.get("salesRepId")) or matches(doctor.get("email")) or matches(doctor.get("id")):
+                return True
+
+    code_id = referral.get("referralCodeId")
+    if code_id:
+        code = referral_code_repository.find_by_id(code_id)
+        if code and matches(code.get("salesRepId")):
+            return True
+
+    return False
+
+
+def _load_contact_form_referrals() -> list[dict]:
+    """Load contact form submissions and map them into referral-like records."""
+    records: list[dict] = []
+    mysql_enabled = bool(getattr(mysql_client, "_config", None) and getattr(mysql_client._config, "mysql", {}).get("enabled"))
+    try:
+        rows = mysql_client.fetch_all(
+            """
+            SELECT id, name, email, phone, source, created_at
+            FROM contact_forms
+            ORDER BY created_at DESC
+            """
+        )
+        logger.info(
+            "[referrals] loaded contact forms",
+            extra={
+                "count": len(rows or []),
+                "mysql_enabled": mysql_enabled,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "[referrals] contact form load failed",
+            exc_info=exc,
+            extra={
+                "mysql_enabled": mysql_enabled,
+            },
+        )
+        rows = []
+
+    for row in rows or []:
+        created_at_raw = row.get("created_at") or row.get("createdAt")
+        created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
+        updated_at_raw = row.get("updated_at") or row.get("updatedAt") or created_at_raw
+        updated_at = updated_at_raw.isoformat() if isinstance(updated_at_raw, datetime) else updated_at_raw or created_at
+        record_id = f"contact_form:{row.get('id')}" if row.get("id") is not None else _generate_unique_code("system")
+        stored_entry = contact_form_status_repository.get_entry(record_id)
+        status = stored_entry.get("status") if isinstance(stored_entry, dict) else stored_entry or "contact_form"
+        stored_updated_at = None
+        if isinstance(stored_entry, dict):
+            stored_updated_at = stored_entry.get("updatedAt")
+        records.append(
+            {
+                "id": record_id,
+                "referrerDoctorId": None,
+                "salesRepId": None,
+                "referredContactName": row.get("name") or "Contact Form Lead",
+                "referredContactEmail": row.get("email") or None,
+                "referredContactPhone": row.get("phone") or None,
+                "status": status or "contact_form",
+                "notes": row.get("source") or "Contact form submission",
+                "createdAt": created_at,
+                "updatedAt": stored_updated_at or updated_at,
+                "convertedDoctorId": None,
+                "convertedAt": None,
+            }
+        )
+    return records
+
+
+def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = False, token_role: Optional[str] = None):
+    """
+    Fetch referrals visible to the given sales rep. Admins also see contact form submissions; non-admins do not.
+    """
+    sales_rep_id = _resolve_user_id(sales_rep_identifier) or sales_rep_identifier
+    if not sales_rep_id:
+        return []
+
+    user = user_repository.find_by_id(str(sales_rep_id))
+    role = (user.get("role") or "").lower() if user else ""
+    token_is_admin = (token_role or "").lower() == "admin"
+    is_admin = role == "admin" or token_is_admin
+
+    if is_admin:
+        referrals = referral_repository.get_all() if scope_all else referral_repository.find_by_sales_rep(str(sales_rep_id))
+        referrals.extend(_load_contact_form_referrals())
+        referrals.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
+        enriched_admin = [_enrich_referral(ref) for ref in referrals]
+        logger.info(
+            "[referrals] admin scoped to rep",
+            extra={
+                "sales_rep_id": str(sales_rep_id),
+                "referrals": len(enriched_admin),
+                "contact_forms": len([r for r in enriched_admin if (r.get('status') == 'contact_form')]),
+            },
+        )
+        return enriched_admin
+
+    referrals = referral_repository.find_by_sales_rep(str(sales_rep_id))
+    referrals.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
+    enriched_rep = [_enrich_referral(ref) for ref in referrals]
+    logger.info(
+        "[referrals] rep scope",
+        extra={
+            "sales_rep_id": str(sales_rep_id),
+            "referrals": len(enriched_rep),
+        },
+    )
+    return enriched_rep
+
+
+def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: Dict) -> Dict:
+    resolved_sales_rep_id = str(_resolve_user_id(sales_rep_id) or "").strip()
+    fallback_sales_rep_id = str(sales_rep_id or "").strip()
+
+    if _is_contact_form_id(referral_id):
+        return _update_contact_form_referral(referral_id, updates)
+
+    referral = referral_repository.find_by_id(referral_id)
+    if not referral:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    candidate_identifiers = []
+    if resolved_sales_rep_id:
+        candidate_identifiers.append(resolved_sales_rep_id)
+    if fallback_sales_rep_id and fallback_sales_rep_id not in candidate_identifiers:
+        candidate_identifiers.append(fallback_sales_rep_id)
+
+    alias_set = _resolve_sales_rep_aliases(candidate_identifiers)
+
+    accessible_ids: set[str] = set()
+    for candidate in candidate_identifiers:
+        for item in referral_repository.find_by_sales_rep(candidate):
+            if item.get("id") is not None:
+                accessible_ids.add(str(item["id"]))
+
+    if not accessible_ids and _referral_matches_aliases(referral, alias_set):
+        accessible_ids.add(str(referral.get("id")))
+
+    if str(referral.get("id")) not in accessible_ids:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    current_status = referral.get("status") or "pending"
+    payload: Dict = {"id": referral["id"]}
+    changed = False
+
+    if "status" in updates:
+        sanitized_status = _sanitize_referral_status(updates.get("status"), current_status)
+        if sanitized_status != current_status:
+            payload["status"] = sanitized_status
+            changed = True
+
+    if "notes" in updates:
+        sanitized_notes = _sanitize_notes(updates.get("notes"))
+        if sanitized_notes != (referral.get("notes") or None):
+            payload["notes"] = sanitized_notes
+            changed = True
+
+    if "referredContactName" in updates:
+        sanitized_name = _sanitize_text(updates.get("referredContactName"))
+        if sanitized_name and sanitized_name != referral.get("referredContactName"):
+            payload["referredContactName"] = sanitized_name
+            changed = True
+
+    if "referredContactEmail" in updates:
+        sanitized_email = _sanitize_email(updates.get("referredContactEmail"))
+        if sanitized_email != (referral.get("referredContactEmail") or None):
+            payload["referredContactEmail"] = sanitized_email
+            changed = True
+
+    if "referredContactPhone" in updates:
+        sanitized_phone = _sanitize_phone(updates.get("referredContactPhone"))
+        if sanitized_phone != (referral.get("referredContactPhone") or None):
+            payload["referredContactPhone"] = sanitized_phone
+            changed = True
+
+    if not changed:
+        return _enrich_referral(referral)
+
+    updated = referral_repository.update({**referral, **payload})
+    return _enrich_referral(updated or referral)
+
+
+def _update_contact_form_referral(referral_id: str, updates: Dict) -> Dict:
+    if "status" not in updates:
+        raise _service_error("INVALID_STATUS", 400)
+
+    leads = _load_contact_form_referrals()
+    contact_form = next((lead for lead in leads if lead.get("id") == referral_id), None)
+    if not contact_form:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+
+    sanitized_status = _sanitize_referral_status(updates.get("status"), contact_form.get("status") or "contact_form")
+    entry = contact_form_status_repository.upsert(referral_id, sanitized_status)
+    contact_form["status"] = entry.get("status", sanitized_status)
+    contact_form["updatedAt"] = entry.get("updatedAt") or contact_form.get("updatedAt")
+    return contact_form
+
+
+def get_referral_status_choices() -> List[str]:
+    return REFERRAL_STATUS_CHOICES.copy()
+
+
+def handle_order_referral_effects(purchaser_id: str, referral_code: Optional[str], order_total: float, order_id: str):
+    checkout_bonus = award_checkout_referral_commission(referral_code, order_total, purchaser_id, order_id)
+    first_order_bonus = award_first_order_credit(purchaser_id, order_id, order_total)
+    return {"checkoutBonus": checkout_bonus, "firstOrderBonus": first_order_bonus}
+
+
+def award_checkout_referral_commission(referral_code: Optional[str], total: float, purchaser_id: str, order_id: str):
+    if not referral_code:
+        return None
+    referrer = user_repository.find_by_referral_code(referral_code)
+    if not referrer or referrer.get("id") == purchaser_id:
+        return None
+
+    commission = round(float(total) * get_config().referral["commission_rate"], 2)
+    ledger_entry = credit_ledger_repository.insert(
+        {
+            "doctorId": referrer["id"],
+            "salesRepId": referrer.get("salesRepId"),
+            "amount": commission,
+            "currency": "USD",
+            "direction": "credit",
+            "reason": "referral_bonus",
+            "description": f"Checkout referral code applied (order {order_id})",
+            "firstOrderBonus": False,
+            "metadata": {"context": "checkout_code", "referralCode": referral_code, "purchaserId": purchaser_id},
+        }
+    )
+
+    updated_referrer = user_repository.adjust_referral_credits(referrer["id"], commission) or referrer
+    updated_referrer = user_repository.update(
+        {
+            **updated_referrer,
+            "totalReferrals": int(updated_referrer.get("totalReferrals") or 0) + 1,
+        }
+    ) or updated_referrer
+
+    return {
+        "referrerId": updated_referrer["id"],
+        "referrerName": updated_referrer.get("name"),
+        "commission": commission,
+        "ledgerEntry": ledger_entry,
+    }
+
+
+def award_first_order_credit(purchasing_doctor_id: str, order_id: str, order_total: float):
+    purchasing_doctor = user_repository.find_by_id(purchasing_doctor_id)
+    if not purchasing_doctor or not purchasing_doctor.get("referrerDoctorId"):
+        return None
+    referrer = user_repository.find_by_id(purchasing_doctor["referrerDoctorId"])
+    if not referrer:
+        return None
+
+    if _has_first_order_credit(referrer["id"], purchasing_doctor["id"]):
+        return None
+
+    referral_record = next(
+        (ref for ref in referral_repository.get_all() if ref.get("convertedDoctorId") == purchasing_doctor["id"]),
+        None,
+    )
+
+    amount = round(float(get_config().referral["fixed_credit_amount"]), 2)
+    ledger_entry = credit_ledger_repository.insert(
+        {
+            "doctorId": referrer["id"],
+            "salesRepId": purchasing_doctor.get("salesRepId"),
+            "referralId": referral_record.get("id") if referral_record else None,
+            "orderId": order_id,
+            "amount": amount,
+            "currency": "USD",
+            "direction": "credit",
+            "reason": "referral_bonus",
+            "description": f"First order credit granted for {purchasing_doctor.get('name')}",
+            "firstOrderBonus": True,
+            "metadata": {"context": "first_order", "convertedDoctorId": purchasing_doctor["id"], "orderTotal": order_total},
+        }
+    )
+
+    updated_referrer = user_repository.adjust_referral_credits(referrer["id"], amount) or referrer
+    updated_referrer = user_repository.update(
+        {
+            **updated_referrer,
+            "totalReferrals": int(updated_referrer.get("totalReferrals") or 0) + 1,
+        }
+    ) or updated_referrer
+
+    user_repository.update(
+        {
+            **purchasing_doctor,
+            "firstOrderBonusGrantedAt": _now(),
+        }
+    )
+
+    if referral_record:
+        referral_repository.update(
+            {
+                **referral_record,
+                "status": "converted",
+                "convertedDoctorId": purchasing_doctor["id"],
+                "convertedAt": _now(),
+            }
+        )
+
+    return {
+        "referrerId": updated_referrer["id"],
+        "referrerName": updated_referrer.get("name"),
+        "amount": amount,
+        "ledgerEntry": ledger_entry,
+    }
+
+
+def _has_first_order_credit(referrer_id: str, converted_doctor_id: str) -> bool:
+    entries = credit_ledger_repository.find_by_doctor(referrer_id)
+    for entry in entries:
+        if (
+            entry.get("firstOrderBonus")
+            and entry.get("metadata", {}).get("convertedDoctorId") == converted_doctor_id
+        ):
+            return True
+    return False
+
+
+def calculate_doctor_credit_summary(doctor_id: str):
+    summary = credit_ledger_repository.summarize_credits(doctor_id)
+    doctor = user_repository.find_by_id(doctor_id) or {}
+    available_balance = float(doctor.get("referralCredits") or 0)
+    lifetime_credits = float(summary.get("creditsEarned") or summary.get("total") or 0)
+    net_credits = float(summary.get("total") or 0)
+    return {
+        "totalCredits": round(lifetime_credits, 2),
+        "availableCredits": round(available_balance, 2),
+        "netCredits": round(net_credits, 2),
+        "firstOrderBonuses": round(float(summary["firstOrderBonuses"]), 2),
+        "ledger": credit_ledger_repository.find_by_doctor(doctor_id),
+    }
+
+
+def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: str, referral_id: Optional[str] = None):
+    """Manually add a credit to a doctor's account."""
+    if not doctor_id or not isinstance(amount, (int, float)) or not reason:
+        raise _service_error("INVALID_REQUEST", 400)
+
+    doctor = user_repository.find_by_id(doctor_id)
+    if not doctor:
+        raise _service_error("DOCTOR_NOT_FOUND", 404)
+
+    referral_record = referral_repository.find_by_id(referral_id) if referral_id else None
+    referral_contact_name = referral_record.get("referredContactName") if referral_record else None
+    description = referral_contact_name and f"Credited for {referral_contact_name}" or reason
+
+    if referral_record:
+        contact_account, order_count = _resolve_referred_contact_account(referral_record)
+        if order_count <= 0:
+            contact_label = referral_contact_name or referral_record.get("referredContactEmail") or "This referral"
+            raise _service_error(
+                f"{contact_label} has not yet placed their first order.",
+                400,
+            )
+
+    metadata = {"context": "manual_credit", "createdBy": created_by}
+    if referral_id:
+        metadata["referralId"] = referral_id
+    if referral_contact_name:
+        metadata["referralContactName"] = referral_contact_name
+
+    ledger_entry = credit_ledger_repository.insert(
+        {
+            "doctorId": doctor_id,
+            "salesRepId": doctor.get("salesRepId"),
+            "amount": round(amount, 2),
+            "currency": "USD",
+            "direction": "credit",
+            "reason": "manual_adjustment",
+            "description": description,
+            "firstOrderBonus": False,
+            "referralId": referral_id,
+            "metadata": metadata,
+        }
+    )
+
+    delta = round(amount, 2)
+    updated_doctor = user_repository.adjust_referral_credits(doctor_id, delta) or {
+        **doctor,
+        "referralCredits": float(doctor.get("referralCredits") or 0) + delta,
+    }
+
+    if referral_record:
+        referral_repository.update(
+            {
+                **referral_record,
+                "creditIssuedAt": _now(),
+                "creditIssuedAmount": delta,
+                "creditIssuedBy": created_by,
+            }
+        )
+
+    return {"ledgerEntry": ledger_entry, "doctor": updated_doctor}
+
+
+def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
+    """Deduct referral credits from a doctor's balance and write a debit ledger entry.
+
+    Guards against overdraft and no-ops. Returns the ledger entry and the updated
+    doctor snapshot.
+    """
+    if not doctor_id or not isinstance(amount, (int, float)):
+        raise _service_error("INVALID_CREDIT_REQUEST", 400)
+    amt = float(amount)
+    if amt <= 0:
+        raise _service_error("INVALID_CREDIT_AMOUNT", 400)
+
+    doctor = user_repository.find_by_id(doctor_id)
+    if not doctor:
+        raise _service_error("USER_NOT_FOUND", 404)
+    balance = float(doctor.get("referralCredits") or 0)
+    if amt > balance + 1e-9:
+        raise _service_error("INSUFFICIENT_CREDITS", 400)
+
+    updated = user_repository.adjust_referral_credits(doctor_id, -amt) or {**doctor, "referralCredits": round(balance - amt, 2)}
+
+    ledger_entry = credit_ledger_repository.insert(
+        {
+            "doctorId": doctor_id,
+            "salesRepId": doctor.get("salesRepId"),
+            "orderId": order_id,
+            "amount": round(amt, 2),
+            "currency": "USD",
+            "direction": "debit",
+            "reason": "referral_credit_applied",
+            "description": f"Applied ${amt:.2f} referral credit to order {order_id}",
+            "firstOrderBonus": False,
+            "metadata": {"context": "checkout", "orderId": order_id},
+        }
+    )
+
+    return {"ledgerEntry": ledger_entry, "doctor": updated}
+
+
+def count_orders_for_doctor(doctor_id: str) -> int:
+    return order_repository.count_by_user_id(doctor_id)
+
+
+def _service_error(message: str, status: int) -> Exception:
+    err = ValueError(message)
+    setattr(err, "status", status)
+    return err
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _generate_manual_id() -> str:
+    return f"manual:{int(time() * 1000)}"
+def _normalize_timestamp(value) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return ""

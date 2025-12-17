@@ -142,6 +142,7 @@ interface AccountOrderSummary {
   shippingTotal?: number | null;
   taxTotal?: number | null;
   physicianCertified?: boolean | null;
+  expectedShipmentWindow?: string | null;
 }
 
 interface HeaderProps {
@@ -626,7 +627,7 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
   const hasEta = typeof eta === 'string' && eta.trim().length > 0;
 
   if (normalized === 'shipped') {
-    if (tracking && !hasEta) return 'Shipping Soon';
+    if (tracking && !hasEta) return 'Processing';
     return tracking ? 'Shipped' : 'Shipped';
   }
   if (normalized.includes('out_for_delivery') || normalized.includes('out-for-delivery')) {
@@ -640,19 +641,19 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
   }
 
   if (tracking && !hasEta) {
-    return 'Shipping Soon';
+    return 'Processing';
   }
   if (tracking && hasEta) {
     return 'Shipped';
   }
   if (normalized === 'processing') {
-    return 'Processing';
+    return 'Order Received';
   }
   if (normalized === 'completed' || normalized === 'complete') {
     return 'Completed';
   }
   if (normalized === 'awaiting_shipment' || normalized === 'awaiting shipment') {
-    return 'Processing';
+    return 'Order Received';
   }
 
   if (!raw) return 'Pending';
@@ -2366,6 +2367,14 @@ export function Header({
     const showExpectedDeliveryDetails = Boolean(
       expectedDelivery && (isShipmentInTransit(selectedOrder.status) || !selectedOrder.status),
     );
+    const normalizedStatus = String(selectedOrder.status || '').trim().toLowerCase();
+    const expectedShipmentWindow =
+      (selectedOrder as any).expectedShipmentWindow ||
+      (selectedOrder as any).expected_shipment_window ||
+      null;
+    const showExpectedShipmentWindow = Boolean(
+      expectedShipmentWindow && !(normalizedStatus === 'shipped' && Boolean(resolveTrackingNumber(selectedOrder))),
+    );
     const shippingMethod =
       formatShippingMethod(selectedOrder.shippingEstimate) ||
       titleCase(wooShippingLine?.method_title || wooShippingLine?.method_id);
@@ -2532,6 +2541,12 @@ export function Header({
                 {expectedDelivery && (
                   <p>
                     <span className="font-semibold">Expected:</span> {expectedDelivery}
+                  </p>
+                )}
+                {showExpectedShipmentWindow && (
+                  <p>
+                    <span className="font-semibold">Estimated ship window:</span>{' '}
+                    {expectedShipmentWindow}
                   </p>
                 )}
               </div>

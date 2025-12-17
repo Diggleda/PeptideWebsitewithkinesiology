@@ -1,0 +1,3 @@
+{
+  "tests/integrations/test_woo_commerce_webhook.py": true
+}

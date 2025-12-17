@@ -1,0 +1,12 @@
+PassengerEnabled off
+Options -MultiViews
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^daily/?$ daily.php [L]
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType application/x-httpd-ea-php82 .php
+</IfModule>
+
