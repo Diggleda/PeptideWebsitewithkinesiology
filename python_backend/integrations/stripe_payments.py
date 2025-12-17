@@ -88,11 +88,29 @@ def create_payment_intent(order: Dict[str, Any]) -> Dict[str, Any]:
         )
     except Exception:
         pass
-    amount = int(round(float(order.get("total", 0)) * 100))
+    def _num(val: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(val)
+        except Exception:
+            return fallback
+
+    items_subtotal = _num(order.get("itemsSubtotal"), _num(order.get("total"), 0.0))
+    shipping_total = _num(order.get("shippingTotal"), 0.0)
+    tax_total = _num(order.get("taxTotal"), 0.0)
+    discount_total = _num(order.get("appliedReferralCredit"), 0.0)
+    grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
+    grand_total = max(0.0, grand_total)
+
+    amount = int(round(grand_total * 100))
     currency = "usd"
     metadata = {
         "peppro_order_id": order.get("id"),
         "user_id": order.get("userId"),
+        "items_subtotal": f"{items_subtotal:.2f}",
+        "shipping_total": f"{shipping_total:.2f}",
+        "tax_total": f"{tax_total:.2f}",
+        "discount_total": f"{discount_total:.2f}",
+        "grand_total": f"{grand_total:.2f}",
     }
     sales_rep_id = order.get("doctorSalesRepId") or order.get("salesRepId")
     sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")

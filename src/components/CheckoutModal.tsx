@@ -245,6 +245,7 @@ export function CheckoutModal({
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
+  const activeTaxRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -344,10 +345,10 @@ export function CheckoutModal({
   const shippingCost = selectedShippingRate?.rate
     ? Number(selectedShippingRate.rate) || 0
     : 0;
-  const taxAmount = 0;
+  const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
   const appliedCredits = Math.min(subtotal, normalizedCredits);
-  const total = Math.max(0, subtotal - appliedCredits + shippingCost);
+  const total = Math.max(0, subtotal - appliedCredits + shippingCost + taxAmount);
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -361,14 +362,36 @@ export function CheckoutModal({
   const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = stripeReady ? cardholderName.trim().length >= 2 : true;
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
-  const shouldFetchTax = false;
-  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate;
+  const shouldFetchTax = Boolean(
+    isOpen
+    && isAuthenticated
+    && hasSelectedShippingRate
+    && shippingAddressComplete
+    && checkoutLineItems.length > 0,
+  );
+  const taxReady = !shouldFetchTax || (!!taxEstimate && !taxEstimatePending);
+  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate && taxReady;
+  const taxQuoteKey = useMemo(() => {
+    if (!shouldFetchTax) {
+      return null;
+    }
+    const rateFingerprint = selectedShippingRate?.addressFingerprint
+      || `${selectedShippingRate?.carrierId || 'carrier'}:${selectedShippingRate?.serviceCode || selectedShippingRate?.serviceType || 'service'}`;
+    return [
+      cartLineItemSignature || 'items',
+      shippingAddressSignature || 'address',
+      rateFingerprint,
+      shippingCost.toFixed(2),
+    ].join('|');
+  }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost]);
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
   let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
   } else if (checkoutStatus === 'error' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
+  } else if (taxEstimatePending && shouldFetchTax) {
+    checkoutButtonLabel = 'Calculating taxes…';
   } else if (isProcessing) {
     checkoutButtonLabel = 'Processing order...';
   }
@@ -642,6 +665,10 @@ export function CheckoutModal({
       toast.error('Select a shipping option before completing your purchase.');
       return;
     }
+    if (shouldFetchTax && (!taxEstimate || taxEstimatePending)) {
+      toast.error('We are calculating taxes for this order. Please try again in a moment.');
+      return;
+    }
     if (!isAuthenticated) {
       onRequireLogin();
       return;
@@ -699,20 +726,28 @@ export function CheckoutModal({
   };
 
   // Reset state when modal closes
-	  useEffect(() => {
-	    if (!isOpen) {
-	      // referral fields removed
-	      setQuantityInputs({});
-	      setIsProcessing(false);
-	      setBulkOpenMap({});
-	      setTermsAccepted(false);
-	      setCardholderName(defaultCardholderName);
-	      cardholderAutofillRef.current = defaultCardholderName;
-	      setCheckoutStatus('idle');
-	      setCheckoutStatusMessage(null);
+  useEffect(() => {
+    if (!isOpen) {
+      // referral fields removed
+      setQuantityInputs({});
+      setIsProcessing(false);
+      setBulkOpenMap({});
+      setTermsAccepted(false);
+      setCardholderName(defaultCardholderName);
+      cardholderAutofillRef.current = defaultCardholderName;
+      setCheckoutStatus('idle');
+      setCheckoutStatusMessage(null);
       setShippingRates(null);
       setSelectedRateIndex(null);
       setShippingRateError(null);
+      setTaxEstimate(null);
+      setTaxEstimateError(null);
+      setTaxEstimatePending(false);
+      lastTaxQuoteRef.current = null;
+      if (activeTaxRequestRef.current) {
+        activeTaxRequestRef.current.abort();
+        activeTaxRequestRef.current = null;
+      }
       setShippingAddress({
         name: defaultShippingAddress?.name || physicianName || customerName || '',
         addressLine1: defaultShippingAddress?.addressLine1 || '',
@@ -727,7 +762,7 @@ export function CheckoutModal({
         checkoutStatusTimer.current = null;
       }
     }
-  }, [isOpen]);
+  }, [defaultShippingAddress, customerName, defaultCardholderName, isOpen, physicianName]);
 
   useEffect(() => {
     setShippingAddress((prev) => ({
@@ -787,12 +822,103 @@ export function CheckoutModal({
     setShippingRateError('Shipping address changed. Please fetch shipping rates again.');
   }, [shippingAddressSignature, shippingRates]);
 
-useEffect(() => {
-  setTaxEstimate(null);
-  setTaxEstimateError(null);
-  setTaxEstimatePending(false);
-  lastTaxQuoteRef.current = null;
-}, [isOpen]);
+  const requestTaxEstimate = useCallback(async (options?: { force?: boolean }) => {
+    if (!shouldFetchTax || !taxQuoteKey) {
+      return;
+    }
+    if (!options?.force && lastTaxQuoteRef.current?.key === taxQuoteKey) {
+      return;
+    }
+    if (activeTaxRequestRef.current) {
+      activeTaxRequestRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeTaxRequestRef.current = controller;
+    if (lastTaxQuoteRef.current?.key !== taxQuoteKey) {
+      setTaxEstimate(null);
+    }
+    setTaxEstimatePending(true);
+    setTaxEstimateError(null);
+    try {
+      const response = await ordersAPI.estimateTotals(
+        {
+          items: checkoutLineItems.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+          shippingAddress,
+          shippingEstimate: selectedShippingRate,
+          shippingTotal: shippingCost,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) {
+        return;
+      }
+      const totals = response?.totals || null;
+      const amount = Math.max(0, Number(totals?.taxTotal) || 0);
+      const grandTotalFromApi = Number(totals?.grandTotal);
+      const fallbackGrandTotal = Math.max(0, subtotal - appliedCredits + shippingCost + amount);
+      setTaxEstimate({
+        amount,
+        currency: typeof totals?.currency === 'string' && totals.currency ? totals.currency : 'USD',
+        grandTotal: Number.isFinite(grandTotalFromApi) ? Math.max(0, grandTotalFromApi) : fallbackGrandTotal,
+        source: totals?.source || null,
+      });
+      lastTaxQuoteRef.current = { key: taxQuoteKey, ts: Date.now() };
+    } catch (error: any) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message = typeof error?.message === 'string' && error.message.trim()
+        ? sanitizeServiceNames(error.message)
+        : 'Unable to calculate taxes right now. Please try again.';
+      setTaxEstimateError(message);
+      setTaxEstimate(null);
+      lastTaxQuoteRef.current = null;
+    } finally {
+      if (activeTaxRequestRef.current === controller) {
+        activeTaxRequestRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setTaxEstimatePending(false);
+      }
+    }
+  }, [appliedCredits, checkoutLineItems, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
+
+  useEffect(() => {
+    if (!shouldFetchTax || !taxQuoteKey) {
+      if (activeTaxRequestRef.current) {
+        activeTaxRequestRef.current.abort();
+        activeTaxRequestRef.current = null;
+      }
+      setTaxEstimate(null);
+      setTaxEstimateError(null);
+      setTaxEstimatePending(false);
+      lastTaxQuoteRef.current = null;
+      return;
+    }
+
+    requestTaxEstimate().catch((error) => {
+      console.warn('[CheckoutModal] Tax estimate failed', error);
+    });
+
+    return () => {
+      if (activeTaxRequestRef.current) {
+        activeTaxRequestRef.current.abort();
+        activeTaxRequestRef.current = null;
+      }
+    };
+  }, [requestTaxEstimate, shouldFetchTax, taxQuoteKey]);
+
+  const handleRetryTaxEstimate = useCallback(() => {
+    lastTaxQuoteRef.current = null;
+    requestTaxEstimate({ force: true }).catch((error) => {
+      console.warn('[CheckoutModal] Tax estimate retry failed', error);
+    });
+  }, [requestTaxEstimate]);
 
   const isCartEmpty = cartItems.length === 0;
 
@@ -1217,6 +1343,22 @@ useEffect(() => {
                   <span>Shipping:</span>
                   <span>${shippingCost.toFixed(2)}</span>
                 </div>
+                <div className="flex justify-between text-sm text-slate-700">
+                  <span>Estimated tax:</span>
+                  <span>{taxEstimatePending ? 'Calculating…' : `$${taxAmount.toFixed(2)}`}</span>
+                </div>
+                {taxEstimateError && (
+                  <div className="flex items-start justify-between text-xs text-red-600">
+                    <span className="pr-2">{taxEstimateError}</span>
+                    <button
+                      type="button"
+                      onClick={handleRetryTaxEstimate}
+                      className="underline decoration-dotted hover:text-red-700"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span>Total:</span>

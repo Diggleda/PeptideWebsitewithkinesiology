@@ -2538,6 +2538,12 @@ export function Header({
                     {formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}
                   </p>
                 )}
+                {Number.isFinite(taxTotal) && taxTotal > 0 && (
+                  <p>
+                    <span className="font-semibold">Estimated tax:</span>{' '}
+                    {formatCurrency(taxTotal, selectedOrder.currency || 'USD')}
+                  </p>
+                )}
                 {expectedDelivery && (
                   <p>
                     <span className="font-semibold">Expected:</span> {expectedDelivery}

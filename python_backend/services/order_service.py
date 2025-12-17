@@ -15,12 +15,20 @@ from ..repositories import (
     sales_rep_repository,
     referral_code_repository,
 )
-from ..integrations import ship_engine, ship_station, stripe_payments, woo_commerce
+from ..integrations import ship_station, stripe_payments, woo_commerce
+from ..integrations import stripe_tax
 from .. import storage
 from . import referral_service
 from . import settings_service
 
 logger = logging.getLogger(__name__)
+
+_PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
+    if _PERF_LOG_ENABLED or duration_ms >= threshold_ms:
+        logger.info("[perf] %s (%.0fms)", message, duration_ms)
 
 _SALES_BY_REP_SUMMARY_TTL_SECONDS = 25
 _sales_by_rep_summary_lock = threading.Lock()
@@ -179,6 +187,98 @@ def _extract_woo_order_id(local_order: Optional[Dict]) -> Optional[str]:
     return None
 
 
+def estimate_order_totals(
+    *,
+    user_id: str,
+    items: List[Dict],
+    shipping_address: Dict,
+    shipping_estimate: Optional[Dict] = None,
+    shipping_total: float | int | str = 0,
+) -> Dict:
+    if not _validate_items(items):
+        err = ValueError("Invalid items payload")
+        setattr(err, "status", 400)
+        raise err
+
+    try:
+        shipping_total_value = float(shipping_total or 0)
+    except Exception:
+        shipping_total_value = 0.0
+    shipping_total_value = max(0.0, shipping_total_value)
+
+    items_total = 0.0
+    normalized_items: List[Dict] = []
+    for item in items:
+        try:
+            unit_price = float(item.get("price") or 0)
+            quantity = float(item.get("quantity") or 0)
+        except Exception:
+            unit_price = 0.0
+            quantity = 0.0
+        unit_price = max(0.0, unit_price)
+        quantity = max(0.0, quantity)
+        line_total = unit_price * quantity
+        if line_total <= 0:
+            continue
+        items_total += line_total
+        normalized_items.append(
+            {
+                "productId": item.get("productId") or item.get("id") or item.get("sku"),
+                "price": unit_price,
+                "quantity": quantity,
+            }
+        )
+
+    if items_total <= 0:
+        err = ValueError("No billable line items")
+        setattr(err, "status", 400)
+        raise err
+
+    address = shipping_address or {}
+    country = str(address.get("country") or "US").strip().upper()
+    state = _normalize_address_field(address.get("state")) or ""
+    postal = _normalize_address_field(address.get("postalCode") or address.get("postcode") or address.get("zip")) or ""
+    if country == "US" and (not state or not postal):
+        err = ValueError("Shipping address must include state and postal code")
+        setattr(err, "status", 400)
+        raise err
+
+    tax_debug = (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+    if tax_debug:
+        logger.info(
+            "[TaxEstimate] Request userId=%s items=%s shippingTotal=%s destination=%s",
+            str(user_id or ""),
+            len(normalized_items),
+            shipping_total_value,
+            {"country": country, "state": state, "postal_code": postal, "city": address.get("city")},
+        )
+
+    tax_result = stripe_tax.calculate_tax_amount(
+        items=normalized_items,
+        shipping_address=address,
+        shipping_total=shipping_total_value,
+        currency="usd",
+    )
+    tax_total = float(tax_result.get("tax_total_cents") or 0) / 100.0
+    tax_total = max(0.0, tax_total)
+    grand_total = max(0.0, items_total + shipping_total_value + tax_total)
+
+    totals = {
+        "itemsTotal": round(items_total, 2),
+        "shippingTotal": round(shipping_total_value, 2),
+        "taxTotal": round(tax_total, 2),
+        "grandTotal": round(grand_total, 2),
+        "currency": "USD",
+        "source": "stripe_tax",
+        "stripeTaxCalculationId": tax_result.get("calculation_id"),
+    }
+
+    if tax_debug:
+        logger.info("[TaxEstimate] Result %s", totals)
+
+    return {"success": True, "totals": totals}
+
+
 def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
     rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
     if not rep_id:
@@ -211,6 +311,7 @@ def create_order(
     items: List[Dict],
     total: float,
     referral_code: Optional[str],
+    tax_total: Optional[float] = None,
     shipping_total: Optional[float] = None,
     shipping_address: Optional[Dict] = None,
     shipping_rate: Optional[Dict] = None,
@@ -219,8 +320,15 @@ def create_order(
 ) -> Dict:
     if not _validate_items(items):
         raise _service_error("Order requires at least one item", 400)
-    if not isinstance(total, (int, float)) or total <= 0:
-        raise _service_error("Order total must be a positive number", 400)
+    items_subtotal = 0.0
+    for item in items or []:
+        try:
+            items_subtotal += float(item.get("price") or 0) * float(item.get("quantity") or 0)
+        except Exception:
+            continue
+    items_subtotal = float(items_subtotal or 0)
+    if items_subtotal <= 0:
+        raise _service_error("Order requires at least one billable item", 400)
 
     user = user_repository.find_by_id(user_id)
     if not user:
@@ -230,6 +338,17 @@ def create_order(
 
     now = datetime.now(timezone.utc).isoformat()
     shipping_address = shipping_address or {}
+    try:
+        shipping_total_value = float(shipping_total or 0)
+    except Exception:
+        shipping_total_value = 0.0
+    shipping_total_value = max(0.0, shipping_total_value)
+    try:
+        tax_total_value = float(tax_total or 0)
+    except Exception:
+        tax_total_value = 0.0
+    tax_total_value = max(0.0, tax_total_value)
+
     address_updates = _extract_user_address_fields(shipping_address)
     if any(address_updates.values()):
         updated_user = user_repository.update({**user, **address_updates})
@@ -241,8 +360,11 @@ def create_order(
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
         "items": items,
-        "total": float(total),
-        "shippingTotal": float(shipping_total or 0),
+        # `total` is the items subtotal; shipping/tax are tracked separately.
+        "total": float(items_subtotal),
+        "itemsSubtotal": float(items_subtotal),
+        "shippingTotal": float(shipping_total_value),
+        "taxTotal": float(tax_total_value),
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "referralCode": normalized_referral,
@@ -258,14 +380,14 @@ def create_order(
 
     # Auto-apply available referral credits to this order
     available_credit = float(user.get("referralCredits") or 0)
-    if available_credit > 0 and float(total) > 0:
-        applied = min(available_credit, float(total))
+    if available_credit > 0 and items_subtotal > 0:
+        applied = min(available_credit, items_subtotal)
         order["appliedReferralCredit"] = round(applied, 2)
 
     referral_effects = referral_service.handle_order_referral_effects(
         purchaser_id=user_id,
         referral_code=normalized_referral,
-        order_total=float(total),
+        order_total=float(items_subtotal),
         order_id=order["id"],
     )
 
@@ -286,12 +408,23 @@ def create_order(
             "amount": bonus.get("amount"),
         }
 
+    applied_credit_value = float(order.get("appliedReferralCredit") or 0) or 0.0
+    order["grandTotal"] = round(
+        max(0.0, items_subtotal - applied_credit_value + shipping_total_value + tax_total_value),
+        2,
+    )
+
     order_repository.insert(order)
 
     integrations = {}
 
     try:
+        t0 = time.perf_counter()
         integrations["wooCommerce"] = woo_commerce.forward_order(order, user)
+        _perf_log(
+            f"woo_commerce.forward_order orderId={order.get('id')} status={integrations.get('wooCommerce', {}).get('status')}",
+            duration_ms=(time.perf_counter() - t0) * 1000,
+        )
         woo_resp = integrations["wooCommerce"]
         if woo_resp.get("status") == "success":
             woo_response = woo_resp.get("response", {}) or {}
@@ -349,7 +482,12 @@ def create_order(
 
     if order.get("wooOrderId"):
         try:
+            t0 = time.perf_counter()
             integrations["stripe"] = stripe_payments.create_payment_intent(order)
+            _perf_log(
+                f"stripe_payments.create_payment_intent orderId={order.get('id')} status={integrations.get('stripe', {}).get('status')}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+            )
             if integrations["stripe"].get("paymentIntentId"):
                 order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
                 try:
@@ -407,15 +545,8 @@ def create_order(
             },
         )
 
-    try:
-        integrations["shipEngine"] = ship_engine.forward_shipment(order, user)
-    except Exception as exc:  # pragma: no cover - network error path
-        logger.error("ShipEngine integration failed", exc_info=True, extra={"orderId": order["id"]})
-        integrations["shipEngine"] = {
-            "status": "error",
-            "message": str(exc),
-            "details": getattr(exc, "response", None),
-        }
+    # ShipEngine is no longer used in production (ShipStation handles fulfillment/inventory).
+    integrations["shipEngine"] = {"status": "skipped", "reason": "deprecated"}
 
     order["integrations"] = {
         "wooCommerce": integrations.get("wooCommerce", {}).get("status"),
@@ -665,7 +796,13 @@ def get_orders_for_user(user_id: str):
     email = (user.get("email") or "").strip().lower()
     if email:
         try:
+            t0 = time.perf_counter()
             woo_orders = woo_commerce.fetch_orders_by_email(email)
+            _perf_log(
+                f"woo_commerce.fetch_orders_by_email userId={user_id} count={len(woo_orders) if isinstance(woo_orders, list) else 'n/a'}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+                threshold_ms=250.0,
+            )
         except woo_commerce.IntegrationError as exc:
             logger.error("WooCommerce order lookup failed", exc_info=True, extra={"userId": user_id})
             woo_error = {
@@ -680,8 +817,15 @@ def get_orders_for_user(user_id: str):
     merged_woo_orders = woo_orders
 
     # Enrich Woo orders with ShipStation status/tracking
-    for woo_order in merged_woo_orders:
-        _enrich_with_shipstation(woo_order)
+    if merged_woo_orders:
+        t0 = time.perf_counter()
+        for woo_order in merged_woo_orders:
+            _enrich_with_shipstation(woo_order)
+        _perf_log(
+            f"ship_station.enrich_orders userId={user_id} count={len(merged_woo_orders)}",
+            duration_ms=(time.perf_counter() - t0) * 1000,
+            threshold_ms=250.0,
+        )
 
     try:
         sample = merged_woo_orders[0] if merged_woo_orders else {}

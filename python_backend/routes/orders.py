@@ -16,6 +16,7 @@ def create_order():
     items = payload.get("items") or []
     total = payload.get("total")
     referral_code = payload.get("referralCode")
+    tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
     # Support both keys from frontend/backends
@@ -32,6 +33,7 @@ def create_order():
             items=items,
             total=total,
             referral_code=referral_code,
+            tax_total=tax_total,
             shipping_total=shipping_total,
             shipping_address=shipping_address,
             shipping_rate=shipping_rate,
@@ -112,3 +114,23 @@ def admin_sales_by_rep():
         )
 
     return handle_action(action)
+
+
+@blueprint.post("/estimate")
+@require_auth
+def estimate_order_totals():
+    payload = request.get_json(force=True, silent=True) or {}
+    items = payload.get("items") or []
+    shipping_address = payload.get("shippingAddress") or {}
+    shipping_estimate = payload.get("shippingEstimate") or {}
+    shipping_total = payload.get("shippingTotal") or 0
+    user_id = g.current_user.get("id")
+    return handle_action(
+        lambda: order_service.estimate_order_totals(
+            user_id=user_id,
+            items=items,
+            shipping_address=shipping_address,
+            shipping_estimate=shipping_estimate,
+            shipping_total=shipping_total,
+        )
+    )

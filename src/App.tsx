@@ -1282,7 +1282,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.11";
+  "v1.9.13";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2905,6 +2905,11 @@ export default function App() {
     string | null
   >(null);
   const [showCanceledOrders, setShowCanceledOrders] = useState(false);
+  const postCheckoutOrderRef = useRef<{
+    wooOrderNumber: string | null;
+    createdAtMs: number;
+  } | null>(null);
+  const postCheckoutOrdersRefreshTimersRef = useRef<number[]>([]);
   const [accountModalRequest, setAccountModalRequest] = useState<{
     tab: "details" | "orders";
     open?: boolean;
@@ -3130,6 +3135,44 @@ export default function App() {
     },
     [user?.id, showCanceledOrders],
   );
+
+  const triggerPostCheckoutOrdersRefresh = useCallback(async () => {
+    // Best-effort: Woo order creation can be eventually consistent; poll a few times so
+    // the brand new order shows up immediately in the Orders tab.
+    postCheckoutOrdersRefreshTimersRef.current.forEach((id) => window.clearTimeout(id));
+    postCheckoutOrdersRefreshTimersRef.current = [];
+
+    const targetWooNumber = postCheckoutOrderRef.current?.wooOrderNumber || null;
+    const attempts = [0, 900, 1800, 3500];
+
+    const tryRefresh = async () => {
+      try {
+        const latest = await loadAccountOrders();
+        if (targetWooNumber) {
+          const found = latest.some((order) => String(order.number || "").trim() === targetWooNumber);
+          if (found) {
+            return true;
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return false;
+    };
+
+    // Immediate and a few short retries.
+    void tryRefresh();
+    for (const delayMs of attempts.slice(1)) {
+      const timerId = window.setTimeout(async () => {
+        const done = await tryRefresh();
+        if (done) {
+          postCheckoutOrdersRefreshTimersRef.current.forEach((id) => window.clearTimeout(id));
+          postCheckoutOrdersRefreshTimersRef.current = [];
+        }
+      }, delayMs);
+      postCheckoutOrdersRefreshTimersRef.current.push(timerId);
+    }
+  }, [loadAccountOrders]);
 
   const handleCancelOrder = useCallback(
     async (orderId: string) => {
@@ -7953,7 +7996,7 @@ export default function App() {
       typeof options?.taxTotal === "number" && options.taxTotal >= 0
         ? options.taxTotal
         : 0;
-    const total = itemTotal + (options?.shippingTotal || 0) + taxTotal;
+    const total = itemTotal;
 
     try {
       const response = await ordersAPI.create(
@@ -7972,6 +8015,18 @@ export default function App() {
         },
         taxTotal,
       );
+      try {
+        const wooNumber =
+          response?.integrations?.wooCommerce?.response?.number ||
+          response?.order?.wooOrderNumber ||
+          null;
+        postCheckoutOrderRef.current = {
+          wooOrderNumber: wooNumber ? String(wooNumber).trim() : null,
+          createdAtMs: Date.now(),
+        };
+      } catch {
+        postCheckoutOrderRef.current = { wooOrderNumber: null, createdAtMs: Date.now() };
+      }
       await loadAccountOrders().catch(() => undefined);
       return response;
     } catch (error: any) {
@@ -12329,6 +12384,7 @@ export default function App() {
               open: true,
               token: requestToken,
             });
+            triggerPostCheckoutOrdersRefresh().catch(() => undefined);
             setTimeout(() => {
               setAccountModalRequest((prev) =>
                 prev && prev.token === requestToken ? null : prev,
@@ -12606,7 +12662,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="text-right text-sm font-semibold text-slate-900">
-                        {formatCurrency(order.total || 0)}
+                        {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
                       </div>
                     </div>
                   ))}
@@ -12683,10 +12739,15 @@ export default function App() {
                   typeof (salesOrderDetail as any).taxTotal === "number"
                     ? (salesOrderDetail as any).taxTotal
                     : 0;
+                const computedGrandTotal = subtotal + shippingTotal + taxTotal;
+                const storedGrandTotal =
+                  typeof (salesOrderDetail as any).grandTotal === "number"
+                    ? (salesOrderDetail as any).grandTotal
+                    : null;
                 const grandTotal =
-                  typeof salesOrderDetail.total === "number"
-                    ? salesOrderDetail.total
-                    : subtotal + shippingTotal + taxTotal;
+                  typeof storedGrandTotal === "number" && Number.isFinite(storedGrandTotal) && storedGrandTotal > 0
+                    ? storedGrandTotal
+                    : computedGrandTotal;
 	                const paymentDisplay =
 	                  (() => {
 	                    const integrations = (salesOrderDetail as any).integrationDetails || (salesOrderDetail as any).integrations || {};
@@ -12806,7 +12867,7 @@ export default function App() {
                         </p>
                         <p className="font-semibold text-slate-900">
                           {formatCurrency(
-                            salesOrderDetail.total,
+                            grandTotal,
                             salesOrderDetail.currency || "USD",
                           )}
                         </p>
@@ -12964,17 +13025,17 @@ export default function App() {
                             )}
                           </span>
                         </div>
-                        {taxTotal > 0 && (
-                          <div className="flex justify-between">
-                            <span>Tax</span>
-                            <span>
-                              {formatCurrency(
-                                taxTotal,
-                                salesOrderDetail.currency || "USD",
-                              )}
-                            </span>
-                          </div>
-                        )}
+	                        {taxTotal > 0 && (
+	                          <div className="flex justify-between">
+	                            <span>Estimated tax</span>
+	                            <span>
+	                              {formatCurrency(
+	                                taxTotal,
+	                                salesOrderDetail.currency || "USD",
+	                              )}
+	                            </span>
+	                          </div>
+	                        )}
                         <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-2">
                           <span>Total</span>
                           <span>

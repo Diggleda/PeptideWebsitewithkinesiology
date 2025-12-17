@@ -211,6 +211,35 @@ const calculateStripeTax = async ({ items, shippingAddress, shippingTotal }) => 
 
   const address = shippingAddress || {};
 
+  if (env.stripe.taxDebug) {
+    logger.info(
+      {
+        taxDebug: true,
+        event: 'stripe_tax_request',
+        currency,
+        rawItems: Array.isArray(items) ? items.length : 0,
+        lineItems: lineItems.length,
+        lineItemsPreview: lineItems.slice(0, 25).map((item) => ({
+          reference: item.reference,
+          amount: item.amount,
+          tax_code: item.tax_code || null,
+        })),
+        shippingAmountCents: shippingAmount,
+        shippingTaxCode: shippingCost?.tax_code || null,
+        defaultTaxCode: env.stripe.defaultTaxCode || null,
+        destination: {
+          country: address.country || null,
+          state: address.state || null,
+          postal_code: address.postalCode || address.postcode || null,
+          city: address.city || null,
+        },
+        missingPostalCode: !address.postalCode && !address.postcode,
+        missingState: !address.state,
+      },
+      'Stripe Tax request payload',
+    );
+  }
+
   try {
     const calculation = await stripe.tax.calculations.create({
       currency,
@@ -229,16 +258,76 @@ const calculateStripeTax = async ({ items, shippingAddress, shippingTotal }) => 
       },
     });
 
-    const lineTaxCents = Array.isArray(calculation.line_items)
-      ? calculation.line_items.reduce(
-          (sum, item) => sum + (Number(item?.amount_tax) || 0),
-          0,
-        )
-      : 0;
+    let calculationLineItems = Array.isArray(calculation.line_items)
+      ? calculation.line_items
+      : (Array.isArray(calculation.line_items?.data) ? calculation.line_items.data : []);
+    let lineItemsSource = calculationLineItems.length > 0 ? 'inline' : 'none';
+
+    if (env.stripe.taxDebug && calculationLineItems.length === 0 && typeof stripe.tax?.calculations?.listLineItems === 'function') {
+      try {
+        const listed = await stripe.tax.calculations.listLineItems(calculation.id, { limit: 100 });
+        if (Array.isArray(listed?.data) && listed.data.length > 0) {
+          calculationLineItems = listed.data;
+          lineItemsSource = 'listLineItems';
+        }
+      } catch (listError) {
+        logger.warn({ err: listError, calculationId: calculation.id }, 'Stripe Tax listLineItems failed');
+      }
+    }
+
+    const lineTaxCents = calculationLineItems.reduce(
+      (sum, item) => sum + (Number(item?.amount_tax) || 0),
+      0,
+    );
     const shippingTaxCents = calculation.shipping_cost
       ? Number(calculation.shipping_cost.amount_tax) || 0
       : 0;
-    const totalTaxCents = lineTaxCents + shippingTaxCents;
+    const apiTaxExclusive = Number(calculation.tax_amount_exclusive);
+    const apiTaxInclusive = Number(calculation.tax_amount_inclusive);
+    const apiTaxAmount = Number(calculation.tax_amount);
+    const apiTaxFallback = Number.isFinite(apiTaxExclusive)
+      ? apiTaxExclusive
+      : (Number.isFinite(apiTaxInclusive) ? apiTaxInclusive : (Number.isFinite(apiTaxAmount) ? apiTaxAmount : 0));
+    const totalTaxCents = Math.max(lineTaxCents + shippingTaxCents, apiTaxFallback || 0);
+
+    if (env.stripe.taxDebug) {
+      const lineItemsSummary = calculationLineItems.map((item) => ({
+            reference: item.reference || null,
+            amount: item.amount || null,
+            amount_tax: item.amount_tax || null,
+            tax_code: item.tax_code || null,
+            tax_behavior: item.tax_behavior || null,
+            taxability_reason: item.taxability_reason || null,
+            jurisdiction: item.jurisdiction || null,
+          }));
+      logger.info(
+        {
+          taxDebug: true,
+          calculationId: calculation.id,
+          currency,
+          lineItems: calculationLineItems.length,
+          lineItemsSource,
+          lineItemsSummary,
+          lineTaxCents,
+          shippingTaxCents,
+          totalTaxCents,
+          taxAmountExclusive: Number.isFinite(apiTaxExclusive) ? apiTaxExclusive : null,
+          taxAmountInclusive: Number.isFinite(apiTaxInclusive) ? apiTaxInclusive : null,
+          shippingTaxCode: shippingCost?.tax_code || null,
+          defaultTaxCode: env.stripe.defaultTaxCode || null,
+          destination: {
+            country: address.country || null,
+            state: address.state || null,
+            postal_code: address.postalCode || address.postcode || null,
+            city: address.city || null,
+          },
+          calculationLineItemsShape: calculation.line_items && !Array.isArray(calculation.line_items)
+            ? Object.keys(calculation.line_items).slice(0, 20)
+            : null,
+        },
+        'Stripe Tax calculation result',
+      );
+    }
 
     return {
       status: 'success',
@@ -246,7 +335,15 @@ const calculateStripeTax = async ({ items, shippingAddress, shippingTotal }) => 
       calculation,
     };
   } catch (error) {
-    logger.warn({ err: error }, 'Stripe Tax calculation failed');
+    logger.warn(
+      {
+        err: error,
+        taxDebug: Boolean(env.stripe.taxDebug),
+        shippingTaxCode: env.stripe.shippingTaxCode || null,
+        defaultTaxCode: env.stripe.defaultTaxCode || null,
+      },
+      'Stripe Tax calculation failed',
+    );
     const wrapped = new Error(error?.message || 'Stripe Tax calculation failed');
     wrapped.status = error?.statusCode || 502;
     wrapped.code = error?.code || 'STRIPE_TAX_ERROR';

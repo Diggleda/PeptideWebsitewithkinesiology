@@ -633,6 +633,21 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     if applied_credit > 0:
         discount_total = f"-{applied_credit:.2f}"
 
+    tax_total = 0.0
+    try:
+        tax_total = float(order.get("taxTotal") or 0) or 0.0
+    except Exception:
+        tax_total = 0.0
+    tax_total = max(0.0, tax_total)
+    if tax_total > 0:
+        fee_lines.append(
+            {
+                "name": "Estimated tax",
+                "total": f"{tax_total:.2f}",
+                "tax_status": "none",
+            }
+        )
+
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
     shipping_estimate = order.get("shippingEstimate") or {}
@@ -683,6 +698,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     meta_data = [
         {"key": "peppro_order_id", "value": order.get("id")},
         {"key": "peppro_total", "value": order.get("total")},
+        {"key": "peppro_tax_total", "value": tax_total},
+        {"key": "peppro_grand_total", "value": order.get("grandTotal")},
         {"key": "peppro_created_at", "value": order.get("createdAt")},
         {"key": "peppro_shipping_total", "value": shipping_total},
         {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
@@ -1420,6 +1437,22 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     else:
         payment_label = order.get("payment_method_title") or order.get("payment_method")
 
+    tax_total = _num(
+        _meta_value(meta_data, "peppro_tax_total"),
+        _num(order.get("total_tax"), 0.0),
+    )
+    if tax_total <= 0:
+        for fee in order.get("fee_lines") or []:
+            try:
+                name = str((fee or {}).get("name") or "").strip().lower()
+            except Exception:
+                name = ""
+            if not name:
+                continue
+            if "tax" in name:
+                tax_total = _num((fee or {}).get("total"), 0.0)
+                break
+
     mapped = {
         "id": identifier,
         "wooOrderId": woo_order_id or identifier,
@@ -1427,6 +1460,8 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "number": public_number or identifier,
         "status": order.get("status"),
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
+        "taxTotal": tax_total,
+        "grandTotal": _num(_meta_value(meta_data, "peppro_grand_total"), _num(order.get("total"), 0.0)),
         "currency": order.get("currency") or "USD",
         "paymentMethod": payment_label,
         "paymentDetails": payment_label,
