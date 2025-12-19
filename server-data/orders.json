@@ -5694,5 +5694,291 @@
     "wooOrderNumber": "493",
     "shipStationOrderId": 191249305,
     "paymentIntentId": "pi_3SbpTLLdQwKDgAgZ1uMozhtQ"
+  },
+  {
+    "id": "ord_f7d3a945e8f3458278ca9f58",
+    "userId": "1763997887996",
+    "items": [
+      {
+        "cartItemId": "woo-1204::woo-variation-1205",
+        "productId": 1204,
+        "variantId": 1205,
+        "sku": "Phych-PT141-10mg-N",
+        "name": "PT-141 N — 10mg",
+        "price": 93.91,
+        "quantity": 1,
+        "note": null,
+        "position": 1,
+        "weightOz": 0.06,
+        "lengthIn": null,
+        "widthIn": 1,
+        "heightIn": 4.12
+      }
+    ],
+    "total": 140.06,
+    "taxTotal": 0,
+    "itemsSubtotal": 93.91,
+    "shippingTotal": 46.15,
+    "shippingEstimate": {
+      "carrierId": null,
+      "serviceCode": "ups_next_day_air",
+      "serviceType": "ups_next_day_air",
+      "estimatedDeliveryDays": 0,
+      "deliveryDateGuaranteed": null,
+      "rate": 46.15,
+      "currency": "USD",
+      "addressFingerprint": "d3f48189227e0d2f85a3eb25a3fcb48008e48023",
+      "packageCode": null,
+      "weightOz": null,
+      "packageDimensions": null,
+      "meta": null,
+      "estimatedArrivalDate": "2025-12-19T07:15:09.339Z"
+    },
+    "shippingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": "",
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": null
+    },
+    "billingAddress": {
+      "name": "Jackelyn Kelley",
+      "company": null,
+      "addressLine1": "6330 S County Line Rd",
+      "addressLine2": null,
+      "city": "Burr Ridge",
+      "state": "IL",
+      "postalCode": "60527",
+      "country": "US",
+      "phone": "6302584773",
+      "email": "diggledadiggz@gmail.com"
+    },
+    "referralCode": null,
+    "status": "pending",
+    "createdAt": "2025-12-18T07:15:09.339Z",
+    "physicianCertificationAccepted": true,
+    "idempotencyKey": "14aaad40-4159-4842-8dac-33aa8b267ac6",
+    "integrations": {
+      "wooCommerce": "success",
+      "stripe": "success",
+      "shipEngine": "skipped",
+      "shipStation": "success",
+      "mysql": "skipped"
+    },
+    "integrationDetails": {
+      "wooCommerce": {
+        "status": "success",
+        "payload": {
+          "status": "pending",
+          "created_via": "peppro_app",
+          "customer_note": "PepPro Order ord_f7d3a945e8f3458278ca9f58",
+          "set_paid": false,
+          "line_items": [
+            {
+              "name": "PT-141 N — 10mg",
+              "sku": "Phych-PT141-10mg-N",
+              "quantity": 1,
+              "total": "93.91",
+              "subtotal": "93.91",
+              "total_tax": "0",
+              "subtotal_tax": "0",
+              "meta_data": [],
+              "product_id": 1204,
+              "variation_id": 1205
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "peppro_order_id",
+              "value": "ord_f7d3a945e8f3458278ca9f58"
+            },
+            {
+              "key": "peppro_total",
+              "value": 140.06
+            },
+            {
+              "key": "peppro_created_at",
+              "value": "2025-12-18T07:15:09.339Z"
+            },
+            {
+              "key": "peppro_origin",
+              "value": "PepPro Web Checkout"
+            },
+            {
+              "key": "_order_number",
+              "value": "ord_f7d3a945e8f3458278ca9f58"
+            },
+            {
+              "key": "_order_number_formatted",
+              "value": "ord_f7d3a945e8f3458278ca9f58"
+            },
+            {
+              "key": "peppro_display_order_id",
+              "value": "ord_f7d3a945e8f3458278ca9f58"
+            },
+            {
+              "key": "peppro_shipping_total",
+              "value": 46.15
+            },
+            {
+              "key": "peppro_shipping_estimate",
+              "value": "{\"carrierId\":null,\"serviceCode\":\"ups_next_day_air\",\"serviceType\":\"ups_next_day_air\",\"estimatedDeliveryDays\":0,\"deliveryDateGuaranteed\":null,\"rate\":46.15,\"currency\":\"USD\",\"addressFingerprint\":\"d3f48189227e0d2f85a3eb25a3fcb48008e48023\",\"packageCode\":null,\"weightOz\":null,\"packageDimensions\":null,\"meta\":null,\"estimatedArrivalDate\":\"2025-12-19T07:15:09.339Z\"}"
+            },
+            {
+              "key": "peppro_package_weight_oz",
+              "value": 0
+            }
+          ],
+          "billing": {
+            "first_name": "Jackelyn Kelley",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipping": {
+            "first_name": "Jackelyn Kelley",
+            "address_1": "6330 S County Line Rd",
+            "address_2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postcode": "60527",
+            "country": "US"
+          },
+          "shipping_lines": [
+            {
+              "method_id": "peppro_ups_next_day_air",
+              "method_title": "ups_next_day_air",
+              "total": "46.15",
+              "meta_data": [
+                {
+                  "key": "peppro_service_code",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_service_type",
+                  "value": "ups_next_day_air"
+                },
+                {
+                  "key": "peppro_estimated_delivery_days",
+                  "value": 0
+                },
+                {
+                  "key": "peppro_package_weight_oz",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "invoiceUrl": "https://shop.peppro.net/my-account/view-order/1274/?order=1274&key=wc_order_0703rnjPNrkZI",
+        "response": {
+          "id": 1274,
+          "number": "1274",
+          "status": "pending",
+          "payment_url": "https://shop.peppro.net/checkout/order-pay/1274/?pay_for_order=true&key=wc_order_0703rnjPNrkZI",
+          "order_key": "wc_order_0703rnjPNrkZI",
+          "invoiceUrl": "https://shop.peppro.net/my-account/view-order/1274/?order=1274&key=wc_order_0703rnjPNrkZI"
+        }
+      },
+      "shipStation": {
+        "status": "success",
+        "payload": {
+          "orderNumber": "1274",
+          "orderKey": "woo-1274",
+          "orderSource": "PepPro Checkout",
+          "orderStatus": "awaiting_shipment",
+          "orderDate": "2025-12-18T07:15:09.339Z",
+          "paymentDate": "2025-12-18T07:15:09.339Z",
+          "customerEmail": "diggledadiggz@gmail.com",
+          "requestedShippingService": "ups_next_day_air",
+          "carrierCode": "ups_walleted",
+          "serviceCode": "ups_next_day_air",
+          "packageCode": "package",
+          "amountPaid": 140.06,
+          "shippingPaid": 46.15,
+          "taxAmount": 0,
+          "billTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "6330 S County Line Rd",
+            "street2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postalCode": "60527",
+            "country": "US",
+            "phone": "6302584773",
+            "email": "diggledadiggz@gmail.com"
+          },
+          "shipTo": {
+            "name": "Jackelyn Kelley",
+            "company": "",
+            "street1": "6330 S County Line Rd",
+            "street2": "",
+            "city": "Burr Ridge",
+            "state": "IL",
+            "postalCode": "60527",
+            "country": "US",
+            "phone": "6302584773"
+          },
+          "shipFrom": {
+            "name": "Peptra Fulfillment",
+            "company": "PepPro",
+            "street1": "640 S. Grand Ave",
+            "street2": "107",
+            "city": "Santa Ana",
+            "state": "CA",
+            "postalCode": "92705",
+            "country": "US",
+            "phone": "7149320232"
+          },
+          "weight": {
+            "value": 0.06,
+            "units": "ounces"
+          },
+          "items": [
+            {
+              "lineItemKey": "woo-1204::woo-variation-1205",
+              "sku": "Phych-PT141-10mg-N",
+              "name": "PT-141 N — 10mg",
+              "quantity": 1,
+              "unitPrice": 93.91,
+              "weight": {
+                "value": 0.06,
+                "units": "ounces"
+              }
+            }
+          ],
+          "advancedOptions": {
+            "source": "woocommerce",
+            "customOrderNumber": "1274",
+            "requestedPackageType": "package"
+          }
+        },
+        "response": {
+          "orderId": 200175493,
+          "orderKey": "woo-1274",
+          "orderNumber": "1274"
+        }
+      },
+      "stripe": {
+        "status": "success",
+        "clientSecret": "pi_3SfbQaLdQwKDgAgZ1EVpcmvM_secret_7499tcmlEBtAEd5F4v1yDol1F",
+        "paymentIntentId": "pi_3SfbQaLdQwKDgAgZ1EVpcmvM"
+      },
+      "shipEngine": {
+        "status": "skipped",
+        "reason": "shipstation_enabled"
+      },
+      "mysql": {
+        "status": "skipped",
+        "reason": "mysql_disabled"
+      }
+    },
+    "wooOrderId": 1274,
+    "wooOrderNumber": "1274",
+    "shipStationOrderId": 200175493,
+    "paymentIntentId": "pi_3SfbQaLdQwKDgAgZ1EVpcmvM"
   }
 ]

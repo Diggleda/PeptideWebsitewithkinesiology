@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
-from flask import Blueprint, g, request
+from pathlib import Path
+from flask import Blueprint, g, request, send_file
 
 from ..middleware.auth import require_auth
-from ..repositories import referral_code_repository, referral_repository, user_repository, sales_rep_repository
+from ..repositories import referral_code_repository, referral_repository, sales_prospect_repository, user_repository, sales_rep_repository
 from ..services import referral_service
 from ..utils.http import handle_action
 
@@ -135,8 +136,10 @@ def delete_doctor_referral(referral_id: str):
         if not referral:
             return {"deleted": True}
 
-        status = (referral.get("status") or "").lower()
-        if status != "pending":
+        # Status is tracked in sales_prospects; block delete if any prospect has progressed.
+        prospects = sales_prospect_repository.find_all_by_referral_id(referral_id)
+        progressed = any((p.get("status") or "").lower() not in ("", "pending") for p in prospects)
+        if progressed:
             raise _error("REFERRAL_DELETE_NOT_ALLOWED", 409)
 
         # Allow deletion even if ownership metadata is missing/mismatched (legacy data)
@@ -172,7 +175,7 @@ def admin_dashboard():
             scope_all=scope_all and (user.get("role") or "").lower() == "admin",
         )
         return {
-            "version": "backend_v1.9.10",
+            "version": "backend_v1.9.21",
             "referrals": referrals,
             "codes": codes,
             "users": users,
@@ -276,6 +279,7 @@ def admin_create_manual_prospect():
                 "phone": payload.get("phone"),
                 "notes": payload.get("notes"),
                 "status": payload.get("status"),
+                "hasAccount": payload.get("hasAccount"),
             }
         )
         return {"referral": referral}
@@ -309,6 +313,7 @@ def admin_update_referral(referral_id: str):
             for key in (
                 "status",
                 "notes",
+                "salesRepNotes",
                 "referredContactName",
                 "referredContactEmail",
                 "referredContactPhone",
@@ -320,6 +325,90 @@ def admin_update_referral(referral_id: str):
             "referral": referral,
             "statuses": referral_service.get_referral_status_choices(),
         }
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/sales-prospects/<identifier>")
+@require_auth
+def admin_get_sales_prospect(identifier: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        prospect = referral_service.get_sales_prospect_for_sales_rep(user["id"], identifier)
+        return {"prospect": prospect}
+
+    return handle_action(action)
+
+
+@blueprint.patch("/admin/sales-prospects/<identifier>")
+@require_auth
+def admin_upsert_sales_prospect(identifier: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        prospect = referral_service.upsert_sales_prospect_for_sales_rep(
+            sales_rep_id=user["id"],
+            identifier=identifier,
+            status=payload.get("status") if "status" in payload else None,
+            notes=payload.get("notes") if "notes" in payload else None,
+            reseller_permit_exempt=payload.get("resellerPermitExempt")
+            if "resellerPermitExempt" in payload
+            else None,
+        )
+        return {"prospect": prospect}
+
+    return handle_action(action)
+
+
+@blueprint.post("/admin/sales-prospects/<identifier>/reseller-permit")
+@require_auth
+def admin_upload_reseller_permit(identifier: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+
+        file = request.files.get("file")
+        if not file:
+            raise _error("INVALID_FILE", 400)
+
+        content = file.read()
+        filename = file.filename or "reseller_permit"
+        prospect = referral_service.upload_reseller_permit_for_sales_rep(
+            user["id"],
+            identifier,
+            filename=filename,
+            content=content,
+        )
+        return {"prospect": prospect}
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/sales-prospects/<identifier>/reseller-permit")
+@require_auth
+def admin_download_reseller_permit(identifier: str):
+    def action():
+        user = _ensure_user()
+        _require_sales_rep(user)
+        prospect = referral_service.get_sales_prospect_for_sales_rep(user["id"], identifier)
+        if not prospect or not prospect.get("resellerPermitFilePath"):
+            raise _error("PERMIT_NOT_FOUND", 404)
+
+        cfg = referral_service.get_config()
+        data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+        relative_path = str(prospect.get("resellerPermitFilePath") or "").lstrip("/\\")
+        abs_path = (data_dir / relative_path).resolve()
+        allowed_root = (data_dir / "uploads" / "reseller-permits").resolve()
+        if not str(abs_path).startswith(str(allowed_root)):
+            raise _error("PERMIT_NOT_FOUND", 404)
+        if not abs_path.exists():
+            raise _error("PERMIT_NOT_FOUND", 404)
+
+        download_name = prospect.get("resellerPermitFileName") or abs_path.name
+        return send_file(abs_path, download_name=download_name, as_attachment=False)
 
     return handle_action(action)
 

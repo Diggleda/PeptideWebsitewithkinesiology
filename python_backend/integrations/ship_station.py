@@ -268,7 +268,11 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
                 data = exc.response.json()
             except Exception:
                 data = exc.response.text
-        logger.error("ShipStation product lookup failed", exc_info=True, extra={"sku": sku})
+        logger.warning(
+            "ShipStation product lookup failed",
+            exc_info=False,
+            extra={"sku": sku, "error": str(exc)},
+        )
         raise IntegrationError("Failed to fetch ShipStation product", response=data) from exc
 
     payload = response.json() or {}
@@ -326,7 +330,11 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
                 data = exc.response.json()
             except Exception:
                 data = exc.response.text
-        logger.error("ShipStation order lookup failed", exc_info=True, extra={"orderNumber": order_number})
+        logger.warning(
+            "ShipStation order lookup failed",
+            exc_info=False,
+            extra={"orderNumber": order_number, "error": str(exc)},
+        )
         raise IntegrationError("ShipStation order lookup failed", response=data, status=getattr(exc.response, "status_code", 502) or 502) from exc
 
     payload = resp.json() or {}

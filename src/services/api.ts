@@ -204,6 +204,135 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   return response.text();
 };
 
+const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
+  const token = getAuthToken();
+  const headers: HeadersInit = {
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    cache: options.cache ?? 'no-store',
+    ...options,
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      ...headers,
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    let errorMessage = `Request failed (${response.status})`;
+    let errorDetails: Record<string, unknown> | string | null = null;
+
+    try {
+      if (contentType.includes('application/json')) {
+        errorDetails = await response.json();
+        if (errorDetails && typeof errorDetails === 'object' && 'error' in errorDetails) {
+          const candidate = (errorDetails as Record<string, unknown>).error;
+          if (typeof candidate === 'string' && candidate.trim().length > 0) {
+            errorMessage = candidate;
+          }
+        }
+      } else {
+        errorDetails = await response.text();
+      }
+    } catch (parseError) {
+      errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+    }
+
+    errorMessage = sanitizeServiceNames(errorMessage);
+    if (typeof errorDetails === 'string') {
+      errorDetails = sanitizeServiceNames(errorDetails);
+    } else if (errorDetails && typeof errorDetails === 'object') {
+      sanitizePayloadMessages(errorDetails as any);
+    }
+
+    const error = new Error(errorMessage);
+    (error as any).status = response.status;
+    (error as any).details = errorDetails;
+    throw error;
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const text = await response.text();
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text);
+      return sanitizePayloadMessages(parsed);
+    } catch {
+      return sanitizeServiceNames(text);
+    }
+  }
+  return response.text();
+};
+
+const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
+  const token = getAuthToken();
+  const headers: HeadersInit = {
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    cache: options.cache ?? 'no-store',
+    ...options,
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      ...headers,
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    let errorMessage = `Request failed (${response.status})`;
+    let errorDetails: Record<string, unknown> | string | null = null;
+
+    try {
+      if (contentType.includes('application/json')) {
+        errorDetails = await response.json();
+        if (errorDetails && typeof errorDetails === 'object' && 'error' in errorDetails) {
+          const candidate = (errorDetails as Record<string, unknown>).error;
+          if (typeof candidate === 'string' && candidate.trim().length > 0) {
+            errorMessage = candidate;
+          }
+        }
+      } else {
+        errorDetails = await response.text();
+      }
+    } catch (parseError) {
+      errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+    }
+
+    errorMessage = sanitizeServiceNames(errorMessage);
+    if (typeof errorDetails === 'string') {
+      errorDetails = sanitizeServiceNames(errorDetails);
+    } else if (errorDetails && typeof errorDetails === 'object') {
+      sanitizePayloadMessages(errorDetails as any);
+    }
+
+    const error = new Error(errorMessage);
+    (error as any).status = response.status;
+    (error as any).details = errorDetails;
+    throw error;
+  }
+
+  const contentDisposition = response.headers.get('content-disposition') || '';
+  const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1] : null;
+  const blob = await response.blob();
+  return { blob, filename, contentType: response.headers.get('content-type') || '' };
+};
+
 export type UpdateProfilePayload = {
   name?: string;
   email?: string;
@@ -721,6 +850,7 @@ export const referralAPI = {
   updateReferral: async (referralId: string, payload: {
     status?: string;
     notes?: string;
+    salesRepNotes?: string;
     referredContactName?: string;
     referredContactEmail?: string;
     referredContactPhone?: string;
@@ -731,12 +861,46 @@ export const referralAPI = {
     });
   },
 
+  getSalesProspect: async (doctorId: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(doctorId)}`);
+  },
+
+  upsertSalesProspect: async (
+    doctorId: string,
+    payload: { status?: string | null; notes?: string | null; resellerPermitExempt?: boolean | null },
+  ) => {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(doctorId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  uploadResellerPermit: async (identifier: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchWithAuthForm(
+      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
+  },
+
+  downloadResellerPermit: async (identifier: string) => {
+    return fetchWithAuthBlob(
+      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      { method: 'GET' },
+    );
+  },
+
   createManualProspect: async (payload: {
     name: string;
     email?: string;
     phone?: string;
     notes?: string;
     status?: string;
+    hasAccount?: boolean;
   }) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/manual`, {
       method: 'POST',

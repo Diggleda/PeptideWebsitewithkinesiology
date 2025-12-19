@@ -6,13 +6,14 @@ from typing import Dict, List
 from ..config import load_config
 from ..database import init_database
 from ..logging import configure_logging
-from ..storage import init_storage, user_store, order_store, sales_rep_store, referral_code_store, referral_store, credit_ledger_store
+from ..storage import init_storage, user_store, order_store, sales_rep_store, referral_code_store, referral_store, sales_prospect_store, credit_ledger_store
 from ..repositories import (
     user_repository,
     order_repository,
     sales_rep_repository,
     referral_code_repository,
     referral_repository,
+    sales_prospect_repository,
     credit_ledger_repository,
 )
 
@@ -52,6 +53,7 @@ def migrate() -> None:
         ("users", user_store, user_repository.insert),
         ("referral codes", referral_code_store, referral_code_repository.insert),
         ("referrals", referral_store, referral_repository.insert),
+        ("sales prospects", sales_prospect_store, sales_prospect_repository.upsert),
         ("orders", order_store, order_repository.insert),
         ("credit ledger", credit_ledger_store, credit_ledger_repository.insert),
     ]

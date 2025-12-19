@@ -589,12 +589,19 @@ def _normalize_woo_order_id(value: Optional[object]) -> Optional[str]:
     return text
 
 
-def build_line_items(items):
-    line_items = []
+def build_line_items(items, tax_total: float = 0.0):
+    """
+    Build WooCommerce line_items.
+
+    If `tax_total` is provided, allocate it across line items (proportional to their totals) so
+    WooCommerce emails show a non-zero tax total (and can optionally itemize by label).
+    """
+    prepared = []
     for item in items or []:
         quantity = int(item.get("quantity", 0) or 0)
         price = float(item.get("price", 0))
-        total = f"{price * quantity:.2f}"
+        line_total_value = max(price * quantity, 0.0)
+        total = f"{line_total_value:.2f}"
         product_id = _parse_woo_id(item.get("productId"))
         variation_id = _parse_woo_id(item.get("variantId"))
         resolved_sku = item.get("sku") or item.get("productId") or item.get("variantSku")
@@ -605,24 +612,44 @@ def build_line_items(items):
                 resolved_sku = None
         if resolved_sku:
             resolved_sku = resolved_sku.strip()
-        line = {
-            "name": item.get("name"),
-            "sku": resolved_sku or None,
-            "quantity": quantity,
-            "product_id": product_id,
-            # Woo keeps our explicit totals; also helps ShipStation export items.
-            "price": f"{price:.2f}",
-            "total": total,
-            "subtotal": total,
-            "total_tax": "0",
-            "subtotal_tax": "0",
-            "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
-        }
-        # Include variation when available so Woo export/ShipStation can map items.
-        if variation_id is not None:
-            line["variation_id"] = variation_id
-        line_items.append(line)
-    return line_items
+        prepared.append(
+            {
+                "name": item.get("name"),
+                "sku": resolved_sku or None,
+                "quantity": quantity,
+                "product_id": product_id,
+                "variation_id": variation_id,
+                "price": f"{price:.2f}",
+                "total": total,
+                "subtotal": total,
+                "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
+                "_line_total_value": line_total_value,
+            }
+        )
+
+    tax_total = float(tax_total or 0)
+    tax_total = max(tax_total, 0.0)
+    base_total = sum(line.get("_line_total_value", 0.0) for line in prepared) or 0.0
+
+    remaining_tax = round(tax_total, 2)
+    for idx, line in enumerate(prepared):
+        line_value = float(line.get("_line_total_value") or 0.0)
+        if tax_total <= 0 or base_total <= 0 or line_value <= 0:
+            allocated = 0.0
+        elif idx == len(prepared) - 1:
+            allocated = remaining_tax
+        else:
+            allocated = round(tax_total * (line_value / base_total), 2)
+            remaining_tax = round(remaining_tax - allocated, 2)
+
+        line["total_tax"] = f"{max(allocated, 0.0):.2f}"
+        line["subtotal_tax"] = f"{max(allocated, 0.0):.2f}"
+        # Drop helper fields and omit variation_id when not set.
+        line.pop("_line_total_value", None)
+        if line.get("variation_id") is None:
+            line.pop("variation_id", None)
+
+    return prepared
 
 
 def build_order_payload(order: Dict, customer: Dict) -> Dict:
@@ -639,12 +666,18 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     except Exception:
         tax_total = 0.0
     tax_total = max(0.0, tax_total)
+    tax_lines = []
     if tax_total > 0:
-        fee_lines.append(
+        # Surface the tax as a WooCommerce tax line so emails show a single "Estimated tax" entry.
+        # Avoid using fee_lines here, because Woo will still display a separate "Tax" row.
+        tax_lines.append(
             {
-                "name": "Estimated tax",
-                "total": f"{tax_total:.2f}",
-                "tax_status": "none",
+                "rate_id": 0,
+                "label": "Estimated tax",
+                "compound": False,
+                "tax_total": f"{tax_total:.2f}",
+                "shipping_tax_total": "0.00",
+                "rate_percent": "0.00",
             }
         )
 
@@ -719,9 +752,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
-        "line_items": build_line_items(order.get("items")),
+        "line_items": build_line_items(order.get("items"), tax_total=tax_total),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
+        "tax_lines": tax_lines,
         "discount_total": discount_total,
         "meta_data": meta_data,
         "billing": billing_address,

@@ -135,6 +135,7 @@ def _ensure_defaults(referral: Dict) -> Dict:
     normalized.setdefault("referralCodeId", referral.get("referralCodeId") or None)
     normalized.setdefault("salesRepId", referral.get("salesRepId") or None)
     normalized.setdefault("referrerDoctorId", referral.get("referrerDoctorId") or None)
+    normalized.setdefault("salesRepNotes", normalized.get("salesRepNotes") or None)
     created_at = normalized.get("createdAt") or _now()
     normalized["createdAt"] = created_at
     normalized["updatedAt"] = normalized.get("updatedAt") or created_at
@@ -253,13 +254,13 @@ def insert(referral: Dict) -> Dict:
             INSERT INTO referrals (
                 id, referrer_doctor_id, sales_rep_id, referral_code_id,
                 referred_contact_name, referred_contact_email, referred_contact_phone,
-                status, notes, converted_doctor_id, converted_at,
+                status, notes, sales_rep_notes, converted_doctor_id, converted_at,
                 credit_issued_at, credit_issued_amount, credit_issued_by,
                 created_at, updated_at
             ) VALUES (
                 %(id)s, %(referrer_doctor_id)s, %(sales_rep_id)s, %(referral_code_id)s,
                 %(referred_contact_name)s, %(referred_contact_email)s, %(referred_contact_phone)s,
-                %(status)s, %(notes)s, %(converted_doctor_id)s, %(converted_at)s,
+                %(status)s, %(notes)s, %(sales_rep_notes)s, %(converted_doctor_id)s, %(converted_at)s,
                 %(credit_issued_at)s, %(credit_issued_amount)s, %(credit_issued_by)s,
                 %(created_at)s, %(updated_at)s
             )
@@ -272,6 +273,7 @@ def insert(referral: Dict) -> Dict:
                 referred_contact_phone = VALUES(referred_contact_phone),
                 status = VALUES(status),
                 notes = VALUES(notes),
+                sales_rep_notes = VALUES(sales_rep_notes),
                 converted_doctor_id = VALUES(converted_doctor_id),
                 converted_at = VALUES(converted_at),
                 credit_issued_at = VALUES(credit_issued_at),
@@ -309,6 +311,7 @@ def update(referral: Dict) -> Optional[Dict]:
                 referred_contact_phone = %(referred_contact_phone)s,
                 status = %(status)s,
                 notes = %(notes)s,
+                sales_rep_notes = %(sales_rep_notes)s,
                 converted_doctor_id = %(converted_doctor_id)s,
                 converted_at = %(converted_at)s,
                 credit_issued_at = %(credit_issued_at)s,
@@ -353,6 +356,7 @@ def _row_to_referral(row: Optional[Dict]) -> Optional[Dict]:
             "referredContactPhone": row.get("referred_contact_phone"),
             "status": row.get("status"),
             "notes": row.get("notes"),
+            "salesRepNotes": row.get("sales_rep_notes"),
             "convertedDoctorId": row.get("converted_doctor_id"),
             "convertedAt": fmt_datetime(row.get("converted_at")),
             "creditIssuedAt": fmt_datetime(row.get("credit_issued_at")),
@@ -386,6 +390,7 @@ def _to_db_params(referral: Dict) -> Dict:
         "referred_contact_phone": referral.get("referredContactPhone"),
         "status": referral.get("status"),
         "notes": referral.get("notes"),
+        "sales_rep_notes": referral.get("salesRepNotes"),
         "converted_doctor_id": referral.get("convertedDoctorId"),
         "converted_at": parse_dt(referral.get("convertedAt")),
         "credit_issued_at": parse_dt(referral.get("creditIssuedAt")),

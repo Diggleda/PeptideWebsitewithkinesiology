@@ -614,23 +614,16 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
   const baseImageFrameClass = 'product-image-frame product-image-frame--flush';
 
   return (
-    <Card className="group overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-      <CardContent className="p-0">
+    <Card className="group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+      <CardContent className="flex-1 p-0">
         <div className={baseImageFrameClass}>
           <ImageWithFallback
             src={primaryImage}
             alt={product.name}
             className="product-image-frame__img"
           />
-          {!product.inStock && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-gray-900/35">
-              <Badge variant="destructive" className="squircle-sm">
-                Out of Stock
-              </Badge>
-            </div>
-          )}
         </div>
-        <div className="p-4 space-y-3">
+        <div className="p-4 pb-3 space-y-3">
           <div className="space-y-1">{productMeta}</div>
           {variationSelector}
           {quantitySelector}
@@ -638,7 +631,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
           {gridBulkSection}
         </div>
       </CardContent>
-      <CardFooter className="p-4 pt-0">{addToCartButton}</CardFooter>
+      <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
     </Card>
   );
 }

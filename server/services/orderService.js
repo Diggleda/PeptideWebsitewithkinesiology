@@ -1,6 +1,7 @@
 const { env } = require('../config/env');
 const orderRepository = require('../repositories/orderRepository');
 const userRepository = require('../repositories/userRepository');
+const salesProspectRepository = require('../repositories/salesProspectRepository');
 const referralService = require('./referralService');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
@@ -69,6 +70,78 @@ const normalizeId = (value) => {
 };
 
 const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+
+const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
+
+const isDoctorRole = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'doctor' || normalized === 'test_doctor';
+};
+
+const hasResellerPermitOnFile = async (user) => {
+  const doctorId = normalizeId(user?.id);
+  const email = normalizeEmail(user?.email);
+  if (!doctorId && !email) {
+    return false;
+  }
+
+  if (mysqlClient.isEnabled()) {
+    const clauses = [];
+    const params = {};
+    if (doctorId) {
+      clauses.push('doctor_id = :doctorId');
+      params.doctorId = doctorId;
+    }
+    if (email) {
+      clauses.push('LOWER(contact_email) = :email');
+      params.email = email;
+    }
+    if (!clauses.length) {
+      return false;
+    }
+    const where = clauses.join(' OR ');
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT id
+        FROM sales_prospects
+        WHERE reseller_permit_file_path IS NOT NULL
+          AND reseller_permit_file_path <> ''
+          AND (${where})
+        LIMIT 1
+      `,
+      params,
+    );
+    return Boolean(row);
+  }
+
+  try {
+    const prospects = await salesProspectRepository.getAll();
+    const list = Array.isArray(prospects) ? prospects : [];
+    return list.some((prospect) => {
+      const prospectDoctorId = normalizeId(prospect?.doctorId);
+      const prospectEmail = normalizeEmail(prospect?.contactEmail);
+      const matchesDoctor = doctorId && prospectDoctorId && prospectDoctorId === doctorId;
+      const matchesEmail = email && prospectEmail && prospectEmail === email;
+      if (!matchesDoctor && !matchesEmail) {
+        return false;
+      }
+      const path = prospect?.resellerPermitFilePath;
+      return typeof path === 'string' && path.trim().length > 0;
+    });
+  } catch {
+    return false;
+  }
+};
+
+const isUserTaxExemptForCheckout = async (user) => {
+  if (!user || !isDoctorRole(user.role)) {
+    return false;
+  }
+  if (user.isTaxExempt === true) {
+    return true;
+  }
+  return hasResellerPermitOnFile(user);
+};
 
 const extractWooMetaValue = (wooOrder, keys) => {
   const lookup = Array.isArray(keys) ? keys : [keys];
@@ -638,13 +711,14 @@ const createOrderInternal = async ({
     throw error;
   }
 
+  const taxExempt = await isUserTaxExemptForCheckout(user);
   const shippingData = ensureShippingData({
     shippingAddress,
     shippingEstimate,
     shippingTotal,
   });
   const itemsSubtotal = calculateItemsSubtotal(items);
-  const normalizedTaxTotal = normalizeTaxAmount(taxTotal);
+  const normalizedTaxTotal = taxExempt ? 0 : normalizeTaxAmount(taxTotal);
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
   const normalizedTotal = typeof total === 'number' && !Number.isNaN(total) ? roundCurrency(total) : computedTotal;
   if (normalizedTotal <= 0) {
@@ -947,6 +1021,22 @@ const estimateOrderTotals = async ({
   });
 
   const itemsSubtotal = calculateItemsSubtotal(items);
+  const taxExempt = await isUserTaxExemptForCheckout(user);
+  if (taxExempt) {
+    const grandTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal);
+    return {
+      success: true,
+      totals: {
+        itemsTotal: roundCurrency(itemsSubtotal),
+        shippingTotal: roundCurrency(shippingData.shippingTotal),
+        taxTotal: 0,
+        grandTotal: roundCurrency(grandTotal),
+        currency: 'USD',
+        source: 'tax_exempt',
+      },
+      wooPreview: null,
+    };
+  }
   const provisionalOrder = {
     id: `estimate-${Date.now()}`,
     userId,

@@ -9,7 +9,6 @@ import { Filter } from 'lucide-react';
 interface FilterState {
   categories: string[];
   priceRange: [number, number];
-  inStockOnly: boolean;
   prescriptionOnly: boolean;
   rating: number;
 }
@@ -38,7 +37,6 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
     onFiltersChange({
       categories: [],
       priceRange: [0, 500],
-      inStockOnly: false,
       prescriptionOnly: false,
       rating: 0
     });
@@ -46,7 +44,6 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
 
   const activeFiltersCount = 
     filters.categories.length + 
-    (filters.inStockOnly ? 1 : 0) + 
     (filters.prescriptionOnly ? 1 : 0) + 
     (filters.rating > 0 ? 1 : 0) +
     (filters.priceRange[0] > 0 || filters.priceRange[1] < 500 ? 1 : 0);
@@ -111,23 +108,6 @@ export function CategoryFilter({ categories, filters, onFiltersChange, productCo
               <span>${filters.priceRange[0]}</span>
               <span>${filters.priceRange[1]}</span>
             </div>
-          </div>
-        </div>
-
-        {/* Stock Status */}
-        <div className="space-y-3">
-          <Label>Availability</Label>
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="inStock"
-              checked={filters.inStockOnly}
-              onCheckedChange={(checked) => 
-                onFiltersChange({ ...filters, inStockOnly: !!checked })
-              }
-            />
-            <Label htmlFor="inStock" className="text-sm cursor-pointer">
-              In Stock Only
-            </Label>
           </div>
         </div>
 

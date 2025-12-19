@@ -3411,10 +3411,13 @@ html {
   overflow-y: auto;
   max-height: 22rem;
   padding-right: 0.35rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(95, 179, 249, 0.25) transparent;
 }
 
 .referrals-table-scroll::-webkit-scrollbar {
   width: 0.35rem;
+  height: 0.35rem;
 }
 
 .referrals-table-scroll::-webkit-scrollbar-thumb {
@@ -3423,6 +3426,41 @@ html {
 }
 
 .referrals-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.account-tab-scroll-container,
+.sales-doctor-scroll,
+.sales-order-card,
+.lead-list-scroll,
+.sales-rep-table-wrapper {
+  padding-bottom: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(95, 179, 249, 0.25) transparent;
+}
+
+.account-tab-scroll-container::-webkit-scrollbar,
+.sales-doctor-scroll::-webkit-scrollbar,
+.sales-order-card::-webkit-scrollbar,
+.lead-list-scroll::-webkit-scrollbar,
+.sales-rep-table-wrapper::-webkit-scrollbar {
+  height: 0.35rem;
+}
+
+.account-tab-scroll-container::-webkit-scrollbar-thumb,
+.sales-doctor-scroll::-webkit-scrollbar-thumb,
+.sales-order-card::-webkit-scrollbar-thumb,
+.lead-list-scroll::-webkit-scrollbar-thumb,
+.sales-rep-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(95, 179, 249, 0.25);
+  border-radius: 999px;
+}
+
+.account-tab-scroll-container::-webkit-scrollbar-track,
+.sales-doctor-scroll::-webkit-scrollbar-track,
+.sales-order-card::-webkit-scrollbar-track,
+.lead-list-scroll::-webkit-scrollbar-track,
+.sales-rep-table-wrapper::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -3661,6 +3699,20 @@ html {
   justify-content: flex-start;
   align-items: center;
   gap: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.sales-doctor-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 54px;
+  pointer-events: none;
+  background: transparent;
+  z-index: 0;
 }
 
 .sales-doctor-chevron {
@@ -3668,19 +3720,20 @@ html {
   display: flex;
   align-items: center;
   align-self: stretch;
-  padding-left: 0.25rem;
-  padding-right: 0rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
   position: relative;
-  background: rgba(255, 255, 255, 0.95);
-  z-index: 2;
-  border-top-left-radius: 14px;
-  border-bottom-left-radius: 14px;
+  z-index: 1;
+  background: transparent;
+  width: 42px;
+  justify-content: center;
 }
 
-.sales-doctor-chevron svg {
-  width: 1.3em !important;
-  height: 1.3em !important;
+.sales-doctor-chevron > svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
+
 
 .sales-doctor-scroll {
   flex: 1 1 auto;
@@ -3688,6 +3741,8 @@ html {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   position: relative;
+  z-index: 1;
+  padding-left: 0.35rem;
 }
 
 .sales-doctor-scroll-inner {
@@ -3699,7 +3754,6 @@ html {
   min-width: 100%;
   position: relative;
   z-index: 0;
-  padding-left: 0rem;
 }
 
 .sales-order-card {
@@ -3792,11 +3846,12 @@ html {
   overflow-x: auto;
   overflow-y: visible;
   padding-top: 0.5rem;
-  padding-bottom: 0.4rem;
+  padding-bottom: 0;
 }
 
 .lead-list-scroll .lead-list {
   min-width: 420px;
+  padding-bottom: 0.4rem;
 }
 
 .lead-list-item {
@@ -3897,13 +3952,174 @@ html {
 }
 
 .lead-status-select {
-  width: 100%;
+  width: min(240px, 100%);
   border: 1px solid rgba(148, 163, 184, 0.5);
   border-radius: 10px;
   padding: 0.45rem 0.65rem;
   font-size: 0.85rem;
   background: white;
   color: rgb(30, 41, 59);
+}
+
+.notes-textarea {
+  background: rgb(241, 245, 249);
+}
+
+.lead-list-actions-footer {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.lead-list-updated-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.lead-status-select option:checked {
+  background: rgb(95, 179, 249) !important;
+  color: #fff !important;
+}
+
+.lead-status-select option:checked:disabled {
+  background: rgb(95, 179, 249) !important;
+  color: #fff !important;
+}
+
+.prospect-permit-controls {
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.prospect-permit-container {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  padding: 0.55rem 0.65rem 0.45rem;
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.prospect-permit-caption {
+  font-size: 0.7rem;
+  color: rgb(100, 116, 139);
+  font-weight: 600;
+  text-align: center;
+  width: 100%;
+}
+
+.prospect-permit-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  color: rgb(71, 85, 105);
+  padding: 0.25rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(95, 179, 249, 0.35);
+  background: rgba(239, 246, 255, 0.7);
+}
+
+.prospect-permit-checkbox-input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: rgb(95, 179, 249);
+}
+
+.prospect-permit-file-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prospect-permit-file-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 100%;
+  border: 1px solid rgba(95, 179, 249, 0.55);
+  border-radius: 12px;
+  padding: 0.28rem 0.55rem;
+  background: rgba(239, 246, 255, 0.65);
+  color: rgb(30, 41, 59);
+  overflow: hidden;
+}
+
+.prospect-permit-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.prospect-permit-file-picker:focus-within {
+  box-shadow: 0 0 0 2px rgba(95, 179, 249, 0.25);
+}
+
+.prospect-permit-file-button {
+  flex: none;
+  border-radius: 10px;
+  padding: 0.25rem 0.65rem;
+  background: rgb(95, 179, 249);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.prospect-permit-file-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.75rem;
+  color: rgb(71, 85, 105);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prospect-permit-file-name-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.prospect-permit-file-name-button:hover,
+.prospect-permit-file-name-button:focus-visible {
+  text-decoration: underline;
+  color: rgb(37, 99, 235);
+}
+
+.prospect-permit-file-name-button:disabled {
+  cursor: not-allowed;
+  text-decoration: none;
+  color: rgb(148, 163, 184);
 }
 
 .lead-updated {
@@ -3924,6 +4140,26 @@ html {
   .lead-list-actions {
     width: 100%;
     align-items: flex-start;
+  }
+
+  .lead-list-actions-footer {
+    align-items: flex-start;
+  }
+
+  .lead-list-updated-block {
+    align-items: flex-start;
+  }
+
+  .lead-list-actions .prospect-permit-controls {
+    align-items: flex-start;
+  }
+
+  .prospect-permit-container {
+    align-items: flex-start;
+  }
+
+  .prospect-permit-caption {
+    text-align: center;
   }
 
   .lead-updated {
@@ -4255,7 +4491,7 @@ html {
   border: 1px solid rgba(95, 179, 249, 0.35);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  padding: 0.75rem;
+  padding: 0.75rem 0.75rem 0;
 }
 
 /* Manual credit styling */

@@ -32,20 +32,22 @@ import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { toast } from "sonner@2.0.3";
 import {
-  ShoppingCart,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  ArrowLeft,
-  ChevronRight,
-  RefreshCw,
-  ArrowUpDown,
-  Fingerprint,
-  Loader2,
-  Plus,
-  Package,
-  Download,
-} from "lucide-react";
+	  ShoppingCart,
+	  Eye,
+	  EyeOff,
+	  ArrowRight,
+	  ArrowLeft,
+	  ChevronRight,
+	  RefreshCw,
+	  ArrowUpDown,
+	  Fingerprint,
+		  Loader2,
+		  Plus,
+		  Package,
+		  Download,
+		  NotebookPen,
+		  CheckSquare,
+		} from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -1281,7 +1283,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.13";
+  "v1.9.21";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -1405,29 +1407,38 @@ const SALES_REP_PIPELINE = [
     statuses: ["contacted"],
   },
   {
+    key: "verified",
+    label: "Verified",
+    statuses: ["verified", "verifying"],
+  },
+  {
     key: "account_created",
     label: "Account Created",
     statuses: ["account_created"],
-  },
-  {
-    key: "nuture",
-    label: "Nuture",
-    statuses: ["nuture"],
   },
   {
     key: "converted",
     label: "Converted",
     statuses: ["converted"],
   },
+  {
+    key: "nuture",
+    label: "Nuturing",
+    statuses: ["nuture"],
+  },
 ];
 
 const REFERRAL_STATUS_FLOW = [
   { key: "pending", label: "Pending" },
   { key: "contacted", label: "Contacting" },
+  { key: "verified", label: "Verified" },
   { key: "account_created", label: "Account Created" },
-  { key: "nuture", label: "Nuture" },
   { key: "converted", label: "Converted" },
+  { key: "nuture", label: "Nuturing" },
 ];
+const REFERRAL_STATUS_FLOW_SELECT = REFERRAL_STATUS_FLOW.filter(
+  (stage) => stage.key !== "nuture",
+);
 const REFERRAL_LEAD_STATUS_KEYS = new Set(
   REFERRAL_STATUS_FLOW.filter((stage) => stage.key !== "pending").map(
     (stage) => stage.key,
@@ -1439,6 +1450,9 @@ const REFERRAL_STATUS_SET = new Set([
 ]);
 const sanitizeReferralStatus = (status?: string | null): string => {
   const normalized = (status || "").toLowerCase().trim();
+  if (normalized === "verifying") {
+    return "verified";
+  }
   if (REFERRAL_STATUS_SET.has(normalized)) {
     return normalized;
   }
@@ -1460,10 +1474,14 @@ const toTitleCase = (value?: string | null): string | null => {
 const CONTACT_FORM_STATUS_FLOW = [
   { key: "contact_form", label: "Pending / Contact Form" },
   { key: "contacted", label: "Contacting" },
+  { key: "verified", label: "Verified" },
   { key: "account_created", label: "Account Created" },
-  { key: "nuture", label: "Nuture" },
   { key: "converted", label: "Converted" },
+  { key: "nuture", label: "Nuturing" },
 ];
+const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
+  (stage) => stage.key !== "nuture",
+);
 
 const MANUAL_PROSPECT_DELETE_VALUE = "__manual_delete__";
 
@@ -3671,6 +3689,82 @@ export default function App() {
     });
     return keys;
   }, [salesRepDashboard]);
+
+  const accountProfileLookup = useMemo(() => {
+    const dashboardAny = salesRepDashboard as any;
+    const rawAccounts = [
+      ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
+      ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
+      ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+    ];
+
+    type Profile = { name: string; email?: string | null; profileImageUrl?: string | null };
+    const map = new Map<string, Profile>();
+    const setKey = (key: string | null | undefined, profile: Profile) => {
+      if (!key) return;
+      const normalized = String(key).trim().toLowerCase();
+      if (!normalized) return;
+      const existing = map.get(normalized);
+      if (!existing || (!existing.profileImageUrl && profile.profileImageUrl)) {
+        map.set(normalized, profile);
+      }
+    };
+
+    rawAccounts.forEach((acct: any) => {
+      const email =
+        (acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail || "").toString().trim();
+      const phone =
+        acct?.phone ||
+        acct?.phoneNumber ||
+        acct?.phone_number ||
+        acct?.referredContactPhone ||
+        null;
+      const accountId =
+        acct?.id ||
+        acct?.userId ||
+        acct?.doctorId ||
+        acct?.accountId ||
+        acct?.account_id ||
+        acct?.referredContactAccountId ||
+        null;
+
+      const name =
+        acct?.name ||
+        [acct?.firstName, acct?.lastName].filter(Boolean).join(" ").trim() ||
+        acct?.doctorName ||
+        acct?.username ||
+        email ||
+        "Account";
+
+      const profileImageUrl =
+        acct?.profileImageUrl ||
+        acct?.profile_image_url ||
+        acct?.avatar ||
+        acct?.avatarUrl ||
+        null;
+
+      const profile: Profile = {
+        name,
+        email: email || acct?.referredContactEmail || null,
+        profileImageUrl,
+      };
+
+      if (email) {
+        setKey(email.toLowerCase(), profile);
+        setKey(`email:${email.toLowerCase()}`, profile);
+      }
+      if (phone) {
+        setKey(`phone:${phone}`, profile);
+      }
+      if (accountId) {
+        setKey(`acct:${accountId}`, profile);
+        setKey(`acct:${String(accountId).toLowerCase()}`, profile);
+        setKey(String(accountId), profile);
+      }
+    });
+
+    return map;
+  }, [salesRepDashboard]);
   const normalizedReferrals = useMemo(
     () =>
       (salesRepDashboard?.referrals ?? []).map((ref) => {
@@ -3732,8 +3826,59 @@ export default function App() {
     [user?.email],
   );
   const userId = user?.id || null;
-  const userRole = user?.role || null;
-  const userSalesRepId = user?.salesRepId || null;
+	  const userRole = user?.role || null;
+	  const userSalesRepId = user?.salesRepId || null;
+	  const salesDoctorNotesStorageKey = useMemo(() => {
+	    const ownerKey = userSalesRepId || userId || null;
+	    return ownerKey ? `peppro:sales-doctor-notes:v1:${String(ownerKey)}` : null;
+	  }, [userId, userSalesRepId]);
+	  const [salesDoctorNotes, setSalesDoctorNotes] = useState<Record<string, string>>(
+	    {},
+	  );
+	  const [salesDoctorNoteDraft, setSalesDoctorNoteDraft] = useState<string>("");
+	
+	  useEffect(() => {
+	    if (!salesDoctorNotesStorageKey) {
+	      setSalesDoctorNotes({});
+	      return;
+	    }
+	    if (typeof window === "undefined") {
+	      return;
+	    }
+	    try {
+	      const raw = window.localStorage.getItem(salesDoctorNotesStorageKey);
+	      if (!raw) {
+	        setSalesDoctorNotes({});
+	        return;
+	      }
+	      const parsed = JSON.parse(raw);
+	      if (parsed && typeof parsed === "object") {
+	        setSalesDoctorNotes(parsed as Record<string, string>);
+	      } else {
+	        setSalesDoctorNotes({});
+	      }
+	    } catch {
+	      setSalesDoctorNotes({});
+	    }
+	  }, [salesDoctorNotesStorageKey]);
+	
+	  const persistSalesDoctorNotes = useCallback(
+	    (next: Record<string, string>) => {
+	      setSalesDoctorNotes(next);
+	      if (!salesDoctorNotesStorageKey || typeof window === "undefined") {
+	        return;
+	      }
+	      try {
+	        window.localStorage.setItem(
+	          salesDoctorNotesStorageKey,
+	          JSON.stringify(next),
+	        );
+	      } catch {
+	        // ignore
+	      }
+	    },
+	    [salesDoctorNotesStorageKey],
+	  );
   const [salesTrackingOrders, setSalesTrackingOrders] = useState<
     AccountOrderSummary[]
   >([]);
@@ -3758,31 +3903,70 @@ export default function App() {
     return set;
   }, [resolveOrderDoctorId, salesTrackingOrders]);
 
-  const hasLeadPlacedOrder = useCallback(
-    (lead: any) => {
-      const orders = coerceNumber(lead?.referredContactTotalOrders) ?? 0;
-      if (orders > 0) return true;
+	  const hasLeadPlacedOrder = useCallback(
+	    (lead: any) => {
+	      const currentUserId = user?.id != null ? String(user.id) : "";
+	      const currentEmail =
+	        typeof user?.email === "string" ? user.email.toLowerCase() : "";
+	      const leadEmailRaw =
+	        typeof lead?.referredContactEmail === "string"
+	          ? lead.referredContactEmail
+	          : typeof lead?.email === "string"
+	            ? lead.email
+	            : "";
+	      const leadEmail = leadEmailRaw ? leadEmailRaw.toLowerCase() : "";
+	      if (currentEmail && leadEmail && currentEmail === leadEmail) {
+	        return false;
+	      }
+	      const leadAccountId =
+	        lead?.referredContactAccountId ||
+	        lead?.referredContactId ||
+	        lead?.userId ||
+	        lead?.doctorId;
+	      if (currentUserId && leadAccountId && String(leadAccountId) === currentUserId) {
+	        return false;
+	      }
 
-      const email = typeof lead?.referredContactEmail === "string"
-        ? lead.referredContactEmail.toLowerCase()
-        : "";
-      if (email && orderIdentitySet.has(`email:${email}`)) {
-        return true;
-      }
+	      const orders =
+	        coerceNumber(lead?.referredContactTotalOrders) ??
+	        coerceNumber(lead?.totalOrders) ??
+	        0;
+	      if (orders > 0) return true;
 
-      const accountId =
-        lead?.referredContactAccountId ||
-        lead?.referredContactId ||
-        lead?.userId ||
-        lead?.doctorId;
-      if (accountId && orderIdentitySet.has(`id:${String(accountId)}`)) {
-        return true;
-      }
+	      const email = leadEmail;
+	      if (email && orderIdentitySet.has(`email:${email}`)) {
+	        return true;
+	      }
 
-      return false;
-    },
-    [orderIdentitySet],
-  );
+	      if (leadAccountId && orderIdentitySet.has(`id:${String(leadAccountId)}`)) {
+	        return true;
+	      }
+
+	      return false;
+	    },
+	    [orderIdentitySet, user?.email, user?.id],
+	  );
+		  const shouldRemoveFromActiveProspects = useCallback(
+		    (lead: any) => {
+		      const status = sanitizeReferralStatus(lead?.status);
+		      if (status === "nuture") {
+		        return true;
+		      }
+		      return hasLeadPlacedOrder(lead);
+		    },
+		    [hasLeadPlacedOrder],
+		  );
+
+	  const normalizeNotesValue = useCallback((value: unknown): string | null => {
+	    if (typeof value !== "string") {
+	      return null;
+	    }
+	    const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	    if (!normalized.trim()) {
+	      return null;
+	    }
+	    return normalized;
+	  }, []);
   const [salesOrderDetail, setSalesOrderDetail] =
     useState<AccountOrderSummary | null>(null);
   const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
@@ -3798,18 +3982,125 @@ export default function App() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-    doctorId: string;
-    name: string;
-    email?: string | null;
-    avatar?: string | null;
-    revenue: number;
-    orders: AccountOrderSummary[];
-    phone?: string | null;
-    address?: string | null;
-    lastOrderDate?: string | null;
-    avgOrderValue?: number | null;
-  } | null>(null);
+	  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+	    doctorId: string;
+	    referralId?: string | null;
+	    name: string;
+	    email?: string | null;
+	    avatar?: string | null;
+	    revenue: number;
+	    orders: AccountOrderSummary[];
+	    phone?: string | null;
+	    address?: string | null;
+	    lastOrderDate?: string | null;
+	    avgOrderValue?: number | null;
+	  } | null>(null);
+	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
+	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
+	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
+	  const triggerSalesDoctorNotesSaved = useCallback(() => {
+	    setSalesDoctorNotesSaved(true);
+	    if (salesDoctorNotesSavedTimeoutRef.current) {
+	      window.clearTimeout(salesDoctorNotesSavedTimeoutRef.current);
+	    }
+	    salesDoctorNotesSavedTimeoutRef.current = window.setTimeout(() => {
+	      setSalesDoctorNotesSaved(false);
+	      salesDoctorNotesSavedTimeoutRef.current = null;
+	    }, 1000);
+	  }, []);
+	
+	  useEffect(() => {
+	    if (!salesDoctorDetail?.doctorId) {
+	      setSalesDoctorNoteDraft("");
+	      setSalesDoctorNotesLoading(false);
+	      setSalesDoctorNotesSaved(false);
+	      return;
+	    }
+	    const doctorId = String(salesDoctorDetail.doctorId);
+	    let canceled = false;
+	    (async () => {
+	      setSalesDoctorNoteDraft("");
+	      setSalesDoctorNotesLoading(true);
+	      try {
+	        const response = await referralAPI.getSalesProspect(doctorId);
+	        const notes = (response as any)?.prospect?.notes;
+	        if (!canceled) {
+	          setSalesDoctorNoteDraft(typeof notes === "string" ? notes : "");
+	          setSalesDoctorNotesLoading(false);
+	          setSalesDoctorNotesSaved(false);
+	        }
+	      } catch {
+	        if (!canceled) {
+	          const fallbackKey = String(salesDoctorDetail.doctorId);
+	          setSalesDoctorNoteDraft(salesDoctorNotes[fallbackKey] || "");
+	          setSalesDoctorNotesLoading(false);
+	          setSalesDoctorNotesSaved(false);
+	        }
+	      }
+	    })();
+	    return () => {
+	      canceled = true;
+	    };
+	  }, [salesDoctorDetail?.doctorId, salesDoctorNotes]);
+
+	  useEffect(() => {
+	    return () => {
+	      if (salesDoctorNotesSavedTimeoutRef.current) {
+	        window.clearTimeout(salesDoctorNotesSavedTimeoutRef.current);
+	        salesDoctorNotesSavedTimeoutRef.current = null;
+	      }
+	    };
+	  }, []);
+	
+	  const saveSalesDoctorNotes = useCallback(async () => {
+	    if (!salesDoctorDetail?.doctorId) {
+	      return;
+	    }
+	    const doctorId = String(salesDoctorDetail.doctorId);
+	    if (user && (isRep(user.role) || isAdmin(user.role))) {
+	      try {
+	        setAdminActionState((prev) => ({
+	          ...prev,
+	          updatingReferral: doctorId,
+	          error: null,
+	        }));
+	        await referralAPI.upsertSalesProspect(doctorId, {
+	          notes: salesDoctorNoteDraft,
+	        });
+	        triggerSalesDoctorNotesSaved();
+	        return;
+	      } catch (error: any) {
+	        console.warn("[Referral] Update sales rep notes failed", error);
+	        toast.error(
+	          typeof error?.message === "string" && error.message
+	            ? error.message
+	            : "Unable to save notes right now.",
+	        );
+	      } finally {
+	        setAdminActionState((prev) => ({ ...prev, updatingReferral: null }));
+	      }
+	    }
+	
+		    // Fallback: per-rep local notes when we can't attach to a referral row.
+		    const key = String(salesDoctorDetail.doctorId);
+		    const nextText = normalizeNotesValue(salesDoctorNoteDraft);
+		    const next = { ...salesDoctorNotes };
+		    if (nextText) {
+		      next[key] = nextText;
+		    } else {
+	      delete next[key];
+	    }
+	    persistSalesDoctorNotes(next);
+	    triggerSalesDoctorNotesSaved();
+		  }, [
+		    persistSalesDoctorNotes,
+		    salesDoctorDetail?.doctorId,
+		    salesDoctorNoteDraft,
+		    salesDoctorNotes,
+		    normalizeNotesValue,
+		    triggerSalesDoctorNotesSaved,
+		    user,
+		  ]);
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
@@ -3936,17 +4227,18 @@ export default function App() {
     [mergeSalesOrderDetail],
   );
 
-  const openSalesDoctorDetail = useCallback(
-    (bucket: {
-      doctorId: string;
-      doctorName: string;
-      doctorEmail?: string | null;
-      doctorAvatar?: string | null;
-      doctorPhone?: string | null;
-      doctorAddress?: string | null;
-      orders: AccountOrderSummary[];
-      total: number;
-    }) => {
+	  const openSalesDoctorDetail = useCallback(
+	    (bucket: {
+	      doctorId: string;
+	      referralId?: string | null;
+	      doctorName: string;
+	      doctorEmail?: string | null;
+	      doctorAvatar?: string | null;
+	      doctorPhone?: string | null;
+	      doctorAddress?: string | null;
+	      orders: AccountOrderSummary[];
+	      total: number;
+	    }) => {
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -3983,12 +4275,13 @@ export default function App() {
       const avgOrderValue =
         bucket.orders.length > 0 ? bucket.total / bucket.orders.length : null;
 
-      setSalesDoctorDetail({
-        doctorId: bucket.doctorId,
-        name: bucket.doctorName,
-        email: bucket.doctorEmail,
-        avatar: bucket.doctorAvatar ?? null,
-        revenue: bucket.total,
+	      setSalesDoctorDetail({
+	        doctorId: bucket.doctorId,
+	        referralId: bucket.referralId ?? null,
+	        name: bucket.doctorName,
+	        email: bucket.doctorEmail,
+	        avatar: bucket.doctorAvatar ?? null,
+	        revenue: bucket.total,
         orders: bucket.orders,
         phone:
           bucket.doctorPhone ||
@@ -4876,21 +5169,30 @@ export default function App() {
     );
   }, [salesRepDashboard, normalizedReferrals]);
 
-  const leadStatusOptions = useMemo(() => {
-    const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
-    const dynamic = salesRepStatusOptions
-      .map((status) => status.toLowerCase())
-      .filter((status) => status === "pending" || isLeadStatus(status));
-    return Array.from(new Set([...defaults, ...dynamic]));
-  }, [salesRepStatusOptions, isLeadStatus]);
+	  const leadStatusOptions = useMemo(() => {
+	    const defaults = REFERRAL_STATUS_FLOW_SELECT.map((stage) => stage.key);
+	    const dynamic = salesRepStatusOptions
+	      .map((status) => status.toLowerCase())
+	      .filter(
+	        (status) => status !== "nuture" && (status === "pending" || isLeadStatus(status)),
+	      );
+	    return Array.from(new Set([...defaults, ...dynamic]));
+	  }, [salesRepStatusOptions, isLeadStatus]);
+
+	  const [accountProspectProspects, setAccountProspectProspects] = useState<
+	    Record<string, any>
+	  >({});
+	  const accountProspectFetchInFlightRef = useRef<Set<string>>(new Set());
 
   const contactFormEntries = useMemo(() => {
     return normalizedReferrals.filter(isContactFormEntry);
   }, [normalizedReferrals, isContactFormEntry]);
 
   const contactFormQueue = useMemo(() => {
-    return contactFormEntries.filter((entry) => !isLeadStatus(entry.status));
-  }, [contactFormEntries, isLeadStatus]);
+    return contactFormEntries.filter(
+      (entry) => !isLeadStatus(entry.status) && !hasLeadPlacedOrder(entry),
+    );
+  }, [contactFormEntries, hasLeadPlacedOrder, isLeadStatus]);
 
   const contactFormPipeline = useMemo(() => {
     return contactFormEntries.filter(
@@ -4957,19 +5259,22 @@ export default function App() {
     return referralRecords.filter((referral) => !isLeadStatus(referral.status));
   }, [referralRecords, isLeadStatus]);
 
-  const activeProspectFilterOptions = useMemo(() => {
-    const keys = new Set<string>();
-    contactFormPipeline.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
-    referralLeadEntries.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
-    manualProspectEntries.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
-    return ["all", ...Array.from(keys)];
-  }, [contactFormPipeline, manualProspectEntries, referralLeadEntries]);
+	  const activeProspectFilterOptions = useMemo(() => {
+	    const keys = new Set<string>();
+	    contactFormPipeline.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
+	    referralLeadEntries.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
+	    manualProspectEntries.forEach((entry) => keys.add(sanitizeReferralStatus(entry.status)));
+	    keys.delete("nuture");
+	    return ["all", ...Array.from(keys)];
+	  }, [contactFormPipeline, manualProspectEntries, referralLeadEntries]);
 
-  const [activeProspectFilter, setActiveProspectFilter] = useState<string>("all");
+		  const [activeProspectFilter, setActiveProspectFilter] = useState<string>("all");
+	  const activeProspectSortOrderRef = useRef<Map<string, number>>(new Map());
+	  const activeProspectSortOrderCounterRef = useRef(0);
 
-  const accountProspectEntries = useMemo(() => {
-    const dashboardAny = salesRepDashboard as any;
-    const rawAccounts = [
+	  const accountProspectEntries = useMemo(() => {
+	    const dashboardAny = salesRepDashboard as any;
+	    const rawAccounts = [
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
@@ -5052,10 +5357,10 @@ export default function App() {
           acct.phone_number ||
           acct.contactPhone ||
           null;
-        const created =
-          acct.createdAt ||
-          acct.created_at ||
-          acct.dateCreated ||
+	        const created =
+	          acct.createdAt ||
+	          acct.created_at ||
+	          acct.dateCreated ||
           acct.date_created ||
           acct.updatedAt ||
           acct.updated_at ||
@@ -5070,30 +5375,46 @@ export default function App() {
           return null;
         }
 
-        const hasOrdersByIdentity =
-          (email && orderIdentitySet.has(`email:${email.toLowerCase()}`)) ||
-          (accountId && orderIdentitySet.has(`id:${String(accountId)}`));
-        if (hasOrdersByIdentity) {
-          return null;
-        }
+	        const hasOrdersByIdentity =
+	          (email && orderIdentitySet.has(`email:${email.toLowerCase()}`)) ||
+	          (accountId && orderIdentitySet.has(`id:${String(accountId)}`));
+	        if (hasOrdersByIdentity) {
+	          return null;
+	        }
 
-        const record: ReferralRecord & { syntheticAccountProspect?: boolean } = {
-          id: `acct-prospect-${accountId || email || phone || idx}`,
-          referrerDoctorId: user?.id || user?.salesRepId || "rep",
-          salesRepId: user?.salesRepId || user?.id || null,
+	        const doctorId = accountId ? String(accountId) : null;
+	        const persistedProspect =
+	          doctorId && Object.prototype.hasOwnProperty.call(accountProspectProspects, doctorId)
+	            ? accountProspectProspects[doctorId]
+	            : null;
+	        const persistedStatus =
+	          persistedProspect && typeof persistedProspect?.status === "string"
+	            ? sanitizeReferralStatus(persistedProspect.status)
+	            : null;
+
+	        const record: ReferralRecord & { syntheticAccountProspect?: boolean } = {
+	          id: `acct-prospect-${accountId || email || phone || idx}`,
+	          referrerDoctorId: user?.id || user?.salesRepId || "rep",
+	          salesRepId: user?.salesRepId || user?.id || null,
           referredContactName: name,
           referredContactEmail: email,
           referredContactPhone: phone,
           referralCodeId: null,
-          status: "account_created",
-          createdAt: created,
-          updatedAt: created,
-          convertedDoctorId: null,
-          convertedAt: null,
-          notes: acct.notes || null,
-          referrerDoctorName: null,
-          referrerDoctorEmail: null,
-          referrerDoctorPhone: null,
+	          status: persistedStatus || "account_created",
+	          createdAt: created,
+	          updatedAt:
+	            typeof persistedProspect?.updatedAt === "string" && persistedProspect.updatedAt
+	              ? persistedProspect.updatedAt
+	              : created,
+	          convertedDoctorId: null,
+	          convertedAt: null,
+	          notes:
+	            typeof persistedProspect?.notes === "string"
+	              ? persistedProspect.notes
+	              : acct.notes || null,
+	          referrerDoctorName: null,
+	          referrerDoctorEmail: null,
+	          referrerDoctorPhone: null,
           creditIssuedAt: null,
           creditIssuedAmount: null,
           creditIssuedBy: null,
@@ -5107,12 +5428,58 @@ export default function App() {
           syntheticAccountProspect: true,
         };
 
-        return { kind: "referral" as const, record };
-      })
-      .filter(Boolean) as { kind: "referral"; record: ReferralRecord }[];
+	        return { kind: "referral" as const, record };
+	      })
+	      .filter(Boolean) as { kind: "referral"; record: ReferralRecord }[];
 
-    return syntheticEntries;
-  }, [activeReferralEntries, contactFormPipeline, salesRepDashboard, user?.id, user?.salesRepId]);
+	    return syntheticEntries;
+	  }, [
+	    accountProspectProspects,
+	    activeReferralEntries,
+	    contactFormPipeline,
+	    salesRepDashboard,
+	    user?.id,
+	    user?.salesRepId,
+	  ]);
+
+	  useEffect(() => {
+	    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+	      return;
+	    }
+	    const doctorIds = accountProspectEntries
+	      .map((entry) => String((entry.record as any)?.referredContactAccountId || "").trim())
+	      .filter(Boolean);
+	    if (doctorIds.length === 0) {
+	      return;
+	    }
+	    let canceled = false;
+	    (async () => {
+	      for (const doctorId of doctorIds) {
+	        if (canceled) return;
+	        if (Object.prototype.hasOwnProperty.call(accountProspectProspects, doctorId)) {
+	          continue;
+	        }
+	        if (accountProspectFetchInFlightRef.current.has(doctorId)) {
+	          continue;
+	        }
+	        accountProspectFetchInFlightRef.current.add(doctorId);
+	        try {
+	          const response = await referralAPI.getSalesProspect(doctorId);
+	          const prospect = (response as any)?.prospect;
+	          if (!canceled && prospect) {
+	            setAccountProspectProspects((prev) => ({ ...prev, [doctorId]: prospect }));
+	          }
+	        } catch {
+	          // ignore - prospects are optional for synthetic accounts
+	        } finally {
+	          accountProspectFetchInFlightRef.current.delete(doctorId);
+	        }
+	      }
+	    })();
+	    return () => {
+	      canceled = true;
+	    };
+	  }, [accountProspectEntries, accountProspectProspects, user]);
 
   const combinedLeadEntries = useMemo(
     () =>
@@ -5198,12 +5565,53 @@ export default function App() {
     );
   }, [contactFormEntries, hasLeadPlacedOrder, historicReferralEntries]);
 
-  const activeProspectEntries = useMemo(() => {
-    const combined = [
-      ...manualProspectEntries.map((record) => ({
-        kind: "referral" as const,
-        record,
-      })),
+			  const activeProspectEntries = useMemo(() => {
+		    const getActiveProspectKey = (
+		      entry: { kind: "referral" | "contact_form"; record: any },
+		      index: number,
+		    ) => {
+		      const record = entry.record ?? {};
+		      const id =
+		        record.id ??
+		        record.referralId ??
+		        record.leadId ??
+		        record.prospectId ??
+		        null;
+		      if (id) {
+		        return `${entry.kind}:${String(id)}`;
+		      }
+		      const accountId =
+		        record.referredContactAccountId ??
+		        record.accountId ??
+		        record.userId ??
+		        record.doctorId ??
+		        null;
+		      const email =
+		        record.referredContactEmail ?? record.email ?? record.userEmail ?? null;
+		      const phone =
+		        record.referredContactPhone ?? record.phone ?? record.phoneNumber ?? null;
+		      const name =
+		        record.referredContactName ?? record.name ?? record.doctorName ?? null;
+		      const createdAt =
+		        record.createdAt ??
+		        record.created_at ??
+		        record.dateCreated ??
+		        record.date_created ??
+		        null;
+		      const composite = [accountId, email, phone, name, createdAt]
+		        .filter(Boolean)
+		        .join("|");
+		      if (composite) {
+		        return `${entry.kind}:${composite}`.toLowerCase();
+		      }
+		      return `${entry.kind}:idx:${index}`;
+		    };
+
+			    const combined = [
+			      ...manualProspectEntries.map((record) => ({
+			        kind: "referral" as const,
+			        record,
+			      })),
       ...activeReferralEntries.map((record) => ({
         kind: "referral" as const,
         record,
@@ -5212,36 +5620,82 @@ export default function App() {
         kind: "contact_form" as const,
         record,
       })),
-      ...accountProspectEntries,
-    ];
+		      ...accountProspectEntries,
+		    ];
 
-    const dedup = new Map<string, { kind: "referral" | "contact_form"; record: any }>();
-    combined.forEach((entry) => {
-      const key = entry.record?.id ? String(entry.record.id) : `${entry.kind}-${Math.random()}`;
-      if (!dedup.has(key)) {
-        dedup.set(key, entry);
-      }
-    });
+			    const normalizedCombined = combined.map((entry) => {
+			      const normalizedStatus = sanitizeReferralStatus(entry.record?.status);
+			      if (normalizedStatus === "converted" && hasLeadPlacedOrder(entry.record)) {
+			        return {
+			          ...entry,
+			          record: { ...(entry.record ?? {}), status: "nuture" },
+			        };
+			      }
+			      return entry;
+			    });
 
-    return Array.from(dedup.values()).sort((a, b) => {
-      const aTime = a.record.updatedAt
-        ? new Date(a.record.updatedAt).getTime()
-        : a.record.createdAt
-          ? new Date(a.record.createdAt).getTime()
-          : 0;
-      const bTime = b.record.updatedAt
-        ? new Date(b.record.updatedAt).getTime()
-        : b.record.createdAt
-          ? new Date(b.record.createdAt).getTime()
-          : 0;
-      return bTime - aTime;
-    });
-  }, [
-    accountProspectEntries,
-    activeReferralEntries,
-    contactFormPipeline,
-    manualProspectEntries,
-  ]);
+			    const filtered = normalizedCombined.filter(
+			      (entry) => !shouldRemoveFromActiveProspects(entry.record),
+			    );
+
+		    const dedup = new Map<string, { kind: "referral" | "contact_form"; record: any }>();
+		    filtered.forEach((entry, index) => {
+		      const key = getActiveProspectKey(entry, index);
+		      if (!dedup.has(key)) {
+		        dedup.set(key, entry);
+		      }
+		    });
+
+		    const stableOrder = activeProspectSortOrderRef.current;
+		    let nextCounter = activeProspectSortOrderCounterRef.current;
+		    Array.from(dedup.keys()).forEach((key) => {
+		      if (!stableOrder.has(key)) {
+		        stableOrder.set(key, nextCounter);
+		        nextCounter += 1;
+		      }
+		    });
+		    activeProspectSortOrderCounterRef.current = nextCounter;
+	
+	    const statusRank = new Map<string, number>([
+	      ["nuture", 0],
+	      ["converted", 1],
+	      ["account_created", 2],
+	      ["verified", 3],
+	      ["verifying", 3],
+	      ["contacted", 4],
+	      ["contact_form", 5],
+	      ["pending", 6],
+	    ]);
+
+	    const sortable = Array.from(dedup.entries()).map(([key, entry]) => ({
+	      ...entry,
+	      _sortKey: key,
+	    }));
+	    return sortable.sort((a, b) => {
+	      const aStatus = sanitizeReferralStatus(a.record?.status);
+	      const bStatus = sanitizeReferralStatus(b.record?.status);
+	      const aRank = statusRank.get(aStatus) ?? Number.MAX_SAFE_INTEGER;
+	      const bRank = statusRank.get(bStatus) ?? Number.MAX_SAFE_INTEGER;
+	      if (aRank !== bRank) return aRank - bRank;
+
+	      const aOrder =
+	        stableOrder.get((a as any)._sortKey) ?? Number.MAX_SAFE_INTEGER;
+	      const bOrder =
+	        stableOrder.get((b as any)._sortKey) ?? Number.MAX_SAFE_INTEGER;
+	      if (aOrder !== bOrder) return aOrder - bOrder;
+
+	      const aId = a.record?.id ? String(a.record.id) : "";
+	      const bId = b.record?.id ? String(b.record.id) : "";
+	      return aId.localeCompare(bId);
+	    });
+			  }, [
+			    accountProspectEntries,
+			    activeReferralEntries,
+			    contactFormPipeline,
+		    manualProspectEntries,
+		    hasLeadPlacedOrder,
+		    shouldRemoveFromActiveProspects,
+		  ]);
 
   const filteredActiveProspects = useMemo(() => {
     if (activeProspectFilter === "all") {
@@ -5270,25 +5724,75 @@ export default function App() {
     setCollapsedReferralIds(next);
   }, [filteredSalesRepReferrals]);
 
-  const salesRepChartData = useMemo(() => {
-    const counts = normalizedReferrals.reduce<Record<string, number>>(
-      (acc, referral) => {
-        const status = sanitizeReferralStatus(referral.status);
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      },
-      {},
-    );
+		  const salesRepChartData = useMemo(() => {
+		    const statusRank = new Map<string, number>();
+		    SALES_REP_PIPELINE.forEach((stage, index) => {
+		      stage.statuses.forEach((statusKey) => statusRank.set(statusKey, index));
+		    });
 
-    return SALES_REP_PIPELINE.map((stage) => ({
-      status: stage.key,
-      label: stage.label,
+		    const identityKeyForReferral = (referral: any, index: number): string => {
+		      const accountId =
+		        referral?.referredContactAccountId ||
+		        referral?.convertedDoctorId ||
+		        referral?.referredContactId ||
+		        referral?.userId ||
+		        referral?.doctorId ||
+		        null;
+		      if (accountId) {
+		        return `acct:${String(accountId)}`;
+		      }
+		      const email =
+		        typeof referral?.referredContactEmail === "string"
+		          ? referral.referredContactEmail.trim().toLowerCase()
+		          : "";
+		      if (email) {
+		        return `email:${email}`;
+		      }
+		      const phone =
+		        typeof referral?.referredContactPhone === "string"
+		          ? referral.referredContactPhone.trim()
+		          : "";
+		      if (phone) {
+		        return `phone:${phone}`;
+		      }
+		      if (referral?.id != null) {
+		        return `id:${String(referral.id)}`;
+		      }
+		      return `idx:${index}`;
+		    };
+
+		    const bestByIdentity = new Map<string, { status: string }>();
+		    normalizedReferrals.forEach((referral, index) => {
+		      const status = hasLeadPlacedOrder(referral)
+		        ? "nuture"
+		        : sanitizeReferralStatus(referral.status);
+		      const key = identityKeyForReferral(referral, index);
+		      const existing = bestByIdentity.get(key);
+		      if (!existing) {
+		        bestByIdentity.set(key, { status });
+		        return;
+		      }
+		      const nextRank = statusRank.get(status) ?? -1;
+		      const prevRank = statusRank.get(existing.status) ?? -1;
+		      if (nextRank > prevRank) {
+		        bestByIdentity.set(key, { status });
+		      }
+		    });
+
+		    const counts: Record<string, number> = {};
+		    bestByIdentity.forEach(({ status }) => {
+		      counts[status] = (counts[status] || 0) + 1;
+		    });
+
+	    return SALES_REP_PIPELINE.map((stage) => ({
+	      status: stage.key,
+	      label: stage.label,
       count: stage.statuses.reduce(
         (total, statusKey) => total + (counts[statusKey] || 0),
         0,
       ),
     }));
-  }, [normalizedReferrals]);
+	  }, [hasLeadPlacedOrder, normalizedReferrals]);
 
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -5814,7 +6318,7 @@ export default function App() {
     };
   }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
 
-  const salesTrackingSummary = useMemo(() => {
+	  const salesTrackingSummary = useMemo(() => {
     if (salesTrackingOrders.length === 0) {
       return null;
     }
@@ -5839,7 +6343,46 @@ export default function App() {
       totalRevenue: revenue,
       latestOrder: activeOrders[0] || salesTrackingOrders[0],
     };
-  }, [salesTrackingOrders]);
+	  }, [salesTrackingOrders]);
+
+	  const referralIdLookupForDoctorNotes = useMemo(() => {
+	    const map = new Map<string, { referralId: string; updatedAtMs: number }>();
+	    const referrals = (salesRepDashboard?.referrals ?? []) as any[];
+	    referrals.forEach((ref) => {
+	      if (!ref?.id) return;
+	      const referralId = String(ref.id);
+	      const updatedAtMs = ref.updatedAt ? new Date(ref.updatedAt).getTime() : 0;
+	      const add = (key?: string | null) => {
+	        if (!key) return;
+	        const normalized = String(key).trim().toLowerCase();
+	        if (!normalized) return;
+	        const existing = map.get(normalized);
+	        if (!existing || updatedAtMs > existing.updatedAtMs) {
+	          map.set(normalized, { referralId, updatedAtMs });
+	        }
+	      };
+	      add(ref.referredContactAccountId ? `acct:${ref.referredContactAccountId}` : null);
+	      add(ref.convertedDoctorId ? `acct:${ref.convertedDoctorId}` : null);
+	      add(ref.referredContactEmail ? `email:${String(ref.referredContactEmail).toLowerCase()}` : null);
+	      add(ref.referredContactAccountEmail ? `email:${String(ref.referredContactAccountEmail).toLowerCase()}` : null);
+	    });
+	    return map;
+	  }, [salesRepDashboard?.referrals]);
+
+	  const resolveReferralIdForDoctorNotes = useCallback(
+	    (doctorId?: string | null, doctorEmail?: string | null): string | null => {
+	      if (doctorId) {
+	        const hit = referralIdLookupForDoctorNotes.get(`acct:${String(doctorId).toLowerCase()}`);
+	        if (hit) return hit.referralId;
+	      }
+	      if (doctorEmail) {
+	        const hit = referralIdLookupForDoctorNotes.get(`email:${String(doctorEmail).toLowerCase()}`);
+	        if (hit) return hit.referralId;
+	      }
+	      return null;
+	    },
+	    [referralIdLookupForDoctorNotes],
+	  );
 
   const salesTrackingOrdersByDoctor = useMemo(() => {
     const buckets = new Map<
@@ -6156,13 +6699,14 @@ export default function App() {
       }
       try {
         setManualProspectSubmitting(true);
-        await referralAPI.createManualProspect({
-          name: manualProspectForm.name.trim(),
-          email: manualProspectForm.email.trim() || undefined,
-          phone: manualProspectForm.phone.trim() || undefined,
-          notes: manualProspectForm.notes.trim() || undefined,
-          status: manualProspectForm.status,
-        });
+	        await referralAPI.createManualProspect({
+	          name: manualProspectForm.name.trim(),
+	          email: manualProspectForm.email.trim() || undefined,
+	          phone: manualProspectForm.phone.trim() || undefined,
+	          notes: normalizeNotesValue(manualProspectForm.notes) || undefined,
+	          status: manualProspectForm.status,
+	          hasAccount: false,
+	        });
         toast.success("Prospect added successfully.");
         closeManualProspectModal();
         await tracedRefreshReferralData("manual-prospect-submit", {
@@ -6179,12 +6723,187 @@ export default function App() {
         setManualProspectSubmitting(false);
       }
     },
-    [
-      manualProspectForm,
-      closeManualProspectModal,
-      tracedRefreshReferralData,
-    ],
-  );
+	    [
+	      manualProspectForm,
+	      closeManualProspectModal,
+	      normalizeNotesValue,
+	      tracedRefreshReferralData,
+	    ],
+	  );
+
+	  const promoteSyntheticAccountProspect = useCallback(
+	    async (record: any, nextStatus: string) => {
+	      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+	        return;
+	      }
+
+	      const doctorId = String(record?.referredContactAccountId || "").trim();
+	      if (!doctorId) {
+	        toast.error("Unable to update this account prospect.");
+	        return;
+	      }
+
+	      try {
+	        setAdminActionState((prev) => ({
+	          ...prev,
+	          updatingReferral: String(record?.id || ""),
+	          error: null,
+	        }));
+
+	        const response = await referralAPI.upsertSalesProspect(doctorId, {
+	          status: nextStatus,
+	        });
+	        const prospect = (response as any)?.prospect;
+	        if (prospect) {
+	          setAccountProspectProspects((prev) => ({ ...prev, [doctorId]: prospect }));
+	        }
+
+	        toast.success("Prospect updated.");
+	        await tracedRefreshReferralData("synthetic-account-promote", {
+	          showLoading: false,
+	        });
+	      } catch (error: any) {
+        console.error("[Referral] Synthetic account promote failed", error);
+        const message =
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to update prospect right now.";
+        setAdminActionState((prev) => ({ ...prev, error: message }));
+	        toast.error(message);
+	      } finally {
+	        setAdminActionState((prev) => ({ ...prev, updatingReferral: null }));
+	      }
+	    },
+	    [setAccountProspectProspects, tracedRefreshReferralData, user],
+	  );
+
+	  const [resellerPermitBusyByProspectId, setResellerPermitBusyByProspectId] =
+	    useState<Record<string, boolean>>({});
+
+	  const patchSalesRepDashboardReferral = useCallback(
+	    (referralId: string, patch: Record<string, any>) => {
+	      setSalesRepDashboard((prev: any) => {
+	        if (!prev) return prev;
+	        const referrals = Array.isArray(prev.referrals) ? prev.referrals : [];
+	        const nextReferrals = referrals.map((item: any) => {
+	          if (String(item?.id || "") !== String(referralId)) {
+	            return item;
+	          }
+	          return { ...item, ...patch };
+	        });
+	        return { ...prev, referrals: nextReferrals };
+	      });
+	    },
+	    [],
+	  );
+
+	  const updateResellerPermitExempt = useCallback(
+	    async (prospectId: string, exempt: boolean) => {
+	      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+	        return;
+	      }
+	      setResellerPermitBusyByProspectId((prev) => ({
+	        ...prev,
+	        [prospectId]: true,
+	      }));
+	      try {
+	        const response = await referralAPI.upsertSalesProspect(prospectId, {
+	          resellerPermitExempt: exempt,
+	        });
+	        const prospect = (response as any)?.prospect;
+	        patchSalesRepDashboardReferral(prospectId, {
+	          resellerPermitExempt: exempt,
+	          ...(prospect && typeof prospect === "object" ? prospect : {}),
+	        });
+	      } catch (error: any) {
+	        console.warn("[Prospects] Update reseller permit exempt failed", error);
+	        toast.error(
+	          typeof error?.message === "string" && error.message
+	            ? error.message
+	            : "Unable to update permit status right now.",
+	        );
+	      } finally {
+	        setResellerPermitBusyByProspectId((prev) => ({
+	          ...prev,
+	          [prospectId]: false,
+	        }));
+	      }
+	    },
+	    [patchSalesRepDashboardReferral, user],
+	  );
+
+		  const uploadResellerPermit = useCallback(
+		    async (prospectId: string, file: File) => {
+		      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+		        return;
+	      }
+	      setResellerPermitBusyByProspectId((prev) => ({
+	        ...prev,
+	        [prospectId]: true,
+	      }));
+	      try {
+	        const response = await referralAPI.uploadResellerPermit(prospectId, file);
+	        const prospect = (response as any)?.prospect;
+	        patchSalesRepDashboardReferral(prospectId, {
+	          ...(prospect && typeof prospect === "object" ? prospect : {}),
+	          resellerPermitFileName: file.name,
+	        });
+	      } catch (error: any) {
+	        console.warn("[Prospects] Upload reseller permit failed", error);
+	        toast.error(
+	          typeof error?.message === "string" && error.message
+	            ? error.message
+	            : "Unable to upload permit right now.",
+	        );
+	      } finally {
+	        setResellerPermitBusyByProspectId((prev) => ({
+	          ...prev,
+	          [prospectId]: false,
+	        }));
+	      }
+	    },
+		    [patchSalesRepDashboardReferral, user],
+		  );
+
+		  const viewResellerPermit = useCallback(
+		    async (prospectId: string, fallbackName?: string) => {
+		      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+		        return;
+		      }
+		      setResellerPermitBusyByProspectId((prev) => ({
+		        ...prev,
+		        [prospectId]: true,
+		      }));
+		      try {
+		        const result = await referralAPI.downloadResellerPermit(prospectId);
+		        const objectUrl = URL.createObjectURL(result.blob);
+		        const opened = window.open(objectUrl, "_blank", "noopener,noreferrer");
+		        if (!opened) {
+		          const anchor = document.createElement("a");
+		          anchor.href = objectUrl;
+		          anchor.download =
+		            result.filename || fallbackName || "reseller_permit";
+		          document.body.appendChild(anchor);
+		          anchor.click();
+		          anchor.remove();
+		        }
+		        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+		      } catch (error: any) {
+		        console.warn("[Prospects] Download reseller permit failed", error);
+		        toast.error(
+		          typeof error?.message === "string" && error.message
+		            ? error.message
+		            : "Unable to download permit right now.",
+		        );
+		      } finally {
+		        setResellerPermitBusyByProspectId((prev) => ({
+		          ...prev,
+		          [prospectId]: false,
+		        }));
+		      }
+		    },
+		    [user],
+		  );
 
   const handleDeleteDoctorReferral = useCallback(
     async (referralId: string) => {
@@ -7942,20 +8661,26 @@ export default function App() {
       };
     });
 
-    const itemTotal = items.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0,
-    );
-    const taxTotal =
-      typeof options?.taxTotal === "number" && options.taxTotal >= 0
-        ? options.taxTotal
-        : 0;
-    const total = itemTotal;
+	    const itemTotal = items.reduce(
+	      (sum, item) => sum + item.price * item.quantity,
+	      0,
+	    );
+	    const taxTotal =
+	      typeof options?.taxTotal === "number" && options.taxTotal >= 0
+	        ? options.taxTotal
+	        : 0;
+	    const shippingTotal =
+	      typeof options?.shippingTotal === "number" && options.shippingTotal >= 0
+	        ? options.shippingTotal
+	        : 0;
+	    const total = Math.round(
+	      (itemTotal + shippingTotal + taxTotal + Number.EPSILON) * 100,
+	    ) / 100;
 
-    try {
-      const response = await ordersAPI.create(
-        items,
-        total,
+	    try {
+	      const response = await ordersAPI.create(
+	        items,
+	        total,
         undefined,
         {
           address: options?.shippingAddress,
@@ -8096,12 +8821,12 @@ export default function App() {
     try {
       setReferralSubmitting(true);
       setReferralStatusMessage(null);
-      await submitReferralWithRetry({
-        contactName: referralForm.contactName.trim(),
-        contactEmail: referralForm.contactEmail.trim() || undefined,
-        contactPhone: referralForm.contactPhone.trim() || undefined,
-        notes: referralForm.notes.trim() || undefined,
-      });
+	      await submitReferralWithRetry({
+	        contactName: referralForm.contactName.trim(),
+	        contactEmail: referralForm.contactEmail.trim() || undefined,
+	        contactPhone: referralForm.contactPhone.trim() || undefined,
+	        notes: normalizeNotesValue(referralForm.notes) || undefined,
+	      });
       setReferralStatusMessage({
         type: "success",
         message: "Referral sent to your regional administrator.",
@@ -9388,12 +10113,12 @@ export default function App() {
 	                        </div>
 	                      )}
 
-                      <div className="text-xs text-slate-500">
-                        Cutoff:{" "}
-                        {userActivityReport.cutoff
-                          ? new Date(userActivityReport.cutoff).toLocaleString()
-                          : "—"}
-                      </div>
+	                      <div className="text-xs text-slate-500 pl-3">
+	                        Cutoff:{" "}
+	                        {userActivityReport.cutoff
+	                          ? new Date(userActivityReport.cutoff).toLocaleString()
+	                          : "—"}
+	                      </div>
                     </>
                   ) : (
                     <div className="px-4 py-3 text-sm text-slate-500">
@@ -9877,13 +10602,25 @@ export default function App() {
                                   className="flex items-center gap-3 min-w-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openSalesDoctorDetail(bucket);
+	                                    openSalesDoctorDetail({
+	                                      ...bucket,
+	                                      referralId: resolveReferralIdForDoctorNotes(
+	                                        bucket.doctorId,
+	                                        bucket.doctorEmail,
+	                                      ),
+	                                    });
                                   }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" || e.key === " ") {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      openSalesDoctorDetail(bucket);
+	                                      openSalesDoctorDetail({
+	                                        ...bucket,
+	                                        referralId: resolveReferralIdForDoctorNotes(
+	                                          bucket.doctorId,
+	                                          bucket.doctorEmail,
+	                                        ),
+	                                      });
                                     }
                                   }}
                                   aria-label={`View ${bucket.doctorName} details`}
@@ -9911,9 +10648,13 @@ export default function App() {
                                     )}
                                   </div>
                                   <div className="text-left">
-                                    <p className="lead-list-name whitespace-nowrap">
-                                      {bucket.doctorName}
-                                    </p>
+		                                    <p className="lead-list-name whitespace-nowrap flex items-center gap-1">
+		                                      <NotebookPen
+		                                        className="h-4 w-4 text-slate-400"
+		                                        aria-hidden="true"
+		                                      />
+		                                      <span>{bucket.doctorName}</span>
+		                                    </p>
                                     {String(bucket.leadType || "").toLowerCase() ===
                                       "contact_form" && (
                                       <span className="lead-source-pill lead-source-pill--contact mt-1">
@@ -10124,14 +10865,18 @@ export default function App() {
                   ) : (
                     <div className="lead-list-scroll active-prospects-list-scroll">
                       <ul className="lead-list">
-                        {filteredActiveProspects.map(({ kind, record }) => {
-                        const isUpdating =
-                          adminActionState.updatingReferral === record.id;
-                        const normalizedStatus =
-                          kind === "contact_form"
-                            ? (record.status || "contact_form").toLowerCase()
-                            : sanitizeReferralStatus(record.status);
-                        const isContacting = normalizedStatus === "contacted";
+	                        {filteredActiveProspects.map(({ kind, record }) => {
+	                        const isUpdating =
+	                          adminActionState.updatingReferral === record.id;
+	                        const normalizedStatus =
+	                          kind === "contact_form"
+	                            ? (record.status || "contact_form").toLowerCase()
+	                            : sanitizeReferralStatus(record.status);
+		                        const selectedStatusValue =
+		                          normalizedStatus === "contact_form"
+		                            ? "pending"
+		                            : normalizedStatus;
+		                        const isVerified = selectedStatusValue === "verified";
                           const isCrediting = creditingReferralId === record.id;
                           const referralDisplayName =
                             (kind === "referral" &&
@@ -10164,27 +10909,225 @@ export default function App() {
                             typeof record.referredContactHasAccount === "boolean"
                               ? record.referredContactHasAccount
                               : false;
-                          const creditEligible =
-                            kind === "referral"
-                              ? Boolean(record.referredContactEligibleForCredit)
-                              : false;
-                          const awaitingFirstPurchase =
-                            normalizedStatus === "converted" &&
-                            !hasLeadPlacedOrder(record);
-                          const isSyntheticAccount =
-                            (record as any).syntheticAccountProspect === true;
-                          return (
-                            <li key={record.id} className="lead-list-item">
-                              <div className="lead-list-meta">
-                                <div className="lead-list-name">
-                                  {record.referredContactName ||
-                                    record.referredContactEmail ||
-                                    "—"}
-                                </div>
-                                {record.referredContactEmail && (
-                                  <div className="lead-list-detail">
-                                    <a
-                                      href={`mailto:${record.referredContactEmail}`}
+	                          const creditEligible =
+	                            kind === "referral"
+	                              ? Boolean(record.referredContactEligibleForCredit)
+	                              : false;
+		                          const awaitingFirstPurchase =
+		                            selectedStatusValue === "converted" &&
+		                            !hasLeadPlacedOrder(record);
+			                          const isSyntheticAccount =
+			                            (record as any).syntheticAccountProspect === true;
+			                          const resellerPermitExempt = Boolean(
+			                            (record as any).resellerPermitExempt,
+			                          );
+			                          const resellerPermitFileName =
+			                            typeof (record as any).resellerPermitFileName ===
+			                              "string" && (record as any).resellerPermitFileName.trim()
+			                              ? (record as any).resellerPermitFileName.trim()
+			                              : "";
+			                          const resellerPermitFilePath =
+			                            typeof (record as any).resellerPermitFilePath === "string"
+			                              ? (record as any).resellerPermitFilePath
+			                              : "";
+			                          const hasResellerPermitFile = Boolean(
+			                            resellerPermitFileName || resellerPermitFilePath,
+			                          );
+			                          const permitSatisfied =
+			                            resellerPermitExempt || hasResellerPermitFile;
+				                          const isPermitBusy = Boolean(
+				                            resellerPermitBusyByProspectId[String(record?.id || "")],
+				                          );
+				                          const permitInputId = `reseller-permit-${String(record?.id || "")
+				                            .replace(/[^a-zA-Z0-9_-]/g, "_")
+				                            .slice(0, 64)}`;
+				                          const currentStatusLabel =
+				                            selectedStatusValue === "pending"
+				                              ? "Pending"
+				                              : humanizeReferralStatus(selectedStatusValue);
+			                          const nextPromotion = (() => {
+			                            if (isSyntheticAccount) {
+			                              return { value: "converted", label: "Converted", disabled: false };
+			                            }
+			                            switch (selectedStatusValue) {
+			                              case "pending":
+			                                return { value: "contacted", label: "Contacting", disabled: false };
+			                              case "contacted":
+			                                return {
+			                                  value: "verified",
+			                                  label: permitSatisfied ? "Verified" : "Verified (permit required)",
+			                                  disabled: !permitSatisfied,
+			                                };
+			                              case "verified":
+			                                return { value: "account_created", label: "Account Created", disabled: false };
+			                              case "account_created":
+			                                return { value: "converted", label: "Converted", disabled: false };
+			                              default:
+			                                return null;
+			                            }
+			                          })();
+			                          const backwardStatuses = (() => {
+			                            const order = [
+			                              "pending",
+			                              "contacted",
+			                              "verified",
+			                              "account_created",
+			                              "converted",
+			                            ];
+			                            const currentIndex = order.indexOf(selectedStatusValue);
+			                            if (currentIndex <= 0) return [];
+			                            return order.slice(0, currentIndex).map((value) => ({
+			                                value,
+			                                label:
+			                                  value === "pending"
+			                                    ? "Pending"
+			                                    : humanizeReferralStatus(value),
+			                                disabled: false,
+			                              }));
+			                          })();
+			                          const promotionOptions = [
+			                            ...backwardStatuses,
+			                            {
+			                              value: selectedStatusValue,
+			                              label: currentStatusLabel,
+			                              disabled: true,
+			                            },
+			                            ...(nextPromotion ? [nextPromotion] : []),
+			                          ];
+		                          const leadAccountProfile = (() => {
+		                            if (!hasContactAccount) return null;
+		                            const accountId = (record as any).referredContactAccountId;
+	                            const accountEmail =
+	                              typeof (record as any).referredContactAccountEmail === "string"
+	                                ? (record as any).referredContactAccountEmail.trim()
+	                                : "";
+	                            const leadEmail =
+	                              typeof (record as any).referredContactEmail === "string"
+	                                ? (record as any).referredContactEmail.trim()
+	                                : "";
+	                            const email = (accountEmail || leadEmail).toLowerCase();
+	                            const phone =
+	                              typeof (record as any).referredContactPhone === "string"
+	                                ? (record as any).referredContactPhone.trim()
+	                                : "";
+	
+	                            const lookups = [
+	                              accountId ? `acct:${accountId}` : null,
+	                              accountId ? `acct:${String(accountId).toLowerCase()}` : null,
+	                              email ? `email:${email}` : null,
+	                              email || null,
+	                              phone ? `phone:${phone}` : null,
+	                            ].filter(Boolean) as string[];
+	
+	                            for (const key of lookups) {
+	                              const match = accountProfileLookup.get(key);
+	                              if (match) return match;
+	                            }
+	                            return null;
+	                          })();
+	                          const leadDisplayName =
+	                            (hasContactAccount && leadAccountProfile?.name) ||
+	                            record.referredContactName ||
+	                            record.referredContactEmail ||
+	                            "—";
+	                          return (
+	                            <li key={record.id} className="lead-list-item">
+	                              <div className="lead-list-meta">
+	                                <div className="lead-list-name min-w-0">
+	                                  <button
+	                                    type="button"
+	                                    className="flex items-start justify-start gap-2 min-w-0 text-left w-full"
+	                                    onClick={() => {
+	                                      const doctorId =
+	                                        (record as any).referredContactAccountId ||
+	                                        (record as any).referredContactId ||
+	                                        (record as any).userId ||
+	                                        (record as any).doctorId ||
+	                                        record.id;
+	                                      const doctorEmail =
+	                                        record.referredContactEmail ||
+	                                        (leadAccountProfile?.email ?? null) ||
+	                                        null;
+	                                    openSalesDoctorDetail({
+	                                        doctorId: String(doctorId || record.id),
+	                                        referralId: kind === "referral" ? String(record.id) : null,
+	                                        doctorName: leadDisplayName,
+	                                        doctorEmail,
+	                                        doctorAvatar:
+	                                          leadAccountProfile?.profileImageUrl ?? null,
+	                                        doctorPhone: record.referredContactPhone || null,
+	                                        doctorAddress: null,
+	                                        orders: [],
+	                                        total: 0,
+	                                      });
+	                                    }}
+	                                    onKeyDown={(e) => {
+	                                      if (e.key === "Enter" || e.key === " ") {
+	                                        e.preventDefault();
+	                                        const doctorId =
+	                                          (record as any).referredContactAccountId ||
+	                                          (record as any).referredContactId ||
+	                                          (record as any).userId ||
+	                                          (record as any).doctorId ||
+	                                          record.id;
+	                                        const doctorEmail =
+	                                          record.referredContactEmail ||
+	                                          (leadAccountProfile?.email ?? null) ||
+	                                          null;
+	                                        openSalesDoctorDetail({
+	                                          doctorId: String(doctorId || record.id),
+	                                          referralId: kind === "referral" ? String(record.id) : null,
+	                                          doctorName: leadDisplayName,
+	                                          doctorEmail,
+	                                          doctorAvatar:
+	                                            leadAccountProfile?.profileImageUrl ?? null,
+	                                          doctorPhone: record.referredContactPhone || null,
+	                                          doctorAddress: null,
+	                                          orders: [],
+	                                          total: 0,
+	                                        });
+	                                      }
+	                                    }}
+	                                    aria-label={`View ${leadDisplayName} details`}
+	                                    style={{
+	                                      background: "transparent",
+	                                      border: "none",
+	                                      padding: 0,
+	                                    }}
+	                                  >
+	                                    {hasContactAccount && (
+	                                      <div
+	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
+	                                        style={{ width: 28, height: 28, minWidth: 28 }}
+	                                      >
+	                                        {leadAccountProfile?.profileImageUrl ? (
+	                                          <img
+	                                            src={leadAccountProfile.profileImageUrl}
+	                                            alt={leadDisplayName}
+	                                            className="h-full w-full object-cover"
+	                                            loading="lazy"
+	                                            decoding="async"
+	                                          />
+	                                        ) : (
+	                                          <span className="text-[11px] font-semibold text-slate-600">
+	                                            {getInitials(leadDisplayName)}
+	                                          </span>
+	                                        )}
+	                                      </div>
+	                                    )}
+		                                    <NotebookPen
+		                                      className="h-4 w-4 text-slate-400 shrink-0 mt-[2px]"
+		                                      aria-hidden="true"
+		                                    />
+		                                    <span className="min-w-0 whitespace-normal break-words leading-snug text-left">
+		                                      {leadDisplayName}
+		                                    </span>
+		                                  </button>
+	                                </div>
+	                                {record.referredContactEmail && (
+	                                  <div className="lead-list-detail">
+	                                    <a
+	                                      href={`mailto:${record.referredContactEmail}`}
                                       className="text-[rgb(95,179,249)] hover:underline"
                                     >
                                       {record.referredContactEmail}
@@ -10208,74 +11151,81 @@ export default function App() {
                                     ? "Account Created"
                                     : "No Account Yet"}
                                 </span>
-                                {isSyntheticAccount && (
-                                  <span className="inline-flex text-[10px] uppercase tracking-wide text-[rgb(95,179,249)] font-semibold">
-                                    Synced Account
-                                  </span>
-                                )}
                               </div>
-                              <div className="lead-list-actions">
-                                <select
-                                  value={normalizedStatus}
-                                  disabled={isUpdating || isSyntheticAccount}
-                                  onChange={(event) => {
-                                    if (isSyntheticAccount) {
-                                      return;
-                                    }
-                                    const nextValue = event.target.value;
-                                    if (
-                                      isManualLead &&
-                                      nextValue === MANUAL_PROSPECT_DELETE_VALUE
-                                    ) {
-                                      handleDeleteManualProspect(record.id);
+			                              <div className="lead-list-actions">
+			                                <select
+			                                  value={selectedStatusValue}
+			                                  disabled={isUpdating || isPermitBusy}
+				                                  onChange={(event) => {
+			                                    const nextValue = event.target.value;
+		                                    if (nextValue === selectedStatusValue) {
+		                                      return;
+		                                    }
+	                                    if (
+	                                      isManualLead &&
+	                                      nextValue === MANUAL_PROSPECT_DELETE_VALUE
+	                                    ) {
+	                                      handleDeleteManualProspect(record.id);
+	                                      return;
+	                                    }
+	                                    if (
+	                                      nextValue === "account_created" &&
+	                                      !hasContactAccount &&
+	                                      !window.confirm(
+	                                        "They have not yet created a PepPro account, are you sure you want to promote them to Account Created?",
+	                                      )
+	                                    ) {
+	                                      return;
+	                                    }
+	                                    if (isSyntheticAccount) {
+	                                      void promoteSyntheticAccountProspect(
+	                                        record,
+	                                        nextValue,
+	                                      );
                                       return;
                                     }
                                     handleUpdateReferralStatus(
                                       record.id,
                                       nextValue,
                                     );
-                                  }}
-                                  className="lead-status-select"
-                                >
-                                  {isManualLead && (
-                                    <option value={MANUAL_PROSPECT_DELETE_VALUE}>
-                                      Delete
-                                    </option>
-                                  )}
-                                  {kind === "contact_form"
-                                    ? CONTACT_FORM_STATUS_FLOW.map((stage) => (
-                                        <option
-                                          key={stage.key}
-                                          value={stage.key}
-                                        >
-                                          {stage.label}
-                                        </option>
-                                      ))
-                                    : leadStatusOptions.map((status) => (
-                                        <option key={status} value={status}>
-                                          {humanizeReferralStatus(status)}
-                                        </option>
-                                  ))}
-                                </select>
-                                {isContacting && (
-                                  <button
-                                    type="button"
-                                    onClick={openAccountDetailsTab}
-                                    className="text-[rgb(95,179,249)] text-xs font-semibold hover:underline mt-1"
-                                  >
-                                    Share Referral Code
-                                  </button>
-                                )}
+			                                  }}
+			                                  className="lead-status-select"
+			                                >
+		                                  {isManualLead && (
+		                                    <option value={MANUAL_PROSPECT_DELETE_VALUE}>
+		                                      Delete
+		                                    </option>
+		                                  )}
+		                                  {promotionOptions.map((option) => (
+		                                    <option
+		                                      key={option.value}
+		                                      value={option.value}
+		                                      disabled={option.disabled}
+		                                    >
+		                                      {option.label}
+		                                    </option>
+			                                  ))}
+			                                </select>
+			                                {isVerified && (
+			                                  <button
+			                                    type="button"
+			                                    onClick={openAccountDetailsTab}
+		                                    className="text-[rgb(95,179,249)] text-xs font-semibold hover:underline mt-1"
+	                                  >
+	                                    Share Referral Code
+	                                  </button>
+	                                )}
                                 {awaitingFirstPurchase && (
                                   <div className="text-xs text-amber-600 text-center mt-1">
                                     Awaiting their first purchase
                                   </div>
                                 )}
-                                {kind === "referral" &&
-                                  normalizedStatus === "converted" &&
-                                  !referralCreditTimestamp &&
-                                  creditEligible && (
-                                    <Button
+	                                {kind === "referral" &&
+	                                  !isManualLead &&
+	                                  normalizedStatus === "converted" &&
+	                                  !referralCreditTimestamp &&
+	                                  creditEligible && (
+	                                    <Button
                                       type="button"
                                       disabled={isCrediting}
                                       onClick={() =>
@@ -10290,31 +11240,120 @@ export default function App() {
                                         : `Credit ${referralDisplayName} $50`}
                                     </Button>
                                   )}
-                                {kind === "referral" &&
-                                  normalizedStatus === "converted" &&
-                                  !referralCreditTimestamp &&
-                                  !creditEligible && (
-                                    <div className="text-xs text-slate-500 text-center mt-1">
-                                      Awaiting first order to credit
-                                    </div>
-                                  )}
-                                <div className="flex flex-col items-end gap-1 min-w-[220px]">
-                                  {kind === "referral" &&
-                                    referralCreditTimestamp && (
-                                      <div className="text-xs font-semibold text-emerald-600 text-right break-words">
-                                        {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
-                                      </div>
-                                    )}
-                                  <div className="lead-updated text-right">
-                                    {record.updatedAt
-                                      ? `Updated ${formatDateTime(record.updatedAt)}`
-                                      : formatDateTime(record.createdAt)}
-                                  </div>
-                                </div>
-                              </div>
-                            </li>
-                          );
-                        })}
+		                                {kind === "referral" &&
+		                                  !isManualLead &&
+		                                  normalizedStatus === "converted" &&
+		                                  !referralCreditTimestamp &&
+		                                  !creditEligible && (
+		                                    <div className="text-xs text-slate-500 text-center mt-1">
+		                                      Awaiting first order to credit
+		                                    </div>
+		                                  )}
+	                                <div className="lead-list-actions-footer">
+	                                  {selectedStatusValue === "contacted" &&
+	                                    !isSyntheticAccount && (
+	                                      <div className="prospect-permit-container">
+	                                        <div className="prospect-permit-caption">
+	                                          Reseller Permit Verification
+	                                        </div>
+	                                        <div className="prospect-permit-controls">
+	                                          <label className="prospect-permit-checkbox">
+	                                            <input
+	                                              type="checkbox"
+	                                              checked={resellerPermitExempt}
+	                                              disabled={
+	                                                isUpdating || isPermitBusy
+	                                              }
+	                                              onChange={(event) => {
+	                                                void updateResellerPermitExempt(
+	                                                  String(record.id),
+	                                                  event.target.checked,
+	                                                );
+	                                              }}
+	                                              className="prospect-permit-checkbox-input"
+	                                            />
+	                                            Doctor does not have a resellers permit
+	                                          </label>
+		                                          <div className="prospect-permit-file-picker">
+		                                            <input
+		                                              id={permitInputId}
+		                                              type="file"
+		                                              accept="application/pdf,image/*"
+		                                              disabled={
+		                                                isUpdating || isPermitBusy
+		                                              }
+		                                              onChange={(event) => {
+		                                                const file =
+		                                                  event.target.files?.[0];
+		                                                if (file) {
+		                                                  void uploadResellerPermit(
+		                                                    String(record.id),
+		                                                    file,
+		                                                  );
+		                                                  event.target.value = "";
+		                                                }
+		                                              }}
+		                                              className="prospect-permit-file-input"
+		                                            />
+		                                            <label
+		                                              htmlFor={permitInputId}
+		                                              className="prospect-permit-file-button"
+		                                            >
+		                                              Upload Permit
+		                                            </label>
+		                                            {hasResellerPermitFile ? (
+		                                              <button
+		                                                type="button"
+		                                                className="prospect-permit-file-name prospect-permit-file-name-button"
+		                                                disabled={
+		                                                  isUpdating || isPermitBusy
+		                                                }
+		                                                onClick={() => {
+		                                                  const display =
+		                                                    resellerPermitFileName ||
+		                                                    resellerPermitFilePath
+		                                                      .split("/")
+		                                                      .pop() ||
+		                                                    "reseller_permit";
+		                                                  void viewResellerPermit(
+		                                                    String(record.id),
+		                                                    display,
+		                                                  );
+		                                                }}
+		                                              >
+		                                                {resellerPermitFileName ||
+		                                                  resellerPermitFilePath
+		                                                    .split("/")
+		                                                    .pop() ||
+		                                                  "Uploaded permit"}
+		                                              </button>
+		                                            ) : (
+		                                              <span className="prospect-permit-file-name">
+		                                                No file selected
+		                                              </span>
+		                                            )}
+		                                          </div>
+		                                        </div>
+		                                      </div>
+		                                    )}
+	                                  <div className="lead-list-updated-block">
+	                                    {kind === "referral" &&
+	                                      referralCreditTimestamp && (
+	                                        <div className="text-xs font-semibold text-emerald-600 text-right break-words">
+	                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
+	                                        </div>
+	                                      )}
+	                                    <div className="lead-updated text-right">
+	                                      {record.updatedAt
+	                                        ? `Updated ${formatDateTime(record.updatedAt)}`
+	                                        : formatDateTime(record.createdAt)}
+	                                    </div>
+	                                  </div>
+	                                </div>
+			                              </div>
+			                            </li>
+			                          );
+			                        })}
                       </ul>
                     </div>
                   )}
@@ -10346,16 +11385,32 @@ export default function App() {
                       </p>
                     ) : (
                       <ul className="lead-list">
-                        {filteredSalesRepReferrals.map((referral) => {
-                          const isUpdating =
-                            adminActionState.updatingReferral === referral.id;
-                          const isCrediting =
-                            creditingReferralId === referral.id;
-                          const referralStatusOptions =
-                            REFERRAL_STATUS_FLOW.map((stage) => stage.key);
-                          const normalizedStatus = sanitizeReferralStatus(
-                            referral.status,
-                          );
+	                        {filteredSalesRepReferrals.map((referral) => {
+		                          const isUpdating =
+		                            adminActionState.updatingReferral === referral.id;
+		                          const isCrediting =
+		                            creditingReferralId === referral.id;
+		                          const manualLead = isManualEntry(referral);
+		                          const normalizedStatus = sanitizeReferralStatus(
+		                            referral.status,
+		                          );
+		                          const referralStatusOptions = (() => {
+		                            if (manualLead) {
+		                              return leadStatusOptions;
+	                            }
+	                            const base = ["pending", "contacted"];
+	                            const options: string[] = [];
+	                            const pushUnique = (value: string) => {
+	                              if (!value) return;
+	                              if (options.includes(value)) return;
+	                              options.push(value);
+	                            };
+	                            if (!base.includes(normalizedStatus)) {
+	                              pushUnique(normalizedStatus);
+	                            }
+	                            base.forEach((value) => pushUnique(value));
+	                            return options;
+	                          })();
                           const referralDisplayName =
                             referral.referrerDoctorName || "User";
                           const referralCreditTimestamp =
@@ -10364,14 +11419,13 @@ export default function App() {
                             referral.creditIssuedAmount != null
                               ? referral.creditIssuedAmount
                               : 50;
-                          const referralEligibleForCredit = Boolean(
-                            referral.referredContactEligibleForCredit,
-                          );
-                          const manualLead = isManualEntry(referral);
-                          const isCollapsed = collapsedReferralIds.has(referral.id);
-                          const capitalizeName = (value?: string | null) => {
-                            if (!value) return value;
-                            return value
+	                          const referralEligibleForCredit = Boolean(
+	                            referral.referredContactEligibleForCredit,
+	                          );
+	                          const isCollapsed = collapsedReferralIds.has(referral.id);
+	                          const capitalizeName = (value?: string | null) => {
+	                            if (!value) return value;
+	                            return value
                               .split(" ")
                               .map((part) =>
                                 part ? part.charAt(0).toUpperCase() + part.slice(1) : part,
@@ -10504,38 +11558,52 @@ export default function App() {
                                     <div className="flex flex-col items-end gap-2 min-w-[240px] ml-auto">
                                       <select
                                         value={normalizedStatus}
-                                        onChange={(event) => {
-                                          const nextValue = event.target.value;
-                                          if (
-                                            manualLead &&
-                                            nextValue === MANUAL_PROSPECT_DELETE_VALUE
-                                          ) {
-                                            handleDeleteManualProspect(referral.id);
-                                            return;
-                                          }
-                                          handleUpdateReferralStatus(
-                                            referral.id,
-                                            nextValue,
-                                          );
-                                        }}
+	                                        onChange={(event) => {
+	                                          const nextValue = event.target.value;
+	                                          if (
+	                                            manualLead &&
+	                                            nextValue === MANUAL_PROSPECT_DELETE_VALUE
+	                                          ) {
+	                                            handleDeleteManualProspect(referral.id);
+	                                            return;
+	                                          }
+	                                          if (
+	                                            nextValue === "account_created" &&
+	                                            !referral.referredContactHasAccount &&
+	                                            !window.confirm(
+	                                              "They have not created a PepPro account, yet are you sure you want to promote them?",
+	                                            )
+	                                          ) {
+	                                            return;
+	                                          }
+	                                          handleUpdateReferralStatus(
+	                                            referral.id,
+	                                            nextValue,
+	                                          );
+	                                        }}
                                         disabled={isUpdating}
                                         className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                                       >
-                                        {manualLead && (
-                                          <option value={MANUAL_PROSPECT_DELETE_VALUE}>
-                                            Delete
-                                          </option>
-                                        )}
-                                        {referralStatusOptions.map((status) => (
-                                          <option key={status} value={status}>
-                                            {humanizeReferralStatus(status)}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      {normalizedStatus === "converted" &&
-                                        !referralCreditTimestamp &&
-                                        referralEligibleForCredit && (
-                                          <Button
+	                                        {manualLead && (
+	                                          <option value={MANUAL_PROSPECT_DELETE_VALUE}>
+	                                            Delete
+	                                          </option>
+	                                        )}
+	                                        {referralStatusOptions.map((status) => (
+	                                          <option
+	                                            key={status}
+	                                            value={status}
+	                                            disabled={!manualLead && !["pending", "contacted"].includes(status)}
+	                                          >
+	                                            {humanizeReferralStatus(status)}
+	                                          </option>
+	                                        ))}
+	                                      </select>
+	                                      {normalizedStatus === "converted" &&
+	                                        !manualLead &&
+	                                        !referralCreditTimestamp &&
+	                                        referralEligibleForCredit && (
+	                                          <Button
                                             type="button"
                                             disabled={isCrediting}
                                             onClick={() =>
@@ -10548,13 +11616,14 @@ export default function App() {
                                               : `Credit ${referralDisplayName} $50`}
                                           </Button>
                                         )}
-                                      {normalizedStatus === "converted" &&
-                                        !referralCreditTimestamp &&
-                                        !referralEligibleForCredit && (
-                                          <div className="text-xs text-slate-500 text-right w-full">
-                                            Awaiting first order to credit
-                                          </div>
-                                        )}
+	                                      {normalizedStatus === "converted" &&
+	                                        !manualLead &&
+	                                        !referralCreditTimestamp &&
+	                                        !referralEligibleForCredit && (
+	                                          <div className="text-xs text-slate-500 text-right w-full">
+	                                            Awaiting first order to credit
+	                                          </div>
+	                                        )}
                                       {referralCreditTimestamp && (
                                         <div className="text-xs font-semibold text-emerald-600 text-right break-words">
                                           {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
@@ -10576,20 +11645,14 @@ export default function App() {
                 </section>
                 {isAdmin(user?.role) && (
                   <section className="lead-panel">
-                    <div className="lead-panel-header">
-                      <div>
-                        <h4>House / Contact Form</h4>
-                        <p className="text-sm text-slate-500">
-                          Inbound submissions captured directly from the site.
-                        </p>
-                      </div>
-                      <span className="lead-panel-count">
-                        {contactFormQueue.length}{" "}
-                        {contactFormQueue.length === 1
-                          ? "submission"
-                          : "submissions"}
-                      </span>
-                    </div>
+	                    <div className="lead-panel-header">
+	                      <div>
+	                        <h4>{contactFormQueue.length} House / Contact Form</h4>
+	                        <p className="text-sm text-slate-500">
+	                          Inbound submissions captured directly from the site.
+	                        </p>
+	                      </div>
+	                    </div>
                     <div className="sales-rep-table-wrapper">
                       <table className="min-w-[720px] divide-y divide-slate-200/70">
                         <thead className="bg-slate-50/70">
@@ -10628,9 +11691,13 @@ export default function App() {
                             contactFormQueue.map((lead) => {
                               const isUpdating =
                                 adminActionState.updatingReferral === lead.id;
-                              const normalizedStatus = (
-                                lead.status || "contact_form"
-                              ).toLowerCase();
+                              const normalizedStatusRaw = sanitizeReferralStatus(
+                                lead.status || "contact_form",
+                              );
+                              const normalizedStatus =
+                                normalizedStatusRaw === "contact_form"
+                                  ? "pending"
+                                  : normalizedStatusRaw;
                               const displayId =
                                 (lead.id || "").replace("contact_form:", "") ||
                                 lead.id ||
@@ -10674,32 +11741,68 @@ export default function App() {
                                     <div>{formatDateTime(lead.createdAt)}</div>
                                   </td>
                                   <td className="px-4 py-4">
-                                    <select
-                                      value={normalizedStatus}
-                                      disabled={isUpdating}
-                                      onChange={(event) =>
-                                        handleUpdateReferralStatus(
-                                          lead.id,
-                                          event.target.value,
-                                        )
-                                      }
-                                      className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                                    >
-                                      {CONTACT_FORM_STATUS_FLOW.map((stage) => (
-                                        <option key={stage.key} value={stage.key}>
-                                          {stage.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    {normalizedStatus === "contacted" && (
-                                      <button
-                                        type="button"
-                                        onClick={openAccountDetailsTab}
-                                        className="block text-[rgb(95,179,249)] text-xs font-semibold hover:underline mt-1"
-                                      >
-                                        Share Referral Code
-                                      </button>
-                                    )}
+		                                    <select
+		                                      value={normalizedStatus}
+		                                      disabled={isUpdating}
+		                                      onChange={(event) => {
+		                                        const nextValue = event.target.value;
+		                                        if (nextValue === normalizedStatus) {
+		                                          return;
+		                                        }
+		                                        handleUpdateReferralStatus(lead.id, nextValue);
+		                                      }}
+		                                      className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                                    >
+		                                      {(() => {
+		                                        const base = ["pending", "contacted"];
+		                                        const options: Array<{
+		                                          value: string;
+		                                          label: string;
+		                                          disabled: boolean;
+		                                        }> = [];
+		                                        const pushUnique = (
+		                                          value: string,
+		                                          label: string,
+		                                          disabled = false,
+		                                        ) => {
+		                                          if (!value) return;
+		                                          if (options.some((opt) => opt.value === value)) return;
+		                                          options.push({ value, label, disabled });
+		                                        };
+		                                        if (!base.includes(normalizedStatus)) {
+		                                          pushUnique(
+		                                            normalizedStatus,
+		                                            humanizeReferralStatus(normalizedStatus),
+		                                            true,
+		                                          );
+		                                        }
+		                                        base.forEach((value) => {
+		                                          const label =
+		                                            value === "pending"
+		                                              ? "Pending"
+		                                              : humanizeReferralStatus(value);
+		                                          pushUnique(value, label, false);
+		                                        });
+		                                        return options.map((option) => (
+		                                          <option
+		                                            key={option.value}
+		                                            value={option.value}
+		                                            disabled={option.disabled}
+		                                          >
+		                                            {option.label}
+		                                          </option>
+		                                        ));
+		                                      })()}
+		                                    </select>
+	                                    {normalizedStatus === "verified" && (
+	                                      <button
+	                                        type="button"
+	                                        onClick={openAccountDetailsTab}
+	                                        className="block text-[rgb(95,179,249)] text-xs font-semibold hover:underline mt-1"
+	                                      >
+	                                        Share Referral Code
+	                                      </button>
+	                                    )}
                                   </td>
                                 </tr>
                               );
@@ -12442,17 +13545,18 @@ export default function App() {
               <label className="text-sm font-medium text-slate-700">
                 Notes
               </label>
-              <Textarea
-                value={manualProspectForm.notes}
-                onChange={(event) =>
-                  setManualProspectForm((prev) => ({
-                    ...prev,
-                    notes: event.target.value,
-                  }))
-                }
-                rows={3}
-                placeholder="Add optional context"
-              />
+	              <Textarea
+	                value={manualProspectForm.notes}
+	                onChange={(event) =>
+	                  setManualProspectForm((prev) => ({
+	                    ...prev,
+	                    notes: event.target.value,
+	                  }))
+	                }
+	                rows={3}
+	                placeholder="Add optional context"
+	                className="notes-textarea"
+	              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">
@@ -12468,7 +13572,7 @@ export default function App() {
                 }
                 className="w-full rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
               >
-                {REFERRAL_STATUS_FLOW.map((stage) => (
+                {REFERRAL_STATUS_FLOW_SELECT.map((stage) => (
                   <option key={stage.key} value={stage.key}>
                     {stage.label}
                   </option>
@@ -12504,21 +13608,50 @@ export default function App() {
             setSalesDoctorDetail(null);
           }
         }}
-      >
-        <DialogContent className="max-w-2xl">
-          {salesDoctorDetail && (
-            <div className="space-y-4">
-              <DialogHeader>
-                <DialogTitle>{salesDoctorDetail.name}</DialogTitle>
-                <DialogDescription>
-                  {salesDoctorDetail.email || "Doctor details"}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex items-center gap-4">
-                <div
-                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
-                  style={{ width: 72, height: 72, minWidth: 72 }}
-                >
+	      >
+	        <DialogContent className="max-w-2xl">
+	          {salesDoctorDetail && (
+	            <div className="space-y-4">
+	              <DialogHeader>
+	                <DialogTitle>{salesDoctorDetail.name}</DialogTitle>
+	                <DialogDescription>
+	                  {salesDoctorDetail.email || "Doctor details"}
+	                </DialogDescription>
+	              </DialogHeader>
+			              <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
+			                <p className="text-sm font-semibold text-slate-800">Notes</p>
+			                {salesDoctorNotesLoading && (
+			                  <p className="text-xs text-slate-500">Loading notes...</p>
+			                )}
+			                <Textarea
+			                  value={salesDoctorNoteDraft}
+			                  onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
+			                  rows={4}
+			                  placeholder="Add notes about this doctor"
+			                  className="text-sm notes-textarea"
+			                  onBlur={() => void saveSalesDoctorNotes()}
+			                  disabled={salesDoctorNotesLoading}
+			                />
+			                <div className="mt-2 mb-1 flex items-center justify-end gap-2">
+			                  {salesDoctorNotesSaved && (
+			                    <CheckSquare className="h-4 w-4 text-emerald-600" />
+			                  )}
+			                  <Button
+		                    type="button"
+		                    variant="outline"
+		                    onClick={() => void saveSalesDoctorNotes()}
+		                    className="h-8 px-3 text-xs"
+		                    disabled={salesDoctorNotesLoading}
+		                  >
+		                    Save
+		                  </Button>
+		                </div>
+		              </div>
+		              <div className="flex items-center gap-4">
+		                <div
+		                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+		                  style={{ width: 72, height: 72, minWidth: 72 }}
+		                >
                   {salesDoctorDetail.avatar ? (
                     <img
                       src={salesDoctorDetail.avatar}
@@ -12529,21 +13662,13 @@ export default function App() {
                     <span className="text-lg font-semibold text-slate-600">
                       {getInitials(salesDoctorDetail.name)}
                     </span>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-lg font-semibold text-slate-900">
-                    {salesDoctorDetail.name}
-                  </p>
-                  {salesDoctorDetail.email && (
-                    <p className="text-sm text-slate-600">
-                      {salesDoctorDetail.email}
-                    </p>
-                  )}
-                  <p className="text-sm text-slate-600">
-                    Orders: {salesDoctorDetail.orders.length}
-                  </p>
-                  <p className="text-sm text-slate-600">
+	                  )}
+	                </div>
+	                <div className="space-y-1">
+	                  <p className="text-sm text-slate-600">
+	                    Orders: {salesDoctorDetail.orders.length}
+	                  </p>
+	                  <p className="text-sm text-slate-600">
                     Revenue: {formatCurrency(salesDoctorDetail.revenue)}
                   </p>
                 </div>
@@ -12687,21 +13812,24 @@ export default function App() {
                   (salesOrderDetail as any).lineItems ||
                   (salesOrderDetail as any).line_items ||
                   [];
-                const subtotal = lineItems.reduce((sum, line) => {
-                  const lineTotal =
-                    typeof line.total === "number"
-                      ? line.total
-                      : (Number(line.price) || 0) * (Number(line.quantity) || 0);
-                  return sum + (Number.isFinite(lineTotal) ? lineTotal : 0);
-                }, 0);
-                const shippingTotal =
-                  typeof salesOrderDetail.shippingTotal === "number"
-                    ? salesOrderDetail.shippingTotal
-                    : 0;
-                const taxTotal =
-                  typeof (salesOrderDetail as any).taxTotal === "number"
-                    ? (salesOrderDetail as any).taxTotal
-                    : 0;
+	                const subtotal = lineItems.reduce((sum, line) => {
+	                  const lineTotal =
+	                    coerceNumber(line.total ?? line.subtotal) ??
+	                    (coerceNumber(line.price) ?? 0) * (coerceNumber(line.quantity) ?? 0);
+	                  return sum + (Number.isFinite(lineTotal) ? lineTotal : 0);
+	                }, 0);
+	                const shippingTotal =
+	                  coerceNumber(
+	                    salesOrderDetail.shippingTotal ??
+	                      (salesOrderDetail as any).shipping_total ??
+	                      (salesOrderDetail as any).shippingTotal,
+	                  ) ?? 0;
+	                const taxTotal =
+	                  coerceNumber(
+	                    (salesOrderDetail as any).taxTotal ??
+	                      (salesOrderDetail as any).total_tax ??
+	                      (salesOrderDetail as any).totalTax,
+	                  ) ?? 0;
                 const computedGrandTotal = subtotal + shippingTotal + taxTotal;
                 const storedGrandTotal =
                   typeof (salesOrderDetail as any).grandTotal === "number"
@@ -12988,13 +14116,13 @@ export default function App() {
                             )}
                           </span>
                         </div>
-	                        {taxTotal > 0 && (
-	                          <div className="flex justify-between">
-	                            <span>Estimated tax</span>
-	                            <span>
-	                              {formatCurrency(
-	                                taxTotal,
-	                                salesOrderDetail.currency || "USD",
+		                        {taxTotal > 0 && (
+		                          <div className="flex justify-between">
+		                            <span>Tax</span>
+		                            <span>
+		                              {formatCurrency(
+		                                taxTotal,
+		                                salesOrderDetail.currency || "USD",
 	                              )}
 	                            </span>
 	                          </div>

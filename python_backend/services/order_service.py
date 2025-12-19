@@ -14,6 +14,7 @@ from ..repositories import (
     user_repository,
     sales_rep_repository,
     referral_code_repository,
+    sales_prospect_repository,
 )
 from ..integrations import ship_station, stripe_payments, woo_commerce
 from ..integrations import stripe_tax
@@ -43,6 +44,51 @@ _SALES_REP_ORDERS_TTL_SECONDS = int(os.environ.get("SALES_REP_ORDERS_TTL_SECONDS
 _SALES_REP_ORDERS_TTL_SECONDS = max(3, min(_SALES_REP_ORDERS_TTL_SECONDS, 120))
 _sales_rep_orders_cache_lock = threading.Lock()
 _sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
+
+
+def _normalize_email(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return str(value).strip().lower()
+
+
+def _is_doctor_role(role: Optional[str]) -> bool:
+    normalized = str(role or "").strip().lower()
+    return normalized in ("doctor", "test_doctor")
+
+
+def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict):
+        return False
+    doctor_id = str(user.get("id") or "").strip()
+    email = _normalize_email(user.get("email"))
+    if not doctor_id and not email:
+        return False
+    try:
+        prospects = sales_prospect_repository.get_all()
+    except Exception:
+        return False
+    for prospect in prospects or []:
+        if not isinstance(prospect, dict):
+            continue
+        prospect_doctor_id = str(prospect.get("doctorId") or "").strip()
+        prospect_email = _normalize_email(prospect.get("contactEmail"))
+        matches_doctor = bool(doctor_id and prospect_doctor_id and prospect_doctor_id == doctor_id)
+        matches_email = bool(email and prospect_email and prospect_email == email)
+        if not matches_doctor and not matches_email:
+            continue
+        file_path = str(prospect.get("resellerPermitFilePath") or "").strip()
+        if file_path:
+            return True
+    return False
+
+
+def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict) or not _is_doctor_role(user.get("role")):
+        return False
+    if bool(user.get("isTaxExempt")):
+        return True
+    return _has_reseller_permit_on_file(user)
 
 
 def _compute_allowed_sales_rep_ids(
@@ -234,6 +280,21 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
+    user = user_repository.find_by_id(user_id) if user_id else None
+    if _is_tax_exempt_for_checkout(user):
+        grand_total = max(0.0, items_total + shipping_total_value)
+        return {
+            "success": True,
+            "totals": {
+                "itemsTotal": round(items_total, 2),
+                "shippingTotal": round(shipping_total_value, 2),
+                "taxTotal": 0.0,
+                "grandTotal": round(grand_total, 2),
+                "currency": "USD",
+                "source": "tax_exempt",
+            },
+        }
+
     address = shipping_address or {}
     country = str(address.get("country") or "US").strip().upper()
     state = _normalize_address_field(address.get("state")) or ""
@@ -334,6 +395,7 @@ def create_order(
     if not user:
         raise _service_error("User not found", 404)
 
+    tax_exempt = _is_tax_exempt_for_checkout(user)
     sales_rep_ctx = _resolve_sales_rep_context(user)
 
     now = datetime.now(timezone.utc).isoformat()
@@ -348,6 +410,8 @@ def create_order(
     except Exception:
         tax_total_value = 0.0
     tax_total_value = max(0.0, tax_total_value)
+    if tax_exempt:
+        tax_total_value = 0.0
 
     address_updates = _extract_user_address_fields(shipping_address)
     if any(address_updates.values()):
@@ -1210,8 +1274,12 @@ def _enrich_with_shipstation(order: Dict) -> None:
     except ship_station.IntegrationError as exc:  # pragma: no cover - network path
         logger.warning(
             "ShipStation status lookup failed",
-            exc_info=True,
-            extra={"orderNumber": order_number, "status": getattr(exc, "status", None)},
+            exc_info=False,
+            extra={
+                "orderNumber": order_number,
+                "status": getattr(exc, "status", None),
+                "error": str(exc),
+            },
         )
     except Exception:  # pragma: no cover - unexpected path
         logger.warning("ShipStation status lookup failed (unexpected)", exc_info=True, extra={"orderNumber": order_number})
@@ -1316,18 +1384,16 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
     except ship_station.IntegrationError as exc:  # pragma: no cover - network path
         logger.warning(
             "ShipStation status lookup failed",
-            exc_info=True,
-            extra={"orderId": order_id, "status": getattr(exc, "status", None)},
+            exc_info=False,
+            extra={
+                "orderId": order_id,
+                "status": getattr(exc, "status", None),
+                "error": str(exc),
+            },
         )
     except Exception:
         # Non-fatal enrichment failure.
         shipstation_info = None
-    except Exception:  # pragma: no cover - unexpected path
-        logger.warning(
-            "ShipStation status lookup failed (unexpected)",
-            exc_info=True,
-            extra={"orderId": order_id},
-        )
 
     if shipstation_info:
         mapped.setdefault("integrationDetails", {})

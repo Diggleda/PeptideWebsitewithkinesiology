@@ -8,7 +8,7 @@ import { Filter } from 'lucide-react';
 
 interface FilterState {
   categories: string[];
-  inStockOnly: boolean;
+  types: string[];
 }
 
 interface CategoryFilterProps {
@@ -32,14 +32,12 @@ export function CategoryFilter({
 
   const clearFilters = () => {
     onFiltersChange({
+      ...filters,
       categories: [],
-      inStockOnly: false,
     });
   };
 
-  const activeFiltersCount =
-    filters.categories.length +
-    (filters.inStockOnly ? 1 : 0);
+  const activeFiltersCount = filters.categories.length;
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const bounceTimerRef = useRef<number | null>(null);
@@ -326,19 +324,6 @@ export function CategoryFilter({
           </div>
         </div>
 
-        <div className="space-y-3">
-          <Label>Availability</Label>
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="inStock"
-              checked={filters.inStockOnly}
-              onCheckedChange={(checked) => onFiltersChange({ ...filters, inStockOnly: !!checked })}
-            />
-            <Label htmlFor="inStock" className="text-sm cursor-pointer">
-              In Stock Only
-            </Label>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );

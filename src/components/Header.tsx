@@ -2459,219 +2459,221 @@ export function Header({
       return null;
     })();
 
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle-sm glass btn-hover-lighter"
-            onClick={() => setSelectedOrder(null)}
-          >
-            ← Back to orders
-          </Button>
-        </div>
-        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden">
-          <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9] flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-1 text-left">
-              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Order</p>
-              <p className="text-lg font-semibold text-slate-900">
-                {selectedOrder.number ? `Order #${selectedOrder.number}` : selectedOrder.id}
-              </p>
+	    return (
+	      <div className="space-y-6">
+	          <div className="flex justify-end">
+		          <Button
+		            type="button"
+	            variant="outline"
+	            className="header-home-button squircle-sm bg-white text-slate-900"
+	            onClick={() => setSelectedOrder(null)}
+	          >
+	            ← Back to orders
+	          </Button>
+	        </div>
+	        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden text-left">
+	          <div className="px-6 py-4 bg-[#f5f6f6] flex flex-wrap items-center justify-between gap-4">
+	            <div className="space-y-1">
+	              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Order</p>
+	              <p className="text-lg font-semibold text-slate-900">
+	                {selectedOrder.number ? `Order #${selectedOrder.number}` : selectedOrder.id}
+	              </p>
+	            </div>
+	            <div className="space-y-1 text-right">
+	              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Status</p>
+	              <p className="text-base font-semibold text-slate-900">{describeOrderStatus(selectedOrder)}</p>
+	            </div>
+	          </div>
+
+          <div className="px-6 py-5 flex flex-wrap items-center justify-between gap-6 text-sm text-slate-700 mb-4">
+            <div className="space-y-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Placed</p>
+                <p className="text-sm font-semibold text-slate-900">{formatOrderDate(selectedOrder.createdAt)}</p>
+              </div>
+              {showExpectedDeliveryDetails && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
+                  <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+                </div>
+              )}
             </div>
-            <div className="space-y-1 text-right">
-              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Status</p>
-              <p className="text-base font-semibold text-slate-900">{describeOrderStatus(selectedOrder)}</p>
-            </div>
-          </div>
-          <div className="px-6 py-5 grid gap-4 md:grid-cols-3 text-sm text-slate-700">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Placed</p>
-              <p className="text-sm font-semibold text-slate-900">{formatOrderDate(selectedOrder.createdAt)}</p>
-            </div>
-            <div>
+            <div className="text-right">
               <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
               <p className="text-sm font-semibold text-slate-900">
                 {formatCurrency(detailTotal, selectedOrder.currency || 'USD')}
               </p>
             </div>
-            {showExpectedDeliveryDetails && (
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
-                <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="account-order-card squircle-lg bg-white border border-[#d5d9d9] p-6 space-y-6 text-left">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-3">
-              <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
-              {renderAddressLines(shippingAddress)}
-              <div className="text-sm text-slate-700 space-y-1">
-                {trackingNumber && (
-                  <p>
-                    <span className="font-semibold">Tracking:</span>{' '}
-                    {trackingHref ? (
-                      <a
-                        href={trackingHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[rgb(26,85,173)] hover:underline"
-                      >
-                        {trackingNumber}
-                      </a>
-                    ) : (
-                      trackingNumber
-                    )}
-                  </p>
-                )}
-                {shippingMethod && (
-                  <p>
-                    <span className="font-semibold">Service:</span> {shippingMethod}
-                  </p>
-                )}
-                {Number.isFinite(shippingTotal) && (
-                  <p>
-                    <span className="font-semibold">Shipping:</span>{' '}
-                    {formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}
-                  </p>
-                )}
-                {Number.isFinite(taxTotal) && taxTotal > 0 && (
-                  <p>
-                    <span className="font-semibold">Estimated tax:</span>{' '}
-                    {formatCurrency(taxTotal, selectedOrder.currency || 'USD')}
-                  </p>
-                )}
-                {expectedDelivery && (
-                  <p>
-                    <span className="font-semibold">Expected:</span> {expectedDelivery}
-                  </p>
-                )}
-                {showExpectedShipmentWindow && (
-                  <p>
-                    <span className="font-semibold">Estimated ship window:</span>{' '}
-                    {expectedShipmentWindow}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
-              {renderAddressLines(billingAddress)}
-              <div className="text-sm text-slate-700 space-y-1">
-                <p>
-                  <span className="font-semibold">Payment:</span>{' '}
-                  {paymentDisplay ? `${paymentDisplay}` : '—'}
-                </p>
-                {stripeMeta?.cardLast4 && (
-                  <p>
-                    <span className="font-semibold">Card:</span>{' '}
-                    {`${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`}
-                  </p>
-                )}
-                {selectedOrder.physicianCertified && (
-                  <p className="text-green-700 font-semibold">Physician certification acknowledged</p>
-                )}
-              </div>
-            </div>
           </div>
 
-          <div className="space-y-4">
-            <h4 className="text-base font-semibold text-slate-900">Items</h4>
-            {lineItems.length > 0 ? (
-              <div className="space-y-4">
-	                {lineItems.map((line, idx) => {
-	                  const quantity = Number(line.quantity) || 0;
-	                  const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
-	                  const unitPrice = quantity > 0 ? lineTotal / quantity : parseWooMoney(line.price, lineTotal);
-	                  const ids = extractOrderLineImageKey(line);
-	                  const cachedImage = ids ? orderLineImageCache[ids.key] : null;
-	                  const lineImage =
-	                    typeof cachedImage === 'string' && cachedImage.trim().length > 0
-	                      ? cachedImage
-	                      : resolveOrderLineImage(line, wooLineItems);
-	                  return (
-	                    <div
-	                      key={line.id || `${line.sku}-${idx}`}
-	                      className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
-	                    >
-                      <div className="w-20 h-20 max-h-[120px] rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
-                        {lineImage ? (
-                          <img
-                            src={lineImage}
-                            alt={line.name || 'Item thumbnail'}
-                            className="h-full w-full object-contain"
-                            style={{ maxHeight: '120px' }}
-                          />
-                        ) : (
-                          <Package className="h-6 w-6" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-[12rem] space-y-1 pr-4">
-                        <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
-                        <p className="text-slate-600">Qty: {quantity || '—'}</p>
-                      </div>
-                      <div className="text-sm text-slate-700 text-right min-w-[8rem]">
-                        {Number.isFinite(unitPrice) && (
-                          <p>Each: {formatCurrency(unitPrice, selectedOrder.currency || 'USD')}</p>
-                        )}
-                        {Number.isFinite(lineTotal) && (
-                          <p className="font-semibold">
-                            Total: {formatCurrency(lineTotal, selectedOrder.currency || 'USD')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-600">No line items available for this order.</p>
-            )}
-          </div>
+	          <div className="border-t border-[#d5d9d9] p-6 space-y-6">
+	            <div className="grid gap-4 md:grid-cols-2">
+	              <div className="space-y-3">
+	                <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
+	                {renderAddressLines(shippingAddress)}
+	                <div className="text-sm text-slate-700 space-y-1">
+	                  {trackingNumber && (
+	                    <p>
+	                      <span className="font-semibold">Tracking:</span>{' '}
+	                      {trackingHref ? (
+	                        <a
+	                          href={trackingHref}
+	                          target="_blank"
+	                          rel="noreferrer"
+	                          className="text-[rgb(26,85,173)] hover:underline"
+	                        >
+	                          {trackingNumber}
+	                        </a>
+	                      ) : (
+	                        trackingNumber
+	                      )}
+	                    </p>
+	                  )}
+	                  {shippingMethod && (
+	                    <p>
+	                      <span className="font-semibold">Service:</span> {shippingMethod}
+	                    </p>
+	                  )}
+	                  {Number.isFinite(shippingTotal) && (
+	                    <p>
+	                      <span className="font-semibold">Shipping:</span>{' '}
+	                      {formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}
+	                    </p>
+	                  )}
+	                  {Number.isFinite(taxTotal) && taxTotal > 0 && (
+	                    <p>
+	                      <span className="font-semibold">Estimated tax:</span>{' '}
+	                      {formatCurrency(taxTotal, selectedOrder.currency || 'USD')}
+	                    </p>
+	                  )}
+	                  {expectedDelivery && (
+	                    <p>
+	                      <span className="font-semibold">Expected:</span> {expectedDelivery}
+	                    </p>
+	                  )}
+	                  {showExpectedShipmentWindow && (
+	                    <p>
+	                      <span className="font-semibold">Estimated ship window:</span>{' '}
+	                      {expectedShipmentWindow}
+	                    </p>
+	                  )}
+	                </div>
+	              </div>
 
-          <div className="space-y-3">
-            <h4 className="text-base font-semibold text-slate-900">Order Summary</h4>
-            <div className="space-y-2 text-sm text-slate-700">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{formatCurrency(subtotal, selectedOrder.currency || 'USD')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Shipping</span>
-                <span>{formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}</span>
-              </div>
-              {taxTotal > 0 && (
-                <div className="flex justify-between">
-                  <span>Tax</span>
-                  <span>{formatCurrency(taxTotal, selectedOrder.currency || 'USD')}</span>
-                </div>
-              )}
-              {discountTotal > 0 && (
-                <div className="flex justify-between text-[rgb(26,85,173)]">
-                  <span>Credits & Discounts</span>
-                  <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>
-                </div>
-              )}
-              {paymentDisplay && (
-                <div className="flex justify-between">
-                  <span>Paid with</span>
-                  <span className="font-medium text-slate-900">{paymentDisplay}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-3">
-                <span>Total</span>
-                <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+	              <div className="space-y-3">
+	                <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
+	                {renderAddressLines(billingAddress)}
+	                <div className="text-sm text-slate-700 space-y-1">
+	                  <p>
+	                    <span className="font-semibold">Payment:</span> {paymentDisplay ? `${paymentDisplay}` : '—'}
+	                  </p>
+	                  {stripeMeta?.cardLast4 && (
+	                    <p>
+	                      <span className="font-semibold">Card:</span>{' '}
+	                      {`${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`}
+	                    </p>
+	                  )}
+	                  {selectedOrder.physicianCertified && (
+	                    <p className="text-green-700 font-semibold">Physician certification acknowledged</p>
+	                  )}
+	                </div>
+	              </div>
+	            </div>
+
+	            <div className="space-y-4">
+	              <h4 className="text-base font-semibold text-slate-900">Items</h4>
+	              {lineItems.length > 0 ? (
+	                <div className="space-y-4">
+	                  {lineItems.map((line, idx) => {
+	                    const quantity = Number(line.quantity) || 0;
+	                    const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
+	                    const unitPrice = quantity > 0 ? lineTotal / quantity : parseWooMoney(line.price, lineTotal);
+	                    const ids = extractOrderLineImageKey(line);
+	                    const cachedImage = ids ? orderLineImageCache[ids.key] : null;
+	                    const lineImage =
+	                      typeof cachedImage === 'string' && cachedImage.trim().length > 0
+	                        ? cachedImage
+	                        : resolveOrderLineImage(line, wooLineItems);
+	                    return (
+	                      <div
+	                        key={line.id || `${line.sku}-${idx}`}
+	                        className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
+	                      >
+	                        <div className="w-20 h-20 max-h-[120px] rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
+	                          {lineImage ? (
+	                            <img
+	                              src={lineImage}
+	                              alt={line.name || 'Item thumbnail'}
+	                              className="h-full w-full object-contain"
+	                              style={{ maxHeight: '120px' }}
+	                            />
+	                          ) : (
+	                            <Package className="h-6 w-6" />
+	                          )}
+	                        </div>
+	                        <div className="flex-1 min-w-[12rem] space-y-1 pr-4">
+	                          <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
+	                          <p className="text-slate-600">Qty: {quantity || '—'}</p>
+	                        </div>
+	                        <div className="text-sm text-slate-700 text-right min-w-[8rem]">
+	                          {Number.isFinite(unitPrice) && (
+	                            <p>Each: {formatCurrency(unitPrice, selectedOrder.currency || 'USD')}</p>
+	                          )}
+	                          {Number.isFinite(lineTotal) && (
+	                            <p className="font-semibold">
+	                              Total: {formatCurrency(lineTotal, selectedOrder.currency || 'USD')}
+	                            </p>
+	                          )}
+	                        </div>
+	                      </div>
+	                    );
+	                  })}
+	                </div>
+	              ) : (
+	                <p className="text-sm text-slate-600">No line items available for this order.</p>
+	              )}
+	            </div>
+
+	            <div className="space-y-3">
+	              <h4 className="text-base font-semibold text-slate-900">Order Summary</h4>
+	              <div className="space-y-2 text-sm text-slate-700">
+	                <div className="flex justify-between">
+	                  <span>Subtotal</span>
+	                  <span>{formatCurrency(subtotal, selectedOrder.currency || 'USD')}</span>
+	                </div>
+	                <div className="flex justify-between">
+	                  <span>Shipping</span>
+	                  <span>{formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}</span>
+	                </div>
+	                {taxTotal > 0 && (
+	                  <div className="flex justify-between">
+	                    <span>Tax</span>
+	                    <span>{formatCurrency(taxTotal, selectedOrder.currency || 'USD')}</span>
+	                  </div>
+	                )}
+	                {discountTotal > 0 && (
+	                  <div className="flex justify-between text-[rgb(26,85,173)]">
+	                    <span>Credits & Discounts</span>
+	                    <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>
+	                  </div>
+	                )}
+	                {paymentDisplay && (
+	                  <div className="flex justify-between">
+	                    <span>Paid with</span>
+	                    <span className="font-medium text-slate-900">{paymentDisplay}</span>
+	                  </div>
+	                )}
+	                <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-3">
+	                  <span>Total</span>
+	                  <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+	    );
+	  };
 
   const accountOrdersPanel = localUser ? (
     <div className="space-y-4">
@@ -2685,13 +2687,18 @@ export function Header({
           </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex-1 min-w-[1px]" />
-          <div className="flex items-center gap-2">
-            {ordersLastSyncedAt && (
-              <span className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)]">
-                {formatRelativeMinutes(ordersLastSyncedAt)}
-              </span>
-            )}
+          {ordersLastSyncedAt && (
+            <button
+              type="button"
+              onClick={() => Promise.resolve(onRefreshOrders?.())}
+              disabled={!onRefreshOrders}
+              title={onRefreshOrders ? 'Refresh orders' : undefined}
+              className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)] disabled:opacity-70 disabled:cursor-default hover:text-slate-700 hover:border-[var(--brand-glass-border-2)] transition-colors"
+            >
+              {formatRelativeMinutes(ordersLastSyncedAt)}
+            </button>
+          )}
+          <div className="flex items-center gap-2 ml-auto">
             <Button
               type="button"
               variant="outline"

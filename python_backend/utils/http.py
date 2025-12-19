@@ -48,6 +48,14 @@ def json_error(error: Exception) -> Response:
 def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
     try:
         payload = action()
+        if isinstance(payload, Response):
+            return payload
+        if isinstance(payload, tuple) and len(payload) == 2:
+            body, code = payload
+            if isinstance(body, Response):
+                return payload
+            if isinstance(code, int):
+                return json_success(body, status=code)
         return json_success(payload, status=status)
     except Exception as exc:  # pragma: no cover - error paths
         import logging
