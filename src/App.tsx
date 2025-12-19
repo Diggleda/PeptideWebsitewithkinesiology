@@ -191,7 +191,6 @@ interface CartItem {
 interface FilterState {
   categories: string[];
   types: string[];
-  inStockOnly: boolean;
 }
 
 type WooImage = { src?: string | null };
@@ -3628,7 +3627,6 @@ export default function App() {
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     types: [],
-    inStockOnly: false,
   });
   const [doctorSummary, setDoctorSummary] =
     useState<DoctorCreditSummary | null>(null);
@@ -3639,8 +3637,6 @@ export default function App() {
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
-  const [salesRepStatusFilter, setSalesRepStatusFilter] =
-    useState<string>("all");
   const accountIdentitySet = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
     const rawAccounts = [
@@ -4880,14 +4876,6 @@ export default function App() {
     );
   }, [salesRepDashboard, normalizedReferrals]);
 
-  const referralFilterStatuses = useMemo(() => {
-    const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
-    const dynamic = salesRepStatusOptions
-      .map((status) => status.toLowerCase())
-      .filter(Boolean);
-    return Array.from(new Set([...defaults, ...dynamic]));
-  }, [salesRepStatusOptions]);
-
   const leadStatusOptions = useMemo(() => {
     const defaults = REFERRAL_STATUS_FLOW.map((stage) => stage.key);
     const dynamic = salesRepStatusOptions
@@ -5266,27 +5254,10 @@ export default function App() {
   }, [activeProspectEntries, activeProspectFilter]);
 
   const filteredSalesRepReferrals = useMemo(() => {
-    const normalizedFilter = salesRepStatusFilter.toLowerCase();
-    // Only show pending referrals in this list
-    const allReferrals = referralRecords.filter(
+    return referralRecords.filter(
       (referral) => sanitizeReferralStatus(referral.status) === "pending",
     );
-    console.debug("[Referral] Filter compute", {
-      filter: normalizedFilter,
-      total: allReferrals.length,
-    });
-    if (normalizedFilter === "all") {
-      return allReferrals;
-    }
-    const filtered = allReferrals.filter(
-      (referral) => (referral.status || "").toLowerCase() === normalizedFilter,
-    );
-    console.debug("[Referral] Filter result", {
-      filter: normalizedFilter,
-      count: filtered.length,
-    });
-    return filtered;
-  }, [referralRecords, salesRepStatusFilter]);
+  }, [referralRecords]);
 
   // Default referrals collapsed; recollapse new items when list changes
   useEffect(() => {
@@ -5357,18 +5328,6 @@ export default function App() {
 
   const sortDirectionLabel =
     referralSortOrder === "desc" ? "Newest first" : "Oldest first";
-
-  useEffect(() => {
-    if (salesRepStatusFilter === "all") {
-      return;
-    }
-    const available = new Set(
-      referralFilterStatuses.map((status) => status.toLowerCase()),
-    );
-    if (!available.has(salesRepStatusFilter.toLowerCase())) {
-      setSalesRepStatusFilter("all");
-    }
-  }, [salesRepStatusFilter, referralFilterStatuses]);
 
   const salesRepDoctorsById = useMemo(() => {
     const lookup = new Map<string, string>();
@@ -5689,10 +5648,6 @@ export default function App() {
           const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           return bTime - aTime;
         });
-
-      if (isAdmin(role)) {
-        void refreshSalesBySalesRepSummary();
-      }
 
       const buildSignature = (order: AccountOrderSummary) => {
         const key = String(order.id || order.number || "");
@@ -7004,15 +6959,14 @@ export default function App() {
   }, [catalogCategories]);
 
   useEffect(() => {
-    if (!user) {
-      setDoctorSummary(null);
-      setDoctorReferrals([]);
-      setSalesRepDashboard(null);
-      setSalesRepStatusFilter("all");
-      setAdminActionState({ updatingReferral: null, error: null });
-      setReferralPollingSuppressed(false);
-      return;
-    }
+	    if (!user) {
+	      setDoctorSummary(null);
+	      setDoctorReferrals([]);
+	      setSalesRepDashboard(null);
+	      setAdminActionState({ updatingReferral: null, error: null });
+	      setReferralPollingSuppressed(false);
+	      return;
+	    }
 
     setReferralPollingSuppressed(false);
 
@@ -8366,19 +8320,19 @@ export default function App() {
           }}
         >
           <div className="flex items-center gap-6 flex-shrink-0 pl-4 ml-2">
-            <div
-              className={`flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-all duration-300 group-hover:bg-slate-200 ${
-                expanded ? "shadow-inner" : ""
-              }`}
-            >
-              <ChevronRight
-                className="h-5 w-5"
-                style={{
-                  transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-                  transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
-                  transformOrigin: "center",
-                }}
-              />
+	            <div
+	              className={`flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-all duration-300 group-hover:bg-slate-200 ${
+	                expanded ? "shadow-inner" : ""
+	              }`}
+		            >
+		              <ChevronRight
+		                className="h-4 w-4"
+		                style={{
+		                  transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+		                  transition: "transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+		                  transformOrigin: "center",
+		                }}
+		              />
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-semibold text-slate-700">
@@ -9173,28 +9127,9 @@ export default function App() {
           )}
 
 	          {isAdmin(user?.role) && (
-	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-	                <div>
-	                  <h3 className="text-lg font-semibold text-slate-900">
-	                    Admin Settings
-	                  </h3>
-		                  <p className="text-sm text-slate-600">
-		                    Configure storefront availability and payment mode.
-		                  </p>
-	                </div>
-	                <div className="text-xs text-slate-500">
-	                  <span className="mr-2">
-	                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
-	                  </span>
-		                  <span>
-		                    Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
-		                  </span>
-	                </div>
-	              </div>
-
+	          <div className="glass-card squircle-xl p-6 border border-slate-200/70">
                 <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h4 className="text-base font-semibold text-slate-900">
                         Server Health
@@ -9203,21 +9138,23 @@ export default function App() {
                         Quick usage snapshot (load, memory, disk).
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void fetchServerHealth({ force: true })}
-                      disabled={serverHealthLoading}
-                      className="gap-2"
-                      title="Refresh server health"
-                    >
-                      <RefreshCw
-                        className={`h-4 w-4 ${
-                          serverHealthLoading ? "animate-spin" : ""
-                        }`}
-                      />
-                      Refresh
-                    </Button>
+                    <div className="flex-shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void fetchServerHealth({ force: true })}
+                        disabled={serverHealthLoading}
+                        className="gap-2"
+                        title="Refresh server health"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${
+                            serverHealthLoading ? "animate-spin" : ""
+                          }`}
+                        />
+                        Refresh
+                      </Button>
+                    </div>
                   </div>
 
                   {serverHealthError && (
@@ -9226,13 +9163,13 @@ export default function App() {
                     </div>
                   )}
 
-	                  <div className="sales-rep-table-wrapper">
-	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
-	                      {(() => {
-	                      const usage = serverHealthPayload?.usage || null;
-	                      const cpu = usage?.cpu || null;
-	                      const mem = usage?.memory || null;
-	                      const disk = usage?.disk || null;
+                  <div className="sales-rep-table-wrapper">
+                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
+                      {(() => {
+                      const usage = serverHealthPayload?.usage || null;
+                      const cpu = usage?.cpu || null;
+                      const mem = usage?.memory || null;
+                      const disk = usage?.disk || null;
                       const cpuLabel =
                         cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
                           ? `CPU load: ${cpu.loadPercent}%`
@@ -9261,40 +9198,59 @@ export default function App() {
                       const tsLabel = serverHealthPayload?.timestamp
                         ? `Updated: ${new Date(serverHealthPayload.timestamp).toLocaleTimeString()}`
                         : null;
-	                      const workerLabel = (() => {
-	                        const workers = serverHealthPayload?.workers;
-	                        const detected = workers?.detected;
-	                        const configured = workers?.configured;
-	                        if (typeof detected === "number" && detected > 0) {
-	                          return `Backend workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
-	                        }
-	                        if (typeof configured === "number" && configured > 0) {
-	                          return `Backend workers: target ${configured}`;
-	                        }
-	                        return null;
-	                      })();
+                      const workerLabel = (() => {
+                        const workers = serverHealthPayload?.workers;
+                        const detected = workers?.detected;
+                        const configured = workers?.configured;
+                        if (typeof detected === "number" && detected > 0) {
+                          return `Backend workers: ${detected}${configured ? ` (target ${configured})` : ""}`;
+                        }
+                        if (typeof configured === "number" && configured > 0) {
+                          return `Backend workers: target ${configured}`;
+                        }
+                        return null;
+                      })();
 
-	                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
-	                        (x): x is string => typeof x === "string" && x.trim().length > 0,
-	                      );
-	                      return pills.map((label) => (
-	                        <span
-	                          key={label}
-	                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-	                        >
-	                          {label}
-	                        </span>
-	                      ));
-	                      })()}
-	                    </div>
-	                  </div>
+                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
+                        (x): x is string => typeof x === "string" && x.trim().length > 0,
+                      );
+                      return pills.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+                        >
+                          {label}
+                        </span>
+                      ));
+                      })()}
+                    </div>
+                  </div>
                 </div>
-	
-		              <div className="flex flex-col gap-3 mb-4">
-		                <div className="flex items-center gap-2 text-sm text-slate-700">
+
+	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+	                <div>
+	                  <h3 className="text-lg font-semibold text-slate-900">
+	                    Settings
+	                  </h3>
+		                  <p className="text-sm text-slate-600">
+		                    Configure storefront availability and payment mode.
+		                  </p>
+	                </div>
+                </div>
+
+                <div className="flex flex-col gap-3 mb-4">
+                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>
+                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                  <span>
+                    Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-700">
 		                  <input
 		                    type="checkbox"
-                        aria-label="Enable Shop button for users"
+                        aria-label="Enable Shop for users"
 		                    checked={shopEnabled}
 		                    onChange={(e) => handleShopToggle(e.target.checked)}
 		                    className="brand-checkbox"
@@ -9451,86 +9407,89 @@ export default function App() {
 			          {isAdmin(user?.role) && (
 			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
 			              <div className="flex flex-col gap-3 mb-4">
-					                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-					                  <div className="min-w-0">
-					                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-					                      <h3 className="text-lg font-semibold text-slate-900">
-					                        Sales by Sales Rep
-					                      </h3>
-					                      <div className="flex flex-col items-start gap-1">
-					                        <Button
-				                          type="button"
-					                          variant="outline"
-					                          size="sm"
-					                          className="gap-2 w-full justify-center sm:w-auto"
-					                          onClick={() => void refreshSalesBySalesRepSummary()}
-					                          disabled={salesRepSalesSummaryLoading}
-					                          aria-busy={salesRepSalesSummaryLoading}
-					                          title="Refresh sales summary"
-					                        >
-				                          <RefreshCw
-				                            className={`h-4 w-4 ${
-				                              salesRepSalesSummaryLoading
-				                                ? "animate-spin"
-				                                : ""
-				                            }`}
-				                            aria-hidden="true"
-				                          />
-				                          {salesRepSalesSummaryLoading
-				                            ? "Refreshing..."
-				                            : "Refresh"}
-				                        </Button>
-				                        <span className="text-[11px] text-slate-500">
-				                          Last fetched{" "}
-				                          {(() => {
-				                            const ts =
-				                              salesRepSalesSummaryLastFetchedAt ??
-				                              salesTrackingLastUpdated ??
-				                              null;
-				                            return ts
-				                              ? new Date(ts).toLocaleTimeString()
-				                              : "—";
-				                          })()}
-					                        </span>
-					                      </div>
-					                    </div>
-					                  </div>
-					                  <div className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
-					                    <Button
-					                      type="button"
-					                      variant="outline"
-					                      className="gap-2 w-full justify-center sm:w-auto"
-					                      onClick={downloadSalesBySalesRepCsv}
-					                      disabled={salesRepSalesSummary.length === 0}
-					                      title="Download CSV"
-					                    >
-				                      <Download className="h-4 w-4" aria-hidden="true" />
-				                      Download CSV
-				                    </Button>
-				                    <span className="text-[11px] text-slate-500">
-				                      Last downloaded{" "}
-				                      {salesRepSalesCsvDownloadedAt
-				                        ? new Date(
-				                            salesRepSalesCsvDownloadedAt,
-				                          ).toLocaleString()
-				                        : "—"}
-				                    </span>
-				                  </div>
-				                </div>
-			
-                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-slate-900">
+                      Sales by Sales Rep
+                    </h3>
                     <p className="text-sm text-slate-600">
                       Orders placed by doctors assigned to each rep.
                     </p>
+                  </div>
+                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={downloadSalesBySalesRepCsv}
+                        disabled={salesRepSalesSummary.length === 0}
+                        title="Download CSV"
+                      >
+                        <Download className="h-4 w-4" aria-hidden="true" />
+                        Download CSV
+                      </Button>
+                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+                        <span className="sales-rep-action-meta-label block">
+                          Last downloaded
+                        </span>
+                        <span className="sales-rep-action-meta-value block">
+                          {salesRepSalesCsvDownloadedAt
+                            ? new Date(
+                                salesRepSalesCsvDownloadedAt,
+                              ).toLocaleString()
+                            : "—"}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="sales-rep-refresh-button gap-2"
+                        onClick={() => void refreshSalesBySalesRepSummary()}
+                        disabled={salesRepSalesSummaryLoading}
+                        aria-busy={salesRepSalesSummaryLoading}
+                        title="Refresh sales summary"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${
+                            salesRepSalesSummaryLoading ? "animate-spin" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
+                        {salesRepSalesSummaryLoading ? "Refreshing..." : "Refresh"}
+                      </Button>
+                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+                        <span className="sales-rep-action-meta-label block">
+                          Last fetched
+                        </span>
+                        <span className="sales-rep-action-meta-value block">
+                          {(() => {
+                            const ts =
+                              salesRepSalesSummaryLastFetchedAt ??
+                              salesTrackingLastUpdated ??
+                              null;
+                            return ts ? new Date(ts).toLocaleTimeString() : "—";
+                          })()}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+			
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                  <div className="min-w-0">
                     <form
-                      className="mt-2 flex flex-col sm:flex-row sm:items-end gap-2 text-sm"
+                      className="sales-rep-period-form mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-end"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void refreshSalesBySalesRepSummary();
                       }}
                     >
-                      <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
                         Start
                         <Input
                           type="date"
@@ -9538,7 +9497,7 @@ export default function App() {
                           onChange={(event) => setSalesRepPeriodStart(event.target.value)}
                         />
                       </label>
-                      <label className="flex flex-col gap-1 text-xs font-semibold text-slate-700">
+                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
                         End
                         <Input
                           type="date"
@@ -9546,7 +9505,7 @@ export default function App() {
                           onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
                         />
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="sales-rep-period-actions flex items-center gap-2 self-start sm:self-end">
                         <Button
                           type="submit"
                           size="sm"
@@ -9573,46 +9532,21 @@ export default function App() {
                     </form>
                   </div>
 
-                  <div className="flex flex-col items-start sm:items-end gap-2 sm:text-right">
-			                    <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
-			                      {(() => {
-			                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
-			                        const totals = metaTotals
-			                          ? metaTotals
-			                          : {
-			                              totalOrders: salesRepSalesSummary.reduce(
-			                                (sum, row) => sum + (Number(row.totalOrders) || 0),
-			                                0,
-			                              ),
-			                              totalRevenue: salesRepSalesSummary.reduce(
-			                                (sum, row) => sum + (Number(row.totalRevenue) || 0),
-			                                0,
-			                              ),
-			                            };
-			                        const hasTotals =
-			                          typeof totals.totalOrders === "number" &&
-			                          typeof totals.totalRevenue === "number";
-			                        if (!hasTotals) return null;
-			                        return (
-			                          <>
-			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-			                              Total Orders: {totals.totalOrders}
-			                            </span>
-			                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-			                              Total Revenue: {formatCurrency(totals.totalRevenue)}
-			                            </span>
-			                          </>
-			                        );
-			                      })()}
-			                    </div>
-				                  {/* Fetched/download timestamps shown under buttons above */}
-				                </div>
+                  {/* Totals shown inline above list below */}
 				              </div>
 			              </div>
 	              <div className="sales-rep-table-wrapper" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
                   <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
+                  </div>
+                ) : salesRepSalesSummaryLoading ? (
+                  <div className="px-4 py-3 text-sm text-slate-500">
+                    Checking sales…
+                  </div>
+                ) : salesRepSalesSummaryLastFetchedAt === null ? (
+                  <div className="px-4 py-3 text-sm text-slate-500">
+                    Click Refresh to load sales.
                   </div>
                 ) : salesRepSalesSummary.length === 0 ? (
                   <div className="px-4 py-3 text-sm text-slate-500">
@@ -9621,8 +9555,33 @@ export default function App() {
                 ) : (
 	                  <div className="w-full" style={{ minWidth: 780 }}>
 	                    <div className="overflow-hidden rounded-xl">
+                        {(() => {
+                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+                          const totals = metaTotals
+                            ? metaTotals
+                            : {
+                                totalOrders: salesRepSalesSummary.reduce(
+                                  (sum, row) => sum + (Number(row.totalOrders) || 0),
+                                  0,
+                                ),
+                                totalRevenue: salesRepSalesSummary.reduce(
+                                  (sum, row) => sum + (Number(row.totalRevenue) || 0),
+                                  0,
+                                ),
+                              };
+                          const hasTotals =
+                            typeof totals.totalOrders === "number" &&
+                            typeof totals.totalRevenue === "number";
+                          if (!hasTotals) return null;
+                          return (
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl border border-slate-200/70 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900">
+                              <span>Total Orders: {totals.totalOrders}</span>
+                              <span>Total Revenue: {formatCurrency(totals.totalRevenue)}</span>
+                            </div>
+                          );
+                        })()}
 	                      <div
-	                        className="grid items-center gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 	                        style={{
 	                          gridTemplateColumns:
 	                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr)",
@@ -9633,7 +9592,7 @@ export default function App() {
 	                        <div className="whitespace-nowrap text-right">Orders</div>
 	                        <div className="whitespace-nowrap text-right">Revenue</div>
 	                      </div>
-                      <ul className="divide-y divide-slate-200/70">
+                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl">
                         {salesRepSalesSummary.map((rep) => (
                           <li
                             key={rep.salesRepId}
@@ -9878,12 +9837,12 @@ export default function App() {
                 {!salesTrackingLoading &&
                   !salesTrackingError &&
                   salesTrackingOrdersByDoctor.length > 0 &&
-                  salesTrackingOrdersByDoctor.map((bucket) => {
-                    const isCollapsed = collapsedSalesDoctorIds.has(bucket.doctorId);
-                    return (
-                      <section key={bucket.doctorId} className="lead-panel">
-                        <div
-                          className="lead-panel-header sales-doctor-row cursor-pointer items-center"
+	                  salesTrackingOrdersByDoctor.map((bucket) => {
+	                    const isCollapsed = collapsedSalesDoctorIds.has(bucket.doctorId);
+	                    return (
+	                      <section key={bucket.doctorId} className="lead-panel">
+	                        <div
+	                          className="lead-panel-header sales-doctor-row cursor-pointer items-center"
                           role="button"
                           tabIndex={0}
                           onClick={() => toggleSalesDoctorCollapse(bucket.doctorId)}
@@ -9893,87 +9852,99 @@ export default function App() {
                               toggleSalesDoctorCollapse(bucket.doctorId);
                             }
                           }}
-                          aria-expanded={!isCollapsed}
-                          aria-controls={`sales-orders-${bucket.doctorId}`}
-                          style={{ alignItems: "center" }}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <ChevronRight
-                              className="h-4 w-4 text-slate-500"
-                              aria-hidden="true"
-                              style={{
-                                transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)",
-                                transition:
-                                  "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
-                                transformOrigin: "center",
-                              }}
-                            />
-                            <button
-                              type="button"
-                              className="flex items-center gap-3 min-w-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSalesDoctorDetail(bucket);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  openSalesDoctorDetail(bucket);
-                                }
-                              }}
-                              aria-label={`View ${bucket.doctorName} details`}
-                              style={{ background: "transparent", border: "none", padding: 0 }}
-                            >
-                              <div
-                                className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
-                                style={{ width: 44, height: 44, minWidth: 44 }}
-                              >
-                                {bucket.doctorAvatar ? (
-                                  <img
-                                    src={bucket.doctorAvatar}
-                                    alt={bucket.doctorName}
-                                    className="h-full w-full object-cover"
-                                    style={{ width: 44, height: 44 }}
-                                  />
-                                ) : (
-                                  <span className="text-sm font-semibold text-slate-600">
-                                    {getInitials(bucket.doctorName)}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-left">
-                                <p className="lead-list-name">
-                                  {bucket.doctorName}
-                                </p>
-                                {String(bucket.leadType || "").toLowerCase() === "contact_form" && (
-                                  <span className="lead-source-pill lead-source-pill--contact mt-1">
-                                    House / Contact Form
-                                  </span>
-                                )}
-                                {bucket.doctorEmail && (
-                                  <p className="lead-list-detail">
-                                    {bucket.doctorEmail}
+	                          aria-expanded={!isCollapsed}
+	                          aria-controls={`sales-orders-${bucket.doctorId}`}
+	                          style={{ alignItems: "center" }}
+	                        >
+	                            <div className="sales-doctor-chevron">
+	                              <ChevronRight
+	                                className="h-4 w-4 text-slate-500"
+	                                aria-hidden="true"
+	                                style={{
+	                                  transform: isCollapsed
+	                                    ? "rotate(0deg)"
+                                    : "rotate(90deg)",
+                                  transition:
+                                    "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
+                                  transformOrigin: "center",
+                                }}
+                              />
+                            </div>
+                            <div className="sales-doctor-scroll">
+                              <div className="sales-doctor-scroll-inner">
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-3 min-w-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openSalesDoctorDetail(bucket);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      openSalesDoctorDetail(bucket);
+                                    }
+                                  }}
+                                  aria-label={`View ${bucket.doctorName} details`}
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                  }}
+                                >
+                                  <div
+                                    className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
+                                    style={{ width: 44, height: 44, minWidth: 44 }}
+                                  >
+                                    {bucket.doctorAvatar ? (
+                                      <img
+                                        src={bucket.doctorAvatar}
+                                        alt={bucket.doctorName}
+                                        className="h-full w-full object-cover"
+                                        style={{ width: 44, height: 44 }}
+                                      />
+                                    ) : (
+                                      <span className="text-sm font-semibold text-slate-600">
+                                        {getInitials(bucket.doctorName)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-left">
+                                    <p className="lead-list-name whitespace-nowrap">
+                                      {bucket.doctorName}
+                                    </p>
+                                    {String(bucket.leadType || "").toLowerCase() ===
+                                      "contact_form" && (
+                                      <span className="lead-source-pill lead-source-pill--contact mt-1">
+                                        House / Contact Form
+                                      </span>
+                                    )}
+                                    {bucket.doctorEmail && (
+                                      <p className="lead-list-detail whitespace-nowrap">
+                                        {bucket.doctorEmail}
+                                      </p>
+                                    )}
+                                  </div>
+                                </button>
+                                <div className="text-right">
+                                  <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
+                                    Revenue
                                   </p>
-                                )}
+                                  <p className="text-base font-semibold text-slate-900">
+                                    {formatCurrency(bucket.total)}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {bucket.orders.length} order
+                                    {bucket.orders.length === 1 ? "" : "s"}
+                                  </p>
+                                </div>
                               </div>
-                            </button>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
-                              Revenue
-                            </p>
-                            <p className="text-base font-semibold text-slate-900">
-                              {formatCurrency(bucket.total)}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {bucket.orders.length} order{bucket.orders.length === 1 ? "" : "s"}
-                            </p>
-                          </div>
-                        </div>
-                        {!isCollapsed && (
-                          <ul
-                            className="lead-list"
+                            </div>
+	                        </div>
+	                        {!isCollapsed && (
+	                          <ul
+	                            className="lead-list"
                             id={`sales-orders-${bucket.doctorId}`}
                           >
                           {bucket.orders.map((order) => {
@@ -10349,32 +10320,18 @@ export default function App() {
                   )}
                 </section>
                 <section className="lead-panel">
-                  <div className="lead-panel-header">
-                    <div className="w-full">
-                      <div className="lead-panel-filter-row">
-                        <h4>
-                          {filteredSalesRepReferrals.length} Referral
-                          {filteredSalesRepReferrals.length === 1 ? "" : "s"}
-                        </h4>
-                        <select
-                          value={salesRepStatusFilter}
-                          onChange={(event) =>
-                            setSalesRepStatusFilter(event.target.value)
-                          }
-                          className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                        >
-                          <option value="all">All statuses</option>
-                          {referralFilterStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {humanizeReferralStatus(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <p className="text-sm text-slate-500 referrals-subtitle">
-                        Qualify new referrals and update their status.
-                      </p>
-                    </div>
+	                  <div className="lead-panel-header">
+	                    <div className="w-full">
+	                      <div className="lead-panel-filter-row">
+	                        <h4>
+	                          {filteredSalesRepReferrals.length} Referral
+	                          {filteredSalesRepReferrals.length === 1 ? "" : "s"}
+	                        </h4>
+	                      </div>
+	                      <p className="text-sm text-slate-500 referrals-subtitle">
+	                        Qualify new referrals and update their status.
+	                      </p>
+	                    </div>
                   </div>
                   <div className="lead-panel-divider" />
                   <div className="lead-list-scroll">
@@ -10437,7 +10394,7 @@ export default function App() {
                               className="lead-list-item flex-col gap-3"
                             >
                               <div
-                                className="lead-panel-header referral-card-header cursor-pointer items-center"
+                                className="lead-panel-header referral-card-header cursor-pointer items-center sales-doctor-row"
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => toggleReferralCollapse(referral.id)}
@@ -10449,27 +10406,37 @@ export default function App() {
                                 }}
                                 aria-expanded={!isCollapsed}
                               >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <ChevronRight
-                                    className="h-4 w-4 text-slate-500"
-                                    aria-hidden="true"
-                                    style={{
-                                      transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)",
-                                      transition:
+	                                <div className="sales-doctor-chevron">
+	                                  <ChevronRight
+	                                    className="h-4 w-4 text-slate-500"
+	                                    aria-hidden="true"
+	                                    style={{
+	                                      transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)",
+	                                      transition:
                                         "transform 0.32s cubic-bezier(0.42, 0, 0.38, 1)",
                                       transformOrigin: "center",
                                     }}
                                   />
-                                  <div className="min-w-0">
-                                    <p className="lead-list-name">
-                                      {referrerName} <span className="text-slate-500 font-normal">referred</span> {refName}
-                                    </p>
-                                  </div>
                                 </div>
-                                <div className="text-right text-xs text-slate-500 space-y-1 min-w-[180px]">
-                                  <div>Submitted {formatDateTime(referral.createdAt)}</div>
-                                  <div className="text-[11px] text-slate-400">
-                                    Updated {formatDateTime(referral.updatedAt)}
+                                <div className="sales-doctor-scroll">
+                                  <div className="sales-doctor-scroll-inner">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="min-w-0">
+                                        <p className="lead-list-name">
+                                          {referrerName}{" "}
+                                          <span className="text-slate-500 font-normal">
+                                            referred
+                                          </span>{" "}
+                                          {refName}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right text-xs text-slate-500 space-y-1 min-w-[180px]">
+                                      <div>Submitted {formatDateTime(referral.createdAt)}</div>
+                                      <div className="text-[11px] text-slate-400">
+                                        Updated {formatDateTime(referral.updatedAt)}
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -10834,10 +10801,6 @@ export default function App() {
       filtered = filtered.filter((product) =>
         filters.categories.includes(product.category),
       );
-    }
-
-    if (filters.inStockOnly) {
-      filtered = filtered.filter((product) => product.inStock);
     }
 
     if (filters.types.length > 0) {
