@@ -149,6 +149,7 @@ def health():
             build = config.backend_build
             usage = _server_usage()
             status = "ok"
+            mysql_enabled = bool(getattr(config, "mysql", {}).get("enabled"))
             workers = {
                 "configured": _configured_worker_target(),
                 "detected": _detect_worker_count(),
@@ -159,11 +160,13 @@ def health():
             build = os.environ.get("BACKEND_BUILD", "unknown")
             usage = None
             status = "degraded"
+            mysql_enabled = None
             workers = None
         return {
             "status": status,
             "message": "Server is running",
             "build": build,
+            "mysql": {"enabled": mysql_enabled},
             "usage": usage,
             "workers": workers,
             "timestamp": _now(),
@@ -180,6 +183,7 @@ def help_endpoint():
             "ok": True,
             "service": "PepPro Backend",
             "build": config.backend_build,
+            "mysql": {"enabled": bool(getattr(config, "mysql", {}).get("enabled"))},
             "integrations": {
                 "wooCommerce": {"configured": woo_commerce.is_configured()},
                 "shipEngine": {"configured": ship_engine.is_configured()},

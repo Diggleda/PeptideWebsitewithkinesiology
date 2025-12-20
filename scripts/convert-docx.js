@@ -50,6 +50,49 @@ function convertWithTextutil(inputPath) {
   });
 }
 
+const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+function linkifyEmails(html) {
+  let out = '';
+  let index = 0;
+  let inAnchor = false;
+
+  while (index < html.length) {
+    const nextTag = html.indexOf('<', index);
+    if (nextTag === -1) {
+      const tail = html.slice(index);
+      out += inAnchor
+        ? tail
+        : tail.replace(EMAIL_REGEX, (email) => `<a href="mailto:${email}">${email}</a>`);
+      break;
+    }
+
+    const text = html.slice(index, nextTag);
+    out += inAnchor
+      ? text
+      : text.replace(EMAIL_REGEX, (email) => `<a href="mailto:${email}">${email}</a>`);
+
+    const tagEnd = html.indexOf('>', nextTag);
+    if (tagEnd === -1) {
+      out += html.slice(nextTag);
+      break;
+    }
+
+    const tag = html.slice(nextTag, tagEnd + 1);
+    const tagLower = tag.toLowerCase();
+    if (tagLower.startsWith('<a ') || tagLower === '<a>') {
+      inAnchor = true;
+    } else if (tagLower.startsWith('</a')) {
+      inAnchor = false;
+    }
+
+    out += tag;
+    index = tagEnd + 1;
+  }
+
+  return out;
+}
+
 async function convertDocument({ docx, html }) {
   const inputPath = path.join(projectRoot, docx);
   const outputPath = path.join(projectRoot, html);
@@ -68,7 +111,7 @@ async function convertDocument({ docx, html }) {
 
   const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
-  const finalHtml = `${styles ? `${styles}\n` : ''}${content}\n`;
+  const finalHtml = `${styles ? `${styles}\n` : ''}${linkifyEmails(content)}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
   console.log(`Converted ${docx} -> ${html}`);

@@ -175,7 +175,7 @@ def admin_dashboard():
             scope_all=scope_all and (user.get("role") or "").lower() == "admin",
         )
         return {
-            "version": "backend_v1.9.21",
+            "version": "backend_v1.9.26",
             "referrals": referrals,
             "codes": codes,
             "users": users,
@@ -363,36 +363,35 @@ def admin_upsert_sales_prospect(identifier: str):
     return handle_action(action)
 
 
-@blueprint.post("/admin/sales-prospects/<identifier>/reseller-permit")
+@blueprint.route("/admin/sales-prospects/<identifier>/reseller-permit", methods=["GET", "POST", "DELETE"])
 @require_auth
-def admin_upload_reseller_permit(identifier: str):
+def admin_reseller_permit(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
 
-        file = request.files.get("file")
-        if not file:
-            raise _error("INVALID_FILE", 400)
+        if request.method == "DELETE":
+            prospect = referral_service.delete_reseller_permit_for_sales_rep(
+                user["id"],
+                identifier,
+            )
+            return {"prospect": prospect}
 
-        content = file.read()
-        filename = file.filename or "reseller_permit"
-        prospect = referral_service.upload_reseller_permit_for_sales_rep(
-            user["id"],
-            identifier,
-            filename=filename,
-            content=content,
-        )
-        return {"prospect": prospect}
+        if request.method == "POST":
+            file = request.files.get("file")
+            if not file:
+                raise _error("INVALID_FILE", 400)
 
-    return handle_action(action)
+            content = file.read()
+            filename = file.filename or "reseller_permit"
+            prospect = referral_service.upload_reseller_permit_for_sales_rep(
+                user["id"],
+                identifier,
+                filename=filename,
+                content=content,
+            )
+            return {"prospect": prospect}
 
-
-@blueprint.get("/admin/sales-prospects/<identifier>/reseller-permit")
-@require_auth
-def admin_download_reseller_permit(identifier: str):
-    def action():
-        user = _ensure_user()
-        _require_sales_rep(user)
         prospect = referral_service.get_sales_prospect_for_sales_rep(user["id"], identifier)
         if not prospect or not prospect.get("resellerPermitFilePath"):
             raise _error("PERMIT_NOT_FOUND", 404)

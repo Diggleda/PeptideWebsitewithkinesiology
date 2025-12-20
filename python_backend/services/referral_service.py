@@ -1345,7 +1345,14 @@ def upsert_sales_prospect_for_sales_rep(
     if notes is not None:
         payload["notes"] = _sanitize_notes(notes)
     if reseller_permit_exempt is not None:
-        payload["resellerPermitExempt"] = bool(reseller_permit_exempt)
+        is_exempt = bool(reseller_permit_exempt)
+        payload["resellerPermitExempt"] = is_exempt
+        if is_exempt:
+            # Enforce mutual exclusivity: an exempt prospect cannot also carry an uploaded permit.
+            _delete_sales_prospect_reseller_permit_file(existing)
+            payload["resellerPermitFilePath"] = None
+            payload["resellerPermitFileName"] = None
+            payload["resellerPermitUploadedAt"] = None
     return sales_prospect_repository.upsert(payload)
 
 
@@ -1386,16 +1393,59 @@ def upload_reseller_permit_for_sales_rep(
     uploaded_at = datetime.utcnow().isoformat()
 
     base = upsert_sales_prospect_for_sales_rep(rep_id, candidate)
+    _delete_sales_prospect_reseller_permit_file(base)
     return sales_prospect_repository.upsert(
         {
             **(base or {}),
             "id": str((base or {}).get("id") or candidate),
             "salesRepId": rep_id,
+            "resellerPermitExempt": False,
             "resellerPermitFilePath": stored_relative,
             "resellerPermitFileName": safe_name,
             "resellerPermitUploadedAt": uploaded_at,
         }
     )
+
+
+def delete_reseller_permit_for_sales_rep(sales_rep_id: str, identifier: str) -> Dict:
+    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    candidate = str(identifier or "").strip()
+    if not rep_id or not candidate:
+        raise _service_error("INVALID_PAYLOAD", 400)
+
+    existing = get_sales_prospect_for_sales_rep(rep_id, candidate)
+    if not existing:
+        raise _service_error("PERMIT_NOT_FOUND", 404)
+
+    _delete_sales_prospect_reseller_permit_file(existing)
+    updated = sales_prospect_repository.upsert(
+        {
+            **existing,
+            "salesRepId": rep_id,
+            "resellerPermitFilePath": None,
+            "resellerPermitFileName": None,
+            "resellerPermitUploadedAt": None,
+        }
+    )
+    return updated
+
+
+def _delete_sales_prospect_reseller_permit_file(prospect: Optional[Dict]) -> None:
+    try:
+        if not prospect or not prospect.get("resellerPermitFilePath"):
+            return
+        cfg = get_config()
+        data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+        relative_path = str(prospect.get("resellerPermitFilePath") or "").lstrip("/\\")
+        abs_path = (data_dir / relative_path).resolve()
+        allowed_root = (data_dir / "uploads" / "reseller-permits").resolve()
+        if not str(abs_path).startswith(str(allowed_root)):
+            return
+        if abs_path.exists():
+            abs_path.unlink()
+    except Exception:
+        # Best-effort cleanup; never block the request flow.
+        return
 
 
 def get_referral_status_choices() -> List[str]:

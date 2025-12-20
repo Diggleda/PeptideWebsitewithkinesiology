@@ -4101,6 +4101,14 @@ html {
   text-overflow: ellipsis;
 }
 
+.prospect-permit-file-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .prospect-permit-file-name-button {
   background: transparent;
   border: 0;
@@ -4120,6 +4128,36 @@ html {
   cursor: not-allowed;
   text-decoration: none;
   color: rgb(148, 163, 184);
+}
+
+.prospect-permit-file-delete {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0.15rem;
+  border-radius: 10px;
+  color: rgb(148, 163, 184);
+  cursor: pointer;
+}
+
+.prospect-permit-file-delete:hover,
+.prospect-permit-file-delete:focus-visible {
+  color: rgb(225, 29, 72);
+  background: rgba(225, 29, 72, 0.08);
+}
+
+.prospect-permit-file-delete:disabled {
+  cursor: not-allowed;
+  color: rgb(203, 213, 225);
+  background: transparent;
+}
+
+.prospect-permit-file-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .lead-updated {
@@ -5615,4 +5653,16 @@ html {
   100% {
     transform: translateX(100%);
   }
+}
+
+/* Mailto links: always underline; turn blue on hover */
+a[href^="mailto:"] {
+  color: inherit !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+a[href^="mailto:"]:hover {
+  color: rgb(37, 99, 235) !important;
 }

@@ -47,6 +47,7 @@ import {
 		  Download,
 		  NotebookPen,
 		  CheckSquare,
+		  Trash2,
 		} from "lucide-react";
 import {
   ResponsiveContainer,
@@ -1283,7 +1284,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.21";
+  "v1.9.26";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -4665,6 +4666,19 @@ export default function App() {
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
+  const salesByRepAutoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!user || !isAdmin(user.role)) {
+      salesByRepAutoLoadedRef.current = false;
+      return;
+    }
+    if (salesByRepAutoLoadedRef.current) {
+      return;
+    }
+    salesByRepAutoLoadedRef.current = true;
+    void refreshSalesBySalesRepSummary();
+  }, [refreshSalesBySalesRepSummary, user?.id, user?.role]);
+
   useEffect(() => {
     if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
       setUserReferralCodes([]);
@@ -6832,11 +6846,11 @@ export default function App() {
 	    [patchSalesRepDashboardReferral, user],
 	  );
 
-		  const uploadResellerPermit = useCallback(
-		    async (prospectId: string, file: File) => {
-		      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
-		        return;
-	      }
+			  const uploadResellerPermit = useCallback(
+			    async (prospectId: string, file: File) => {
+			      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+			        return;
+		      }
 	      setResellerPermitBusyByProspectId((prev) => ({
 	        ...prev,
 	        [prospectId]: true,
@@ -6862,14 +6876,52 @@ export default function App() {
 	        }));
 	      }
 	    },
-		    [patchSalesRepDashboardReferral, user],
-		  );
+			    [patchSalesRepDashboardReferral, user],
+			  );
 
-		  const viewResellerPermit = useCallback(
-		    async (prospectId: string, fallbackName?: string) => {
-		      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
-		        return;
-		      }
+			  const deleteResellerPermit = useCallback(
+			    async (prospectId: string) => {
+			      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+			        return;
+			      }
+			      if (!window.confirm("Delete this reseller permit file?")) {
+			        return;
+			      }
+			      setResellerPermitBusyByProspectId((prev) => ({
+			        ...prev,
+			        [prospectId]: true,
+			      }));
+			      try {
+			        const response = await referralAPI.deleteResellerPermit(prospectId);
+			        const prospect = (response as any)?.prospect;
+			        patchSalesRepDashboardReferral(prospectId, {
+			          ...(prospect && typeof prospect === "object" ? prospect : {}),
+			          resellerPermitFileName: null,
+			          resellerPermitFilePath: null,
+			          resellerPermitUploadedAt: null,
+			        });
+			      } catch (error: any) {
+			        console.warn("[Prospects] Delete reseller permit failed", error);
+			        toast.error(
+			          typeof error?.message === "string" && error.message
+			            ? error.message
+			            : "Unable to delete permit right now.",
+			        );
+			      } finally {
+			        setResellerPermitBusyByProspectId((prev) => ({
+			          ...prev,
+			          [prospectId]: false,
+			        }));
+			      }
+			    },
+			    [patchSalesRepDashboardReferral, user],
+			  );
+
+			  const viewResellerPermit = useCallback(
+			    async (prospectId: string, fallbackName?: string) => {
+			      if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+			        return;
+			      }
 		      setResellerPermitBusyByProspectId((prev) => ({
 		        ...prev,
 		        [prospectId]: true,
@@ -10067,12 +10119,12 @@ export default function App() {
 	                          No logins in this window.
 	                        </div>
 	                      ) : (
-	                        <div className="sales-rep-table-wrapper">
-	                          <div className="max-h-[320px] overflow-y-auto">
-	                            <table className="min-w-[640px] w-full divide-y divide-slate-200/70">
-	                              <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-	                                <tr>
-	                                  <th className="px-4 py-2 text-left">
+		                        <div className="sales-rep-table-wrapper">
+		                          <div className="max-h-[320px] overflow-y-auto pb-3">
+		                            <table className="min-w-[640px] w-full mb-2 divide-y divide-slate-200/70">
+		                              <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+		                                <tr>
+		                                  <th className="px-4 py-2 text-left">
 	                                    Name
 	                                  </th>
 	                                  <th className="px-4 py-2 text-left">
@@ -10093,7 +10145,13 @@ export default function App() {
 	                                      {entry.name || "—"}
 	                                    </td>
 	                                    <td className="px-4 py-3 text-sm text-slate-600">
-	                                      {entry.email || "—"}
+	                                      {entry.email ? (
+	                                        <a href={`mailto:${entry.email}`}>
+	                                          {entry.email}
+	                                        </a>
+	                                      ) : (
+	                                        "—"
+	                                      )}
 	                                    </td>
 	                                    <td className="px-4 py-3 text-sm text-slate-700">
 	                                      {entry.role}
@@ -10262,19 +10320,19 @@ export default function App() {
 			              </div>
 	              <div className="sales-rep-table-wrapper" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
-                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                  <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
                   </div>
                 ) : salesRepSalesSummaryLoading ? (
-                  <div className="px-4 py-3 text-sm text-slate-500">
+                  <div className="px-4 py-3 text-sm mb-3 text-slate-500">
                     Checking sales…
                   </div>
                 ) : salesRepSalesSummaryLastFetchedAt === null ? (
-                  <div className="px-4 py-3 text-sm text-slate-500">
+                  <div className="px-4 py-3 text-sm mb-3 text-slate-500">
                     Click Refresh to load sales.
                   </div>
                 ) : salesRepSalesSummary.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-slate-500">
+                  <div className="px-4 py-3 text-sm mb-3 text-slate-500">
                     No sales recorded yet.
                   </div>
                 ) : (
@@ -11257,17 +11315,20 @@ export default function App() {
 	                                          Reseller Permit Verification
 	                                        </div>
 	                                        <div className="prospect-permit-controls">
-	                                          <label className="prospect-permit-checkbox">
-	                                            <input
-	                                              type="checkbox"
-	                                              checked={resellerPermitExempt}
-	                                              disabled={
-	                                                isUpdating || isPermitBusy
-	                                              }
-	                                              onChange={(event) => {
-	                                                void updateResellerPermitExempt(
-	                                                  String(record.id),
-	                                                  event.target.checked,
+		                                          <label className="prospect-permit-checkbox">
+		                                            <input
+		                                              type="checkbox"
+		                                              checked={resellerPermitExempt}
+		                                              disabled={
+		                                                isUpdating ||
+		                                                isPermitBusy ||
+		                                                (hasResellerPermitFile &&
+		                                                  !resellerPermitExempt)
+		                                              }
+		                                              onChange={(event) => {
+		                                                void updateResellerPermitExempt(
+		                                                  String(record.id),
+		                                                  event.target.checked,
 	                                                );
 	                                              }}
 	                                              className="prospect-permit-checkbox-input"
@@ -11275,17 +11336,19 @@ export default function App() {
 	                                            Doctor does not have a resellers permit
 	                                          </label>
 		                                          <div className="prospect-permit-file-picker">
-		                                            <input
-		                                              id={permitInputId}
-		                                              type="file"
-		                                              accept="application/pdf,image/*"
-		                                              disabled={
-		                                                isUpdating || isPermitBusy
-		                                              }
-		                                              onChange={(event) => {
-		                                                const file =
-		                                                  event.target.files?.[0];
-		                                                if (file) {
+			                                            <input
+			                                              id={permitInputId}
+			                                              type="file"
+			                                              accept="application/pdf,image/*"
+			                                              disabled={
+			                                                isUpdating ||
+			                                                isPermitBusy ||
+			                                                resellerPermitExempt
+			                                              }
+			                                              onChange={(event) => {
+			                                                const file =
+			                                                  event.target.files?.[0];
+			                                                if (file) {
 		                                                  void uploadResellerPermit(
 		                                                    String(record.id),
 		                                                    file,
@@ -11295,43 +11358,68 @@ export default function App() {
 		                                              }}
 		                                              className="prospect-permit-file-input"
 		                                            />
-		                                            <label
-		                                              htmlFor={permitInputId}
-		                                              className="prospect-permit-file-button"
-		                                            >
-		                                              Upload Permit
-		                                            </label>
-		                                            {hasResellerPermitFile ? (
-		                                              <button
-		                                                type="button"
-		                                                className="prospect-permit-file-name prospect-permit-file-name-button"
-		                                                disabled={
-		                                                  isUpdating || isPermitBusy
-		                                                }
-		                                                onClick={() => {
-		                                                  const display =
-		                                                    resellerPermitFileName ||
-		                                                    resellerPermitFilePath
-		                                                      .split("/")
-		                                                      .pop() ||
-		                                                    "reseller_permit";
-		                                                  void viewResellerPermit(
-		                                                    String(record.id),
-		                                                    display,
-		                                                  );
-		                                                }}
-		                                              >
-		                                                {resellerPermitFileName ||
-		                                                  resellerPermitFilePath
-		                                                    .split("/")
-		                                                    .pop() ||
-		                                                  "Uploaded permit"}
-		                                              </button>
-		                                            ) : (
-		                                              <span className="prospect-permit-file-name">
-		                                                No file selected
-		                                              </span>
-		                                            )}
+			                                            <label
+			                                              htmlFor={permitInputId}
+			                                              className="prospect-permit-file-button"
+			                                              aria-disabled={
+			                                                isUpdating ||
+			                                                isPermitBusy ||
+			                                                resellerPermitExempt
+			                                              }
+			                                            >
+			                                              Upload Permit
+			                                            </label>
+			                                            {hasResellerPermitFile ? (
+			                                              <div className="prospect-permit-file-meta">
+			                                                <button
+			                                                  type="button"
+			                                                  className="prospect-permit-file-name prospect-permit-file-name-button"
+			                                                  disabled={
+			                                                    isUpdating || isPermitBusy
+			                                                  }
+			                                                  onClick={() => {
+			                                                    const display =
+			                                                      resellerPermitFileName ||
+			                                                      resellerPermitFilePath
+			                                                        .split("/")
+			                                                        .pop() ||
+			                                                      "reseller_permit";
+			                                                    void viewResellerPermit(
+			                                                      String(record.id),
+			                                                      display,
+			                                                    );
+			                                                  }}
+			                                                >
+			                                                  {resellerPermitFileName ||
+			                                                    resellerPermitFilePath
+			                                                      .split("/")
+			                                                      .pop() ||
+			                                                    "Uploaded permit"}
+			                                                </button>
+			                                                <button
+			                                                  type="button"
+			                                                  className="prospect-permit-file-delete"
+			                                                  disabled={
+			                                                    isUpdating || isPermitBusy
+			                                                  }
+			                                                  title="Delete uploaded permit"
+			                                                  onClick={() => {
+			                                                    void deleteResellerPermit(
+			                                                      String(record.id),
+			                                                    );
+			                                                  }}
+			                                                >
+			                                                  <Trash2
+			                                                    className="h-4 w-4"
+			                                                    aria-hidden="true"
+			                                                  />
+			                                                </button>
+			                                              </div>
+			                                            ) : (
+			                                              <span className="prospect-permit-file-name">
+			                                                No file selected
+			                                              </span>
+			                                            )}
 		                                          </div>
 		                                        </div>
 		                                      </div>
@@ -11647,14 +11735,14 @@ export default function App() {
                   <section className="lead-panel">
 	                    <div className="lead-panel-header">
 	                      <div>
-	                        <h4>{contactFormQueue.length} House / Contact Form</h4>
+	                        <h4>{contactFormQueue.length} House / Contact Form{contactFormQueue.length === 1 ? "" : "s"}</h4>
 	                        <p className="text-sm text-slate-500">
 	                          Inbound submissions captured directly from the site.
 	                        </p>
 	                      </div>
 	                    </div>
                     <div className="sales-rep-table-wrapper">
-                      <table className="min-w-[720px] divide-y divide-slate-200/70">
+                      <table className="min-w-[720px] divide-y mb-2 divide-slate-200/70">
                         <thead className="bg-slate-50/70">
                           <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                             <th className="px-4 py-3">ID</th>
@@ -11668,12 +11756,12 @@ export default function App() {
                             <th className="px-4 py-3">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200/60">
+                        <tbody className="divide-y mt-2 mb-2 divide-slate-200/60">
                           {referralDataLoading ? (
                             <tr>
                               <td
                                 colSpan={7}
-                                className="px-4 py-6 text-center text-sm text-slate-500"
+                                className="px-4 py-6 text-center mt-2 mb-2 text-sm text-slate-500"
                               >
                                 Loading contact forms…
                               </td>
@@ -11682,7 +11770,7 @@ export default function App() {
                             <tr>
                               <td
                                 colSpan={7}
-                                className="px-4 py-6 text-center text-sm text-slate-500"
+                                className="px-4 py-6 text-center mt-4 mb-2 text-sm text-slate-500"
                               >
                                 No contact form submissions available.
                               </td>
@@ -13615,7 +13703,13 @@ export default function App() {
 	              <DialogHeader>
 	                <DialogTitle>{salesDoctorDetail.name}</DialogTitle>
 	                <DialogDescription>
-	                  {salesDoctorDetail.email || "Doctor details"}
+	                  {salesDoctorDetail.email ? (
+	                    <a href={`mailto:${salesDoctorDetail.email}`}>
+	                      {salesDoctorDetail.email}
+	                    </a>
+	                  ) : (
+	                    "Doctor details"
+	                  )}
 	                </DialogDescription>
 	              </DialogHeader>
 			              <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
@@ -13623,13 +13717,12 @@ export default function App() {
 			                {salesDoctorNotesLoading && (
 			                  <p className="text-xs text-slate-500">Loading notes...</p>
 			                )}
-			                <Textarea
+			                  <Textarea
 			                  value={salesDoctorNoteDraft}
 			                  onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
 			                  rows={4}
 			                  placeholder="Add notes about this doctor"
 			                  className="text-sm notes-textarea"
-			                  onBlur={() => void saveSalesDoctorNotes()}
 			                  disabled={salesDoctorNotesLoading}
 			                />
 			                <div className="mt-2 mb-1 flex items-center justify-end gap-2">
@@ -13682,7 +13775,13 @@ export default function App() {
                   <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
                     <div>
                       <span className="font-semibold text-slate-800">Email: </span>
-                      <span>{salesDoctorDetail.email || "Unavailable"}</span>
+                      {salesDoctorDetail.email ? (
+                        <a href={`mailto:${salesDoctorDetail.email}`}>
+                          {salesDoctorDetail.email}
+                        </a>
+                      ) : (
+                        <span>Unavailable</span>
+                      )}
                     </div>
                     <div>
                       <span className="font-semibold text-slate-800">Phone: </span>

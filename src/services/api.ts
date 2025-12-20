@@ -894,6 +894,13 @@ export const referralAPI = {
     );
   },
 
+  deleteResellerPermit: async (identifier: string) => {
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      { method: 'DELETE' },
+    );
+  },
+
   createManualProspect: async (payload: {
     name: string;
     email?: string;

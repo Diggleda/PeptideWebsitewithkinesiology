@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -15,6 +15,42 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+
+const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
+  const active = Math.max(0, Math.min(activeBars, 3));
+  const activeFill = 'rgb(30, 41, 59)'; // slate-800
+  const inactiveFill = 'rgb(203, 213, 225)'; // slate-300
+  const bars = [
+    { x: 2, y: 9, w: 4, h: 4 },
+    { x: 8, y: 6, w: 4, h: 7 },
+    { x: 14, y: 3, w: 4, h: 10 },
+  ];
+
+  return (
+    <svg
+      width="22"
+      height="14"
+      viewBox="0 0 20 14"
+      fill="none"
+      aria-hidden="true"
+    >
+      {bars.map((bar, index) => {
+        const isActive = index < active;
+        return (
+          <rect
+            key={index}
+            x={bar.x}
+            y={bar.y}
+            width={bar.w}
+            height={bar.h}
+            rx="1"
+            fill={isActive ? activeFill : inactiveFill}
+          />
+        );
+      })}
+    </svg>
+  );
+};
 
 // Downscale/compress images before uploading to avoid proxy/body limits.
 const compressImageToDataUrl = (file: File, opts?: { maxSize?: number; quality?: number }): Promise<string> => {
@@ -425,24 +461,54 @@ const renderAddressLines = (address?: AccountOrderAddress | null) => {
   if (!address) {
     return <p className="text-sm text-slate-500">No address available.</p>;
   }
-  const lines = [
-    address.name,
-    address.company,
-    [address.addressLine1, address.addressLine2].filter(Boolean).join(' ').trim() || null,
-    [address.city, address.state, address.postalCode].filter(Boolean).join(', ').replace(/, ,/g, ', ').replace(/^,/, '').trim() || null,
-    address.country,
-    address.phone ? `Phone: ${address.phone}` : null,
-    address.email ? `Email: ${address.email}` : null,
-  ].filter((line) => typeof line === 'string' && line.trim().length > 0);
+  const lineItems: Array<{ key: string; node: ReactNode }> = [];
 
-  if (!lines.length) {
+  const pushLine = (value: string | null) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    lineItems.push({ key: trimmed, node: trimmed });
+  };
+
+  pushLine(address.name || null);
+  pushLine(address.company || null);
+  pushLine(
+    [address.addressLine1, address.addressLine2]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || null,
+  );
+  pushLine(
+    [address.city, address.state, address.postalCode]
+      .filter(Boolean)
+      .join(', ')
+      .replace(/, ,/g, ', ')
+      .replace(/^,/, '')
+      .trim() || null,
+  );
+  pushLine(address.country || null);
+  pushLine(address.phone ? `Phone: ${address.phone}` : null);
+
+  const email = typeof address.email === 'string' ? address.email.trim() : '';
+  if (email) {
+    lineItems.push({
+      key: `email-${email}`,
+      node: (
+        <>
+          Email: <a href={`mailto:${email}`}>{email}</a>
+        </>
+      ),
+    });
+  }
+
+  if (!lineItems.length) {
     return <p className="text-sm text-slate-500">No address available.</p>;
   }
 
   return (
     <div className="text-sm text-slate-700 space-y-1 text-left">
-      {lines.map((line, index) => (
-        <p key={`${line}-${index}`}>{line}</p>
+      {lineItems.map((line, index) => (
+        <p key={`${line.key}-${index}`}>{line.node}</p>
       ))}
     </div>
   );
@@ -728,6 +794,7 @@ export function Header({
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const [networkQuality, setNetworkQuality] = useState<'good' | 'fair' | 'poor' | 'offline'>('good');
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
@@ -751,6 +818,85 @@ export function Header({
   const [showAvatarControls, setShowAvatarControls] = useState(false);
   const credentialAutofillRequestInFlight = useRef(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const updateNetworkQuality = () => {
+      if (typeof navigator === 'undefined') {
+        setNetworkQuality('good');
+        return;
+      }
+      if (navigator.onLine === false) {
+        setNetworkQuality('offline');
+        return;
+      }
+      const conn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+      if (!conn) {
+        setNetworkQuality('good');
+        return;
+      }
+      const effectiveType = String(conn.effectiveType || '').toLowerCase();
+      const downlink = typeof conn.downlink === 'number' ? conn.downlink : null;
+      const rtt = typeof conn.rtt === 'number' ? conn.rtt : null;
+      const saveData = Boolean(conn.saveData);
+
+      if (saveData) {
+        setNetworkQuality('poor');
+        return;
+      }
+
+      if (effectiveType === 'slow-2g' || effectiveType === '2g') {
+        setNetworkQuality('poor');
+        return;
+      }
+      if (effectiveType === '3g') {
+        setNetworkQuality('fair');
+        return;
+      }
+      if (effectiveType === '4g') {
+        setNetworkQuality('good');
+        return;
+      }
+
+      if (typeof downlink === 'number' && downlink > 0) {
+        if (downlink < 1) {
+          setNetworkQuality('poor');
+          return;
+        }
+        if (downlink < 2) {
+          setNetworkQuality('fair');
+          return;
+        }
+      }
+
+      if (typeof rtt === 'number') {
+        if (rtt > 700) {
+          setNetworkQuality('poor');
+          return;
+        }
+        if (rtt > 300) {
+          setNetworkQuality('fair');
+          return;
+        }
+      }
+
+      setNetworkQuality('good');
+    };
+
+    updateNetworkQuality();
+    window.addEventListener('online', updateNetworkQuality);
+    window.addEventListener('offline', updateNetworkQuality);
+    const conn = (navigator as any)?.connection;
+    if (conn && typeof conn.addEventListener === 'function') {
+      conn.addEventListener('change', updateNetworkQuality);
+    }
+    return () => {
+      window.removeEventListener('online', updateNetworkQuality);
+      window.removeEventListener('offline', updateNetworkQuality);
+      if (conn && typeof conn.removeEventListener === 'function') {
+        conn.removeEventListener('change', updateNetworkQuality);
+      }
+    };
+  }, []);
   const mergeOrderIntoCache = useCallback(
     (order: AccountOrderSummary | null | undefined) => {
       if (!order) return;
@@ -3304,13 +3450,48 @@ export function Header({
               </form>
             )}
 
-            {/* User Actions */}
-            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end">
-              {authControls}
-              {!isLargeScreen && (
-                <Button
-                  type="button"
-                  variant="outline"
+	            {/* User Actions */}
+	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end">
+	              {user && (
+	                <div
+	                  className="flex items-center justify-center squircle-sm border border-slate-200 bg-white/70 px-2 py-1"
+	                  title={
+	                    networkQuality === 'offline'
+	                      ? 'Offline'
+	                      : networkQuality === 'poor'
+	                        ? 'Poor internet connection'
+	                        : networkQuality === 'fair'
+	                          ? 'OK connection'
+	                          : 'Good connection'
+	                  }
+	                  aria-label={
+	                    networkQuality === 'offline'
+	                      ? 'Offline'
+	                      : networkQuality === 'poor'
+	                        ? 'Poor internet connection'
+	                        : networkQuality === 'fair'
+	                          ? 'OK connection'
+	                          : 'Good connection'
+	                  }
+	                >
+	                  <NetworkBarsIcon
+	                    activeBars={
+	                      networkQuality === 'offline'
+	                        ? 0
+	                        : networkQuality === 'poor'
+	                          ? 1
+	                          : networkQuality === 'fair'
+	                            ? 2
+	                            : 3
+	                    }
+	                  />
+	                </div>
+	              )}
+	              {authControls}
+	              {!isLargeScreen && (
+	                <Button
+	                  type="button"
+	                  variant="outline"
                   size="icon"
                   onClick={toggleMobileSearch}
                   aria-expanded={mobileSearchOpen}
