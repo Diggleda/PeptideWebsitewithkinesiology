@@ -166,6 +166,22 @@ CREATE_TABLE_STATEMENTS = [
         value_json JSON NULL,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS product_documents (
+        woo_product_id BIGINT UNSIGNED NOT NULL,
+        kind VARCHAR(64) NOT NULL,
+        product_name VARCHAR(255) NULL,
+        product_sku VARCHAR(64) NULL,
+        woo_synced_at DATETIME NULL,
+        mime_type VARCHAR(64) NULL,
+        filename VARCHAR(255) NULL,
+        sha256 CHAR(64) NULL,
+        data LONGBLOB NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        PRIMARY KEY (woo_product_id, kind)
+    ) CHARACTER SET utf8mb4
     """
 ]
 
@@ -218,6 +234,13 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS product_name VARCHAR(255) NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS product_sku VARCHAR(64) NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS woo_synced_at DATETIME NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS mime_type VARCHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
     ]
     for stmt in migrations:
         try:

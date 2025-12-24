@@ -5,7 +5,9 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Input } from './ui/input';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { ShoppingCart, Minus, Plus } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { ShoppingCart, Minus, Plus, Loader2 } from 'lucide-react';
+import { wooAPI } from '../services/api';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH ?? '').toLowerCase().trim();
@@ -200,6 +202,33 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
   const userInteractedRef = useRef(false);
   const autoCycleDoneRef = useRef<string | null>(null);
   const autoOpenDoneRef = useRef<string | null>(null);
+  const [coaOpen, setCoaOpen] = useState(false);
+  const [coaLoading, setCoaLoading] = useState(false);
+  const [coaError, setCoaError] = useState<string | null>(null);
+  const [coaObjectUrl, setCoaObjectUrl] = useState<string | null>(null);
+
+  const wooProductId = useMemo(() => {
+    const raw = String(product.id || '').trim();
+    const match = raw.match(/^woo-(\d+)$/i);
+    if (match && match[1]) {
+      const parsed = Number.parseInt(match[1], 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    const digits = raw.replace(/[^0-9]/g, '');
+    if (digits) {
+      const parsed = Number.parseInt(digits, 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }, [product.id]);
+
+  useEffect(() => {
+    return () => {
+      if (coaObjectUrl) {
+        URL.revokeObjectURL(coaObjectUrl);
+      }
+    };
+  }, [coaObjectUrl]);
 
   useEffect(() => {
     const rawVariations = Array.isArray(product.variations) ? product.variations : [];
@@ -412,6 +441,34 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
 
   const categoryLabel = product.category?.trim() || 'PepPro Catalog';
 
+  const openCertificateOfAnalysis = async () => {
+    setCoaOpen(true);
+    setCoaError(null);
+    if (coaObjectUrl || coaLoading) {
+      return;
+    }
+    if (!wooProductId) {
+      setCoaError('Certificate unavailable for this product.');
+      return;
+    }
+
+    setCoaLoading(true);
+    try {
+      const { blob } = await wooAPI.getCertificateOfAnalysis(wooProductId);
+      const url = URL.createObjectURL(blob);
+      setCoaObjectUrl(url);
+    } catch (error: any) {
+      const status = typeof error?.status === 'number' ? error.status : null;
+      if (status === 404) {
+        setCoaError('No certificate is available for this product yet.');
+      } else {
+        setCoaError(typeof error?.message === 'string' ? error.message : 'Failed to load certificate.');
+      }
+    } finally {
+      setCoaLoading(false);
+    }
+  };
+
   const productMeta = (
     <>
       <Badge
@@ -421,6 +478,14 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         {categoryLabel}
       </Badge>
       <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
+      <button
+        type="button"
+        onClick={() => void openCertificateOfAnalysis()}
+        className="line-clamp-2 text-left hover:underline"
+        style={{ color: 'rgb(95, 179, 249)' }}
+      >
+        Certificate of Analysis
+      </button>
       {product.manufacturer && <p className="text-xs text-gray-500">{product.manufacturer}</p>}
     </>
   );
@@ -614,24 +679,74 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
   const baseImageFrameClass = 'product-image-frame product-image-frame--flush';
 
   return (
-    <Card className="group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-      <CardContent className="flex-1 p-0">
-        <div className={baseImageFrameClass}>
-          <ImageWithFallback
-            src={primaryImage}
-            alt={product.name}
-            className="product-image-frame__img"
-          />
-        </div>
-        <div className="p-4 pb-3 space-y-3">
-          <div className="space-y-1">{productMeta}</div>
-          {variationSelector}
-          {quantitySelector}
-          {pricingSummary}
-          {gridBulkSection}
-        </div>
-      </CardContent>
-      <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
-    </Card>
+    <>
+      <Card
+        className="group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(95,179,249,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)]"
+        style={{
+          background:
+            'linear-gradient(to right, rgba(95,179,249,0.08) 0%, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 100%)',
+          backdropFilter: 'blur(40px) saturate(1.7)',
+          WebkitBackdropFilter: 'blur(40px) saturate(1.7)',
+        }}
+      >
+        <CardContent className="flex-1 p-0">
+          <div className={baseImageFrameClass}>
+            <ImageWithFallback
+              src={primaryImage}
+              alt={product.name}
+              className="product-image-frame__img"
+            />
+          </div>
+          <div className="p-4 pb-3 space-y-3">
+            <div className="space-y-1">{productMeta}</div>
+            {variationSelector}
+            {quantitySelector}
+            {pricingSummary}
+            {gridBulkSection}
+          </div>
+        </CardContent>
+        <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
+      </Card>
+
+      <Dialog
+        open={coaOpen}
+        onOpenChange={(open) => {
+          setCoaOpen(open);
+          if (!open) {
+            setCoaError(null);
+            if (coaObjectUrl) {
+              URL.revokeObjectURL(coaObjectUrl);
+              setCoaObjectUrl(null);
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Certificate of Analysis</DialogTitle>
+            <DialogDescription>{product.name}</DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-3 min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
+            {coaLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Loading certificate…
+              </div>
+            ) : coaObjectUrl ? (
+              <img
+                src={coaObjectUrl}
+                alt={`Certificate of Analysis for ${product.name}`}
+                className="max-h-[70vh] w-auto max-w-full object-contain"
+              />
+            ) : (
+              <div className="text-sm text-slate-600 text-center">
+                {coaError || 'Unable to load certificate.'}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

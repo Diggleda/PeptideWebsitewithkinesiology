@@ -40,17 +40,13 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-x-0 bottom-0 z-[9999] backdrop-blur-xl transition-opacity duration-[1200ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+      "fixed inset-0 z-[9999] backdrop-blur-xl transition-opacity duration-[1200ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
       className,
     )}
     style={{
       backdropFilter: 'blur(4px) saturate(1.2)',
       WebkitBackdropFilter: 'blur(4px) saturate(1.2)',
       willChange: 'opacity',
-      top: 'var(--modal-header-offset, 6rem)',
-      left: 0,
-      right: 0,
-      bottom: 0,
       ...style,
     }}
     {...props}

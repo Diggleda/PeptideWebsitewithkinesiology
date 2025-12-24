@@ -5,6 +5,7 @@ from .logging_config import configure_logging
 from .storage import init_storage
 from .routes import register_blueprints
 from .services import configure_services
+from .services.product_document_sync_service import start_product_document_sync
 from .database import init_database
 from .middleware.request_logging import init_request_logging
 from .middleware.rate_limit import init_rate_limit
@@ -26,6 +27,7 @@ def create_app() -> Flask:
 
     configure_services(config)
     init_database(config)
+    start_product_document_sync()
 
     # Ensure JSON storage files exist before serving requests.
     init_storage(config)

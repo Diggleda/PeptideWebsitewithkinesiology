@@ -43,12 +43,13 @@ import {
 	  Fingerprint,
 		  Loader2,
 		  Plus,
-		  Package,
-		  Download,
-		  NotebookPen,
-		  CheckSquare,
-		  Trash2,
-		} from "lucide-react";
+			  Package,
+			  Upload,
+			  Download,
+			  NotebookPen,
+			  CheckSquare,
+			  Trash2,
+			} from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -59,17 +60,18 @@ import {
   Bar,
   LabelList,
 } from "recharts@2.15.2";
-import {
-  authAPI,
-  ordersAPI,
-  referralAPI,
-  newsAPI,
-  quotesAPI,
-  checkServerHealth,
-  passwordResetAPI,
-  settingsAPI,
-  API_BASE_URL,
-} from "./services/api";
+	import {
+	  authAPI,
+	  ordersAPI,
+	  referralAPI,
+	  newsAPI,
+	  quotesAPI,
+	  wooAPI,
+	  checkServerHealth,
+	  passwordResetAPI,
+	  settingsAPI,
+	  API_BASE_URL,
+	} from "./services/api";
 import physiciansChoiceHtml from "./content/landing/physicians-choice.html?raw";
 import careComplianceHtml from "./content/landing/care-compliance.html?raw";
 import { isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
@@ -1284,7 +1286,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.26";
+  "v1.9.30";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -4879,20 +4881,351 @@ export default function App() {
     };
   }, [user?.role, userActivityWindow]);
 
-  useEffect(() => {
-    if (!user || !isAdmin(user.role) || postLoginHold) {
-      setServerHealthPayload(null);
-      setServerHealthLoading(false);
-      setServerHealthError(null);
-      return;
-    }
-    void fetchServerHealth();
-  }, [user?.id, user?.role, postLoginHold, fetchServerHealth]);
-  const referralRefreshInFlight = useRef(false);
-  const referralLastRefreshAtRef = useRef(0);
-  const [adminActionState, setAdminActionState] = useState<{
-    updatingReferral: string | null;
-    error: string | null;
+	  useEffect(() => {
+	    if (!user || !isAdmin(user.role) || postLoginHold) {
+	      setServerHealthPayload(null);
+	      setServerHealthLoading(false);
+	      setServerHealthError(null);
+	      return;
+	    }
+	    void fetchServerHealth();
+	  }, [user?.id, user?.role, postLoginHold, fetchServerHealth]);
+
+		  type MissingCertificateProduct = {
+		    wooProductId: number | string;
+		    name?: string | null;
+		    sku?: string | null;
+		  };
+		  type CertificateProduct = MissingCertificateProduct & {
+		    hasCertificate?: boolean;
+		    filename?: string | null;
+		    bytes?: number | null;
+		    updatedAt?: string | null;
+		  };
+		  const [missingCertificates, setMissingCertificates] = useState<
+		    MissingCertificateProduct[]
+		  >([]);
+		  const [missingCertificatesLoading, setMissingCertificatesLoading] =
+		    useState(false);
+		  const [missingCertificatesError, setMissingCertificatesError] = useState<
+		    string | null
+		  >(null);
+		  const [certificateUploadsVisible, setCertificateUploadsVisible] =
+		    useState(false);
+		  const [certificateProducts, setCertificateProducts] = useState<
+		    CertificateProduct[]
+		  >([]);
+		  const [certificateProductsLoading, setCertificateProductsLoading] =
+		    useState(false);
+		  const [certificateProductsError, setCertificateProductsError] = useState<
+		    string | null
+		  >(null);
+		  const [missingCertificatesSelectedId, setMissingCertificatesSelectedId] =
+		    useState<string>("");
+	  const [missingCertificatesSelectedFile, setMissingCertificatesSelectedFile] =
+	    useState<File | null>(null);
+	  const [missingCertificatesUploading, setMissingCertificatesUploading] =
+	    useState(false);
+	  const [missingCertificatesInfoLoading, setMissingCertificatesInfoLoading] =
+	    useState(false);
+	  const [missingCertificatesInfoError, setMissingCertificatesInfoError] =
+	    useState<string | null>(null);
+	  const [missingCertificatesInfo, setMissingCertificatesInfo] = useState<{
+	    exists: boolean;
+	    filename: string | null;
+	    mimeType: string | null;
+	    bytes: number | null;
+	    updatedAt: string | null;
+	  } | null>(null);
+		  const [missingCertificatesDeleting, setMissingCertificatesDeleting] =
+		    useState(false);
+		  const missingCertificatesInFlightRef = useRef(false);
+		  const missingCertificatesLastFetchedAtRef = useRef<number>(0);
+		  const certificateProductsInFlightRef = useRef(false);
+		  const certificateProductsLastFetchedAtRef = useRef<number>(0);
+
+	  const fetchMissingCertificates = useCallback(
+		    async (options?: { force?: boolean }) => {
+		      if (!user || !isAdmin(user.role) || postLoginHold) {
+		        setMissingCertificates([]);
+		        setMissingCertificatesLoading(false);
+		        setMissingCertificatesError(null);
+		        setCertificateUploadsVisible(false);
+		        setCertificateProducts([]);
+		        setCertificateProductsLoading(false);
+		        setCertificateProductsError(null);
+		        setMissingCertificatesSelectedId("");
+		        setMissingCertificatesSelectedFile(null);
+		        return;
+		      }
+	      const now = Date.now();
+	      const ttlMs = 60_000;
+	      if (!options?.force && now - missingCertificatesLastFetchedAtRef.current < ttlMs) {
+	        return;
+	      }
+	      if (missingCertificatesInFlightRef.current) {
+	        return;
+	      }
+	      missingCertificatesInFlightRef.current = true;
+	      missingCertificatesLastFetchedAtRef.current = now;
+	      setMissingCertificatesLoading(true);
+	      setMissingCertificatesError(null);
+	      try {
+	        const payload = (await wooAPI.listMissingCertificates()) as any;
+	        const products = Array.isArray(payload?.products)
+	          ? (payload.products as MissingCertificateProduct[])
+	          : [];
+	        setMissingCertificates(products);
+	        setMissingCertificatesSelectedFile(null);
+	        const normalizedIds = new Set(products.map((p) => String(p.wooProductId)));
+	        setMissingCertificatesSelectedId((prev) => {
+	          if (prev && normalizedIds.has(prev)) return prev;
+	          return products[0] ? String(products[0].wooProductId) : "";
+	        });
+	      } catch (error) {
+	        setMissingCertificates([]);
+	        setMissingCertificatesError(
+	          error instanceof Error
+	            ? error.message
+	            : "Unable to load missing certificates.",
+	        );
+	      } finally {
+	        setMissingCertificatesLoading(false);
+	        missingCertificatesInFlightRef.current = false;
+	      }
+	    },
+	    [user?.id, user?.role, postLoginHold],
+	  );
+
+		  useEffect(() => {
+		    if (!user || !isAdmin(user.role) || postLoginHold) {
+		      return;
+		    }
+		    void fetchMissingCertificates();
+		  }, [user?.id, user?.role, postLoginHold, fetchMissingCertificates]);
+
+		  useEffect(() => {
+		    if (!user || !isAdmin(user.role) || postLoginHold) {
+		      return;
+		    }
+		    if (missingCertificatesError || missingCertificates.length > 0) {
+		      setCertificateUploadsVisible(true);
+		    }
+		  }, [
+		    user?.id,
+		    user?.role,
+		    postLoginHold,
+		    missingCertificatesError,
+		    missingCertificates.length,
+		  ]);
+
+		  const fetchCertificateProducts = useCallback(
+		    async (options?: { force?: boolean }) => {
+		      if (!user || !isAdmin(user.role) || postLoginHold) {
+		        setCertificateProducts([]);
+		        setCertificateProductsLoading(false);
+		        setCertificateProductsError(null);
+		        return;
+		      }
+		      if (!certificateUploadsVisible) {
+		        return;
+		      }
+		      const now = Date.now();
+		      const ttlMs = 60_000;
+		      if (
+		        !options?.force &&
+		        now - certificateProductsLastFetchedAtRef.current < ttlMs
+		      ) {
+		        return;
+		      }
+		      if (certificateProductsInFlightRef.current) {
+		        return;
+		      }
+		      certificateProductsInFlightRef.current = true;
+		      certificateProductsLastFetchedAtRef.current = now;
+		      setCertificateProductsLoading(true);
+		      setCertificateProductsError(null);
+		      try {
+		        const payload = (await wooAPI.listCertificateProducts()) as any;
+		        const products = Array.isArray(payload?.products)
+		          ? (payload.products as CertificateProduct[])
+		          : [];
+		        setCertificateProducts(products);
+		        const normalizedIds = new Set(
+		          products.map((p) => String(p.wooProductId)),
+		        );
+		        setMissingCertificatesSelectedId((prev) => {
+		          if (prev && normalizedIds.has(prev)) return prev;
+		          return products[0] ? String(products[0].wooProductId) : "";
+		        });
+		      } catch (error) {
+		        setCertificateProducts([]);
+		        setCertificateProductsError(
+		          error instanceof Error ? error.message : "Unable to load products.",
+		        );
+		      } finally {
+		        setCertificateProductsLoading(false);
+		        certificateProductsInFlightRef.current = false;
+		      }
+		    },
+		    [user?.id, user?.role, postLoginHold, certificateUploadsVisible],
+		  );
+
+		  useEffect(() => {
+		    void fetchCertificateProducts();
+		  }, [fetchCertificateProducts]);
+
+		  const selectedCertificateInfoRequestIdRef = useRef(0);
+		  const fetchSelectedCertificateInfo = useCallback(async () => {
+	    if (!user || !isAdmin(user.role) || postLoginHold) {
+	      setMissingCertificatesInfo(null);
+	      setMissingCertificatesInfoLoading(false);
+	      setMissingCertificatesInfoError(null);
+	      return;
+	    }
+	    if (!missingCertificatesSelectedId) {
+	      setMissingCertificatesInfo(null);
+	      setMissingCertificatesInfoLoading(false);
+	      setMissingCertificatesInfoError(null);
+	      return;
+	    }
+	    const requestId = (selectedCertificateInfoRequestIdRef.current += 1);
+	    setMissingCertificatesInfoLoading(true);
+	    setMissingCertificatesInfoError(null);
+	    try {
+	      const payload = (await wooAPI.getCertificateOfAnalysisInfo(
+	        missingCertificatesSelectedId,
+	      )) as any;
+	      if (requestId !== selectedCertificateInfoRequestIdRef.current) return;
+	      setMissingCertificatesInfo({
+	        exists: Boolean(payload?.exists),
+	        filename:
+	          typeof payload?.filename === "string" && payload.filename.trim().length > 0
+	            ? payload.filename
+	            : null,
+	        mimeType:
+	          typeof payload?.mimeType === "string" && payload.mimeType.trim().length > 0
+	            ? payload.mimeType
+	            : null,
+	        bytes: typeof payload?.bytes === "number" ? payload.bytes : null,
+	        updatedAt:
+	          typeof payload?.updatedAt === "string" && payload.updatedAt.trim().length > 0
+	            ? payload.updatedAt
+	            : null,
+	      });
+	    } catch (error) {
+	      if (requestId !== selectedCertificateInfoRequestIdRef.current) return;
+	      setMissingCertificatesInfo(null);
+	      setMissingCertificatesInfoError(
+	        error instanceof Error
+	          ? error.message
+	          : "Unable to load current certificate.",
+	      );
+	    } finally {
+	      if (requestId === selectedCertificateInfoRequestIdRef.current) {
+	        setMissingCertificatesInfoLoading(false);
+	      }
+	    }
+	  }, [user?.id, user?.role, postLoginHold, missingCertificatesSelectedId]);
+
+	  useEffect(() => {
+	    void fetchSelectedCertificateInfo();
+	  }, [fetchSelectedCertificateInfo]);
+
+		  const handleDeleteSelectedCertificate = useCallback(async () => {
+		    if (!missingCertificatesSelectedId) {
+		      toast.error("Select a product first.");
+		      return;
+		    }
+		    setMissingCertificatesDeleting(true);
+		    try {
+		      const res = (await wooAPI.deleteCertificateOfAnalysis(
+		        missingCertificatesSelectedId,
+		      )) as any;
+		      const didDelete = Boolean(res?.deleted);
+		      toast.success(didDelete ? "Certificate deleted." : "No certificate to delete.");
+		      setMissingCertificatesSelectedFile(null);
+		      await fetchMissingCertificates({ force: true });
+		      await fetchCertificateProducts({ force: true });
+		    } catch (error) {
+		      toast.error(
+		        error instanceof Error ? error.message : "Unable to delete certificate.",
+		      );
+		    } finally {
+		      setMissingCertificatesDeleting(false);
+		    }
+		  }, [
+		    missingCertificatesSelectedId,
+		    fetchMissingCertificates,
+		    fetchCertificateProducts,
+		  ]);
+
+		  const handleUploadMissingCertificate = useCallback(async () => {
+	    if (!missingCertificatesSelectedId) {
+	      toast.error("Select a product first.");
+	      return;
+	    }
+	    if (!missingCertificatesSelectedFile) {
+	      toast.error("Choose a PNG file first.");
+	      return;
+	    }
+	    const file = missingCertificatesSelectedFile;
+	    const isPng =
+	      file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+	    if (!isPng) {
+	      toast.error("Certificate must be a PNG.");
+	      return;
+	    }
+	    const maxBytes = 8 * 1024 * 1024;
+	    if (file.size > maxBytes) {
+	      toast.error("PNG is too large (max 8 MB).");
+	      return;
+	    }
+
+	    const readAsDataUrl = (input: File) =>
+	      new Promise<string>((resolve, reject) => {
+	        const reader = new FileReader();
+	        reader.onerror = () => reject(new Error("Unable to read file."));
+	        reader.onload = () => {
+	          const result = reader.result;
+	          if (typeof result === "string" && result.trim().length > 0) {
+	            resolve(result);
+	          } else {
+	            reject(new Error("Unable to read file."));
+	          }
+	        };
+	        reader.readAsDataURL(input);
+	      });
+
+		    setMissingCertificatesUploading(true);
+		    try {
+		      const dataUrl = await readAsDataUrl(file);
+		      await wooAPI.uploadCertificateOfAnalysis(missingCertificatesSelectedId, {
+		        dataUrl,
+		        filename: file.name,
+		      });
+		      toast.success("Certificate uploaded.");
+		      setMissingCertificatesSelectedFile(null);
+		      await fetchMissingCertificates({ force: true });
+		      await fetchCertificateProducts({ force: true });
+		    } catch (error) {
+		      toast.error(
+		        error instanceof Error ? error.message : "Unable to upload certificate.",
+		      );
+		    } finally {
+		      setMissingCertificatesUploading(false);
+		    }
+		  }, [
+		    missingCertificatesSelectedId,
+		    missingCertificatesSelectedFile,
+		    fetchMissingCertificates,
+		    fetchCertificateProducts,
+		  ]);
+	  const referralRefreshInFlight = useRef(false);
+	  const referralLastRefreshAtRef = useRef(0);
+	  const [adminActionState, setAdminActionState] = useState<{
+	    updatingReferral: string | null;
+	    error: string | null;
   }>({
     updatingReferral: null,
     error: null,
@@ -9789,14 +10122,14 @@ export default function App() {
                       key={chip.key}
                       className={`filter-chip glass-card${chip.tone ? ` filter-chip--${chip.tone}` : ""}`}
                     >
-                      {isSpinner ? (
-                        <RefreshCw
-                          className="h-3 w-3.1 text-[rgb(30,41,59)]"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <span className="whitespace-nowrap">{chip.label}</span>
-                      )}
+	                      {isSpinner ? (
+	                        <RefreshCw
+	                          className="h-3 w-3.1 animate-spin text-[rgb(30,41,59)]"
+	                          aria-hidden="true"
+	                        />
+	                      ) : (
+	                        <span className="whitespace-nowrap">{chip.label}</span>
+	                      )}
                     </span>
                   );
                 })}
@@ -9940,10 +10273,10 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="sales-rep-table-wrapper">
-                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
-                      {(() => {
-                      const usage = serverHealthPayload?.usage || null;
+	                  <div className="sales-rep-table-wrapper">
+	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
+	                      {(() => {
+	                      const usage = serverHealthPayload?.usage || null;
                       const cpu = usage?.cpu || null;
                       const mem = usage?.memory || null;
                       const disk = usage?.disk || null;
@@ -9999,21 +10332,206 @@ export default function App() {
                           {label}
                         </span>
                       ));
-                      })()}
-                    </div>
-                  </div>
-                </div>
-
-	              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-	                <div>
-	                  <h3 className="text-lg font-semibold text-slate-900">
-	                    Settings
-	                  </h3>
-		                  <p className="text-sm text-slate-600">
-		                    Configure storefront availability and payment mode.
-		                  </p>
+	                      })()}
+	                    </div>
+	                  </div>
 	                </div>
-                </div>
+
+		                {!certificateUploadsVisible && (
+		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
+		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+		                      <div>
+		                        <h4 className="text-base font-semibold text-slate-900">
+		                          Certificates of Analysis
+		                        </h4>
+		                        <p className="text-sm text-slate-600">
+		                          {missingCertificatesLoading
+		                            ? "Checking certificates…"
+		                            : missingCertificatesError
+		                              ? "Unable to load certificate status."
+		                              : "All products have a certificate. (You can still view/delete/upload replacements.)"}
+		                        </p>
+		                      </div>
+		                      <div className="flex-shrink-0">
+		                        <Button
+		                          type="button"
+		                          variant="outline"
+		                          onClick={() => setCertificateUploadsVisible(true)}
+		                          className="gap-2"
+		                        >
+		                          Show certificate uploads
+		                        </Button>
+		                      </div>
+		                    </div>
+		                  </div>
+		                )}
+
+		                {certificateUploadsVisible && (
+		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
+		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+		                      <div>
+		                        <h4 className="text-base font-semibold text-slate-900">
+		                          Certificates of Analysis
+		                        </h4>
+		                        <p className="text-sm text-slate-600">
+		                          {missingCertificatesError
+		                            ? "Unable to load missing certificate count."
+		                            : missingCertificates.length > 0
+		                              ? `${missingCertificates.length} product${missingCertificates.length === 1 ? "" : "s"} missing a certificate.`
+		                              : "All products currently have a certificate."}
+		                        </p>
+		                      </div>
+		                      <div className="flex-shrink-0">
+		                        <Button
+		                          type="button"
+		                          variant="outline"
+		                          onClick={() => {
+		                            void fetchMissingCertificates({ force: true });
+		                            void fetchCertificateProducts({ force: true });
+		                          }}
+		                          disabled={missingCertificatesLoading || certificateProductsLoading}
+		                          className="gap-2"
+		                          title="Refresh certificates"
+		                        >
+		                          <RefreshCw
+		                            className={`h-4 w-4 ${
+		                              missingCertificatesLoading || certificateProductsLoading
+		                                ? "animate-spin"
+		                                : ""
+		                            }`}
+		                          />
+		                          Refresh
+		                        </Button>
+		                      </div>
+		                    </div>
+		
+		                    {(missingCertificatesError || certificateProductsError) && (
+		                      <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+		                        {certificateProductsError || missingCertificatesError}
+		                      </div>
+		                    )}
+
+		                    {certificateProductsLoading && certificateProducts.length === 0 && (
+		                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+		                        Loading products…
+		                      </div>
+		                    )}
+		
+		                    {(certificateProducts.length > 0 || missingCertificates.length > 0) && (
+		                      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+		                        <div className="flex flex-col gap-1">
+		                          <label className="text-xs font-medium text-slate-600">
+		                            Product
+		                          </label>
+		                          <select
+		                            value={missingCertificatesSelectedId}
+		                            onChange={(e) => {
+		                              setMissingCertificatesSelectedId(e.target.value);
+		                              setMissingCertificatesSelectedFile(null);
+		                            }}
+		                            disabled={certificateProductsLoading}
+		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
+		                          >
+		                            {(certificateProducts.length > 0
+		                              ? certificateProducts
+		                              : (missingCertificates as any)
+		                            ).map((product: any) => {
+		                              const id = String(product.wooProductId);
+		                              const labelParts = [
+		                                product.name && String(product.name).trim().length > 0
+		                                  ? String(product.name).trim()
+		                                  : `Product ${id}`,
+		                                product.sku ? `SKU ${product.sku}` : null,
+		                                product.hasCertificate ? "Has certificate" : "Missing",
+		                              ].filter(
+		                                (part): part is string =>
+		                                  typeof part === "string" &&
+		                                  part.trim().length > 0,
+		                              );
+		                              return (
+		                                <option key={id} value={id}>
+		                                  {labelParts.join(" · ")}
+		                                </option>
+		                              );
+		                            })}
+		                          </select>
+		                        </div>
+		
+		                        <div className="flex flex-col gap-1">
+		                          <div className="flex items-center justify-between gap-2">
+		                            <label className="text-xs font-medium text-slate-600">
+		                              PNG certificate
+		                            </label>
+		                            <Button
+		                              type="button"
+		                              variant="ghost"
+		                              size="icon"
+		                              onClick={() => void handleDeleteSelectedCertificate()}
+		                              disabled={
+		                                missingCertificatesDeleting ||
+		                                missingCertificatesUploading ||
+		                                missingCertificatesInfoLoading ||
+		                                !missingCertificatesInfo?.exists
+		                              }
+		                              title="Delete current certificate"
+		                              className="h-8 w-8"
+		                            >
+		                              <Trash2 className="h-4 w-4 text-slate-700" />
+		                            </Button>
+		                          </div>
+		                          <div className="text-xs text-slate-500">
+		                            {missingCertificatesInfoLoading
+		                              ? "Current: Loading…"
+		                              : missingCertificatesInfoError
+		                                ? "Current: —"
+		                                : missingCertificatesInfo?.exists
+		                                  ? `Current: ${missingCertificatesInfo.filename || "certificate-of-analysis.png"}`
+		                                  : "Current: None"}
+		                          </div>
+		                          <input
+		                            type="file"
+		                            accept="image/png"
+		                            onChange={(e) => {
+		                              const file = e.target.files?.[0] ?? null;
+		                              setMissingCertificatesSelectedFile(file);
+		                            }}
+		                            disabled={missingCertificatesUploading}
+		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+		                          />
+		                        </div>
+		
+		                        <Button
+		                          type="button"
+		                          onClick={() => void handleUploadMissingCertificate()}
+		                          disabled={
+		                            missingCertificatesUploading ||
+		                            !missingCertificatesSelectedId ||
+		                            !missingCertificatesSelectedFile
+		                          }
+		                          className="gap-2"
+		                        >
+		                          {missingCertificatesUploading ? (
+		                            <Loader2 className="h-4 w-4 animate-spin" />
+		                          ) : (
+		                            <Upload className="h-4 w-4" />
+		                          )}
+		                          Upload
+		                        </Button>
+		                      </div>
+		                    )}
+		                  </div>
+		                )}
+
+		              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+		                <div>
+		                  <h3 className="text-lg font-semibold text-slate-900">
+		                    Settings
+		                  </h3>
+			                  <p className="text-sm text-slate-600">
+			                    Configure storefront availability and payment mode.
+			                  </p>
+		                </div>
+	                </div>
 
                 <div className="flex flex-col gap-3 mb-4">
                 <div className="flex flex-wrap gap-4 text-xs text-slate-500">
@@ -13714,14 +14232,15 @@ export default function App() {
 	              </DialogHeader>
 			              <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 			                <p className="text-sm font-semibold text-slate-800">Notes</p>
-			                {salesDoctorNotesLoading && (
-			                  <p className="text-xs text-slate-500">Loading notes...</p>
-			                )}
 			                  <Textarea
 			                  value={salesDoctorNoteDraft}
 			                  onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
 			                  rows={4}
-			                  placeholder="Add notes about this doctor"
+			                  placeholder={
+			                    salesDoctorNotesLoading
+			                      ? "Loading notes..."
+			                      : "Add notes about this doctor"
+			                  }
 			                  className="text-sm notes-textarea"
 			                  disabled={salesDoctorNotesLoading}
 			                />

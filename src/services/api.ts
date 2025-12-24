@@ -754,6 +754,20 @@ export const ordersAPI = {
 };
 
 export const wooAPI = {
+  listCertificateProducts: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/woo/certificates/products`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+  },
+
+  listMissingCertificates: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/woo/certificates/missing`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+  },
+
   getProduct: async (productId: string | number) => {
     if (!productId) {
       throw new Error('productId is required');
@@ -778,6 +792,58 @@ export const wooAPI = {
         cache: 'no-store',
       },
     );
+  },
+
+  getCertificateOfAnalysis: async (productId: string | number) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    return fetchWithAuthBlob(
+      `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+    );
+  },
+
+  getCertificateOfAnalysisInfo: async (productId: string | number) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis/info`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+    );
+  },
+
+  uploadCertificateOfAnalysis: async (productId: string | number, payload: { dataUrl: string; filename?: string }) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    if (!payload?.dataUrl) {
+      throw new Error('dataUrl is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`, {
+      method: 'POST',
+      body: JSON.stringify({
+        data: payload.dataUrl,
+        filename: payload.filename,
+        mimeType: 'image/png',
+      }),
+    });
+  },
+
+  deleteCertificateOfAnalysis: async (productId: string | number) => {
+    if (!productId) {
+      throw new Error('productId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`, {
+      method: 'DELETE',
+    });
   },
 };
 

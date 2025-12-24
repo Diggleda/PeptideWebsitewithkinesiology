@@ -2662,6 +2662,12 @@ body {
   }
 }
 
+.animate-spin {
+  animation: spin-stable 0.9s linear infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
 .animate-spin-slow {
   animation: spin-stable 0.9s linear infinite;
   transform-origin: center center;

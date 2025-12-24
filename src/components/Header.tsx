@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Users, RefreshCw } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -15,6 +15,8 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+
+type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
 
 const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
   const active = Math.max(0, Math.min(activeBars, 3));
@@ -794,7 +796,13 @@ export function Header({
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
-  const [networkQuality, setNetworkQuality] = useState<'good' | 'fair' | 'poor' | 'offline'>('good');
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('fair');
+  const [networkSpeedSummary, setNetworkSpeedSummary] = useState<{
+    downloadMbps: number | null;
+    uploadMbps: number | null;
+    latencyMs: number | null;
+    measuredAt: number | null;
+  }>({ downloadMbps: null, uploadMbps: null, latencyMs: null, measuredAt: null });
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
@@ -820,80 +828,338 @@ export function Header({
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const updateNetworkQuality = () => {
-      if (typeof navigator === 'undefined') {
-        setNetworkQuality('good');
-        return;
+    const rank: Record<NetworkQuality, number> = {
+      offline: 0,
+      poor: 1,
+      fair: 2,
+      good: 3,
+    };
+
+    let mounted = true;
+    const connQualityRef = { current: null as NetworkQuality | null };
+    const pingQualityRef = { current: null as NetworkQuality | null };
+    const throughputQualityRef = { current: null as NetworkQuality | null };
+    const lastThroughputRef = { current: 0 };
+    const consecutiveUnreachableRef = { current: 0 };
+    const lastLatencyMsRef = { current: null as number | null };
+    let pingTimer: ReturnType<typeof window.setInterval> | null = null;
+    let throughputTimer: ReturnType<typeof window.setInterval> | null = null;
+    let visibilityTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let pingAbort: AbortController | null = null;
+    let throughputAbort: AbortController | null = null;
+    let pingRequestId = 0;
+    let throughputRequestId = 0;
+
+    const computeConservative = (values: Array<NetworkQuality | null>) => {
+      let best: NetworkQuality | null = null;
+      for (const value of values) {
+        if (!value) continue;
+        if (!best || rank[value] < rank[best]) {
+          best = value;
+        }
       }
-      if (navigator.onLine === false) {
-        setNetworkQuality('offline');
-        return;
-      }
-      const conn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-      if (!conn) {
-        setNetworkQuality('good');
-        return;
-      }
+      return best ?? 'fair';
+    };
+
+    const updateCombined = () => {
+      const hasThroughput = Boolean(throughputQualityRef.current);
+      const next = computeConservative(
+        hasThroughput
+          ? [pingQualityRef.current, throughputQualityRef.current]
+          : [connQualityRef.current, pingQualityRef.current],
+      );
+      if (mounted) setNetworkQuality(next);
+    };
+
+    const deriveFromConnection = (): NetworkQuality | null => {
+      if (typeof navigator === 'undefined') return null;
+      if (navigator.onLine === false) return 'offline';
+
+      const conn =
+        (navigator as any).connection ||
+        (navigator as any).mozConnection ||
+        (navigator as any).webkitConnection;
+      if (!conn) return null;
+
       const effectiveType = String(conn.effectiveType || '').toLowerCase();
       const downlink = typeof conn.downlink === 'number' ? conn.downlink : null;
       const rtt = typeof conn.rtt === 'number' ? conn.rtt : null;
       const saveData = Boolean(conn.saveData);
 
-      if (saveData) {
-        setNetworkQuality('poor');
-        return;
-      }
+      if (saveData) return 'poor';
 
-      if (effectiveType === 'slow-2g' || effectiveType === '2g') {
-        setNetworkQuality('poor');
-        return;
-      }
-      if (effectiveType === '3g') {
-        setNetworkQuality('fair');
-        return;
-      }
-      if (effectiveType === '4g') {
-        setNetworkQuality('good');
-        return;
-      }
+      if (effectiveType === 'slow-2g' || effectiveType === '2g') return 'poor';
+      if (effectiveType === '3g') return 'fair';
+      if (effectiveType === '4g') return 'good';
 
       if (typeof downlink === 'number' && downlink > 0) {
-        if (downlink < 1) {
-          setNetworkQuality('poor');
-          return;
-        }
-        if (downlink < 2) {
-          setNetworkQuality('fair');
-          return;
-        }
+        if (downlink < 1) return 'poor';
+        if (downlink < 2) return 'fair';
+        if (downlink >= 8) return 'good';
       }
 
       if (typeof rtt === 'number') {
-        if (rtt > 700) {
-          setNetworkQuality('poor');
-          return;
-        }
-        if (rtt > 300) {
-          setNetworkQuality('fair');
-          return;
-        }
+        if (rtt > 900) return 'poor';
+        if (rtt > 450) return 'fair';
+        if (rtt <= 200) return 'good';
       }
 
-      setNetworkQuality('good');
+      return 'fair';
     };
 
-    updateNetworkQuality();
-    window.addEventListener('online', updateNetworkQuality);
-    window.addEventListener('offline', updateNetworkQuality);
+    const measureHealthPing = async (): Promise<NetworkQuality | null> => {
+      if (typeof navigator === 'undefined') return null;
+      if (navigator.onLine === false) return 'offline';
+
+      const requestId = (pingRequestId += 1);
+      const startedAt = performance.now();
+      const timeoutMs = 2800;
+
+      if (pingAbort) pingAbort.abort();
+      const controller = new AbortController();
+      pingAbort = controller;
+      const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        // Frontend-only ping: hit the static index.html instead of `/api/*` so the
+        // indicator does not depend on the backend being online.
+        const resp = await fetch(`/index.html?ping=1&t=${Date.now()}`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        // Ensure the request actually transfers data (not just headers).
+        await resp.text();
+        const elapsed = performance.now() - startedAt;
+        if (!mounted || requestId !== pingRequestId) return null;
+
+        consecutiveUnreachableRef.current = 0;
+        lastLatencyMsRef.current = Math.round(elapsed);
+        setNetworkSpeedSummary((prev) => ({
+          ...prev,
+          latencyMs: Math.round(elapsed),
+          measuredAt: Date.now(),
+        }));
+
+        if (!resp.ok) {
+          return elapsed > 1400 ? 'poor' : 'fair';
+        }
+
+        if (elapsed > 2200) return 'poor';
+        if (elapsed > 900) return 'fair';
+        return 'good';
+      } catch (error: any) {
+        if (!mounted || requestId !== pingRequestId) return null;
+        if (error?.name === 'AbortError') return 'poor';
+        if (error instanceof TypeError) {
+          consecutiveUnreachableRef.current += 1;
+          if (consecutiveUnreachableRef.current >= 2) {
+            return 'offline';
+          }
+        }
+        return 'poor';
+      } finally {
+        window.clearTimeout(timeoutHandle);
+      }
+    };
+
+    const measureThroughput = async (): Promise<{
+      downloadMbps: number | null;
+      quality: NetworkQuality | null;
+    }> => {
+      if (typeof navigator === 'undefined') {
+        return { downloadMbps: null, quality: null };
+      }
+      if (navigator.onLine === false) {
+        return { downloadMbps: null, quality: 'offline' };
+      }
+
+      const requestId = (throughputRequestId += 1);
+      const timeoutMs = 6000;
+
+      if (throughputAbort) throughputAbort.abort();
+      const controller = new AbortController();
+      throughputAbort = controller;
+      const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+
+	      const measureFetchMbps = async (options: { url: string }) => {
+	        const startedAt = performance.now();
+	        const resp = await fetch(options.url, {
+	          method: 'GET',
+	          cache: 'no-store',
+	          signal: controller.signal,
+	          headers: {
+	            'Cache-Control': 'no-cache',
+	          },
+	        });
+	        if (!mounted || requestId !== throughputRequestId) return null;
+	        if (!resp.ok) return null;
+
+	        const targetBytes = choosePayloadBytes();
+	        let bytesTransferred = 0;
+	        let elapsedMs = 0;
+
+	        if (resp.body && typeof (resp.body as any).getReader === 'function') {
+	          const reader = (resp.body as any).getReader();
+	          try {
+	            while (bytesTransferred < targetBytes) {
+	              const { done, value } = await reader.read();
+	              if (done) break;
+	              bytesTransferred += value?.byteLength ?? 0;
+	            }
+	            elapsedMs = performance.now() - startedAt;
+	          } catch {
+	            elapsedMs = performance.now() - startedAt;
+	          } finally {
+	            try {
+	              await reader.cancel();
+	            } catch {
+	              // ignore
+	            }
+	          }
+	        } else {
+	          const buffer = await resp.arrayBuffer();
+	          bytesTransferred = Math.min(buffer.byteLength, targetBytes);
+	          elapsedMs = performance.now() - startedAt;
+	        }
+
+        if (!bytesTransferred || elapsedMs <= 0) return null;
+        const mbps = (bytesTransferred * 8) / (elapsedMs / 1000) / 1_000_000;
+        return mbps;
+      };
+
+      const choosePayloadBytes = () => {
+        const latency = lastLatencyMsRef.current;
+        if (typeof latency === 'number' && latency > 1400) {
+          return 140_000;
+        }
+        return 320_000;
+      };
+
+      try {
+        // Frontend-only throughput: fetch a static asset from `/public` so this does not
+        // rely on the backend. Use a cache-busting query param to avoid cached responses.
+        const downloadMbps = await measureFetchMbps({
+          url: `/leafTexture.jpg?networkTest=1&t=${Date.now()}`,
+        });
+
+        if (!mounted || requestId !== throughputRequestId) {
+          return { downloadMbps: null, quality: null };
+        }
+
+        const hasDown = typeof downloadMbps === 'number' && Number.isFinite(downloadMbps);
+
+        if (!hasDown) {
+          consecutiveUnreachableRef.current += 1;
+          const offlineLikely = consecutiveUnreachableRef.current >= 2;
+          return { downloadMbps: null, quality: offlineLikely ? 'offline' : 'poor' };
+        }
+
+        consecutiveUnreachableRef.current = 0;
+
+        const down = hasDown ? downloadMbps! : null;
+        const latencyMs = lastLatencyMsRef.current;
+
+        setNetworkSpeedSummary({
+          downloadMbps: down ? Math.round(down * 10) / 10 : null,
+          uploadMbps: null,
+          latencyMs: typeof latencyMs === 'number' ? latencyMs : null,
+          measuredAt: Date.now(),
+        });
+
+        const slowDown = typeof down === 'number' && down < 0.8;
+        const highLatency = typeof latencyMs === 'number' && latencyMs > 2500;
+        if (slowDown || highLatency) return { downloadMbps: down, quality: 'poor' };
+
+        const fairDown = typeof down === 'number' && down < 2.0;
+        const fairLatency = typeof latencyMs === 'number' && latencyMs > 900;
+        if (fairDown || fairLatency) return { downloadMbps: down, quality: 'fair' };
+
+        return { downloadMbps: down, quality: 'good' };
+      } catch (error: any) {
+        if (!mounted || requestId !== throughputRequestId) {
+          return { downloadMbps: null, quality: null };
+        }
+        if (error?.name === 'AbortError') {
+          return { downloadMbps: null, quality: 'poor' };
+        }
+        if (error instanceof TypeError) {
+          consecutiveUnreachableRef.current += 1;
+          if (consecutiveUnreachableRef.current >= 2) {
+            return { downloadMbps: null, quality: 'offline' };
+          }
+        }
+        return { downloadMbps: null, quality: 'poor' };
+      } finally {
+        window.clearTimeout(timeoutHandle);
+      }
+    };
+
+    const updateFromConnection = () => {
+      connQualityRef.current = deriveFromConnection();
+      updateCombined();
+    };
+
+    const runPing = async () => {
+      const pingQuality = await measureHealthPing();
+      if (!mounted) return;
+      pingQualityRef.current = pingQuality;
+      updateCombined();
+    };
+
+    const runThroughput = async () => {
+      const now = Date.now();
+      const ttlMs = 75_000;
+      if (now - lastThroughputRef.current < ttlMs) return;
+      lastThroughputRef.current = now;
+      const result = await measureThroughput();
+      if (!mounted) return;
+      throughputQualityRef.current = result.quality;
+      updateCombined();
+    };
+
+    const onVisibilityChange = () => {
+      if (visibilityTimer) window.clearTimeout(visibilityTimer);
+      if (document.visibilityState !== 'visible') return;
+      visibilityTimer = window.setTimeout(() => {
+        void runPing();
+        void runThroughput();
+      }, 50);
+    };
+
+    updateFromConnection();
+    void runPing();
+    void runThroughput();
+
+    window.addEventListener('online', updateFromConnection);
+    window.addEventListener('offline', updateFromConnection);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     const conn = (navigator as any)?.connection;
     if (conn && typeof conn.addEventListener === 'function') {
-      conn.addEventListener('change', updateNetworkQuality);
+      conn.addEventListener('change', updateFromConnection);
     }
+
+    pingTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void runPing();
+    }, 25000);
+    throughputTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void runThroughput();
+    }, 35000);
+
     return () => {
-      window.removeEventListener('online', updateNetworkQuality);
-      window.removeEventListener('offline', updateNetworkQuality);
+      mounted = false;
+      if (pingTimer) window.clearInterval(pingTimer);
+      if (throughputTimer) window.clearInterval(throughputTimer);
+      if (visibilityTimer) window.clearTimeout(visibilityTimer);
+      if (pingAbort) pingAbort.abort();
+      if (throughputAbort) throughputAbort.abort();
+      window.removeEventListener('online', updateFromConnection);
+      window.removeEventListener('offline', updateFromConnection);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (conn && typeof conn.removeEventListener === 'function') {
-        conn.removeEventListener('change', updateNetworkQuality);
+        conn.removeEventListener('change', updateFromConnection);
       }
     };
   }, []);
@@ -1179,22 +1445,73 @@ export function Header({
     return () => clearTimeout(timer);
   }, [welcomeOpen, updateTabIndicator, accountTab]);
 
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+	  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+	    event.preventDefault();
 
-    if (loginSubmitting) {
-      return;
-    }
+	    if (loginSubmitting) {
+	      return;
+	    }
 
-    setLoginError('');
-    setSignupError('');
-    setLoginSubmitting(true);
+	    setLoginError('');
+	    setSignupError('');
+	    setLoginSubmitting(true);
 
-    const formElement = event.currentTarget;
-    const emailValue = loginEmailRef.current?.value ?? '';
-    const passwordValue = loginPasswordRef.current?.value ?? '';
+	    const formElement = event.currentTarget;
+	    const emailValue = loginEmailRef.current?.value ?? '';
+	    const passwordValue = loginPasswordRef.current?.value ?? '';
 
-    const result = await onLogin(emailValue, passwordValue);
+	    const classifyNetworkIssue = (message?: string | null): 'offline' | 'network' | null => {
+	      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+	        return 'offline';
+	      }
+	      if (networkQuality === 'offline') {
+	        return 'offline';
+	      }
+	      if (networkQuality === 'poor') {
+	        return 'network';
+	      }
+	      const text = String(message || '').toLowerCase();
+	      if (!text) return null;
+	      if (text.includes('offline') || text.includes('no internet') || text.includes('internet connection')) {
+	        return 'offline';
+	      }
+	      return (
+	        text.includes('failed to fetch') ||
+	        text.includes('networkerror') ||
+	        text.includes('network request failed') ||
+	        text.includes('load failed') ||
+	        text.includes('timeout') ||
+	        text.includes('econnrefused') ||
+	        text.includes('enotfound') ||
+	        text.includes('eai_again')
+	      )
+	        ? 'network'
+	        : null;
+	    };
+
+	    const issueAtSubmit = classifyNetworkIssue(null);
+	    if (issueAtSubmit === 'offline') {
+	      setLoginError('No internet connection detected. Please turn on Wi-Fi or cellular data and try again.');
+	      setLoginSubmitting(false);
+	      return;
+	    }
+
+	    let result: AuthActionResult;
+	    try {
+	      result = await onLogin(emailValue, passwordValue);
+	    } catch (error: any) {
+	      const message = typeof error?.message === 'string' ? error.message : null;
+	      const issue = classifyNetworkIssue(message);
+	      setLoginError(
+	        issue === 'offline'
+	          ? 'No internet connection detected. Please turn on Wi-Fi or cellular data and try again.'
+	          : issue === 'network'
+	            ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	          : 'Unable to log in. Please try again.',
+	      );
+	      setLoginSubmitting(false);
+	      return;
+	    }
 
     if (result.status === 'success') {
       queueLoginPrefill({ email: '', password: '' });
@@ -1255,9 +1572,16 @@ export function Header({
       return;
     }
 
-    if (result.status === 'error') {
-      setLoginError('Unable to log in. Please try again.');
-    }
+	    if (result.status === 'error') {
+	      const issue = classifyNetworkIssue(result.message);
+	      setLoginError(
+	        issue === 'offline'
+	          ? 'No internet connection detected. Please turn on Wi-Fi or cellular data and try again.'
+	          : issue === 'network'
+	            ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	          : 'Unable to log in. Please try again.',
+	      );
+	    }
 
     setLoginSubmitting(false);
   };
@@ -2381,7 +2705,7 @@ export function Header({
               </div>
 
               {/* Order Body */}
-              <div className="px-6 pt-5 pb-5">
+              <div className="px-6 pt-5 pb-6">
                 <div className="order-card-body flex flex-col gap-4 pt-4 md:flex-row md:items-start md:gap-6">
                   <div className="space-y-4 flex-1 min-w-0">
 	                    <div className="order-number-row flex flex-wrap items-start justify-between gap-3">
@@ -2429,7 +2753,7 @@ export function Header({
                                     style={{ width: '100%', height: '100%', maxHeight: '120px' }}
                                   />
                                 ) : (
-                                  <Package className="h-6 w-6" />
+                                  <Box className="h-6 w-6" />
                                 )}
                               </div>
                               <div className="flex-1 space-y-1">
@@ -2446,7 +2770,7 @@ export function Header({
                       </div>
                     )}
                   </div>
-                  <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
+                  <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full pb-2 md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
 	                    <Button
 	                      type="button"
 	                      size="sm"
@@ -2479,7 +2803,7 @@ export function Header({
                             }
                           }
                         }}
-                        className="order-cancel-button squircle-sm px-6 py-1 font-semibold w-full lg:w-full text-center disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="order-cancel-button squircle-sm inline-flex h-9 w-full items-center justify-center px-6 py-0 text-center font-semibold disabled:cursor-not-allowed disabled:opacity-60 lg:w-full"
                       >
                         {isCanceling ? 'Canceling…' : 'Cancel order'}
                       </button>
@@ -2754,7 +3078,7 @@ export function Header({
 	                              style={{ maxHeight: '120px' }}
 	                            />
 	                          ) : (
-	                            <Package className="h-6 w-6" />
+	                            <Box className="h-6 w-6" />
 	                          )}
 	                        </div>
 	                        <div className="flex-1 min-w-[12rem] space-y-1 pr-4">
@@ -3452,41 +3776,34 @@ export function Header({
 
 	            {/* User Actions */}
 	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end">
-	              {user && (
-	                <div
-	                  className="flex items-center justify-center squircle-sm border border-slate-200 bg-white/70 px-2 py-1"
-	                  title={
-	                    networkQuality === 'offline'
-	                      ? 'Offline'
-	                      : networkQuality === 'poor'
-	                        ? 'Poor internet connection'
-	                        : networkQuality === 'fair'
-	                          ? 'OK connection'
-	                          : 'Good connection'
-	                  }
-	                  aria-label={
-	                    networkQuality === 'offline'
-	                      ? 'Offline'
-	                      : networkQuality === 'poor'
-	                        ? 'Poor internet connection'
-	                        : networkQuality === 'fair'
-	                          ? 'OK connection'
-	                          : 'Good connection'
-	                  }
-	                >
-	                  <NetworkBarsIcon
-	                    activeBars={
-	                      networkQuality === 'offline'
-	                        ? 0
-	                        : networkQuality === 'poor'
-	                          ? 1
-	                          : networkQuality === 'fair'
-	                            ? 2
-	                            : 3
-	                    }
-	                  />
-	                </div>
-	              )}
+		              {(networkQuality === 'offline' || networkQuality === 'poor') && (
+		                <div
+		                  className="flex items-center justify-center squircle-sm border border-slate-200 bg-white/70 px-2 py-1"
+			                  title={
+			                    networkQuality === 'offline'
+	                          ? 'Offline'
+                          : (() => {
+                              const parts: string[] = [];
+                              if (typeof networkSpeedSummary.downloadMbps === 'number') {
+                                parts.push(`Down ${networkSpeedSummary.downloadMbps} Mbps`);
+                              }
+                              if (typeof networkSpeedSummary.latencyMs === 'number') {
+                                parts.push(`Latency ${networkSpeedSummary.latencyMs} ms`);
+                              }
+                              return `Poor internet connection${parts.length ? ` (${parts.join(' · ')})` : ''}`;
+                            })()
+			                  }
+		                  aria-label={
+		                    networkQuality === 'offline' ? 'Offline' : 'Poor internet connection'
+		                  }
+		                >
+		                  {networkQuality === 'offline' ? (
+                        <WifiOff className="h-4 w-4 text-slate-800" aria-hidden="true" />
+                      ) : (
+                        <NetworkBarsIcon activeBars={1} />
+                      )}
+		                </div>
+		              )}
 	              {authControls}
 	              {!isLargeScreen && (
 	                <Button
