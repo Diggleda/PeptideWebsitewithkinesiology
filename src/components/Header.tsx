@@ -15,6 +15,10 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
 const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+const isDoctorRole = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'doctor' || normalized === 'test_doctor';
+};
 
 type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
 
@@ -2578,10 +2582,12 @@ export function Header({
     </div>
   );
 
-  const renderOrdersList = () => {
-    const repView = Boolean(localUser && isRep(localUser.role));
-    const visibleOrders = cachedAccountOrders
-      .filter((order) => {
+	  const renderOrdersList = () => {
+	    const repView = Boolean(localUser && isRep(localUser.role));
+	    const doctorView = Boolean(localUser && isDoctorRole(localUser.role));
+	    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
+	    const visibleOrders = cachedAccountOrders
+	      .filter((order) => {
         const source = (order.source || '').toLowerCase();
         const hasWooIntegration = Boolean(
           (order.integrationDetails as any)?.wooCommerce ||
@@ -2609,12 +2615,12 @@ export function Header({
       );
     }
 
-    return (
-      <div className="space-y-4 pb-4">
-      {visibleOrders.map((order) => {
-        const status = describeOrderStatus(order);
-        const trackingNumber = resolveTrackingNumber(order);
-        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
+	    return (
+	      <div className="space-y-4 pb-4">
+	      {visibleOrders.map((order) => {
+	        const status = describeOrderStatus(order);
+	        const trackingNumber = resolveTrackingNumber(order);
+	        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
             const statusNormalized = (order.status || '').toLowerCase();
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
@@ -2861,11 +2867,37 @@ export function Header({
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
-    );
-  };
+	          );
+	        })}
+	        {doctorView && (
+	          <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] bg-white/80 px-5 py-4 text-sm text-slate-700">
+	            <div className="space-y-1">
+	              {salesRepEmail && (
+	                <p>
+	                  Sales rep:{' '}
+	                  <a
+	                    href={`mailto:${salesRepEmail}`}
+	                    className="underline hover:text-[rgb(95,179,249)]"
+	                  >
+	                    {salesRepEmail}
+	                  </a>
+	                </p>
+	              )}
+	              <p>
+	                Support:{' '}
+	                <a
+	                  href="mailto:support@peppro.net"
+	                  className="underline hover:text-[rgb(95,179,249)]"
+	                >
+	                  support@peppro.net
+	                </a>
+	              </p>
+	            </div>
+	          </div>
+	        )}
+	      </div>
+	    );
+	  };
 
   const renderOrderDetails = () => {
     if (!selectedOrder) return null;
@@ -3428,16 +3460,21 @@ export function Header({
               zIndex: 20,
             }}
           >
-            <div className="flex-1 min-w-0 space-y-1">
-              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
-                {authMode === 'login' ? 'Welcome back' : 'Create Account'}
-              </DialogTitle>
-              <DialogDescription>
-                {authMode === 'login'
-                  ? 'Login to enter your PepPro account.'
-                  : 'Create your PepPro physician account to access PepPro.'}
-              </DialogDescription>
-            </div>
+	            <div className="flex-1 min-w-0 space-y-1">
+	              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+	                {authMode === 'login' ? 'Welcome back' : 'Create Account'}
+	              </DialogTitle>
+	              <DialogDescription>
+	                {authMode === 'login'
+	                  ? 'Login to enter your PepPro account.'
+	                  : 'Create your PepPro physician account to access PepPro.'}
+	              </DialogDescription>
+	              {authMode === 'signup' && (
+	                <p className="text-base leading-snug" style={{ color: secondaryColor }}>
+	                  Your regional manager will work with you, if intended, to collect your resellers permit.
+	                </p>
+	              )}
+	            </div>
             <DialogClose
               className="dialog-close-btn inline-flex h-9 w-9 items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               aria-label="Close account modal"

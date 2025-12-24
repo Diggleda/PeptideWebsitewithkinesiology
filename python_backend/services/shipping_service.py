@@ -45,6 +45,8 @@ def _text_contains_address_issue(text: Optional[str]) -> bool:
 
 
 def _friendly_rate_error(message: str, response_payload, status: int) -> str:
+    if status == 402:
+        return "Shipping rates are temporarily unavailable (ShipStation billing is required). Please contact support."
     if status >= 500:
         return "Shipping provider is unavailable. Please try again in a moment."
 

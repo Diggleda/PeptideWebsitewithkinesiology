@@ -273,7 +273,7 @@ export function CheckoutModal({
     }
   }, [legalModalOpen, restoreScrollPosition]);
 
-  const openLegalDocument = useCallback((key: 'terms' | 'shipping') => {
+  const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
     storeScrollPosition();
     window.dispatchEvent(new CustomEvent('peppro:open-legal', { detail: { key, preserveDialogs: true } }));
   }, [storeScrollPosition]);
@@ -1295,34 +1295,46 @@ export function CheckoutModal({
                   checked={termsAccepted}
                   onChange={(event) => setTermsAccepted(event.target.checked)}
                 />
-                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
-                  I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro's{' '}
-                  <button
-                    type="button"
-                    className="legal-inline-link"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openLegalDocument('terms');
-                    }}
-                  >
-                    Terms of Service
-                  </button>
-                  {' '}and{' '}
-                  <button
-                    type="button"
-                    className="legal-inline-link"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openLegalDocument('shipping');
-                    }}
-                  >
-                    Shipping Policy
-                  </button>
-                  .
-                </label>
-              </div>
+	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
+	                  I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro's{' '}
+	                  <button
+	                    type="button"
+	                    className="legal-inline-link"
+	                    onClick={(event) => {
+	                      event.preventDefault();
+	                      event.stopPropagation();
+	                      openLegalDocument('terms');
+	                    }}
+	                  >
+	                    Terms of Service
+	                  </button>
+	                  {', '}
+	                  <button
+	                    type="button"
+	                    className="legal-inline-link"
+	                    onClick={(event) => {
+	                      event.preventDefault();
+	                      event.stopPropagation();
+	                      openLegalDocument('shipping');
+	                    }}
+	                  >
+	                    Shipping Policy
+	                  </button>
+	                  {', and '}
+	                  <button
+	                    type="button"
+	                    className="legal-inline-link"
+	                    onClick={(event) => {
+	                      event.preventDefault();
+	                      event.stopPropagation();
+	                      openLegalDocument('privacy');
+	                    }}
+	                  >
+	                    Privacy Policy
+	                  </button>
+	                  .
+	                </label>
+	              </div>
 
               {/* Order Total */}
               <div className="space-y-2">

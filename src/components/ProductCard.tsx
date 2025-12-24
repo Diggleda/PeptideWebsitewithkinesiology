@@ -5,8 +5,8 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Input } from './ui/input';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { ShoppingCart, Minus, Plus, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
+import { ShoppingCart, Minus, Plus, Loader2, Download } from 'lucide-react';
 import { wooAPI } from '../services/api';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
@@ -460,7 +460,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
       if (status === 404) {
-        setCoaError('No certificate is available for this product yet.');
+        setCoaError('We are working to attach a certificate for this product.');
       } else {
         setCoaError(typeof error?.message === 'string' ? error.message : 'Failed to load certificate.');
       }
@@ -469,15 +469,32 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     }
   };
 
-	  const productMeta = (
-	    <>
-	      <Badge
-	        variant="outline"
-	        className="text-xs squircle-sm block max-w-full truncate leading-snug"
-	        title={categoryLabel}
-	      >
-	        {categoryLabel}
-	      </Badge>
+  const downloadCertificateOfAnalysis = () => {
+    if (!coaObjectUrl) return;
+    const safeBase = product.name
+      .trim()
+      .replace(/[^a-z0-9]+/gi, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80);
+    const filename = `${safeBase || 'certificate_of_analysis'}.png`;
+    const link = document.createElement('a');
+    link.href = coaObjectUrl;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+		  const productMeta = (
+		    <>
+		      <Badge
+		        variant="outline"
+		        className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug line-clamp-2 min-h-[2.1rem]"
+		        title={categoryLabel}
+		      >
+		        {categoryLabel}
+		      </Badge>
       <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
       <button
         type="button"
@@ -709,9 +726,9 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         <CardFooter className="mt-auto p-4 pt-0">{addToCartButton}</CardFooter>
       </Card>
 
-      <Dialog
-        open={coaOpen}
-        onOpenChange={(open) => {
+	      <Dialog
+	        open={coaOpen}
+	        onOpenChange={(open) => {
           setCoaOpen(open);
           if (!open) {
             setCoaError(null);
@@ -721,33 +738,54 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
             }
           }
         }}
-      >
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Certificate of Analysis</DialogTitle>
-            <DialogDescription>{product.name}</DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-3 min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
-            {coaLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-600">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Loading certificate…
-              </div>
-            ) : coaObjectUrl ? (
-              <img
-                src={coaObjectUrl}
-                alt={`Certificate of Analysis for ${product.name}`}
-                className="max-h-[70vh] w-auto max-w-full object-contain"
-              />
-            ) : (
-              <div className="text-sm text-slate-600 text-center">
-                {coaError || 'Unable to load certificate.'}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
+	      >
+			        <DialogContent className="max-w-4xl">
+			          <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-[rgba(245,251,255,0.96)] px-6 pt-6 pb-4 backdrop-blur-xl">
+			            <div className="flex items-center justify-between gap-3 pr-24">
+			              <div className="flex min-w-0 items-center gap-3">
+			                <DialogTitle className="whitespace-nowrap">
+			                  Certificate of Analysis
+			                </DialogTitle>
+			                <DialogDescription className="sr-only">{product.name}</DialogDescription>
+			                <span className="min-w-0 truncate text-sm text-slate-500">
+			                  {product.name}
+			                </span>
+			              </div>
+			              <Button
+			                type="button"
+			                variant="outline"
+			                size="sm"
+			                className="gap-2 shrink-0"
+			                onClick={downloadCertificateOfAnalysis}
+			                disabled={!coaObjectUrl || coaLoading}
+			                title={coaObjectUrl ? 'Download certificate' : 'Certificate not loaded yet'}
+			              >
+		                <Download className="h-4 w-4" aria-hidden="true" />
+		                Download
+		              </Button>
+		            </div>
+		          </div>
+		
+		          <div className="min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
+		            {coaLoading ? (
+		              <div className="flex items-center gap-2 text-sm text-slate-600">
+		                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+		                Loading certificate…
+		              </div>
+		            ) : coaObjectUrl ? (
+		              <img
+		                src={coaObjectUrl}
+		                alt={`Certificate of Analysis for ${product.name}`}
+		                className="max-h-[70vh] w-auto max-w-full object-contain"
+		              />
+		            ) : (
+		              <div className="text-sm text-slate-600 text-center">
+		                {coaError || 'Unable to load certificate.'}
+		              </div>
+		            )}
+		          </div>
+		        </DialogContent>
+		      </Dialog>
+		    </>
+		  );
+		}

@@ -175,7 +175,7 @@ def admin_dashboard():
             scope_all=scope_all and (user.get("role") or "").lower() == "admin",
         )
         return {
-            "version": "backend_v1.9.32",
+            "version": "backend_v1.9.34",
             "referrals": referrals,
             "codes": codes,
             "users": users,

@@ -1286,7 +1286,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.32";
+  "v1.9.34";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -10197,10 +10197,10 @@ export default function App() {
     );
   };
 
-  const renderSalesRepDashboard = () => {
-    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
-      return null;
-    }
+	  const renderSalesRepDashboard = () => {
+	    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
+	      return null;
+	    }
 
     const referrals = normalizedReferrals;
 
@@ -10216,19 +10216,32 @@ export default function App() {
 
     return (
       <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">
-                {isAdmin(user?.role)
-                  ? "Admin Dashboard"
-                  : "Sales Rep Dashboard"}
-              </h2>
-              <p className="text-sm text-slate-600">
-                Monitor referral progress and keep statuses in sync.
-              </p>
-            </div>
-          </div>
+	        <div className="flex flex-col gap-6">
+	          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+	            <div>
+	              <h2 className="text-xl font-semibold text-slate-900">
+	                {isAdmin(user?.role)
+	                  ? "Admin Dashboard"
+	                  : "Sales Rep Dashboard"}
+	              </h2>
+	              <p className="text-sm text-slate-600">
+	                Monitor referral progress and keep statuses in sync.
+	              </p>
+	            </div>
+	            {isAdmin(user?.role) && (
+	              <div className="flex flex-wrap items-center gap-2">
+	                <a
+	                  href="https://shop.peppro.net/wp-admin/"
+	                  target="_blank"
+	                  rel="noopener noreferrer"
+	                  className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+	                  title="Open PepPro WooCommerce Dashboard"
+	                >
+	                  PepPro WooCommerce Dashboard
+	                </a>
+	              </div>
+	            )}
+	          </div>
 
           {adminActionState.error && (
             <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -10790,22 +10803,28 @@ export default function App() {
                         void refreshSalesBySalesRepSummary();
                       }}
                     >
-                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-                        Start
-                        <Input
-                          type="date"
-                          value={salesRepPeriodStart}
-                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
-                        />
-                      </label>
-                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-                        End
-                        <Input
-                          type="date"
-                          value={salesRepPeriodEnd}
-                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
-                        />
-                      </label>
+	                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
+	                        Start
+	                        <Input
+	                          type="date"
+	                          value={salesRepPeriodStart}
+	                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
+	                          placeholder="YYYY-MM-DD"
+	                          className="block w-full min-w-0 text-slate-900"
+	                          style={{ colorScheme: "light" }}
+	                        />
+	                      </label>
+	                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
+	                        End
+	                        <Input
+	                          type="date"
+	                          value={salesRepPeriodEnd}
+	                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
+	                          placeholder="YYYY-MM-DD"
+	                          className="block w-full min-w-0 text-slate-900"
+	                          style={{ colorScheme: "light" }}
+	                        />
+	                      </label>
                       <div className="sales-rep-period-actions flex items-center gap-2 self-start sm:self-end">
                         <Button
                           type="submit"
@@ -13699,14 +13718,21 @@ export default function App() {
                           </div>
                         </>
                       )}
-                      {landingAuthMode === "signup" && (
-                        <>
-                          <div className="text-center space-y-2">
-                            <h1 className="text-2xl font-semibold">
-                              Join the PepPro Network
-                            </h1>
-                          </div>
-                          <form
+	                      {landingAuthMode === "signup" && (
+	                        <>
+	                          <div className="text-center space-y-2">
+	                            <h1 className="text-2xl font-semibold">
+	                              Join the PepPro Network
+	                            </h1>
+	                            <p
+	                              className="text-xs leading-snug"
+	                              style={{ color: "rgb(95, 179, 249)" }}
+	                            >
+	                              Your regional manager will work with you, if intended, to
+	                              collect your resellers permit.
+	                            </p>
+	                          </div>
+	                          <form
                             onSubmit={async (e) => {
                               e.preventDefault();
                               setLandingSignupError("");

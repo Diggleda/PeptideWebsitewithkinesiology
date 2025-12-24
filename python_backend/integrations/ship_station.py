@@ -165,6 +165,9 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
     if not is_configured():
         raise IntegrationError("ShipStation is not configured", status=503)
 
+    if _is_unavailable():
+        raise IntegrationError("ShipStation is temporarily unavailable", status=503)
+
     required = [
         shipping_address.get("addressLine1"),
         shipping_address.get("city"),
@@ -221,7 +224,7 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
             json=payload_variant,
             headers=headers,
             auth=auth,
-            timeout=15,
+            timeout=10,
         )
         resp.raise_for_status()
         return resp
@@ -248,6 +251,30 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
             continue
         except requests.RequestException as exc:  # pragma: no cover
             data, status = _extract_response(exc)
+
+            if status == 402:
+                _mark_unavailable(status, "payment_required")
+                last_error = exc
+                last_status = status
+                last_response = data
+                logger.error(
+                    "ShipStation rate request failed (payment required)",
+                    exc_info=True,
+                    extra={"carrier": carrier_code, "status": status, "response": data},
+                )
+                break
+            if status in (401, 403):
+                _mark_unavailable(status, "unauthorized")
+                last_error = exc
+                last_status = status
+                last_response = data
+                logger.error(
+                    "ShipStation rate request failed (unauthorized)",
+                    exc_info=True,
+                    extra={"carrier": carrier_code, "status": status, "response": data},
+                )
+                break
+
             logger.warning(
                 "ShipStation rate request failed; retrying without serviceCode (carrier=%s, status=%s, response=%s, payload=%s)",
                 carrier_code,
@@ -265,6 +292,10 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
                 continue
             except requests.RequestException as retry_exc:  # pragma: no cover
                 retry_data, retry_status = _extract_response(retry_exc)
+                if retry_status == 402:
+                    _mark_unavailable(retry_status, "payment_required")
+                elif retry_status in (401, 403):
+                    _mark_unavailable(retry_status, "unauthorized")
                 last_error = retry_exc
                 last_status = retry_status or status
                 last_response = retry_data or data
