@@ -469,14 +469,15 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     }
   };
 
-  const productMeta = (
-    <>
-      <Badge
-        variant="outline"
-        className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug"
-      >
-        {categoryLabel}
-      </Badge>
+	  const productMeta = (
+	    <>
+	      <Badge
+	        variant="outline"
+	        className="text-xs squircle-sm block max-w-full truncate leading-snug"
+	        title={categoryLabel}
+	      >
+	        {categoryLabel}
+	      </Badge>
       <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
       <button
         type="button"

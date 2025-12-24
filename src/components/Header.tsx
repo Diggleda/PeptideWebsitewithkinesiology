@@ -835,25 +835,65 @@ export function Header({
       good: 3,
     };
 
-    let mounted = true;
-    const connQualityRef = { current: null as NetworkQuality | null };
-    const pingQualityRef = { current: null as NetworkQuality | null };
-    const throughputQualityRef = { current: null as NetworkQuality | null };
-    const lastThroughputRef = { current: 0 };
-    const consecutiveUnreachableRef = { current: 0 };
-    const lastLatencyMsRef = { current: null as number | null };
-    let pingTimer: ReturnType<typeof window.setInterval> | null = null;
-    let throughputTimer: ReturnType<typeof window.setInterval> | null = null;
-    let visibilityTimer: ReturnType<typeof window.setTimeout> | null = null;
-    let pingAbort: AbortController | null = null;
-    let throughputAbort: AbortController | null = null;
-    let pingRequestId = 0;
-    let throughputRequestId = 0;
+	    let mounted = true;
+	    const connQualityRef = { current: null as NetworkQuality | null };
+	    const pingQualityRef = { current: null as NetworkQuality | null };
+	    const throughputQualityRef = { current: null as NetworkQuality | null };
+	    const combinedQualityRef = { current: 'fair' as NetworkQuality };
+	    const lastThroughputRef = { current: 0 };
+	    const consecutiveUnreachableRef = { current: 0 };
+	    const consecutiveTimeoutRef = { current: 0 };
+	    const lastOkAtRef = { current: 0 };
+	    const lastLatencyMsRef = { current: null as number | null };
+	    let pingTimer: ReturnType<typeof window.setInterval> | null = null;
+	    let throughputTimer: ReturnType<typeof window.setInterval> | null = null;
+	    let visibilityTimer: ReturnType<typeof window.setTimeout> | null = null;
+	    let pingAbort: AbortController | null = null;
+	    let throughputAbort: AbortController | null = null;
+	    let pingRequestId = 0;
+	    let throughputRequestId = 0;
 
-    const computeConservative = (values: Array<NetworkQuality | null>) => {
-      let best: NetworkQuality | null = null;
-      for (const value of values) {
-        if (!value) continue;
+	    const getErrorText = (error: unknown) => {
+	      if (!error) return '';
+	      const message = (error as any)?.message;
+	      if (typeof message === 'string') return message;
+	      try {
+	        return String(error);
+	      } catch {
+	        return '';
+	      }
+	    };
+
+	    const isLikelyOfflineError = (error: unknown) => {
+	      const text = getErrorText(error).toLowerCase();
+	      if (!text) return false;
+	      return (
+	        text.includes('appears to be offline') ||
+	        text.includes('internet connection') ||
+	        text.includes('not connected to the internet') ||
+	        text.includes('network request failed') ||
+	        text.includes('failed to fetch') ||
+	        text.includes('load failed') ||
+	        text.includes('offline')
+	      );
+	    };
+
+	    const markReachable = () => {
+	      lastOkAtRef.current = Date.now();
+	      consecutiveTimeoutRef.current = 0;
+	      consecutiveUnreachableRef.current = 0;
+	    };
+
+	    const shouldTimeoutsCountAsOffline = () => {
+	      if (consecutiveTimeoutRef.current < 2) return false;
+	      if (!lastOkAtRef.current) return true;
+	      return Date.now() - lastOkAtRef.current > 9_000;
+	    };
+
+	    const computeConservative = (values: Array<NetworkQuality | null>) => {
+	      let best: NetworkQuality | null = null;
+	      for (const value of values) {
+	        if (!value) continue;
         if (!best || rank[value] < rank[best]) {
           best = value;
         }
@@ -861,15 +901,19 @@ export function Header({
       return best ?? 'fair';
     };
 
-    const updateCombined = () => {
-      const hasThroughput = Boolean(throughputQualityRef.current);
-      const next = computeConservative(
-        hasThroughput
-          ? [pingQualityRef.current, throughputQualityRef.current]
-          : [connQualityRef.current, pingQualityRef.current],
-      );
-      if (mounted) setNetworkQuality(next);
-    };
+	    const updateCombined = () => {
+	      const next = (() => {
+	        if (connQualityRef.current === 'offline') return 'offline';
+	        const hasThroughput = Boolean(throughputQualityRef.current);
+	        return computeConservative(
+	          hasThroughput
+	            ? [pingQualityRef.current, throughputQualityRef.current]
+	            : [connQualityRef.current, pingQualityRef.current],
+	        );
+	      })();
+	      combinedQualityRef.current = next;
+	      if (mounted) setNetworkQuality(next);
+	    };
 
     const deriveFromConnection = (): NetworkQuality | null => {
       if (typeof navigator === 'undefined') return null;
@@ -907,17 +951,17 @@ export function Header({
       return 'fair';
     };
 
-    const measureHealthPing = async (): Promise<NetworkQuality | null> => {
-      if (typeof navigator === 'undefined') return null;
-      if (navigator.onLine === false) return 'offline';
+	    const measureHealthPing = async (): Promise<NetworkQuality | null> => {
+	      if (typeof navigator === 'undefined') return null;
+	      if (navigator.onLine === false) return 'offline';
 
-      const requestId = (pingRequestId += 1);
-      const startedAt = performance.now();
-      const timeoutMs = 2800;
+	      const requestId = (pingRequestId += 1);
+	      const startedAt = performance.now();
+	      const timeoutMs = 1800;
 
-      if (pingAbort) pingAbort.abort();
-      const controller = new AbortController();
-      pingAbort = controller;
+	      if (pingAbort) pingAbort.abort();
+	      const controller = new AbortController();
+	      pingAbort = controller;
       const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
@@ -930,15 +974,15 @@ export function Header({
           headers: { 'Cache-Control': 'no-cache' },
         });
         // Ensure the request actually transfers data (not just headers).
-        await resp.text();
-        const elapsed = performance.now() - startedAt;
-        if (!mounted || requestId !== pingRequestId) return null;
+	        await resp.text();
+	        const elapsed = performance.now() - startedAt;
+	        if (!mounted || requestId !== pingRequestId) return null;
 
-        consecutiveUnreachableRef.current = 0;
-        lastLatencyMsRef.current = Math.round(elapsed);
-        setNetworkSpeedSummary((prev) => ({
-          ...prev,
-          latencyMs: Math.round(elapsed),
+	        markReachable();
+	        lastLatencyMsRef.current = Math.round(elapsed);
+	        setNetworkSpeedSummary((prev) => ({
+	          ...prev,
+	          latencyMs: Math.round(elapsed),
           measuredAt: Date.now(),
         }));
 
@@ -946,28 +990,30 @@ export function Header({
           return elapsed > 1400 ? 'poor' : 'fair';
         }
 
-        if (elapsed > 2200) return 'poor';
-        if (elapsed > 900) return 'fair';
-        return 'good';
-      } catch (error: any) {
-        if (!mounted || requestId !== pingRequestId) return null;
-        if (error?.name === 'AbortError') return 'poor';
-        if (error instanceof TypeError) {
-          consecutiveUnreachableRef.current += 1;
-          if (consecutiveUnreachableRef.current >= 2) {
-            return 'offline';
-          }
-        }
-        return 'poor';
-      } finally {
-        window.clearTimeout(timeoutHandle);
-      }
-    };
+	        if (elapsed > 2200) return 'poor';
+	        if (elapsed > 900) return 'fair';
+	        return 'good';
+	      } catch (error: any) {
+	        if (!mounted || requestId !== pingRequestId) return null;
+	        if (error?.name === 'AbortError') {
+	          consecutiveTimeoutRef.current += 1;
+	          return shouldTimeoutsCountAsOffline() ? 'offline' : 'poor';
+	        }
+	        if (error instanceof TypeError) {
+	          if (isLikelyOfflineError(error)) return 'offline';
+	          consecutiveUnreachableRef.current += 1;
+	          if (consecutiveUnreachableRef.current >= 2) return 'offline';
+	        }
+	        return isLikelyOfflineError(error) ? 'offline' : 'poor';
+	      } finally {
+	        window.clearTimeout(timeoutHandle);
+	      }
+	    };
 
-    const measureThroughput = async (): Promise<{
-      downloadMbps: number | null;
-      quality: NetworkQuality | null;
-    }> => {
+	    const measureThroughput = async (): Promise<{
+	      downloadMbps: number | null;
+	      quality: NetworkQuality | null;
+	    }> => {
       if (typeof navigator === 'undefined') {
         return { downloadMbps: null, quality: null };
       }
@@ -976,7 +1022,7 @@ export function Header({
       }
 
       const requestId = (throughputRequestId += 1);
-      const timeoutMs = 6000;
+	      const timeoutMs = 5200;
 
       if (throughputAbort) throughputAbort.abort();
       const controller = new AbortController();
@@ -1048,18 +1094,18 @@ export function Header({
           return { downloadMbps: null, quality: null };
         }
 
-        const hasDown = typeof downloadMbps === 'number' && Number.isFinite(downloadMbps);
+	        const hasDown = typeof downloadMbps === 'number' && Number.isFinite(downloadMbps);
 
-        if (!hasDown) {
-          consecutiveUnreachableRef.current += 1;
-          const offlineLikely = consecutiveUnreachableRef.current >= 2;
-          return { downloadMbps: null, quality: offlineLikely ? 'offline' : 'poor' };
-        }
+	        if (!hasDown) {
+	          consecutiveUnreachableRef.current += 1;
+	          const offlineLikely = consecutiveUnreachableRef.current >= 2;
+	          return { downloadMbps: null, quality: offlineLikely ? 'offline' : 'poor' };
+	        }
 
-        consecutiveUnreachableRef.current = 0;
+	        markReachable();
 
-        const down = hasDown ? downloadMbps! : null;
-        const latencyMs = lastLatencyMsRef.current;
+	        const down = hasDown ? downloadMbps! : null;
+	        const latencyMs = lastLatencyMsRef.current;
 
         setNetworkSpeedSummary({
           downloadMbps: down ? Math.round(down * 10) / 10 : null,
@@ -1077,24 +1123,24 @@ export function Header({
         if (fairDown || fairLatency) return { downloadMbps: down, quality: 'fair' };
 
         return { downloadMbps: down, quality: 'good' };
-      } catch (error: any) {
-        if (!mounted || requestId !== throughputRequestId) {
-          return { downloadMbps: null, quality: null };
-        }
-        if (error?.name === 'AbortError') {
-          return { downloadMbps: null, quality: 'poor' };
-        }
-        if (error instanceof TypeError) {
-          consecutiveUnreachableRef.current += 1;
-          if (consecutiveUnreachableRef.current >= 2) {
-            return { downloadMbps: null, quality: 'offline' };
-          }
-        }
-        return { downloadMbps: null, quality: 'poor' };
-      } finally {
-        window.clearTimeout(timeoutHandle);
-      }
-    };
+	      } catch (error: any) {
+	        if (!mounted || requestId !== throughputRequestId) {
+	          return { downloadMbps: null, quality: null };
+	        }
+	        if (error?.name === 'AbortError') {
+	          consecutiveTimeoutRef.current += 1;
+	          return { downloadMbps: null, quality: shouldTimeoutsCountAsOffline() ? 'offline' : 'poor' };
+	        }
+	        if (error instanceof TypeError) {
+	          if (isLikelyOfflineError(error)) return { downloadMbps: null, quality: 'offline' };
+	          consecutiveUnreachableRef.current += 1;
+	          if (consecutiveUnreachableRef.current >= 2) return { downloadMbps: null, quality: 'offline' };
+	        }
+	        return { downloadMbps: null, quality: isLikelyOfflineError(error) ? 'offline' : 'poor' };
+	      } finally {
+	        window.clearTimeout(timeoutHandle);
+	      }
+	    };
 
     const updateFromConnection = () => {
       connQualityRef.current = deriveFromConnection();
@@ -1108,13 +1154,16 @@ export function Header({
       updateCombined();
     };
 
-    const runThroughput = async () => {
-      const now = Date.now();
-      const ttlMs = 75_000;
-      if (now - lastThroughputRef.current < ttlMs) return;
-      lastThroughputRef.current = now;
-      const result = await measureThroughput();
-      if (!mounted) return;
+	    const runThroughput = async () => {
+	      const now = Date.now();
+	      const ttlMs =
+	        combinedQualityRef.current === 'poor' || combinedQualityRef.current === 'offline'
+	          ? 30_000
+	          : 75_000;
+	      if (now - lastThroughputRef.current < ttlMs) return;
+	      lastThroughputRef.current = now;
+	      const result = await measureThroughput();
+	      if (!mounted) return;
       throughputQualityRef.current = result.quality;
       updateCombined();
     };
@@ -1141,12 +1190,12 @@ export function Header({
       conn.addEventListener('change', updateFromConnection);
     }
 
-    pingTimer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void runPing();
-    }, 25000);
-    throughputTimer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void runThroughput();
-    }, 35000);
+	    pingTimer = window.setInterval(() => {
+	      if (document.visibilityState === 'visible') void runPing();
+	    }, 5000);
+	    throughputTimer = window.setInterval(() => {
+	      if (document.visibilityState === 'visible') void runThroughput();
+	    }, 30000);
 
     return () => {
       mounted = false;

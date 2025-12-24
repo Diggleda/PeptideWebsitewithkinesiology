@@ -1,6 +1,6 @@
 {
   "name": "peppro-app",
-  "version": "1.9.30",
+  "version": "1.9.32",
   "private": true,
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",

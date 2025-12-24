@@ -1286,7 +1286,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.30";
+  "v1.9.32";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -13189,44 +13189,93 @@ export default function App() {
                     >
                       {landingAuthMode === "login" && (
                         <>
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              if (landingLoginPending) {
-                                return;
-                              }
-                              setLandingLoginError("");
-                              setLandingLoginPending(true);
-                              try {
-                                const fd = new FormData(e.currentTarget);
-                                const res = await handleLogin(
-                                  fd.get("username") as string,
-                                  fd.get("password") as string,
-                                );
-                                if (res.status !== "success") {
-                                  if (res.status === "invalid_password") {
-                                    setLandingLoginError(
-                                      "Incorrect password. Please try again.",
-                                    );
-                                  } else if (res.status === "email_not_found") {
-                                    setLandingLoginError(
-                                      "We could not find that email.",
-                                    );
-                                  } else {
-                                    setLandingLoginError(
-                                      "Unable to log in. Please try again.",
-                                    );
-                                  }
-                                }
-                              } catch (error) {
-                                console.warn("[Landing Login] Failed", error);
-                                setLandingLoginError(
-                                  "Unable to log in. Please try again.",
-                                );
-                              } finally {
-                                setLandingLoginPending(false);
-                              }
-                            }}
+	                          <form
+	                            onSubmit={async (e) => {
+	                              e.preventDefault();
+	                              if (landingLoginPending) {
+	                                return;
+	                              }
+	                              const classifyNetworkIssue = (
+	                                message?: string | null,
+	                              ): "offline" | "network" | null => {
+	                                if (
+	                                  typeof navigator !== "undefined" &&
+	                                  navigator.onLine === false
+	                                ) {
+	                                  return "offline";
+	                                }
+	                                const text = String(message || "")
+	                                  .toLowerCase()
+	                                  .trim();
+	                                if (!text) return null;
+	                                if (
+	                                  text.includes("internet connection appears to be offline") ||
+	                                  text.includes("appears to be offline") ||
+	                                  text.includes("no internet") ||
+	                                  text.includes("offline")
+	                                ) {
+	                                  return "offline";
+	                                }
+	                                if (
+	                                  text.includes("failed to fetch") ||
+	                                  text.includes("networkerror") ||
+	                                  text.includes("network request failed") ||
+	                                  text.includes("load failed") ||
+	                                  text.includes("timeout") ||
+	                                  text.includes("econnrefused") ||
+	                                  text.includes("enotfound") ||
+	                                  text.includes("eai_again")
+	                                ) {
+	                                  return "network";
+	                                }
+	                                return null;
+	                              };
+	                              setLandingLoginError("");
+	                              setLandingLoginPending(true);
+	                              try {
+	                                const fd = new FormData(e.currentTarget);
+	                                const res = await handleLogin(
+	                                  fd.get("username") as string,
+	                                  fd.get("password") as string,
+	                                );
+	                                if (res.status !== "success") {
+	                                  if (res.status === "invalid_password") {
+	                                    setLandingLoginError(
+	                                      "Incorrect password. Please try again.",
+	                                    );
+	                                  } else if (res.status === "email_not_found") {
+	                                    setLandingLoginError(
+	                                      "We could not find that email.",
+	                                    );
+	                                  } else {
+	                                    const issue = classifyNetworkIssue(
+	                                      (res as any)?.message ?? null,
+	                                    );
+	                                    setLandingLoginError(
+	                                      issue === "offline"
+	                                        ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
+	                                        : issue === "network"
+	                                          ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	                                          : "Unable to log in. Please try again.",
+	                                    );
+	                                  }
+	                                }
+	                              } catch (error) {
+	                                console.warn("[Landing Login] Failed", error);
+	                                const issue = classifyNetworkIssue(
+	                                  error instanceof Error ? error.message : null,
+	                                );
+	                                setLandingLoginError(
+	                                  issue === "offline"
+	                                    ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
+	                                    : issue === "network"
+	                                      ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	                                      : "Unable to log in. Please try again.",
+	                                );
+	                              } finally {
+	                                setLandingLoginPending(false);
+	                              }
+	                            }}
                             className="space-y-3"
                             autoComplete="on"
                           >
