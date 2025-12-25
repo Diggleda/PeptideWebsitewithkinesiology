@@ -54,10 +54,14 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  hideCloseButton?: boolean;
+};
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, style, ...props }, ref) => (
+  DialogContentProps
+>(({ className, children, style, hideCloseButton = false, ...props }, ref) => (
   <DialogPortal data-slot="dialog-portal">
     <div
       className="fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
@@ -89,11 +93,20 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 disabled:pointer-events-none"
-          style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}>
-          <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
+        {!hideCloseButton && (
+          <DialogPrimitive.Close
+            className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 disabled:pointer-events-none"
+            style={{
+              backgroundColor: 'rgb(95, 179, 249)',
+              width: '38px',
+              height: '38px',
+              borderRadius: '50%',
+            }}
+          >
+            <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </div>
   </DialogPortal>

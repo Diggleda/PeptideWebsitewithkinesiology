@@ -5,8 +5,8 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Input } from './ui/input';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
-import { ShoppingCart, Minus, Plus, Loader2, Download } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from './ui/dialog';
+import { ShoppingCart, Minus, Plus, Loader2, Download, X } from 'lucide-react';
 import { wooAPI } from '../services/api';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
@@ -739,32 +739,36 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
           }
         }}
 	      >
-			        <DialogContent className="max-w-4xl">
-			          <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-[rgba(245,251,255,0.96)] px-6 pt-6 pb-4 backdrop-blur-xl">
-			            <div className="flex items-center justify-between gap-3 pr-24">
-			              <div className="flex min-w-0 items-center gap-3">
-			                <DialogTitle className="whitespace-nowrap">
-			                  Certificate of Analysis
-			                </DialogTitle>
-			                <DialogDescription className="sr-only">{product.name}</DialogDescription>
-			                <span className="min-w-0 truncate text-sm text-slate-500">
-			                  {product.name}
-			                </span>
-			              </div>
+			      <DialogContent className="max-w-4xl" hideCloseButton>
+			        <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-[rgba(245,251,255,0.96)] backdrop-blur-xl">
+			          <div className="flex items-start justify-between gap-3">
+			            <div className="min-w-0">
+			              <DialogTitle>Certificate of Analysis</DialogTitle>
+			              <DialogDescription className="truncate">{product.name}</DialogDescription>
+			            </div>
+			            <div className="flex items-center gap-3 shrink-0">
 			              <Button
 			                type="button"
 			                variant="outline"
 			                size="sm"
-			                className="gap-2 shrink-0"
+			                className="gap-2"
 			                onClick={downloadCertificateOfAnalysis}
 			                disabled={!coaObjectUrl || coaLoading}
 			                title={coaObjectUrl ? 'Download certificate' : 'Certificate not loaded yet'}
 			              >
-		                <Download className="h-4 w-4" aria-hidden="true" />
-		                Download
-		              </Button>
-		            </div>
-		          </div>
+			                <Download className="h-4 w-4" aria-hidden="true" />
+			                Download
+			              </Button>
+			              <DialogClose
+			                className="dialog-close-btn mb-2 inline-flex flex-none items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 disabled:pointer-events-none"
+			                aria-label="Close"
+			                style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}
+			              >
+			                <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+			              </DialogClose>
+			            </div>
+			          </div>
+			        </div>
 		
 		          <div className="min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
 		            {coaLoading ? (
