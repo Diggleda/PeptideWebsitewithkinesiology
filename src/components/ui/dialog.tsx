@@ -56,22 +56,34 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   hideCloseButton?: boolean;
+  overlayClassName?: string;
+  overlayStyle?: React.CSSProperties;
+  containerClassName?: string;
+  containerStyle?: React.CSSProperties;
 };
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, style, hideCloseButton = false, ...props }, ref) => (
+>(({ className, children, style, hideCloseButton = false, overlayClassName, overlayStyle, containerClassName, containerStyle, ...props }, ref) => (
   <DialogPortal data-slot="dialog-portal">
     <div
-      className="fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
-      style={{
-        top: 'var(--modal-header-offset, 6rem)',
-        left: 0,
-        right: 0,
-      }}
+      className={
+        containerClassName ??
+        "fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+      }
+      style={
+        containerClassName
+          ? containerStyle
+          : {
+              top: 'var(--modal-header-offset, 6rem)',
+              left: 0,
+              right: 0,
+              ...containerStyle,
+            }
+      }
     >
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} style={overlayStyle} />
       <DialogPrimitive.Content
         ref={ref}
         data-slot="dialog-content"

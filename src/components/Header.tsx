@@ -796,6 +796,8 @@ export function Header({
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
+  const logoutThanksTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [trackingForm, setTrackingForm] = useState({ orderId: '', email: '' });
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
@@ -1772,6 +1774,29 @@ export function Header({
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (logoutThanksTimerRef.current) {
+        window.clearTimeout(logoutThanksTimerRef.current);
+        logoutThanksTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleLogoutClick = useCallback(() => {
+    if (logoutThanksTimerRef.current) {
+      window.clearTimeout(logoutThanksTimerRef.current);
+      logoutThanksTimerRef.current = null;
+    }
+    setWelcomeOpen(false);
+    setLoginOpen(false);
+    setLogoutThanksOpen(true);
+    logoutThanksTimerRef.current = window.setTimeout(() => {
+      setLogoutThanksOpen(false);
+      Promise.resolve(onLogout());
+    }, 4000);
+  }, [onLogout]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -3416,23 +3441,43 @@ export function Header({
               )}
             </div>
           </div>
-          <div className="border-t border-[var(--brand-glass-border-1)] px-6 py-4 flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="btn-no-hover header-logout-button squircle-sm glass text-slate-900 border-0"
-              onClick={onLogout}
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {renderCartButton()}
-    </>
-  ) : (
+	          <div className="border-t border-[var(--brand-glass-border-1)] px-6 py-4 flex justify-end">
+	            <Button
+	              type="button"
+	              variant="outline"
+	              size="sm"
+	              className="btn-no-hover header-logout-button squircle-sm glass text-slate-900 border-0"
+	              onClick={handleLogoutClick}
+	            >
+	              <LogOut className="h-4 w-4 mr-2" />
+	              Logout
+	            </Button>
+	          </div>
+	        </DialogContent>
+	      </Dialog>
+	      <Dialog open={logoutThanksOpen} onOpenChange={setLogoutThanksOpen}>
+	        <DialogContent
+	          hideCloseButton
+	          className="duration-300 data-[state=closed]:duration-200 !max-w-[min(28rem,calc(100vw-2rem))]"
+	          style={{ margin: 'auto', maxWidth: 'min(32rem, calc(100vw - 2rem))' }}
+	          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10"
+	          overlayStyle={{
+	            backgroundColor: 'rgba(4, 14, 21, 0.45)',
+	            backdropFilter: 'blur(22px) saturate(1.35)',
+	            WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
+	          }}
+	        >
+	          <div className="px-8 py-14 text-center sm:px-10 sm:py-16">
+	            <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
+	              Thank you for being a partner of ours and a joy to those around you. We at PepPro wish you a great rest
+	              of your day and will be here when you need us!
+	            </p>
+	          </div>
+	        </DialogContent>
+	      </Dialog>
+	      {renderCartButton()}
+	    </>
+	  ) : (
     <>
       <Dialog open={loginOpen} onOpenChange={handleDialogChange}>
         <DialogTrigger asChild>

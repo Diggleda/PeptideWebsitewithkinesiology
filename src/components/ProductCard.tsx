@@ -740,7 +740,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         }}
 	      >
 			      <DialogContent className="max-w-4xl" hideCloseButton>
-			        <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-[rgba(245,251,255,0.96)] backdrop-blur-xl">
+				        <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-[rgb(245,251,255)] backdrop-blur-xl">
 			          <div className="flex items-start justify-between gap-3">
 			            <div className="min-w-0">
 			              <DialogTitle>Certificate of Analysis</DialogTitle>
