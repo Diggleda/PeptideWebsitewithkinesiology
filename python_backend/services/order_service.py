@@ -511,25 +511,6 @@ def create_order(
                 )
             except Exception:
                 pass
-            try:
-                woo_commerce.update_order_metadata(
-                    {
-                        "woo_order_id": order.get("wooOrderId"),
-                        "order_key": order.get("wooOrderKey"),
-                        "peppro_order_id": order.get("id"),
-                        "sales_rep_id": order.get("doctorSalesRepId"),
-                        "sales_rep_name": order.get("doctorSalesRepName"),
-                        "sales_rep_email": order.get("doctorSalesRepEmail"),
-                        "sales_rep_code": order.get("doctorSalesRepCode"),
-                        "stripe_mode": settings_service.get_effective_stripe_mode(),
-                    }
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to attach initial metadata to Woo order",
-                    exc_info=True,
-                    extra={"orderId": order.get("id"), "wooOrderId": order.get("wooOrderId")},
-                )
         # On successful Woo order creation, finalize referral credit deduction
         if order.get("appliedReferralCredit"):
             try:
@@ -554,32 +535,6 @@ def create_order(
             )
             if integrations["stripe"].get("paymentIntentId"):
                 order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
-                try:
-	                    woo_commerce.update_order_metadata(
-	                        {
-	                            "woo_order_id": order.get("wooOrderId"),
-	                            "payment_intent_id": order.get("paymentIntentId"),
-	                            "order_key": order.get("wooOrderKey"),
-	                            "peppro_order_id": order.get("id"),
-	                            "sales_rep_id": order.get("doctorSalesRepId"),
-	                            "sales_rep_name": order.get("doctorSalesRepName"),
-	                            "sales_rep_email": order.get("doctorSalesRepEmail"),
-	                            "sales_rep_code": order.get("doctorSalesRepCode"),
-	                            "stripe_mode": settings_service.get_effective_stripe_mode(),
-	                            "payment_method": "stripe",
-	                            "payment_method_title": "Card payment",
-	                        }
-	                    )
-                except Exception:
-                    logger.warning(
-                        "Failed to attach Stripe metadata to Woo order",
-                        exc_info=True,
-                        extra={
-                            "orderId": order.get("id"),
-                            "wooOrderId": order.get("wooOrderId"),
-                            "paymentIntentId": order.get("paymentIntentId"),
-                        },
-                    )
             else:
                 try:
                     print(

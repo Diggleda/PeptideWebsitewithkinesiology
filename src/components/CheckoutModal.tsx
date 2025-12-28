@@ -587,12 +587,12 @@ export function CheckoutModal({
         }
         console.debug('[CheckoutModal] Stripe payment confirmed', { stripeIntentId, intentStatus });
         if (stripeIntentId) {
-          try {
-            await paymentsAPI.confirmStripeIntent(stripeIntentId);
-          } catch (confirmError) {
+          void paymentsAPI.confirmStripeIntent(stripeIntentId).catch((confirmError) => {
             console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
-            toast.info('Payment received, but order sync is still pending. If you do not receive an email shortly, contact support.');
-          }
+            toast.info(
+              'Payment received, but order sync is still pending. If you do not receive an email shortly, contact support.',
+            );
+          });
         }
       } else if (stripeReady && !clientSecret) {
         console.warn('[CheckoutModal] Stripe onsite enabled but no clientSecret returned', stripeInfo);

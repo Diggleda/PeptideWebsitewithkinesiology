@@ -12,6 +12,7 @@ CREATE_TABLE_STATEMENTS = [
         password VARCHAR(255) NOT NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'doctor',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
+        is_online TINYINT(1) NOT NULL DEFAULT 0,
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         lead_type VARCHAR(32) NULL,
@@ -194,6 +195,8 @@ def ensure_schema() -> None:
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",

@@ -1286,7 +1286,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.37";
+  "v1.9.39";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2929,6 +2929,7 @@ export default function App() {
     wooOrderNumber: string | null;
     createdAtMs: number;
   } | null>(null);
+  const postCheckoutOptimisticOrderRef = useRef<AccountOrderSummary | null>(null);
   const postCheckoutOrdersRefreshTimersRef = useRef<number[]>([]);
   const [accountModalRequest, setAccountModalRequest] = useState<{
     tab: "details" | "orders";
@@ -3113,9 +3114,35 @@ export default function App() {
       setAccountOrdersError(null);
       try {
         const response = await ordersAPI.getAll();
-        const normalized = normalizeAccountOrdersResponse(response, {
+        let normalized = normalizeAccountOrdersResponse(response, {
           includeCanceled,
         });
+        const optimistic = postCheckoutOptimisticOrderRef.current;
+        const optimisticMeta = postCheckoutOrderRef.current;
+        if (optimistic && optimisticMeta) {
+          const ageMs = Date.now() - optimisticMeta.createdAtMs;
+          if (ageMs > 10 * 60 * 1000) {
+            postCheckoutOptimisticOrderRef.current = null;
+          } else {
+            const optimisticNumber = optimistic.number
+              ? String(optimistic.number).trim()
+              : "";
+            const optimisticId = optimistic.id ? String(optimistic.id).trim() : "";
+            const exists = normalized.some((order) => {
+              const orderNumber = order.number ? String(order.number).trim() : "";
+              const orderId = order.id ? String(order.id).trim() : "";
+              return (
+                (optimisticNumber && orderNumber && orderNumber === optimisticNumber) ||
+                (optimisticId && orderId && orderId === optimisticId)
+              );
+            });
+            if (exists) {
+              postCheckoutOptimisticOrderRef.current = null;
+            } else {
+              normalized = [optimistic, ...normalized];
+            }
+          }
+        }
         setAccountOrders(normalized);
         const fetchedAt =
           response &&
@@ -4834,6 +4861,7 @@ export default function App() {
       name: string | null;
       email: string | null;
       role: string;
+      isOnline: boolean;
       lastLoginAt: string | null;
     }>;
   };
@@ -9088,12 +9116,109 @@ export default function App() {
           wooOrderNumber: wooNumber ? String(wooNumber).trim() : null,
           createdAtMs: Date.now(),
         };
-      } catch {
-        postCheckoutOrderRef.current = { wooOrderNumber: null, createdAtMs: Date.now() };
-      }
-      await loadAccountOrders().catch(() => undefined);
-      return response;
-    } catch (error: any) {
+	      } catch {
+	        postCheckoutOrderRef.current = { wooOrderNumber: null, createdAtMs: Date.now() };
+	      }
+
+        try {
+          const created = response?.order as any;
+          const wooId =
+            response?.integrations?.wooCommerce?.response?.id ||
+            created?.wooOrderId ||
+            created?.woo_order_id ||
+            null;
+          const wooNumber =
+            response?.integrations?.wooCommerce?.response?.number ||
+            created?.wooOrderNumber ||
+            created?.woo_order_number ||
+            null;
+          const createdAt =
+            created?.createdAt ||
+            created?.created_at ||
+            new Date().toISOString();
+          const lineItemsRaw = Array.isArray(created?.items) ? created.items : [];
+          const lineItems = lineItemsRaw.map((item: any, index: number) => ({
+            id: String(item?.id || `${created?.id || "order"}-${index}`),
+            name: item?.name ?? null,
+            quantity:
+              typeof item?.quantity === "number"
+                ? item.quantity
+                : Number(item?.quantity) || 0,
+            total:
+              typeof item?.total === "number"
+                ? item.total
+                : Number(item?.total) || Number(item?.price) || null,
+            price:
+              typeof item?.price === "number"
+                ? item.price
+                : Number(item?.price) || null,
+            sku: item?.sku ?? item?.variantSku ?? null,
+            productId: item?.productId ?? null,
+            variantId: item?.variantId ?? null,
+            image: null,
+          }));
+          const optimisticOrder: AccountOrderSummary = {
+            id: wooId ? String(wooId) : String(created?.id || Date.now()),
+            number: wooNumber ? String(wooNumber) : null,
+            status: String(created?.status || "pending"),
+            currency: "usd",
+            total:
+              typeof created?.grandTotal === "number"
+                ? created.grandTotal
+                : Number(created?.grandTotal) || Number(created?.total) || null,
+            createdAt: typeof createdAt === "string" ? createdAt : new Date().toISOString(),
+            updatedAt: null,
+            source: "peppro",
+            lineItems,
+            integrations: created?.integrations ?? null,
+            paymentMethod: null,
+            paymentDetails: null,
+            integrationDetails: created?.integrationDetails ?? null,
+            shippingAddress: created?.shippingAddress ?? null,
+            billingAddress: created?.billingAddress ?? null,
+            shippingEstimate: created?.shippingEstimate ?? null,
+            shippingTotal:
+              typeof created?.shippingTotal === "number"
+                ? created.shippingTotal
+                : Number(created?.shippingTotal) || null,
+            taxTotal:
+              typeof created?.taxTotal === "number"
+                ? created.taxTotal
+                : Number(created?.taxTotal) || null,
+            physicianCertified: Boolean(
+              created?.physicianCertificationAccepted ??
+                created?.physicianCertified ??
+                false,
+            ),
+            wooOrderNumber: wooNumber ? String(wooNumber) : null,
+            wooOrderId: wooId ? String(wooId) : null,
+            expectedShipmentWindow: created?.expectedShipmentWindow ?? null,
+          };
+
+          postCheckoutOptimisticOrderRef.current = optimisticOrder;
+          setAccountOrders((prev) => {
+            const optimisticNumber = optimisticOrder.number
+              ? String(optimisticOrder.number).trim()
+              : "";
+            const optimisticId = String(optimisticOrder.id || "").trim();
+            const exists = prev.some((order) => {
+              const orderNumber = order.number ? String(order.number).trim() : "";
+              const orderId = order.id ? String(order.id).trim() : "";
+              return (
+                (optimisticNumber && orderNumber && orderNumber === optimisticNumber) ||
+                (optimisticId && orderId && orderId === optimisticId)
+              );
+            });
+            if (exists) return prev;
+            return [optimisticOrder, ...prev];
+          });
+        } catch {
+          // ignore optimistic order failures
+        }
+
+	      await loadAccountOrders().catch(() => undefined);
+	      return response;
+	    } catch (error: any) {
       console.error("[Checkout] Failed", { error });
       const message =
         error?.message === "Request failed"
@@ -9214,7 +9339,7 @@ export default function App() {
 	      });
       setReferralStatusMessage({
         type: "success",
-        message: "Referral sent to your regional administrator.",
+        message: "Referral sent to your regional manager.",
       });
       setReferralForm({
         contactName: "",
@@ -9597,7 +9722,7 @@ export default function App() {
               <div className="pt-1 flex w-full justify-end">
                 <div className="inline-flex flex-col items-start gap-3 text-left sm:flex-nowrap sm:flex-row sm:items-center sm:justify-end sm:text-right">
                   <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
-                    Your regional administrator will credit you $50 each time
+                    Your regional manager will credit you $50 each time
                     your new referee has completed their first checkout.
                   </p>
                   <Button
@@ -12782,12 +12907,12 @@ export default function App() {
                                 className="news-loading-line news-loading-shimmer w-1/2"
                                 aria-hidden="true"
                               />
-                            </div>
-                            <p className="text-xs text-slate-500">
-                              Loading today&apos;s quote…
-                            </p>
-                          </div>
-                        )}
+	                            </div>
+	                            <p className="text-xs font-semibold shimmer-text is-shimmering">
+	                              Loading today&apos;s quote…
+	                            </p>
+	                          </div>
+	                        )}
                         {quoteReady && quoteOfTheDay && (
                           <p
                             className="px-4 sm:px-6 italic text-gray-700 text-center leading-snug break-words"
@@ -13131,7 +13256,7 @@ export default function App() {
                         {!(isRep(user.role) || isAdmin(user.role)) && (
                           <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                             <p className="text-sm font-medium text-slate-700">
-                              Please contact your Regional Administrator
+                              Please contact your Regional Manager
                               anytime.
                             </p>
                             <div className="space-y-1 text-sm text-slate-600">
@@ -13771,13 +13896,13 @@ export default function App() {
                                 res.status === "referral_code_not_found"
                               ) {
                                 setLandingSignupError(
-                                  "We couldn't locate that onboarding code. Please confirm it with your regional administrator.",
+                                  "We couldn't locate that onboarding code. Please confirm it with your regional manager.",
                                 );
                               } else if (
                                 res.status === "referral_code_unavailable"
                               ) {
                                 setLandingSignupError(
-                                  "This onboarding code has already been used. Ask your regional administrator for a new code.",
+                                  "This onboarding code has already been used. Ask your regional manager for a new code.",
                                 );
                               } else if (res.status === "name_email_required") {
                                 setLandingSignupError(
@@ -14059,7 +14184,7 @@ export default function App() {
                               />
                               <p className="text-xs text-slate-500">
                                 Codes are 5 characters and issued by your
-                                regional administrator.
+                                regional manager.
                               </p>
                             </div>
                             {landingSignupError && (

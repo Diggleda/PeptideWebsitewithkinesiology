@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import json
+import threading
+import time
 from typing import Any, Dict, Optional
 from datetime import datetime
 
@@ -341,24 +343,60 @@ def finalize_payment_intent(payment_intent_id: str) -> Dict[str, Any]:
     woo_order_id = _resolve_woo_order_id(metadata, order)
     order_key = _resolve_order_key(metadata, order)
 
-    woo_update = None
+    woo_update: Optional[Dict[str, Any]] = None
     if woo_order_id:
-        try:
-            woo_update = woo_commerce.mark_order_paid(
-                {
-                    "woo_order_id": woo_order_id,
-                    "payment_intent_id": payment_intent_id,
-                    "order_key": order_key,
-                    "card_last4": card_summary.get("last4"),
-                    "card_brand": card_summary.get("brand"),
-                }
-            )
-        except Exception as exc:
-            logger.error(
-                "Failed to mark Woo order paid from Stripe finalize",
-                exc_info=True,
-                extra={"wooOrderId": woo_order_id, "paymentIntentId": payment_intent_id},
-            )
+        woo_update = {"status": "queued", "wooOrderId": woo_order_id}
+
+        def _mark_paid_background() -> None:
+            t0 = time.perf_counter()
+            result_update: Optional[Dict[str, Any]] = None
+            try:
+                result_update = woo_commerce.mark_order_paid(
+                    {
+                        "woo_order_id": woo_order_id,
+                        "payment_intent_id": payment_intent_id,
+                        "order_key": order_key,
+                        "card_last4": card_summary.get("last4"),
+                        "card_brand": card_summary.get("brand"),
+                    }
+                )
+            except Exception:
+                logger.error(
+                    "Failed to mark Woo order paid from Stripe finalize (async)",
+                    exc_info=True,
+                    extra={"wooOrderId": woo_order_id, "paymentIntentId": payment_intent_id},
+                )
+            finally:
+                duration_ms = (time.perf_counter() - t0) * 1000
+                if duration_ms >= 500:
+                    logger.info(
+                        "[perf] woo_commerce.mark_order_paid paymentIntentId=%s wooOrderId=%s (%.0fms)",
+                        payment_intent_id,
+                        woo_order_id,
+                        duration_ms,
+                    )
+
+            if not order_id:
+                return
+            try:
+                local = order_repository.find_by_id(order_id)
+                if not local:
+                    return
+                integrations = _ensure_dict(local.get("integrationDetails") or local.get("integrations"))
+                stripe_meta = _ensure_dict(integrations.get("stripe"))
+                stripe_meta["wooUpdate"] = result_update or {"status": "error"}
+                stripe_meta["lastSyncAt"] = datetime.utcnow().isoformat()
+                integrations["stripe"] = stripe_meta
+                local["integrationDetails"] = integrations
+                order_repository.update(local)
+            except Exception:
+                logger.warning(
+                    "Failed to persist Woo update result after async mark paid",
+                    exc_info=True,
+                    extra={"orderId": order_id, "wooOrderId": woo_order_id, "paymentIntentId": payment_intent_id},
+                )
+
+        threading.Thread(target=_mark_paid_background, daemon=True).start()
 
     if order:
         order["paymentIntentId"] = payment_intent_id

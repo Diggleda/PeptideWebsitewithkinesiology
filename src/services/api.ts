@@ -396,6 +396,11 @@ export const authAPI = {
   },
 
   logout: () => {
+    try {
+      void fetchWithAuth(`${API_BASE_URL}/auth/logout`, { method: 'POST' }).catch(() => null);
+    } catch {
+      // ignore
+    }
     clearAuthToken();
   },
 
@@ -403,12 +408,12 @@ export const authAPI = {
     try {
       return await fetchWithAuth(`${API_BASE_URL}/auth/me`);
     } catch (error) {
-      // If token is invalid, clear it
-      localStorage.removeItem('auth_token');
-      try {
-        sessionStorage.removeItem('auth_token');
-      } catch {
-        // ignore
+      const maybeAny = error as any;
+      const status = typeof maybeAny?.status === 'number' ? maybeAny.status : null;
+      const code = typeof maybeAny?.code === 'string' ? maybeAny.code : null;
+      if (code === 'AUTH_REQUIRED' || status === 401) {
+        // Only clear tokens when the backend says auth is invalid.
+        clearAuthToken();
       }
       return null;
     }

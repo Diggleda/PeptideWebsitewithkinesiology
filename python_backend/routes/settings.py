@@ -235,6 +235,7 @@ def get_user_activity():
                     "name": user.get("name") or None,
                     "email": user.get("email") or None,
                     "role": str(user.get("role") or "").strip().lower() or "unknown",
+                    "isOnline": bool(user.get("isOnline")),
                     "lastLoginAt": user.get("lastLoginAt") or None,
                 }
             )

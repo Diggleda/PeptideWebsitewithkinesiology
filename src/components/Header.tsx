@@ -797,7 +797,13 @@ export function Header({
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
-  const logoutThanksTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [logoutThanksOpacity, setLogoutThanksOpacity] = useState(0);
+  const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(800);
+  const logoutThanksSequenceRef = useRef(0);
+  const logoutThanksTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const logoutThanksRafRef = useRef<number | null>(null);
+  const logoutThanksLogoutTriggeredRef = useRef(false);
+  const logoutThanksPendingFadeOutRef = useRef(false);
   const [trackingForm, setTrackingForm] = useState({ orderId: '', email: '' });
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
@@ -1777,26 +1783,87 @@ export function Header({
 
   useEffect(() => {
     return () => {
-      if (logoutThanksTimerRef.current) {
-        window.clearTimeout(logoutThanksTimerRef.current);
-        logoutThanksTimerRef.current = null;
+      logoutThanksTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      logoutThanksTimeoutsRef.current = [];
+      if (logoutThanksRafRef.current !== null) {
+        window.cancelAnimationFrame(logoutThanksRafRef.current);
+        logoutThanksRafRef.current = null;
       }
     };
   }, []);
 
-  const handleLogoutClick = useCallback(() => {
-    if (logoutThanksTimerRef.current) {
-      window.clearTimeout(logoutThanksTimerRef.current);
-      logoutThanksTimerRef.current = null;
+  const clearLogoutThanksTimers = useCallback(() => {
+    logoutThanksTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    logoutThanksTimeoutsRef.current = [];
+    if (logoutThanksRafRef.current !== null) {
+      window.cancelAnimationFrame(logoutThanksRafRef.current);
+      logoutThanksRafRef.current = null;
     }
+  }, []);
+
+  const triggerLogout = useCallback(() => {
+    if (logoutThanksLogoutTriggeredRef.current) return;
+    logoutThanksLogoutTriggeredRef.current = true;
+    clearLogoutThanksTimers();
+    setLogoutThanksOpen(false);
+    Promise.resolve(onLogout());
+  }, [clearLogoutThanksTimers, onLogout]);
+
+  const beginLogoutFadeOut = useCallback(
+    (sequence: number, durationMs: number) => {
+      if (logoutThanksLogoutTriggeredRef.current) return;
+      logoutThanksPendingFadeOutRef.current = true;
+      setLogoutThanksTransitionMs(durationMs);
+      setLogoutThanksOpacity(0);
+      logoutThanksTimeoutsRef.current.push(
+        window.setTimeout(() => {
+          if (logoutThanksSequenceRef.current !== sequence) return;
+          triggerLogout();
+        }, durationMs),
+      );
+    },
+    [triggerLogout],
+  );
+
+  const handleLogoutClick = useCallback(() => {
+    clearLogoutThanksTimers();
+    logoutThanksLogoutTriggeredRef.current = false;
+    logoutThanksPendingFadeOutRef.current = false;
+    logoutThanksSequenceRef.current += 1;
+    const sequence = logoutThanksSequenceRef.current;
     setWelcomeOpen(false);
     setLoginOpen(false);
+    setLogoutThanksTransitionMs(800);
+    setLogoutThanksOpacity(0);
     setLogoutThanksOpen(true);
-    logoutThanksTimerRef.current = window.setTimeout(() => {
-      setLogoutThanksOpen(false);
-      Promise.resolve(onLogout());
-    }, 4000);
-  }, [onLogout]);
+    logoutThanksRafRef.current = window.requestAnimationFrame(() => {
+      if (logoutThanksSequenceRef.current !== sequence) return;
+      setLogoutThanksOpacity(1);
+    });
+    logoutThanksTimeoutsRef.current.push(
+      window.setTimeout(() => {
+        if (logoutThanksSequenceRef.current !== sequence) return;
+        beginLogoutFadeOut(sequence, 1000);
+      }, 5000),
+    );
+  }, [beginLogoutFadeOut, clearLogoutThanksTimers]);
+
+  const handleLogoutThanksOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setLogoutThanksOpen(true);
+        return;
+      }
+
+      if (logoutThanksLogoutTriggeredRef.current) return;
+      clearLogoutThanksTimers();
+      logoutThanksSequenceRef.current += 1;
+      const sequence = logoutThanksSequenceRef.current;
+      setLogoutThanksOpen(true);
+      beginLogoutFadeOut(sequence, 1000);
+    },
+    [beginLogoutFadeOut, clearLogoutThanksTimers],
+  );
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -2895,7 +2962,7 @@ export function Header({
 	          );
 	        })}
 	        {doctorView && (
-	          <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] bg-white/80 px-5 py-4 text-sm text-slate-700">
+	          <div className="glass-card squircle-lg pl-4 border border-[var(--brand-glass-border-2)] bg-white/80 px-5 py-4 text-sm text-slate-700">
 	            <div className="space-y-1">
 	              {salesRepEmail && (
 	                <p>
@@ -3455,16 +3522,30 @@ export function Header({
 	          </div>
 	        </DialogContent>
 	      </Dialog>
-	      <Dialog open={logoutThanksOpen} onOpenChange={setLogoutThanksOpen}>
+	      <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
 	        <DialogContent
 	          hideCloseButton
 	          className="duration-300 data-[state=closed]:duration-200 !max-w-[min(28rem,calc(100vw-2rem))]"
-	          style={{ margin: 'auto', maxWidth: 'min(32rem, calc(100vw - 2rem))' }}
+	          onTransitionEnd={(event) => {
+	            if (event.propertyName !== 'opacity') return;
+	            if (!logoutThanksPendingFadeOutRef.current) return;
+	            if (logoutThanksOpacity !== 0) return;
+	            triggerLogout();
+	          }}
+	          style={{
+	            margin: 'auto',
+	            maxWidth: 'min(32rem, calc(100vw - 2rem))',
+	            opacity: logoutThanksOpacity,
+	            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
+	            transform: 'none',
+	          }}
 	          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10"
 	          overlayStyle={{
 	            backgroundColor: 'rgba(4, 14, 21, 0.45)',
 	            backdropFilter: 'blur(22px) saturate(1.35)',
 	            WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
+	            opacity: logoutThanksOpacity,
+	            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
 	          }}
 	        >
 	          <div className="px-8 py-14 text-center sm:px-10 sm:py-16">

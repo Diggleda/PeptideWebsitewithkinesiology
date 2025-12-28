@@ -34,6 +34,13 @@ def me():
     return handle_action(lambda: auth_service.get_profile(user_id))
 
 
+@blueprint.post("/logout")
+@require_auth
+def logout():
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: auth_service.logout(user_id))
+
+
 @blueprint.post("/verify-npi")
 def verify_npi():
     payload = request.get_json(force=True, silent=True) or {}
