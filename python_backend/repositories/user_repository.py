@@ -88,6 +88,78 @@ def get_all() -> List[Dict]:
     return _load()
 
 
+def list_recent_users_since(cutoff: datetime) -> List[Dict]:
+    """
+    Lightweight user activity projection used by admin dashboards.
+    Returns users that are either currently online or have lastLoginAt >= cutoff and includes
+    only fields needed for activity reporting.
+    """
+    if _using_mysql():
+        cutoff_sql = cutoff.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        rows = mysql_client.fetch_all(
+            """
+            SELECT id, name, email, role, is_online, last_login_at, profile_image_url
+            FROM users
+            WHERE is_online = 1
+               OR (last_login_at IS NOT NULL AND last_login_at >= %(cutoff)s)
+            """,
+            {"cutoff": cutoff_sql},
+        )
+        result: List[Dict] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            last_login_at = row.get("last_login_at")
+            last_login_iso = None
+            if isinstance(last_login_at, datetime):
+                dt = last_login_at if last_login_at.tzinfo else last_login_at.replace(tzinfo=timezone.utc)
+                last_login_iso = dt.astimezone(timezone.utc).isoformat()
+            elif isinstance(last_login_at, str) and last_login_at.strip():
+                last_login_iso = last_login_at.strip()
+            result.append(
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name") or None,
+                    "email": row.get("email") or None,
+                    "role": row.get("role") or None,
+                    "isOnline": bool(row.get("is_online")),
+                    "profileImageUrl": row.get("profile_image_url") or None,
+                    "lastLoginAt": last_login_iso,
+                }
+            )
+        return result
+
+    # JSON-store fallback.
+    result = []
+    for user in _load():
+        last_login_at = user.get("lastLoginAt") or None
+        is_online = bool(user.get("isOnline"))
+        if not last_login_at and not is_online:
+            continue
+        try:
+            if last_login_at:
+                parsed = datetime.fromisoformat(str(last_login_at).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if parsed.astimezone(timezone.utc) < cutoff.astimezone(timezone.utc) and not is_online:
+                    continue
+        except Exception:
+            if not is_online:
+                continue
+        result.append(
+            {
+                "id": user.get("id"),
+                "name": user.get("name") or None,
+                "email": user.get("email") or None,
+                "role": user.get("role") or None,
+                "isOnline": is_online,
+                "profileImageUrl": user.get("profileImageUrl") or None,
+                "lastLoginAt": user.get("lastLoginAt") or None,
+            }
+        )
+    return result
+
+
 def find_by_email(email: str) -> Optional[Dict]:
     email = (email or "").strip().lower()
     if _using_mysql():

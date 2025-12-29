@@ -41,6 +41,7 @@ export interface Product {
   reviews: number;
   image: string;
   images: string[];
+  image_loaded?: boolean;
   inStock: boolean;
   stockQuantity?: number | null;
   prescription: boolean;

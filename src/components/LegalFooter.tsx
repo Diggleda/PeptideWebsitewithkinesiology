@@ -44,12 +44,15 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
+  const [contactVisible, setContactVisible] = useState(false);
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', source: '' });
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
+  const MODAL_FADE_MS = 350;
 
   useEffect(() => {
     const body = document.body;
@@ -108,7 +111,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       setActiveDocument(null);
       setIsClosing(false);
       closeTimerRef.current = null;
-    }, 180);
+    }, MODAL_FADE_MS);
   };
 
   useEffect(() => {
@@ -157,6 +160,9 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
     }
+    if (contactCloseTimerRef.current) {
+      clearTimeout(contactCloseTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -167,6 +173,27 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       }
     };
   }, [selectedDocument]);
+
+  const handleContactOpen = useCallback(() => {
+    if (contactCloseTimerRef.current) {
+      clearTimeout(contactCloseTimerRef.current);
+      contactCloseTimerRef.current = null;
+    }
+    setContactOpen(true);
+    requestAnimationFrame(() => setContactVisible(true));
+  }, []);
+
+  const handleContactClose = useCallback(() => {
+    if (!contactOpen) return;
+    setContactVisible(false);
+    if (contactCloseTimerRef.current) {
+      clearTimeout(contactCloseTimerRef.current);
+    }
+    contactCloseTimerRef.current = setTimeout(() => {
+      setContactOpen(false);
+      contactCloseTimerRef.current = null;
+    }, MODAL_FADE_MS);
+  }, [contactOpen, MODAL_FADE_MS]);
 
   const handleContactSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -216,7 +243,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
                   type="button"
                   onClick={() => {
                     window.dispatchEvent(new Event('peppro:close-dialogs'));
-                    setContactOpen(true);
+                    handleContactOpen();
                   }}
                   className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
                   style={{ backgroundColor: 'rgb(95, 179, 249)' }}
@@ -260,7 +287,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       {selectedDocument && createPortal(
         <div
           className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-200 ease-out backdrop-blur-[16px]',
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px]',
             isVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
           )}
           style={{
@@ -273,7 +300,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
         >
           <div
             className={clsx(
-              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-200 ease-out',
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[350ms] ease-out',
               isVisible ? 'opacity-100' : 'opacity-0',
             )}
             onClick={handleClose}
@@ -289,7 +316,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
             className={clsx(
-              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-200 ease-out h-full',
+              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-[350ms] ease-out h-full',
               isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
@@ -336,19 +363,25 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       )}
       {showContactCTA && contactOpen && createPortal(
         <div
-          className="fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-200 ease-out backdrop-blur-[16px]"
+          className={clsx(
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px]',
+            contactVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          )}
           style={{
             zIndex: 2147483647,
             willChange: 'opacity',
             backdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
             WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
           }}
-          onClick={() => setContactOpen(false)}
+          onClick={handleContactClose}
           aria-modal="true"
           role="dialog"
         >
           <div
-            className="absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-200 ease-out"
+            className={clsx(
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[350ms] ease-out',
+              contactVisible ? 'opacity-100' : 'opacity-0',
+            )}
             aria-hidden="true"
             style={{
               willChange: 'opacity',
@@ -357,7 +390,10 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
             }}
           />
           <div
-            className="relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px]"
+            className={clsx(
+              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[350ms] ease-out',
+              contactVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
+            )}
             style={{
               backgroundColor: 'rgba(245, 251, 255, 0.94)',
               borderColor: 'rgba(95, 179, 249, 0.65)',
@@ -368,7 +404,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
               <h2 className="flex-1 text-lg font-semibold text-[rgb(95,179,249)]">Contact Form</h2>
               <button
                 type="button"
-                onClick={() => setContactOpen(false)}
+                onClick={handleContactClose}
                 className="legal-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
                 style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}
               >

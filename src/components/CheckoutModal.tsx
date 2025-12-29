@@ -213,6 +213,19 @@ export function CheckoutModal({
   const stripeReady = stripeOnsiteEnabled && Boolean(stripeAvailable);
   const stripe = useStripe();
   const elements = useElements();
+  const cardElementOptions = useMemo(
+    () => ({
+      style: {
+        base: {
+          fontSize: '16px',
+          color: '#1f2933',
+          '::placeholder': { color: '#9ca3af' },
+        },
+        invalid: { color: '#ef4444' },
+      },
+    }),
+    [],
+  );
   const defaultCardholderName = (defaultShippingAddress?.name || physicianName || customerName || '').trim();
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
@@ -928,7 +941,6 @@ export function CheckoutModal({
 
   return (
     <Dialog
-      modal={!legalModalOpen}
       open={isOpen}
       onOpenChange={(open) => {
         console.debug('[CheckoutModal] Dialog open change', { open });
@@ -945,6 +957,8 @@ export function CheckoutModal({
         className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
         style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
         data-legal-overlay={legalModalOpen ? 'true' : 'false'}
+        trapFocus={!legalModalOpen}
+        disableOutsidePointerEvents={!legalModalOpen}
       >
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">
@@ -1265,18 +1279,7 @@ export function CheckoutModal({
                     <div className="flex flex-col gap-2">
                       <Label>Card Details</Label>
                       <div className="squircle-sm mt-1 border-2 bg-white px-3 py-2">
-                        <CardElement
-                          options={{
-                            style: {
-                              base: {
-                                fontSize: '16px',
-                                color: '#1f2933',
-                                '::placeholder': { color: '#9ca3af' },
-                              },
-                              invalid: { color: '#ef4444' },
-                            },
-                          }}
-                        />
+                        <CardElement options={cardElementOptions} />
                       </div>
                     </div>
                   </div>

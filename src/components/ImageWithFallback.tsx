@@ -153,7 +153,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
   }
 
   return (
-    <div className="relative block h-full w-full overflow-hidden" style={style}>
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={style}>
       {!isLoaded && !didError && !isPlaceholder && (
         <div className="image-skeleton" aria-hidden="true" />
       )}

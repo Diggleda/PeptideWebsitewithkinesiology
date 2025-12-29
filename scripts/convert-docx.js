@@ -93,6 +93,16 @@ function linkifyEmails(html) {
   return out;
 }
 
+function replaceRegionalAdministrator(html) {
+  return html.replace(/regional administrator/gi, (match) => {
+    const firstChar = match.charAt(0);
+    if (firstChar && firstChar === firstChar.toUpperCase()) {
+      return "Regional Manager";
+    }
+    return "regional manager";
+  });
+}
+
 async function convertDocument({ docx, html }) {
   const inputPath = path.join(projectRoot, docx);
   const outputPath = path.join(projectRoot, html);
@@ -111,7 +121,7 @@ async function convertDocument({ docx, html }) {
 
   const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
-  const finalHtml = `${styles ? `${styles}\n` : ''}${linkifyEmails(content)}\n`;
+  const finalHtml = `${styles ? `${styles}\n` : ''}${replaceRegionalAdministrator(linkifyEmails(content))}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
   console.log(`Converted ${docx} -> ${html}`);

@@ -58,6 +58,18 @@ const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
   );
 };
 
+const triggerBrowserDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+};
+
 // Downscale/compress images before uploading to avoid proxy/body limits.
 const compressImageToDataUrl = (file: File, opts?: { maxSize?: number; quality?: number }): Promise<string> => {
   const maxSize = opts?.maxSize ?? 1600; // max width/height in px
@@ -798,7 +810,7 @@ export function Header({
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
   const [logoutThanksOpacity, setLogoutThanksOpacity] = useState(0);
-  const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(800);
+  const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(350);
   const logoutThanksSequenceRef = useRef(0);
   const logoutThanksTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const logoutThanksRafRef = useRef<number | null>(null);
@@ -1833,7 +1845,7 @@ export function Header({
     const sequence = logoutThanksSequenceRef.current;
     setWelcomeOpen(false);
     setLoginOpen(false);
-    setLogoutThanksTransitionMs(800);
+    setLogoutThanksTransitionMs(350);
     setLogoutThanksOpacity(0);
     setLogoutThanksOpen(true);
     logoutThanksRafRef.current = window.requestAnimationFrame(() => {
@@ -1843,7 +1855,7 @@ export function Header({
     logoutThanksTimeoutsRef.current.push(
       window.setTimeout(() => {
         if (logoutThanksSequenceRef.current !== sequence) return;
-        beginLogoutFadeOut(sequence, 1000);
+        beginLogoutFadeOut(sequence, 350);
       }, 5000),
     );
   }, [beginLogoutFadeOut, clearLogoutThanksTimers]);
@@ -2292,6 +2304,48 @@ export function Header({
     [extractOrderLineImageKey, runWithOrderLineImagePrefetchLimit, storeOrderLineImageCacheEntry],
   );
 
+  const isCanceledOrRefundedStatus = useCallback((status?: string | null) => {
+    const normalized = status ? String(status).trim().toLowerCase() : '';
+    return normalized === 'trash' || normalized.includes('cancel') || normalized.includes('refund');
+  }, []);
+
+  const invoiceDownloadInflightRef = useRef<Set<string>>(new Set());
+  const downloadInvoiceForOrder = useCallback(async (order: any) => {
+    const integrations = order?.integrations || order?.integrationDetails || null;
+    const woo =
+      (integrations as any)?.wooCommerce ||
+      (integrations as any)?.woocommerce ||
+      null;
+    const invoiceOrderId =
+      order?.wooOrderId ||
+      woo?.wooOrderId ||
+      order?.wooOrderNumber ||
+      woo?.wooOrderNumber ||
+      order?.id ||
+      null;
+    const resolvedId = invoiceOrderId ? String(invoiceOrderId) : '';
+    if (!resolvedId) {
+      toast.error('Invoice is not available for this order yet.');
+      return;
+    }
+
+    if (invoiceDownloadInflightRef.current.has(resolvedId)) {
+      return;
+    }
+    invoiceDownloadInflightRef.current.add(resolvedId);
+
+    try {
+      const api = await import('../services/api');
+      const { blob, filename } = await api.ordersAPI.downloadInvoice(resolvedId);
+      triggerBrowserDownload(blob, filename || `PepPro_Invoice_${resolvedId}.pdf`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to download invoice right now.';
+      toast.error(message);
+    } finally {
+      invoiceDownloadInflightRef.current.delete(resolvedId);
+    }
+  }, []);
+
   useEffect(() => {
     if (!welcomeOpen || accountTab !== 'orders') {
       return;
@@ -2304,14 +2358,13 @@ export function Header({
           (order.integrationDetails as any)?.wooCommerce ||
           (order.integrationDetails as any)?.woocommerce,
         );
-        return source === 'woocommerce' || hasWooIntegration;
+        return source === 'woocommerce' || source === 'peppro' || source === 'local' || hasWooIntegration;
       })
       .filter((order) => {
         if (showCanceledOrders) {
           return true;
         }
-        const status = order.status ? String(order.status).trim().toLowerCase() : '';
-        return status !== 'canceled' && status !== 'trash';
+        return !isCanceledOrRefundedStatus(order.status);
       });
 
     const queued = new Set<string>();
@@ -2337,6 +2390,7 @@ export function Header({
     ensureOrderLineImageLoaded,
     extractWooLineItemsFromOrder,
     extractOrderLineImageKey,
+    isCanceledOrRefundedStatus,
   ]);
 
   useEffect(() => {
@@ -2685,14 +2739,13 @@ export function Header({
           (order.integrationDetails as any)?.wooCommerce ||
           (order.integrationDetails as any)?.woocommerce,
         );
-        return source === 'woocommerce' || hasWooIntegration;
+        return source === 'woocommerce' || source === 'peppro' || source === 'local' || hasWooIntegration;
       })
       .filter((order) => {
         if (showCanceledOrders) {
           return true;
         }
-        const status = order.status ? String(order.status).trim().toLowerCase() : '';
-        return status !== 'canceled' && status !== 'trash';
+        return !isCanceledOrRefundedStatus(order.status);
       });
 
     if (!visibleOrders.length) {
@@ -2714,7 +2767,7 @@ export function Header({
 	        const trackingNumber = resolveTrackingNumber(order);
 	        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
             const statusNormalized = (order.status || '').toLowerCase();
-            const isCanceled = statusNormalized.includes('cancel') || statusNormalized === 'trash';
+            const isCanceled = statusNormalized.includes('cancel') || statusNormalized.includes('refund') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
             const canCancel = !repView && Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
             const cancellationKey =
@@ -2827,18 +2880,41 @@ export function Header({
                   </div>
                   <div className="order-header-actions flex flex-row items-end gap-3 text-sm">
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        className="text-[rgb(26,85,173)] font-semibold hover:underline"
-                        onClick={() => {
-                          const integrations = order.integrations || integrationDetails;
-                          const wooIntegration = (integrations as any)?.wooCommerce;
-                          if (wooIntegration?.invoiceUrl) window.open(wooIntegration.invoiceUrl, '_blank', 'noopener,noreferrer');
-                        }}
-                      >
-                        View invoice
-                      </button>
-                      |
+                      {(() => {
+                        const integrations = order.integrations || integrationDetails;
+                        const wooIntegration =
+                          (integrations as any)?.wooCommerce ||
+                          (integrations as any)?.woocommerce ||
+                          null;
+                        const invoiceOrderId =
+                          order.wooOrderId ||
+                          wooIntegration?.wooOrderId ||
+                          order.wooOrderNumber ||
+                          wooIntegration?.wooOrderNumber ||
+                          null;
+                        const hasWooInvoice = Boolean(
+                          invoiceOrderId ||
+                            (integrationDetails as any)?.wooCommerce?.wooOrderId ||
+                            (integrationDetails as any)?.woocommerce?.wooOrderId,
+                        );
+
+                        if (!hasWooInvoice) {
+                          return null;
+                        }
+
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              className="text-[rgb(26,85,173)] font-semibold hover:underline"
+                              onClick={() => void downloadInvoiceForOrder(order)}
+                            >
+                              Download invoice
+                            </button>
+                            |
+                          </>
+                        );
+                      })()}
                       <button
                         type="button"
                         className="text-[rgb(26,85,173)] font-semibold hover:underline"
@@ -3525,7 +3601,7 @@ export function Header({
 	      <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
 	        <DialogContent
 	          hideCloseButton
-	          className="duration-300 data-[state=closed]:duration-200 !max-w-[min(28rem,calc(100vw-2rem))]"
+	          className="duration-[350ms] data-[state=closed]:duration-[350ms] !max-w-[min(28rem,calc(100vw-2rem))]"
 	          onTransitionEnd={(event) => {
 	            if (event.propertyName !== 'opacity') return;
 	            if (!logoutThanksPendingFadeOutRef.current) return;

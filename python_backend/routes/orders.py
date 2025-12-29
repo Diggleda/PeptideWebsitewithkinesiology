@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, g, make_response, request
 
 from ..middleware.auth import require_auth
+from ..integrations import woo_commerce
 from ..services import order_service
+from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action
 
 blueprint = Blueprint("orders", __name__, url_prefix="/api/orders")
@@ -134,3 +136,52 @@ def estimate_order_totals():
             shipping_total=shipping_total,
         )
     )
+
+
+@blueprint.get("/<order_id>/invoice")
+@require_auth
+def download_invoice(order_id: str) -> Response:
+    def action() -> Response:
+        if not order_id:
+            err = ValueError("Order id required")
+            setattr(err, "status", 400)
+            raise err
+
+        role = (g.current_user.get("role") or "").lower()
+        user_email = (g.current_user.get("email") or "").strip().lower()
+
+        woo_order = woo_commerce.fetch_order(order_id)
+        if not woo_order:
+            woo_order = woo_commerce.fetch_order_by_number(order_id) or woo_commerce.fetch_order_by_peppro_id(order_id)
+        if not woo_order:
+            err = ValueError("Order not found")
+            setattr(err, "status", 404)
+            raise err
+
+        billing_email = ""
+        if isinstance(woo_order.get("billing"), dict):
+            billing_email = (woo_order.get("billing") or {}).get("email") or ""
+        billing_email = str(billing_email or "").strip().lower()
+
+        is_admin_like = role in ("admin", "sales_rep", "rep")
+        if not is_admin_like:
+            # Avoid leaking existence of other customers' orders.
+            if not user_email or not billing_email or user_email != billing_email:
+                err = ValueError("Order not found")
+                setattr(err, "status", 404)
+                raise err
+
+        mapped = woo_commerce._map_woo_order_summary(woo_order)  # type: ignore[attr-defined]
+        pdf_bytes, filename = build_invoice_pdf(
+            woo_order=woo_order,
+            mapped_summary=mapped,
+            customer_email=billing_email or user_email,
+        )
+
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    return handle_action(action)

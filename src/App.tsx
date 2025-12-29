@@ -1045,10 +1045,11 @@ const normalizeAccountOrdersResponse = (
   const shouldIncludeStatus = (status?: string | null) => {
     if (!status) return true;
     const normalized = String(status).trim().toLowerCase();
-    if (normalized === "trash") {
-      return includeCanceled;
-    }
-    return true;
+    const isCanceledOrRefunded =
+      normalized === "trash" ||
+      normalized.includes("cancel") ||
+      normalized.includes("refund");
+    return includeCanceled || !isCanceledOrRefunded;
   };
 
   const registerLocalEntry = (entry: AccountOrderSummary) => {
@@ -1286,7 +1287,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.39";
+  "v1.9.44";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2162,6 +2163,7 @@ const mapWooProductToProduct = (
       : 0,
     image: galleryImages[0] ?? WOO_PLACEHOLDER_IMAGE,
     images: galleryImages,
+    image_loaded: false,
     inStock: hasVariants
       ? variantList.some((variant) => variant.inStock)
       : (product.stock_status ?? "").toLowerCase() !== "outofstock",
@@ -2502,6 +2504,10 @@ export default function App() {
       }
     >
   >(new Map());
+  const mediaRepairInFlightRef = useRef<Set<number>>(new Set());
+  const mediaRepairRetryRef = useRef<Map<number, { attempt: number; nextAt: number }>>(
+    new Map(),
+  );
 
   const ensureCatalogProductHasVariants = useCallback(
     async (product: Product, options?: { force?: boolean }): Promise<Product> => {
@@ -2622,6 +2628,9 @@ export default function App() {
         }
 
         const nextProduct = mapWooProductToProduct(rawWooProduct, resolved);
+        nextProduct.image_loaded =
+          nextProduct.image !== WOO_PLACEHOLDER_IMAGE &&
+          Boolean(imagePrefetchStateRef.current.get(nextProduct.image)?.loaded);
         if (
           isVariable &&
           (!nextProduct.variants || nextProduct.variants.length === 0) &&
@@ -4852,10 +4861,20 @@ export default function App() {
     | "year";
   type UserActivityReport = {
     window: UserActivityWindow;
+    etag?: string;
     generatedAt: string;
     cutoff: string;
     total: number;
     byRole: Record<string, number>;
+    liveUsers?: Array<{
+      id: string;
+      name: string | null;
+      email: string | null;
+      role: string;
+      isOnline: boolean;
+      lastLoginAt: string | null;
+      profileImageUrl?: string | null;
+    }>;
     users: Array<{
       id: string;
       name: string | null;
@@ -4863,6 +4882,7 @@ export default function App() {
       role: string;
       isOnline: boolean;
       lastLoginAt: string | null;
+      profileImageUrl?: string | null;
     }>;
   };
   const [userActivityWindow, setUserActivityWindow] =
@@ -4873,12 +4893,44 @@ export default function App() {
   const [userActivityError, setUserActivityError] = useState<string | null>(
     null,
   );
+  const userActivityPollInFlightRef = useRef(false);
+  const userActivityEtagRef = useRef<string | null>(null);
+  const userActivityLongPollDisabledRef = useRef(false);
+  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin(user?.role)) return;
+    const id = window.setInterval(() => {
+      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
+    }, 30000);
+    return () => window.clearInterval(id);
+  }, [user?.role]);
+
+  const formatOnlineDuration = (lastLoginAt?: string | null) => {
+    void userActivityNowTick;
+    if (!lastLoginAt) return "Online";
+    const startedAt = new Date(lastLoginAt).getTime();
+    if (!Number.isFinite(startedAt)) return "Online";
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
+    const totalMinutes = Math.floor(elapsedMs / 60000);
+    if (totalMinutes < 1) return "Online for <1m";
+    if (totalMinutes < 60) return `Online for ${totalMinutes}m`;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours < 24) {
+      return minutes ? `Online for ${hours}h ${minutes}m` : `Online for ${hours}h`;
+    }
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return remHours ? `Online for ${days}d ${remHours}h` : `Online for ${days}d`;
+  };
 
   useEffect(() => {
     if (!isAdmin(user?.role)) {
       setUserActivityReport(null);
       setUserActivityLoading(false);
       setUserActivityError(null);
+      userActivityEtagRef.current = null;
       return;
     }
     let cancelled = false;
@@ -4890,6 +4942,8 @@ export default function App() {
           userActivityWindow,
         )) as any;
         if (cancelled) return;
+        userActivityEtagRef.current =
+          typeof report?.etag === "string" ? report.etag : null;
         setUserActivityReport(report as UserActivityReport);
       } catch (error) {
         if (cancelled) return;
@@ -4908,6 +4962,105 @@ export default function App() {
       cancelled = true;
     };
   }, [user?.role, userActivityWindow]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!user || !isAdmin(user.role) || postLoginHold) {
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const pollIntervalMs = 4000;
+    const longPollTimeoutMs = 25000;
+
+    const poll = async () => {
+      if (cancelled) return;
+      if (!isPageVisible()) return;
+      if (!isOnline()) return;
+      if (userActivityPollInFlightRef.current) return;
+
+      userActivityPollInFlightRef.current = true;
+      try {
+        const report = (await settingsAPI.getUserActivity(
+          userActivityWindow,
+        )) as any;
+        if (!cancelled) {
+          userActivityEtagRef.current =
+            typeof report?.etag === "string" ? report.etag : null;
+          setUserActivityReport(report as UserActivityReport);
+        }
+      } catch (error) {
+        // Keep the last-known report to avoid UI flicker; next poll will retry.
+        if (!cancelled) {
+          console.debug("[Admin] User activity poll failed", error);
+        }
+      } finally {
+        userActivityPollInFlightRef.current = false;
+      }
+    };
+
+    const startIntervalFallback = () => {
+      if (intervalId !== null) return;
+      void poll();
+      intervalId = window.setInterval(() => {
+        void poll();
+      }, pollIntervalMs);
+    };
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+    const controller = new AbortController();
+    const runLongPoll = async () => {
+      if (userActivityLongPollDisabledRef.current) {
+        startIntervalFallback();
+        return;
+      }
+
+      while (!cancelled) {
+        if (!isPageVisible() || !isOnline()) {
+          // Keep the loop frontend-only and responsive.
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(800);
+          continue;
+        }
+        try {
+          const report = (await settingsAPI.getUserActivityLongPoll(
+            userActivityWindow,
+            userActivityEtagRef.current,
+            longPollTimeoutMs,
+            controller.signal,
+          )) as any;
+          if (cancelled) break;
+          userActivityEtagRef.current =
+            typeof report?.etag === "string" ? report.etag : null;
+          setUserActivityReport(report as UserActivityReport);
+        } catch (error: any) {
+          if (cancelled) break;
+          if (typeof error?.status === "number" && error.status === 404) {
+            userActivityLongPollDisabledRef.current = true;
+            startIntervalFallback();
+            return;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(pollIntervalMs);
+        }
+      }
+    };
+
+    void runLongPoll();
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      controller.abort();
+    };
+  }, [postLoginHold, user?.id, user?.role, userActivityWindow]);
 
 	  useEffect(() => {
 	    if (!user || !isAdmin(user.role) || postLoginHold) {
@@ -5420,6 +5573,153 @@ export default function App() {
     }, 1200);
     return () => window.clearInterval(timer);
   }, [runImagePrefetchQueue]);
+
+  useEffect(() => {
+    if (!IMAGE_PREFETCH_ENABLED) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!isPageVisible()) {
+        return;
+      }
+      setCatalogProducts((prev) => {
+        if (!Array.isArray(prev) || prev.length === 0) {
+          return prev;
+        }
+        let changed = false;
+        const next = prev.map((product) => {
+          if (product.image_loaded) {
+            return product;
+          }
+          if (!product.image || product.image === WOO_PLACEHOLDER_IMAGE) {
+            return product;
+          }
+          const state = imagePrefetchStateRef.current.get(product.image);
+          if (state?.loaded) {
+            changed = true;
+            return { ...product, image_loaded: true };
+          }
+          return product;
+        });
+        return changed ? next : prev;
+      });
+    }, 1750);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const refreshCatalogProductMedia = useCallback(
+    async (product: Product, wooId: number) => {
+      const isVariable = (product.type ?? "").toLowerCase() === "variable";
+      if (isVariable) {
+        await ensureCatalogProductHasVariants(product, { force: true });
+        return;
+      }
+      const raw = await getProduct<WooProduct>(wooId, { force: true });
+      if (!raw || typeof raw !== "object" || !("id" in raw)) {
+        return;
+      }
+      wooProductCacheRef.current.set(wooId, raw);
+      const mapped = mapWooProductToProduct(raw, []);
+      mapped.image_loaded =
+        mapped.image !== WOO_PLACEHOLDER_IMAGE &&
+        Boolean(imagePrefetchStateRef.current.get(mapped.image)?.loaded);
+      setCatalogProducts((prev) =>
+        prev.map((item) => (item.id === product.id ? mapped : item)),
+      );
+      setSelectedProduct((prev) => (prev?.id === product.id ? mapped : prev));
+    },
+    [ensureCatalogProductHasVariants],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const MAX_PER_TICK = 2;
+    const timer = window.setInterval(() => {
+      if (!isPageVisible()) return;
+      if (Date.now() < wooBackoffUntilRef.current) return;
+
+      const now = Date.now();
+      const products = catalogProductsRef.current;
+      if (!Array.isArray(products) || products.length === 0) return;
+
+      let started = 0;
+      for (const product of products) {
+        if (started >= MAX_PER_TICK) break;
+        const wooId =
+          typeof product.wooId === "number"
+            ? product.wooId
+            : Number.parseInt(String(product.id).replace(/[^\d]/g, ""), 10);
+        if (!Number.isFinite(wooId)) continue;
+        const numericWooId = Number(wooId);
+        if (mediaRepairInFlightRef.current.has(numericWooId)) continue;
+        const retry = mediaRepairRetryRef.current.get(numericWooId);
+        if (retry && now < retry.nextAt) continue;
+
+        const isVariable = (product.type ?? "").toLowerCase() === "variable";
+        const hasVariantImages =
+          Array.isArray(product.variants) &&
+          product.variants.some(
+            (variant) =>
+              Boolean(variant?.image) && variant.image !== WOO_PLACEHOLDER_IMAGE,
+          );
+        const placeholderImage =
+          !product.image || product.image === WOO_PLACEHOLDER_IMAGE;
+        const needsVariants = isVariable && !hasVariantImages;
+
+        let imageFailed = false;
+        if (!product.image_loaded && product.image && product.image !== WOO_PLACEHOLDER_IMAGE) {
+          const state = imagePrefetchStateRef.current.get(product.image);
+          if (state && !state.loaded) {
+            const ageMs = now - state.firstSeenAt;
+            imageFailed = state.attempt >= 2 && ageMs > 25_000;
+          }
+        }
+
+        const needsRepair = needsVariants || placeholderImage || imageFailed;
+        if (!needsRepair) continue;
+
+        mediaRepairInFlightRef.current.add(numericWooId);
+        started += 1;
+        void refreshCatalogProductMedia(product, numericWooId)
+          .then(() => {
+            const updated = catalogProductsRef.current.find(
+              (p) => p.id === product.id,
+            );
+            const resolvedPlaceholder =
+              updated?.image && updated.image !== WOO_PLACEHOLDER_IMAGE;
+            if (resolvedPlaceholder || updated?.image_loaded) {
+              mediaRepairRetryRef.current.delete(numericWooId);
+            } else {
+              const prev = mediaRepairRetryRef.current.get(numericWooId);
+              const attempt = (prev?.attempt ?? 0) + 1;
+              const delayMs = Math.min(10 * 60_000, 4000 * Math.pow(1.9, attempt - 1));
+              mediaRepairRetryRef.current.set(numericWooId, {
+                attempt,
+                nextAt: Date.now() + delayMs,
+              });
+            }
+          })
+          .catch(() => {
+            const prev = mediaRepairRetryRef.current.get(numericWooId);
+            const attempt = (prev?.attempt ?? 0) + 1;
+            const delayMs = Math.min(10 * 60_000, 4000 * Math.pow(1.9, attempt - 1));
+            mediaRepairRetryRef.current.set(numericWooId, {
+              attempt,
+              nextAt: Date.now() + delayMs,
+            });
+          })
+          .finally(() => {
+            mediaRepairInFlightRef.current.delete(numericWooId);
+          });
+      }
+    }, 6500);
+    return () => window.clearInterval(timer);
+  }, [refreshCatalogProductMedia]);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
@@ -8255,12 +8555,16 @@ export default function App() {
     email: string,
     password: string,
     attempt = 0,
+    context?: "checkout" | null,
   ): Promise<AuthActionResult> => {
+    const loginContextAtStart = context ?? loginContext;
     console.debug("[Auth] Login attempt", { email, attempt });
     try {
       const user = await authAPI.login(email, password);
       applyLoginSuccessState(user);
-      void storePasswordCredential(email, password, user.name || email);
+      if (loginContextAtStart !== "checkout") {
+        void storePasswordCredential(email, password, user.name || email);
+      }
       console.debug("[Auth] Login success", {
         userId: user.id,
         visits: user.visits,
@@ -8303,7 +8607,7 @@ export default function App() {
         );
         // Fire-and-forget a health ping to wake cold starts, but don't block the retry.
         void checkServerHealth().catch(() => undefined);
-        return loginWithRetry(email, password, attempt + 1);
+        return loginWithRetry(email, password, attempt + 1, loginContextAtStart);
       }
 
       if (
@@ -8976,12 +9280,7 @@ export default function App() {
     });
     setCartItems(nextCart);
     setCheckoutOpen(true);
-    toast("Order loaded into a new cart.", {
-      style: {
-        backgroundColor: "rgb(95,179,249)",
-        color: "#ffffff",
-      },
-    });
+    toast.info("Order loaded into a new cart.");
     })();
   };
 
@@ -10704,42 +11003,14 @@ export default function App() {
 			                </div>
 		              </div>
 
-                <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                      <h4 className="text-base font-semibold text-slate-900">
-                        Recent Logins
-                      </h4>
-                      <p className="text-sm text-slate-600">
-                        Users who logged in within the selected window.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label
-                        htmlFor="admin-user-activity-window"
-                        className="text-xs text-slate-500 uppercase tracking-wide"
-                      >
-                        Window
-                      </label>
-                      <select
-                        id="admin-user-activity-window"
-                        value={userActivityWindow}
-                        onChange={(e) =>
-                          setUserActivityWindow(
-                            e.target.value as UserActivityWindow,
-                          )
-                        }
-                        className="shipping-rate-select w-auto text-sm"
-                      >
-                        <option value="hour">Last hour</option>
-                        <option value="day">Last day</option>
-                        <option value="3days">Last 3 days</option>
-                        <option value="week">Last week</option>
-                        <option value="month">Last month</option>
-                        <option value="6months">Last 6 months</option>
-                        <option value="year">Last year</option>
-                      </select>
-                    </div>
+                <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-6">
+                  <div>
+                    <h4 className="text-base font-semibold text-slate-900">
+                      Live users
+                    </h4>
+                    <p className="text-sm text-slate-600">
+                      Users currently online.
+                    </p>
                   </div>
 
                   {userActivityError && (
@@ -10753,92 +11024,229 @@ export default function App() {
                       Loading user activity…
                     </div>
                   ) : userActivityReport ? (
-                    <>
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        {[
-                          { key: "admin", label: "Admins" },
-                          { key: "sales_rep", label: "Sales reps" },
-                          { key: "doctor", label: "Doctors" },
-                          { key: "test_doctor", label: "Test doctors" },
-                        ].map((role) => (
-                          <span
-                            key={role.key}
-                            className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-                          >
-                            {role.label}: {userActivityReport.byRole?.[role.key] || 0}
-                          </span>
-                        ))}
-                      </div>
+                    (() => {
+                      const liveUsers =
+                        Array.isArray(userActivityReport.liveUsers) &&
+                        userActivityReport.liveUsers.length > 0
+                          ? userActivityReport.liveUsers
+                          : (userActivityReport.users || []).filter(
+                              (entry) => entry.isOnline,
+                            );
 
-	                      {userActivityReport.users.length === 0 ? (
-	                        <div className="px-4 py-3 text-sm text-slate-500">
-	                          No logins in this window.
-	                        </div>
-	                      ) : (
-		                        <div className="sales-rep-table-wrapper">
-		                          <div className="max-h-[320px] overflow-y-auto pb-3">
-		                            <table className="min-w-[640px] w-full mb-2 divide-y divide-slate-200/70">
-		                              <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-		                                <tr>
-		                                  <th className="px-4 py-2 text-left">
-	                                    Name
-	                                  </th>
-	                                  <th className="px-4 py-2 text-left">
-	                                    Email
-	                                  </th>
-	                                  <th className="px-4 py-2 text-left">
-	                                    Role
-	                                  </th>
-	                                  <th className="px-4 py-2 text-left">
-	                                    Last login
-	                                  </th>
-	                                </tr>
-	                              </thead>
-	                              <tbody className="divide-y divide-slate-100 bg-white/70">
-	                                {userActivityReport.users.map((entry) => (
-	                                  <tr key={entry.id}>
-	                                    <td className="px-4 py-3 text-sm font-medium text-slate-800">
-	                                      {entry.name || "—"}
-	                                    </td>
-	                                    <td className="px-4 py-3 text-sm text-slate-600">
-	                                      {entry.email ? (
-	                                        <a href={`mailto:${entry.email}`}>
-	                                          {entry.email}
-	                                        </a>
-	                                      ) : (
-	                                        "—"
-	                                      )}
-	                                    </td>
-	                                    <td className="px-4 py-3 text-sm text-slate-700">
-	                                      {entry.role}
-	                                    </td>
-	                                    <td className="px-4 py-3 text-sm text-slate-700">
-	                                      {entry.lastLoginAt
-	                                        ? new Date(
-	                                            entry.lastLoginAt,
-	                                          ).toLocaleString()
-	                                        : "—"}
-	                                    </td>
-	                                  </tr>
-	                                ))}
-	                              </tbody>
-	                            </table>
-	                          </div>
-	                        </div>
-	                      )}
+                      if (liveUsers.length === 0) {
+                        return (
+                          <div className="px-4 py-3 text-sm text-slate-500">
+                            No users are online right now.
+                          </div>
+                        );
+                      }
 
-	                      <div className="text-xs text-slate-500 pl-3">
-	                        Cutoff:{" "}
-	                        {userActivityReport.cutoff
-	                          ? new Date(userActivityReport.cutoff).toLocaleString()
-	                          : "—"}
-	                      </div>
-                    </>
+                      return (
+                        <div className="flex flex-col gap-2">
+                          {liveUsers.map((entry) => {
+                            const avatarUrl = entry.profileImageUrl || null;
+                            const displayName =
+                              entry.name || entry.email || "User";
+                            return (
+                              <div
+                                key={entry.id}
+                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+                              >
+                                <div
+                                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
+                                  style={{
+                                    width: 34,
+                                    height: 34,
+                                    minWidth: 34,
+                                  }}
+                                >
+                                  {avatarUrl ? (
+                                    <img
+                                      src={avatarUrl}
+                                      alt={displayName}
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                      decoding="async"
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] font-semibold text-slate-600">
+                                      {getInitials(displayName)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-sm font-semibold text-slate-800 truncate">
+                                      {displayName}
+                                    </span>
+                                    <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(95,179,249)] shrink-0">
+                                      Online
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-500 truncate">
+                                    {entry.email || "—"}
+                                  </div>
+                                </div>
+                                <div className="text-xs text-slate-600 whitespace-nowrap">
+                                  {formatOnlineDuration(entry.lastLoginAt)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="px-4 py-3 text-sm text-slate-500">
                       No user activity loaded.
                     </div>
                   )}
+
+                  <div className="pt-6 border-t border-slate-200/70 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-semibold text-slate-900">
+                          Recent Logins
+                        </h4>
+                        <p className="text-sm text-slate-600">
+                          Users who logged in within the selected window.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor="admin-user-activity-window"
+                          className="text-xs text-slate-500 uppercase tracking-wide"
+                        >
+                          Window
+                        </label>
+                        <select
+                          id="admin-user-activity-window"
+                          value={userActivityWindow}
+                          onChange={(e) =>
+                            setUserActivityWindow(
+                              e.target.value as UserActivityWindow,
+                            )
+                          }
+                          className="shipping-rate-select w-auto text-sm"
+                        >
+                          <option value="hour">Last hour</option>
+                          <option value="day">Last day</option>
+                          <option value="3days">Last 3 days</option>
+                          <option value="week">Last week</option>
+                          <option value="month">Last month</option>
+                          <option value="6months">Last 6 months</option>
+                          <option value="year">Last year</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {userActivityLoading ? (
+                      <div className="px-4 py-3 text-sm text-slate-500">
+                        Loading user activity…
+                      </div>
+                    ) : userActivityReport ? (
+                      <>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {[
+                            { key: "admin", label: "Admins" },
+                            { key: "sales_rep", label: "Sales reps" },
+                            { key: "doctor", label: "Doctors" },
+                            { key: "test_doctor", label: "Test doctors" },
+                          ].map((role) => (
+                            <span
+                              key={role.key}
+                              className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
+                            >
+                              {role.label}:{" "}
+                              {userActivityReport.byRole?.[role.key] || 0}
+                            </span>
+                          ))}
+                        </div>
+
+                        {userActivityReport.users.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-slate-500">
+                            No logins in this window.
+                          </div>
+                        ) : (
+                          <div className="sales-rep-table-wrapper">
+                            <div className="max-h-[320px] overflow-y-auto pb-3">
+                              <table className="min-w-[720px] w-full mb-2 divide-y divide-slate-200/70">
+                                <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left">
+                                      Online
+                                    </th>
+                                    <th className="px-4 py-2 text-left">
+                                      Name
+                                    </th>
+                                    <th className="px-4 py-2 text-left">
+                                      Email
+                                    </th>
+                                    <th className="px-4 py-2 text-left">
+                                      Role
+                                    </th>
+                                    <th className="px-4 py-2 text-left">
+                                      Last login
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white/70">
+                                  {userActivityReport.users.map((entry) => (
+                                    <tr key={entry.id}>
+                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                        {entry.isOnline ? (
+                                          <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(95,179,249)]">
+                                            Online
+                                          </span>
+                                        ) : (
+                                          "—"
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                                        {entry.name || "—"}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-slate-600">
+                                        {entry.email ? (
+                                          <a href={`mailto:${entry.email}`}>
+                                            {entry.email}
+                                          </a>
+                                        ) : (
+                                          "—"
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                        {entry.role}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                        {entry.lastLoginAt
+                                          ? new Date(
+                                              entry.lastLoginAt,
+                                            ).toLocaleString()
+                                          : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-500 pl-3">
+                          Cutoff:{" "}
+                          {userActivityReport.cutoff
+                            ? new Date(
+                                userActivityReport.cutoff,
+                              ).toLocaleString()
+                            : "—"}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-slate-500">
+                        No user activity loaded.
+                      </div>
+                    )}
+                  </div>
                 </div>
 	            </div>
 	          )}
@@ -12885,7 +13293,7 @@ export default function App() {
                       </div>
 
                       <div
-                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
+                        className={`glass-card ${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
                           showWelcome
                             ? "opacity-100 translate-y-0"
                             : "opacity-0 translate-y-4 pointer-events-none"
@@ -12915,8 +13323,9 @@ export default function App() {
 	                        )}
                         {quoteReady && quoteOfTheDay && (
                           <p
-                            className="px-4 sm:px-6 italic text-gray-700 text-center leading-snug break-words"
+                            className="px-4 sm:px-6 italic text-[rgb(95,179,249)] text-center leading-snug break-words"
                             style={{
+                              color: "rgb(95,179,249)",
                               fontSize: quoteFontSize,
                               overflow: "hidden",
                               textOverflow: "ellipsis",
@@ -12983,7 +13392,7 @@ export default function App() {
                           , {user.name}!
                         </p>
                         <div
-                          className="w-full rounded-lg bg-white/65 px-3 pt-0 pb-2 sm:px-4 sm:py-2 text-center shadow-inner transition-opacity duration-500"
+                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 pt-0 pb-2 sm:px-4 sm:py-2 text-center shadow-inner transition-opacity duration-500`}
                           aria-live="polite"
                         >
                           {!quoteReady && (
@@ -13000,8 +13409,9 @@ export default function App() {
                           )}
                           {quoteReady && quoteOfTheDay && (
                             <p
-                              className="px-4 sm:px-6 italic text-gray-700 leading-snug break-words"
+                              className="px-4 sm:px-6 italic text-[rgb(95,179,249)] leading-snug break-words"
                               style={{
+                                color: "rgb(95,179,249)",
                                 fontSize: quoteMobileFont,
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
@@ -14251,10 +14661,12 @@ export default function App() {
           onClearCart={() => setCartItems([])}
           onPaymentSuccess={() => {
             const requestToken = Date.now();
+            const optimisticOrder = postCheckoutOptimisticOrderRef.current;
             setAccountModalRequest({
               tab: "orders",
               open: true,
               token: requestToken,
+              order: optimisticOrder ?? undefined,
             });
             triggerPostCheckoutOrdersRefresh().catch(() => undefined);
             setTimeout(() => {

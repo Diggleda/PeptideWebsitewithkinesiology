@@ -513,6 +513,28 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getUserActivityLongPoll: async (
+    window: string,
+    etag?: string | null,
+    timeoutMs: number = 25000,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (window) {
+      params.set('window', window);
+    }
+    if (etag) {
+      params.set('etag', String(etag));
+    }
+    if (timeoutMs && Number.isFinite(timeoutMs)) {
+      params.set('timeoutMs', String(Math.max(1000, Math.min(timeoutMs, 30000))));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/user-activity/longpoll${query}`, {
+      method: 'GET',
+      signal,
+    });
+  },
   getReportSettings: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'GET',
@@ -755,6 +777,16 @@ export const ordersAPI = {
       ? `${API_BASE_URL}/orders/sales-rep/${encodeURIComponent(orderId)}?${query}`
       : `${API_BASE_URL}/orders/sales-rep/${encodeURIComponent(orderId)}`;
     return fetchWithAuth(url);
+  },
+
+  downloadInvoice: async (orderId: string | number) => {
+    if (!orderId) {
+      throw new Error('orderId is required');
+    }
+    return fetchWithAuthBlob(`${API_BASE_URL}/orders/${encodeURIComponent(String(orderId))}/invoice`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
   },
 };
 

@@ -230,7 +230,7 @@ const buildInvoiceUrl = (orderId, orderKey) => {
   }
   const safeId = encodeURIComponent(String(orderId).trim());
   const safeKey = encodeURIComponent(String(orderKey).trim());
-  return `${normalizedStoreUrl}/my-account/view-order/${safeId}/?order=${safeId}&key=${safeKey}`;
+  return `${normalizedStoreUrl}/checkout/order-received/${safeId}/?key=${safeKey}`;
 };
 
 const getClient = () => {

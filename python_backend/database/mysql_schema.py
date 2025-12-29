@@ -191,6 +191,22 @@ def ensure_schema() -> None:
     for statement in CREATE_TABLE_STATEMENTS:
         mysql_client.execute(statement)
 
+    def _column_exists(table: str, column: str) -> bool:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = %(table)s
+                  AND column_name = %(column)s
+                """,
+                {"table": table, "column": column},
+            )
+            return int((row or {}).get("cnt") or 0) > 0
+        except Exception:
+            return False
+
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
@@ -251,3 +267,17 @@ def ensure_schema() -> None:
         except Exception:
             # Best effort; if column exists or engine doesn't support IF NOT EXISTS, ignore
             continue
+
+    # Backward-compatible fix: MySQL/MariaDB variants may not support `ADD COLUMN IF NOT EXISTS`.
+    # Ensure `users.is_online` exists so login/logout tracking can persist.
+    try:
+        if not _column_exists("users", "is_online"):
+            mysql_client.execute(
+                "ALTER TABLE users ADD COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0"
+            )
+        mysql_client.execute(
+            "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0"
+        )
+    except Exception:
+        # Best effort; do not fail app startup on migration issues.
+        pass
