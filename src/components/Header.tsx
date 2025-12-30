@@ -3345,20 +3345,24 @@ export function Header({
 	                        key={line.id || `${line.sku}-${idx}`}
 	                        className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
 	                      >
-		                        <div className="relative w-20 h-20 max-h-[120px] rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
-		                          <Package className="h-7 w-7 opacity-60" />
-		                          {lineImage ? (
-		                            <img
-		                              src={lineImage}
-		                              alt={line.name || 'Item thumbnail'}
-		                              className="absolute inset-0 h-full w-full object-contain"
-		                              style={{ maxHeight: '120px' }}
-		                              onError={(event) => {
-		                                event.currentTarget.style.display = 'none';
-		                              }}
-		                            />
-		                          ) : null}
-		                        </div>
+                        <div
+                          className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
+                          style={{ maxHeight: '120px' }}
+                        >
+                          {lineImage ? (
+                            <img
+                              src={lineImage}
+                              alt={line.name || 'Item thumbnail'}
+                              className="object-contain"
+                              style={{ width: '100%', height: '100%', maxHeight: '120px' }}
+                              onError={(event) => {
+                                event.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <Package className="h-6 w-6 opacity-60" />
+                          )}
+                        </div>
 	                        <div className="flex-1 min-w-[12rem] space-y-1 pr-4">
 	                          <p className="text-slate-900 font-semibold">{line.name || 'Item'}</p>
 	                          <p className="text-slate-600">Qty: {quantity || '—'}</p>

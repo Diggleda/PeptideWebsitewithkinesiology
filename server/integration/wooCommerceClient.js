@@ -476,12 +476,26 @@ const buildOrderPayload = async ({ order, customer }) => {
   const taxTotal = typeof order.taxTotal === 'number' && Number.isFinite(order.taxTotal)
     ? Math.max(0, roundCurrency(order.taxTotal))
     : 0;
+  const itemsSubtotal = typeof order.itemsSubtotal === 'number' && Number.isFinite(order.itemsSubtotal)
+    ? roundCurrency(order.itemsSubtotal)
+    : roundCurrency((order.items || []).reduce((sum, item) => {
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      return sum + (qty * price);
+    }, 0));
+  const computedTotal = roundCurrency(itemsSubtotal + shippingTotal + taxTotal);
+  const providedTotal = typeof order.total === 'number' && Number.isFinite(order.total)
+    ? roundCurrency(order.total)
+    : null;
+  const useProvidedTotal = providedTotal !== null && Math.abs(providedTotal - computedTotal) < 0.01;
+  const finalTotal = useProvidedTotal ? providedTotal : computedTotal;
   const manualTaxRateId = taxTotal > 0 ? await ensurePepProManualTaxRateId() : null;
   const feeLines = [];
 
   const metaData = [
     { key: 'peppro_order_id', value: order.id },
-    { key: 'peppro_total', value: order.total },
+    { key: 'peppro_total', value: finalTotal },
+    ...(providedTotal !== null ? [{ key: 'peppro_client_total', value: providedTotal }] : []),
     ...(taxTotal > 0 ? [{ key: 'peppro_tax_total', value: taxTotal }] : []),
     { key: 'peppro_created_at', value: order.createdAt },
     { key: 'peppro_origin', value: 'PepPro Web Checkout' },
@@ -517,6 +531,10 @@ const buildOrderPayload = async ({ order, customer }) => {
     created_via: 'peppro_app',
     customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
     set_paid: false,
+    total: finalTotal.toFixed(2),
+    total_tax: taxTotal.toFixed(2),
+    cart_tax: taxTotal.toFixed(2),
+    shipping_tax: '0.00',
     line_items: buildLineItems(order.items || [], { taxTotal: manualTaxRateId ? taxTotal : 0, taxRateId: manualTaxRateId }),
     meta_data: metaData,
     billing: {
