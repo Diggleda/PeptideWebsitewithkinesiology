@@ -3066,7 +3066,7 @@ export function Header({
 	        })}
 	        {doctorView && (
 		          <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] bg-white/80 px-7 py-4 text-sm text-slate-700">
-		            <div className="space-y-1 pl-3">
+		            <div className="space-y-1 pl-5">
 		              {salesRepEmail && (
 		                <p>
 		                  Sales rep:{' '}

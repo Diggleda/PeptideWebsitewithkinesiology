@@ -740,8 +740,14 @@ export const ordersAPI = {
     });
   },
 
-  getAll: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/orders/`);
+  getAll: async (options?: { includeCanceled?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.includeCanceled) {
+      params.set('includeCanceled', 'true');
+    }
+    const query = params.toString();
+    const url = query ? `${API_BASE_URL}/orders/?${query}` : `${API_BASE_URL}/orders/`;
+    return fetchWithAuth(url);
   },
 
   getForSalesRep: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all' }) => {

@@ -364,8 +364,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                               type="button"
                               variant={isActive ? 'default' : 'outline'}
                               onClick={() => setSelectedVariantId(variant.id)}
-                              disabled={!variant.inStock}
-                              className={`justify-between text-left ${!variant.inStock ? 'opacity-60' : ''}`}
+                              className="justify-between text-left"
                             >
                               <span className="flex flex-col text-left">
                                 <span className="font-semibold">{variant.label}</span>
@@ -436,15 +435,13 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                   {/* Add to Cart Button */}
                   <Button
                     onClick={handleAddToCart}
-                    disabled={!isInStock || isVariantSelectionLoading}
+                    disabled={isVariantSelectionLoading}
                     className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ShoppingCart className="mr-2 h-5 w-5" />
                     {isVariantSelectionLoading
                       ? 'Loading options…'
-                      : isInStock
-                        ? 'Add to Cart'
-                        : 'Out of Stock'}
+                      : 'Add to Cart'}
                   </Button>
                 </div>
               </div>

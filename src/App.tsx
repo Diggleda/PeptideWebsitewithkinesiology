@@ -75,7 +75,7 @@ import {
 	} from "./services/api";
 import physiciansChoiceHtml from "./content/landing/physicians-choice.html?raw";
 import careComplianceHtml from "./content/landing/care-compliance.html?raw";
-import { isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
+import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
 import { AuthActionResult } from "./types/auth";
@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.49";
+  "v1.9.51";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -3123,7 +3123,7 @@ export default function App() {
       setAccountOrdersLoading(true);
       setAccountOrdersError(null);
       try {
-        const response = await ordersAPI.getAll();
+        const response = await ordersAPI.getAll({ includeCanceled });
         let normalized = normalizeAccountOrdersResponse(response, {
           includeCanceled,
         });
@@ -5452,6 +5452,25 @@ export default function App() {
   const backgroundVariantPrefetchTokenRef = useRef(0);
   const backgroundVariantPrefetchRunningRef = useRef(false);
   const backgroundVariantPrefetchSeedRef = useRef<string | null>(null);
+  const leaderActivityLogRef = useRef<Map<string, number>>(new Map());
+
+  const logLeaderActivity = useCallback(
+    (leaderKey: string, label: string, intervalMs: number) => {
+      const now = Date.now();
+      const last = leaderActivityLogRef.current.get(leaderKey) ?? 0;
+      if (now - last < 30_000) {
+        return;
+      }
+      leaderActivityLogRef.current.set(leaderKey, now);
+      console.debug("[Leader] Active", {
+        leaderKey,
+        label,
+        intervalMs,
+        tabId: getTabId(),
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     catalogProductsRef.current = catalogProducts;
@@ -5465,6 +5484,14 @@ export default function App() {
       return;
     }
     if (!Array.isArray(catalogProducts) || catalogProducts.length === 0) {
+      return;
+    }
+    if (!isPageVisible()) {
+      return;
+    }
+    const leaderKey = "catalog-image-prefetch-seed";
+    const leaderTtlMs = 20_000;
+    if (!isTabLeader(leaderKey, leaderTtlMs)) {
       return;
     }
 
@@ -5487,6 +5514,9 @@ export default function App() {
     }
 
     runImagePrefetchQueue();
+    return () => {
+      releaseTabLeadership(leaderKey);
+    };
   }, [catalogProducts, enqueueImagePrefetch, runImagePrefetchQueue]);
 
   useEffect(() => {
@@ -5499,9 +5529,17 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    const leaderKey = "catalog-variant-prefetch-seed";
+    const leaderTtlMs = 120_000;
+    if (!isTabLeader(leaderKey, leaderTtlMs)) {
+      return () => {
+        releaseTabLeadership(leaderKey);
+      };
+    }
 
     const seed = catalogProducts.map((p) => p.id).join("|");
     if (backgroundVariantPrefetchSeedRef.current === seed) {
+      releaseTabLeadership(leaderKey);
       return;
     }
     backgroundVariantPrefetchSeedRef.current = seed;
@@ -5547,6 +5585,7 @@ export default function App() {
     });
 
     return () => {
+      releaseTabLeadership(leaderKey);
       backgroundVariantPrefetchTokenRef.current += 1;
       backgroundVariantPrefetchRunningRef.current = false;
     };
@@ -5559,10 +5598,16 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    const leaderKey = "catalog-variant-poll";
+    const leaderTtlMs = Math.max(20_000, VARIANT_POLL_INTERVAL_MS * 2);
     const timer = window.setInterval(() => {
       if (!isPageVisible()) {
         return;
       }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
+      logLeaderActivity(leaderKey, "catalog-variant-poll", VARIANT_POLL_INTERVAL_MS);
       const products = catalogProductsRef.current;
       if (!Array.isArray(products) || products.length === 0) {
         return;
@@ -5574,7 +5619,10 @@ export default function App() {
         prefetchCatalogProductVariants(product);
       }
     }, VARIANT_POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      releaseTabLeadership(leaderKey);
+      window.clearInterval(timer);
+    };
   }, [prefetchCatalogProductVariants]);
 
   useEffect(() => {
@@ -5584,13 +5632,22 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    const leaderKey = "catalog-image-prefetch-queue";
+    const leaderTtlMs = 10_000;
     const timer = window.setInterval(() => {
       if (!isPageVisible()) {
         return;
       }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
+      logLeaderActivity(leaderKey, "catalog-image-prefetch-queue", 1200);
       runImagePrefetchQueue();
     }, 1200);
-    return () => window.clearInterval(timer);
+    return () => {
+      releaseTabLeadership(leaderKey);
+      window.clearInterval(timer);
+    };
   }, [runImagePrefetchQueue]);
 
   useEffect(() => {
@@ -5600,10 +5657,16 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    const leaderKey = "catalog-image-loaded-check";
+    const leaderTtlMs = 12_000;
     const timer = window.setInterval(() => {
       if (!isPageVisible()) {
         return;
       }
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
+      logLeaderActivity(leaderKey, "catalog-image-loaded-check", 1750);
       setCatalogProducts((prev) => {
         if (!Array.isArray(prev) || prev.length === 0) {
           return prev;
@@ -5626,7 +5689,10 @@ export default function App() {
         return changed ? next : prev;
       });
     }, 1750);
-    return () => window.clearInterval(timer);
+    return () => {
+      releaseTabLeadership(leaderKey);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const refreshCatalogProductMedia = useCallback(
@@ -5657,9 +5723,13 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    const leaderKey = "catalog-media-repair";
+    const leaderTtlMs = 25_000;
     const MAX_PER_TICK = 2;
     const timer = window.setInterval(() => {
       if (!isPageVisible()) return;
+      if (!isTabLeader(leaderKey, leaderTtlMs)) return;
+      logLeaderActivity(leaderKey, "catalog-media-repair", 6500);
       if (Date.now() < wooBackoffUntilRef.current) return;
 
       const now = Date.now();
@@ -5737,7 +5807,10 @@ export default function App() {
           });
       }
     }, 6500);
-    return () => window.clearInterval(timer);
+    return () => {
+      releaseTabLeadership(leaderKey);
+      window.clearInterval(timer);
+    };
   }, [refreshCatalogProductMedia]);
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
@@ -8177,11 +8250,12 @@ export default function App() {
 	      if (!isPageVisible()) {
 	        return;
 	      }
-	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-	        return;
-	      }
-	      void loadCatalog(true);
-	    }, CATALOG_POLL_INTERVAL_MS);
+      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+        return;
+      }
+      logLeaderActivity(leaderKey, "catalog-background-poll", CATALOG_POLL_INTERVAL_MS);
+      void loadCatalog(true);
+    }, CATALOG_POLL_INTERVAL_MS);
 
 	    return () => {
 	      cancelled = true;
@@ -11172,7 +11246,7 @@ export default function App() {
                               e.target.value as UserActivityWindow,
                             )
                           }
-                          className="shipping-rate-select w-auto text-sm"
+                          className="recent-logins-select w-auto text-sm"
                         >
                           <option value="hour">Last hour</option>
                           <option value="day">Last day</option>
@@ -11218,19 +11292,19 @@ export default function App() {
                               <table className="min-w-[720px] w-full mb-2 divide-y divide-slate-200/70">
                                 <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
                                   <tr>
-                                    <th className="px-4 py-2 text-left">
+                                    <th className="px-4 py-2 text-center">
                                       Online
                                     </th>
-                                    <th className="px-4 py-2 text-left">
+                                    <th className="px-4 py-2 text-center">
                                       Name
                                     </th>
-                                    <th className="px-4 py-2 text-left">
+                                    <th className="px-4 py-2 text-center">
                                       Email
                                     </th>
-                                    <th className="px-4 py-2 text-left">
+                                    <th className="px-4 py-2 text-center">
                                       Role
                                     </th>
-                                    <th className="px-4 py-2 text-left">
+                                    <th className="px-4 py-2 text-center">
                                       Last login
                                     </th>
                                   </tr>
@@ -11238,7 +11312,7 @@ export default function App() {
                                 <tbody className="divide-y divide-slate-100 bg-white/70">
                                   {userActivityReport.users.map((entry) => (
                                     <tr key={entry.id}>
-                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
                                         {entry.isOnline ? (
                                           <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(95,179,249)]">
                                             Online
@@ -11247,10 +11321,10 @@ export default function App() {
                                           "—"
                                         )}
                                       </td>
-                                      <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                                      <td className="px-4 py-3 text-sm font-medium text-slate-800 text-center">
                                         {entry.name || "—"}
                                       </td>
-                                      <td className="px-4 py-3 text-sm text-slate-600">
+                                      <td className="px-4 py-3 text-sm text-slate-600 text-center">
                                         {entry.email ? (
                                           <a href={`mailto:${entry.email}`}>
                                             {entry.email}
@@ -11259,10 +11333,10 @@ export default function App() {
                                           "—"
                                         )}
                                       </td>
-                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
                                         {entry.role}
                                       </td>
-                                      <td className="px-4 py-3 text-sm text-slate-700">
+                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
                                         {entry.lastLoginAt
                                           ? new Date(
                                               entry.lastLoginAt,
@@ -11299,7 +11373,7 @@ export default function App() {
 			          {isAdmin(user?.role) && (
 			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
 			              <div className="flex flex-col gap-3 mb-4">
-                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
+                <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-slate-900">
                       Sales by Sales Rep
@@ -11307,6 +11381,60 @@ export default function App() {
                     <p className="text-sm text-slate-600">
                       Orders placed by doctors assigned to each rep.
                     </p>
+                    <form
+                      className="sales-rep-period-form mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-end"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void refreshSalesBySalesRepSummary();
+                      }}
+                    >
+                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
+                        Start
+                        <Input
+                          type="date"
+                          value={salesRepPeriodStart}
+                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
+                          placeholder="YYYY-MM-DD"
+                          className="block w-full min-w-0 text-slate-900"
+                          style={{ colorScheme: "light" }}
+                        />
+                      </label>
+                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
+                        End
+                        <Input
+                          type="date"
+                          value={salesRepPeriodEnd}
+                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
+                          placeholder="YYYY-MM-DD"
+                          className="block w-full min-w-0 text-slate-900"
+                          style={{ colorScheme: "light" }}
+                        />
+                      </label>
+                      <div className="sales-rep-period-actions flex items-center gap-2 self-start sm:self-end">
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="outline"
+                          disabled={salesRepSalesSummaryLoading}
+                          className="whitespace-nowrap"
+                        >
+                          Apply
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="whitespace-nowrap"
+                          onClick={() => {
+                            setSalesRepPeriodStart("");
+                            setSalesRepPeriodEnd("");
+                            void refreshSalesBySalesRepSummary();
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </form>
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
                     <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
@@ -11372,66 +11500,7 @@ export default function App() {
                   </div>
                 </div>
 			
-                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-                  <div className="min-w-0">
-                    <form
-                      className="sales-rep-period-form mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-end"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void refreshSalesBySalesRepSummary();
-                      }}
-                    >
-	                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-	                        Start
-	                        <Input
-	                          type="date"
-	                          value={salesRepPeriodStart}
-	                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
-	                          placeholder="YYYY-MM-DD"
-	                          className="block w-full min-w-0 text-slate-900"
-	                          style={{ colorScheme: "light" }}
-	                        />
-	                      </label>
-	                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-	                        End
-	                        <Input
-	                          type="date"
-	                          value={salesRepPeriodEnd}
-	                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
-	                          placeholder="YYYY-MM-DD"
-	                          className="block w-full min-w-0 text-slate-900"
-	                          style={{ colorScheme: "light" }}
-	                        />
-	                      </label>
-                      <div className="sales-rep-period-actions flex items-center gap-2 self-start sm:self-end">
-                        <Button
-                          type="submit"
-                          size="sm"
-                          variant="outline"
-                          disabled={salesRepSalesSummaryLoading}
-                          className="whitespace-nowrap"
-                        >
-                          Apply
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="whitespace-nowrap"
-                          onClick={() => {
-                            setSalesRepPeriodStart("");
-                            setSalesRepPeriodEnd("");
-                            void refreshSalesBySalesRepSummary();
-                          }}
-                        >
-                          Clear
-                        </Button>
-                      </div>
-                    </form>
-                  </div>
-
-                  {/* Totals shown inline above list below */}
-				              </div>
+                {/* Totals shown inline above list below */}
 			              </div>
 	              <div className="sales-rep-table-wrapper" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (

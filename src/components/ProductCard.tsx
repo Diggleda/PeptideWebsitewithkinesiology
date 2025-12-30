@@ -686,11 +686,10 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         setQuantityInput('1');
         setBulkOpen(false);
       }}
-      disabled={!product.inStock}
       className="squircle-sm glass-brand btn-hover-lighter w-full"
     >
       <ShoppingCart className="w-4 h-4 mr-2" />
-      {product.inStock ? 'Add to Cart' : 'Out of Stock'}
+      Add to Cart
     </Button>
   );
 
