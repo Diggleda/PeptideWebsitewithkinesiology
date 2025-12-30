@@ -109,7 +109,7 @@ def load_config() -> AppConfig:
         data_dir=_resolve_path(os.environ.get("DATA_DIR"), "server-data"),
         cors_allow_list=cors_allow_list,
         body_limit=os.environ.get("BODY_LIMIT", "1mb"),
-        backend_build=os.environ.get("BACKEND_BUILD", "v1.9.44"),
+        backend_build=os.environ.get("BACKEND_BUILD", "v1.9.46"),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
             "store_url": _s(os.environ.get("WC_STORE_URL")),
@@ -218,6 +218,9 @@ def load_config() -> AppConfig:
         ),
         flask_settings={
             "JSON_SORT_KEYS": False,
+            # Allow larger JSON payloads (e.g., base64 certificate uploads).
+            # Base64 adds ~33% overhead, so 50MB accommodates ~35MB binary uploads.
+            "MAX_CONTENT_LENGTH": int(os.environ.get("MAX_CONTENT_LENGTH", str(50 * 1024 * 1024))),
         },
     )
 

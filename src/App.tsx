@@ -11,6 +11,7 @@ import {
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { getStripeMode, getStripePublishableKey } from "./lib/stripeConfig";
+import { computeUnitPrice } from "./lib/pricing";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -1287,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.44";
+  "v1.9.46";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -9354,6 +9355,7 @@ export default function App() {
       const resolvedProductId = product.wooId ?? product.id;
       const resolvedVariantId = variant?.wooId ?? variant?.id ?? null;
       const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
+      const unitPrice = computeUnitPrice(product, variant ?? null, quantity);
       const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
       const dimensions = variant?.dimensions || product.dimensions || undefined;
       return {
@@ -9362,7 +9364,7 @@ export default function App() {
         variantId: resolvedVariantId,
         sku: resolvedSku,
         name: variant ? `${product.name} — ${variant.label}` : product.name,
-        price: variant?.price ?? product.price,
+        price: unitPrice,
         quantity,
         note: note ?? null,
         position: index + 1,
@@ -9436,26 +9438,51 @@ export default function App() {
             created?.created_at ||
             new Date().toISOString();
           const lineItemsRaw = Array.isArray(created?.items) ? created.items : [];
-          const lineItems = lineItemsRaw.map((item: any, index: number) => ({
-            id: String(item?.id || `${created?.id || "order"}-${index}`),
-            name: item?.name ?? null,
-            quantity:
+          const lineItems = lineItemsRaw.map((item: any, index: number) => {
+            const quantity =
               typeof item?.quantity === "number"
                 ? item.quantity
-                : Number(item?.quantity) || 0,
-            total:
-              typeof item?.total === "number"
-                ? item.total
-                : Number(item?.total) || Number(item?.price) || null,
-            price:
-              typeof item?.price === "number"
-                ? item.price
-                : Number(item?.price) || null,
-            sku: item?.sku ?? item?.variantSku ?? null,
-            productId: item?.productId ?? null,
-            variantId: item?.variantId ?? null,
-            image: null,
-          }));
+                : Number(item?.quantity) || 0;
+            const rawTotal =
+              typeof item?.total === "number" ? item.total : Number(item?.total);
+            const rawUnitPrice =
+              typeof item?.price === "number" ? item.price : Number(item?.price);
+            const normalizedTotal =
+              Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : null;
+            const normalizedUnitPrice =
+              Number.isFinite(rawUnitPrice) && rawUnitPrice > 0 ? rawUnitPrice : null;
+            let unitPrice =
+              normalizedUnitPrice ??
+              (normalizedTotal && quantity > 0 ? normalizedTotal / quantity : null);
+            let lineTotal =
+              normalizedTotal ??
+              (typeof unitPrice === "number" && Number.isFinite(unitPrice)
+                ? unitPrice * quantity
+                : null);
+
+            if (
+              quantity > 1 &&
+              typeof normalizedTotal === "number" &&
+              typeof normalizedUnitPrice === "number" &&
+              Math.abs(normalizedTotal - normalizedUnitPrice) < 0.01
+            ) {
+              unitPrice = normalizedUnitPrice;
+              lineTotal = normalizedUnitPrice * quantity;
+            }
+
+            return {
+              id: String(item?.id || `${created?.id || "order"}-${index}`),
+              name: item?.name ?? null,
+              quantity,
+              total: typeof lineTotal === "number" ? lineTotal : null,
+              subtotal: typeof lineTotal === "number" ? lineTotal : null,
+              price: typeof unitPrice === "number" ? unitPrice : null,
+              sku: item?.sku ?? item?.variantSku ?? null,
+              productId: item?.productId ?? null,
+              variantId: item?.variantId ?? null,
+              image: null,
+            };
+          });
           const optimisticOrder: AccountOrderSummary = {
             id: wooId ? String(wooId) : String(created?.id || Date.now()),
             number: wooNumber ? String(wooNumber) : null,
@@ -13305,21 +13332,11 @@ export default function App() {
                         aria-live="polite"
                       >
                         {quoteLoading && !quoteReady && (
-                          <div className="w-full flex flex-col items-center gap-4">
-                            <div className="news-loading-card flex flex-col items-center gap-3 w-full max-w-md">
-                              <div
-                                className="news-loading-line news-loading-shimmer w-3/4"
-                                aria-hidden="true"
-                              />
-                              <div
-                                className="news-loading-line news-loading-shimmer w-1/2"
-                                aria-hidden="true"
-                              />
-	                            </div>
-	                            <p className="text-xs font-semibold shimmer-text is-shimmering">
-	                              Loading today&apos;s quote…
-	                            </p>
-	                          </div>
+                          <div className="flex w-full flex-1 items-center justify-center">
+                            <p className="text-sm font-semibold text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
+                              Loading today&apos;s quote…
+                            </p>
+                          </div>
 	                        )}
                         {quoteReady && quoteOfTheDay && (
                           <p
@@ -13392,19 +13409,14 @@ export default function App() {
                           , {user.name}!
                         </p>
                         <div
-                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 pt-0 pb-2 sm:px-4 sm:py-2 text-center shadow-inner transition-opacity duration-500`}
+                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500`}
                           aria-live="polite"
                         >
                           {!quoteReady && (
-                            <div className="flex flex-col items-center gap-2 w-full">
-                              <div
-                                className="news-loading-line news-loading-shimmer w-3/4"
-                                aria-hidden="true"
-                              />
-                              <div
-                                className="news-loading-line news-loading-shimmer w-2/3"
-                                aria-hidden="true"
-                              />
+                            <div className="min-h-[56px] flex items-center justify-center w-full">
+                              <p className="text-sm font-semibold text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
+                                Loading today&apos;s quote…
+                              </p>
                             </div>
                           )}
                           {quoteReady && quoteOfTheDay && (

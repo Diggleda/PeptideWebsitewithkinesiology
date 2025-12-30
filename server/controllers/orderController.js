@@ -1,5 +1,92 @@
 const { logger } = require('../config/logger');
 const orderService = require('../services/orderService');
+const wooCommerceClient = require('../integration/wooCommerceClient');
+const axios = require('axios');
+const { env } = require('../config/env');
+const { buildInvoicePdf } = require('../services/invoicePdf');
+
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
+const normalizeOrderToken = (value) => String(value || '').trim().replace(/^#/, '');
+
+const extractWpoAccessKey = (wooOrder) => {
+  const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
+  if (metaData.length === 0) {
+    return null;
+  }
+
+  const unwrap = (value) => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const text = String(value).trim();
+      return text.length > 0 ? text : null;
+    }
+    if (typeof value === 'object') {
+      const invoiceValue = value?.invoice ?? value?.Invoice ?? null;
+      if (typeof invoiceValue === 'string' || typeof invoiceValue === 'number') {
+        const text = String(invoiceValue).trim();
+        return text.length > 0 ? text : null;
+      }
+      const accessValue = value?.access_key ?? value?.accessKey ?? null;
+      if (typeof accessValue === 'string' || typeof accessValue === 'number') {
+        const text = String(accessValue).trim();
+        return text.length > 0 ? text : null;
+      }
+    }
+    return null;
+  };
+
+  const findByKey = (key) => {
+    const match = metaData.find((entry) => String(entry?.key || '') === key);
+    return unwrap(match?.value);
+  };
+
+  const directKeys = [
+    '_wcpdf_invoice_access_key',
+    'wcpdf_invoice_access_key',
+    '_wpo_wcpdf_invoice_access_key',
+    'wpo_wcpdf_invoice_access_key',
+    '_wpo_wcpdf_access_key',
+    'wpo_wcpdf_access_key',
+    '_wcpdf_access_key',
+    'wcpdf_access_key',
+    'wpo_wcpdf_document_access_key',
+    '_wpo_wcpdf_document_access_key',
+  ];
+
+  for (const key of directKeys) {
+    const value = findByKey(key);
+    if (value) return value;
+  }
+
+  for (const entry of metaData) {
+    const key = String(entry?.key || '');
+    if (!key) continue;
+    const normalized = key.toLowerCase();
+    if (!(normalized.includes('wcpdf') || normalized.includes('wpo'))) continue;
+    if (!normalized.includes('access')) continue;
+    const value = unwrap(entry?.value);
+    if (value) return value;
+  }
+
+  return null;
+};
+
+const buildWpoInvoiceUrl = ({ storeUrl, orderId, accessKey, documentType = 'invoice' }) => {
+  const base = storeUrl ? String(storeUrl).replace(/\/+$/, '') : '';
+  if (!base || !orderId) return null;
+  const params = new URLSearchParams();
+  params.set('action', 'generate_wpo_wcpdf');
+  params.set('document_type', String(documentType || 'invoice'));
+  params.set('order_ids', String(orderId).trim());
+  if (accessKey) {
+    params.set('access_key', String(accessKey).trim());
+  }
+  params.set('shortcode', 'true');
+  return `${base}/wp-admin/admin-ajax.php?${params.toString()}`;
+};
 
 const createOrder = async (req, res, next) => {
   try {
@@ -148,6 +235,127 @@ const getSalesByRepForAdmin = async (req, res, next) => {
   }
 };
 
+const downloadInvoice = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const token = normalizeOrderToken(orderId);
+    if (!token) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+
+    const role = normalizeRole(req.user?.role);
+    const userEmail = normalizeEmail(req.user?.email);
+    const isAdminLike = role === 'admin' || role === 'sales_rep' || role === 'rep';
+
+    if (!wooCommerceClient?.fetchOrderById || !wooCommerceClient?.fetchOrdersByEmail) {
+      return res.status(503).json({ error: 'Invoice service unavailable' });
+    }
+
+    const fetchWooOrder = async (id) => {
+      try {
+        return await wooCommerceClient.fetchOrderById(id, { context: 'edit' });
+      } catch (error) {
+        return await wooCommerceClient.fetchOrderById(id);
+      }
+    };
+
+    let wooOrder = null;
+    try {
+      wooOrder = await fetchWooOrder(token);
+    } catch (error) {
+      wooOrder = null;
+    }
+
+    if (!wooOrder && userEmail) {
+      try {
+        const candidates = await wooCommerceClient.fetchOrdersByEmail(userEmail, { perPage: 50 });
+        const list = Array.isArray(candidates) ? candidates : [];
+        const match = list.find((entry) => {
+          const idMatch = normalizeOrderToken(entry?.wooOrderId || entry?.id) === token;
+          const numberMatch = normalizeOrderToken(entry?.wooOrderNumber || entry?.number) === token;
+          return idMatch || numberMatch;
+        });
+        const resolvedWooId = match?.wooOrderId || match?.id || null;
+        if (resolvedWooId) {
+          wooOrder = await fetchWooOrder(String(resolvedWooId));
+        }
+      } catch (error) {
+        logger.warn({ err: error, orderId: token }, 'Invoice order lookup fallback failed');
+      }
+    }
+
+    if (!wooOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const billingEmail = normalizeEmail(wooOrder?.billing?.email);
+    if (!isAdminLike) {
+      if (!userEmail || !billingEmail || userEmail !== billingEmail) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+    }
+
+    const accessKey = extractWpoAccessKey(wooOrder);
+    const wpoUrl = buildWpoInvoiceUrl({
+      storeUrl: env.wooCommerce?.storeUrl,
+      orderId: wooOrder?.id,
+      accessKey,
+    });
+
+    if (!wpoUrl || !accessKey) {
+      const { pdf, filename } = buildInvoicePdf(wooOrder, { orderToken: token });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-PepPro-Invoice-Source', 'fallback');
+      return res.status(200).send(pdf);
+    }
+
+    const response = await axios.get(wpoUrl, {
+      responseType: 'arraybuffer',
+      timeout: 25000,
+      maxRedirects: 5,
+      headers: {
+        Accept: 'application/pdf',
+        'User-Agent': 'PepPro Invoice Proxy',
+      },
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    const buffer = Buffer.from(response.data || []);
+    if (buffer.length < 5 || buffer.slice(0, 4).toString('ascii') !== '%PDF') {
+      const preview = buffer.slice(0, 180).toString('utf8');
+      const previewLower = preview.toLowerCase();
+      const permissionLike = previewLower.includes('sufficient permissions') || previewLower.includes('permission');
+      logger.warn(
+        {
+          orderId: token,
+          status: response.status,
+          contentType: response.headers?.['content-type'],
+          hasAccessKey: Boolean(accessKey),
+          preview: preview.length > 0 ? preview.slice(0, 160) : null,
+        },
+        'WP Overnight invoice response did not look like a PDF',
+      );
+      const { pdf, filename } = buildInvoicePdf(wooOrder, { orderToken: token });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-PepPro-Invoice-Source', permissionLike ? 'fallback-permission' : 'fallback');
+      return res.status(200).send(pdf);
+    }
+
+    const filename = `PepPro_Invoice_${normalizeOrderToken(wooOrder?.number || wooOrder?.id || token)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-PepPro-Invoice-Source', 'wpo');
+    return res.status(200).send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
@@ -156,4 +364,5 @@ module.exports = {
   getSalesByRepForAdmin,
   cancelOrder,
   estimateOrderTotals,
+  downloadInvoice,
 };

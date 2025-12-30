@@ -20,6 +20,7 @@ import { ordersAPI, paymentsAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 import { sanitizeServiceNames } from '../lib/publicText';
+import { computeUnitPrice } from '../lib/pricing';
 
 interface CheckoutResult {
   success?: boolean;
@@ -288,23 +289,9 @@ export function CheckoutModal({
 
   const openLegalDocument = useCallback((key: 'terms' | 'shipping' | 'privacy') => {
     storeScrollPosition();
+    setLegalModalOpen(true);
     window.dispatchEvent(new CustomEvent('peppro:open-legal', { detail: { key, preserveDialogs: true } }));
   }, [storeScrollPosition]);
-
-  const computeUnitPrice = (product: Product, variant: ProductVariant | null | undefined, quantity: number) => {
-    const basePrice = variant?.price ?? product.price;
-    const tiers = product.bulkPricingTiers ?? [];
-    if (!tiers.length) {
-      return basePrice;
-    }
-    const applicable = [...tiers]
-      .sort((a, b) => b.minQuantity - a.minQuantity)
-      .find((tier) => quantity >= tier.minQuantity);
-    if (!applicable) {
-      return basePrice;
-    }
-    return basePrice * (1 - applicable.discountPercentage / 100);
-  };
 
   const getVisibleBulkTiers = (product: Product, quantity: number) => {
     const tiers = product.bulkPricingTiers ?? [];
@@ -939,13 +926,14 @@ export function CheckoutModal({
     return null;
   }
 
-  return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        console.debug('[CheckoutModal] Dialog open change', { open });
-        if (!open) {
-          if (legalModalOpen) {
+    return (
+      <Dialog
+        open={isOpen}
+        modal={!legalModalOpen}
+        onOpenChange={(open) => {
+          console.debug('[CheckoutModal] Dialog open change', { open });
+          if (!open) {
+            if (legalModalOpen) {
             console.debug('[CheckoutModal] Close request blocked by legal modal');
             return;
           }
@@ -956,9 +944,11 @@ export function CheckoutModal({
       <DialogContent
         className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
         style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+        containerStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
+        overlayStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
         data-legal-overlay={legalModalOpen ? 'true' : 'false'}
         trapFocus={!legalModalOpen}
-        disableOutsidePointerEvents={!legalModalOpen}
+        disableOutsidePointerEvents={false}
       >
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">

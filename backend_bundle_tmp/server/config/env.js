@@ -57,6 +57,10 @@ const resolvePath = (value, fallback) => {
     : path.join(process.cwd(), candidate);
 };
 
+// Stripe Tax defaults
+const DEFAULT_STRIPE_TAX_CODE = 'txcd_99999999'; // tangible personal property
+const DEFAULT_STRIPE_SHIPPING_TAX_CODE = 'txcd_92010001'; // shipping / delivery charges
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: toNumber(process.env.PORT, 3001),
@@ -71,7 +75,7 @@ const env = {
     // so default to 50mb to comfortably support ~25-35mb binary images.
     limit: process.env.BODY_LIMIT || '50mb',
   },
-  backendBuild: process.env.BACKEND_BUILD || 'v1.9.11',
+  backendBuild: process.env.BACKEND_BUILD || 'v1.9.46',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   logPretty: process.env.LOG_PRETTY === 'true',
   rateLimit: {
@@ -154,9 +158,11 @@ const env = {
     })(),
     livePublishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
     testPublishableKey: process.env.VITE_STRIPE_PUBLISHABLE_TEST_KEY || '',
-    taxEnabled: process.env.STRIPE_TAX_ENABLED === 'true',
-    defaultTaxCode: process.env.STRIPE_TAX_CODE || '',
-    shippingTaxCode: process.env.STRIPE_TAX_SHIPPING_CODE || '',
+    taxEnabled: process.env.STRIPE_TAX_ENABLED !== 'false',
+    defaultTaxCode: process.env.STRIPE_TAX_CODE || DEFAULT_STRIPE_TAX_CODE,
+    shippingTaxCode: process.env.STRIPE_TAX_SHIPPING_CODE
+      || DEFAULT_STRIPE_SHIPPING_TAX_CODE,
+    taxDebug: process.env.STRIPE_TAX_DEBUG === 'true',
   },
   shipStation: {
     // V2 bearer token support; fall back to legacy key/secret if provided

@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { router: paymentRoutes, handleStripeWebhook } = require('./routes/paymentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orderRoutes');
@@ -87,6 +89,15 @@ const defaultCodeForStatus = (status) => {
     default:
       return status >= 500 ? 'INTERNAL_ERROR' : 'ERROR';
   }
+};
+
+const resolveFrontendRoot = () => {
+  const candidates = [
+    path.join(process.cwd(), 'build'),
+    path.join(process.cwd(), 'public_html'),
+    path.join(process.cwd(), 'public'),
+  ];
+  return candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
 };
 
 const buildCorsOptions = () => {
@@ -228,6 +239,17 @@ const createApp = () => {
   app.use('/api', (req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
   });
+
+  // Serve the built frontend for local/test usage when present.
+  const frontendRoot = resolveFrontendRoot();
+  if (frontendRoot) {
+    const contentRoot = path.join(process.cwd(), 'src', 'content');
+    if (fs.existsSync(contentRoot)) {
+      app.use('/content', express.static(contentRoot));
+    }
+    app.use(express.static(frontendRoot));
+    app.get(/^\/(?!api\/).*/, (req, res, next) => res.sendFile(path.join(frontendRoot, 'index.html')));
+  }
 
   app.use((err, req, res, _next) => {
     const status = Number.isFinite(err?.status) ? err.status : 500;

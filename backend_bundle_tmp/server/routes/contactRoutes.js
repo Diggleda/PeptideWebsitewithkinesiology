@@ -2,6 +2,8 @@ const express = require('express');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const { ensureAdmin } = require('../middleware/auth');
+const salesRepRepository = require('../repositories/salesRepRepository');
+const salesProspectRepository = require('../repositories/salesProspectRepository');
 
 const router = express.Router();
 
@@ -43,13 +45,38 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    await mysqlClient.execute(
+    const result = await mysqlClient.execute(
       `
         INSERT INTO contact_forms (name, email, phone, source)
         VALUES (:name, :email, :phone, :source)
       `,
       trimmed,
     );
+
+    try {
+      const normalizedSource = trimmed.source.trim().toUpperCase();
+      const rep = salesRepRepository
+        .getAll()
+        .find((candidate) => String(candidate?.salesCode || '').trim().toUpperCase() === normalizedSource);
+
+      const insertId = result && typeof result.insertId !== 'undefined' ? result.insertId : null;
+      if (rep && insertId) {
+        await salesProspectRepository.upsert({
+          id: `contact_form:${insertId}`,
+          salesRepId: String(rep.id || rep.salesRepId),
+          contactFormId: String(insertId),
+          status: 'contact_form',
+          isManual: false,
+          contactName: trimmed.name,
+          contactEmail: trimmed.email,
+          contactPhone: trimmed.phone || null,
+          notes: null,
+        });
+      }
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to upsert sales prospect for contact form submission');
+    }
+
     return res.status(200).json({ status: 'ok' });
   } catch (error) {
     logger.error({ err: error }, 'Failed to persist contact form');

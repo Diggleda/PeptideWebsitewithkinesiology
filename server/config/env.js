@@ -75,7 +75,7 @@ const env = {
     // so default to 50mb to comfortably support ~25-35mb binary images.
     limit: process.env.BODY_LIMIT || '50mb',
   },
-  backendBuild: process.env.BACKEND_BUILD || 'v1.9.44',
+  backendBuild: process.env.BACKEND_BUILD || 'v1.9.46',
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   logPretty: process.env.LOG_PRETTY === 'true',
   rateLimit: {

@@ -1,13 +1,32 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const referralRepository = require('../repositories/referralRepository');
 const referralCodeRepository = require('../repositories/referralCodeRepository');
 const creditLedgerRepository = require('../repositories/creditLedgerRepository');
+const adminRepository = require('../repositories/adminRepository');
 const salesRepRepository = require('../repositories/salesRepRepository');
 const userRepository = require('../repositories/userRepository');
+const salesProspectRepository = require('../repositories/salesProspectRepository');
+const orderRepository = require('../repositories/orderRepository');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
+const { env } = require('../config/env');
+const { parseMultipartSingleFile } = require('../utils/multipart');
 
-const REFERRAL_STATUSES = ['pending', 'contacted', 'account_created', 'nuture', 'converted', 'contact_form'];
+const REFERRAL_STATUSES = ['pending', 'contacted', 'verified', 'account_created', 'converted', 'nuture', 'contact_form'];
+
+const normalizeReferralStatus = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'verifying') return 'verified';
+  if (normalized === 'nurture') return 'nuture';
+  if (normalized === 'nuturing') return 'nuture';
+  if (normalized === 'account created') return 'account_created';
+  if (normalized === 'account-created') return 'account_created';
+  if (normalized === 'accountcreated') return 'account_created';
+  return normalized;
+};
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
@@ -70,6 +89,22 @@ const ensureSalesRep = (user, context = 'unknown') => {
   }
 };
 
+const normalizeOwnerIds = (user) => {
+  return [
+    user?.id || null,
+    user?.salesRepId || null,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value));
+};
+
+const extractContactFormId = (identifier) => {
+  const raw = String(identifier || '');
+  if (!raw.startsWith('contact_form:')) return null;
+  const [, value] = raw.split(':', 2);
+  return value ? String(value).trim() : null;
+};
+
 const submitDoctorReferral = (req, res, next) => {
   try {
     ensureDoctor(req.user, 'submitDoctorReferral');
@@ -97,6 +132,26 @@ const submitDoctorReferral = (req, res, next) => {
       referrerDoctorPhone: req.user.phone || null,
     });
 
+    // Status/notes live in sales_prospects in the new flow; create a prospect row when we can
+    // associate this referral with a sales rep.
+    if (record.salesRepId) {
+      salesProspectRepository
+        .upsert({
+          id: String(record.id),
+          salesRepId: String(record.salesRepId),
+          referralId: String(record.id),
+          status: 'pending',
+          isManual: false,
+          contactName: record.referredContactName,
+          contactEmail: record.referredContactEmail,
+          contactPhone: record.referredContactPhone,
+          notes: null,
+        })
+        .catch((error) => {
+          logger.warn({ err: error, referralId: record.id }, 'Failed to create sales prospect for referral');
+        });
+    }
+
     res.json({ referral: record });
   } catch (error) {
     next(error);
@@ -112,17 +167,34 @@ const deleteDoctorReferral = (req, res, next) => {
       // treat missing as already deleted for idempotency
       return res.json({ deleted: true });
     }
-    const status = (referral.status || '').toLowerCase();
-    if (status !== 'pending') {
-      const error = new Error('Referral can only be deleted while pending');
-      error.status = 409;
-      throw error;
-    }
-    const removed = referralRepository.remove(referralId);
-    if (!removed) {
+
+    const checkDeletion = async () => {
+      const ownerId = referral.salesRepId || req.user.salesRepId || null;
+      let status = (referral.status || '').toLowerCase();
+      if (ownerId) {
+        try {
+          const prospect = await salesProspectRepository.findBySalesRepAndReferralId(ownerId, referralId);
+          if (prospect?.status) {
+            status = String(prospect.status).toLowerCase();
+          }
+        } catch (error) {
+          logger.warn({ err: error, referralId }, 'Failed to load sales prospect while deleting referral');
+        }
+      }
+      if (status !== 'pending') {
+        const error = new Error('Referral can only be deleted while pending');
+        error.status = 409;
+        throw error;
+      }
+      const removed = referralRepository.remove(referralId);
+      if (!removed) {
+        return res.json({ deleted: true });
+      }
+      await salesProspectRepository.remove(referralId).catch(() => null);
       return res.json({ deleted: true });
-    }
-    res.json({ deleted: true });
+    };
+
+    checkDeletion().catch(next);
   } catch (error) {
     next(error);
   }
@@ -268,6 +340,50 @@ const getSalesRepDashboard = async (req, res, next) => {
           );
           return ownerIds.includes(String(salesRepId));
         });
+    const userIds = (users || [])
+      .map((u) => (u && u.id != null ? String(u.id) : null))
+      .filter(Boolean);
+    const orderCounts = {};
+    if (userIds.length > 0) {
+      if (mysqlClient.isEnabled()) {
+        try {
+          const placeholders = userIds.map((_, idx) => `:id${idx}`).join(', ');
+          const params = userIds.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+          const rows = await mysqlClient.fetchAll(
+            `
+              SELECT user_id AS userId, COUNT(*) AS count
+              FROM peppro_orders
+              WHERE user_id IN (${placeholders})
+              GROUP BY user_id
+            `,
+            params,
+          );
+          (rows || []).forEach((row) => {
+            if (row?.userId != null) {
+              orderCounts[String(row.userId)] = Number(row.count) || 0;
+            }
+          });
+        } catch (error) {
+          logger.warn({ err: error }, 'Failed to load order counts for dashboard users');
+        }
+      } else {
+        try {
+          const orders = orderRepository.getAll();
+          (orders || []).forEach((order) => {
+            const uid = order?.userId != null ? String(order.userId) : null;
+            if (!uid) return;
+            if (!orderCounts[uid]) orderCounts[uid] = 0;
+            orderCounts[uid] += 1;
+          });
+        } catch (error) {
+          logger.warn({ err: error }, 'Failed to load local order counts for dashboard users');
+        }
+      }
+    }
+    const usersWithOrders = (users || []).map((u) => ({
+      ...u,
+      totalOrders: orderCounts[String(u?.id)] || 0,
+    }));
 
     // Always merge in any unmatched referrals so local data (mismatched salesRepId) still appears
     if (!scopeAll) {
@@ -369,10 +485,59 @@ const getSalesRepDashboard = async (req, res, next) => {
       }
     }
 
+    // Overlay prospect-owned fields (status/notes/isManual) onto the referral list.
+    // This allows the UI to remain backward compatible while we migrate the source of truth.
+    try {
+      const ownerIds = normalizeOwnerIds(req.user);
+      const useOwnerId = !scopeAll ? String(salesRepId || '') : null;
+      const allowedOwners = scopeAll && isAdmin ? null : new Set(ownerIds.concat(useOwnerId ? [useOwnerId] : []));
+
+      const merged = await Promise.all(
+        (referrals || []).map(async (referral) => {
+          const id = String(referral?.id || '');
+          if (!id) return referral;
+
+          let prospect = await salesProspectRepository.findById(id);
+          if (!prospect && useOwnerId) {
+            const contactFormId = extractContactFormId(id);
+            if (contactFormId) {
+              prospect = await salesProspectRepository.findBySalesRepAndContactFormId(useOwnerId, contactFormId);
+            } else {
+              prospect = await salesProspectRepository.findBySalesRepAndReferralId(useOwnerId, id);
+            }
+          }
+
+          if (!prospect) {
+            return referral;
+          }
+
+          if (allowedOwners && prospect.salesRepId && !allowedOwners.has(String(prospect.salesRepId))) {
+            return referral;
+          }
+
+          return {
+            ...referral,
+            status: prospect.status || referral.status,
+            notes: prospect.notes ?? referral.notes ?? null,
+            salesRepNotes: prospect.notes ?? null,
+            isManual: Boolean(prospect.isManual) || String(id).startsWith('manual:'),
+            resellerPermitExempt: Boolean(prospect.resellerPermitExempt),
+            resellerPermitFilePath: prospect.resellerPermitFilePath || null,
+            resellerPermitFileName: prospect.resellerPermitFileName || null,
+            resellerPermitUploadedAt: prospect.resellerPermitUploadedAt || null,
+          };
+        }),
+      );
+
+      referrals = merged;
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to overlay sales prospect data onto dashboard referrals');
+    }
+
     res.json({
       referrals,
       codes,
-      users,
+      users: usersWithOrders,
       statuses: REFERRAL_STATUSES,
     });
   } catch (error) {
@@ -539,12 +704,23 @@ const updateReferral = (req, res, next) => {
     const { referralId } = req.params;
     const updates = {};
     if (req.body?.status) {
-      if (!REFERRAL_STATUSES.includes(req.body.status)) {
+      const status = normalizeReferralStatus(req.body.status);
+      if (!status || !REFERRAL_STATUSES.includes(status)) {
+        logger.warn(
+          {
+            referralId,
+            receivedStatus: req.body.status,
+            normalizedStatus: status,
+            allowedStatuses: REFERRAL_STATUSES,
+            userId: req.user?.id || null,
+          },
+          'Unsupported referral status update request',
+        );
         const error = new Error('Unsupported referral status');
         error.status = 400;
         throw error;
       }
-      updates.status = req.body.status;
+      updates.status = status;
     }
     ['notes', 'referredContactName', 'referredContactEmail', 'referredContactPhone'].forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
@@ -610,10 +786,537 @@ const updateReferral = (req, res, next) => {
     }
 
     const updated = referralRepository.update(referralId, updates);
-    res.json({
-      referral: updated,
-      statuses: REFERRAL_STATUSES,
+    const ownerId = updated?.salesRepId || req.user.salesRepId || req.user.id;
+    const contactFormId = extractContactFormId(referralId);
+    const isManual = String(referralId).startsWith('manual:');
+    salesProspectRepository
+      .findById(referralId)
+      .catch(() => null)
+      .then((existingProspect) => salesProspectRepository.upsert({
+        id: String(referralId),
+        salesRepId: String(ownerId),
+        referralId: contactFormId ? null : (isManual ? null : String(referralId)),
+        contactFormId: contactFormId ? String(contactFormId) : null,
+        status: updates.status || updated?.status || existingProspect?.status || 'pending',
+        notes: Object.prototype.hasOwnProperty.call(updates, 'notes')
+          ? updates.notes
+          : (existingProspect?.notes ?? null),
+        isManual,
+        contactName: updated?.referredContactName || req.body?.referredContactName || existingProspect?.contactName || null,
+        contactEmail: updated?.referredContactEmail || req.body?.referredContactEmail || existingProspect?.contactEmail || null,
+        contactPhone: updated?.referredContactPhone || req.body?.referredContactPhone || existingProspect?.contactPhone || null,
+      }))
+      .catch((error) => {
+        logger.warn({ err: error, referralId }, 'Failed to sync sales prospect on referral update');
+      })
+      .finally(() => {
+        res.json({
+          referral: updated,
+          statuses: REFERRAL_STATUSES,
+        });
+      });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const createManualProspect = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'createManualProspect');
+    const payload = req.body || {};
+    const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+    if (!name) {
+      const error = new Error('Name is required');
+      error.status = 400;
+      throw error;
+    }
+    const status = normalizeReferralStatus(payload.status) || 'pending';
+    if (!REFERRAL_STATUSES.includes(status) || status === 'contact_form') {
+      logger.warn(
+        {
+          receivedStatus: payload.status,
+          normalizedStatus: status,
+          allowedStatuses: REFERRAL_STATUSES,
+          userId: req.user?.id || null,
+        },
+        'Unsupported manual prospect status',
+      );
+      const error = new Error('Unsupported referral status');
+      error.status = 400;
+      throw error;
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : null;
+    const phone = typeof payload.phone === 'string' ? payload.phone.trim() : null;
+    const notesRaw = typeof payload.notes === 'string' ? payload.notes : null;
+    const notes = notesRaw && notesRaw.trim().length > 0
+      ? notesRaw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      : null;
+    const hasAccount = payload.hasAccount === true;
+    const salesRepId = req.user.salesRepId || req.user.id;
+    const now = new Date().toISOString();
+
+    if (email) {
+      const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
+      const emailTakenInReferrals = () => {
+        try {
+          const referrals = referralRepository.getAll();
+          return Array.isArray(referrals)
+            && referrals.some((r) => normalizeEmail(r?.referredContactEmail) === email);
+        } catch {
+          return false;
+        }
+      };
+      const emailTakenInSalesProspects = async () => {
+        try {
+          const prospects = await salesProspectRepository.getAll();
+          return Array.isArray(prospects)
+            && prospects.some((p) => normalizeEmail(p?.contactEmail) === email);
+        } catch {
+          return false;
+        }
+      };
+      const emailTakenInContactForms = async () => {
+        if (!mysqlClient.isEnabled()) {
+          return false;
+        }
+        try {
+          const row = await mysqlClient.fetchOne(
+            'SELECT id FROM contact_forms WHERE LOWER(email) = :email LIMIT 1',
+            { email },
+          );
+          return Boolean(row);
+        } catch {
+          return false;
+        }
+      };
+
+      const taken =
+        Boolean(adminRepository.findByEmail(email))
+        || Boolean(salesRepRepository.findByEmail(email))
+        || Boolean(userRepository.findByEmail(email))
+        || emailTakenInReferrals()
+        || (await emailTakenInSalesProspects())
+        || (await emailTakenInContactForms());
+
+      if (taken) {
+        const error = new Error('Email already exists in the system');
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    const record = referralRepository.insert({
+      id: `manual:${crypto.randomUUID()}`,
+      referrerDoctorId: null,
+      salesRepId,
+      referredContactName: name,
+      referredContactEmail: email || null,
+      referredContactPhone: phone || null,
+      status,
+      notes: notes || null,
+      createdAt: now,
+      updatedAt: now,
+      referredContactHasAccount: hasAccount,
+      referredContactEligibleForCredit: false,
+      source: 'manual',
     });
+
+    salesProspectRepository
+      .upsert({
+        id: String(record.id),
+        salesRepId: String(salesRepId),
+        status,
+        notes: notes || null,
+        isManual: true,
+        contactName: name,
+        contactEmail: email || null,
+        contactPhone: phone || null,
+      })
+      .catch((error) => {
+        logger.warn({ err: error, manualId: record.id }, 'Failed to persist manual sales prospect');
+      })
+      .finally(() => {
+        res.status(201).json({ referral: { ...record, isManual: true }, statuses: REFERRAL_STATUSES });
+      });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteManualProspect = (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'deleteManualProspect');
+    const { referralId } = req.params;
+    const referral = referralRepository.findById(referralId);
+    if (!referral) {
+      return res.json({ status: 'deleted' });
+    }
+    if (!String(referral.id || '').startsWith('manual:')) {
+      const error = new Error('Not a manual prospect');
+      error.status = 400;
+      throw error;
+    }
+
+    const isAdmin = normalizeRole(req.user?.role) === 'admin';
+    if (!isAdmin) {
+      const owner = referral.salesRepId ? String(referral.salesRepId) : null;
+      const allowedOwners = [req.user.id, req.user.salesRepId].filter(Boolean).map(String);
+      if (owner && !allowedOwners.includes(owner)) {
+        const error = new Error('Referral not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    referralRepository.remove(referralId);
+    salesProspectRepository.remove(referralId).catch(() => null).finally(() => {
+      res.json({ status: 'deleted' });
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getSalesProspect = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'getSalesProspect');
+    const identifier = String(req.params.identifier || '').trim();
+    if (!identifier) {
+      const error = new Error('Identifier is required');
+      error.status = 400;
+      throw error;
+    }
+
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const ownerIds = normalizeOwnerIds(req.user);
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+
+    let prospect = await salesProspectRepository.findById(identifier);
+    if (!prospect && salesRepId) {
+      const contactFormId = extractContactFormId(identifier);
+      prospect = contactFormId
+        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
+        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    }
+
+    if (prospect && !scopeAll && !isAdmin) {
+      const owner = prospect.salesRepId ? String(prospect.salesRepId) : null;
+      if (owner && !ownerIds.includes(owner)) {
+        const error = new Error('Prospect not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    res.json({ prospect: prospect || null });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const upsertSalesProspect = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'upsertSalesProspect');
+    const identifier = String(req.params.identifier || '').trim();
+    if (!identifier) {
+      const error = new Error('Identifier is required');
+      error.status = 400;
+      throw error;
+    }
+
+    const payload = req.body || {};
+    const updates = {};
+    if (Object.prototype.hasOwnProperty.call(payload, 'notes')) {
+      updates.notes = payload.notes == null ? null : String(payload.notes);
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'resellerPermitExempt')) {
+      updates.resellerPermitExempt = Boolean(payload.resellerPermitExempt);
+    }
+    if (payload.status) {
+      const status = normalizeReferralStatus(payload.status);
+      if (!status || !REFERRAL_STATUSES.includes(status)) {
+        const error = new Error('Unsupported referral status');
+        error.status = 400;
+        throw error;
+      }
+      updates.status = status;
+    }
+
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const ownerIds = normalizeOwnerIds(req.user);
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+
+    let existing = await salesProspectRepository.findById(identifier);
+    if (!existing && salesRepId) {
+      const contactFormId = extractContactFormId(identifier);
+      existing = contactFormId
+        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
+        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    }
+
+    if (existing && !scopeAll && !isAdmin) {
+      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
+      if (owner && !ownerIds.includes(owner)) {
+        const error = new Error('Prospect not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    const contactFormId = extractContactFormId(identifier);
+    const isManual = identifier.startsWith('manual:');
+    const owner = existing?.salesRepId || salesRepId || req.user.salesRepId || req.user.id;
+
+    let base = existing;
+    if (!base) {
+      if (contactFormId) {
+        base = {
+          id: identifier,
+          salesRepId: String(owner),
+          contactFormId: String(contactFormId),
+          status: 'contact_form',
+          isManual: false,
+        };
+      } else if (isManual) {
+        base = {
+          id: identifier,
+          salesRepId: String(owner),
+          status: 'pending',
+          isManual: true,
+        };
+      } else {
+        const maybeDoctor = userRepository.findById(identifier);
+        const maybeDoctorRole = normalizeRole(maybeDoctor?.role);
+        if (maybeDoctor && (maybeDoctorRole === 'doctor' || maybeDoctorRole === 'test_doctor')) {
+          base = {
+            id: `doctor:${identifier}`,
+            salesRepId: String(owner),
+            doctorId: String(identifier),
+            status: 'pending',
+            isManual: false,
+          };
+        } else {
+          base = {
+            id: identifier,
+            salesRepId: String(owner),
+            referralId: identifier,
+            status: 'pending',
+            isManual: false,
+          };
+        }
+      }
+    }
+
+    const saved = await salesProspectRepository.upsert({
+      ...base,
+      ...updates,
+    });
+    res.json({ prospect: saved });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const uploadResellerPermit = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'uploadResellerPermit');
+    const identifier = String(req.params.identifier || '').trim();
+    if (!identifier) {
+      const error = new Error('Identifier is required');
+      error.status = 400;
+      throw error;
+    }
+
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const ownerIds = normalizeOwnerIds(req.user);
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+
+    let existing = await salesProspectRepository.findById(identifier);
+    if (!existing && salesRepId) {
+      const contactFormId = extractContactFormId(identifier);
+      existing = contactFormId
+        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
+        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    }
+
+    if (existing && !scopeAll && !isAdmin) {
+      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
+      if (owner && !ownerIds.includes(owner)) {
+        const error = new Error('Prospect not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    const parsed = await parseMultipartSingleFile(req, {
+      fieldName: 'file',
+      maxBytes: 25 * 1024 * 1024,
+    });
+    const ext = path.extname(String(parsed.filename || '')).toLowerCase();
+    const allowedExt = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.gif']);
+    if (!allowedExt.has(ext)) {
+      const error = new Error('Invalid file type');
+      error.status = 400;
+      throw error;
+    }
+
+    const safeOriginal = path
+      .basename(String(parsed.filename || 'reseller_permit'))
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .slice(0, 160);
+    const storedName = `reseller_permit_${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext || ''}`;
+    const uploadDir = path.join(env.dataDir, 'uploads', 'reseller-permits');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const storedPath = path.join(uploadDir, storedName);
+    await fs.promises.writeFile(storedPath, parsed.buffer);
+
+    const contactFormId = extractContactFormId(identifier);
+    const isManual = identifier.startsWith('manual:');
+    const owner = existing?.salesRepId || salesRepId || req.user.salesRepId || req.user.id;
+
+    let base = existing;
+    if (!base) {
+      if (contactFormId) {
+        base = {
+          id: identifier,
+          salesRepId: String(owner),
+          contactFormId: String(contactFormId),
+          status: 'contact_form',
+          isManual: false,
+        };
+      } else if (isManual) {
+        base = {
+          id: identifier,
+          salesRepId: String(owner),
+          status: 'pending',
+          isManual: true,
+        };
+      } else {
+        base = {
+          id: identifier,
+          salesRepId: String(owner),
+          referralId: identifier,
+          status: 'pending',
+          isManual: false,
+        };
+      }
+    }
+
+    const saved = await salesProspectRepository.upsert({
+      ...base,
+      resellerPermitFilePath: path.posix.join('uploads', 'reseller-permits', storedName),
+      resellerPermitFileName: safeOriginal,
+      resellerPermitUploadedAt: new Date().toISOString(),
+    });
+
+    res.json({ prospect: saved });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const downloadResellerPermit = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'downloadResellerPermit');
+    const identifier = String(req.params.identifier || '').trim();
+    if (!identifier) {
+      const error = new Error('Identifier is required');
+      error.status = 400;
+      throw error;
+    }
+
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const ownerIds = normalizeOwnerIds(req.user);
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+
+    let existing = await salesProspectRepository.findById(identifier);
+    if (!existing && salesRepId) {
+      const contactFormId = extractContactFormId(identifier);
+      existing = contactFormId
+        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
+        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    }
+
+    if (existing && !scopeAll && !isAdmin) {
+      const owner = existing.salesRepId ? String(existing.salesRepId) : null;
+      if (owner && !ownerIds.includes(owner)) {
+        const error = new Error('Prospect not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    const relativePath = existing?.resellerPermitFilePath
+      ? String(existing.resellerPermitFilePath)
+      : '';
+    if (!existing || !relativePath) {
+      const error = new Error('Permit not found');
+      error.status = 404;
+      throw error;
+    }
+
+    const allowedRoot = path.resolve(env.dataDir, 'uploads', 'reseller-permits');
+    const candidate = path.resolve(env.dataDir, relativePath.replace(/^[/\\\\]+/, ''));
+    if (!(candidate === allowedRoot || candidate.startsWith(`${allowedRoot}${path.sep}`))) {
+      const error = new Error('Permit not found');
+      error.status = 404;
+      throw error;
+    }
+    if (!fs.existsSync(candidate)) {
+      const error = new Error('Permit not found');
+      error.status = 404;
+      throw error;
+    }
+
+    const ext = path.extname(candidate).toLowerCase();
+    const contentType = (() => {
+      switch (ext) {
+        case '.pdf':
+          return 'application/pdf';
+        case '.png':
+          return 'image/png';
+        case '.jpg':
+        case '.jpeg':
+          return 'image/jpeg';
+        case '.webp':
+          return 'image/webp';
+        case '.gif':
+          return 'image/gif';
+        case '.heic':
+          return 'image/heic';
+        default:
+          return 'application/octet-stream';
+      }
+    })();
+
+    const safeNameBase = existing?.resellerPermitFileName
+      ? String(existing.resellerPermitFileName)
+      : path.basename(candidate);
+    const safeName = path
+      .basename(safeNameBase)
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .slice(0, 160) || 'reseller_permit';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    res.sendFile(candidate);
   } catch (error) {
     next(error);
   }
@@ -626,6 +1329,12 @@ module.exports = {
   getDoctorLedger,
   getSalesRepDashboard,
   createReferralCode,
+  createManualProspect,
+  deleteManualProspect,
+  getSalesProspect,
+  upsertSalesProspect,
+  uploadResellerPermit,
+  downloadResellerPermit,
   updateReferralCodeStatus,
   listReferralCodes,
   updateReferral,

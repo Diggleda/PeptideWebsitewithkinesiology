@@ -165,15 +165,6 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     }
   }, []);
 
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: Boolean(selectedDocument) } }));
-    return () => {
-      if (selectedDocument) {
-        window.dispatchEvent(new CustomEvent('peppro:legal-state', { detail: { open: false } }));
-      }
-    };
-  }, [selectedDocument]);
-
   const handleContactOpen = useCallback(() => {
     if (contactCloseTimerRef.current) {
       clearTimeout(contactCloseTimerRef.current);
@@ -287,8 +278,8 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       {selectedDocument && createPortal(
         <div
           className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px]',
-            isVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            isVisible ? 'opacity-100' : 'opacity-0',
           )}
           style={{
             zIndex: 2147483647,
@@ -364,8 +355,8 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       {showContactCTA && contactOpen && createPortal(
         <div
           className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px]',
-            contactVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            contactVisible ? 'opacity-100' : 'opacity-0',
           )}
           style={{
             zIndex: 2147483647,

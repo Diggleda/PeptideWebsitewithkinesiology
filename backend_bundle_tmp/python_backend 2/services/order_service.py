@@ -1,0 +1,1873 @@
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+from datetime import datetime, timezone
+import json
+import re
+from typing import Dict, List, Optional
+
+from ..repositories import (
+    order_repository,
+    user_repository,
+    sales_rep_repository,
+    referral_code_repository,
+    sales_prospect_repository,
+)
+from ..integrations import ship_station, stripe_payments, woo_commerce
+from ..integrations import stripe_tax
+from .. import storage
+from . import referral_service
+from . import settings_service
+
+logger = logging.getLogger(__name__)
+
+_PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
+    if _PERF_LOG_ENABLED or duration_ms >= threshold_ms:
+        logger.info("[perf] %s (%.0fms)", message, duration_ms)
+
+_SALES_BY_REP_SUMMARY_TTL_SECONDS = 25
+_sales_by_rep_summary_lock = threading.Lock()
+_sales_by_rep_summary_inflight: Optional[threading.Event] = None
+_sales_by_rep_summary_cache: Dict[str, object] = {
+    "data": None,
+    "fetchedAtMs": 0,
+    "expiresAtMs": 0,
+}
+
+_SALES_REP_ORDERS_TTL_SECONDS = int(os.environ.get("SALES_REP_ORDERS_TTL_SECONDS", "20").strip() or 20)
+_SALES_REP_ORDERS_TTL_SECONDS = max(3, min(_SALES_REP_ORDERS_TTL_SECONDS, 120))
+_sales_rep_orders_cache_lock = threading.Lock()
+_sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
+
+
+def _normalize_email(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return str(value).strip().lower()
+
+
+def _is_doctor_role(role: Optional[str]) -> bool:
+    normalized = str(role or "").strip().lower()
+    return normalized in ("doctor", "test_doctor")
+
+
+def _has_reseller_permit_on_file(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict):
+        return False
+    doctor_id = str(user.get("id") or "").strip()
+    email = _normalize_email(user.get("email"))
+    if not doctor_id and not email:
+        return False
+    try:
+        prospects = sales_prospect_repository.get_all()
+    except Exception:
+        return False
+    for prospect in prospects or []:
+        if not isinstance(prospect, dict):
+            continue
+        prospect_doctor_id = str(prospect.get("doctorId") or "").strip()
+        prospect_email = _normalize_email(prospect.get("contactEmail"))
+        matches_doctor = bool(doctor_id and prospect_doctor_id and prospect_doctor_id == doctor_id)
+        matches_email = bool(email and prospect_email and prospect_email == email)
+        if not matches_doctor and not matches_email:
+            continue
+        file_path = str(prospect.get("resellerPermitFilePath") or "").strip()
+        if file_path:
+            return True
+    return False
+
+
+def _is_tax_exempt_for_checkout(user: Optional[Dict]) -> bool:
+    if not isinstance(user, dict) or not _is_doctor_role(user.get("role")):
+        return False
+    if bool(user.get("isTaxExempt")):
+        return True
+    return _has_reseller_permit_on_file(user)
+
+
+def _compute_allowed_sales_rep_ids(
+    sales_rep_id: str,
+    users: List[Dict],
+    rep_records: Dict[str, Dict],
+) -> set[str]:
+    normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    allowed_rep_ids: set[str] = {normalized_sales_rep_id} if normalized_sales_rep_id else set()
+
+    legacy_map = {
+        str(rep.get("legacyUserId")).strip(): str(rep_id)
+        for rep_id, rep in rep_records.items()
+        if rep.get("legacyUserId")
+    }
+
+    rep_record_id = legacy_map.get(normalized_sales_rep_id)
+    if rep_record_id:
+        allowed_rep_ids.add(str(rep_record_id))
+
+    def add_legacy_user_id(rep: Dict | None):
+        if not isinstance(rep, dict):
+            return
+        legacy_user_id = str(rep.get("legacyUserId") or "").strip()
+        if legacy_user_id:
+            allowed_rep_ids.add(str(legacy_user_id))
+
+    direct_rep_record = rep_records.get(normalized_sales_rep_id) if normalized_sales_rep_id else None
+    add_legacy_user_id(direct_rep_record if isinstance(direct_rep_record, dict) else None)
+    add_legacy_user_id(rep_records.get(str(rep_record_id)) if rep_record_id else None)
+
+    rep_user = next((u for u in users if str(u.get("id")) == normalized_sales_rep_id), None)
+    rep_user_email = (rep_user.get("email") or "").strip().lower() if isinstance(rep_user, dict) else ""
+    if rep_user_email:
+        for rep_id, rep in rep_records.items():
+            if (rep.get("email") or "").strip().lower() == rep_user_email:
+                allowed_rep_ids.add(str(rep_id))
+                add_legacy_user_id(rep)
+
+    rep_email_candidates = set()
+    if rep_user_email:
+        rep_email_candidates.add(rep_user_email)
+    for record in (
+        direct_rep_record if isinstance(direct_rep_record, dict) else None,
+        rep_records.get(str(rep_record_id)) if rep_record_id else None,
+    ):
+        if isinstance(record, dict):
+            email = (record.get("email") or "").strip().lower()
+            if email:
+                rep_email_candidates.add(email)
+
+    if rep_email_candidates:
+        for user in users:
+            email = (user.get("email") or "").strip().lower()
+            if not email or email not in rep_email_candidates:
+                continue
+            role = (user.get("role") or "").lower()
+            if role in ("sales_rep", "rep", "admin"):
+                allowed_rep_ids.add(str(user.get("id")))
+
+    return allowed_rep_ids
+
+
+def _ensure_dict(value):
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _validate_items(items: Optional[List[Dict]]) -> bool:
+    return bool(
+        isinstance(items, list)
+        and items
+        and all(isinstance(item, dict) and isinstance(item.get("quantity"), (int, float)) for item in items)
+    )
+
+
+def _normalize_address_field(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _extract_user_address_fields(shipping_address: Optional[Dict]) -> Dict[str, Optional[str]]:
+    if not isinstance(shipping_address, dict):
+        return {}
+    return {
+        "officeAddressLine1": _normalize_address_field(shipping_address.get("addressLine1")),
+        "officeAddressLine2": _normalize_address_field(shipping_address.get("addressLine2")),
+        "officeCity": _normalize_address_field(shipping_address.get("city")),
+        "officeState": _normalize_address_field(shipping_address.get("state")),
+        "officePostalCode": _normalize_address_field(shipping_address.get("postalCode")),
+        "officeCountry": _normalize_address_field(shipping_address.get("country")),
+    }
+
+
+def _normalize_woo_order_id(value: Optional[object]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return text
+    match = re.search(r"(\d+)", text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _extract_woo_order_id(local_order: Optional[Dict]) -> Optional[str]:
+    if not local_order:
+        return None
+    candidates = [
+        local_order.get("wooOrderId"),
+        local_order.get("woo_order_id"),
+    ]
+    details = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
+    woo_details = _ensure_dict(details.get("wooCommerce") or details.get("woocommerce"))
+    response = _ensure_dict(woo_details.get("response"))
+    payload = _ensure_dict(woo_details.get("payload"))
+    candidates.extend(
+        [
+            response.get("id"),
+            payload.get("id"),
+        ],
+    )
+    for candidate in candidates:
+        normalized = _normalize_woo_order_id(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def estimate_order_totals(
+    *,
+    user_id: str,
+    items: List[Dict],
+    shipping_address: Dict,
+    shipping_estimate: Optional[Dict] = None,
+    shipping_total: float | int | str = 0,
+) -> Dict:
+    if not _validate_items(items):
+        err = ValueError("Invalid items payload")
+        setattr(err, "status", 400)
+        raise err
+
+    try:
+        shipping_total_value = float(shipping_total or 0)
+    except Exception:
+        shipping_total_value = 0.0
+    shipping_total_value = max(0.0, shipping_total_value)
+
+    items_total = 0.0
+    normalized_items: List[Dict] = []
+    for item in items:
+        try:
+            unit_price = float(item.get("price") or 0)
+            quantity = float(item.get("quantity") or 0)
+        except Exception:
+            unit_price = 0.0
+            quantity = 0.0
+        unit_price = max(0.0, unit_price)
+        quantity = max(0.0, quantity)
+        line_total = unit_price * quantity
+        if line_total <= 0:
+            continue
+        items_total += line_total
+        normalized_items.append(
+            {
+                "productId": item.get("productId") or item.get("id") or item.get("sku"),
+                "price": unit_price,
+                "quantity": quantity,
+            }
+        )
+
+    if items_total <= 0:
+        err = ValueError("No billable line items")
+        setattr(err, "status", 400)
+        raise err
+
+    user = user_repository.find_by_id(user_id) if user_id else None
+    if _is_tax_exempt_for_checkout(user):
+        grand_total = max(0.0, items_total + shipping_total_value)
+        return {
+            "success": True,
+            "totals": {
+                "itemsTotal": round(items_total, 2),
+                "shippingTotal": round(shipping_total_value, 2),
+                "taxTotal": 0.0,
+                "grandTotal": round(grand_total, 2),
+                "currency": "USD",
+                "source": "tax_exempt",
+            },
+        }
+
+    address = shipping_address or {}
+    country = str(address.get("country") or "US").strip().upper()
+    state = _normalize_address_field(address.get("state")) or ""
+    postal = _normalize_address_field(address.get("postalCode") or address.get("postcode") or address.get("zip")) or ""
+    if country == "US" and (not state or not postal):
+        err = ValueError("Shipping address must include state and postal code")
+        setattr(err, "status", 400)
+        raise err
+
+    tax_debug = (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+    if tax_debug:
+        logger.info(
+            "[TaxEstimate] Request userId=%s items=%s shippingTotal=%s destination=%s",
+            str(user_id or ""),
+            len(normalized_items),
+            shipping_total_value,
+            {"country": country, "state": state, "postal_code": postal, "city": address.get("city")},
+        )
+
+    tax_result = stripe_tax.calculate_tax_amount(
+        items=normalized_items,
+        shipping_address=address,
+        shipping_total=shipping_total_value,
+        currency="usd",
+    )
+    tax_total = float(tax_result.get("tax_total_cents") or 0) / 100.0
+    tax_total = max(0.0, tax_total)
+    grand_total = max(0.0, items_total + shipping_total_value + tax_total)
+
+    totals = {
+        "itemsTotal": round(items_total, 2),
+        "shippingTotal": round(shipping_total_value, 2),
+        "taxTotal": round(tax_total, 2),
+        "grandTotal": round(grand_total, 2),
+        "currency": "USD",
+        "source": "stripe_tax",
+        "stripeTaxCalculationId": tax_result.get("calculation_id"),
+    }
+
+    if tax_debug:
+        logger.info("[TaxEstimate] Result %s", totals)
+
+    return {"success": True, "totals": totals}
+
+
+def _resolve_sales_rep_context(doctor: Dict) -> Dict[str, Optional[str]]:
+    rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
+    if not rep_id:
+        return {}
+
+    rep = sales_rep_repository.find_by_id(rep_id)
+    if not rep:
+        rep_user = user_repository.find_by_id(rep_id)
+        if rep_user and (rep_user.get("role") or "").lower() == "sales_rep":
+            rep = {
+                "id": rep_user.get("id"),
+                "name": rep_user.get("name") or "Sales Rep",
+                "email": rep_user.get("email"),
+            }
+
+    name = (rep.get("name") or "").strip() if isinstance(rep, dict) else ""
+    email = (rep.get("email") or "").strip() if isinstance(rep, dict) else ""
+    sales_code = (rep.get("salesCode") or rep.get("sales_code") or "").strip() if isinstance(rep, dict) else ""
+
+    return {
+        "id": (rep.get("id") if isinstance(rep, dict) else None) or rep_id,
+        "name": name or None,
+        "email": email or None,
+        "salesCode": sales_code or None,
+    }
+
+
+def create_order(
+    user_id: str,
+    items: List[Dict],
+    total: float,
+    referral_code: Optional[str],
+    tax_total: Optional[float] = None,
+    shipping_total: Optional[float] = None,
+    shipping_address: Optional[Dict] = None,
+    shipping_rate: Optional[Dict] = None,
+    expected_shipment_window: Optional[str] = None,
+    physician_certified: bool = False,
+) -> Dict:
+    if not _validate_items(items):
+        raise _service_error("Order requires at least one item", 400)
+    items_subtotal = 0.0
+    for item in items or []:
+        try:
+            items_subtotal += float(item.get("price") or 0) * float(item.get("quantity") or 0)
+        except Exception:
+            continue
+    items_subtotal = float(items_subtotal or 0)
+    if items_subtotal <= 0:
+        raise _service_error("Order requires at least one billable item", 400)
+
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _service_error("User not found", 404)
+
+    tax_exempt = _is_tax_exempt_for_checkout(user)
+    sales_rep_ctx = _resolve_sales_rep_context(user)
+
+    now = datetime.now(timezone.utc).isoformat()
+    shipping_address = shipping_address or {}
+    try:
+        shipping_total_value = float(shipping_total or 0)
+    except Exception:
+        shipping_total_value = 0.0
+    shipping_total_value = max(0.0, shipping_total_value)
+    try:
+        tax_total_value = float(tax_total or 0)
+    except Exception:
+        tax_total_value = 0.0
+    tax_total_value = max(0.0, tax_total_value)
+    if tax_exempt:
+        tax_total_value = 0.0
+
+    address_updates = _extract_user_address_fields(shipping_address)
+    if any(address_updates.values()):
+        updated_user = user_repository.update({**user, **address_updates})
+        if updated_user:
+            user = updated_user
+
+    normalized_referral = (referral_code or "").strip().upper() or None
+    order = {
+        "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
+        "userId": user_id,
+        "items": items,
+        # `total` is the items subtotal; shipping/tax are tracked separately.
+        "total": float(items_subtotal),
+        "itemsSubtotal": float(items_subtotal),
+        "shippingTotal": float(shipping_total_value),
+        "taxTotal": float(tax_total_value),
+        "shippingEstimate": shipping_rate or {},
+        "shippingAddress": shipping_address or {},
+        "referralCode": normalized_referral,
+        "status": "pending",
+        "createdAt": now,
+        "expectedShipmentWindow": (expected_shipment_window or None),
+        "physicianCertificationAccepted": bool(physician_certified),
+        "doctorSalesRepId": sales_rep_ctx.get("id"),
+        "doctorSalesRepName": sales_rep_ctx.get("name"),
+        "doctorSalesRepEmail": sales_rep_ctx.get("email"),
+        "doctorSalesRepCode": sales_rep_ctx.get("salesCode"),
+    }
+
+    # Auto-apply available referral credits to this order
+    available_credit = float(user.get("referralCredits") or 0)
+    if available_credit > 0 and items_subtotal > 0:
+        applied = min(available_credit, items_subtotal)
+        order["appliedReferralCredit"] = round(applied, 2)
+
+    referral_effects = referral_service.handle_order_referral_effects(
+        purchaser_id=user_id,
+        referral_code=normalized_referral,
+        order_total=float(items_subtotal),
+        order_id=order["id"],
+    )
+
+    if referral_effects.get("checkoutBonus"):
+        bonus = referral_effects["checkoutBonus"]
+        order["referrerBonus"] = {
+            "referrerId": bonus.get("referrerId"),
+            "referrerName": bonus.get("referrerName"),
+            "commission": bonus.get("commission"),
+            "type": "checkout_code",
+        }
+
+    if referral_effects.get("firstOrderBonus"):
+        bonus = referral_effects["firstOrderBonus"]
+        order["firstOrderBonus"] = {
+            "referrerId": bonus.get("referrerId"),
+            "referrerName": bonus.get("referrerName"),
+            "amount": bonus.get("amount"),
+        }
+
+    applied_credit_value = float(order.get("appliedReferralCredit") or 0) or 0.0
+    order["grandTotal"] = round(
+        max(0.0, items_subtotal - applied_credit_value + shipping_total_value + tax_total_value),
+        2,
+    )
+
+    order_repository.insert(order)
+
+    integrations = {}
+
+    try:
+        t0 = time.perf_counter()
+        integrations["wooCommerce"] = woo_commerce.forward_order(order, user)
+        _perf_log(
+            f"woo_commerce.forward_order orderId={order.get('id')} status={integrations.get('wooCommerce', {}).get('status')}",
+            duration_ms=(time.perf_counter() - t0) * 1000,
+        )
+        woo_resp = integrations["wooCommerce"]
+        if woo_resp.get("status") == "success":
+            woo_response = woo_resp.get("response", {}) or {}
+            order["wooOrderId"] = woo_response.get("id")
+            order["wooOrderKey"] = woo_response.get("orderKey")
+            order["wooOrderNumber"] = woo_response.get("number")
+            try:
+                order_repository.update_woo_fields(
+                    order_id=order.get("id"),
+                    woo_order_id=order.get("wooOrderId"),
+                    woo_order_number=order.get("wooOrderNumber"),
+                    woo_order_key=order.get("wooOrderKey"),
+                )
+            except Exception:
+                pass
+            try:
+                print(
+                    f"[checkout] woo linked order_id={order.get('id')} woo_id={order.get('wooOrderId')} woo_number={order.get('wooOrderNumber')} sales_rep_id={order.get('doctorSalesRepId')}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+        # On successful Woo order creation, finalize referral credit deduction
+        if order.get("appliedReferralCredit"):
+            try:
+                referral_service.apply_referral_credit(user_id, float(order["appliedReferralCredit"]), order["id"])
+            except Exception as credit_exc:  # best effort; don't fail checkout
+                logger.error("Failed to apply referral credit", exc_info=True, extra={"orderId": order["id"]})
+    except Exception as exc:  # pragma: no cover - network error path
+        logger.error("WooCommerce integration failed", exc_info=True, extra={"orderId": order["id"]})
+        integrations["wooCommerce"] = {
+            "status": "error",
+            "message": str(exc),
+            "details": getattr(exc, "response", None),
+        }
+
+    if order.get("wooOrderId"):
+        try:
+            t0 = time.perf_counter()
+            integrations["stripe"] = stripe_payments.create_payment_intent(order)
+            _perf_log(
+                f"stripe_payments.create_payment_intent orderId={order.get('id')} status={integrations.get('stripe', {}).get('status')}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+            )
+            if integrations["stripe"].get("paymentIntentId"):
+                order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
+            else:
+                try:
+                    print(
+                        f"[order_service] stripe intent not created: order_id={order.get('id')} stripe={integrations.get('stripe')}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
+        except Exception as exc:  # pragma: no cover - network error path
+            logger.error("Stripe integration failed", exc_info=True, extra={"orderId": order["id"]})
+            integrations["stripe"] = {
+                "status": "error",
+                "message": str(exc),
+                "details": getattr(exc, "response", None),
+            }
+    else:
+        integrations["stripe"] = {
+            "status": "skipped",
+            "reason": "woo_order_missing",
+        }
+        logger.warning(
+            "Stripe payment skipped because WooCommerce order failed",
+            extra={
+                "orderId": order["id"],
+                "wooStatus": integrations.get("wooCommerce", {}).get("status"),
+                "wooMessage": integrations.get("wooCommerce", {}).get("message"),
+            },
+        )
+
+    # ShipEngine is no longer used in production (ShipStation handles fulfillment/inventory).
+    integrations["shipEngine"] = {"status": "skipped", "reason": "deprecated"}
+
+    order["integrations"] = {
+        "wooCommerce": integrations.get("wooCommerce", {}).get("status"),
+        "stripe": integrations.get("stripe", {}).get("status"),
+        "shipEngine": integrations.get("shipEngine", {}).get("status"),
+    }
+    if integrations.get("stripe", {}).get("paymentIntentId"):
+        order["paymentIntentId"] = integrations["stripe"]["paymentIntentId"]
+    order_repository.update(order)
+
+    message = None
+    if referral_effects.get("checkoutBonus"):
+        bonus = referral_effects["checkoutBonus"]
+        message = f"{bonus.get('referrerName')} earned ${bonus.get('commission'):.2f} commission!"
+    elif referral_effects.get("firstOrderBonus"):
+        bonus = referral_effects["firstOrderBonus"]
+        message = f"{bonus.get('referrerName')} earned a ${bonus.get('amount'):.2f} referral credit!"
+
+    return {
+        "success": True,
+        "order": order,
+        "message": message,
+        "integrations": integrations,
+    }
+
+
+def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
+    """Best-effort lookup of a local order using a WooCommerce order id/number."""
+    if not woo_order_id:
+        return None
+    target = _normalize_woo_order_id(woo_order_id) or str(woo_order_id)
+    for order in order_repository.get_all():
+        local_candidate = _normalize_woo_order_id(order.get("wooOrderId") or order.get("woo_order_id"))
+        if local_candidate and local_candidate == target:
+            return order
+        local_number = _normalize_woo_order_id(order.get("wooOrderNumber") or order.get("woo_order_number"))
+        if local_number and local_number == target:
+            return order
+        details = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+        woo_details = _ensure_dict(details.get("wooCommerce") or details.get("woocommerce"))
+        detail_candidate = _normalize_woo_order_id(
+            woo_details.get("wooOrderNumber")
+            or woo_details.get("woo_order_number")
+            or _ensure_dict(woo_details.get("payload")).get("number")
+            or _ensure_dict(woo_details.get("response")).get("number")
+        )
+        if detail_candidate and detail_candidate == target:
+            return order
+    return None
+
+
+def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> Dict:
+    """
+    Cancel a WooCommerce order first (source of truth), then mirror status locally if present.
+    """
+    local_order = _find_order_by_woo_id(order_id) or order_repository.find_by_id(order_id)
+    stripe_refund = None
+    woo_order = None
+    woo_order_id = _extract_woo_order_id(local_order)
+
+    # If we don't know Woo order id yet, attempt to fetch using provided identifier.
+    if not local_order or not woo_order_id:
+        woo_order = woo_commerce.fetch_order(order_id)
+        if not woo_order:
+            woo_order = woo_commerce.fetch_order_by_number(order_id)
+        if not woo_order:
+            woo_order = woo_commerce.fetch_order_by_peppro_id(order_id)
+        if woo_order and woo_order.get("id"):
+            woo_order_id = str(woo_order.get("id"))
+
+    # If we resolved a Woo id that differs from the provided identifier, ensure we have Woo details.
+    if woo_order_id and woo_order_id != order_id and woo_order is None:
+        woo_order = (
+            woo_commerce.fetch_order(woo_order_id)
+            or woo_commerce.fetch_order_by_number(woo_order_id)
+            or woo_commerce.fetch_order_by_peppro_id(woo_order_id)
+        )
+
+    if not woo_order_id:
+        woo_order_id = order_id
+
+    # Attempt Stripe refund first if we have a PaymentIntent.
+    payment_intent_id = None
+    total_amount = None
+    intent_data = None
+    intent_amount_cents = None
+    if local_order and local_order.get("paymentIntentId"):
+        payment_intent_id = local_order["paymentIntentId"]
+        total_amount = float(local_order.get("total") or 0) + float(local_order.get("shippingTotal") or 0)
+    elif woo_order:
+        meta = woo_order.get("meta_data") or []
+        for entry in meta:
+            if entry.get("key") == "stripe_payment_intent":
+                payment_intent_id = entry.get("value")
+                break
+        try:
+            total_amount = float(woo_order.get("total") or 0)
+            total_amount += float(woo_order.get("shipping_total") or 0)
+        except Exception:
+            total_amount = None
+
+    did_refund = False
+    refund_amount = None
+    woo_refund = None
+
+    if payment_intent_id:
+        intent_status = None
+        charged_amount_cents = None
+        try:
+            intent_data = stripe_payments.retrieve_payment_intent(payment_intent_id)
+            intent = (intent_data or {}).get("intent") or {}
+            intent_status = str(intent.get("status") or "").strip().lower() or None
+            amount_received = intent.get("amount_received")
+            charges = (intent.get("charges") or {}).get("data") or []
+            if isinstance(amount_received, int) and amount_received > 0:
+                charged_amount_cents = amount_received
+            else:
+                for charge in reversed(charges):
+                    paid = charge.get("paid")
+                    charge_status = str(charge.get("status") or "").strip().lower()
+                    if paid is not True and charge_status != "succeeded":
+                        continue
+                    candidate = charge.get("amount_captured") or charge.get("amount")
+                    if isinstance(candidate, int) and candidate > 0:
+                        charged_amount_cents = candidate
+                        break
+            intent_amount_cents = charged_amount_cents
+        except Exception as exc:  # pragma: no cover - retrieval failure path
+            logger.error(
+                "Failed to retrieve Stripe PaymentIntent before refund",
+                exc_info=True,
+                extra={"orderId": order_id, "paymentIntentId": payment_intent_id},
+            )
+
+        if intent_amount_cents is None or intent_amount_cents <= 0:
+            logger.info(
+                "Stripe refund skipped (no successful charge)",
+                extra={"orderId": order_id, "paymentIntentId": payment_intent_id, "intentStatus": intent_status},
+            )
+        else:
+            fallback_amount_cents = (
+                int(round(total_amount * 100)) if total_amount and total_amount > 0 else None
+            )
+            target_amount_cents = (
+                min(intent_amount_cents, fallback_amount_cents)
+                if fallback_amount_cents
+                else intent_amount_cents
+            )
+            try:
+                stripe_refund = stripe_payments.refund_payment_intent(
+                    payment_intent_id,
+                    amount_cents=target_amount_cents,
+                    reason=reason or None,
+                    metadata={"peppro_order_id": local_order.get("id") if local_order else None, "woo_order_id": order_id},
+                )
+                did_refund = bool(stripe_refund) and stripe_refund.get("status") not in (None, "skipped")
+                if did_refund:
+                    try:
+                        refund_amount = float(stripe_refund.get("amount") or 0) / 100.0
+                    except Exception:
+                        refund_amount = None
+                    try:
+                        woo_commerce.update_order_metadata(
+                            {
+                                "woo_order_id": str(woo_order_id),
+                                "payment_intent_id": payment_intent_id,
+                                "peppro_order_id": local_order.get("id") if local_order else None,
+                                "refunded": True,
+                                "stripe_refund_id": stripe_refund.get("id") if isinstance(stripe_refund, dict) else None,
+                                "refund_amount": refund_amount,
+                                "refund_currency": stripe_refund.get("currency") if isinstance(stripe_refund, dict) else None,
+                                "refund_created_at": datetime.utcnow().isoformat(),
+                            }
+                        )
+                    except Exception:
+                        logger.warning(
+                            "WooCommerce order refund metadata update failed",
+                            exc_info=True,
+                            extra={"orderId": order_id, "wooOrderId": woo_order_id},
+                        )
+            except Exception as exc:  # pragma: no cover - network path
+                logger.error("Stripe refund failed during cancellation", exc_info=True, extra={"orderId": order_id})
+                raise _service_error("Unable to refund this order right now. Please try again soon.", 502)
+
+    woo_result = None
+    try:
+        if did_refund and refund_amount and refund_amount > 0:
+            try:
+                woo_refund = woo_commerce.create_refund(
+                    woo_order_id=str(woo_order_id),
+                    amount=float(refund_amount),
+                    reason=reason or "Refunded via PepPro (Stripe)",
+                    metadata={
+                        "stripe_payment_intent": payment_intent_id,
+                        "peppro_order_id": local_order.get("id") if local_order else None,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "WooCommerce refund record creation failed",
+                    exc_info=True,
+                    extra={"orderId": order_id, "wooOrderId": woo_order_id},
+                )
+        woo_result = woo_commerce.cancel_order(
+            woo_order_id,
+            reason or "",
+            status_override="refunded" if did_refund else None,
+        )
+    except woo_commerce.IntegrationError as exc:  # pragma: no cover - network path
+        logger.error("WooCommerce cancellation failed", exc_info=True, extra={"orderId": order_id})
+        status = getattr(exc, "status", 502)
+        raise _service_error(str(exc) or "Unable to cancel this order right now.", status)
+    except Exception as exc:  # pragma: no cover - unexpected error path
+        logger.error("WooCommerce cancellation failed", exc_info=True, extra={"orderId": order_id})
+        raise _service_error("Unable to cancel this order right now.", 502)
+
+    woo_status = woo_result.get("status") if isinstance(woo_result, dict) else None
+    if woo_status == "not_found" and not local_order:
+        raise _service_error("Order not found", 404)
+    elif woo_status in (None, "error"):
+        message = woo_result.get("message") if isinstance(woo_result, dict) else None
+        raise _service_error(message or "Unable to cancel this order right now.", 502)
+
+    # Mirror status locally if we have a record; do not block on missing or mismatched ownership.
+    if local_order:
+        local_order["status"] = "refunded" if did_refund else "cancelled"
+        local_order["cancellationReason"] = reason or ""
+        order_repository.update(local_order)
+
+    return {
+        "status": "refunded" if did_refund else (woo_result.get("status") if isinstance(woo_result, dict) else "cancelled"),
+        "order": local_order,
+        "wooCancellation": woo_result,
+        "wooRefund": woo_refund,
+        "stripeRefund": stripe_refund,
+    }
+
+
+def get_orders_for_user(user_id: str):
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _service_error("User not found", 404)
+
+    woo_orders = []
+    woo_error = None
+
+    email = (user.get("email") or "").strip().lower()
+    if email:
+        try:
+            t0 = time.perf_counter()
+            woo_orders = woo_commerce.fetch_orders_by_email(email)
+            _perf_log(
+                f"woo_commerce.fetch_orders_by_email userId={user_id} count={len(woo_orders) if isinstance(woo_orders, list) else 'n/a'}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+                threshold_ms=250.0,
+            )
+        except woo_commerce.IntegrationError as exc:
+            logger.error("WooCommerce order lookup failed", exc_info=True, extra={"userId": user_id})
+            woo_error = {
+                "message": str(exc) or "Unable to load WooCommerce orders.",
+                "details": getattr(exc, "response", None),
+                "status": getattr(exc, "status", 502),
+            }
+        except Exception as exc:  # pragma: no cover - unexpected network error path
+            logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
+            woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
+
+    merged_woo_orders = woo_orders
+
+    # Enrich Woo orders with ShipStation status/tracking
+    if merged_woo_orders:
+        t0 = time.perf_counter()
+        for woo_order in merged_woo_orders:
+            _enrich_with_shipstation(woo_order)
+        _perf_log(
+            f"ship_station.enrich_orders userId={user_id} count={len(merged_woo_orders)}",
+            duration_ms=(time.perf_counter() - t0) * 1000,
+            threshold_ms=250.0,
+        )
+
+    try:
+        sample = merged_woo_orders[0] if merged_woo_orders else {}
+        logger.info(
+            "[Orders] User response snapshot userId=%s wooCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            user_id,
+            len(merged_woo_orders),
+            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
+            sample.get("trackingNumber")
+            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
+            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
+        )
+    except Exception:
+        pass
+
+    return {
+        "local": [],
+        "woo": merged_woo_orders,
+        "fetchedAt": datetime.now(timezone.utc).isoformat(),
+        "wooError": woo_error,
+    }
+
+
+def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: List[Dict]) -> List[Dict]:
+    if not woo_orders or not local_orders:
+        return woo_orders
+
+    local_lookup = {str(order.get("id")): order for order in local_orders if order.get("id")}
+
+    for order in woo_orders:
+        integrations = _ensure_dict(order.get("integrationDetails"))
+        woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+        peppro_order_id = (
+            woo_details.get("pepproOrderId")
+            or woo_details.get("peppro_order_id")
+            or order.get("pepproOrderId")
+        )
+        if not peppro_order_id:
+            continue
+
+        local_order = local_lookup.get(str(peppro_order_id))
+        if not local_order:
+            continue
+
+        shipping_address = local_order.get("shippingAddress") or local_order.get("shipping_address")
+        billing_address = local_order.get("billingAddress") or local_order.get("billing_address")
+        if shipping_address:
+            order["shippingAddress"] = shipping_address
+        if billing_address:
+            order["billingAddress"] = billing_address
+
+        if local_order.get("shippingTotal") is not None:
+            try:
+                order["shippingTotal"] = float(local_order.get("shippingTotal") or 0)
+            except Exception:
+                order["shippingTotal"] = local_order.get("shippingTotal")
+        if local_order.get("shippingEstimate"):
+            order["shippingEstimate"] = local_order.get("shippingEstimate")
+
+        if local_order.get("expectedShipmentWindow"):
+            order["expectedShipmentWindow"] = local_order.get("expectedShipmentWindow")
+
+        if local_order.get("items") and not order.get("lineItems"):
+            order["lineItems"] = local_order.get("items")
+
+        order["paymentMethod"] = local_order.get("paymentMethod") or order.get("paymentMethod")
+        order["paymentDetails"] = (
+            local_order.get("paymentDetails")
+            or local_order.get("paymentMethod")
+            or order.get("paymentDetails")
+            or order.get("paymentMethod")
+        )
+
+        local_integrations = _ensure_dict(local_order.get("integrationDetails") or local_order.get("integrations"))
+        stripe_meta = _ensure_dict(local_integrations.get("stripe"))
+        if stripe_meta:
+            integrations["stripe"] = stripe_meta
+        if woo_details:
+            integrations["wooCommerce"] = woo_details
+        order["integrationDetails"] = integrations
+
+    return woo_orders
+
+
+def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, force: bool = False):
+    logger.info("[SalesRep] Fetch start salesRepId=%s includeDoctors=%s", sales_rep_id, include_doctors)
+    cache_key = f"{str(sales_rep_id)}::{'withDoctors' if include_doctors else 'ordersOnly'}"
+    now = time.time()
+    if not force and _SALES_REP_ORDERS_TTL_SECONDS > 0:
+        with _sales_rep_orders_cache_lock:
+            cached = _sales_rep_orders_cache.get(cache_key)
+            if cached and float(cached.get("expiresAt") or 0) > now:
+                logger.info(
+                    "[SalesRep] Cache hit salesRepId=%s ttlSeconds=%s",
+                    sales_rep_id,
+                    _SALES_REP_ORDERS_TTL_SECONDS,
+                )
+                return cached.get("value")
+    users = user_repository.get_all()
+    rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+    allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+
+    doctors = []
+    for user in users:
+        role = (user.get("role") or "").lower()
+        if role not in ("doctor", "test_doctor"):
+            continue
+        doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "")
+        if doctor_sales_rep not in allowed_rep_ids:
+            continue
+        doctors.append(user)
+
+    # Ensure doctors have a stable lead type stored for commission tracking.
+    try:
+        doctors = referral_service.backfill_lead_types_for_doctors(doctors)
+    except Exception:
+        pass
+
+    doctor_lookup = {
+        doc.get("id"): {
+            "id": doc.get("id"),
+            "name": doc.get("name") or doc.get("email") or "Doctor",
+            "email": doc.get("email"),
+            "phone": doc.get("phone"),
+            "profileImageUrl": doc.get("profileImageUrl"),
+            "leadType": doc.get("leadType"),
+            "leadTypeSource": doc.get("leadTypeSource"),
+            "leadTypeLockedAt": doc.get("leadTypeLockedAt"),
+            "address1": doc.get("officeAddressLine1"),
+            "address2": doc.get("officeAddressLine2"),
+            "city": doc.get("officeCity"),
+            "state": doc.get("officeState"),
+            "postalCode": doc.get("officePostalCode"),
+            "country": doc.get("officeCountry"),
+        }
+        for doc in doctors
+    }
+
+    summaries: List[Dict] = []
+    seen_keys = set()
+
+    # WooCommerce orders (if configured) - single paged pull, filter by doctor email.
+    woo_enabled = woo_commerce.is_configured()
+    logger.info(
+        "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
+        sales_rep_id,
+        len(doctors),
+        woo_enabled,
+        [d.get("email") for d in doctors],
+    )
+    if woo_enabled:
+        # Build lookup: normalized email -> list of doctor metadata
+        email_to_doctors: Dict[str, List[Dict[str, object]]] = {}
+        for doctor in doctors:
+            doctor_id = doctor.get("id")
+            doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
+            doctor_email = (doctor.get("email") or "").strip()
+            candidate_emails: List[str] = []
+            primary_email = doctor_email.lower()
+            if primary_email:
+                candidate_emails.append(primary_email)
+            for key in (
+                "doctorEmail",
+                "userEmail",
+                "contactEmail",
+                "billingEmail",
+                "wooEmail",
+                "officeEmail",
+            ):
+                val = (doctor.get(key) or "").strip().lower()
+                if val:
+                    candidate_emails.append(val)
+            for key in ("emails", "alternateEmails", "altEmails", "aliases"):
+                val = doctor.get(key)
+                if isinstance(val, list):
+                    for item in val:
+                        email_candidate = (item or "").strip().lower()
+                        if email_candidate:
+                            candidate_emails.append(email_candidate)
+            normalized_emails: List[str] = []
+            for em in candidate_emails:
+                if em and em not in normalized_emails:
+                    normalized_emails.append(em)
+            if not normalized_emails:
+                logger.info(
+                    "[SalesRep] Skipping Woo fetch; missing doctor email salesRepId=%s doctorId=%s",
+                    sales_rep_id,
+                    doctor_id,
+                )
+                continue
+            for em in normalized_emails:
+                email_to_doctors.setdefault(em, []).append(
+                    {
+                        "id": doctor_id,
+                        "name": doctor_name,
+                        "email": doctor_email,
+                    }
+                )
+
+        per_page = 50
+        max_pages = 20
+        orders_seen = 0
+        pages_fetched = 0
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            pages_fetched += 1
+            if not orders:
+                break
+
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
+                    continue
+                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                if not billing_email or billing_email not in email_to_doctors:
+                    continue
+
+                for doctor_meta in email_to_doctors.get(billing_email, []):
+                    key = f"woo:{woo_order.get('id')}"
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    mapped = woo_commerce._map_woo_order_summary(woo_order)
+                    summary = {
+                        **mapped,
+                        "doctorId": doctor_meta.get("id"),
+                        "doctorName": doctor_meta.get("name"),
+                        "doctorEmail": doctor_meta.get("email"),
+                        "source": "woocommerce",
+                    }
+                    _enrich_with_shipstation(summary)
+                    summaries.append(summary)
+                    orders_seen += 1
+
+            if len(orders) < per_page:
+                break
+
+        logger.info(
+            "[SalesRep] Woo orders fetched via paged pull salesRepId=%s pages=%s perPage=%s matchedOrders=%s",
+            sales_rep_id,
+            pages_fetched,
+            per_page,
+            orders_seen,
+        )
+
+    summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
+
+    logger.info(
+        "[SalesRep] Fetch complete salesRepId=%s doctorCount=%s orderCount=%s sampleOrders=%s",
+        sales_rep_id,
+        len(doctors),
+        len(summaries),
+        [o.get("id") or o.get("number") for o in summaries[:5]],
+    )
+
+    try:
+        sample = summaries[0] if summaries else {}
+        logger.info(
+            "[SalesRep] Response snapshot salesRepId=%s orderCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
+            sales_rep_id,
+            len(summaries),
+            sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
+            sample.get("trackingNumber")
+            or _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("trackingNumber"),
+            _ensure_dict(sample.get("integrationDetails") or {}).get("shipStation", {}).get("status"),
+        )
+    except Exception:
+        pass
+
+    result = (
+        {
+            "orders": summaries,
+            "doctors": list(doctor_lookup.values()),
+            "fetchedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        if include_doctors
+        else summaries
+    )
+    if _SALES_REP_ORDERS_TTL_SECONDS > 0:
+        with _sales_rep_orders_cache_lock:
+            _sales_rep_orders_cache[cache_key] = {
+                "value": result,
+                "expiresAt": now + _SALES_REP_ORDERS_TTL_SECONDS,
+            }
+    return result
+
+
+def _normalize_order_identifier(order_id: str) -> List[str]:
+    """
+    Build candidate identifiers (id and number) from an incoming order id/number string.
+    Strips prefixes like 'woo-' and extracts digits for Woo lookups.
+    """
+    if not order_id:
+        return []
+    raw = str(order_id).strip()
+    candidates = [raw]
+    if raw.lower().startswith("woo-"):
+        candidates.append(raw.split("-", 1)[1])
+    digits_only = re.sub(r"[^\d]", "", raw)
+    if digits_only and digits_only not in candidates:
+        candidates.append(digits_only)
+    return [c for c in candidates if c]
+
+
+def _persist_shipping_update(
+    order_id: Optional[str],
+    shipping_estimate: Optional[Dict],
+    tracking: Optional[str],
+    shipstation_info: Optional[Dict],
+) -> None:
+    """
+    Persist shipping metadata to primary store (MySQL) and best-effort to local JSON for testing.
+    """
+    if not order_id:
+        return
+    try:
+        existing = order_repository.find_by_id(str(order_id))
+    except Exception:
+        existing = None
+    if not existing:
+        return
+
+    merged = dict(existing)
+    if shipping_estimate:
+        current_est = _ensure_dict(merged.get("shippingEstimate"))
+        current_est.update(shipping_estimate)
+        merged["shippingEstimate"] = current_est
+    if tracking and not merged.get("trackingNumber"):
+        merged["trackingNumber"] = tracking
+
+    integrations = _ensure_dict(merged.get("integrationDetails") or merged.get("integrations"))
+    if shipstation_info:
+        integrations["shipStation"] = shipstation_info
+    merged["integrationDetails"] = integrations
+
+    try:
+        order_repository.update(merged)
+    except Exception:
+        logger.warning(
+            "Failed to persist shipping update to primary store",
+            exc_info=True,
+            extra={"orderId": order_id},
+        )
+
+    # Best-effort local JSON update for testing
+    try:
+        store = storage.order_store
+        if store:
+            orders = list(store.read())
+            updated = False
+            for idx, entry in enumerate(orders):
+                if str(entry.get("id")) == str(order_id):
+                    orders[idx] = {**entry, **merged}
+                    updated = True
+                    break
+            if not updated:
+                orders.append(merged)
+            store.write(orders)
+    except Exception:
+        logger.warning(
+            "Failed to persist shipping update to local JSON store",
+            exc_info=True,
+            extra={"orderId": order_id},
+        )
+
+
+def _enrich_with_shipstation(order: Dict) -> None:
+    """
+    Mutates order dict in-place with ShipStation status/tracking, and persists shipping metadata.
+    """
+    if not order:
+        return
+    order_number = order.get("number") or order.get("wooOrderNumber")
+    if not order_number:
+        return
+    info = None
+    try:
+        info = ship_station.fetch_order_status(order_number)
+    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+        logger.warning(
+            "ShipStation status lookup failed",
+            exc_info=False,
+            extra={
+                "orderNumber": order_number,
+                "status": getattr(exc, "status", None),
+                "error": str(exc),
+            },
+        )
+    except Exception:  # pragma: no cover - unexpected path
+        logger.warning("ShipStation status lookup failed (unexpected)", exc_info=True, extra={"orderNumber": order_number})
+    if not info:
+        return
+
+    try:
+        logger.info(
+            "[ShipStation] Status lookup order=%s status=%s tracking=%s shipDate=%s",
+            order_number,
+            info.get("status"),
+            info.get("trackingNumber"),
+            info.get("shipDate"),
+        )
+    except Exception:
+        pass
+
+    integrations = _ensure_dict(order.get("integrationDetails") or order.get("integrations"))
+    integrations["shipStation"] = info
+    order["integrationDetails"] = integrations
+    ship_status = (info.get("status") or "").lower()
+    if ship_status == "shipped":
+        order["status"] = order.get("status") or "shipped"
+        estimate = _ensure_dict(order.get("shippingEstimate"))
+        estimate["status"] = "shipped"
+        if info.get("shipDate"):
+            estimate["shipDate"] = info["shipDate"]
+        order["shippingEstimate"] = estimate
+    if info.get("trackingNumber"):
+        order["trackingNumber"] = info["trackingNumber"]
+
+    peppro_order_id = (
+        _ensure_dict(order.get("integrationDetails") or {})
+        .get("wooCommerce", {})
+        .get("pepproOrderId")
+    ) or order.get("id")
+    _persist_shipping_update(
+        peppro_order_id,
+        order.get("shippingEstimate"),
+        order.get("trackingNumber"),
+        info,
+    )
+
+
+def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dict]:
+    """
+    Fetch a single Woo order detail and ensure it belongs to a doctor tied to this sales rep.
+    """
+    if not order_id:
+        return None
+    if not woo_commerce.is_configured():
+        return None
+
+    try:
+        candidates = _normalize_order_identifier(order_id)
+        woo_order = None
+        logger.debug(
+            "[SalesRep] Order detail lookup start",
+            extra={"orderId": order_id, "salesRepId": sales_rep_id, "candidates": candidates},
+        )
+        for candidate in candidates:
+            woo_order = woo_commerce.fetch_order(candidate)
+            if woo_order:
+                break
+        if woo_order is None:
+            for candidate in candidates:
+                woo_order = woo_commerce.fetch_order_by_number(candidate)
+                if woo_order:
+                    break
+        if not woo_order:
+            return None
+    except Exception:
+        # Avoid returning a 500 when the store is having issues; surface a clean 503.
+        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+
+    try:
+        mapped = woo_commerce._map_woo_order_summary(woo_order)
+        try:
+            logger.debug(
+                "[SalesRep] Order detail mapped",
+                extra={
+                    "orderId": order_id,
+                    "salesRepId": sales_rep_id,
+                    "mappedId": mapped.get("id"),
+                    "mappedNumber": mapped.get("number"),
+                    "mappedWooOrderNumber": mapped.get("wooOrderNumber"),
+                    "mappedWooOrderId": mapped.get("wooOrderId"),
+                    "billingEmail": (woo_order.get("billing") or {}).get("email"),
+                },
+            )
+        except Exception:
+            pass
+    except Exception:
+        raise _service_error("Unable to load order details right now. Please try again soon.", 503)
+
+    # Enrich with ShipStation status/tracking when available
+    shipstation_info = None
+    try:
+        shipstation_info = ship_station.fetch_order_status(
+            mapped.get("number") or mapped.get("wooOrderNumber")
+        )
+    except ship_station.IntegrationError as exc:  # pragma: no cover - network path
+        logger.warning(
+            "ShipStation status lookup failed",
+            exc_info=False,
+            extra={
+                "orderId": order_id,
+                "status": getattr(exc, "status", None),
+                "error": str(exc),
+            },
+        )
+    except Exception:
+        # Non-fatal enrichment failure.
+        shipstation_info = None
+
+    if shipstation_info:
+        mapped.setdefault("integrationDetails", {})
+        mapped["integrationDetails"]["shipStation"] = shipstation_info
+        ship_status = (shipstation_info.get("status") or "").lower()
+        carrier_code = shipstation_info.get("carrierCode")
+        service_code = shipstation_info.get("serviceCode")
+        if ship_status == "shipped":
+            mapped["status"] = mapped.get("status") or "shipped"
+            mapped.setdefault("shippingEstimate", {})
+            mapped["shippingEstimate"]["status"] = "shipped"
+            if shipstation_info.get("shipDate"):
+                mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
+        mapped.setdefault("shippingEstimate", {})
+        if carrier_code:
+            # Prefer carrierCode for display (e.g., UPS)
+            mapped["shippingEstimate"]["carrierId"] = carrier_code
+            mapped["shippingCarrier"] = carrier_code
+        if service_code:
+            mapped["shippingEstimate"]["serviceType"] = service_code
+            mapped["shippingService"] = service_code
+        if shipstation_info.get("trackingNumber"):
+            mapped["trackingNumber"] = shipstation_info["trackingNumber"]
+        peppro_order_id = (
+            _ensure_dict(mapped.get("integrationDetails") or {})
+            .get("wooCommerce", {})
+            .get("pepproOrderId")
+        ) or mapped.get("id")
+        _persist_shipping_update(
+            peppro_order_id,
+            mapped.get("shippingEstimate"),
+            mapped.get("trackingNumber"),
+            shipstation_info,
+        )
+
+    # Associate doctor by billing email
+    billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
+    doctor = user_repository.find_by_email(billing_email) if billing_email else None
+    if doctor:
+        users = user_repository.get_all()
+        rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+
+        doctor_sales_rep = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "")
+        if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
+            raise _service_error("Order not found", 404)
+    else:
+        # If we can't associate to a known doctor, don't leak order detail to arbitrary reps.
+        raise _service_error("Order not found", 404)
+    if doctor:
+        mapped["doctorId"] = doctor.get("id")
+        mapped["doctorName"] = doctor.get("name") or billing_email
+        mapped["doctorEmail"] = doctor.get("email")
+        mapped["doctorSalesRepId"] = doctor.get("salesRepId")
+    try:
+        logger.debug(
+            "[SalesRep] Order detail return",
+            extra={
+                "orderId": order_id,
+                "salesRepId": sales_rep_id,
+                "returnId": mapped.get("id"),
+                "returnNumber": mapped.get("number"),
+                "returnWooOrderNumber": mapped.get("wooOrderNumber"),
+                "returnWooOrderId": mapped.get("wooOrderId"),
+            },
+        )
+    except Exception:
+        pass
+
+    return mapped
+
+
+def get_sales_by_rep(
+    exclude_sales_rep_id: Optional[str] = None,
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+):
+    global _sales_by_rep_summary_inflight
+
+    from datetime import timedelta, timezone
+
+    def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            # Accept date-only values (YYYY-MM-DD).
+            if len(text) == 10 and text[4] == "-" and text[7] == "-":
+                text = f"{text}T00:00:00+00:00"
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    def _period_bounds(now: datetime) -> tuple[datetime, datetime]:
+        # Bi-weekly windows anchored to the 1st of the month:
+        # - Days 1-14
+        # - Days 15-28
+        # - Day 29 -> end of month (short final window)
+        first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Compute start offset by 14-day buckets (0-based).
+        bucket = int((now.day - 1) / 14)
+        start = first + timedelta(days=bucket * 14)
+        # Next boundary is either next bucket or month end.
+        next_bucket_days = (bucket + 1) * 14
+        # Month end boundary is the 1st of next month.
+        if first.month == 12:
+            next_month = first.replace(year=first.year + 1, month=1)
+        else:
+            next_month = first.replace(month=first.month + 1)
+        month_days = int((next_month - first).days)
+        end = first + timedelta(days=min(next_bucket_days, month_days))
+        return start, end
+
+    now_utc = datetime.now(timezone.utc)
+    parsed_start = _parse_iso_datetime(period_start)
+    parsed_end = _parse_iso_datetime(period_end)
+    if parsed_start is None or parsed_end is None:
+        computed_start, computed_end = _period_bounds(now_utc)
+        start_dt = parsed_start or computed_start
+        end_dt = parsed_end or computed_end
+    else:
+        start_dt = parsed_start
+        end_dt = parsed_end
+    if end_dt <= start_dt:
+        # Safety fallback to computed window.
+        start_dt, end_dt = _period_bounds(now_utc)
+    period_meta = {
+        "periodStart": start_dt.isoformat(),
+        "periodEnd": end_dt.isoformat(),
+    }
+    period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
+
+    def _meta_value(meta: object, key: str):
+        if not isinstance(meta, list):
+            return None
+        for entry in meta:
+            if isinstance(entry, dict) and entry.get("key") == key:
+                return entry.get("value")
+        return None
+
+    def _is_truthy(value: object) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        if isinstance(value, (int, float)):
+            try:
+                return float(value) != 0
+            except Exception:
+                return False
+        text = str(value).strip().lower()
+        return text in ("1", "true", "yes", "y", "on")
+
+    def _safe_float(value: object) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except Exception:
+            try:
+                return float(str(value).strip() or 0)
+            except Exception:
+                return 0.0
+
+    def _compute_summary() -> Dict[str, Any]:
+        users = user_repository.get_all()
+        reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+        rep_records_list = sales_rep_repository.get_all()
+        rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
+        user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
+
+        def _norm_email(value: object) -> str:
+            return str(value or "").strip().lower()
+
+        # Canonicalize sales rep ids so we don't double-count reps that exist in both
+        # `users` and `sales_reps` with different ids. Prefer `users` as the source of truth
+        # for display names (sales reps manage their own name there).
+        user_rep_id_by_email: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            email = _norm_email(rep.get("email"))
+            if rep_id and email:
+                user_rep_id_by_email[email] = str(rep_id)
+
+        # Map any known alias id (sales_reps.id, legacy_user_id, user.id) -> canonical user id when possible.
+        alias_to_rep_id: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_id_str = str(rep_id)
+                alias_to_rep_id[rep_id_str] = rep_id_str
+
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            rep_id_str = str(rep_id)
+            rep_email = _norm_email(rep.get("email"))
+            canonical = user_rep_id_by_email.get(rep_email) or rep_id_str
+            alias_to_rep_id[rep_id_str] = canonical
+            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            if legacy_id:
+                alias_to_rep_id[str(legacy_id)] = canonical
+
+        # Used as a fallback when older Woo orders are missing meta.
+        doctors_by_email = {}
+        for u in users:
+            if (u.get("role") or "").lower() not in ("doctor", "test_doctor"):
+                continue
+            email = (u.get("email") or "").strip().lower()
+            if email:
+                doctors_by_email[email] = u
+
+        valid_rep_ids = {alias_to_rep_id[str(rep.get("id"))] for rep in reps if rep.get("id")}
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if rep_id:
+                valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
+
+        logger.info(
+            "[SalesByRep] Begin aggregation",
+            extra={
+                "validRepCount": len(valid_rep_ids),
+                "userReps": len(reps),
+                "repoReps": len(rep_records_list),
+            },
+        )
+
+        rep_totals: Dict[str, Dict[str, float]] = {}
+        house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0}
+        debug_samples: List[Dict[str, object]] = []
+        counted_rep = 0
+        counted_house = 0
+        skipped_status = 0
+        skipped_refunded = 0
+        skipped_outside_period = 0
+
+        # WooCommerce is the source of truth for order history.
+        per_page = 100
+        max_pages = 25
+        orders_seen = 0
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            if not orders:
+                break
+
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
+                    continue
+                status = str(woo_order.get("status") or "").strip().lower()
+                if status not in ("processing", "completed"):
+                    skipped_status += 1
+                    continue
+                meta_data = woo_order.get("meta_data") or []
+                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
+                    skipped_refunded += 1
+                    continue
+
+                # Filter to the requested/computed biweekly period.
+                created_raw = (
+                    woo_order.get("date_created_gmt")
+                    or woo_order.get("date_created")
+                    or woo_order.get("date")
+                    or None
+                )
+                created_at = _parse_iso_datetime(str(created_raw)) if created_raw else None
+                if not created_at:
+                    # If unknown, skip rather than misattribute outside period.
+                    skipped_outside_period += 1
+                    continue
+                if created_at < start_dt or created_at >= end_dt:
+                    skipped_outside_period += 1
+                    continue
+
+                rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
+                rep_id = str(rep_id).strip() if rep_id is not None else ""
+                if rep_id:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                if not rep_id:
+                    billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                    doctor = doctors_by_email.get(billing_email)
+                    rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                    if rep_id:
+                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                total = _safe_float(woo_order.get("total"))
+
+                if rep_id and rep_id in valid_rep_ids:
+                    current = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
+                    current["totalOrders"] += 1.0
+                    current["totalRevenue"] += total
+                    rep_totals[rep_id] = current
+                    counted_rep += 1
+                else:
+                    house_totals["totalOrders"] += 1.0
+                    house_totals["totalRevenue"] += total
+                    counted_house += 1
+
+                if len(debug_samples) < 10:
+                    debug_samples.append(
+                        {
+                            "wooId": woo_order.get("id"),
+                            "wooNumber": woo_order.get("number"),
+                            "status": status,
+                            "repId": rep_id or None,
+                            "metaRepId": _meta_value(meta_data, "peppro_sales_rep_id"),
+                            "billingEmail": ((woo_order.get("billing") or {}) or {}).get("email"),
+                            "total": total,
+                        }
+                    )
+
+                orders_seen += 1
+
+            if len(orders) < per_page:
+                break
+
+        rep_lookup: Dict[str, Dict] = {}
+        # Seed with canonical user rep records.
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_lookup[str(rep_id)] = rep
+        # Fill in any remaining reps from sales_reps (canonicalized).
+        for rep_id, rep_record in rep_records.items():
+            canonical = alias_to_rep_id.get(rep_id, rep_id)
+            rep_lookup.setdefault(canonical, rep_record)
+
+        summary: List[Dict] = []
+        for rep_id in sorted(valid_rep_ids):
+            totals = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
+            rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
+            rep_record = rep_records.get(rep_id) or {}
+            # Prefer the user's name if available (sales reps edit their own name there).
+            user_rec = user_lookup.get(rep_id) or {}
+            preferred_name = (user_rec.get("name") or "").strip() if isinstance(user_rec, dict) else ""
+            summary.append(
+                {
+                    "salesRepId": rep_id,
+                    "salesRepName": preferred_name
+                    or rep.get("name")
+                    or rep_record.get("name")
+                    or rep.get("email")
+                    or rep_record.get("email")
+                    or rep_id
+                    or "Sales Rep",
+                    "salesRepEmail": rep.get("email") or rep_record.get("email"),
+                    "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
+                    "totalOrders": int(totals["totalOrders"]),
+                    "totalRevenue": float(totals["totalRevenue"]),
+                }
+            )
+
+        if house_totals["totalOrders"] > 0:
+            summary.append(
+                {
+                    "salesRepId": "__house__",
+                    "salesRepName": "House / Contact Form",
+                    "salesRepEmail": None,
+                    "salesRepPhone": None,
+                    "totalOrders": int(house_totals["totalOrders"]),
+                    "totalRevenue": float(house_totals["totalRevenue"]),
+                }
+            )
+
+        summary.sort(key=lambda r: float(r.get("totalRevenue") or 0), reverse=True)
+        totals_all = {
+            "totalOrders": int(sum(int(r.get("totalOrders") or 0) for r in summary)),
+            "totalRevenue": float(sum(float(r.get("totalRevenue") or 0) for r in summary)),
+        }
+        logger.info(
+            "[SalesByRep] Summary computed",
+            extra={
+                "rows": len(summary),
+                "ordersSeen": orders_seen,
+                "maxPages": max_pages,
+                "perPage": per_page,
+                "countedRep": counted_rep,
+                "countedHouse": counted_house,
+                "skippedStatus": skipped_status,
+                "skippedRefunded": skipped_refunded,
+                "skippedOutsidePeriod": skipped_outside_period,
+                "periodStart": period_meta["periodStart"],
+                "periodEnd": period_meta["periodEnd"],
+                "debugSamples": debug_samples,
+            },
+        )
+        try:
+            print(
+                f"[sales_by_rep] rows={len(summary)} orders_seen={orders_seen} counted_rep={counted_rep} counted_house={counted_house} reps={len(valid_rep_ids)} samples={debug_samples}",
+                flush=True,
+            )
+        except Exception:
+            pass
+        return {"orders": summary, "totals": totals_all, **period_meta}
+
+    now_ms = int(time.time() * 1000)
+    cached = None
+    inflight_event = None
+    with _sales_by_rep_summary_lock:
+        cached = _sales_by_rep_summary_cache.get("data")
+        expires_at = int(_sales_by_rep_summary_cache.get("expiresAtMs") or 0)
+        cache_key = _sales_by_rep_summary_cache.get("key")
+        if isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
+            if exclude_sales_rep_id:
+                exclude_id = str(exclude_sales_rep_id)
+                rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                return {**cached, "orders": filtered}
+            return cached
+        inflight_event = _sales_by_rep_summary_inflight
+        if inflight_event is None:
+            inflight_event = threading.Event()
+            _sales_by_rep_summary_inflight = inflight_event
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader and inflight_event is not None:
+        inflight_event.wait(timeout=35)
+        with _sales_by_rep_summary_lock:
+            cached = _sales_by_rep_summary_cache.get("data")
+            cache_key = _sales_by_rep_summary_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
+                if exclude_sales_rep_id:
+                    exclude_id = str(exclude_sales_rep_id)
+                    rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    return {**cached, "orders": filtered, "stale": True}
+                return {**cached, "stale": True}
+        # If the leader could not populate cache in time, do not stampede the upstream.
+        return {
+            "orders": [],
+            "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            **period_meta,
+            "stale": True,
+            "error": "Sales summary is temporarily unavailable.",
+        }
+
+    try:
+        summary = _compute_summary()
+        now_ms = int(time.time() * 1000)
+        with _sales_by_rep_summary_lock:
+            _sales_by_rep_summary_cache["data"] = summary
+            _sales_by_rep_summary_cache["key"] = period_cache_key
+            _sales_by_rep_summary_cache["fetchedAtMs"] = now_ms
+            _sales_by_rep_summary_cache["expiresAtMs"] = now_ms + (_SALES_BY_REP_SUMMARY_TTL_SECONDS * 1000)
+        # Best-effort persistence for admins (optional columns).
+        for row in summary.get("orders") if isinstance(summary, dict) else []:
+            rep_id = row.get("salesRepId")
+            if not rep_id or rep_id == "__house__":
+                continue
+            try:
+                target_id = str(rep_id)
+                record = sales_rep_repository.find_by_id(target_id)
+                if not record:
+                    email = row.get("salesRepEmail")
+                    if isinstance(email, str) and email.strip():
+                        record = sales_rep_repository.find_by_email(email)
+                        if record and record.get("id"):
+                            target_id = str(record.get("id"))
+                sales_rep_repository.update_revenue_summary(
+                    target_id,
+                    float(row.get("totalRevenue") or 0),
+                )
+            except Exception:
+                continue
+        if exclude_sales_rep_id:
+            exclude_id = str(exclude_sales_rep_id)
+            rows = summary.get("orders") if isinstance(summary, dict) else []
+            filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+            return {**summary, "orders": filtered}
+        return summary
+    except Exception as exc:
+        # Serve stale cached data if available.
+        with _sales_by_rep_summary_lock:
+            cached = _sales_by_rep_summary_cache.get("data")
+            if isinstance(cached, dict):
+                logger.warning(
+                    "[SalesByRep] Using cached summary after failure",
+                    exc_info=True,
+                    extra={"error": str(exc)},
+                )
+                if exclude_sales_rep_id:
+                    exclude_id = str(exclude_sales_rep_id)
+                    rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
+                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    return {**cached, "orders": filtered, "stale": True, "error": "Sales summary is temporarily unavailable."}
+                return {**cached, "stale": True, "error": "Sales summary is temporarily unavailable."}
+        # No cached data yet; return an empty/stale response instead of a 500.
+        return {
+            "orders": [],
+            "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            **period_meta,
+            "stale": True,
+            "error": "Sales summary is temporarily unavailable.",
+        }
+    finally:
+        with _sales_by_rep_summary_lock:
+            if _sales_by_rep_summary_inflight is not None:
+                try:
+                    _sales_by_rep_summary_inflight.set()
+                except Exception:
+                    pass
+            _sales_by_rep_summary_inflight = None
+
+
+def _service_error(message: str, status: int) -> Exception:
+    err = ValueError(message)
+    setattr(err, "status", status)
+    return err

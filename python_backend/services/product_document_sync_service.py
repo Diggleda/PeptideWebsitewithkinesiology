@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from ..services import get_config
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _SYNC_THREAD_STARTED = False
 _SYNC_LOCK = threading.Lock()
+
+_LAST_RUN_SETTINGS_KEY = "productDocsWooSyncLastRunAt"
 
 
 def _enabled() -> bool:
@@ -42,6 +45,80 @@ def _try_acquire_lock(name: str) -> bool:
 def _release_lock(name: str) -> None:
     try:
         mysql_client.fetch_one("SELECT RELEASE_LOCK(%(name)s) AS released", {"name": name})
+    except Exception:
+        return
+
+
+def _parse_settings_json_value(raw: Any) -> Any:
+    if raw is None:
+        return None
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode("utf-8")
+        except Exception:
+            return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        # JSON column sometimes returns the already-decoded scalar, but for safety parse JSON strings.
+        # Common case is '"2025-01-01T00:00:00Z"' or 'null'.
+        if text == "null":
+            return None
+        if (text.startswith('"') and text.endswith('"')) or text.startswith("{") or text.startswith("["):
+            try:
+                import json
+
+                return json.loads(text)
+            except Exception:
+                return text
+        return text
+    return raw
+
+
+def _parse_iso_utc(value: Any) -> datetime | None:
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _get_last_run_at() -> datetime | None:
+    try:
+        row = mysql_client.fetch_one(
+            "SELECT value_json FROM settings WHERE `key` = %(key)s",
+            {"key": _LAST_RUN_SETTINGS_KEY},
+        )
+        raw = _parse_settings_json_value((row or {}).get("value_json"))
+        return _parse_iso_utc(raw)
+    except Exception:
+        return None
+
+
+def _set_last_run_at(value: datetime) -> None:
+    try:
+        import json
+
+        stamp = value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        mysql_client.execute(
+            """
+            INSERT INTO settings (`key`, value_json, updated_at)
+            VALUES (%(key)s, %(value)s, NOW())
+            ON DUPLICATE KEY UPDATE
+              value_json = VALUES(value_json),
+              updated_at = NOW()
+            """,
+            {"key": _LAST_RUN_SETTINGS_KEY, "value": json.dumps(stamp)},
+        )
     except Exception:
         return
 
@@ -101,9 +178,28 @@ def sync_woo_products_to_product_documents() -> Dict[str, Any]:
         return {"ok": False, "skipped": True, "reason": "lock_busy"}
 
     try:
+        # Passenger commonly runs multiple workers; each worker starts this thread.
+        # The MySQL named lock prevents concurrent syncs, but without a shared cooldown,
+        # workers can run sequential syncs back-to-back at startup. Use a shared
+        # SQL timestamp to enforce at most one sync per interval across all workers.
+        interval = _interval_seconds()
+        now = datetime.now(timezone.utc)
+        last_run_at = _get_last_run_at()
+        if last_run_at and (now - last_run_at).total_seconds() < float(interval):
+            return {
+                "ok": False,
+                "skipped": True,
+                "reason": "cooldown",
+                "intervalSeconds": interval,
+                "secondsSinceLastRun": int((now - last_run_at).total_seconds()),
+            }
+
+        # Claim this run immediately (so sequential workers started at the same time
+        # don't run again once the lock is released).
+        _set_last_run_at(now)
         products = _fetch_all_products_minimal()
         upserted = product_document_repository.upsert_stubs_for_products(products)
-        return {"ok": True, "products": len(products), "upserted": upserted}
+        return {"ok": True, "products": len(products), "upserted": upserted, "intervalSeconds": interval}
     finally:
         _release_lock(lock_name)
 
@@ -136,4 +232,3 @@ def start_product_document_sync() -> None:
         _SYNC_THREAD_STARTED = True
         thread = threading.Thread(target=_worker, name="peppro-product-doc-sync", daemon=True)
         thread.start()
-
