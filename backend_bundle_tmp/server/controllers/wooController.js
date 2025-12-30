@@ -35,8 +35,8 @@ const cacheTtlSecondsForEndpoint = (endpoint) => {
   if (endpoint === 'products/categories') return 10 * 60;
   // Products rarely change minute-to-minute; a longer TTL prevents repeated cold Woo fetches.
   if (endpoint === 'products') return 5 * 60;
-  if (/^products\/[^/]+\/variations$/.test(endpoint)) return 5 * 60;
-  if (/^products\/[^/]+$/.test(endpoint)) return 5 * 60;
+  if (/^products\/[^/]+\/variations$/.test(endpoint)) return 10 * 60;
+  if (/^products\/[^/]+$/.test(endpoint)) return 10 * 60;
   return 60;
 };
 
@@ -211,7 +211,10 @@ const proxyCatalog = async (req, res, next) => {
 
     const ttlSeconds = cacheTtlSecondsForEndpoint(requestedEndpoint);
     const allowStale =
-      requestedEndpoint === 'products' || requestedEndpoint === 'products/categories';
+      requestedEndpoint === 'products'
+      || requestedEndpoint === 'products/categories'
+      || /^products\/[^/]+\/variations$/.test(requestedEndpoint)
+      || /^products\/[^/]+$/.test(requestedEndpoint);
     const cacheKey = buildCacheKey(requestedEndpoint, req.query);
     const now = Date.now();
     const cached = catalogCache.get(cacheKey);

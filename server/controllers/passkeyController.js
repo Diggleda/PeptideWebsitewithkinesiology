@@ -1,8 +1,18 @@
-const passkeyService = require('../services/passkeyService');
+let passkeyService;
+const getPasskeyService = () => {
+  if (!passkeyService) {
+    // Lazy-load to avoid startup hangs if WebAuthn deps misbehave under Node.
+    // Errors will be surfaced when passkey endpoints are hit.
+    // eslint-disable-next-line global-require
+    passkeyService = require('../services/passkeyService');
+  }
+  return passkeyService;
+};
 
 const registrationOptions = async (req, res, next) => {
   try {
-    const result = await passkeyService.generateOptionsForRegistration(req.user.id);
+    const service = getPasskeyService();
+    const result = await service.generateOptionsForRegistration(req.user.id);
     res.json(result);
   } catch (error) {
     next(error);
@@ -11,7 +21,8 @@ const registrationOptions = async (req, res, next) => {
 
 const verifyRegistration = async (req, res, next) => {
   try {
-    const result = await passkeyService.verifyRegistration(req.body, req.user.id);
+    const service = getPasskeyService();
+    const result = await service.verifyRegistration(req.body, req.user.id);
     res.json(result);
   } catch (error) {
     next(error);
@@ -20,7 +31,8 @@ const verifyRegistration = async (req, res, next) => {
 
 const authenticationOptions = async (req, res, next) => {
   try {
-    const result = await passkeyService.generateOptionsForAuthentication(req.body?.email || '');
+    const service = getPasskeyService();
+    const result = await service.generateOptionsForAuthentication(req.body?.email || '');
     res.json(result);
   } catch (error) {
     next(error);
@@ -29,7 +41,8 @@ const authenticationOptions = async (req, res, next) => {
 
 const verifyAuthentication = async (req, res, next) => {
   try {
-    const result = await passkeyService.verifyAuthentication(req.body);
+    const service = getPasskeyService();
+    const result = await service.verifyAuthentication(req.body);
     res.json(result);
   } catch (error) {
     next(error);

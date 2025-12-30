@@ -403,6 +403,23 @@ export const authAPI = {
     }
     clearAuthToken();
   },
+  markOffline: () => {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      void fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      }).catch(() => null);
+    } catch {
+      // ignore
+    }
+  },
 
   getCurrentUser: async () => {
     try {
@@ -811,7 +828,11 @@ export const wooAPI = {
     }
     return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}`, {
       method: 'GET',
-      cache: 'no-store',
+      cache: 'force-cache',
+      headers: {
+        'Cache-Control': 'public, max-age=300',
+        Pragma: '',
+      },
     });
   },
 
@@ -826,7 +847,11 @@ export const wooAPI = {
       `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/variations/${encodeURIComponent(String(variationId))}`,
       {
         method: 'GET',
-        cache: 'no-store',
+        cache: 'force-cache',
+        headers: {
+          'Cache-Control': 'public, max-age=300',
+          Pragma: '',
+        },
       },
     );
   },

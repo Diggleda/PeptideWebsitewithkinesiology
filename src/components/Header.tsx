@@ -532,14 +532,26 @@ const renderAddressLines = (address?: AccountOrderAddress | null) => {
   );
 };
 
+const stripWooSizeSuffix = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  const [base, query = ''] = trimmed.split('?');
+  const match = base.match(/^(.*)-(\d{2,4})x(\d{2,4})(\.[a-zA-Z0-9]+)$/);
+  if (!match) {
+    return trimmed;
+  }
+  const stripped = `${match[1]}${match[4]}`;
+  return query ? `${stripped}?${query}` : stripped;
+};
+
 const normalizeImageSource = (value: any): string | null => {
   if (typeof value === 'string' && value.trim().length > 0) {
-    return proxifyWooMediaUrl(value.trim());
+    return proxifyWooMediaUrl(stripWooSizeSuffix(value));
   }
   if (value && typeof value === 'object') {
     const source = value.src || value.url || value.href || value.source;
     if (typeof source === 'string' && source.trim().length > 0) {
-      return proxifyWooMediaUrl(source.trim());
+      return proxifyWooMediaUrl(stripWooSizeSuffix(source));
     }
   }
   return null;
@@ -1813,13 +1825,22 @@ export function Header({
     }
   }, []);
 
-  const triggerLogout = useCallback(() => {
-    if (logoutThanksLogoutTriggeredRef.current) return;
-    logoutThanksLogoutTriggeredRef.current = true;
-    clearLogoutThanksTimers();
+  const triggerLogout = useCallback(
+    (options?: { closeModal?: boolean }) => {
+      if (logoutThanksLogoutTriggeredRef.current) return;
+      logoutThanksLogoutTriggeredRef.current = true;
+      if (options?.closeModal !== false) {
+        setLogoutThanksOpen(false);
+      }
+      Promise.resolve(onLogout());
+    },
+    [onLogout],
+  );
+
+  const finishLogoutModalClose = useCallback(() => {
     setLogoutThanksOpen(false);
-    Promise.resolve(onLogout());
-  }, [clearLogoutThanksTimers, onLogout]);
+    logoutThanksPendingFadeOutRef.current = false;
+  }, []);
 
   const beginLogoutFadeOut = useCallback(
     (sequence: number, durationMs: number) => {
@@ -1827,14 +1848,15 @@ export function Header({
       logoutThanksPendingFadeOutRef.current = true;
       setLogoutThanksTransitionMs(durationMs);
       setLogoutThanksOpacity(0);
+      triggerLogout({ closeModal: false });
       logoutThanksTimeoutsRef.current.push(
         window.setTimeout(() => {
           if (logoutThanksSequenceRef.current !== sequence) return;
-          triggerLogout();
+          finishLogoutModalClose();
         }, durationMs),
       );
     },
-    [triggerLogout],
+    [finishLogoutModalClose, triggerLogout],
   );
 
   const handleLogoutClick = useCallback(() => {
@@ -2967,21 +2989,22 @@ export function Header({
 		                              className="order-line-item flex items-center gap-4 mb-4 min-h-[60px]"
 		                            >
                               <div
-                                className="relative h-20 w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
+                                className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
                                 style={{ maxHeight: '120px' }}
                               >
-                                <Package className="h-7 w-7 opacity-60" />
                                 {lineImage ? (
                                   <img
                                     src={lineImage}
                                     alt={line.name || 'Item thumbnail'}
-                                    className="absolute inset-0 h-full w-full object-contain p-2"
-                                    style={{ maxHeight: '120px' }}
+                                    className="object-contain"
+                                    style={{ width: '100%', height: '100%', maxHeight: '120px' }}
                                     onError={(event) => {
                                       event.currentTarget.style.display = 'none';
                                     }}
                                   />
-                                ) : null}
+                                ) : (
+                                  <Package className="h-6 w-6 opacity-60" />
+                                )}
                               </div>
                               <div className="flex-1 space-y-1">
                                 <p className="text-[rgb(26,85,173)] font-semibold leading-snug">
@@ -3608,12 +3631,12 @@ export function Header({
 	        <DialogContent
 	          hideCloseButton
 	          className="duration-[350ms] data-[state=closed]:duration-[350ms] !max-w-[min(28rem,calc(100vw-2rem))]"
-	          onTransitionEnd={(event) => {
-	            if (event.propertyName !== 'opacity') return;
-	            if (!logoutThanksPendingFadeOutRef.current) return;
-	            if (logoutThanksOpacity !== 0) return;
-	            triggerLogout();
-	          }}
+          onTransitionEnd={(event) => {
+            if (event.propertyName !== 'opacity') return;
+            if (!logoutThanksPendingFadeOutRef.current) return;
+            if (logoutThanksOpacity !== 0) return;
+            finishLogoutModalClose();
+          }}
 	          style={{
 	            margin: 'auto',
 	            maxWidth: 'min(32rem, calc(100vw - 2rem))',
