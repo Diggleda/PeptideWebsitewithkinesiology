@@ -43,7 +43,159 @@ export const API_BASE_URL = (() => {
   return normalizedWithApi;
 })();
 
-// Helper function to get auth token
+type AuthTabEvent = {
+  type: 'LOGIN';
+  tabId: string;
+  sessionId: string;
+  at: number;
+};
+
+const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
+const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
+const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
+const AUTH_EVENT_NAME = 'peppro:force-logout';
+
+const _randomId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+};
+
+const getOrCreateTabId = () => {
+  try {
+    const existing = sessionStorage.getItem(AUTH_TAB_ID_KEY);
+    if (existing && existing.trim()) return existing;
+    const next = _randomId();
+    sessionStorage.setItem(AUTH_TAB_ID_KEY, next);
+    return next;
+  } catch {
+    return _randomId();
+  }
+};
+
+const getSessionId = () => {
+  try {
+    const value = sessionStorage.getItem(AUTH_SESSION_ID_KEY);
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const setSessionId = (sessionId: string) => {
+  try {
+    sessionStorage.setItem(AUTH_SESSION_ID_KEY, sessionId);
+  } catch {
+    // ignore
+  }
+};
+
+const clearSessionId = () => {
+  try {
+    sessionStorage.removeItem(AUTH_SESSION_ID_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const emitAuthEvent = (payload: AuthTabEvent) => {
+  if (typeof window === 'undefined') return;
+  try {
+    // BroadcastChannel is fast and avoids localStorage writes in most modern browsers.
+    if ('BroadcastChannel' in window) {
+      const channel = new (window as any).BroadcastChannel('peppro-auth');
+      channel.postMessage(payload);
+      channel.close();
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    // Fallback path; also reaches browsers without BroadcastChannel.
+    localStorage.setItem(AUTH_EVENT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+};
+
+const dispatchForceLogout = (reason: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent(AUTH_EVENT_NAME, { detail: { reason } }));
+  } catch {
+    // ignore
+  }
+};
+
+const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
+  if (!payload || payload.type !== 'LOGIN') return;
+  const tabId = getOrCreateTabId();
+  if (payload.tabId === tabId) return;
+
+  const localSessionId = getSessionId();
+  if (!localSessionId || localSessionId === payload.sessionId) return;
+
+  // Another tab completed a login; force-logout this tab (without touching other tabs).
+  clearAuthToken();
+  clearSessionId();
+  dispatchForceLogout('another_tab_login');
+};
+
+if (typeof window !== 'undefined') {
+  // Enforce tab-scoped auth by clearing any legacy localStorage token left by older builds.
+  try {
+    localStorage.removeItem('auth_token');
+  } catch {
+    // ignore
+  }
+
+  // Ensure tab/session ids exist for already-authenticated tabs (e.g., after deploy refresh).
+  try {
+    const existingToken = sessionStorage.getItem('auth_token');
+    if (existingToken && existingToken.trim() && !getSessionId()) {
+      setSessionId(_randomId());
+    }
+  } catch {
+    // ignore
+  }
+
+  // BroadcastChannel listener
+  try {
+    if ('BroadcastChannel' in window) {
+      const channel = new (window as any).BroadcastChannel('peppro-auth');
+      channel.addEventListener('message', (event: any) => {
+        try {
+          handleIncomingAuthEvent(event?.data as AuthTabEvent);
+        } catch {
+          // ignore
+        }
+      });
+    }
+  } catch {
+    // ignore
+  }
+
+  // localStorage listener fallback
+  try {
+    window.addEventListener('storage', (event: StorageEvent) => {
+      if (event.key !== AUTH_EVENT_STORAGE_KEY || !event.newValue) return;
+      try {
+        handleIncomingAuthEvent(JSON.parse(event.newValue) as AuthTabEvent);
+      } catch {
+        // ignore
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+// Helper function to get auth token (tab-scoped: sessionStorage only)
 const getAuthToken = () => {
   try {
     const sessionToken = sessionStorage.getItem('auth_token');
@@ -53,34 +205,33 @@ const getAuthToken = () => {
   } catch {
     // sessionStorage may be unavailable (SSR / private mode)
   }
-  try {
-    const storageToken = localStorage.getItem('auth_token');
-    if (storageToken && storageToken.trim().length > 0) {
-      try {
-        sessionStorage.setItem('auth_token', storageToken);
-      } catch {
-        // Ignore sessionStorage writes if unavailable
-      }
-      return storageToken;
-    }
-  } catch {
-    // Ignore localStorage errors
-  }
   return null;
 };
 
 const persistAuthToken = (token: string) => {
   if (!token) return;
-  localStorage.setItem('auth_token', token);
   try {
     sessionStorage.setItem('auth_token', token);
   } catch {
     // Ignore sessionStorage errors (Safari private mode, etc.)
   }
+
+  const sessionId = _randomId();
+  setSessionId(sessionId);
+  emitAuthEvent({
+    type: 'LOGIN',
+    tabId: getOrCreateTabId(),
+    sessionId,
+    at: Date.now(),
+  });
 };
 
 const clearAuthToken = () => {
-  localStorage.removeItem('auth_token');
+  try {
+    localStorage.removeItem('auth_token');
+  } catch {
+    // ignore
+  }
   try {
     sessionStorage.removeItem('auth_token');
   } catch {
@@ -402,6 +553,7 @@ export const authAPI = {
       // ignore
     }
     clearAuthToken();
+    clearSessionId();
   },
   markOffline: () => {
     const token = getAuthToken();

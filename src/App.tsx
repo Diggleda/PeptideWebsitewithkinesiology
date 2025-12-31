@@ -7253,14 +7253,6 @@ export default function App() {
     } catch {
       // ignore
     }
-    try {
-      const localToken = localStorage.getItem("auth_token");
-      if (localToken && localToken.trim().length > 0) {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
     return false;
   }, []);
 
@@ -9092,6 +9084,25 @@ export default function App() {
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleForcedLogout = () => {
+      handleLogout();
+    };
+    window.addEventListener(
+      "peppro:force-logout",
+      handleForcedLogout as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "peppro:force-logout",
+        handleForcedLogout as EventListener,
+      );
+    };
+  }, [handleLogout]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
