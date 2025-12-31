@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
 from datetime import datetime
+from pathlib import Path
 from time import time
 from typing import Dict, List, Optional
 
@@ -13,6 +15,7 @@ from ..repositories import (
     order_repository,
     referral_code_repository,
     referral_repository,
+    sales_prospect_repository,
     sales_rep_repository,
     user_repository,
 )
@@ -24,6 +27,7 @@ ALLOWED_SUFFIX_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 REFERRAL_STATUS_CHOICES = [
     "pending",
     "contacted",
+    "verified",
     "account_created",
     "nuture",
     "converted",
@@ -42,6 +46,7 @@ LEGACY_STATUS_ALIASES = {
     "disqualified": "pending",
     "rejected": "pending",
     "in_review": "account_created",
+    "verifying": "verified",
 }
 
 
@@ -71,7 +76,15 @@ def _sanitize_phone(value: Optional[str]) -> Optional[str]:
 
 
 def _sanitize_notes(value: Optional[str]) -> Optional[str]:
-    return _sanitize_text(value, 600)
+    if value is None:
+        return None
+    text = str(value)
+    # Preserve newlines/indentation; only normalize line endings for portability.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\x00", "")
+    if not text.strip():
+        return None
+    return text[:600]
 
 
 def _normalize_status_candidate(status: Optional[str]) -> Optional[str]:
@@ -125,7 +138,17 @@ def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> L
         doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
         if doctor_by_id:
             all_users = [doctor_by_id.get(str(u.get("id")), u) for u in all_users]
-        return all_users
+        doctor_ids = [str(d.get("id")) for d in updated_doctors if isinstance(d, dict) and d.get("id")]
+        try:
+            counts = order_repository.count_by_user_ids(doctor_ids)
+        except Exception:
+            counts = {}
+        with_counts = []
+        for user in all_users:
+            uid = str(user.get("id")) if user and user.get("id") is not None else None
+            total_orders = int(counts.get(uid, 0)) if uid else 0
+            with_counts.append({**user, "totalOrders": total_orders})
+        return with_counts
     target = str(sales_rep_id)
     scoped = [
         user
@@ -137,7 +160,17 @@ def list_accounts_for_sales_rep(sales_rep_id: str, scope_all: bool = False) -> L
     doctor_by_id = {str(d.get("id")): d for d in updated_doctors if isinstance(d, dict) and d.get("id")}
     if doctor_by_id:
         scoped = [doctor_by_id.get(str(u.get("id")), u) for u in scoped]
-    return scoped
+    doctor_ids = [str(d.get("id")) for d in updated_doctors if isinstance(d, dict) and d.get("id")]
+    try:
+        counts = order_repository.count_by_user_ids(doctor_ids)
+    except Exception:
+        counts = {}
+    with_counts = []
+    for user in scoped:
+        uid = str(user.get("id")) if user and user.get("id") is not None else None
+        total_orders = int(counts.get(uid, 0)) if uid else 0
+        with_counts.append({**user, "totalOrders": total_orders})
+    return with_counts
 
 
 def _is_contact_form_id(referral_id: str) -> bool:
@@ -322,6 +355,20 @@ def _enrich_referral(referral: Dict) -> Dict:
         enriched["referrerDoctorEmail"] = None
         enriched["referrerDoctorPhone"] = None
     enriched["notes"] = referral.get("notes") or None
+    sales_rep_id = referral.get("salesRepId") or referral.get("sales_rep_id")
+    prospect = None
+    if sales_rep_id and referral.get("id"):
+        prospect = sales_prospect_repository.find_by_sales_rep_and_referral(
+            str(sales_rep_id),
+            str(referral.get("id")),
+        )
+    enriched["salesRepNotes"] = (prospect.get("notes") if prospect else None) or None
+    enriched["isManual"] = bool(prospect.get("isManual")) if prospect else False
+    enriched["status"] = prospect.get("status") if prospect and prospect.get("status") else "pending"
+    enriched["resellerPermitExempt"] = bool(prospect.get("resellerPermitExempt")) if prospect else False
+    enriched["resellerPermitFilePath"] = prospect.get("resellerPermitFilePath") if prospect else None
+    enriched["resellerPermitFileName"] = prospect.get("resellerPermitFileName") if prospect else None
+    enriched["resellerPermitUploadedAt"] = prospect.get("resellerPermitUploadedAt") if prospect else None
 
     contact_account, contact_order_count = _resolve_referred_contact_account(referral)
     enriched["referredContactHasAccount"] = bool(contact_account)
@@ -335,10 +382,33 @@ def _enrich_referral(referral: Dict) -> Dict:
     )
     enriched["referredContactTotalOrders"] = contact_order_count
     enriched["referredContactEligibleForCredit"] = contact_order_count > 0
-    # Promote status to account_created when an account exists but status is still early-stage
+    # Promote prospect status to account_created when an account exists but status is still early-stage.
     status = (enriched.get("status") or "").lower()
     if enriched["referredContactHasAccount"] and status in ("pending", "contact_form", "contacted"):
         enriched["status"] = "account_created"
+        if prospect and sales_rep_id:
+            try:
+                sales_prospect_repository.upsert(
+                    {
+                        "id": str(prospect.get("id")),
+                        "salesRepId": str(sales_rep_id),
+                        "doctorId": str(contact_account.get("id")),
+                        "status": "account_created",
+                    }
+                )
+            except Exception:
+                pass
+    elif prospect and sales_rep_id and contact_account and contact_account.get("id") and not prospect.get("doctorId"):
+        try:
+            sales_prospect_repository.upsert(
+                {
+                    "id": str(prospect.get("id")),
+                    "salesRepId": str(sales_rep_id),
+                    "doctorId": str(contact_account.get("id")),
+                }
+            )
+        except Exception:
+            pass
 
     return enriched
 
@@ -434,19 +504,37 @@ def get_onboarding_code(code: str) -> Optional[Dict]:
 
 def record_referral_submission(data: Dict) -> Dict:
     timestamp = _now()
-    return referral_repository.insert(
+    referral = referral_repository.insert(
         {
             "referrerDoctorId": data.get("referrerDoctorId"),
             "salesRepId": data.get("salesRepId"),
             "referredContactName": data.get("contactName"),
             "referredContactEmail": data.get("contactEmail"),
             "referredContactPhone": data.get("contactPhone"),
-            "status": "pending",
             "notes": data.get("notes"),
             "createdAt": timestamp,
             "updatedAt": timestamp,
         }
     )
+    # Status lives in sales_prospects; create a prospect row for this referral.
+    try:
+        sales_rep_id = data.get("salesRepId") or referral.get("salesRepId")
+        if sales_rep_id and referral and referral.get("id"):
+            sales_prospect_repository.upsert(
+                {
+                    "id": str(referral.get("id")),
+                    "salesRepId": str(sales_rep_id),
+                    "referralId": str(referral.get("id")),
+                    "status": "pending",
+                    "isManual": False,
+                    "contactName": referral.get("referredContactName"),
+                    "contactEmail": referral.get("referredContactEmail"),
+                    "contactPhone": referral.get("referredContactPhone"),
+                }
+            )
+    except Exception:
+        pass
+    return referral
 
 
 def create_manual_prospect(data: Dict) -> Dict:
@@ -464,36 +552,93 @@ def create_manual_prospect(data: Dict) -> Dict:
     contact_phone = _sanitize_phone(data.get("phone"))
     notes = _sanitize_notes(data.get("notes"))
     status = _sanitize_referral_status(data.get("status"), "pending")
+    has_account = bool(data.get("hasAccount")) if "hasAccount" in data else False
 
-    record = referral_repository.insert(
+    if contact_email:
+        if user_repository.find_by_email(contact_email):
+            raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+        if sales_rep_repository.find_by_email(contact_email):
+            raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+        try:
+            for referral in referral_repository.get_all():
+                if (referral.get("referredContactEmail") or "").strip().lower() == contact_email:
+                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+        except Exception:
+            pass
+        try:
+            for prospect in sales_prospect_repository.get_all():
+                if (prospect.get("contactEmail") or "").strip().lower() == contact_email:
+                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+        except Exception:
+            pass
+        try:
+            if get_config().mysql.get("enabled"):
+                row = mysql_client.fetch_one(
+                    "SELECT id FROM contact_forms WHERE LOWER(email) = %(email)s LIMIT 1",
+                    {"email": contact_email},
+                )
+                if row:
+                    raise _service_error("EMAIL_ALREADY_EXISTS", 400)
+        except Exception:
+            pass
+
+    prospect_id = _generate_manual_id()
+    record = sales_prospect_repository.upsert(
         {
-            "id": _generate_manual_id(),
-            "referrerDoctorId": None,
+            "id": prospect_id,
             "salesRepId": resolved_sales_rep_id,
-            "referredContactName": contact_name,
-            "referredContactEmail": contact_email,
-            "referredContactPhone": contact_phone,
+            "doctorId": None,
+            "referralId": None,
+            "contactFormId": None,
             "status": status,
             "notes": notes,
+            "isManual": True,
+            "contactName": contact_name,
+            "contactEmail": contact_email,
+            "contactPhone": contact_phone,
         }
     )
-    return _enrich_referral(record)
+    return {
+        "id": record.get("id"),
+        "referrerDoctorId": None,
+        "salesRepId": record.get("salesRepId"),
+        "referredContactName": record.get("contactName"),
+        "referredContactEmail": record.get("contactEmail"),
+        "referredContactPhone": record.get("contactPhone"),
+        "status": record.get("status") or "pending",
+        "salesRepNotes": record.get("notes") or None,
+        "notes": record.get("notes") or None,
+        "createdAt": record.get("createdAt"),
+        "updatedAt": record.get("updatedAt"),
+        "convertedDoctorId": None,
+        "convertedAt": None,
+        "referredContactHasAccount": bool(has_account),
+        "referredContactAccountId": None,
+        "referredContactAccountName": None,
+        "referredContactAccountEmail": None,
+        "referredContactAccountCreatedAt": None,
+        "referredContactTotalOrders": 0,
+        "referredContactEligibleForCredit": False,
+        "isManual": True,
+    }
 
 
 def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
     if not referral_id:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
-    referral = referral_repository.find_by_id(referral_id)
-    if not referral:
-        raise _service_error("REFERRAL_NOT_FOUND", 404)
-    if not str(referral.get("id") or "").startswith("manual:"):
+    if not str(referral_id or "").startswith("manual:"):
         raise _service_error("NOT_MANUAL_PROSPECT", 400)
     resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
-    record_sales_rep_id = referral.get("salesRepId")
+    prospect = sales_prospect_repository.find_by_id(referral_id)
+    if not prospect:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    record_sales_rep_id = prospect.get("salesRepId")
     normalized_record = _resolve_user_id(record_sales_rep_id) or record_sales_rep_id
     if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip() and str(normalized_record or "").strip() != str(resolved_sales_rep_id or "").strip():
         raise _service_error("REFERRAL_NOT_FOUND", 404)
-    referral_repository.delete(referral_id)
+    if not prospect.get("isManual"):
+        raise _service_error("NOT_MANUAL_PROSPECT", 400)
+    sales_prospect_repository.delete(referral_id)
 
 
 def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
@@ -598,23 +743,72 @@ def _referral_matches_aliases(referral: Dict, aliases: set[str]) -> bool:
     return False
 
 
-def _load_contact_form_referrals() -> list[dict]:
-    """Load contact form submissions and map them into referral-like records."""
+def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dict]:
+    """Load contact form submissions and map them into prospect records."""
     records: list[dict] = []
-    mysql_enabled = bool(getattr(mysql_client, "_config", None) and getattr(mysql_client._config, "mysql", {}).get("enabled"))
+    mysql_enabled = bool(get_config().mysql.get("enabled"))
+
     try:
-        rows = mysql_client.fetch_all(
-            """
-            SELECT id, name, email, phone, source, created_at
-            FROM contact_forms
-            ORDER BY created_at DESC
-            """
-        )
+        if mysql_enabled and sales_rep_id:
+            rows = mysql_client.fetch_all(
+                """
+                SELECT
+                    cf.id,
+                    cf.name,
+                    cf.email,
+                    cf.phone,
+                    cf.source,
+                    cf.created_at,
+                    sp.status AS prospect_status,
+                    sp.notes AS prospect_notes,
+                    sp.updated_at AS prospect_updated_at,
+                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+                    sp.reseller_permit_file_name AS reseller_permit_file_name,
+                    sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                FROM sales_prospects sp
+                JOIN contact_forms cf ON cf.id = sp.contact_form_id
+                WHERE sp.sales_rep_id = %(sales_rep_id)s
+                  AND sp.contact_form_id IS NOT NULL
+                ORDER BY COALESCE(sp.updated_at, cf.created_at) DESC
+                LIMIT 200
+                """,
+                {"sales_rep_id": str(sales_rep_id)},
+            )
+        elif mysql_enabled:
+            rows = mysql_client.fetch_all(
+                """
+                SELECT
+                    cf.id,
+                    cf.name,
+                    cf.email,
+                    cf.phone,
+                    cf.source,
+                    cf.created_at,
+                    sp.sales_rep_id AS prospect_sales_rep_id,
+                    sp.status AS prospect_status,
+                    sp.notes AS prospect_notes,
+                    sp.updated_at AS prospect_updated_at,
+                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+                    sp.reseller_permit_file_name AS reseller_permit_file_name,
+                    sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                FROM contact_forms cf
+                LEFT JOIN sales_prospects sp
+                  ON sp.id = CONCAT('contact_form:', cf.id)
+                  OR sp.contact_form_id = CAST(cf.id AS CHAR)
+                ORDER BY COALESCE(sp.updated_at, cf.created_at) DESC
+                LIMIT 200
+                """,
+            )
+        else:
+            rows = []
         logger.info(
             "[referrals] loaded contact forms",
             extra={
                 "count": len(rows or []),
                 "mysql_enabled": mysql_enabled,
+                "sales_rep_id": sales_rep_id,
             },
         )
     except Exception as exc:
@@ -623,6 +817,7 @@ def _load_contact_form_referrals() -> list[dict]:
             exc_info=exc,
             extra={
                 "mysql_enabled": mysql_enabled,
+                "sales_rep_id": sales_rep_id,
             },
         )
         rows = []
@@ -630,28 +825,59 @@ def _load_contact_form_referrals() -> list[dict]:
     for row in rows or []:
         created_at_raw = row.get("created_at") or row.get("createdAt")
         created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
-        updated_at_raw = row.get("updated_at") or row.get("updatedAt") or created_at_raw
+        updated_at_raw = row.get("prospect_updated_at") or row.get("updated_at") or row.get("updatedAt") or created_at_raw
         updated_at = updated_at_raw.isoformat() if isinstance(updated_at_raw, datetime) else updated_at_raw or created_at
         record_id = f"contact_form:{row.get('id')}" if row.get("id") is not None else _generate_unique_code("system")
-        stored_entry = contact_form_status_repository.get_entry(record_id)
-        status = stored_entry.get("status") if isinstance(stored_entry, dict) else stored_entry or "contact_form"
-        stored_updated_at = None
-        if isinstance(stored_entry, dict):
-            stored_updated_at = stored_entry.get("updatedAt")
+        status = row.get("prospect_status") or "contact_form"
+        prospect_sales_rep_id = row.get("prospect_sales_rep_id") or None
+        if mysql_enabled and row.get("id") is not None and not row.get("prospect_status"):
+            # Best-effort backfill so every contact form exists in the generalized prospects table.
+            try:
+                sales_prospect_repository.upsert(
+                    {
+                        "id": record_id,
+                        "salesRepId": str(prospect_sales_rep_id) if prospect_sales_rep_id else None,
+                        "contactFormId": str(row.get("id")),
+                        "status": "contact_form",
+                        "isManual": False,
+                        "contactName": row.get("name") or None,
+                        "contactEmail": row.get("email") or None,
+                        "contactPhone": row.get("phone") or None,
+                    }
+                )
+            except Exception:
+                pass
         records.append(
             {
                 "id": record_id,
                 "referrerDoctorId": None,
-                "salesRepId": None,
+                "salesRepId": str(sales_rep_id) if sales_rep_id else (str(prospect_sales_rep_id) if prospect_sales_rep_id else None),
                 "referredContactName": row.get("name") or "Contact Form Lead",
                 "referredContactEmail": row.get("email") or None,
                 "referredContactPhone": row.get("phone") or None,
-                "status": status or "contact_form",
+                "status": status,
+                "salesRepNotes": row.get("prospect_notes") or None,
                 "notes": row.get("source") or "Contact form submission",
+                "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
+                "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
+                "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
+                "resellerPermitUploadedAt": (
+                    row.get("reseller_permit_uploaded_at").isoformat()
+                    if isinstance(row.get("reseller_permit_uploaded_at"), datetime)
+                    else row.get("reseller_permit_uploaded_at")
+                ),
                 "createdAt": created_at,
-                "updatedAt": stored_updated_at or updated_at,
+                "updatedAt": updated_at,
                 "convertedDoctorId": None,
                 "convertedAt": None,
+                "referredContactHasAccount": False,
+                "referredContactAccountId": None,
+                "referredContactAccountName": None,
+                "referredContactAccountEmail": None,
+                "referredContactAccountCreatedAt": None,
+                "referredContactTotalOrders": 0,
+                "referredContactEligibleForCredit": False,
+                "isManual": False,
             }
         )
     return records
@@ -670,11 +896,79 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     token_is_admin = (token_role or "").lower() == "admin"
     is_admin = role == "admin" or token_is_admin
 
+    def _ensure_prospect_for_referral(ref: Dict, rep_id: str) -> None:
+        if not ref or not ref.get("id"):
+            return
+        try:
+            existing = sales_prospect_repository.find_by_sales_rep_and_referral(rep_id, str(ref.get("id")))
+            contact_account, _ = _resolve_referred_contact_account(ref)
+            doctor_id = str(contact_account.get("id")) if contact_account and contact_account.get("id") else None
+            payload: Dict = {
+                "id": str(ref.get("id")),
+                "salesRepId": rep_id,
+                "referralId": str(ref.get("id")),
+                "contactName": ref.get("referredContactName"),
+                "contactEmail": ref.get("referredContactEmail"),
+                "contactPhone": ref.get("referredContactPhone"),
+                "isManual": False,
+            }
+            if doctor_id:
+                payload["doctorId"] = doctor_id
+            if not existing:
+                payload["status"] = "pending"
+            sales_prospect_repository.upsert({**(existing or {}), **payload})
+        except Exception:
+            return
+
+    def _load_manual_prospects(rep_id: str) -> list[dict]:
+        prospects = sales_prospect_repository.find_by_sales_rep(rep_id)
+        manual = [p for p in prospects if p and p.get("isManual")]
+        return [
+            {
+                "id": p.get("id"),
+                "referrerDoctorId": None,
+                "salesRepId": p.get("salesRepId"),
+                "referredContactName": p.get("contactName"),
+                "referredContactEmail": p.get("contactEmail"),
+                "referredContactPhone": p.get("contactPhone"),
+                "status": p.get("status") or "pending",
+                "salesRepNotes": p.get("notes") or None,
+                "notes": p.get("notes") or None,
+                "resellerPermitExempt": bool(p.get("resellerPermitExempt")),
+                "resellerPermitFilePath": p.get("resellerPermitFilePath") or None,
+                "resellerPermitFileName": p.get("resellerPermitFileName") or None,
+                "resellerPermitUploadedAt": p.get("resellerPermitUploadedAt") or None,
+                "createdAt": p.get("createdAt"),
+                "updatedAt": p.get("updatedAt"),
+                "convertedDoctorId": None,
+                "convertedAt": None,
+                "referredContactHasAccount": False,
+                "referredContactAccountId": None,
+                "referredContactAccountName": None,
+                "referredContactAccountEmail": None,
+                "referredContactAccountCreatedAt": None,
+                "referredContactTotalOrders": 0,
+                "referredContactEligibleForCredit": False,
+                "isManual": True,
+            }
+            for p in manual
+        ]
+
     if is_admin:
         referrals = referral_repository.get_all() if scope_all else referral_repository.find_by_sales_rep(str(sales_rep_id))
-        referrals.extend(_load_contact_form_referrals())
-        referrals.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
-        enriched_admin = [_enrich_referral(ref) for ref in referrals]
+        for ref in referrals:
+            _ensure_prospect_for_referral(ref, str(sales_rep_id))
+        # Admins should always see all inbound contact forms (house leads), regardless of rep scope.
+        contact_forms = _load_contact_form_referrals(sales_rep_id=None)
+        manual = _load_manual_prospects(str(sales_rep_id))
+        combined = [*referrals, *contact_forms, *manual]
+        combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
+        enriched_admin = [
+            _enrich_referral(ref)
+            if not str(ref.get("id") or "").startswith(("contact_form:", "manual:"))
+            else ref
+            for ref in combined
+        ]
         logger.info(
             "[referrals] admin scoped to rep",
             extra={
@@ -686,8 +980,15 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         return enriched_admin
 
     referrals = referral_repository.find_by_sales_rep(str(sales_rep_id))
-    referrals.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
-    enriched_rep = [_enrich_referral(ref) for ref in referrals]
+    for ref in referrals:
+        _ensure_prospect_for_referral(ref, str(sales_rep_id))
+    manual = _load_manual_prospects(str(sales_rep_id))
+    combined = [*referrals, *manual]
+    combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
+    enriched_rep = [
+        _enrich_referral(ref) if not str(ref.get("id") or "").startswith("manual:") else ref
+        for ref in combined
+    ]
     logger.info(
         "[referrals] rep scope",
         extra={
@@ -703,7 +1004,10 @@ def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: 
     fallback_sales_rep_id = str(sales_rep_id or "").strip()
 
     if _is_contact_form_id(referral_id):
-        return _update_contact_form_referral(referral_id, updates)
+        return _update_contact_form_referral(referral_id, sales_rep_id, updates)
+
+    if str(referral_id or "").startswith("manual:"):
+        return _update_manual_prospect(referral_id, sales_rep_id, updates)
 
     referral = referral_repository.find_by_id(referral_id)
     if not referral:
@@ -729,61 +1033,419 @@ def update_referral_for_sales_rep(referral_id: str, sales_rep_id: str, updates: 
     if str(referral.get("id")) not in accessible_ids:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
 
-    current_status = referral.get("status") or "pending"
-    payload: Dict = {"id": referral["id"]}
-    changed = False
+    existing_prospect = sales_prospect_repository.find_by_sales_rep_and_referral(
+        str(referral.get("salesRepId") or sales_rep_id),
+        str(referral.get("id")),
+    )
+    current_status = (existing_prospect.get("status") if existing_prospect else None) or "pending"
+    referral_payload: Dict = {"id": referral["id"]}
+    prospect_updates: Dict = {}
+    changed_referral = False
+    changed_prospect = False
 
     if "status" in updates:
         sanitized_status = _sanitize_referral_status(updates.get("status"), current_status)
         if sanitized_status != current_status:
-            payload["status"] = sanitized_status
-            changed = True
+            prospect_updates["status"] = sanitized_status
+            changed_prospect = True
 
     if "notes" in updates:
         sanitized_notes = _sanitize_notes(updates.get("notes"))
         if sanitized_notes != (referral.get("notes") or None):
-            payload["notes"] = sanitized_notes
-            changed = True
+            referral_payload["notes"] = sanitized_notes
+            changed_referral = True
+    
+    if "salesRepNotes" in updates:
+        sanitized_notes = _sanitize_notes(updates.get("salesRepNotes"))
+        existing_notes = existing_prospect.get("notes") if existing_prospect else None
+        if sanitized_notes != (existing_notes or None):
+            prospect_updates["notes"] = sanitized_notes
+            changed_prospect = True
 
     if "referredContactName" in updates:
         sanitized_name = _sanitize_text(updates.get("referredContactName"))
         if sanitized_name and sanitized_name != referral.get("referredContactName"):
-            payload["referredContactName"] = sanitized_name
-            changed = True
+            referral_payload["referredContactName"] = sanitized_name
+            changed_referral = True
 
     if "referredContactEmail" in updates:
         sanitized_email = _sanitize_email(updates.get("referredContactEmail"))
         if sanitized_email != (referral.get("referredContactEmail") or None):
-            payload["referredContactEmail"] = sanitized_email
-            changed = True
+            referral_payload["referredContactEmail"] = sanitized_email
+            changed_referral = True
 
     if "referredContactPhone" in updates:
         sanitized_phone = _sanitize_phone(updates.get("referredContactPhone"))
         if sanitized_phone != (referral.get("referredContactPhone") or None):
-            payload["referredContactPhone"] = sanitized_phone
-            changed = True
+            referral_payload["referredContactPhone"] = sanitized_phone
+            changed_referral = True
 
-    if not changed:
+    if not changed_referral and not changed_prospect:
         return _enrich_referral(referral)
 
-    updated = referral_repository.update({**referral, **payload})
+    updated = (
+        referral_repository.update({**referral, **referral_payload})
+        if changed_referral
+        else referral
+    )
+
+    prospect_payload: Dict = {
+        "id": str(referral.get("id")),
+        "salesRepId": str(referral.get("salesRepId") or sales_rep_id),
+        "referralId": str(referral.get("id")),
+        "contactName": (updated or referral).get("referredContactName"),
+        "contactEmail": (updated or referral).get("referredContactEmail"),
+        "contactPhone": (updated or referral).get("referredContactPhone"),
+        "isManual": False,
+    }
+    if "status" in prospect_updates:
+        prospect_payload["status"] = prospect_updates.get("status")
+    if "notes" in prospect_updates:
+        prospect_payload["notes"] = prospect_updates.get("notes")
+    contact_account, _ = _resolve_referred_contact_account(updated or referral)
+    if contact_account and contact_account.get("id"):
+        prospect_payload["doctorId"] = str(contact_account.get("id"))
+
+    try:
+        sales_prospect_repository.upsert(prospect_payload)
+    except Exception:
+        pass
+
     return _enrich_referral(updated or referral)
 
 
-def _update_contact_form_referral(referral_id: str, updates: Dict) -> Dict:
-    if "status" not in updates:
-        raise _service_error("INVALID_STATUS", 400)
-
-    leads = _load_contact_form_referrals()
-    contact_form = next((lead for lead in leads if lead.get("id") == referral_id), None)
-    if not contact_form:
+def _update_contact_form_referral(referral_id: str, sales_rep_id: str, updates: Dict) -> Dict:
+    contact_form_pk = str(referral_id).replace("contact_form:", "")
+    row = mysql_client.fetch_one(
+        "SELECT * FROM contact_forms WHERE id = %(id)s",
+        {"id": contact_form_pk},
+    )
+    if not row:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
 
-    sanitized_status = _sanitize_referral_status(updates.get("status"), contact_form.get("status") or "contact_form")
-    entry = contact_form_status_repository.upsert(referral_id, sanitized_status)
-    contact_form["status"] = entry.get("status", sanitized_status)
-    contact_form["updatedAt"] = entry.get("updatedAt") or contact_form.get("updatedAt")
-    return contact_form
+    existing = sales_prospect_repository.find_by_sales_rep_and_contact_form(
+        str(_resolve_user_id(sales_rep_id) or sales_rep_id),
+        str(contact_form_pk),
+    )
+    current_status = (existing.get("status") if existing else None) or "contact_form"
+
+    payload: Dict = {
+        "id": str(referral_id),
+        "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
+        "contactFormId": str(contact_form_pk),
+        "contactName": row.get("name"),
+        "contactEmail": row.get("email"),
+        "contactPhone": row.get("phone"),
+        "isManual": False,
+        "status": current_status,
+        "notes": existing.get("notes") if existing else None,
+    }
+
+    if "status" in updates:
+        payload["status"] = _sanitize_referral_status(updates.get("status"), current_status)
+    if "salesRepNotes" in updates:
+        payload["notes"] = _sanitize_notes(updates.get("salesRepNotes"))
+
+    try:
+        saved = sales_prospect_repository.upsert(payload)
+    except Exception as exc:
+        logger.warning("[prospects] contact form prospect update failed", exc_info=exc)
+        saved = payload
+
+    created_at_raw = row.get("created_at")
+    created_at = created_at_raw.isoformat() if isinstance(created_at_raw, datetime) else created_at_raw
+    return {
+        "id": str(referral_id),
+        "referrerDoctorId": None,
+        "salesRepId": str(_resolve_user_id(sales_rep_id) or sales_rep_id),
+        "referredContactName": row.get("name") or "Contact Form Lead",
+        "referredContactEmail": row.get("email") or None,
+        "referredContactPhone": row.get("phone") or None,
+        "status": saved.get("status") or "contact_form",
+        "salesRepNotes": saved.get("notes") or None,
+        "notes": row.get("source") or "Contact form submission",
+        "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
+        "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
+        "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
+        "resellerPermitUploadedAt": saved.get("resellerPermitUploadedAt") or None,
+        "createdAt": created_at,
+        "updatedAt": saved.get("updatedAt") or created_at,
+        "convertedDoctorId": None,
+        "convertedAt": None,
+        "referredContactHasAccount": False,
+        "referredContactAccountId": None,
+        "referredContactAccountName": None,
+        "referredContactAccountEmail": None,
+        "referredContactAccountCreatedAt": None,
+        "referredContactTotalOrders": 0,
+        "referredContactEligibleForCredit": False,
+        "isManual": False,
+    }
+
+
+def _update_manual_prospect(prospect_id: str, sales_rep_id: str, updates: Dict) -> Dict:
+    resolved_sales_rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    existing = sales_prospect_repository.find_by_id(prospect_id)
+    if not existing or str(existing.get("salesRepId") or "").strip() != resolved_sales_rep_id:
+        raise _service_error("REFERRAL_NOT_FOUND", 404)
+    if not existing.get("isManual"):
+        raise _service_error("NOT_MANUAL_PROSPECT", 400)
+
+    current_status = existing.get("status") or "pending"
+    payload: Dict = {"id": prospect_id, "salesRepId": resolved_sales_rep_id}
+    changed = False
+
+    if "status" in updates:
+        payload["status"] = _sanitize_referral_status(updates.get("status"), current_status)
+        changed = True
+
+    if "salesRepNotes" in updates:
+        payload["notes"] = _sanitize_notes(updates.get("salesRepNotes"))
+        changed = True
+
+    if "referredContactName" in updates:
+        payload["contactName"] = _sanitize_text(updates.get("referredContactName"))
+        changed = True
+
+    if "referredContactEmail" in updates:
+        payload["contactEmail"] = _sanitize_email(updates.get("referredContactEmail"))
+        changed = True
+
+    if "referredContactPhone" in updates:
+        payload["contactPhone"] = _sanitize_phone(updates.get("referredContactPhone"))
+        changed = True
+
+    if not changed:
+        return {
+            "id": existing.get("id"),
+            "referrerDoctorId": None,
+            "salesRepId": existing.get("salesRepId"),
+            "referredContactName": existing.get("contactName"),
+            "referredContactEmail": existing.get("contactEmail"),
+            "referredContactPhone": existing.get("contactPhone"),
+            "status": existing.get("status") or "pending",
+            "salesRepNotes": existing.get("notes") or None,
+            "notes": existing.get("notes") or None,
+            "resellerPermitExempt": bool(existing.get("resellerPermitExempt")),
+            "resellerPermitFilePath": existing.get("resellerPermitFilePath") or None,
+            "resellerPermitFileName": existing.get("resellerPermitFileName") or None,
+            "resellerPermitUploadedAt": existing.get("resellerPermitUploadedAt") or None,
+            "createdAt": existing.get("createdAt"),
+            "updatedAt": existing.get("updatedAt"),
+            "convertedDoctorId": None,
+            "convertedAt": None,
+            "referredContactHasAccount": False,
+            "referredContactAccountId": None,
+            "referredContactAccountName": None,
+            "referredContactAccountEmail": None,
+            "referredContactAccountCreatedAt": None,
+            "referredContactTotalOrders": 0,
+            "referredContactEligibleForCredit": False,
+            "isManual": True,
+        }
+
+    saved = sales_prospect_repository.upsert({**existing, **payload})
+    return {
+        "id": saved.get("id"),
+        "referrerDoctorId": None,
+        "salesRepId": saved.get("salesRepId"),
+        "referredContactName": saved.get("contactName"),
+        "referredContactEmail": saved.get("contactEmail"),
+        "referredContactPhone": saved.get("contactPhone"),
+        "status": saved.get("status") or "pending",
+        "salesRepNotes": saved.get("notes") or None,
+        "notes": saved.get("notes") or None,
+        "resellerPermitExempt": bool(saved.get("resellerPermitExempt")),
+        "resellerPermitFilePath": saved.get("resellerPermitFilePath") or None,
+        "resellerPermitFileName": saved.get("resellerPermitFileName") or None,
+        "resellerPermitUploadedAt": saved.get("resellerPermitUploadedAt") or None,
+        "createdAt": saved.get("createdAt"),
+        "updatedAt": saved.get("updatedAt"),
+        "convertedDoctorId": None,
+        "convertedAt": None,
+        "referredContactHasAccount": False,
+        "referredContactAccountId": None,
+        "referredContactAccountName": None,
+        "referredContactAccountEmail": None,
+        "referredContactAccountCreatedAt": None,
+        "referredContactTotalOrders": 0,
+        "referredContactEligibleForCredit": False,
+        "isManual": True,
+    }
+
+
+def get_sales_prospect_for_sales_rep(sales_rep_id: str, identifier: str) -> Optional[Dict]:
+    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    candidate = str(identifier or "").strip()
+    if not rep_id or not candidate:
+        return None
+
+    prospect = sales_prospect_repository.find_by_id(candidate)
+    if prospect and str(prospect.get("salesRepId") or "").strip() == rep_id:
+        return prospect
+
+    if candidate.startswith("contact_form:"):
+        contact_form_pk = candidate.replace("contact_form:", "")
+        return sales_prospect_repository.find_by_sales_rep_and_contact_form(rep_id, contact_form_pk)
+
+    by_referral = sales_prospect_repository.find_by_sales_rep_and_referral(rep_id, candidate)
+    if by_referral:
+        return by_referral
+
+    return sales_prospect_repository.find_by_sales_rep_and_doctor(rep_id, candidate)
+
+
+def upsert_sales_prospect_for_sales_rep(
+    sales_rep_id: str,
+    identifier: str,
+    status: Optional[str] = None,
+    notes: Optional[str] = None,
+    reseller_permit_exempt: Optional[bool] = None,
+) -> Dict:
+    if not sales_rep_id or not identifier:
+        raise _service_error("INVALID_PAYLOAD", 400)
+
+    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    candidate = str(identifier or "").strip()
+    existing = get_sales_prospect_for_sales_rep(rep_id, candidate)
+
+    payload: Dict = {"salesRepId": rep_id}
+    if existing and existing.get("id"):
+        payload["id"] = str(existing.get("id"))
+        payload["doctorId"] = existing.get("doctorId")
+        payload["referralId"] = existing.get("referralId")
+        payload["contactFormId"] = existing.get("contactFormId")
+        payload["isManual"] = bool(existing.get("isManual"))
+        payload["contactName"] = existing.get("contactName")
+        payload["contactEmail"] = existing.get("contactEmail")
+        payload["contactPhone"] = existing.get("contactPhone")
+    else:
+        # Create a new prospect row if needed.
+        if candidate.startswith("contact_form:"):
+            payload["id"] = candidate
+            payload["contactFormId"] = candidate.replace("contact_form:", "")
+        elif candidate.startswith("manual:"):
+            payload["id"] = candidate
+            payload["isManual"] = True
+        else:
+            # If this looks like a real doctor account id, store as doctor prospect; otherwise treat as referral.
+            doctor = user_repository.find_by_id(candidate)
+            if doctor and (doctor.get("role") or "").lower() in ("doctor", "test_doctor"):
+                payload["id"] = f"doctor:{candidate}"
+                payload["doctorId"] = candidate
+            elif referral_repository.find_by_id(candidate):
+                payload["id"] = candidate
+                payload["referralId"] = candidate
+            else:
+                payload["id"] = candidate
+                payload["referralId"] = candidate
+
+    if status is not None:
+        payload["status"] = _sanitize_referral_status(status, "pending")
+    if notes is not None:
+        payload["notes"] = _sanitize_notes(notes)
+    if reseller_permit_exempt is not None:
+        is_exempt = bool(reseller_permit_exempt)
+        payload["resellerPermitExempt"] = is_exempt
+        if is_exempt:
+            # Enforce mutual exclusivity: an exempt prospect cannot also carry an uploaded permit.
+            _delete_sales_prospect_reseller_permit_file(existing)
+            payload["resellerPermitFilePath"] = None
+            payload["resellerPermitFileName"] = None
+            payload["resellerPermitUploadedAt"] = None
+    return sales_prospect_repository.upsert(payload)
+
+
+def upload_reseller_permit_for_sales_rep(
+    sales_rep_id: str,
+    identifier: str,
+    *,
+    filename: str,
+    content: bytes,
+) -> Dict:
+    if not sales_rep_id or not identifier:
+        raise _service_error("INVALID_PAYLOAD", 400)
+    if not content:
+        raise _service_error("INVALID_FILE", 400)
+
+    max_bytes = 8 * 1024 * 1024
+    if len(content) > max_bytes:
+        raise _service_error("FILE_TOO_LARGE", 413)
+
+    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    candidate = str(identifier or "").strip()
+
+    safe_name = (filename or "permit").strip()
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", safe_name)[:120] or "permit"
+
+    cfg = get_config()
+    data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+    relative_dir = Path("uploads") / "reseller-permits" / rep_id / re.sub(r"[^a-zA-Z0-9_-]+", "_", candidate)[:64]
+    abs_dir = data_dir / relative_dir
+    os.makedirs(abs_dir, exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    stored_name = f"{timestamp}_{safe_name}"
+    abs_path = abs_dir / stored_name
+    abs_path.write_bytes(content)
+
+    stored_relative = str((relative_dir / stored_name).as_posix())
+    uploaded_at = datetime.utcnow().isoformat()
+
+    base = upsert_sales_prospect_for_sales_rep(rep_id, candidate)
+    _delete_sales_prospect_reseller_permit_file(base)
+    return sales_prospect_repository.upsert(
+        {
+            **(base or {}),
+            "id": str((base or {}).get("id") or candidate),
+            "salesRepId": rep_id,
+            "resellerPermitExempt": False,
+            "resellerPermitFilePath": stored_relative,
+            "resellerPermitFileName": safe_name,
+            "resellerPermitUploadedAt": uploaded_at,
+        }
+    )
+
+
+def delete_reseller_permit_for_sales_rep(sales_rep_id: str, identifier: str) -> Dict:
+    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    candidate = str(identifier or "").strip()
+    if not rep_id or not candidate:
+        raise _service_error("INVALID_PAYLOAD", 400)
+
+    existing = get_sales_prospect_for_sales_rep(rep_id, candidate)
+    if not existing:
+        raise _service_error("PERMIT_NOT_FOUND", 404)
+
+    _delete_sales_prospect_reseller_permit_file(existing)
+    updated = sales_prospect_repository.upsert(
+        {
+            **existing,
+            "salesRepId": rep_id,
+            "resellerPermitFilePath": None,
+            "resellerPermitFileName": None,
+            "resellerPermitUploadedAt": None,
+        }
+    )
+    return updated
+
+
+def _delete_sales_prospect_reseller_permit_file(prospect: Optional[Dict]) -> None:
+    try:
+        if not prospect or not prospect.get("resellerPermitFilePath"):
+            return
+        cfg = get_config()
+        data_dir = Path(str(getattr(cfg, "data_dir", "server-data")))
+        relative_path = str(prospect.get("resellerPermitFilePath") or "").lstrip("/\\")
+        abs_path = (data_dir / relative_path).resolve()
+        allowed_root = (data_dir / "uploads" / "reseller-permits").resolve()
+        if not str(abs_path).startswith(str(allowed_root)):
+            return
+        if abs_path.exists():
+            abs_path.unlink()
+    except Exception:
+        # Best-effort cleanup; never block the request flow.
+        return
 
 
 def get_referral_status_choices() -> List[str]:

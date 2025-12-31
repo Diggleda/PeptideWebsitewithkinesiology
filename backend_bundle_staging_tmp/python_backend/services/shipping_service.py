@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import logging
+import time
 from typing import Dict, List, Optional, Tuple
 
 from . import get_config
 from ..integrations import ship_engine, ship_station
 
 logger = logging.getLogger(__name__)
+
+_PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
+    if _PERF_LOG_ENABLED or duration_ms >= threshold_ms:
+        logger.info("[perf] %s (%.0fms)", message, duration_ms)
 
 
 class ShippingError(RuntimeError):
@@ -36,6 +45,8 @@ def _text_contains_address_issue(text: Optional[str]) -> bool:
 
 
 def _friendly_rate_error(message: str, response_payload, status: int) -> str:
+    if status == 402:
+        return "Shipping rates are temporarily unavailable (ShipStation billing is required). Please contact support."
     if status >= 500:
         return "Shipping provider is unavailable. Please try again in a moment."
 
@@ -241,7 +252,8 @@ def _total_weight(items: List[Dict]) -> float:
     weight = 0.0
     for item in items:
         weight += item["quantity"] * item["weightOz"]
-    return max(weight, 8.0)
+    # Preserve true cumulative weight; only fall back when weights are missing.
+    return weight if weight > 0 else 16.0
 
 
 def _create_fingerprint(address: Dict) -> str:
@@ -417,7 +429,12 @@ def get_rates(shipping_address: Dict, items) -> Dict:
     if shipstation_cfg:
         logger.info("Using ShipStation for rate estimate", extra={"address_fingerprint": fingerprint})
         try:
+            t0 = time.perf_counter()
             raw_rates = ship_station.estimate_rates(address, normalized_items)
+            _perf_log(
+                f"ship_station.estimate_rates fingerprint={fingerprint} rates={len(raw_rates) if isinstance(raw_rates, list) else 'n/a'}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+            )
         except ship_station.IntegrationError as exc:
             shipstation_error = exc
             logger.error("ShipStation rate estimate failed", exc_info=True)
@@ -427,7 +444,12 @@ def get_rates(shipping_address: Dict, items) -> Dict:
     if raw_rates is None and shipengine_cfg:
         logger.info("Using ShipEngine for rate estimate", extra={"address_fingerprint": fingerprint})
         try:
+            t0 = time.perf_counter()
             raw_rates = ship_engine.estimate_rates(address, total_weight)
+            _perf_log(
+                f"ship_engine.estimate_rates fingerprint={fingerprint} rates={len(raw_rates) if isinstance(raw_rates, list) else 'n/a'}",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+            )
         except ship_engine.IntegrationError as exc:
             logger.error("ShipEngine rate estimate failed", exc_info=True)
             error_message = "Failed to retrieve shipping rates"

@@ -59,6 +59,30 @@ const STATEMENTS = [
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
   `,
+  `
+    CREATE TABLE IF NOT EXISTS sales_prospects (
+      id VARCHAR(64) PRIMARY KEY,
+      sales_rep_id VARCHAR(32) NOT NULL,
+      doctor_id VARCHAR(32) NULL,
+      referral_id VARCHAR(64) NULL,
+      contact_form_id VARCHAR(64) NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      notes LONGTEXT NULL,
+      is_manual TINYINT(1) NOT NULL DEFAULT 0,
+      contact_name VARCHAR(190) NULL,
+      contact_email VARCHAR(190) NULL,
+      contact_phone VARCHAR(32) NULL,
+      reseller_permit_exempt TINYINT(1) NOT NULL DEFAULT 0,
+      reseller_permit_file_path VARCHAR(255) NULL,
+      reseller_permit_file_name VARCHAR(255) NULL,
+      reseller_permit_uploaded_at DATETIME NULL,
+      created_at DATETIME NULL,
+      updated_at DATETIME NULL,
+      UNIQUE KEY uniq_sales_rep_doctor (sales_rep_id, doctor_id),
+      UNIQUE KEY uniq_sales_rep_referral (sales_rep_id, referral_id),
+      UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id)
+    ) CHARACTER SET utf8mb4
+  `,
 ];
 
 const ensureUserColumns = async () => {
@@ -205,6 +229,62 @@ const ensureOrderColumns = async () => {
   }
 };
 
+const ensureSalesProspectColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'reseller_permit_exempt',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN reseller_permit_exempt TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
+    {
+      name: 'reseller_permit_file_path',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN reseller_permit_file_path VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'reseller_permit_file_name',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN reseller_permit_file_name VARCHAR(255) NULL
+      `,
+    },
+    {
+      name: 'reseller_permit_uploaded_at',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN reseller_permit_uploaded_at DATETIME NULL
+      `,
+    },
+  ];
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'sales_prospects'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL sales_prospects column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL sales_prospects column');
+    }
+  }
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -214,6 +294,7 @@ const ensureSchema = async () => {
   }
   await ensureUserColumns();
   await ensureOrderColumns();
+  await ensureSalesProspectColumns();
   logger.info('MySQL schema ensured');
 };
 

@@ -631,10 +631,11 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
     tax_total = max(tax_total, 0.0)
     base_total = sum(line.get("_line_total_value", 0.0) for line in prepared) or 0.0
 
+    include_tax_fields = tax_total > 0 and tax_rate_id is not None and base_total > 0
     remaining_tax = round(tax_total, 2)
     for idx, line in enumerate(prepared):
         line_value = float(line.get("_line_total_value") or 0.0)
-        if tax_total <= 0 or base_total <= 0 or line_value <= 0:
+        if not include_tax_fields or line_value <= 0:
             allocated = 0.0
         elif idx == len(prepared) - 1:
             allocated = remaining_tax
@@ -643,12 +644,13 @@ def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] =
             remaining_tax = round(remaining_tax - allocated, 2)
 
         allocated = max(allocated, 0.0)
-        line["total_tax"] = f"{allocated:.2f}"
-        line["subtotal_tax"] = f"{allocated:.2f}"
-        if tax_rate_id is not None:
+        if include_tax_fields:
+            line["total_tax"] = f"{allocated:.2f}"
+            line["subtotal_tax"] = f"{allocated:.2f}"
             line["taxes"] = [
                 {"id": int(tax_rate_id), "total": f"{allocated:.2f}", "subtotal": f"{allocated:.2f}"}
             ]
+
         # Drop helper fields and omit variation_id when not set.
         line.pop("_line_total_value", None)
         if line.get("variation_id") is None:
@@ -756,23 +758,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         tax_total = 0.0
     tax_total = max(0.0, tax_total)
     tax_rate_id = _ensure_peppro_manual_tax_rate_id() if tax_total > 0 else None
-    tax_lines = []
-    if tax_total > 0 and tax_rate_id is not None:
-        # Surface the tax as a WooCommerce tax line so emails show a single "Estimated tax" entry.
-        # Avoid using fee_lines here, because Woo will still display a separate "Tax" row.
-        tax_lines.append(
-            {
-                "rate_id": int(tax_rate_id or 0),
-                "label": "Estimated tax",
-                "compound": False,
-                "tax_total": f"{tax_total:.2f}",
-                "shipping_tax_total": "0.00",
-                "rate_percent": "0.00",
-            }
-        )
-    elif tax_total > 0:
-        # Fallback: keep Woo totals accurate even if taxes cannot be registered.
-        fee_lines.append({"name": "Estimated tax", "total": f"{tax_total:.2f}"})
+    # Always send PepPro tax as a fee line so Woo order creation is resilient.
+    # A companion Woo plugin (PepPro Manual Tax Sync) converts this + meta into a true tax line item.
+    if tax_total > 0:
+        fee_lines.append({"name": "Estimated tax", "total": f"{tax_total:.2f}", "tax_status": "none"})
 
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
@@ -793,12 +782,6 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             "method_id": method_code,
             "method_title": method_title,
             "total": f"{shipping_total:.2f}",
-            "total_tax": "0.00",
-            "taxes": (
-                [{"id": int(tax_rate_id or 0), "total": "0.00"}]
-                if tax_rate_id
-                else []
-            ),
         }
     )
 
@@ -831,6 +814,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         {"key": "peppro_order_id", "value": order.get("id")},
         {"key": "peppro_total", "value": order.get("total")},
         {"key": "peppro_tax_total", "value": tax_total},
+        {"key": "peppro_manual_tax_rate_id", "value": int(tax_rate_id or 0)},
         {"key": "peppro_grand_total", "value": order.get("grandTotal")},
         {"key": "peppro_created_at", "value": order.get("createdAt")},
         {"key": "peppro_shipping_total", "value": shipping_total},
@@ -851,10 +835,9 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
-        "line_items": build_line_items(order.get("items"), tax_total=tax_total, tax_rate_id=tax_rate_id),
+        "line_items": build_line_items(order.get("items")),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
-        "tax_lines": tax_lines,
         "discount_total": discount_total,
         "meta_data": meta_data,
         "billing": billing_address,

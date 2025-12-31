@@ -17,6 +17,8 @@ const RETRIABLE_NETWORK_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN
 const MAX_WOO_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 750;
 
+const PEPPRO_MANUAL_TAX_RATE_NAME = 'PepPro Manual Tax';
+
 const KEEP_ALIVE_MAX_SOCKETS = (() => {
   return 30;
 })();
@@ -230,7 +232,7 @@ const buildInvoiceUrl = (orderId, orderKey) => {
   }
   const safeId = encodeURIComponent(String(orderId).trim());
   const safeKey = encodeURIComponent(String(orderKey).trim());
-  return `${normalizedStoreUrl}/my-account/view-order/${safeId}/?order=${safeId}&key=${safeKey}`;
+  return `${normalizedStoreUrl}/checkout/order-received/${safeId}/?key=${safeKey}`;
 };
 
 const getClient = () => {
@@ -273,6 +275,26 @@ const getSiteClient = () => {
   });
 };
 
+const getTaxClient = () => {
+  if (!isConfigured()) {
+    throw new Error('WooCommerce is not configured');
+  }
+
+  return axios.create({
+    baseURL: `${normalizedStoreUrl}/wp-json/wc/v3`,
+    auth: {
+      username: env.wooCommerce.consumerKey,
+      password: env.wooCommerce.consumerSecret,
+    },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    httpAgent,
+    httpsAgent,
+    timeout: DEFAULT_WOO_TIMEOUT_MS,
+  });
+};
+
 let taxCalculationSupported = true;
 let taxCalculationWarningLogged = false;
 
@@ -288,40 +310,172 @@ const parseWooNumericId = (value) => {
   return match ? Number(match[1]) : null;
 };
 
-const buildLineItems = (items) => items.map((item) => {
-  const quantity = Number(item.quantity) || 0;
-  const price = Number(item.price) || 0;
-  const total = Number(price * quantity).toFixed(2);
-  const productId = parseWooNumericId(item.productId || item.wooProductId || item.product_id);
-  const variationId = parseWooNumericId(
-    item.variantId
-    || item.variationId
-    || item.wooVariationId
-    || item.variation_id,
-  );
-  const resolvedSku = item.sku
-    || item.productSku
-    || item.variantSku
-    || (typeof item.productId === 'string' ? item.productId : null);
-  const line = {
-    name: item.name,
-    sku: resolvedSku || null,
-    quantity,
-    total,
-    subtotal: total,
-    total_tax: '0',
-    subtotal_tax: '0',
-    meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
-  };
-  // Include product/variation ids so Woo and ShipStation exports keep the items.
-  if (productId) {
-    line.product_id = productId;
+const roundCurrency = (value) => {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return 0;
   }
-  if (variationId) {
-    line.variation_id = variationId;
+  return Math.round((normalized + Number.EPSILON) * 100) / 100;
+};
+
+let pepproManualTaxRateId = null;
+let pepproManualTaxRatePromise = null;
+
+const ensurePepProManualTaxRateId = async () => {
+  if (pepproManualTaxRateId) {
+    return pepproManualTaxRateId;
   }
-  return line;
-});
+  if (!isConfigured()) {
+    return null;
+  }
+  if (pepproManualTaxRatePromise) {
+    return pepproManualTaxRatePromise;
+  }
+
+  pepproManualTaxRatePromise = (async () => {
+    const clientFactories = [getClient, getTaxClient];
+
+    const fetchRates = async () => {
+      for (const buildClient of clientFactories) {
+        try {
+          const client = buildClient();
+          const response = await client.get('/taxes', { params: { per_page: 100 } });
+          const rates = Array.isArray(response.data) ? response.data : [];
+          if (rates.length > 0) {
+            return rates;
+          }
+        } catch (error) {
+          logger.debug({ err: summarizeWooError(error) }, 'Woo manual tax rate lookup failed');
+        }
+      }
+      return [];
+    };
+
+    const createRate = async () => {
+      const payload = {
+        country: '',
+        state: '',
+        postcode: '',
+        city: '',
+        rate: '0.0000',
+        name: PEPPRO_MANUAL_TAX_RATE_NAME,
+        priority: 1,
+        compound: false,
+        shipping: false,
+        order: 0,
+        class: 'standard',
+      };
+      for (const buildClient of clientFactories) {
+        try {
+          const client = buildClient();
+          const response = await client.post('/taxes', payload);
+          const id = parseWooNumericId(response.data?.id);
+          if (id) {
+            return id;
+          }
+        } catch (error) {
+          logger.warn({ err: summarizeWooError(error) }, 'Woo manual tax rate creation failed');
+        }
+      }
+      return null;
+    };
+
+    try {
+      const rates = await fetchRates();
+      const match = rates.find((rate) => String(rate?.name || '').trim().toLowerCase() === PEPPRO_MANUAL_TAX_RATE_NAME.toLowerCase());
+      const id = parseWooNumericId(match?.id);
+      if (id) {
+        pepproManualTaxRateId = id;
+        return id;
+      }
+    } catch (error) {
+      logger.debug({ err: summarizeWooError(error) }, 'Woo manual tax rate lookup failed');
+    }
+
+    try {
+      const id = await createRate();
+      if (id) {
+        pepproManualTaxRateId = id;
+        return id;
+      }
+    } catch (error) {
+      logger.warn({ err: summarizeWooError(error) }, 'Woo manual tax rate creation failed');
+    }
+
+    return null;
+  })();
+
+  try {
+    return await pepproManualTaxRatePromise;
+  } finally {
+    pepproManualTaxRatePromise = null;
+  }
+};
+
+const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
+  const prepared = (items || []).map((item) => {
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.price) || 0;
+    const lineTotalValue = Math.max(price * quantity, 0);
+    const total = Number(lineTotalValue).toFixed(2);
+    const productId = parseWooNumericId(item.productId || item.wooProductId || item.product_id);
+    const variationId = parseWooNumericId(
+      item.variantId
+      || item.variationId
+      || item.wooVariationId
+      || item.variation_id,
+    );
+    const resolvedSku = item.sku
+      || item.productSku
+      || item.variantSku
+      || (typeof item.productId === 'string' ? item.productId : null);
+    const line = {
+      name: item.name,
+      sku: resolvedSku || null,
+      quantity,
+      total,
+      subtotal: total,
+      total_tax: '0.00',
+      subtotal_tax: '0.00',
+      meta_data: item.note ? [{ key: 'note', value: item.note }] : [],
+      _line_total_value: lineTotalValue,
+    };
+    // Include product/variation ids so Woo and ShipStation exports keep the items.
+    if (productId) {
+      line.product_id = productId;
+    }
+    if (variationId) {
+      line.variation_id = variationId;
+    }
+    return line;
+  });
+
+  const normalizedTaxTotal = Math.max(0, roundCurrency(taxTotal));
+  const baseTotal = prepared.reduce((sum, line) => sum + (Number(line._line_total_value) || 0), 0);
+  let remainingTax = roundCurrency(normalizedTaxTotal);
+
+  prepared.forEach((line, idx) => {
+    const lineValue = Number(line._line_total_value) || 0;
+    let allocated = 0;
+    if (normalizedTaxTotal > 0 && baseTotal > 0 && lineValue > 0) {
+      if (idx === prepared.length - 1) {
+        allocated = remainingTax;
+      } else {
+        allocated = roundCurrency(normalizedTaxTotal * (lineValue / baseTotal));
+        remainingTax = roundCurrency(remainingTax - allocated);
+      }
+    }
+
+    line.total_tax = allocated.toFixed(2);
+    line.subtotal_tax = allocated.toFixed(2);
+    if (taxRateId) {
+      line.taxes = [{ id: Number(taxRateId), total: allocated.toFixed(2), subtotal: allocated.toFixed(2) }];
+    }
+    delete line._line_total_value;
+  });
+
+  return prepared;
+};
 
 const buildShippingLines = ({ shippingTotal, shippingEstimate }) => {
   if (shippingEstimate) {
@@ -364,15 +518,35 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate }) => {
   return [];
 };
 
-const buildOrderPayload = ({ order, customer }) => {
+const buildOrderPayload = async ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
   const shippingTotal = typeof order.shippingTotal === 'number' && Number.isFinite(order.shippingTotal)
     ? Number(order.shippingTotal)
     : 0;
+  const taxTotal = typeof order.taxTotal === 'number' && Number.isFinite(order.taxTotal)
+    ? Math.max(0, roundCurrency(order.taxTotal))
+    : 0;
+  const itemsSubtotal = typeof order.itemsSubtotal === 'number' && Number.isFinite(order.itemsSubtotal)
+    ? roundCurrency(order.itemsSubtotal)
+    : roundCurrency((order.items || []).reduce((sum, item) => {
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      return sum + (qty * price);
+    }, 0));
+  const computedTotal = roundCurrency(itemsSubtotal + shippingTotal + taxTotal);
+  const providedTotal = typeof order.total === 'number' && Number.isFinite(order.total)
+    ? roundCurrency(order.total)
+    : null;
+  const useProvidedTotal = providedTotal !== null && Math.abs(providedTotal - computedTotal) < 0.01;
+  const finalTotal = useProvidedTotal ? providedTotal : computedTotal;
+  const manualTaxRateId = taxTotal > 0 ? await ensurePepProManualTaxRateId() : null;
+  const feeLines = [];
 
   const metaData = [
     { key: 'peppro_order_id', value: order.id },
-    { key: 'peppro_total', value: order.total },
+    { key: 'peppro_total', value: finalTotal },
+    ...(providedTotal !== null ? [{ key: 'peppro_client_total', value: providedTotal }] : []),
+    ...(taxTotal > 0 ? [{ key: 'peppro_tax_total', value: taxTotal }] : []),
     { key: 'peppro_created_at', value: order.createdAt },
     { key: 'peppro_origin', value: 'PepPro Web Checkout' },
     { key: '_order_number', value: order.id },
@@ -397,18 +571,42 @@ const buildOrderPayload = ({ order, customer }) => {
     metaData.push({ key: 'peppro_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
   }
 
+  if (taxTotal > 0 && !manualTaxRateId) {
+    // Fallback so Woo totals still reflect tax even if we can't register a tax line.
+    feeLines.push({ name: 'Estimated tax', total: taxTotal.toFixed(2) });
+  }
+
   const payload = {
     status: 'pending',
     created_via: 'peppro_app',
     customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
     set_paid: false,
-    line_items: buildLineItems(order.items || []),
+    total: finalTotal.toFixed(2),
+    total_tax: taxTotal.toFixed(2),
+    cart_tax: taxTotal.toFixed(2),
+    shipping_tax: '0.00',
+    line_items: buildLineItems(order.items || [], { taxTotal: manualTaxRateId ? taxTotal : 0, taxRateId: manualTaxRateId }),
     meta_data: metaData,
     billing: {
       first_name: customer.name || 'PepPro',
       email: customer.email || 'orders@peppro.example',
     },
   };
+
+  if (feeLines.length > 0) {
+    payload.fee_lines = feeLines;
+  } else if (taxTotal > 0 && manualTaxRateId) {
+    payload.tax_lines = [
+      {
+        rate_id: Number(manualTaxRateId),
+        label: 'Estimated tax',
+        compound: false,
+        tax_total: taxTotal.toFixed(2),
+        shipping_tax_total: '0.00',
+        rate_percent: '0.00',
+      },
+    ];
+  }
 
   if (shippingAddress) {
     payload.shipping = {
@@ -441,7 +639,7 @@ const createDraftId = () => {
 };
 
 const forwardOrder = async ({ order, customer }) => {
-  const payload = buildOrderPayload({ order, customer });
+  const payload = await buildOrderPayload({ order, customer });
 
   if (!isConfigured()) {
     return {
@@ -862,13 +1060,18 @@ const cancelOrder = async ({ wooOrderId, reason, statusOverride }) => {
   }
 };
 
-const fetchOrderById = async (wooOrderId) => {
+const fetchOrderById = async (wooOrderId, options = {}) => {
   if (!wooOrderId || !isConfigured()) {
     return null;
   }
   try {
     const client = getClient();
-    const response = await client.get(`/orders/${wooOrderId}`);
+    const params = {};
+    const context = typeof options?.context === 'string' ? options.context.trim() : '';
+    if (context) {
+      params.context = context;
+    }
+    const response = await client.get(`/orders/${wooOrderId}`, Object.keys(params).length ? { params } : undefined);
     return response.data;
   } catch (error) {
     const integrationError = new Error('Failed to fetch WooCommerce order');

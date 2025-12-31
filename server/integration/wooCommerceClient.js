@@ -275,6 +275,26 @@ const getSiteClient = () => {
   });
 };
 
+const getTaxClient = () => {
+  if (!isConfigured()) {
+    throw new Error('WooCommerce is not configured');
+  }
+
+  return axios.create({
+    baseURL: `${normalizedStoreUrl}/wp-json/wc/v3`,
+    auth: {
+      username: env.wooCommerce.consumerKey,
+      password: env.wooCommerce.consumerSecret,
+    },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    httpAgent,
+    httpsAgent,
+    timeout: DEFAULT_WOO_TIMEOUT_MS,
+  });
+};
+
 let taxCalculationSupported = true;
 let taxCalculationWarningLogged = false;
 
@@ -300,6 +320,7 @@ const roundCurrency = (value) => {
 
 let pepproManualTaxRateId = null;
 let pepproManualTaxRatePromise = null;
+let pepproManualTaxRatePercent = null;
 
 const ensurePepProManualTaxRateId = async () => {
   if (pepproManualTaxRateId) {
@@ -313,22 +334,25 @@ const ensurePepProManualTaxRateId = async () => {
   }
 
   pepproManualTaxRatePromise = (async () => {
-    try {
-      const client = getClient();
-      const response = await client.get('/taxes', { params: { per_page: 100 } });
-      const rates = Array.isArray(response.data) ? response.data : [];
-      const match = rates.find((rate) => String(rate?.name || '').trim().toLowerCase() === PEPPRO_MANUAL_TAX_RATE_NAME.toLowerCase());
-      const id = parseWooNumericId(match?.id);
-      if (id) {
-        pepproManualTaxRateId = id;
-        return id;
-      }
-    } catch (error) {
-      logger.debug({ err: summarizeWooError(error) }, 'Woo manual tax rate lookup failed');
-    }
+    const clientFactories = [getClient, getTaxClient];
 
-    try {
-      const client = getClient();
+    const fetchRates = async () => {
+      for (const buildClient of clientFactories) {
+        try {
+          const client = buildClient();
+          const response = await client.get('/taxes', { params: { per_page: 100 } });
+          const rates = Array.isArray(response.data) ? response.data : [];
+          if (rates.length > 0) {
+            return rates;
+          }
+        } catch (error) {
+          logger.debug({ err: summarizeWooError(error) }, 'Woo manual tax rate lookup failed');
+        }
+      }
+      return [];
+    };
+
+    const createRate = async () => {
       const payload = {
         country: '',
         state: '',
@@ -342,8 +366,35 @@ const ensurePepProManualTaxRateId = async () => {
         order: 0,
         class: 'standard',
       };
-      const response = await client.post('/taxes', payload);
-      const id = parseWooNumericId(response.data?.id);
+      for (const buildClient of clientFactories) {
+        try {
+          const client = buildClient();
+          const response = await client.post('/taxes', payload);
+          const id = parseWooNumericId(response.data?.id);
+          if (id) {
+            return id;
+          }
+        } catch (error) {
+          logger.warn({ err: summarizeWooError(error) }, 'Woo manual tax rate creation failed');
+        }
+      }
+      return null;
+    };
+
+    try {
+      const rates = await fetchRates();
+      const match = rates.find((rate) => String(rate?.name || '').trim().toLowerCase() === PEPPRO_MANUAL_TAX_RATE_NAME.toLowerCase());
+      const id = parseWooNumericId(match?.id);
+      if (id) {
+        pepproManualTaxRateId = id;
+        return id;
+      }
+    } catch (error) {
+      logger.debug({ err: summarizeWooError(error) }, 'Woo manual tax rate lookup failed');
+    }
+
+    try {
+      const id = await createRate();
       if (id) {
         pepproManualTaxRateId = id;
         return id;
@@ -360,6 +411,29 @@ const ensurePepProManualTaxRateId = async () => {
   } finally {
     pepproManualTaxRatePromise = null;
   }
+};
+
+const syncPepProManualTaxRatePercent = async ({ taxRateId, ratePercent }) => {
+  if (!taxRateId || !Number.isFinite(ratePercent) || ratePercent <= 0) {
+    return null;
+  }
+  const normalized = roundCurrency(ratePercent);
+  if (pepproManualTaxRatePercent !== null && Math.abs(pepproManualTaxRatePercent - normalized) < 0.0001) {
+    return normalized;
+  }
+  try {
+    const client = getTaxClient();
+    const payload = { rate: normalized.toFixed(4) };
+    const response = await client.put(`/taxes/${Number(taxRateId)}`, payload);
+    const updatedRate = Number(response.data?.rate);
+    if (Number.isFinite(updatedRate)) {
+      pepproManualTaxRatePercent = updatedRate;
+      return updatedRate;
+    }
+  } catch (error) {
+    logger.warn({ err: summarizeWooError(error), taxRateId, ratePercent: normalized }, 'Woo manual tax rate update failed');
+  }
+  return null;
 };
 
 const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
@@ -494,7 +568,10 @@ const buildOrderPayload = async ({ order, customer }) => {
 
   const metaData = [
     { key: 'peppro_order_id', value: order.id },
-    { key: 'peppro_total', value: finalTotal },
+    // NOTE: This historically mapped to item subtotal in Woo. Keep it stable.
+    { key: 'peppro_total', value: itemsSubtotal },
+    { key: 'peppro_grand_total', value: finalTotal },
+    { key: 'peppro_items_subtotal', value: itemsSubtotal },
     ...(providedTotal !== null ? [{ key: 'peppro_client_total', value: providedTotal }] : []),
     ...(taxTotal > 0 ? [{ key: 'peppro_tax_total', value: taxTotal }] : []),
     { key: 'peppro_created_at', value: order.createdAt },
@@ -506,6 +583,9 @@ const buildOrderPayload = async ({ order, customer }) => {
 
   if (shippingTotal > 0) {
     metaData.push({ key: 'peppro_shipping_total', value: shippingTotal });
+  }
+  if (manualTaxRateId) {
+    metaData.push({ key: 'peppro_manual_tax_rate_id', value: manualTaxRateId });
   }
 
   if (order.shippingEstimate) {
@@ -521,9 +601,15 @@ const buildOrderPayload = async ({ order, customer }) => {
     metaData.push({ key: 'peppro_package_weight_oz', value: Number(order.shippingEstimate.weightOz) });
   }
 
-  if (taxTotal > 0 && !manualTaxRateId) {
-    // Fallback so Woo totals still reflect tax even if we can't register a tax line.
-    feeLines.push({ name: 'Estimated tax', total: taxTotal.toFixed(2) });
+  if (taxTotal > 0) {
+    // Woo REST does not reliably accept custom tax line items/totals. Always send tax as a fee line
+    // so the amount is reflected in Woo order total; a small Woo-side plugin can convert this fee
+    // (and/or the peppro_tax_total meta) into a proper tax line item.
+    feeLines.push({
+      name: 'Estimated tax',
+      total: taxTotal.toFixed(2),
+      tax_status: 'none',
+    });
   }
 
   const payload = {
@@ -532,10 +618,10 @@ const buildOrderPayload = async ({ order, customer }) => {
     customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
     set_paid: false,
     total: finalTotal.toFixed(2),
-    total_tax: taxTotal.toFixed(2),
-    cart_tax: taxTotal.toFixed(2),
+    total_tax: '0.00',
+    cart_tax: '0.00',
     shipping_tax: '0.00',
-    line_items: buildLineItems(order.items || [], { taxTotal: manualTaxRateId ? taxTotal : 0, taxRateId: manualTaxRateId }),
+    line_items: buildLineItems(order.items || [], { taxTotal: 0, taxRateId: null }),
     meta_data: metaData,
     billing: {
       first_name: customer.name || 'PepPro',
@@ -545,17 +631,6 @@ const buildOrderPayload = async ({ order, customer }) => {
 
   if (feeLines.length > 0) {
     payload.fee_lines = feeLines;
-  } else if (taxTotal > 0 && manualTaxRateId) {
-    payload.tax_lines = [
-      {
-        rate_id: Number(manualTaxRateId),
-        label: 'Estimated tax',
-        compound: false,
-        tax_total: taxTotal.toFixed(2),
-        shipping_tax_total: '0.00',
-        rate_percent: '0.00',
-      },
-    ];
   }
 
   if (shippingAddress) {

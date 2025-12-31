@@ -152,6 +152,7 @@ def register(data: Dict) -> Dict:
             "visits": 1,
             "createdAt": now,
             "lastLoginAt": now,
+            "isOnline": True,
             "mustResetPassword": False,
             "npiNumber": normalized_npi,
             "npiLastVerifiedAt": npi_last_verified_at,
@@ -279,6 +280,7 @@ def login(data: Dict) -> Dict:
                 **user,
                 "visits": int(user.get("visits") or 1) + 1,
                 "lastLoginAt": datetime.now(timezone.utc).isoformat(),
+                "isOnline": True,
                 "mustResetPassword": False,
             }
         ) or user
@@ -309,6 +311,13 @@ def login(data: Dict) -> Dict:
 
     token = _create_auth_token({"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep"})
     return {"token": token, "user": _sanitize_sales_rep(updated_rep)}
+
+
+def logout(user_id: str) -> Dict:
+    user = user_repository.find_by_id(user_id) if user_id else None
+    if user:
+        user_repository.update({**user, "isOnline": False})
+    return {"ok": True}
 
 
 def check_email(email: str) -> Dict:

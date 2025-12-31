@@ -117,11 +117,11 @@ def _cache_ttl_seconds_for_endpoint(endpoint: str) -> int:
     if endpoint == "products":
         return 5 * 60
     if re.match(r"^products/[^/]+/variations$", endpoint):
-        return 5 * 60
+        return 10 * 60
     if re.match(r"^products/[^/]+/variations/[^/]+$", endpoint):
-        return 5 * 60
+        return 10 * 60
     if re.match(r"^products/[^/]+$", endpoint):
-        return 5 * 60
+        return 10 * 60
     return 60
 
 
@@ -589,12 +589,19 @@ def _normalize_woo_order_id(value: Optional[object]) -> Optional[str]:
     return text
 
 
-def build_line_items(items):
-    line_items = []
+def build_line_items(items, tax_total: float = 0.0, tax_rate_id: Optional[int] = None):
+    """
+    Build WooCommerce line_items.
+
+    If `tax_total` is provided, allocate it across line items (proportional to their totals) so
+    WooCommerce emails show a non-zero tax total (and can optionally itemize by label).
+    """
+    prepared = []
     for item in items or []:
         quantity = int(item.get("quantity", 0) or 0)
         price = float(item.get("price", 0))
-        total = f"{price * quantity:.2f}"
+        line_total_value = max(price * quantity, 0.0)
+        total = f"{line_total_value:.2f}"
         product_id = _parse_woo_id(item.get("productId"))
         variation_id = _parse_woo_id(item.get("variantId"))
         resolved_sku = item.get("sku") or item.get("productId") or item.get("variantSku")
@@ -605,24 +612,133 @@ def build_line_items(items):
                 resolved_sku = None
         if resolved_sku:
             resolved_sku = resolved_sku.strip()
-        line = {
-            "name": item.get("name"),
-            "sku": resolved_sku or None,
-            "quantity": quantity,
-            "product_id": product_id,
-            # Woo keeps our explicit totals; also helps ShipStation export items.
-            "price": f"{price:.2f}",
-            "total": total,
-            "subtotal": total,
-            "total_tax": "0",
-            "subtotal_tax": "0",
-            "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
-        }
-        # Include variation when available so Woo export/ShipStation can map items.
-        if variation_id is not None:
-            line["variation_id"] = variation_id
-        line_items.append(line)
-    return line_items
+        prepared.append(
+            {
+                "name": item.get("name"),
+                "sku": resolved_sku or None,
+                "quantity": quantity,
+                "product_id": product_id,
+                "variation_id": variation_id,
+                "price": f"{price:.2f}",
+                "total": total,
+                "subtotal": total,
+                "meta_data": [{"key": "note", "value": item.get("note")}] if item.get("note") else [],
+                "_line_total_value": line_total_value,
+            }
+        )
+
+    tax_total = float(tax_total or 0)
+    tax_total = max(tax_total, 0.0)
+    base_total = sum(line.get("_line_total_value", 0.0) for line in prepared) or 0.0
+
+    remaining_tax = round(tax_total, 2)
+    for idx, line in enumerate(prepared):
+        line_value = float(line.get("_line_total_value") or 0.0)
+        if tax_total <= 0 or base_total <= 0 or line_value <= 0:
+            allocated = 0.0
+        elif idx == len(prepared) - 1:
+            allocated = remaining_tax
+        else:
+            allocated = round(tax_total * (line_value / base_total), 2)
+            remaining_tax = round(remaining_tax - allocated, 2)
+
+        allocated = max(allocated, 0.0)
+        line["total_tax"] = f"{allocated:.2f}"
+        line["subtotal_tax"] = f"{allocated:.2f}"
+        if tax_rate_id is not None:
+            line["taxes"] = [
+                {"id": int(tax_rate_id), "total": f"{allocated:.2f}", "subtotal": f"{allocated:.2f}"}
+            ]
+        # Drop helper fields and omit variation_id when not set.
+        line.pop("_line_total_value", None)
+        if line.get("variation_id") is None:
+            line.pop("variation_id", None)
+
+    return prepared
+
+
+_PEPPRO_MANUAL_TAX_RATE_NAME = "PepPro Manual Tax"
+_peppro_manual_tax_rate_id: Optional[int] = None
+_peppro_manual_tax_rate_lock = threading.Lock()
+
+
+def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
+    """
+    WooCommerce taxes must reference an existing tax rate id to register totals that surface in
+    admin + emails. We create (once) a 0% "PepPro Manual Tax" rate and then attach explicit tax
+    amounts to the order/line items.
+    """
+    global _peppro_manual_tax_rate_id
+
+    if _peppro_manual_tax_rate_id is not None:
+        return _peppro_manual_tax_rate_id
+    if not is_configured():
+        return None
+
+    with _peppro_manual_tax_rate_lock:
+        if _peppro_manual_tax_rate_id is not None:
+            return _peppro_manual_tax_rate_id
+
+        try:
+            existing = fetch_catalog(
+                "taxes",
+                {"per_page": 100, "search": _PEPPRO_MANUAL_TAX_RATE_NAME},
+            )
+            if isinstance(existing, list):
+                for rate in existing:
+                    if str((rate or {}).get("name") or "").strip().lower() != _PEPPRO_MANUAL_TAX_RATE_NAME.lower():
+                        continue
+                    rate_id = _parse_woo_id((rate or {}).get("id"))
+                    if rate_id:
+                        _peppro_manual_tax_rate_id = rate_id
+                        return rate_id
+        except Exception:
+            logger.debug("Woo manual tax rate lookup failed", exc_info=True)
+
+        try:
+            base_url, api_version, auth, timeout = _client_config()
+            url = f"{base_url}/wp-json/{api_version}/taxes"
+            payload = {
+                "country": "US",
+                "state": "",
+                "postcode": "",
+                "city": "",
+                "rate": "0.0000",
+                "name": _PEPPRO_MANUAL_TAX_RATE_NAME,
+                "priority": 1,
+                "compound": False,
+                "shipping": False,
+                "order": 0,
+                "class": "standard",
+            }
+
+            acquired = _woo_http_semaphore.acquire(timeout=25)
+            if not acquired:
+                err = IntegrationError("WooCommerce is busy, please retry")
+                setattr(err, "status", 503)
+                raise err
+            try:
+                response = requests.post(url, json=payload, auth=auth, timeout=timeout)
+            finally:
+                try:
+                    _woo_http_semaphore.release()
+                except ValueError:
+                    pass
+            response.raise_for_status()
+            data = None
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            rate_id = _parse_woo_id((data or {}).get("id"))
+            if rate_id:
+                _peppro_manual_tax_rate_id = rate_id
+                return rate_id
+        except Exception:
+            logger.warning("Woo manual tax rate creation failed", exc_info=True)
+            return None
+
+    return None
 
 
 def build_order_payload(order: Dict, customer: Dict) -> Dict:
@@ -632,6 +748,31 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     discount_total = "0"
     if applied_credit > 0:
         discount_total = f"-{applied_credit:.2f}"
+
+    tax_total = 0.0
+    try:
+        tax_total = float(order.get("taxTotal") or 0) or 0.0
+    except Exception:
+        tax_total = 0.0
+    tax_total = max(0.0, tax_total)
+    tax_rate_id = _ensure_peppro_manual_tax_rate_id() if tax_total > 0 else None
+    tax_lines = []
+    if tax_total > 0 and tax_rate_id is not None:
+        # Surface the tax as a WooCommerce tax line so emails show a single "Estimated tax" entry.
+        # Avoid using fee_lines here, because Woo will still display a separate "Tax" row.
+        tax_lines.append(
+            {
+                "rate_id": int(tax_rate_id or 0),
+                "label": "Estimated tax",
+                "compound": False,
+                "tax_total": f"{tax_total:.2f}",
+                "shipping_tax_total": "0.00",
+                "rate_percent": "0.00",
+            }
+        )
+    elif tax_total > 0:
+        # Fallback: keep Woo totals accurate even if taxes cannot be registered.
+        fee_lines.append({"name": "Estimated tax", "total": f"{tax_total:.2f}"})
 
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
@@ -652,6 +793,12 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             "method_id": method_code,
             "method_title": method_title,
             "total": f"{shipping_total:.2f}",
+            "total_tax": "0.00",
+            "taxes": (
+                [{"id": int(tax_rate_id or 0), "total": "0.00"}]
+                if tax_rate_id
+                else []
+            ),
         }
     )
 
@@ -683,6 +830,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     meta_data = [
         {"key": "peppro_order_id", "value": order.get("id")},
         {"key": "peppro_total", "value": order.get("total")},
+        {"key": "peppro_tax_total", "value": tax_total},
+        {"key": "peppro_grand_total", "value": order.get("grandTotal")},
         {"key": "peppro_created_at", "value": order.get("createdAt")},
         {"key": "peppro_shipping_total", "value": shipping_total},
         {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
@@ -702,9 +851,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "status": "pending",
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
-        "line_items": build_line_items(order.get("items")),
+        "line_items": build_line_items(order.get("items"), tax_total=tax_total, tax_rate_id=tax_rate_id),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
+        "tax_lines": tax_lines,
         "discount_total": discount_total,
         "meta_data": meta_data,
         "billing": billing_address,
@@ -1303,7 +1453,7 @@ def _build_invoice_url(order_id: Any, order_key: Any) -> Optional[str]:
         return None
     safe_id = quote(str(order_id).strip(), safe="")
     safe_key = quote(str(order_key).strip(), safe="")
-    return f"{base}/my-account/view-order/{safe_id}/?order={safe_id}&key={safe_key}"
+    return f"{base}/checkout/order-received/{safe_id}/?key={safe_key}"
 
 
 def _map_address(address: Optional[Dict[str, Any]]) -> Optional[Dict[str, Optional[str]]]:
@@ -1420,6 +1570,22 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     else:
         payment_label = order.get("payment_method_title") or order.get("payment_method")
 
+    tax_total = _num(
+        _meta_value(meta_data, "peppro_tax_total"),
+        _num(order.get("total_tax"), 0.0),
+    )
+    if tax_total <= 0:
+        for fee in order.get("fee_lines") or []:
+            try:
+                name = str((fee or {}).get("name") or "").strip().lower()
+            except Exception:
+                name = ""
+            if not name:
+                continue
+            if "tax" in name:
+                tax_total = _num((fee or {}).get("total"), 0.0)
+                break
+
     mapped = {
         "id": identifier,
         "wooOrderId": woo_order_id or identifier,
@@ -1427,6 +1593,8 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "number": public_number or identifier,
         "status": order.get("status"),
         "total": _num(order.get("total"), _num(order.get("total_ex_tax"), 0.0)),
+        "taxTotal": tax_total,
+        "grandTotal": _num(_meta_value(meta_data, "peppro_grand_total"), _num(order.get("total"), 0.0)),
         "currency": order.get("currency") or "USD",
         "paymentMethod": payment_label,
         "paymentDetails": payment_label,

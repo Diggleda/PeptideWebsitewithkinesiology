@@ -278,7 +278,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       {selectedDocument && createPortal(
         <div
           className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[250ms] ease-out backdrop-blur-[16px] pointer-events-auto',
             isVisible ? 'opacity-100' : 'opacity-0',
           )}
           style={{
@@ -291,7 +291,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
         >
           <div
             className={clsx(
-              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[350ms] ease-out',
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[250ms] ease-out',
               isVisible ? 'opacity-100' : 'opacity-0',
             )}
             onClick={handleClose}
@@ -307,7 +307,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
             className={clsx(
-              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-[350ms] ease-out h-full',
+              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-[250ms] ease-out h-full',
               isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{
@@ -355,7 +355,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
       {showContactCTA && contactOpen && createPortal(
         <div
           className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[350ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[250ms] ease-out backdrop-blur-[16px] pointer-events-auto',
             contactVisible ? 'opacity-100' : 'opacity-0',
           )}
           style={{
@@ -370,7 +370,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
         >
           <div
             className={clsx(
-              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[350ms] ease-out',
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[250ms] ease-out',
               contactVisible ? 'opacity-100' : 'opacity-0',
             )}
             aria-hidden="true"
@@ -382,7 +382,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
           />
           <div
             className={clsx(
-              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[350ms] ease-out',
+              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[250ms] ease-out',
               contactVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
             )}
             style={{

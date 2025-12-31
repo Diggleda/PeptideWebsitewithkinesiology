@@ -12,6 +12,7 @@ CREATE_TABLE_STATEMENTS = [
         password VARCHAR(255) NOT NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'doctor',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
+        is_online TINYINT(1) NOT NULL DEFAULT 0,
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         lead_type VARCHAR(32) NULL,
@@ -75,6 +76,7 @@ CREATE_TABLE_STATEMENTS = [
         referred_contact_phone VARCHAR(32) NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'pending',
         notes LONGTEXT NULL,
+        sales_rep_notes LONGTEXT NULL,
         converted_doctor_id VARCHAR(32) NULL,
         converted_at DATETIME NULL,
         credit_issued_at DATETIME NULL,
@@ -82,6 +84,30 @@ CREATE_TABLE_STATEMENTS = [
         credit_issued_by VARCHAR(190) NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sales_prospects (
+        id VARCHAR(64) PRIMARY KEY,
+        sales_rep_id VARCHAR(32) NULL,
+        doctor_id VARCHAR(32) NULL,
+        referral_id VARCHAR(64) NULL,
+        contact_form_id VARCHAR(64) NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        notes LONGTEXT NULL,
+        is_manual TINYINT(1) NOT NULL DEFAULT 0,
+        reseller_permit_exempt TINYINT(1) NOT NULL DEFAULT 0,
+        reseller_permit_file_path LONGTEXT NULL,
+        reseller_permit_file_name VARCHAR(190) NULL,
+        reseller_permit_uploaded_at DATETIME NULL,
+        contact_name VARCHAR(190) NULL,
+        contact_email VARCHAR(190) NULL,
+        contact_phone VARCHAR(32) NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        UNIQUE KEY uniq_sales_rep_doctor (sales_rep_id, doctor_id),
+        UNIQUE KEY uniq_sales_rep_referral (sales_rep_id, referral_id),
+        UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -141,6 +167,22 @@ CREATE_TABLE_STATEMENTS = [
         value_json JSON NULL,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS product_documents (
+        woo_product_id BIGINT UNSIGNED NOT NULL,
+        kind VARCHAR(64) NOT NULL,
+        product_name VARCHAR(255) NULL,
+        product_sku VARCHAR(64) NULL,
+        woo_synced_at DATETIME NULL,
+        mime_type VARCHAR(64) NULL,
+        filename VARCHAR(255) NULL,
+        sha256 CHAR(64) NULL,
+        data LONGBLOB NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        PRIMARY KEY (woo_product_id, kind)
+    ) CHARACTER SET utf8mb4
     """
 ]
 
@@ -149,10 +191,28 @@ def ensure_schema() -> None:
     for statement in CREATE_TABLE_STATEMENTS:
         mysql_client.execute(statement)
 
+    def _column_exists(table: str, column: str) -> bool:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = %(table)s
+                  AND column_name = %(column)s
+                """,
+                {"table": table, "column": column},
+            )
+            return int((row or {}).get("cnt") or 0) > 0
+        except Exception:
+            return False
+
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
@@ -167,6 +227,21 @@ def ensure_schema() -> None:
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_at DATETIME NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_amount DECIMAL(12,2) NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_by VARCHAR(190) NULL",
+        "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS sales_rep_notes LONGTEXT NULL",
+        "ALTER TABLE referrals MODIFY COLUMN sales_rep_notes LONGTEXT NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending'",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS notes LONGTEXT NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS is_manual TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS reseller_permit_exempt TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS reseller_permit_file_path LONGTEXT NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS reseller_permit_file_name VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS reseller_permit_uploaded_at DATETIME NULL",
+        "ALTER TABLE sales_prospects MODIFY COLUMN sales_rep_id VARCHAR(32) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_name VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(32) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS created_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_type VARCHAR(32) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_type_source VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_type_locked_at DATETIME NULL",
@@ -178,6 +253,13 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS product_name VARCHAR(255) NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS product_sku VARCHAR(64) NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS woo_synced_at DATETIME NULL",
+        "ALTER TABLE product_documents ADD COLUMN IF NOT EXISTS mime_type VARCHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
+        "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
     ]
     for stmt in migrations:
         try:
@@ -185,3 +267,17 @@ def ensure_schema() -> None:
         except Exception:
             # Best effort; if column exists or engine doesn't support IF NOT EXISTS, ignore
             continue
+
+    # Backward-compatible fix: MySQL/MariaDB variants may not support `ADD COLUMN IF NOT EXISTS`.
+    # Ensure `users.is_online` exists so login/logout tracking can persist.
+    try:
+        if not _column_exists("users", "is_online"):
+            mysql_client.execute(
+                "ALTER TABLE users ADD COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0"
+            )
+        mysql_client.execute(
+            "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0"
+        )
+    except Exception:
+        # Best effort; do not fail app startup on migration issues.
+        pass

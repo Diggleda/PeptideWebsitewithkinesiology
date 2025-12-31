@@ -40,7 +40,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-[9999] backdrop-blur-xl transition-opacity duration-[350ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+      "fixed inset-0 z-[9999] backdrop-blur-xl transition-opacity duration-[250ms] ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
       className,
     )}
     style={{
@@ -88,7 +88,7 @@ const DialogContent = React.forwardRef<
         ref={ref}
         data-slot="dialog-content"
         className={cn(
-          "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] transition-[opacity,transform] duration-[350ms] ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=closed]:scale-95 focus:outline-none data-[state=closed]:pointer-events-none sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
+          "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] transition-[opacity,transform] duration-[250ms] ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=closed]:scale-95 focus:outline-none data-[state=closed]:pointer-events-none sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
           className,
         )}
         style={{

@@ -21,12 +21,58 @@ _ORDER_STATUS_CACHE_TTL_SECONDS = max(10, min(_ORDER_STATUS_CACHE_TTL_SECONDS, 1
 _order_status_cache: Dict[str, Dict[str, object]] = {}
 _order_status_cache_lock = threading.Lock()
 
+_SHIPSTATION_UNAVAILABLE_TTL_SECONDS = int(
+    os.environ.get("SHIPSTATION_UNAVAILABLE_TTL_SECONDS", "900").strip() or 900
+)
+_SHIPSTATION_UNAVAILABLE_TTL_SECONDS = max(60, min(_SHIPSTATION_UNAVAILABLE_TTL_SECONDS, 24 * 60 * 60))
+_shipstation_unavailable_until = 0.0
+_shipstation_unavailable_lock = threading.Lock()
+
 
 class IntegrationError(RuntimeError):
     def __init__(self, message: str, response: Optional[Dict] = None, status: int = 500):
         super().__init__(message)
         self.response = response
         self.status = status
+
+
+def _mark_unavailable(status_code: Optional[int], reason: str) -> None:
+    now = time.time()
+    until = now + _SHIPSTATION_UNAVAILABLE_TTL_SECONDS
+    with _shipstation_unavailable_lock:
+        global _shipstation_unavailable_until
+        if _shipstation_unavailable_until > now:
+            return
+        _shipstation_unavailable_until = until
+    logger.warning(
+        "ShipStation API unavailable; pausing lookups",
+        exc_info=False,
+        extra={"status": status_code, "reason": reason, "pauseSeconds": _SHIPSTATION_UNAVAILABLE_TTL_SECONDS},
+    )
+
+
+def _is_unavailable() -> bool:
+    now = time.time()
+    with _shipstation_unavailable_lock:
+        return _shipstation_unavailable_until > now
+
+
+def _cache_order_status(normalized: str, value: Optional[Dict], ttl_seconds: int = _ORDER_STATUS_CACHE_TTL_SECONDS) -> None:
+    now = time.time()
+    with _order_status_cache_lock:
+        _order_status_cache[normalized] = {"value": value, "expiresAt": now + max(1, ttl_seconds)}
+
+
+def _extract_error_payload(exc: requests.RequestException):
+    if exc.response is None:
+        return None
+    try:
+        return exc.response.json()
+    except Exception:
+        try:
+            return exc.response.text
+        except Exception:
+            return None
 
 
 def is_configured(log: bool = False) -> bool:
@@ -62,7 +108,8 @@ def _sum_weight_ounces(items: List[Dict]) -> float:
     total = 0.0
     for item in items or []:
         total += float(item.get("quantity") or 0) * float(item.get("weightOz") or 0)
-    return max(total, 8.0)
+    # Preserve true cumulative weight; only fall back when weights are missing.
+    return total if total > 0 else 16.0
 
 
 def _aggregate_dimensions(items: List[Dict]) -> Optional[Dict]:
@@ -118,6 +165,9 @@ def _coerce_inventory_number(*values: Optional[float]) -> Optional[float]:
 def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
     if not is_configured():
         raise IntegrationError("ShipStation is not configured", status=503)
+
+    if _is_unavailable():
+        raise IntegrationError("ShipStation is temporarily unavailable", status=503)
 
     required = [
         shipping_address.get("addressLine1"),
@@ -175,7 +225,7 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
             json=payload_variant,
             headers=headers,
             auth=auth,
-            timeout=15,
+            timeout=10,
         )
         resp.raise_for_status()
         return resp
@@ -202,6 +252,30 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
             continue
         except requests.RequestException as exc:  # pragma: no cover
             data, status = _extract_response(exc)
+
+            if status == 402:
+                _mark_unavailable(status, "payment_required")
+                last_error = exc
+                last_status = status
+                last_response = data
+                logger.error(
+                    "ShipStation rate request failed (payment required)",
+                    exc_info=True,
+                    extra={"carrier": carrier_code, "status": status, "response": data},
+                )
+                break
+            if status in (401, 403):
+                _mark_unavailable(status, "unauthorized")
+                last_error = exc
+                last_status = status
+                last_response = data
+                logger.error(
+                    "ShipStation rate request failed (unauthorized)",
+                    exc_info=True,
+                    extra={"carrier": carrier_code, "status": status, "response": data},
+                )
+                break
+
             logger.warning(
                 "ShipStation rate request failed; retrying without serviceCode (carrier=%s, status=%s, response=%s, payload=%s)",
                 carrier_code,
@@ -219,6 +293,10 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
                 continue
             except requests.RequestException as retry_exc:  # pragma: no cover
                 retry_data, retry_status = _extract_response(retry_exc)
+                if retry_status == 402:
+                    _mark_unavailable(retry_status, "payment_required")
+                elif retry_status in (401, 403):
+                    _mark_unavailable(retry_status, "unauthorized")
                 last_error = retry_exc
                 last_status = retry_status or status
                 last_response = retry_data or data
@@ -268,7 +346,11 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
                 data = exc.response.json()
             except Exception:
                 data = exc.response.text
-        logger.error("ShipStation product lookup failed", exc_info=True, extra={"sku": sku})
+        logger.warning(
+            "ShipStation product lookup failed",
+            exc_info=False,
+            extra={"sku": sku, "error": str(exc)},
+        )
         raise IntegrationError("Failed to fetch ShipStation product", response=data) from exc
 
     payload = response.json() or {}
@@ -302,6 +384,9 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
     if not order_number or not is_configured():
         return None
 
+    if _is_unavailable():
+        return None
+
     normalized = str(order_number).strip()
     now = time.time()
     with _order_status_cache_lock:
@@ -320,14 +405,34 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
         )
         resp.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - network path
-        data = None
-        if exc.response is not None:
-            try:
-                data = exc.response.json()
-            except Exception:
-                data = exc.response.text
-        logger.error("ShipStation order lookup failed", exc_info=True, extra={"orderNumber": order_number})
-        raise IntegrationError("ShipStation order lookup failed", response=data, status=getattr(exc.response, "status_code", 502) or 502) from exc
+        status_code = getattr(exc.response, "status_code", None)
+        data = _extract_error_payload(exc)
+
+        # ShipStation uses 402 when the account is past due / billing required. Treat this as
+        # "integration temporarily unavailable" and avoid spamming logs or breaking order views.
+        if status_code == 402:
+            _mark_unavailable(status_code, "payment_required")
+            _cache_order_status(normalized, None, ttl_seconds=_ORDER_STATUS_CACHE_TTL_SECONDS)
+            return None
+
+        # If the account is unauthorized/forbidden, pause lookups as well (typically config or access changes).
+        if status_code in (401, 403):
+            _mark_unavailable(status_code, "unauthorized")
+            _cache_order_status(normalized, None, ttl_seconds=_ORDER_STATUS_CACHE_TTL_SECONDS)
+            return None
+
+        # Not found just means ShipStation doesn't know about this order; no need to warn.
+        if status_code == 404:
+            _cache_order_status(normalized, None, ttl_seconds=_ORDER_STATUS_CACHE_TTL_SECONDS)
+            return None
+
+        logger.warning(
+            "ShipStation order lookup failed",
+            exc_info=False,
+            extra={"orderNumber": order_number, "status": status_code, "error": str(exc), "response": data},
+        )
+        _cache_order_status(normalized, None, ttl_seconds=_ORDER_STATUS_CACHE_TTL_SECONDS)
+        return None
 
     payload = resp.json() or {}
     orders = payload.get("orders") if isinstance(payload, dict) else None

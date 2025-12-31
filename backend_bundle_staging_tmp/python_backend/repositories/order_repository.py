@@ -60,6 +60,52 @@ def count_by_user_id(user_id: str) -> int:
     return len(find_by_user_id(user_id))
 
 
+def count_by_user_ids(user_ids: List[str]) -> Dict[str, int]:
+    """
+    Return mapping user_id -> order count.
+    Used to avoid N+1 COUNT queries when enriching dashboards.
+    """
+    ids = [str(uid).strip() for uid in (user_ids or []) if str(uid).strip()]
+    if not ids:
+        return {}
+
+    if _using_mysql():
+        counts: Dict[str, int] = {}
+        chunk_size = 500
+        for offset in range(0, len(ids), chunk_size):
+            chunk = ids[offset : offset + chunk_size]
+            placeholders = ", ".join([f"%(user_id_{idx})s" for idx in range(len(chunk))])
+            params = {f"user_id_{idx}": user_id for idx, user_id in enumerate(chunk)}
+            rows = mysql_client.fetch_all(
+                f"""
+                SELECT user_id, COUNT(*) AS count
+                FROM orders
+                WHERE user_id IN ({placeholders})
+                GROUP BY user_id
+                """,
+                params,
+            )
+            for row in rows or []:
+                uid = row.get("user_id")
+                if uid is None:
+                    continue
+                counts[str(uid)] = int(row.get("count") or 0)
+        for uid in ids:
+            counts.setdefault(uid, 0)
+        return counts
+
+    # JSON-store mode: count in memory
+    counts: Dict[str, int] = {uid: 0 for uid in ids}
+    for order in _load():
+        uid = order.get("userId")
+        if uid is None:
+            continue
+        key = str(uid)
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+
 def insert(order: Dict) -> Dict:
     if _using_mysql():
         order.setdefault("id", order.get("id") or _generate_id())

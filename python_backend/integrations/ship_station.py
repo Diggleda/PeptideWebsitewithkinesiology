@@ -21,6 +21,41 @@ _ORDER_STATUS_CACHE_TTL_SECONDS = max(10, min(_ORDER_STATUS_CACHE_TTL_SECONDS, 1
 _order_status_cache: Dict[str, Dict[str, object]] = {}
 _order_status_cache_lock = threading.Lock()
 
+def _coerce_timeout_seconds(value: object, *, default: float) -> float:
+    if value in (None, "", False):
+        return float(default)
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if numeric <= 0:
+        return float(default)
+    return float(numeric)
+
+
+_SHIPSTATION_HTTP_TIMEOUT_SECONDS = os.environ.get("SHIPSTATION_HTTP_TIMEOUT_SECONDS")
+_SHIPSTATION_CONNECT_TIMEOUT_SECONDS = _coerce_timeout_seconds(
+    os.environ.get("SHIPSTATION_HTTP_CONNECT_TIMEOUT_SECONDS"),
+    default=http_client.DEFAULT_CONNECT_TIMEOUT_SECONDS,
+)
+_SHIPSTATION_READ_TIMEOUT_SECONDS = _coerce_timeout_seconds(
+    os.environ.get("SHIPSTATION_HTTP_READ_TIMEOUT_SECONDS"),
+    default=15.0,
+)
+
+if _SHIPSTATION_HTTP_TIMEOUT_SECONDS not in (None, "", False):
+    _single = _coerce_timeout_seconds(_SHIPSTATION_HTTP_TIMEOUT_SECONDS, default=_SHIPSTATION_READ_TIMEOUT_SECONDS)
+    _SHIPSTATION_CONNECT_TIMEOUT_SECONDS = _single
+    _SHIPSTATION_READ_TIMEOUT_SECONDS = _single
+
+_SHIPSTATION_CONNECT_TIMEOUT_SECONDS = max(1.0, min(_SHIPSTATION_CONNECT_TIMEOUT_SECONDS, 60.0))
+_SHIPSTATION_READ_TIMEOUT_SECONDS = max(2.0, min(_SHIPSTATION_READ_TIMEOUT_SECONDS, 90.0))
+
+
+def _shipstation_timeout():
+    return (_SHIPSTATION_CONNECT_TIMEOUT_SECONDS, _SHIPSTATION_READ_TIMEOUT_SECONDS)
+
+
 _SHIPSTATION_UNAVAILABLE_TTL_SECONDS = int(
     os.environ.get("SHIPSTATION_UNAVAILABLE_TTL_SECONDS", "900").strip() or 900
 )
@@ -225,7 +260,7 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
             json=payload_variant,
             headers=headers,
             auth=auth,
-            timeout=10,
+            timeout=_shipstation_timeout(),
         )
         resp.raise_for_status()
         return resp
@@ -253,6 +288,21 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
         except requests.RequestException as exc:  # pragma: no cover
             data, status = _extract_response(exc)
 
+            # Avoid doubling latency on timeouts by skipping the "strip serviceCode" retry.
+            # (Timeouts typically indicate a slow/transient upstream, not a payload validation issue.)
+            if isinstance(exc, requests.Timeout) and status is None:
+                last_error = exc
+                last_status = None
+                last_response = None
+                logger.error(
+                    "ShipStation rate request timed out (carrier=%s, timeout=%s, payload=%s)",
+                    carrier_code,
+                    _shipstation_timeout(),
+                    payload,
+                    exc_info=True,
+                )
+                break
+
             if status == 402:
                 _mark_unavailable(status, "payment_required")
                 last_error = exc
@@ -273,6 +323,21 @@ def estimate_rates(shipping_address: Dict, items: List[Dict]) -> List[Dict]:
                     "ShipStation rate request failed (unauthorized)",
                     exc_info=True,
                     extra={"carrier": carrier_code, "status": status, "response": data},
+                )
+                break
+
+            # If we don't have an HTTP response status, we can't meaningfully "strip serviceCode"
+            # to fix a payload validation issue. Preserve latency for downstream fallbacks.
+            if status is None:
+                last_error = exc
+                last_status = None
+                last_response = data
+                logger.error(
+                    "ShipStation rate request failed (no response) (carrier=%s, error=%s, payload=%s)",
+                    carrier_code,
+                    str(exc),
+                    payload,
+                    exc_info=True,
                 )
                 break
 
@@ -336,7 +401,7 @@ def fetch_product_by_sku(sku: Optional[str]) -> Optional[Dict]:
             params=params,
             headers=headers,
             auth=auth,
-            timeout=10,
+            timeout=_shipstation_timeout(),
         )
         response.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - defensive logging
@@ -401,7 +466,7 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
             params={"orderNumber": normalized, "pageSize": 1},
             headers=headers,
             auth=auth,
-            timeout=10,
+            timeout=_shipstation_timeout(),
         )
         resp.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - network path
@@ -471,7 +536,7 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
                 params={"orderNumber": normalized, "page": 1, "pageSize": 5},
                 headers=headers,
                 auth=auth,
-                timeout=10,
+                timeout=_shipstation_timeout(),
             )
             shipment_resp.raise_for_status()
             shipment_payload = shipment_resp.json() or {}

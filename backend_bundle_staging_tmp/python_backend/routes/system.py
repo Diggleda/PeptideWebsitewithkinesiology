@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from flask import Blueprint
+from flask import Blueprint, Response, request
 
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from ..services import get_config
@@ -149,6 +150,7 @@ def health():
             build = config.backend_build
             usage = _server_usage()
             status = "ok"
+            mysql_enabled = bool(getattr(config, "mysql", {}).get("enabled"))
             workers = {
                 "configured": _configured_worker_target(),
                 "detected": _detect_worker_count(),
@@ -159,11 +161,13 @@ def health():
             build = os.environ.get("BACKEND_BUILD", "unknown")
             usage = None
             status = "degraded"
+            mysql_enabled = None
             workers = None
         return {
             "status": status,
             "message": "Server is running",
             "build": build,
+            "mysql": {"enabled": mysql_enabled},
             "usage": usage,
             "workers": workers,
             "timestamp": _now(),
@@ -180,6 +184,7 @@ def help_endpoint():
             "ok": True,
             "service": "PepPro Backend",
             "build": config.backend_build,
+            "mysql": {"enabled": bool(getattr(config, "mysql", {}).get("enabled"))},
             "integrations": {
                 "wooCommerce": {"configured": woo_commerce.is_configured()},
                 "shipEngine": {"configured": ship_engine.is_configured()},
@@ -205,6 +210,43 @@ def help_endpoint():
                 "/api/news/peptides",
                 "/api/health",
             ],
+            "timestamp": _now(),
+        }
+
+    return handle_action(action)
+
+@blueprint.get("/network/test-download")
+def network_test_download():
+    def action():
+        raw = request.args.get("bytes", "").strip()
+        size = 250_000
+        if raw.isdigit():
+            size = int(raw)
+        size = max(1_000, min(size, 750_000))
+
+        # Use random bytes to prevent proxy compression skewing the measurement.
+        payload = os.urandom(size)
+        resp = Response(payload, mimetype="application/octet-stream")
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["X-Bytes"] = str(size)
+        resp.headers["X-Timestamp"] = str(int(time.time() * 1000))
+        return resp
+
+    return handle_action(action)
+
+
+@blueprint.post("/network/test-upload")
+def network_test_upload():
+    def action():
+        data = request.get_data(cache=False, as_text=False) or b""
+        size = len(data)
+        max_size = 750_000
+        if size > max_size:
+            return {"ok": False, "error": "Payload too large", "maxBytes": max_size}, 413
+        return {
+            "ok": True,
+            "bytesReceived": size,
             "timestamp": _now(),
         }
 

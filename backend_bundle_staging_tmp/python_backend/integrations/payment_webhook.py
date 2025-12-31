@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from ..services import get_config
-from . import stripe_payments, woo_commerce
-from ..repositories import order_repository
+from . import stripe_payments
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +39,5 @@ def _finalize_payment_intent_and_woo(intent: Dict[str, Any]) -> None:
     except Exception as exc:
         logger.warning("Stripe finalize intent failed", exc_info=True, extra={"piId": pi_id})
 
-    metadata = intent.get("metadata") or {}
-    woo_order_id = metadata.get("woo_order_id") or metadata.get("wooOrderId")
-    if not woo_order_id:
-        return
-
-    # Update Woo order status to paid/processing
-    try:
-        woo_commerce.mark_order_paid(
-            {
-                "woo_order_id": woo_order_id,
-                "payment_intent_id": pi_id,
-                "order_key": metadata.get("woo_order_key") or metadata.get("order_key"),
-            }
-        )
-    except Exception as exc:
-        logger.error("Failed to mark Woo order paid", exc_info=True, extra={"wooOrderId": woo_order_id, "piId": pi_id})
+    # Stripe finalize handler takes care of updating Woo (async) and persisting local order status.
+    return

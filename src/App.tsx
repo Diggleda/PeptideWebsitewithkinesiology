@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.51";
+  "v1.9.59";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -2367,6 +2367,11 @@ export default function App() {
     }
     return getStripeMode();
   }, [stripeSettings?.stripeMode]);
+  const stripeDashboardUrl =
+    stripeModeEffective === "live"
+      ? "https://dashboard.stripe.com/"
+      : "https://dashboard.stripe.com/test";
+  const shipStationDashboardUrl = "https://ship14.shipstation.com";
 	  const stripePublishableKey = useMemo(() => {
 	    const candidate = stripeSettings
 	      ? (stripeSettings.publishableKey || "").trim()
@@ -3113,13 +3118,6 @@ export default function App() {
         setAccountOrdersError(null);
         return [];
       }
-      if (isRep(user.role)) {
-        // Sales reps use the sales tracking endpoint for order visibility.
-        setAccountOrders([]);
-        setAccountOrdersSyncedAt(null);
-        setAccountOrdersError(null);
-        return [];
-      }
       setAccountOrdersLoading(true);
       setAccountOrdersError(null);
       try {
@@ -3295,9 +3293,7 @@ export default function App() {
       setAccountOrdersError(null);
       return;
     }
-    if (!isRep(user.role)) {
-      loadAccountOrders();
-    }
+    loadAccountOrders();
   }, [user?.id, loadAccountOrders]);
 
   useEffect(() => {
@@ -10777,11 +10773,53 @@ export default function App() {
 	                  href="https://shop.peppro.net/wp-admin/"
 	                  target="_blank"
 	                  rel="noopener noreferrer"
-	                  className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+	                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
 	                  title="Open PepPro WooCommerce Dashboard"
 	                >
-	                  PepPro WooCommerce Dashboard
+                    <img
+                      src="/logos/woocommerce.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                      loading="lazy"
+                      decoding="async"
+                    />
+	                  <span>PepPro WooCommerce Dashboard</span>
 	                </a>
+                  <a
+                    href={stripeDashboardUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+                    title="Open Stripe Dashboard"
+                  >
+                    <img
+                      src="/logos/stripe.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span>Stripe Dashboard</span>
+                  </a>
+                  <a
+                    href={shipStationDashboardUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+                    title="Open ShipStation Dashboard"
+                  >
+                    <img
+                      src="/logos/shipstation.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span>ShipStation Dashboard</span>
+                  </a>
 	              </div>
 	            )}
 	          </div>
@@ -13306,51 +13344,37 @@ export default function App() {
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Header - Only show when logged in */}
 	        {user && !postLoginHold && (
-	          (() => {
-	            const repView = isRep(user.role);
-	            const headerOrders = repView ? salesTrackingOrders : accountOrders;
-	            const headerOrdersLoading = repView ? salesTrackingLoading : accountOrdersLoading;
-	            const headerOrdersError = repView ? salesTrackingError : accountOrdersError;
-	            const headerOrdersLastSyncedAt = repView
-	              ? (typeof salesTrackingLastUpdated === "number" && salesTrackingLastUpdated > 0
-	                  ? new Date(salesTrackingLastUpdated).toISOString()
-	                  : null)
-	              : accountOrdersSyncedAt;
-	            const headerRefreshOrders = repView ? refreshSalesRepOrdersForHeader : loadAccountOrders;
-	            return (
 	          <Header
 	            user={user}
 	            onLogin={handleLogin}
 	            onLogout={handleLogout}
 	            cartItems={totalCartItems}
-            onSearch={handleSearch}
-            onCreateAccount={handleCreateAccount}
-            onCartClick={() => setCheckoutOpen(true)}
-            loginPromptToken={loginPromptToken}
-            loginContext={loginContext}
-            showCartIconFallback={shouldShowHeaderCartIcon}
-            onShowInfo={() => {
-              console.log(
-                "[App] onShowInfo called, setting postLoginHold to true",
-              );
-              setPostLoginHold(true);
-            }}
+	            onSearch={handleSearch}
+	            onCreateAccount={handleCreateAccount}
+	            onCartClick={() => setCheckoutOpen(true)}
+	            loginPromptToken={loginPromptToken}
+	            loginContext={loginContext}
+	            showCartIconFallback={shouldShowHeaderCartIcon}
+	            onShowInfo={() => {
+	              console.log(
+	                "[App] onShowInfo called, setting postLoginHold to true",
+	              );
+	              setPostLoginHold(true);
+	            }}
 	            onUserUpdated={(next) => setUser(next as User)}
-	            accountOrders={headerOrders}
-	            accountOrdersLoading={headerOrdersLoading}
-	            accountOrdersError={headerOrdersError}
-	            ordersLastSyncedAt={headerOrdersLastSyncedAt}
-	            onRefreshOrders={headerRefreshOrders}
+	            accountOrders={accountOrders}
+	            accountOrdersLoading={accountOrdersLoading}
+	            accountOrdersError={accountOrdersError}
+	            ordersLastSyncedAt={accountOrdersSyncedAt}
+	            onRefreshOrders={loadAccountOrders}
 	            showCanceledOrders={showCanceledOrders}
 	            onToggleShowCanceled={toggleShowCanceledOrders}
 	            accountModalRequest={accountModalRequest}
-	            onBuyOrderAgain={repView ? undefined : handleBuyOrderAgain}
-	            onCancelOrder={repView ? undefined : handleCancelOrder}
+	            onBuyOrderAgain={handleBuyOrderAgain}
+	            onCancelOrder={handleCancelOrder}
 	            referralCodes={referralCodesForHeader}
 	            catalogLoading={catalogLoading}
 	          />
-	            );
-	          })()
 	        )}
 
         <div className="flex-1 w-full flex flex-col">

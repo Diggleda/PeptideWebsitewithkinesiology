@@ -5397,13 +5397,14 @@ html {
   box-shadow: none !important;
   border-width: 0 !important;
   border-color: transparent !important;
+  background-color: transparent !important;
 }
 
 .header-logout-button:hover,
 .header-logout-button:active,
 .header-logout-button:focus-visible {
   box-shadow: none !important;
-  background-color: inherit !important;
+  background-color: transparent !important;
   border-width: 0 !important;
   border-color: transparent !important;
   color: inherit !important;

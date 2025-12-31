@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import logging
+import time
 
 from flask import Blueprint, request, g
 
@@ -203,12 +206,53 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
 def get_user_activity():
     def action():
         _require_admin()
-        logger = logging.getLogger("peppro.user_activity")
+        raw_window = request.args.get("window")
+        window_key = _parse_activity_window(raw_window)
+        return _compute_user_activity(window_key, raw_window=raw_window)
+
+    return handle_action(action)
+
+
+@blueprint.get("/user-activity/longpoll")
+@require_auth
+def longpoll_user_activity():
+    def action():
+        _require_admin()
 
         raw_window = request.args.get("window")
         window_key = _parse_activity_window(raw_window)
-        cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
+        client_etag = str(request.args.get("etag") or "").strip() or None
+        try:
+            timeout_ms = int(request.args.get("timeoutMs") or 25000)
+        except Exception:
+            timeout_ms = 25000
+        timeout_ms = max(1000, min(timeout_ms, 30000))
 
+        started = time.monotonic()
+        # First compute immediately.
+        report = _compute_user_activity(window_key, raw_window=raw_window, include_logs=False)
+        etag = str(report.get("etag") or "").strip() or None
+        if not client_etag or not etag or client_etag != etag:
+            return report
+
+        # Wait until the snapshot changes or we hit timeout.
+        while (time.monotonic() - started) * 1000 < timeout_ms:
+            time.sleep(0.15)
+            report = _compute_user_activity(window_key, raw_window=raw_window, include_logs=False)
+            etag = str(report.get("etag") or "").strip() or None
+            if not etag or etag != client_etag:
+                return report
+
+        return report
+
+    return handle_action(action)
+
+
+def _compute_user_activity(window_key: str, *, raw_window: str | None = None, include_logs: bool = True) -> dict:
+    logger = logging.getLogger("peppro.user_activity")
+    cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
+
+    if include_logs:
         print(
             f"[user-activity] window_raw={raw_window!r} window={window_key} cutoff={cutoff.isoformat()}",
             flush=True,
@@ -223,32 +267,73 @@ def get_user_activity():
             },
         )
 
-        users = user_repository.get_all()
-        recent: list[dict] = []
-        for user in users:
-            last_login = _parse_iso_datetime(user.get("lastLoginAt"))
-            if not last_login or last_login < cutoff:
-                continue
-            recent.append(
-                {
-                    "id": user.get("id"),
-                    "name": user.get("name") or None,
-                    "email": user.get("email") or None,
-                    "role": str(user.get("role") or "").strip().lower() or "unknown",
-                    "lastLoginAt": user.get("lastLoginAt") or None,
-                }
-            )
+    users = user_repository.list_recent_users_since(cutoff)
+    recent: list[dict] = []
+    live_users: list[dict] = []
+    for user in users:
+        entry = {
+            "id": user.get("id"),
+            "name": user.get("name") or None,
+            "email": user.get("email") or None,
+            "role": str(user.get("role") or "").strip().lower() or "unknown",
+            "isOnline": bool(user.get("isOnline")),
+            "lastLoginAt": user.get("lastLoginAt") or None,
+            "profileImageUrl": user.get("profileImageUrl") or None,
+        }
 
-        recent.sort(
-            key=lambda entry: _parse_iso_datetime(entry.get("lastLoginAt")) or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
+        if entry["isOnline"]:
+            live_users.append(entry)
+
+        last_login = _parse_iso_datetime(entry.get("lastLoginAt"))
+        if not last_login or last_login < cutoff:
+            continue
+        recent.append(entry)
+
+    recent.sort(
+        key=lambda entry: _parse_iso_datetime(entry.get("lastLoginAt"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    live_users.sort(
+        key=lambda entry: str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower()
+    )
+
+    by_role: dict[str, int] = {}
+    sig_recent: list[dict] = []
+    for entry in recent:
+        role = entry.get("role") or "unknown"
+        by_role[role] = int(by_role.get(role, 0)) + 1
+        sig_recent.append(
+            {
+                "id": entry.get("id"),
+                "role": role,
+                "isOnline": bool(entry.get("isOnline")),
+                "lastLoginAt": entry.get("lastLoginAt") or None,
+                "profileImageUrl": entry.get("profileImageUrl") or None,
+            }
         )
 
-        by_role: dict[str, int] = {}
-        for entry in recent:
-            role = entry.get("role") or "unknown"
-            by_role[role] = int(by_role.get(role, 0)) + 1
+    # ETag should only reflect meaningful state changes (online/offline + logins),
+    # not the moving cutoff timestamp.
+    sig_live = [
+        {
+            "id": entry.get("id"),
+            "role": entry.get("role") or "unknown",
+            "isOnline": bool(entry.get("isOnline")),
+            "lastLoginAt": entry.get("lastLoginAt") or None,
+            "profileImageUrl": entry.get("profileImageUrl") or None,
+        }
+        for entry in live_users
+    ]
+    sig_recent.sort(key=lambda entry: str(entry.get("id") or ""))
+    sig_live.sort(key=lambda entry: str(entry.get("id") or ""))
+    sig_payload = {"window": window_key, "recent": sig_recent, "live": sig_live}
+    etag = hashlib.sha256(
+        json.dumps(sig_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
+    if include_logs:
         print(
             f"[user-activity] matched={len(recent)} by_role={by_role}",
             flush=True,
@@ -258,13 +343,13 @@ def get_user_activity():
             extra={"matched": len(recent), "byRole": by_role, "window": window_key},
         )
 
-        return {
-            "window": window_key,
-            "generatedAt": datetime.now(timezone.utc).isoformat(),
-            "cutoff": cutoff.isoformat(),
-            "total": len(recent),
-            "byRole": by_role,
-            "users": recent,
-        }
-
-    return handle_action(action)
+    return {
+        "window": window_key,
+        "etag": etag,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "cutoff": cutoff.isoformat(),
+        "liveUsers": live_users,
+        "total": len(recent),
+        "byRole": by_role,
+        "users": recent,
+    }

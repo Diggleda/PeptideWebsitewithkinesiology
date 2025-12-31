@@ -8,6 +8,7 @@ from flask import Blueprint, request
 from ..storage import contact_form_store
 from ..utils.http import handle_action
 from ..database import mysql_client
+from ..repositories import sales_rep_repository, sales_prospect_repository
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
 
@@ -36,18 +37,40 @@ def submit_contact():
 
         # Prefer MySQL; fall back to JSON store if unavailable.
         try:
-            mysql_client.execute(
-                """
-                INSERT INTO contact_forms (name, email, phone, source)
-                VALUES (%(name)s, %(email)s, %(phone)s, %(source)s)
-                """,
-                {
-                    "name": record["name"],
-                    "email": record["email"],
-                    "phone": record["phone"],
-                    "source": record["source"],
-                },
-            )
+            inserted_id = None
+            with mysql_client.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO contact_forms (name, email, phone, source)
+                    VALUES (%(name)s, %(email)s, %(phone)s, %(source)s)
+                    """,
+                    {
+                        "name": record["name"],
+                        "email": record["email"],
+                        "phone": record["phone"],
+                        "source": record["source"],
+                    },
+                )
+                inserted_id = cur.lastrowid
+
+            # Always add contact form submissions to the generalized prospects table.
+            try:
+                if inserted_id:
+                    rep = sales_rep_repository.find_by_sales_code(source) if source else None
+                    sales_prospect_repository.upsert(
+                        {
+                            "id": f"contact_form:{inserted_id}",
+                            "salesRepId": str(rep.get("id")) if rep and rep.get("id") else None,
+                            "contactFormId": str(inserted_id),
+                            "status": "contact_form",
+                            "isManual": False,
+                            "contactName": record["name"],
+                            "contactEmail": record["email"],
+                            "contactPhone": record["phone"],
+                        }
+                    )
+            except Exception:
+                pass
         except Exception:
             if contact_form_store:
                 forms = contact_form_store.read()

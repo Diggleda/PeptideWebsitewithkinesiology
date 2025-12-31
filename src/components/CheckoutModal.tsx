@@ -972,7 +972,7 @@ export function CheckoutModal({
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
-                <div className="grid gap-4 lg:grid-cols-2 auto-rows-fr">
+                <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2 lg:mx-0 lg:px-0 lg:grid lg:overflow-visible lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item, index) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
@@ -985,9 +985,12 @@ export function CheckoutModal({
                   const upcomingTier = allTiers.find((tier) => item.quantity < tier.minQuantity) || null;
                   const isBulkOpen = bulkOpenMap[item.id] ?? false;
                   return (
-                    <Card key={item.id} className="glass squircle-sm h-full">
+                    <Card
+                      key={item.id}
+                      className="glass squircle-sm h-full shrink-0 min-w-[min(22rem,85vw)] lg:min-w-0"
+                    >
                       <CardContent className="p-4 relative">
-                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[150px] text-right">
+                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[120px] sm:w-[150px] text-right">
                           <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
                           <Button
                             type="button"
@@ -1000,7 +1003,7 @@ export function CheckoutModal({
                             <span className="sr-only">Remove item</span>
                           </Button>
                         </div>
-                        <div className="flex items-start gap-4 pr-[180px]">
+                        <div className="flex items-start gap-4 pr-[150px] sm:pr-[180px]">
                           <div className="flex items-center gap-4 flex-grow">
                             <div
                               className="flex-shrink-0 self-stretch"

@@ -822,7 +822,7 @@ export function Header({
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [logoutThanksOpen, setLogoutThanksOpen] = useState(false);
   const [logoutThanksOpacity, setLogoutThanksOpacity] = useState(0);
-  const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(350);
+  const [logoutThanksTransitionMs, setLogoutThanksTransitionMs] = useState(250);
   const logoutThanksSequenceRef = useRef(0);
   const logoutThanksTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const logoutThanksRafRef = useRef<number | null>(null);
@@ -2750,11 +2750,11 @@ export function Header({
     </div>
   );
 
-	  const renderOrdersList = () => {
-	    const repView = Boolean(localUser && isRep(localUser.role));
-	    const doctorView = Boolean(localUser && isDoctorRole(localUser.role));
-	    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
-	    const visibleOrders = cachedAccountOrders
+		  const renderOrdersList = () => {
+		    const repView = false;
+		    const doctorView = Boolean(localUser && isDoctorRole(localUser.role));
+		    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
+		    const visibleOrders = cachedAccountOrders
 	      .filter((order) => {
         const source = (order.source || '').toLowerCase();
         const hasWooIntegration = Boolean(
@@ -2867,7 +2867,11 @@ export function Header({
               parseWooMoney(order.total, 0),
             );
             const computedGrandTotal = subtotalValue + shippingValue + taxValue - discountValue;
-            const displayTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
+            const baseTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
+            const displayTotal =
+              taxValue > 0 && computedGrandTotal > baseTotal + 0.01
+                ? computedGrandTotal
+                : baseTotal;
             const itemLabel = `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
             
           return (
@@ -3186,7 +3190,11 @@ export function Header({
       parseWooMoney(selectedOrder.total, 0),
     );
     const computedGrandTotal = subtotal + shippingTotal + taxTotal - discountTotal;
-    const grandTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
+    const baseGrandTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
+    const grandTotal =
+      taxTotal > 0 && computedGrandTotal > baseGrandTotal + 0.01
+        ? computedGrandTotal
+        : baseGrandTotal;
     const detailTotal = Math.max(grandTotal, 0);
     const fallbackPayment =
       selectedOrder.paymentDetails ||
@@ -3431,13 +3439,7 @@ export function Header({
     <div className="space-y-4">
       {/* Header Section */}
       <div className="flex flex-col gap-4">
-        {isRep(localUser.role) && (
-          <div className="glass-card squircle-md p-4 border border-[rgba(95,179,249,0.35)] bg-white/80">
-            <p className="text-sm text-slate-700">
-              Showing orders for doctors assigned to you.
-            </p>
-          </div>
-        )}
+	        
         <div className="flex flex-wrap items-center justify-between gap-3">
           {ordersLastSyncedAt && (
             <button
@@ -3562,7 +3564,7 @@ export function Header({
               </div>
               <DialogDescription className="account-header-description">
                 {(user.visits ?? 1) > 1
-                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! We are excited to have you! You can manage your account details and orders below.`
+                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! You can manage your account details and orders below.`
                   : `We are thrilled to have you with us—let's make healthcare simpler together!`}
               </DialogDescription>
               <div className="relative w-full">
@@ -3622,7 +3624,7 @@ export function Header({
 	              type="button"
 	              variant="outline"
 	              size="sm"
-	              className="btn-no-hover header-logout-button squircle-sm glass text-slate-900 border-0"
+	              className="btn-no-hover header-logout-button squircle-sm bg-transparent text-slate-900 border-0"
 	              onClick={handleLogoutClick}
 	            >
 	              <LogOut className="h-4 w-4 mr-2" />
@@ -3634,7 +3636,7 @@ export function Header({
 	      <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
 	        <DialogContent
 	          hideCloseButton
-	          className="duration-[350ms] data-[state=closed]:duration-[350ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+	          className="duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
           onTransitionEnd={(event) => {
             if (event.propertyName !== 'opacity') return;
             if (!logoutThanksPendingFadeOutRef.current) return;
