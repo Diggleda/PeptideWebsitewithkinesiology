@@ -27,6 +27,7 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("role", "doctor")
     normalized.setdefault("status", "active")
     normalized.setdefault("isOnline", bool(normalized.get("isOnline", False)))
+    normalized.setdefault("sessionId", normalized.get("sessionId") or None)
     normalized.setdefault("salesRepId", None)
     normalized.setdefault("referrerDoctorId", None)
     normalized["leadType"] = (normalized.get("leadType") or None)
@@ -255,6 +256,7 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, is_online, sales_rep_id, referrer_doctor_id,
+            session_id,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
             office_postal_code, office_country, profile_image_url, referral_credits, total_referrals, visits,
@@ -262,7 +264,7 @@ def _mysql_insert(user: Dict) -> Dict:
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
+            %(referrer_doctor_id)s, %(session_id)s, %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
             %(profile_image_url)s, %(referral_credits)s,
@@ -278,6 +280,7 @@ def _mysql_insert(user: Dict) -> Dict:
             is_online = VALUES(is_online),
             sales_rep_id = VALUES(sales_rep_id),
             referrer_doctor_id = VALUES(referrer_doctor_id),
+            session_id = VALUES(session_id),
             lead_type = VALUES(lead_type),
             lead_type_source = VALUES(lead_type_source),
             lead_type_locked_at = VALUES(lead_type_locked_at),
@@ -325,6 +328,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             is_online = %(is_online)s,
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
+            session_id = %(session_id)s,
             lead_type = %(lead_type)s,
             lead_type_source = %(lead_type_source)s,
             lead_type_locked_at = %(lead_type_locked_at)s,
@@ -384,6 +388,7 @@ def _row_to_user(row: Dict) -> Dict:
             "isOnline": bool(row.get("is_online")),
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
+            "sessionId": row.get("session_id"),
             "leadType": row.get("lead_type"),
             "leadTypeSource": row.get("lead_type_source"),
             "leadTypeLockedAt": fmt_datetime(row.get("lead_type_locked_at")),
@@ -434,6 +439,7 @@ def _to_db_params(user: Dict) -> Dict:
         "is_online": 1 if user.get("isOnline") else 0,
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
+        "session_id": user.get("sessionId"),
         "lead_type": user.get("leadType"),
         "lead_type_source": user.get("leadTypeSource"),
         "lead_type_locked_at": parse_dt(user.get("leadTypeLockedAt")),

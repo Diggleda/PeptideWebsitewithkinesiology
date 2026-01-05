@@ -48,6 +48,9 @@ _BCRYPT_PREFIX = re.compile(r"^\$2[abxy]\$")
 logger = logging.getLogger(__name__)
 _PASSWORD_RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
 
+def _new_session_id() -> str:
+    return secrets.token_urlsafe(24)
+
 
 def _safe_check_password(password: str, hashed: str) -> bool:
     encoded = (hashed or "").strip()
@@ -159,6 +162,7 @@ def register(data: Dict) -> Dict:
             "npiVerification": npi_verification,
             "npiStatus": npi_status,
             "npiCheckError": None,
+            "sessionId": _new_session_id(),
         }
     )
 
@@ -174,7 +178,9 @@ def register(data: Dict) -> Dict:
         referral_service.redeem_onboarding_code({"code": code, "doctorId": user["id"]})
 
     token_role = (user.get("role") or "doctor").lower()
-    token = _create_auth_token({"id": user["id"], "email": user["email"], "role": token_role})
+    token = _create_auth_token(
+        {"id": user["id"], "email": user["email"], "role": token_role, "sid": user.get("sessionId")}
+    )
 
     return {"token": token, "user": _sanitize_user(user)}
 
@@ -199,6 +205,7 @@ def _register_sales_rep_account(
 
     user_record = user_repository.find_by_email(email)
     if user_record:
+        new_session_id = _new_session_id()
         updated_user = user_repository.update(
             {
                 **user_record,
@@ -211,10 +218,12 @@ def _register_sales_rep_account(
                 "visits": int(user_record.get("visits") or 0) + 1,
                 "lastLoginAt": now,
                 "mustResetPassword": False,
+                "sessionId": new_session_id,
             }
         )
         user_record = updated_user or user_record
     else:
+        new_session_id = _new_session_id()
         user_record = user_repository.insert(
             {
                 "name": name,
@@ -230,6 +239,7 @@ def _register_sales_rep_account(
                 "createdAt": now,
                 "lastLoginAt": now,
                 "mustResetPassword": False,
+                "sessionId": new_session_id,
             }
         )
 
@@ -246,6 +256,7 @@ def _register_sales_rep_account(
         "mustResetPassword": False,
         "status": "active",
         "updatedAt": now,
+        "sessionId": new_session_id,
     }
 
     updated_sales_rep = sales_rep_repository.update(sales_rep_update)
@@ -258,7 +269,12 @@ def _register_sales_rep_account(
         ) or updated_sales_rep
 
     token = _create_auth_token(
-        {"id": updated_sales_rep["id"], "email": updated_sales_rep.get("email"), "role": "sales_rep"}
+        {
+            "id": updated_sales_rep["id"],
+            "email": updated_sales_rep.get("email"),
+            "role": "sales_rep",
+            "sid": updated_sales_rep.get("sessionId"),
+        }
     )
 
     return {"token": token, "user": _sanitize_sales_rep(updated_sales_rep)}
@@ -275,6 +291,7 @@ def login(data: Dict) -> Dict:
         if not _safe_check_password(password, str(user.get("password", ""))):
             raise _unauthorized("INVALID_PASSWORD")
 
+        new_session_id = _new_session_id()
         updated = user_repository.update(
             {
                 **user,
@@ -282,11 +299,14 @@ def login(data: Dict) -> Dict:
                 "lastLoginAt": datetime.now(timezone.utc).isoformat(),
                 "isOnline": True,
                 "mustResetPassword": False,
+                "sessionId": new_session_id,
             }
         ) or user
 
         token_role = (updated.get("role") or "doctor").lower()
-        token = _create_auth_token({"id": updated["id"], "email": updated["email"], "role": token_role})
+        token = _create_auth_token(
+            {"id": updated["id"], "email": updated["email"], "role": token_role, "sid": updated.get("sessionId")}
+        )
         return {"token": token, "user": _sanitize_user(updated)}
 
     sales_rep = sales_rep_repository.find_by_email(email)
@@ -300,23 +320,44 @@ def login(data: Dict) -> Dict:
     if not _safe_check_password(password, hashed_password):
         raise _unauthorized("INVALID_PASSWORD")
 
+    new_session_id = _new_session_id()
     updated_rep = sales_rep_repository.update(
         {
             **sales_rep,
             "visits": int(sales_rep.get("visits") or 1) + 1,
             "lastLoginAt": datetime.now(timezone.utc).isoformat(),
             "mustResetPassword": False,
+            "sessionId": new_session_id,
         }
     ) or sales_rep
 
-    token = _create_auth_token({"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep"})
+    token = _create_auth_token(
+        {"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep", "sid": updated_rep.get("sessionId")}
+    )
     return {"token": token, "user": _sanitize_sales_rep(updated_rep)}
 
 
-def logout(user_id: str) -> Dict:
+def logout(user_id: str, role: Optional[str] = None) -> Dict:
+    normalized_role = (role or "").strip().lower()
+    new_session_id = _new_session_id()
+
+    if normalized_role == "sales_rep":
+        rep = sales_rep_repository.find_by_id(user_id) if user_id else None
+        if rep:
+            sales_rep_repository.update({**rep, "sessionId": new_session_id})
+        user = user_repository.find_by_id(user_id) if user_id else None
+        if user:
+            user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+        return {"ok": True}
+
     user = user_repository.find_by_id(user_id) if user_id else None
     if user:
-        user_repository.update({**user, "isOnline": False})
+        user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+        return {"ok": True}
+
+    rep = sales_rep_repository.find_by_id(user_id) if user_id else None
+    if rep:
+        sales_rep_repository.update({**rep, "sessionId": new_session_id})
     return {"ok": True}
 
 
@@ -328,11 +369,18 @@ def check_email(email: str) -> Dict:
     return {"exists": exists}
 
 
-def get_profile(user_id: str) -> Dict:
+def get_profile(user_id: str, role: Optional[str] = None) -> Dict:
     user = user_repository.find_by_id(user_id)
-    if not user:
-        raise _not_found("User not found")
-    return _sanitize_user(user)
+    if user:
+        return _sanitize_user(user)
+
+    normalized_role = (role or "").strip().lower()
+    if normalized_role == "sales_rep":
+        rep = sales_rep_repository.find_by_id(user_id)
+        if rep:
+            return _sanitize_sales_rep(rep)
+
+    raise _not_found("User not found")
 
 
 def verify_npi(npi_number: Optional[str]) -> Dict:
@@ -413,6 +461,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
 def _sanitize_user(user: Dict) -> Dict:
     sanitized = dict(user)
     sanitized.pop("password", None)
+    sanitized.pop("sessionId", None)
     rep_id = sanitized.get("salesRepId")
     sales_rep = None
     if rep_id:
@@ -445,6 +494,7 @@ def _sanitize_user(user: Dict) -> Dict:
 def _sanitize_sales_rep(rep: Dict) -> Dict:
     sanitized = dict(rep)
     sanitized.pop("password", None)
+    sanitized.pop("sessionId", None)
     sanitized.setdefault("role", "sales_rep")
     sanitized.setdefault("salesRepId", sanitized.get("id"))
     sanitized.setdefault("salesRep", None)
@@ -515,18 +565,25 @@ def reset_password(data: Dict) -> Dict:
         if not rep:
             _PASSWORD_RESET_TOKENS.pop(token, None)
             raise _not_found("USER_NOT_FOUND")
-        sales_rep_repository.update({**rep, "password": hashed_password, "mustResetPassword": False})
+        new_session_id = _new_session_id()
+        sales_rep_repository.update(
+            {**rep, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
+        )
         legacy_id = rep.get("legacyUserId")
         if legacy_id:
             linked_user = user_repository.find_by_id(str(legacy_id))
             if linked_user:
-                user_repository.update({**linked_user, "password": hashed_password, "mustResetPassword": False})
+                user_repository.update(
+                    {**linked_user, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
+                )
     else:
         user = user_repository.find_by_id(str(account_id))
         if not user:
             _PASSWORD_RESET_TOKENS.pop(token, None)
             raise _not_found("USER_NOT_FOUND")
-        user_repository.update({**user, "password": hashed_password, "mustResetPassword": False})
+        user_repository.update(
+            {**user, "password": hashed_password, "mustResetPassword": False, "sessionId": _new_session_id()}
+        )
 
     _PASSWORD_RESET_TOKENS.pop(token, None)
     return {"status": "ok"}

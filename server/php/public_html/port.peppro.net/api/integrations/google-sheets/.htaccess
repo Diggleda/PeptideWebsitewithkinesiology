@@ -1,0 +1,18 @@
+# Ensure this directory is served by Apache/PHP, not Passenger/Node
+PassengerEnabled off
+Options -MultiViews
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Allow the Apps Script URL without the .php suffix.
+  RewriteRule ^sales-reps/?$ sales-reps.php [L]
+
+  # Prevent rewriting the actual script filename.
+  RewriteRule ^sales-reps\.php$ - [L]
+</IfModule>
+
+# Common cPanel PHP handler (adjust if your account uses a different version)
+<IfModule mod_mime.c>
+  AddType application/x-httpd-ea-php82 .php
+</IfModule>

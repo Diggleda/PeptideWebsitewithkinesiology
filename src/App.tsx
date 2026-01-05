@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.59";
+  "v1.9.63";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -5356,7 +5356,7 @@ export default function App() {
 		    fetchCertificateProducts,
 		  ]);
 
-		  const handleUploadMissingCertificate = useCallback(async () => {
+	  const handleUploadMissingCertificate = useCallback(async () => {
 	    if (!missingCertificatesSelectedId) {
 	      toast.error("Select a product first.");
 	      return;
@@ -5378,26 +5378,10 @@ export default function App() {
 	      return;
 	    }
 
-	    const readAsDataUrl = (input: File) =>
-	      new Promise<string>((resolve, reject) => {
-	        const reader = new FileReader();
-	        reader.onerror = () => reject(new Error("Unable to read file."));
-	        reader.onload = () => {
-	          const result = reader.result;
-	          if (typeof result === "string" && result.trim().length > 0) {
-	            resolve(result);
-	          } else {
-	            reject(new Error("Unable to read file."));
-	          }
-	        };
-	        reader.readAsDataURL(input);
-	      });
-
 		    setMissingCertificatesUploading(true);
 		    try {
-		      const dataUrl = await readAsDataUrl(file);
 		      await wooAPI.uploadCertificateOfAnalysis(missingCertificatesSelectedId, {
-		        dataUrl,
+		        file,
 		        filename: file.name,
 		      });
 		      toast.success("Certificate uploaded.");
@@ -5405,9 +5389,13 @@ export default function App() {
 		      await fetchMissingCertificates({ force: true });
 		      await fetchCertificateProducts({ force: true });
 		    } catch (error) {
-		      toast.error(
-		        error instanceof Error ? error.message : "Unable to upload certificate.",
-		      );
+          if ((error as any)?.status === 413) {
+            toast.error("Upload rejected (413). Increase the API/proxy upload limit.");
+          } else {
+            toast.error(
+              error instanceof Error ? error.message : "Unable to upload certificate.",
+            );
+          }
 		    } finally {
 		      setMissingCertificatesUploading(false);
 		    }
@@ -9066,7 +9054,7 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     console.debug("[Auth] Logout");
     authAPI.logout();
     setUser(null);
@@ -9083,7 +9071,7 @@ export default function App() {
     setReferralDataError(null);
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -9103,6 +9091,39 @@ export default function App() {
       );
     };
   }, [handleLogout]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!user) return;
+
+    let cancelled = false;
+    const intervalMs = 25_000;
+
+    const checkSession = async () => {
+      if (cancelled) return;
+      if (!isOnline() || !isPageVisible()) return;
+      try {
+        const current = await authAPI.getCurrentUser();
+        if (!current && !cancelled) {
+          handleLogout();
+        }
+      } catch {
+        // Ignore transient network/server failures; keep the user signed in.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void checkSession();
+    }, intervalMs);
+
+    // Run one check shortly after mount so stale sessions resolve quickly.
+    window.setTimeout(() => void checkSession(), 1_500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [user?.id, handleLogout]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;

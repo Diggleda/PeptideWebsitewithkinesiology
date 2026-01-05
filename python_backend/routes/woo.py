@@ -379,23 +379,51 @@ def get_certificate_of_analysis_info(product_id: int):
 @blueprint.post("/products/<int:product_id>/certificate-of-analysis")
 @require_auth
 def upsert_certificate_of_analysis(product_id: int):
-    payload = request.get_json(force=True, silent=True) or {}
-
     def action():
         _require_admin()
-        data_raw = payload.get("data") or payload.get("dataBase64") or payload.get("dataUrl")
-        decoded, mime_from_payload = _parse_data_url_or_base64(str(data_raw or ""))
-        if len(decoded) > _COA_MAX_BYTES:
-            max_mb = round(_COA_MAX_BYTES / (1024 * 1024), 2)
-            err = ValueError(f"Document is too large (max {max_mb} MB). Please upload a smaller PNG.")
-            setattr(err, "status", 413)
-            raise err
+        decoded: bytes
+        filename: str | None = None
+        mime: str = "application/octet-stream"
 
-        filename = payload.get("filename") if isinstance(payload.get("filename"), str) else None
-        mime_type = payload.get("mimeType") if isinstance(payload.get("mimeType"), str) else None
-        mime = (mime_type or mime_from_payload or "image/png").strip()
-        if not mime:
-            mime = "image/png"
+        # Prefer multipart uploads to avoid base64 overhead and proxy limits.
+        if request.files and "file" in request.files:
+            incoming = request.files.get("file")
+            if not incoming:
+                err = ValueError("Document payload is required")
+                setattr(err, "status", 400)
+                raise err
+
+            data = bytearray()
+            while True:
+                chunk = incoming.stream.read(64 * 1024)
+                if not chunk:
+                    break
+                data.extend(chunk)
+                if len(data) > _COA_MAX_BYTES:
+                    max_mb = round(_COA_MAX_BYTES / (1024 * 1024), 2)
+                    err = ValueError(f"Document is too large (max {max_mb} MB).")
+                    setattr(err, "status", 413)
+                    raise err
+
+            decoded = bytes(data)
+            filename = (incoming.filename or "").strip() or None
+            mime = (incoming.mimetype or "").strip() or "application/octet-stream"
+        else:
+            payload = request.get_json(force=True, silent=True) or {}
+            data_raw = payload.get("data") or payload.get("dataBase64") or payload.get("dataUrl")
+            decoded, mime_from_payload = _parse_data_url_or_base64(str(data_raw or ""))
+            if len(decoded) > _COA_MAX_BYTES:
+                max_mb = round(_COA_MAX_BYTES / (1024 * 1024), 2)
+                err = ValueError(f"Document is too large (max {max_mb} MB).")
+                setattr(err, "status", 413)
+                raise err
+
+            filename = payload.get("filename") if isinstance(payload.get("filename"), str) else None
+            mime_type = payload.get("mimeType") if isinstance(payload.get("mimeType"), str) else None
+            # Data URL already embeds the true mime; only fall back to explicit mimeType if needed.
+            mime = (mime_from_payload or mime_type or "application/octet-stream").strip()
+
+        filename = filename or "certificate-of-analysis"
 
         saved = product_document_repository.upsert_document(
             woo_product_id=int(product_id),

@@ -31,14 +31,16 @@ def check_email():
 @require_auth
 def me():
     user_id = g.current_user.get("id")
-    return handle_action(lambda: auth_service.get_profile(user_id))
+    role = g.current_user.get("role")
+    return handle_action(lambda: auth_service.get_profile(user_id, role))
 
 
 @blueprint.post("/logout")
 @require_auth
 def logout():
     user_id = g.current_user.get("id")
-    return handle_action(lambda: auth_service.logout(user_id))
+    role = g.current_user.get("role")
+    return handle_action(lambda: auth_service.logout(user_id, role))
 
 
 @blueprint.post("/verify-npi")

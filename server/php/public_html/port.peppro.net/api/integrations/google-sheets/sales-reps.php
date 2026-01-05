@@ -48,6 +48,38 @@ function respond(int $code, array $payload): void {
   exit;
 }
 
+/**
+ * Generate an ID in the same format used elsewhere in this project: a millisecond
+ * timestamp string (e.g. "1762382696762").
+ *
+ * Adds a small per-process increment to avoid collisions when creating multiple
+ * reps within the same millisecond.
+ */
+function generate_id(): string {
+  static $lastMs = 0;
+  static $bump = 0;
+
+  $ms = (int)floor(microtime(true) * 1000);
+  if ($ms === $lastMs) {
+    $bump++;
+  } else {
+    $lastMs = $ms;
+    $bump = 0;
+  }
+
+  return (string)($ms + $bump);
+}
+
+/** Load column list for a table (used to support multiple schema variants). */
+function get_table_columns(PDO $pdo, string $table): array {
+  $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
+  $cols = [];
+  foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    if (!empty($row['Field'])) $cols[] = (string)$row['Field'];
+  }
+  return $cols;
+}
+
 /** Simple shared-secret auth (Authorization or X-WebHook-Signature). */
 function authorized(array $config): bool {
   $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
@@ -123,6 +155,8 @@ function derive_initials(string $initials, string $name, string $sales_code): st
 $clean   = [];
 $errors  = [];
 $results = [];
+$emailToFirstRow = [];
+$duplicateEmails = [];
 
 foreach ($body['salesReps'] as $i => $r) {
   $name       = trim((string)($r['name'] ?? ''));
@@ -142,7 +176,31 @@ foreach ($body['salesReps'] as $i => $r) {
     continue;
   }
 
-  $clean[] = compact('sales_code','initials','name','email','phone','territory');
+  if ($email !== '') {
+    $emailKey = strtolower($email);
+    if (!array_key_exists($emailKey, $emailToFirstRow)) {
+      $emailToFirstRow[$emailKey] = $i;
+    } else {
+      $duplicateEmails[$emailKey][] = $i;
+    }
+  }
+
+  $clean[] = ['row_index' => $i] + compact('sales_code','initials','name','email','phone','territory');
+}
+
+if (!empty($duplicateEmails)) {
+  $dupes = [];
+  foreach ($duplicateEmails as $emailKey => $rows) {
+    $allRows = array_values(array_unique(array_merge([$emailToFirstRow[$emailKey]], $rows)));
+    sort($allRows);
+    $dupes[] = ['email' => $emailKey, 'rows' => $allRows];
+  }
+  respond(422, [
+    'ok' => false,
+    'error' => 'DUPLICATE_EMAILS',
+    'detail' => 'Each non-empty Email must be unique within the sheet.',
+    'duplicates' => $dupes,
+  ]);
 }
 
 /**
@@ -186,6 +244,17 @@ try {
 
   if (function_exists('set_time_limit')) @set_time_limit(60);
   $pdo->beginTransaction();
+
+  $salesRepsCols = [];
+  try {
+    $salesRepsCols = get_table_columns($pdo, 'sales_reps');
+  } catch (Throwable $e) {
+    // If we can't introspect columns, continue with the legacy insert shape below.
+  }
+  $hasSalesRepsId = in_array('id', $salesRepsCols, true);
+  $hasUpdatedAtCamel = in_array('updatedAt', $salesRepsCols, true);
+  $hasUpdatedAtSnake = in_array('updated_at', $salesRepsCols, true);
+  $hasCreatedAtSnake = in_array('created_at', $salesRepsCols, true);
 
   /**
    * Mirror delete behavior:
@@ -245,16 +314,54 @@ try {
     }
   }
 
-  // Upsert. Table columns: id (auto), sales_code, initials, name, email, phone, territory, updatedAt
+  // Lookups so we can reuse existing IDs (and avoid generating a new ID on a duplicate update).
+  $findSalesRepIdBySalesCode = $pdo->prepare('SELECT id FROM sales_reps WHERE sales_code = :sales_code LIMIT 1');
+  $findSalesRepIdByEmail = $pdo->prepare('SELECT id FROM sales_reps WHERE email = :email LIMIT 1');
+  $salesRepIdExists = $pdo->prepare('SELECT 1 FROM sales_reps WHERE id = :id LIMIT 1');
+
+  // Upsert (supports multiple schema variants; always includes id if the table has one).
+  $insertCols = [];
+  $valuesSql = [];
+  if ($hasSalesRepsId) {
+    $insertCols[] = 'id';
+    $valuesSql[] = ':id';
+  }
+  $insertCols[] = 'sales_code'; $valuesSql[] = ':sales_code';
+  $insertCols[] = 'initials';   $valuesSql[] = ':initials';
+  $insertCols[] = 'name';       $valuesSql[] = ':name';
+  $insertCols[] = 'email';      $valuesSql[] = ':email';
+  $insertCols[] = 'phone';      $valuesSql[] = ':phone';
+  $insertCols[] = 'territory';  $valuesSql[] = ':territory';
+  if ($hasCreatedAtSnake) {
+    $insertCols[] = 'created_at';
+    $valuesSql[] = 'NOW()';
+  }
+  if ($hasUpdatedAtCamel) {
+    $insertCols[] = 'updatedAt';
+    $valuesSql[] = 'NOW()';
+  }
+  if ($hasUpdatedAtSnake) {
+    $insertCols[] = 'updated_at';
+    $valuesSql[] = 'NOW()';
+  }
+
+  $updates = [
+    'initials = VALUES(initials)',
+    'name = VALUES(name)',
+    'email = VALUES(email)',
+    'phone = VALUES(phone)',
+    'territory = VALUES(territory)',
+  ];
+  if ($hasSalesRepsId) {
+    $updates[] = 'id = COALESCE(id, VALUES(id))';
+  }
+  if ($hasUpdatedAtCamel) $updates[] = 'updatedAt = NOW()';
+  if ($hasUpdatedAtSnake) $updates[] = 'updated_at = NOW()';
+
   $stmt = $pdo->prepare(
-    'INSERT INTO sales_reps (sales_code, initials, name, email, phone, territory)
-     VALUES (:sales_code, :initials, :name, :email, :phone, :territory)
-     ON DUPLICATE KEY UPDATE
-       initials  = VALUES(initials),
-       name      = VALUES(name),
-       email     = VALUES(email),
-       phone     = VALUES(phone),
-       territory = VALUES(territory)'
+    'INSERT INTO sales_reps (' . implode(', ', $insertCols) . ')
+     VALUES (' . implode(', ', $valuesSql) . ')
+     ON DUPLICATE KEY UPDATE ' . implode(', ', $updates)
   );
 
   // Optional user sync: only create/update as sales_rep when not already admin/test_doctor.
@@ -274,15 +381,122 @@ try {
 
   $stored = 0;
   foreach ($clean as $rec) {
-    $stmt->execute([
-      ':sales_code' => $rec['sales_code'],
-      ':initials'   => $rec['initials'],
-      ':name'       => $rec['name'],
-      ':email'      => $rec['email'],
-      ':phone'      => $rec['phone'],
-      ':territory'  => $rec['territory'],
-    ]);
-    $stored++;
+    $rowIndex = (int)($rec['row_index'] ?? -1);
+    $userId = null;
+    $salesRepId = null;
+
+    if ($hasSalesRepsId) {
+      $candidateId = trim((string)($rec['id'] ?? ''));
+      if ($candidateId !== '') {
+        $salesRepId = $candidateId;
+      } else {
+        try {
+          $findSalesRepIdBySalesCode->execute([':sales_code' => $rec['sales_code']]);
+          $existing = $findSalesRepIdBySalesCode->fetchColumn();
+          if ($existing !== false && $existing !== null && $existing !== '') {
+            $salesRepId = (string)$existing;
+          }
+        } catch (Throwable $e) {
+          // ignore
+        }
+        if ($salesRepId === null && $rec['email'] !== '') {
+          try {
+            $findSalesRepIdByEmail->execute([':email' => strtolower($rec['email'])]);
+            $existing = $findSalesRepIdByEmail->fetchColumn();
+            if ($existing !== false && $existing !== null && $existing !== '') {
+              $salesRepId = (string)$existing;
+            }
+          } catch (Throwable $e) {
+            // ignore
+          }
+        }
+        if ($salesRepId === null) {
+          $attempts = 0;
+          do {
+            $attempts++;
+            $candidate = generate_id();
+            $exists = false;
+            try {
+              $salesRepIdExists->execute([':id' => $candidate]);
+              $exists = (bool)$salesRepIdExists->fetchColumn();
+            } catch (Throwable $e) {
+              // If we can't check uniqueness, fall back to the generated value.
+              $exists = false;
+            }
+            if (!$exists) {
+              $salesRepId = $candidate;
+              break;
+            }
+          } while ($attempts < 50);
+
+          if ($salesRepId === null) {
+            throw new RuntimeException('Unable to generate unique sales_reps.id');
+          }
+        }
+      }
+    }
+
+    try {
+      $params = [
+        ':sales_code' => $rec['sales_code'],
+        ':initials'   => $rec['initials'],
+        ':name'       => $rec['name'],
+        ':email'      => $rec['email'],
+        ':phone'      => $rec['phone'],
+        ':territory'  => $rec['territory'],
+      ];
+      if ($hasSalesRepsId) $params[':id'] = $salesRepId;
+
+      $stmt->execute($params);
+      $stored++;
+    } catch (Throwable $e) {
+      // If we collided on a newly-generated ID, retry a few times.
+      if ($hasSalesRepsId && $salesRepId !== null && str_contains($e->getMessage(), 'Duplicate entry')) {
+        $retried = false;
+        for ($retry = 0; $retry < 5; $retry++) {
+          $candidate = generate_id();
+          try {
+            $salesRepIdExists->execute([':id' => $candidate]);
+            if ($salesRepIdExists->fetchColumn()) continue;
+          } catch (Throwable $ignore) {
+            // ignore
+          }
+          $params[':id'] = $candidate;
+          try {
+            $stmt->execute($params);
+            $salesRepId = $candidate;
+            $stored++;
+            $retried = true;
+            break;
+          } catch (Throwable $ignore) {
+            // continue retry loop
+          }
+        }
+        if ($retried) {
+          // continue on to user sync + results
+        } else {
+          $errors[] = ($rowIndex >= 0)
+            ? "Row $rowIndex: DB upsert failed: " . $e->getMessage()
+            : "DB upsert failed: " . $e->getMessage();
+          $results[] = [
+            'salesCode' => $rec['sales_code'],
+            'status' => 'error',
+            'error' => 'DB_UPSERT_FAILED',
+          ];
+          continue;
+        }
+      } else {
+      $errors[] = ($rowIndex >= 0)
+        ? "Row $rowIndex: DB upsert failed: " . $e->getMessage()
+        : "DB upsert failed: " . $e->getMessage();
+      $results[] = [
+        'salesCode' => $rec['sales_code'],
+        'status' => 'error',
+        'error' => 'DB_UPSERT_FAILED',
+      ];
+      continue;
+      }
+    }
 
     // Sync user record cautiously (do not overwrite admins/test doctors/other custom roles).
     try {
@@ -292,6 +506,7 @@ try {
         $role = trim(strtolower((string)($user['role'] ?? '')));
         $protectedRoles = ['admin', 'test_doctor', 'doctor'];
         $allowedOverwrite = ['', 'sales_rep', 'rep', null];
+        $candidateId = $user['id'] ?? bin2hex(random_bytes(16));
 
         // If role is protected or a custom non-rep role, skip user sync entirely.
         if (in_array($role, $protectedRoles, true)) {
@@ -299,32 +514,46 @@ try {
         } elseif (!in_array($role, $allowedOverwrite, true)) {
           // preserve other custom roles; no role change
           $upsertUser->execute([
-            ':id' => $user['id'] ?? bin2hex(random_bytes(16)),
+            ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
             ':role' => $role ?: 'sales_rep',
             ':phone' => $rec['phone'],
             ':status' => 'active',
           ]);
+          $userId = $candidateId;
         } else {
           // New user or existing rep/blank role → set to sales_rep
           $upsertUser->execute([
-            ':id' => $user['id'] ?? bin2hex(random_bytes(16)),
+            ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
             ':role' => 'sales_rep',
             ':phone' => $rec['phone'],
             ':status' => 'active',
           ]);
+          $userId = $candidateId;
         }
       }
     } catch (Throwable $e) {
       // If the users table is absent or insert fails, skip without breaking the webhook.
     }
 
+    if ($hasSalesRepsId && $salesRepId === null) {
+      try {
+        $findSalesRepIdBySalesCode->execute([':sales_code' => $rec['sales_code']]);
+        $id = $findSalesRepIdBySalesCode->fetchColumn();
+        if ($id !== false && $id !== null && $id !== '') $salesRepId = (string)$id;
+      } catch (Throwable $e) {
+        // ignore
+      }
+    }
+
     $results[] = [
       'salesCode' => $rec['sales_code'],
       'status'    => 'upserted',
+      'salesRepId' => $salesRepId,
+      'userId' => $userId,
     ];
   }
 

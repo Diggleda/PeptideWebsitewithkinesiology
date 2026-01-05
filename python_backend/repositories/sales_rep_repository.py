@@ -43,6 +43,7 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized = dict(rep)
     normalized.setdefault("id", rep.get("id") or _generate_id())
     normalized.setdefault("legacyUserId", rep.get("legacyUserId") or rep.get("legacy_user_id") or None)
+    normalized.setdefault("sessionId", normalized.get("sessionId") or None)
     name = normalized.get("name") or " ".join(filter(None, [rep.get("firstName"), rep.get("lastName")])).strip()
     normalized["name"] = name or "Sales Rep"
     normalized["initials"] = _normalize_initials(normalized.get("initials"), normalized["name"])
@@ -151,6 +152,7 @@ def insert(rep: Dict) -> Dict:
                 password,
                 role,
                 status,
+                session_id,
                 referral_credits,
                 total_referrals,
                 visits,
@@ -171,6 +173,7 @@ def insert(rep: Dict) -> Dict:
                 %(password)s,
                 %(role)s,
                 %(status)s,
+                %(session_id)s,
                 %(referral_credits)s,
                 %(total_referrals)s,
                 %(visits)s,
@@ -190,6 +193,7 @@ def insert(rep: Dict) -> Dict:
                 password = VALUES(password),
                 role = VALUES(role),
                 status = VALUES(status),
+                session_id = VALUES(session_id),
                 referral_credits = VALUES(referral_credits),
                 total_referrals = VALUES(total_referrals),
                 visits = VALUES(visits),
@@ -231,6 +235,7 @@ def update(rep: Dict) -> Optional[Dict]:
                 password = %(password)s,
                 role = %(role)s,
                 status = %(status)s,
+                session_id = %(session_id)s,
                 referral_credits = %(referral_credits)s,
                 total_referrals = %(total_referrals)s,
                 visits = %(visits)s,
@@ -278,6 +283,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "status": row.get("status"),
             "password": row.get("password"),
             "role": row.get("role"),
+            "sessionId": row.get("session_id"),
             "referralCredits": row.get("referral_credits"),
             "totalReferrals": row.get("total_referrals"),
             "visits": row.get("visits"),
@@ -316,6 +322,7 @@ def _to_db_params(rep: Dict) -> Dict:
         "password": rep.get("password"),
         "role": rep.get("role"),
         "status": rep.get("status"),
+        "session_id": rep.get("sessionId"),
         "referral_credits": float(rep.get("referralCredits") or 0),
         "total_referrals": int(rep.get("totalReferrals") or 0),
         "visits": int(rep.get("visits") or 0),

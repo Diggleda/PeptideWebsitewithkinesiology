@@ -234,9 +234,16 @@ def verify_authentication_response_for_user(
         "passkeys": updated_passkeys,
     }
 
+    # Rotate session id so passkey login invalidates other devices/sessions.
+    new_session_id = auth_service._new_session_id()  # pylint: disable=protected-access
+    updated_user = user_repository.update({**updated_user, "sessionId": new_session_id}) or {
+        **updated_user,
+        "sessionId": new_session_id,
+    }
+
     token_role = (updated_user.get("role") or "doctor").lower()
     token = auth_service._create_auth_token(
-        {"id": updated_user["id"], "email": updated_user["email"], "role": token_role}
+        {"id": updated_user["id"], "email": updated_user["email"], "role": token_role, "sid": updated_user.get("sessionId")}
     )  # pylint: disable=protected-access
 
     return {

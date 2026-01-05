@@ -322,6 +322,12 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
     if (isAuthError) {
       clearAuthToken();
+      clearSessionId();
+      // Only broadcast a logout if this tab *thought* it was authenticated.
+      // Otherwise (e.g., calling /auth/logout without a token) we'd recurse.
+      if (token) {
+        dispatchForceLogout('auth_revoked');
+      }
       (error as any).code = 'AUTH_REQUIRED';
       if (typeof codeField === 'string') {
         (error as any).authCode = codeField;
@@ -379,6 +385,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     const contentType = response.headers.get('content-type') || '';
     let errorMessage = `Request failed (${response.status})`;
     let errorDetails: Record<string, unknown> | string | null = null;
+    let htmlLikePayload = false;
 
     try {
       if (contentType.includes('application/json')) {
@@ -391,9 +398,22 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
         }
       } else {
         errorDetails = await response.text();
+        if (typeof errorDetails === 'string' && errorDetails.trim().length > 0) {
+          const trimmed = errorDetails.trim();
+          htmlLikePayload = trimmed.startsWith('<') || trimmed.includes('<html');
+          errorMessage = `${errorMessage}: ${trimmed}`;
+        }
       }
     } catch (parseError) {
       errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+    }
+
+    if (htmlLikePayload) {
+      if (response.status === 413) {
+        errorMessage = 'Upload too large. Your server rejected the request (413).';
+      } else {
+        errorMessage = `Request failed (${response.status}). Please try again in a moment.`;
+      }
     }
 
     errorMessage = sanitizeServiceNames(errorMessage);
@@ -406,6 +426,24 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     const error = new Error(errorMessage);
     (error as any).status = response.status;
     (error as any).details = errorDetails;
+    const codeField = typeof errorDetails === 'object' && errorDetails !== null
+      ? (errorDetails as any).code
+      : null;
+    const isAuthError = response.status === 401
+      || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
+    if (isAuthError) {
+      clearAuthToken();
+      clearSessionId();
+      if (token) {
+        dispatchForceLogout('auth_revoked');
+      }
+      (error as any).code = 'AUTH_REQUIRED';
+      if (typeof codeField === 'string') {
+        (error as any).authCode = codeField;
+      }
+    } else if (response.status === 403) {
+      (error as any).code = 'FORBIDDEN';
+    }
     throw error;
   }
 
@@ -474,6 +512,24 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
     const error = new Error(errorMessage);
     (error as any).status = response.status;
     (error as any).details = errorDetails;
+    const codeField = typeof errorDetails === 'object' && errorDetails !== null
+      ? (errorDetails as any).code
+      : null;
+    const isAuthError = response.status === 401
+      || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
+    if (isAuthError) {
+      clearAuthToken();
+      clearSessionId();
+      if (token) {
+        dispatchForceLogout('auth_revoked');
+      }
+      (error as any).code = 'AUTH_REQUIRED';
+      if (typeof codeField === 'string') {
+        (error as any).authCode = codeField;
+      }
+    } else if (response.status === 403) {
+      (error as any).code = 'FORBIDDEN';
+    }
     throw error;
   }
 
@@ -547,8 +603,18 @@ export const authAPI = {
   },
 
   logout: () => {
+    const token = getAuthToken();
     try {
-      void fetchWithAuth(`${API_BASE_URL}/auth/logout`, { method: 'POST' }).catch(() => null);
+      if (token) {
+        void fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        }).catch(() => null);
+      }
     } catch {
       // ignore
     }
@@ -580,11 +646,15 @@ export const authAPI = {
       const maybeAny = error as any;
       const status = typeof maybeAny?.status === 'number' ? maybeAny.status : null;
       const code = typeof maybeAny?.code === 'string' ? maybeAny.code : null;
-      if (code === 'AUTH_REQUIRED' || status === 401) {
-        // Only clear tokens when the backend says auth is invalid.
-        clearAuthToken();
+      const authCode = typeof maybeAny?.authCode === 'string' ? maybeAny.authCode : null;
+      const isAuthFailure = code === 'AUTH_REQUIRED'
+        || status === 401
+        || (status === 403 && typeof authCode === 'string' && authCode.startsWith('TOKEN_'));
+      if (isAuthFailure) {
+        // Token already cleared by fetchWithAuth(); caller can treat null as "logged out".
+        return null;
       }
-      return null;
+      throw error;
     }
   },
 
@@ -1040,19 +1110,27 @@ export const wooAPI = {
     );
   },
 
-  uploadCertificateOfAnalysis: async (productId: string | number, payload: { dataUrl: string; filename?: string }) => {
+  uploadCertificateOfAnalysis: async (
+    productId: string | number,
+    payload: { file: File; filename?: string } | { dataUrl: string; filename?: string },
+  ) => {
     if (!productId) {
       throw new Error('productId is required');
+    }
+    const url = `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`;
+    if ('file' in payload) {
+      const form = new FormData();
+      form.append('file', payload.file, payload.filename || payload.file.name || 'certificate-of-analysis');
+      return fetchWithAuthForm(url, { method: 'POST', body: form });
     }
     if (!payload?.dataUrl) {
       throw new Error('dataUrl is required');
     }
-    return fetchWithAuth(`${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`, {
+    return fetchWithAuth(url, {
       method: 'POST',
       body: JSON.stringify({
         data: payload.dataUrl,
         filename: payload.filename,
-        mimeType: 'image/png',
       }),
     });
   },

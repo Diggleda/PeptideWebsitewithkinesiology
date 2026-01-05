@@ -13,6 +13,7 @@ CREATE_TABLE_STATEMENTS = [
         role VARCHAR(32) NOT NULL DEFAULT 'doctor',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         is_online TINYINT(1) NOT NULL DEFAULT 0,
+        session_id VARCHAR(64) NULL,
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         lead_type VARCHAR(32) NULL,
@@ -45,6 +46,7 @@ CREATE_TABLE_STATEMENTS = [
         initials VARCHAR(10) NULL,
         sales_code VARCHAR(8) NULL UNIQUE,
         status VARCHAR(32) NOT NULL DEFAULT 'active',
+        session_id VARCHAR(64) NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
@@ -213,6 +215,8 @@ def ensure_schema() -> None:
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
@@ -280,4 +284,17 @@ def ensure_schema() -> None:
         )
     except Exception:
         # Best effort; do not fail app startup on migration issues.
+        pass
+
+    # Ensure cross-device session invalidation support is available.
+    try:
+        if not _column_exists("users", "session_id"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN session_id VARCHAR(64) NULL")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("sales_reps", "session_id"):
+            mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN session_id VARCHAR(64) NULL")
+    except Exception:
         pass

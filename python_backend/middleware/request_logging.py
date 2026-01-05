@@ -4,6 +4,7 @@ import logging
 import time
 
 from flask import Flask, g, jsonify, request
+from werkzeug.exceptions import RequestEntityTooLarge
 
 
 def _should_track(path: str) -> bool:
@@ -49,4 +50,26 @@ def init_request_logging(app: Flask) -> None:
         if _should_track(request.path):
             logger.warning("Method not allowed: %s %s", request.method, request.path)
             return jsonify({"error": "METHOD_NOT_ALLOWED"}), 405
+        return error
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def _request_too_large(error):  # type: ignore[return-value]
+        if _should_track(request.path):
+            max_bytes = app.config.get("MAX_CONTENT_LENGTH")
+            logger.warning(
+                "Payload too large: %s %s (max=%s)",
+                request.method,
+                request.path,
+                max_bytes,
+            )
+            return (
+                jsonify(
+                    {
+                        "error": "PAYLOAD_TOO_LARGE",
+                        "message": "Upload is too large.",
+                        "maxBytes": int(max_bytes) if isinstance(max_bytes, int) else None,
+                    }
+                ),
+                413,
+            )
         return error
