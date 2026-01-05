@@ -9097,7 +9097,7 @@ export default function App() {
     if (!user) return;
 
     let cancelled = false;
-    const intervalMs = 25_000;
+    const intervalMs = 5_000;
 
     const checkSession = async () => {
       if (cancelled) return;
