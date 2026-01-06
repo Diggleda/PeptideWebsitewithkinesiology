@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.63";
+  "v1.9.64";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
