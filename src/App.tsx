@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.65";
+  "v1.9.66";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -1910,6 +1910,13 @@ const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
 ): Product => {
+  const hiddenCategoryLabels = new Set(
+    [
+      "Nasal / Oral Sprays (15ml White Bottle w/ Spray Top)",
+      "10ml Amber Glass Vials w/ Silver Top",
+    ].map((label) => label.toLowerCase()),
+  );
+
   const parseStockQuantity = (value: unknown): number | null => {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -1924,11 +1931,18 @@ const mapWooProductToProduct = (
   const imageSources = (product.images ?? [])
     .map((image) => normalizeWooImageUrl(image?.src))
     .filter((src): src is string => Boolean(src));
-  const rawCategoryName = product.categories?.[0]?.name?.trim() ?? "";
-  const categoryName =
-    rawCategoryName && !rawCategoryName.toLowerCase().includes("subscription")
-      ? rawCategoryName
-      : "";
+  const categoryName = (() => {
+    const categories = Array.isArray(product.categories) ? product.categories : [];
+    for (const cat of categories) {
+      const name = (cat?.name ?? "").toString().trim();
+      const lowered = name.toLowerCase();
+      if (!name) continue;
+      if (lowered.includes("subscription")) continue;
+      if (hiddenCategoryLabels.has(lowered)) continue;
+      return name;
+    }
+    return "";
+  })();
   const subscriptionMetaFlag = (product.meta_data ?? []).some((meta) => {
     const key = (meta?.key ?? "").toString().toLowerCase();
     const value =
@@ -8006,7 +8020,11 @@ export default function App() {
                   .map((category) => category?.name?.trim())
                   .filter(
                     (name): name is string =>
-                      Boolean(name) && !name.toLowerCase().includes("subscription"),
+                      Boolean(name) &&
+                      !name.toLowerCase().includes("subscription") &&
+                      name.toLowerCase() !==
+                        "nasal / oral sprays (15ml white bottle w/ spray top)" &&
+                      name.toLowerCase() !== "10ml amber glass vials w/ silver top",
                   )
               : [];
             if (categoryNamesFromApi.length > 0) {
@@ -14431,13 +14449,6 @@ export default function App() {
 	                            <h1 className="text-2xl font-semibold">
 	                              Join the PepPro Network
 	                            </h1>
-	                            <p
-	                              className="text-xs leading-snug"
-	                              style={{ color: "rgb(95, 179, 249)" }}
-	                            >
-	                              Your regional manager will work with you, if intended, to
-	                              collect your resellers permit.
-	                            </p>
 	                          </div>
 	                          <form
                             onSubmit={async (e) => {

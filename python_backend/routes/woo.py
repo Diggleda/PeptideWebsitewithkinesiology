@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from flask import Blueprint, request, abort, Response, stream_with_context, jsonify, g
 import base64
+import hashlib
+import json
 import os
 import re
+import time
+from pathlib import Path
 
 import requests
 from urllib.parse import urlparse, urlunparse, quote
@@ -158,6 +162,54 @@ def _sanitize_media_url(raw: str | None) -> str | None:
     sanitized = parsed._replace(scheme="https", path=encoded_path)
     return urlunparse(sanitized)
 
+def _media_cache_paths(source: str) -> tuple[Path, Path]:
+    config = get_config()
+    cache_root = Path(getattr(config, "data_dir", None) or "server-data") / "woo-media-cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    return cache_root / f"{key}.bin", cache_root / f"{key}.json"
+
+def _read_cached_media(meta_path: Path, data_path: Path) -> tuple[bytes, str | None] | None:
+    try:
+        if not meta_path.exists() or not data_path.exists():
+            return None
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        expires_at = float(meta.get("expiresAt") or 0)
+        if expires_at and expires_at < time.time():
+            return None
+        content_type = str(meta.get("contentType") or "").strip() or None
+        return data_path.read_bytes(), content_type
+    except Exception:
+        return None
+
+def _write_cached_media(
+    meta_path: Path,
+    data_path: Path,
+    *,
+    payload: bytes,
+    content_type: str | None,
+    ttl_seconds: int,
+) -> None:
+    try:
+        tmp_data = data_path.with_suffix(".bin.tmp")
+        tmp_meta = meta_path.with_suffix(".json.tmp")
+        tmp_data.write_bytes(payload)
+        tmp_meta.write_text(
+            json.dumps(
+                {
+                    "contentType": content_type,
+                    "bytes": len(payload),
+                    "fetchedAt": int(time.time()),
+                    "expiresAt": time.time() + float(ttl_seconds),
+                }
+            ),
+            encoding="utf-8",
+        )
+        tmp_data.replace(data_path)
+        tmp_meta.replace(meta_path)
+    except Exception:
+        return
+
 
 @blueprint.route("/media", methods=["GET"])
 def proxy_media():
@@ -165,8 +217,19 @@ def proxy_media():
     if not source:
         abort(400, "Invalid media source")
 
+    data_path, meta_path = _media_cache_paths(source)
+    cached = _read_cached_media(meta_path, data_path)
+    if cached is not None:
+        payload, content_type = cached
+        response = Response(payload, status=200)
+        if content_type:
+            response.headers["Content-Type"] = content_type
+        response.headers["Cache-Control"] = "public, max-age=86400"
+        response.headers["X-PepPro-Media-Cache"] = "HIT"
+        return response
+
     try:
-        upstream = requests.get(source, stream=True, timeout=15)
+        upstream = requests.get(source, timeout=15)
     except requests.RequestException:
         abort(502, "Failed to fetch media")
 
@@ -175,19 +238,25 @@ def proxy_media():
     if upstream.status_code >= 400:
         abort(upstream.status_code)
 
-    def _generate():
-        try:
-            for chunk in upstream.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
-        finally:
-            upstream.close()
-
-    response = Response(stream_with_context(_generate()), status=upstream.status_code)
     content_type = upstream.headers.get("Content-Type")
+    payload = upstream.content or b""
+    upstream.close()
+
+    max_cache_bytes = int(os.environ.get("WOO_MEDIA_CACHE_MAX_BYTES") or str(10 * 1024 * 1024))
+    if payload and len(payload) <= max_cache_bytes:
+        _write_cached_media(
+            meta_path,
+            data_path,
+            payload=payload,
+            content_type=content_type,
+            ttl_seconds=int(os.environ.get("WOO_MEDIA_CACHE_TTL_SECONDS") or 86400),
+        )
+
+    response = Response(payload, status=200)
     if content_type:
         response.headers["Content-Type"] = content_type
-    response.headers["Cache-Control"] = "public, max-age=300"
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    response.headers["X-PepPro-Media-Cache"] = "MISS"
     return response
 
 

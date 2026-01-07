@@ -5735,3 +5735,12 @@ a[href^="mailto:"]:hover {
   border-color: rgba(95, 179, 249, 0.6) !important;
   color: rgb(95, 179, 249) !important;
 }
+
+/* iOS Safari zooms text fields with font-size < 16px on focus. */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

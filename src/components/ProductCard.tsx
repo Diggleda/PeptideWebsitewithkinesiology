@@ -439,7 +439,14 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     });
   }, [needsVariants, onEnsureVariants, product.id, variantsLoading]);
 
-  const categoryLabel = product.category?.trim() || 'PepPro Catalog';
+  const categoryLabel = (() => {
+    const value = product.category?.trim() || '';
+    const lowered = value.toLowerCase();
+    if (!value) return '';
+    if (lowered === 'nasal / oral sprays (15ml white bottle w/ spray top)') return '';
+    if (lowered === '10ml amber glass vials w/ silver top') return '';
+    return value;
+  })();
 
   const openCertificateOfAnalysis = async () => {
     setCoaOpen(true);
@@ -488,13 +495,15 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
 
 		  const productMeta = (
 		    <>
-		      <Badge
-		        variant="outline"
-		        className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug line-clamp-2 min-h-[2.1rem]"
-		        title={categoryLabel}
-		      >
-		        {categoryLabel}
-		      </Badge>
+          {categoryLabel ? (
+		        <Badge
+		          variant="outline"
+		          className="text-xs squircle-sm block max-w-full whitespace-normal break-words leading-snug line-clamp-2 min-h-[2.1rem]"
+		          title={categoryLabel}
+		        >
+		          {categoryLabel}
+		        </Badge>
+          ) : null}
       <h3 className="line-clamp-2 text-slate-900">{product.name}</h3>
       <button
         type="button"
