@@ -13,9 +13,24 @@ from pathlib import Path
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
+from ..middleware.auth import require_auth
+from ..queue import ping as queue_ping
+from ..queue import enqueue as queue_enqueue
+from ..jobs.product_docs import sync_product_documents
 from ..utils.http import handle_action
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
+
+
+def _require_admin_user() -> None:
+    from flask import g
+
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    if role != "admin":
+        err = RuntimeError("Admin access required")
+        setattr(err, "status", 403)
+        raise err
+
 
 def _read_linux_meminfo() -> dict | None:
     try:
@@ -176,6 +191,22 @@ def health():
     return handle_action(action)
 
 
+@blueprint.get("/queue/health")
+def queue_health():
+    return handle_action(queue_ping)
+
+
+@blueprint.post("/queue/enqueue/product-docs-sync")
+@require_auth
+def enqueue_product_docs_sync():
+    def action():
+        _require_admin_user()
+        job = queue_enqueue(sync_product_documents, description="sync_product_documents")
+        return {"ok": True, "jobId": job.id}
+
+    return handle_action(action, status=202)
+
+
 @blueprint.get("/help")
 def help_endpoint():
     def action():
@@ -214,6 +245,7 @@ def help_endpoint():
         }
 
     return handle_action(action)
+
 
 @blueprint.get("/network/test-download")
 def network_test_download():

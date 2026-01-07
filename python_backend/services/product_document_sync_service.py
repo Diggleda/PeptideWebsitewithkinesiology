@@ -25,6 +25,12 @@ def _enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _mode() -> str:
+    # "thread" (default): run inside the web process.
+    # "queue": disable the thread; expect an external scheduler to enqueue `jobs.product_docs.sync_product_documents`.
+    return str(os.environ.get("WOO_PRODUCT_DOC_SYNC_MODE", "thread")).strip().lower() or "thread"
+
+
 def _interval_seconds() -> int:
     raw = str(os.environ.get("WOO_PRODUCT_DOC_SYNC_INTERVAL_SECONDS", "180")).strip()
     try:
@@ -223,6 +229,9 @@ def _worker() -> None:
 
 
 def start_product_document_sync() -> None:
+    if _mode() != "thread":
+        logger.info("[product-docs] sync thread disabled", extra={"mode": _mode()})
+        return
     global _SYNC_THREAD_STARTED
     if _SYNC_THREAD_STARTED:
         return
