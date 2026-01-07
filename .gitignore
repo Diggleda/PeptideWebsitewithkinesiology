@@ -24,3 +24,10 @@ pnpm-debug.log*
 # Next.js / static (harmless if unused)
 .next/
 out/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
