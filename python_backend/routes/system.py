@@ -19,6 +19,7 @@ from ..queue import ping as queue_ping
 from ..queue import get_queue as get_rq_queue
 from ..queue import enqueue as queue_enqueue
 from ..jobs.product_docs import sync_product_documents
+from ..jobs.catalog_snapshot import sync_catalog_snapshot_job
 from ..utils.http import handle_action
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
@@ -519,6 +520,17 @@ def enqueue_product_docs_sync():
     def action():
         _require_admin_user()
         job = queue_enqueue(sync_product_documents, description="sync_product_documents")
+        return {"ok": True, "jobId": job.id}
+
+    return handle_action(action, status=202)
+
+
+@blueprint.post("/queue/enqueue/catalog-snapshot-sync")
+@require_auth
+def enqueue_catalog_snapshot_sync():
+    def action():
+        _require_admin_user()
+        job = queue_enqueue(sync_catalog_snapshot_job, description="sync_catalog_snapshot_job")
         return {"ok": True, "jobId": job.id}
 
     return handle_action(action, status=202)

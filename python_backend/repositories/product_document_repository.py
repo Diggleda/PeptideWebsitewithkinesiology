@@ -190,6 +190,88 @@ def upsert_document(
     }
 
 
+def upsert_payload(
+    *,
+    woo_product_id: int,
+    kind: str,
+    data: bytes,
+    mime_type: str,
+    filename: str | None = None,
+    product_name: str | None = None,
+    product_sku: str | None = None,
+    woo_synced_at: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Store arbitrary payloads (typically JSON) in product_documents.
+    Unlike `upsert_document`, this updates `product_name`/`product_sku` when provided.
+    """
+    if not _using_mysql():
+        err = RuntimeError("MySQL is not enabled")
+        setattr(err, "status", 503)
+        raise err
+    if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
+        err = ValueError("Payload data is required")
+        setattr(err, "status", 400)
+        raise err
+
+    normalized_kind = str(kind or "").strip()
+    if not normalized_kind:
+        err = ValueError("kind is required")
+        setattr(err, "status", 400)
+        raise err
+
+    normalized_mime = str(mime_type or "application/octet-stream").strip() or "application/octet-stream"
+    normalized_filename = str(filename).strip() if isinstance(filename, str) and filename.strip() else None
+    digest = hashlib.sha256(data).hexdigest()
+    now = _utc_now_sql()
+    synced_at = str(woo_synced_at).strip() if isinstance(woo_synced_at, str) and woo_synced_at.strip() else now
+
+    safe_name = str(product_name).strip()[:255] if isinstance(product_name, str) and product_name.strip() else None
+    safe_sku = str(product_sku).strip()[:64] if isinstance(product_sku, str) and product_sku.strip() else None
+
+    mysql_client.execute(
+        """
+        INSERT INTO product_documents (
+            woo_product_id, kind, product_name, product_sku, mime_type, filename, sha256, data, created_at, updated_at, woo_synced_at
+        ) VALUES (
+            %(woo_product_id)s, %(kind)s, %(product_name)s, %(product_sku)s, %(mime_type)s, %(filename)s, %(sha256)s, %(data)s, %(created_at)s, %(updated_at)s, %(woo_synced_at)s
+        )
+        ON DUPLICATE KEY UPDATE
+            product_name = COALESCE(VALUES(product_name), product_documents.product_name),
+            product_sku = COALESCE(VALUES(product_sku), product_documents.product_sku),
+            mime_type = VALUES(mime_type),
+            filename = VALUES(filename),
+            sha256 = VALUES(sha256),
+            data = VALUES(data),
+            updated_at = VALUES(updated_at),
+            woo_synced_at = VALUES(woo_synced_at)
+        """,
+        {
+            "woo_product_id": int(woo_product_id),
+            "kind": normalized_kind,
+            "product_name": safe_name,
+            "product_sku": safe_sku,
+            "mime_type": normalized_mime[:64],
+            "filename": normalized_filename[:255] if normalized_filename else None,
+            "sha256": digest,
+            "data": data,
+            "created_at": now,
+            "updated_at": now,
+            "woo_synced_at": synced_at,
+        },
+    )
+
+    return {
+        "woo_product_id": int(woo_product_id),
+        "kind": normalized_kind,
+        "mime_type": normalized_mime[:64],
+        "filename": normalized_filename,
+        "sha256": digest,
+        "updated_at": now,
+        "woo_synced_at": synced_at,
+    }
+
+
 def delete_document(woo_product_id: int, kind: str = DEFAULT_KIND_COA) -> bool:
     if not _using_mysql():
         err = RuntimeError("MySQL is not enabled")

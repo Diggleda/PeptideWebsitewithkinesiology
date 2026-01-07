@@ -3,6 +3,8 @@ import { API_BASE_URL } from '../services/api';
 const DEFAULT_PHP_PROXY = '/api/woo.php';
 const DEFAULT_PROXY_TOKEN = 'a-long-random-string-to-serve-as-proxy-token';
 const WOO_DISABLED = String((import.meta as any).env?.VITE_WOO_DISABLED || '').toLowerCase() === 'true';
+const CATALOG_SNAPSHOT_DISABLED =
+  String((import.meta as any).env?.VITE_CATALOG_SNAPSHOT_DISABLED || '').toLowerCase() === 'true';
 const WOO_DEBUG =
   String((import.meta as any).env?.VITE_WOO_DEBUG || '').toLowerCase() === 'true';
 const WOO_REQUEST_TIMEOUT_MS = (() => {
@@ -31,6 +33,15 @@ const resolveProxyBase = () => {
 const WOO_PROXY = resolveProxyBase();
 const WOO_TOKEN = ((import.meta.env.VITE_WOO_PROXY_TOKEN as string | undefined) || DEFAULT_PROXY_TOKEN).trim();
 const isPhpProxy = /\.php($|\?)/i.test(WOO_PROXY);
+
+const resolveCatalogBase = () => {
+  if (!API_BASE_URL) {
+    return '';
+  }
+  return `${API_BASE_URL.replace(/\/+$/, '')}/catalog`;
+};
+
+const CATALOG_BASE = resolveCatalogBase();
 
 const getWindowOrigin = () => {
   if (typeof window !== 'undefined' && window.location?.origin) {
@@ -167,15 +178,51 @@ export async function wooGet<T = unknown>(endpoint: string, params: QueryParams 
   }
 }
 
+async function catalogGet<T = unknown>(endpoint: string, params: QueryParams = {}): Promise<T> {
+  if (!CATALOG_BASE || CATALOG_SNAPSHOT_DISABLED) {
+    // Fall back to Woo proxy if snapshot isn't available/configured.
+    return wooGet<T>(endpoint, params);
+  }
+  const sanitized = endpoint.replace(/^\/+/, '');
+  const url = toAbsoluteUrl(`${CATALOG_BASE.replace(/\/+$/, '')}/${sanitized}`);
+  Object.entries(stringifyParams(params)).forEach(([key, value]) => url.searchParams.set(key, value));
+  const startedAt = Date.now();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller
+    ? globalThis.setTimeout(() => controller.abort(), Math.min(WOO_REQUEST_TIMEOUT_MS, 15000))
+    : null;
+  try {
+    if (WOO_DEBUG) {
+      console.info('[Catalog] GET(snapshot)', { endpoint, url: url.toString(), params });
+    }
+    const res = await fetch(url.toString(), { method: 'GET', cache: 'no-store', signal: controller?.signal });
+    if (WOO_DEBUG) {
+      console.info('[Catalog] GET(snapshot) complete', {
+        endpoint,
+        status: res.status,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    if (!res.ok) {
+      throw new Error(`Catalog snapshot request failed (${res.status})`);
+    }
+    return res.json() as Promise<T>;
+  } finally {
+    if (timeoutId) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
+}
+
 // Example domain functions
 export const listProducts = <T = unknown>(opts: QueryParams = {}) =>
-  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>('products', { per_page: 12, status: 'publish', ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>('products', { per_page: 100, ...opts });
 
 export const listCategories = <T = unknown>(opts: QueryParams = {}) =>
-  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>('products/categories', { per_page: 50, ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>('categories', { per_page: 100, ...opts });
 
 export const listProductVariations = <T = unknown>(productId: number, opts: QueryParams = {}) =>
-  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : wooGet<T>(`products/${productId}/variations`, { per_page: 100, status: 'publish', ...opts });
+  WOO_DISABLED ? (Promise.resolve([]) as unknown as Promise<T>) : catalogGet<T>(`products/${productId}/variations`, { ...opts });
 
 export const getProduct = <T = unknown>(productId: number | string, opts: QueryParams = {}) =>
   WOO_DISABLED ? (Promise.resolve(null) as unknown as Promise<T>) : wooGet<T>(`products/${productId}`, { ...opts });

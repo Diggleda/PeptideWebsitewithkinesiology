@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Flask
 from flask_cors import CORS
 
-from . import auth, integrations, orders, payments, referrals, system, woo, shipping, quotes, password_reset, contact, settings
+from . import auth, integrations, orders, payments, referrals, system, woo, shipping, quotes, password_reset, contact, settings, catalog
 
 
 def register_blueprints(app: Flask, config) -> None:
@@ -25,6 +25,7 @@ def register_blueprints(app: Flask, config) -> None:
     app.register_blueprint(payments.blueprint)
     app.register_blueprint(integrations.blueprint)
     app.register_blueprint(woo.blueprint)
+    app.register_blueprint(catalog.blueprint)
     app.register_blueprint(shipping.blueprint)
     app.register_blueprint(quotes.blueprint)
     app.register_blueprint(system.blueprint)
