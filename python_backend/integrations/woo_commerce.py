@@ -186,6 +186,7 @@ def _fetch_catalog_http(
     params: Optional[Mapping[str, Any]] = None,
     *,
     suppress_log: bool = False,
+    acquire_timeout: float = 25,
 ) -> Any:
     base_url, api_version, auth, timeout = _client_config()
     normalized = endpoint.lstrip("/")
@@ -195,7 +196,7 @@ def _fetch_catalog_http(
     max_attempts = _WOO_HTTP_MAX_ATTEMPTS
     for attempt in range(max_attempts):
         try:
-            acquired = _woo_http_semaphore.acquire(timeout=25)
+            acquired = _woo_http_semaphore.acquire(timeout=float(acquire_timeout))
             if not acquired:
                 err = IntegrationError("WooCommerce is busy, please retry")
                 setattr(err, "status", 503)
@@ -277,7 +278,29 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     cooldown_seconds = 0
 
     if force_fresh:
-        data = _fetch_catalog_http(endpoint, params)
+        with _catalog_cache_lock:
+            cooldown_seconds = _proxy_cooldown_seconds(cache_key, now_ms)
+            cached = _catalog_cache.get(cache_key)
+            if cached and cached.get("data") is not None and allow_stale:
+                if cooldown_seconds <= 0:
+                    _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
+                return cached.get("data"), {"cache": "FORCE_STALE", "ttlSeconds": ttl_seconds, "noStore": True}
+            if cooldown_seconds > 0:
+                err = IntegrationError("WooCommerce temporarily unavailable, please retry shortly")
+                setattr(err, "status", 503)
+                raise err
+
+        disk_cached = _read_disk_cache(cache_key)
+        if allow_stale and disk_cached and isinstance(disk_cached, dict) and "data" in disk_cached:
+            data = disk_cached.get("data")
+            # Populate a short in-memory TTL to reduce stampedes while the refresh runs.
+            expires_at = now_ms + min(ttl_seconds, 30) * 1000
+            with _catalog_cache_lock:
+                _set_in_memory_cache(cache_key, data, expires_at)
+            _start_background_refresh(cache_key, endpoint, params, ttl_seconds)
+            return data, {"cache": "FORCE_DISK_STALE", "ttlSeconds": ttl_seconds, "noStore": True}
+
+        data = _fetch_catalog_http(endpoint, params, acquire_timeout=2)
         _clear_proxy_failure(cache_key)
         now_ms = _now_ms()
         expires_at = now_ms + ttl_seconds * 1000
@@ -285,7 +308,7 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
             _set_in_memory_cache(cache_key, data, expires_at)
             _inflight.pop(cache_key, None)
         _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
-        return data, {"cache": "BYPASS", "ttlSeconds": ttl_seconds, "noStore": True}
+        return data, {"cache": "FORCE_MISS", "ttlSeconds": ttl_seconds, "noStore": True}
 
     with _catalog_cache_lock:
         cooldown_seconds = _proxy_cooldown_seconds(cache_key, now_ms)

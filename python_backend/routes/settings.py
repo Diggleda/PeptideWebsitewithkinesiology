@@ -20,6 +20,9 @@ blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
 
 _USER_ACTIVITY_CACHE_LOCK = threading.Lock()
 _USER_ACTIVITY_CACHE: dict[str, dict] = {}
+_USER_ACTIVITY_LONGPOLL_CONCURRENCY = int(os.environ.get("USER_ACTIVITY_LONGPOLL_CONCURRENCY") or 4)
+_USER_ACTIVITY_LONGPOLL_CONCURRENCY = max(1, min(_USER_ACTIVITY_LONGPOLL_CONCURRENCY, 20))
+_USER_ACTIVITY_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_USER_ACTIVITY_LONGPOLL_CONCURRENCY)
 
 def _is_admin() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
@@ -233,24 +236,34 @@ def longpoll_user_activity():
             timeout_ms = 25000
         timeout_ms = max(1000, min(timeout_ms, 30000))
 
-        started = time.monotonic()
-        # First compute immediately (cached to avoid hammering storage on small VPS instances).
-        report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
-        etag = str(report.get("etag") or "").strip() or None
-        if not client_etag or not etag or client_etag != etag:
+        acquired = _USER_ACTIVITY_LONGPOLL_SEMAPHORE.acquire(blocking=False)
+        if not acquired:
+            report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
+            report["longpollSkipped"] = True
             return report
 
-        # Wait until the snapshot changes or we hit timeout.
-        poll_interval_s = float(os.environ.get("USER_ACTIVITY_LONGPOLL_INTERVAL_SECONDS") or 1.0)
-        poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
-        while (time.monotonic() - started) * 1000 < timeout_ms:
-            time.sleep(poll_interval_s)
+        try:
+            started = time.monotonic()
             report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
             etag = str(report.get("etag") or "").strip() or None
             if not etag or etag != client_etag:
                 return report
 
-        return report
+            poll_interval_s = float(os.environ.get("USER_ACTIVITY_LONGPOLL_INTERVAL_SECONDS") or 1.0)
+            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
+            while (time.monotonic() - started) * 1000 < timeout_ms:
+                time.sleep(poll_interval_s)
+                report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
+                etag = str(report.get("etag") or "").strip() or None
+                if not etag or etag != client_etag:
+                    return report
+
+            return report
+        finally:
+            try:
+                _USER_ACTIVITY_LONGPOLL_SEMAPHORE.release()
+            except ValueError:
+                pass
 
     return handle_action(action)
 

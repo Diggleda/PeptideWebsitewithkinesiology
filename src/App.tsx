@@ -14489,13 +14489,13 @@ export default function App() {
                                 res.status === "referral_code_not_found"
                               ) {
                                 setLandingSignupError(
-                                  "We couldn't locate that onboarding code. Please confirm it with your regional manager.",
+                                  "We couldn't locate that referral code. Please confirm it with your regional manager.",
                                 );
                               } else if (
                                 res.status === "referral_code_unavailable"
                               ) {
                                 setLandingSignupError(
-                                  "This onboarding code has already been used. Ask your regional manager for a new code.",
+                                  "This referral code has already been used. Ask your regional manager for a new code.",
                                 );
                               } else if (res.status === "name_email_required") {
                                 setLandingSignupError(
@@ -14517,7 +14517,7 @@ export default function App() {
                                 res.status === "npi_already_registered"
                               ) {
                                 setLandingSignupError(
-                                  "An account already exists for this NPI number. Please sign in or contact support.",
+                                  "An account already exists for this NPI number. Please sign in or contact support@peppro.net.",
                                 );
                               } else if (
                                 res.status === "npi_verification_failed"
