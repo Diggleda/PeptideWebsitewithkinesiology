@@ -9,6 +9,7 @@ from .services.product_document_sync_service import start_product_document_sync
 from .database import init_database
 from .middleware.request_logging import init_request_logging
 from .middleware.rate_limit import init_rate_limit
+from .repositories import sales_prospect_repository
 
 
 def create_app() -> Flask:
@@ -27,6 +28,10 @@ def create_app() -> Flask:
 
     configure_services(config)
     init_database(config)
+    try:
+        sales_prospect_repository.ensure_house_sales_rep_for_contact_forms()
+    except Exception:
+        pass
     start_product_document_sync()
 
     # Ensure JSON storage files exist before serving requests.

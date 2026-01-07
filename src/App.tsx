@@ -1920,19 +1920,6 @@ const titleCaseFromSlug = (slug: string): string => {
     .join(" ");
 };
 
-const normalizeWooCategoryLabel = (name: string): string => {
-  const trimmed = name.trim();
-  if (!trimmed) return "";
-  const lowered = trimmed.toLowerCase();
-  if (lowered.startsWith("10ml amber glass vials")) {
-    return "Vials";
-  }
-  if (lowered.startsWith("nasal / oral sprays")) {
-    return "Sprays";
-  }
-  return trimmed;
-};
-
 const hydrateWooProductCategoryNames = (
   product: WooProduct,
   categoryNameById: Map<number, string>,
@@ -1962,9 +1949,6 @@ const hydrateWooProductCategoryNames = (
       }
       if (!name && typeof cat.slug === "string" && cat.slug.trim()) {
         name = titleCaseFromSlug(cat.slug);
-      }
-      if (name) {
-        name = normalizeWooCategoryLabel(name);
       }
       const itemChanged =
         (name !== existingName) || (id !== null && cat.id !== id);
@@ -2015,7 +1999,7 @@ const mapWooProductToProduct = (
     const normalized: string[] = [];
     for (const cat of categories) {
       const rawName = (cat?.name ?? "").toString().trim();
-      const name = rawName ? normalizeWooCategoryLabel(rawName) : "";
+      const name = rawName;
       const lowered = rawName.toLowerCase();
       if (!name) continue;
       if (lowered.includes("subscription")) continue;
@@ -2383,9 +2367,6 @@ const formatPreviewCurrency = (value?: number | null) => {
 const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
   <div className="glass-card squircle-xl p-5 flex flex-col gap-3 min-h-[16rem]" aria-live="polite">
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-semibold text-slate-500">
-        {product.category || "Uncategorized"}
-      </span>
       {product.price && (
         <span className="text-sm font-bold text-slate-900">{formatPreviewCurrency(product.price)}</span>
       )}
@@ -8156,7 +8137,6 @@ export default function App() {
                       Boolean(name) &&
                       !name.toLowerCase().includes("subscription"),
                   )
-                  .map((name) => normalizeWooCategoryLabel(name))
               : [];
             const categoryNameById = new Map<number, string>();
             if (Array.isArray(wooCategories)) {
@@ -8166,9 +8146,8 @@ export default function App() {
                     ? category.id
                     : Number.parseInt(String((category as any)?.id ?? ""), 10);
                 if (!Number.isFinite(id)) continue;
-                const rawName =
+                const name =
                   typeof category?.name === "string" ? category.name.trim() : "";
-                const name = rawName ? normalizeWooCategoryLabel(rawName) : "";
                 if (!name) continue;
                 categoryNameById.set(Number(id), name);
               }
@@ -8234,12 +8213,11 @@ export default function App() {
                 ),
             ),
           );
-          const nextCategories =
-            categoriesFromProducts.length > 0
-              ? categoriesFromProducts
-              : categoryNamesFromApi.length > 0
-                ? categoryNamesFromApi
-                : [];
+          const nextCategoriesBase =
+            categoryNamesFromApi.length > 0 ? categoryNamesFromApi : categoriesFromProducts;
+          const nextCategories = Array.from(
+            new Set([...nextCategoriesBase, ...categoriesFromProducts]),
+          );
           if (nextCategories.length > 0) {
             setCatalogCategories(nextCategories);
           }
@@ -15103,7 +15081,7 @@ export default function App() {
           )}
         </div>
 
-      <LegalFooter showContactCTA={!user} />
+      {user ? <LegalFooter showContactCTA={false} /> : null}
       </div>
 
       {/* Checkout Modal */}

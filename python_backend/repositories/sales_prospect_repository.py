@@ -8,6 +8,8 @@ from ..services import get_config
 from ..database import mysql_client
 from .. import storage
 
+HOUSE_SALES_REP_ID = "house"
+
 
 def _using_mysql() -> bool:
     return bool(get_config().mysql.get("enabled"))
@@ -28,6 +30,13 @@ def _generate_id() -> str:
     return uuid.uuid4().hex
 
 
+def _is_contact_form_prospect(record: Dict) -> bool:
+    identifier = str(record.get("id") or "")
+    if identifier.startswith("contact_form:"):
+        return True
+    return bool(record.get("contactFormId"))
+
+
 def _ensure_defaults(record: Dict) -> Dict:
     normalized = dict(record)
     normalized.setdefault("id", normalized.get("id") or _generate_id())
@@ -35,6 +44,8 @@ def _ensure_defaults(record: Dict) -> Dict:
     normalized.setdefault("doctorId", normalized.get("doctorId") or None)
     normalized.setdefault("referralId", normalized.get("referralId") or None)
     normalized.setdefault("contactFormId", normalized.get("contactFormId") or None)
+    if _is_contact_form_prospect(normalized) and not normalized.get("salesRepId"):
+        normalized["salesRepId"] = HOUSE_SALES_REP_ID
     normalized.setdefault("status", normalized.get("status") or "pending")
     normalized.setdefault("notes", normalized.get("notes") or None)
     normalized.setdefault("isManual", bool(normalized.get("isManual")) if "isManual" in normalized else False)
@@ -199,12 +210,11 @@ def upsert(record: Dict) -> Dict:
         existing = find_by_id(incoming.get("id"))
 
     sales_rep_id = incoming.get("salesRepId") or (existing.get("salesRepId") if existing else None)
+    if not sales_rep_id and _is_contact_form_prospect(incoming):
+        sales_rep_id = HOUSE_SALES_REP_ID
     incoming["salesRepId"] = sales_rep_id
     if not sales_rep_id:
-        # Allow unassigned contact form prospects to exist before being claimed by a rep/admin.
-        identifier = str(incoming.get("id") or "")
-        if not (identifier.startswith("contact_form:") and incoming.get("contactFormId")):
-            raise RuntimeError("salesRepId is required for sales prospects")
+        raise RuntimeError("salesRepId is required for sales prospects")
 
     if not existing and sales_rep_id and incoming.get("doctorId"):
         existing = find_by_sales_rep_and_doctor(sales_rep_id, incoming.get("doctorId"))
@@ -273,6 +283,42 @@ def upsert(record: Dict) -> Dict:
         records.append(merged)
     _get_store().write(records)
     return merged
+
+
+def ensure_house_sales_rep_for_contact_forms() -> int:
+    """
+    Ensure every contact-form prospect has a sales rep assignment.
+
+    The requested default is the special "house" rep.
+    """
+    if _using_mysql():
+        return mysql_client.execute(
+            """
+            UPDATE sales_prospects
+            SET sales_rep_id = %(house)s,
+                updated_at = UTC_TIMESTAMP()
+            WHERE contact_form_id IS NOT NULL
+              AND (sales_rep_id IS NULL OR sales_rep_id = '')
+            """,
+            {"house": HOUSE_SALES_REP_ID},
+        )
+
+    records = [_ensure_defaults(item) for item in _get_store().read()]
+    updated = 0
+    next_records: List[Dict] = []
+    for record in records:
+        if not _is_contact_form_prospect(record):
+            next_records.append(record)
+            continue
+        if str(record.get("salesRepId") or "").strip():
+            next_records.append(record)
+            continue
+        next_records.append({**record, "salesRepId": HOUSE_SALES_REP_ID, "updatedAt": _now()})
+        updated += 1
+
+    if updated > 0:
+        _get_store().write(next_records)
+    return updated
 
 
 def mark_doctor_as_nurturing_if_purchased(doctor_id: str) -> int:
