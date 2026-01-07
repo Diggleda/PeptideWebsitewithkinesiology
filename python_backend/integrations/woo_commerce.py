@@ -40,8 +40,12 @@ _background_refresh_semaphore = threading.BoundedSemaphore(_BACKGROUND_REFRESH_C
 _WOO_HTTP_CONCURRENCY = int(os.environ.get("WOO_HTTP_CONCURRENCY", "4").strip() or 4)
 _WOO_HTTP_CONCURRENCY = max(1, min(_WOO_HTTP_CONCURRENCY, 16))
 _woo_http_semaphore = threading.BoundedSemaphore(_WOO_HTTP_CONCURRENCY)
+_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = float(os.environ.get("WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS", "6").strip() or 6)
+_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS = max(0.5, min(_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS, 25.0))
 _WOO_HTTP_MAX_ATTEMPTS = int(os.environ.get("WOO_HTTP_MAX_ATTEMPTS", "3").strip() or 3)
 _WOO_HTTP_MAX_ATTEMPTS = max(1, min(_WOO_HTTP_MAX_ATTEMPTS, 6))
+_WOO_PROXY_INFLIGHT_WAIT_SECONDS = float(os.environ.get("WOO_PROXY_INFLIGHT_WAIT_SECONDS", "6").strip() or 6)
+_WOO_PROXY_INFLIGHT_WAIT_SECONDS = max(1.0, min(_WOO_PROXY_INFLIGHT_WAIT_SECONDS, 35.0))
 _orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
 _orders_by_email_cache_lock = threading.Lock()
 _ORDERS_BY_EMAIL_TTL_SECONDS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_TTL_SECONDS", "30").strip() or 30)
@@ -186,17 +190,18 @@ def _fetch_catalog_http(
     params: Optional[Mapping[str, Any]] = None,
     *,
     suppress_log: bool = False,
-    acquire_timeout: float = 25,
+    acquire_timeout: float | None = None,
 ) -> Any:
     base_url, api_version, auth, timeout = _client_config()
     normalized = endpoint.lstrip("/")
     url = f"{base_url}/wp-json/{api_version}/{normalized}"
     cleaned = _sanitize_params(params or {})
 
+    semaphore_timeout = float(_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS if acquire_timeout is None else acquire_timeout)
     max_attempts = _WOO_HTTP_MAX_ATTEMPTS
     for attempt in range(max_attempts):
         try:
-            acquired = _woo_http_semaphore.acquire(timeout=float(acquire_timeout))
+            acquired = _woo_http_semaphore.acquire(timeout=semaphore_timeout)
             if not acquired:
                 err = IntegrationError("WooCommerce is busy, please retry")
                 setattr(err, "status", 503)
@@ -357,7 +362,7 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
 
     # If there's an in-flight fetch, wait for it (outside lock).
     if event is not None and cooldown_seconds <= 0:
-        event.wait(timeout=35)
+        event.wait(timeout=_WOO_PROXY_INFLIGHT_WAIT_SECONDS)
         with _catalog_cache_lock:
             cached = _catalog_cache.get(cache_key)
             if cached and cached.get("expiresAt", 0) > _now_ms():
@@ -453,7 +458,7 @@ def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = Non
             raise
 
     # Follower: wait for leader.
-    event.wait(timeout=35)
+    event.wait(timeout=_WOO_PROXY_INFLIGHT_WAIT_SECONDS)
     with _catalog_cache_lock:
         cached = _catalog_cache.get(cache_key)
         if cached and cached.get("expiresAt", 0) > _now_ms():

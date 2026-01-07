@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -25,6 +26,9 @@ blueprint = Blueprint("woo", __name__, url_prefix="/api/woo")
 # Certificate uploads are sent as base64 (data URL) via JSON; base64 adds ~33% overhead.
 # Keep the binary limit reasonably high for scanned COAs while still preventing abuse.
 _COA_MAX_BYTES = int(os.environ.get("COA_MAX_BYTES", str(20 * 1024 * 1024)))  # 20MB default
+_WOO_MEDIA_FETCH_CONCURRENCY = int(os.environ.get("WOO_MEDIA_FETCH_CONCURRENCY") or 6)
+_WOO_MEDIA_FETCH_CONCURRENCY = max(1, min(_WOO_MEDIA_FETCH_CONCURRENCY, 32))
+_WOO_MEDIA_FETCH_SEMAPHORE = threading.BoundedSemaphore(_WOO_MEDIA_FETCH_CONCURRENCY)
 
 def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int, no_store: bool = False) -> Response:
     response = jsonify(data)
@@ -228,21 +232,43 @@ def proxy_media():
         response.headers["X-PepPro-Media-Cache"] = "HIT"
         return response
 
+    acquired = _WOO_MEDIA_FETCH_SEMAPHORE.acquire(timeout=2)
+    if not acquired:
+        abort(503, "Media proxy is busy, please retry")
+
     try:
-        upstream = requests.get(source, timeout=15)
-    except requests.RequestException:
-        abort(502, "Failed to fetch media")
+        try:
+            upstream = requests.get(source, timeout=(4, 20), stream=True)
+        except requests.RequestException:
+            abort(502, "Failed to fetch media")
 
-    if upstream.status_code == 404:
-        abort(404)
-    if upstream.status_code >= 400:
-        abort(upstream.status_code)
+        if upstream.status_code == 404:
+            abort(404)
+        if upstream.status_code >= 400:
+            abort(upstream.status_code)
 
-    content_type = upstream.headers.get("Content-Type")
-    payload = upstream.content or b""
-    upstream.close()
+        content_type = upstream.headers.get("Content-Type")
+        max_cache_bytes = int(os.environ.get("WOO_MEDIA_CACHE_MAX_BYTES") or str(10 * 1024 * 1024))
+        max_download_bytes = int(os.environ.get("WOO_MEDIA_DOWNLOAD_MAX_BYTES") or str(max_cache_bytes))
+        max_download_bytes = max(256 * 1024, min(max_download_bytes, 50 * 1024 * 1024))
 
-    max_cache_bytes = int(os.environ.get("WOO_MEDIA_CACHE_MAX_BYTES") or str(10 * 1024 * 1024))
+        body = bytearray()
+        try:
+            for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                body.extend(chunk)
+                if len(body) > max_download_bytes:
+                    abort(413, "Media too large")
+        finally:
+            upstream.close()
+        payload = bytes(body) if body else b""
+    finally:
+        try:
+            _WOO_MEDIA_FETCH_SEMAPHORE.release()
+        except ValueError:
+            pass
+
     if payload and len(payload) <= max_cache_bytes:
         _write_cached_media(
             meta_path,

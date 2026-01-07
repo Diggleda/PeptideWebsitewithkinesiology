@@ -253,6 +253,144 @@ def _read_proc_cmdline(pid: int) -> str | None:
         return None
 
 
+def _read_proc_status_kv(pid: int) -> dict[str, str] | None:
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        status_path = Path(f"/proc/{pid}/status")
+        if not status_path.exists():
+            return None
+        parsed: dict[str, str] = {}
+        for line in status_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if ":" not in line:
+                continue
+            key, rest = line.split(":", 1)
+            parsed[key.strip()] = rest.strip()
+        return parsed or None
+    except Exception:
+        return None
+
+
+def _proc_status_memory_mb(status: dict[str, str] | None, key: str) -> float | None:
+    try:
+        if not status:
+            return None
+        raw = str(status.get(key) or "")
+        # Example: "12345 kB"
+        parts = raw.split()
+        if len(parts) < 2:
+            return None
+        value, unit = parts[0], parts[1].lower()
+        if not value.isdigit():
+            return None
+        n = float(value)
+        if unit == "kb":
+            return round(n / 1024.0, 2)
+        if unit == "mb":
+            return round(n, 2)
+        return None
+    except Exception:
+        return None
+
+
+def _read_process_snapshot(pid: int) -> dict[str, Any] | None:
+    status = _read_proc_status_kv(pid)
+    if not status:
+        return None
+    return {
+        "pid": pid,
+        "name": str(status.get("Name") or "").strip() or None,
+        "state": str(status.get("State") or "").strip() or None,
+        "ppid": int(str(status.get("PPid") or "0").split()[0]) if str(status.get("PPid") or "").split() else None,
+        "threads": int(str(status.get("Threads") or "0").split()[0]) if str(status.get("Threads") or "").split() else None,
+        "vmRssMb": _proc_status_memory_mb(status, "VmRSS"),
+        "vmSizeMb": _proc_status_memory_mb(status, "VmSize"),
+    }
+
+
+def _read_child_processes(parent_pid: int, *, limit: int = 25) -> list[dict[str, Any]] | None:
+    """
+    Best-effort: enumerate immediate child processes of parent_pid (Linux only).
+    Kept lightweight for health checks: cap entries and return minimal fields.
+    """
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        proc_dir = Path("/proc")
+        if not proc_dir.exists():
+            return None
+        children: list[dict[str, Any]] = []
+        for entry in proc_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            status = _read_proc_status_kv(pid)
+            if not status:
+                continue
+            raw_ppid = str(status.get("PPid") or "")
+            if not raw_ppid or not raw_ppid.split() or not raw_ppid.split()[0].isdigit():
+                continue
+            if int(raw_ppid.split()[0]) != parent_pid:
+                continue
+            snap = _read_process_snapshot(pid)
+            if snap:
+                children.append(snap)
+            if len(children) >= max(1, min(limit, 100)):
+                break
+        return children or None
+    except Exception:
+        return None
+
+
+def _read_cgroup_memory() -> dict[str, Any] | None:
+    """
+    Expose cgroup memory limits/usage when running under systemd/cgroupv2 (Linux).
+    Helps confirm whether SIGKILL is coming from hitting a memory limit.
+    """
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        candidates = [
+            Path("/sys/fs/cgroup/memory.current"),
+            Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+        ]
+        usage_path = next((p for p in candidates if p.exists()), None)
+        if not usage_path:
+            return None
+        usage_bytes = int(usage_path.read_text(encoding="utf-8", errors="ignore").strip() or "0")
+
+        limit_candidates = [
+            Path("/sys/fs/cgroup/memory.max"),
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+        ]
+        limit_path = next((p for p in limit_candidates if p.exists()), None)
+        limit_raw = limit_path.read_text(encoding="utf-8", errors="ignore").strip() if limit_path else ""
+        limit_bytes: int | None
+        if not limit_raw or limit_raw.lower() == "max":
+            limit_bytes = None
+        else:
+            limit_bytes = int(limit_raw)
+
+        def mb(value: int | None) -> float | None:
+            if value is None:
+                return None
+            return round(float(value) / (1024.0 * 1024.0), 2)
+
+        used_pct = None
+        if limit_bytes and limit_bytes > 0:
+            used_pct = round((float(usage_bytes) / float(limit_bytes)) * 100.0, 2)
+
+        return {
+            "usageMb": mb(usage_bytes),
+            "limitMb": mb(limit_bytes),
+            "usedPercent": used_pct,
+        }
+    except Exception:
+        return None
+
+
 def _queue_stats() -> dict[str, Any] | None:
     try:
         q = get_rq_queue()
@@ -273,6 +411,8 @@ def health():
             pid = os.getpid()
             ppid = os.getppid()
             master_cmdline = _read_proc_cmdline(ppid) if ppid else None
+            master = _read_process_snapshot(ppid) if ppid else None
+            children = _read_child_processes(ppid) if ppid else None
             workers = {
                 "configured": _configured_worker_target(),
                 "detected": _detect_worker_count(),
@@ -289,13 +429,17 @@ def health():
             mysql_enabled = None
             workers = None
             queue = None
+            master = None
+            children = None
         return {
             "status": status,
             "message": "Server is running",
             "build": build,
             "mysql": {"enabled": mysql_enabled},
             "usage": usage,
+            "cgroup": {"memory": _read_cgroup_memory()},
             "workers": workers,
+            "processes": {"master": master, "children": children},
             "queue": queue,
             "timestamp": _now(),
         }
