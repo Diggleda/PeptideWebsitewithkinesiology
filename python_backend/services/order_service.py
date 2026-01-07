@@ -479,6 +479,10 @@ def create_order(
     )
 
     order_repository.insert(order)
+    try:
+        sales_prospect_repository.mark_doctor_as_nurturing_if_purchased(user_id)
+    except Exception:
+        pass
 
     integrations = {}
 

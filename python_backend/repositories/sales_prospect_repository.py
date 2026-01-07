@@ -275,6 +275,53 @@ def upsert(record: Dict) -> Dict:
     return merged
 
 
+def mark_doctor_as_nurturing_if_purchased(doctor_id: str) -> int:
+    """
+    Promote sales prospects for a doctor to `nurturing` once they've placed an order.
+
+    We only auto-promote early-stage statuses to avoid overwriting manual workflow states.
+    """
+    doctor_id = str(doctor_id or "").strip()
+    if not doctor_id:
+        return 0
+
+    eligible_statuses = ("pending", "contact_form", "contacted", "account_created")
+
+    if _using_mysql():
+        placeholders = ", ".join([f"%(s{idx})s" for idx in range(len(eligible_statuses))])
+        params: Dict[str, str] = {"doctor_id": doctor_id}
+        for idx, status in enumerate(eligible_statuses):
+            params[f"s{idx}"] = status
+        return mysql_client.execute(
+            f"""
+            UPDATE sales_prospects
+            SET status = 'nurturing',
+                updated_at = UTC_TIMESTAMP()
+            WHERE doctor_id = %(doctor_id)s
+              AND LOWER(status) IN ({placeholders})
+            """,
+            params,
+        )
+
+    records = [_ensure_defaults(item) for item in _get_store().read()]
+    updated = 0
+    next_records: List[Dict] = []
+    for record in records:
+        if str(record.get("doctorId") or "").strip() != doctor_id:
+            next_records.append(record)
+            continue
+        status = str(record.get("status") or "").strip().lower()
+        if status and status not in eligible_statuses:
+            next_records.append(record)
+            continue
+        next_records.append({**record, "status": "nurturing", "updatedAt": _now()})
+        updated += 1
+
+    if updated > 0:
+        _get_store().write(next_records)
+    return updated
+
+
 def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:
     if not row:
         return None

@@ -1906,6 +1906,76 @@ const parseStrengthFromSku = (sku?: string | null): string | null => {
   return `${dedup[0]} / ${dedup[1]}`;
 };
 
+const titleCaseFromSlug = (slug: string): string => {
+  const trimmed = slug.trim();
+  if (!trimmed) return "";
+  return trimmed
+    .split("-")
+    .map((part) => {
+      const token = part.trim();
+      if (!token) return "";
+      return token[0].toUpperCase() + token.slice(1);
+    })
+    .filter(Boolean)
+    .join(" ");
+};
+
+const hydrateWooProductCategoryNames = (
+  product: WooProduct,
+  categoryNameById: Map<number, string>,
+): WooProduct => {
+  const raw = (product as any)?.categories;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return product;
+  }
+
+  const normalizeId = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const parsed = Number.parseInt(String(value ?? "").replace(/[^\d]/g, ""), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  let anyChanged = false;
+  const hydrated = raw.map((cat: any) => {
+    if (cat && typeof cat === "object") {
+      const id = normalizeId(cat.id);
+      const existingName = typeof cat.name === "string" ? cat.name.trim() : "";
+      let name = existingName;
+      if (!name && id !== null) {
+        const fallback = categoryNameById.get(id);
+        if (typeof fallback === "string" && fallback.trim()) {
+          name = fallback.trim();
+        }
+      }
+      if (!name && typeof cat.slug === "string" && cat.slug.trim()) {
+        name = titleCaseFromSlug(cat.slug);
+      }
+      const itemChanged =
+        (name !== existingName) || (id !== null && cat.id !== id);
+      if (!itemChanged) {
+        return cat;
+      }
+      anyChanged = true;
+      return {
+        ...cat,
+        id: id ?? cat.id,
+        name: name || cat.name,
+      };
+    }
+
+    const id = normalizeId(cat);
+    if (id === null) return cat;
+    const name = categoryNameById.get(id) || "";
+    anyChanged = true;
+    return { id, name };
+  });
+
+  if (!anyChanged) {
+    return product;
+  }
+  return { ...(product as any), categories: hydrated };
+};
+
 const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
@@ -2447,6 +2517,7 @@ export default function App() {
   const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
   const variationCacheLoadedRef = useRef(false);
   const wooProductCacheRef = useRef<Map<number, WooProduct>>(new Map());
+  const wooCategoryNameByIdRef = useRef<Map<number, string>>(new Map());
   const ensureVariationCacheReady = useCallback(() => {
     if (variationCacheLoadedRef.current) {
       return;
@@ -2571,6 +2642,16 @@ export default function App() {
         cached = undefined;
       }
       let rawWooProduct = wooProductCacheRef.current.get(wooId);
+      if (rawWooProduct) {
+        const hydrated = hydrateWooProductCategoryNames(
+          rawWooProduct,
+          wooCategoryNameByIdRef.current,
+        );
+        if (hydrated !== rawWooProduct) {
+          rawWooProduct = hydrated;
+          wooProductCacheRef.current.set(wooId, hydrated);
+        }
+      }
 
       const retryState = variationRetryRef.current.get(wooId);
       if (retryState && Date.now() < retryState.nextAt && !shouldForce) {
@@ -2644,8 +2725,12 @@ export default function App() {
           try {
             const fetched = await getProduct<WooProduct>(wooId, shouldForce ? { force: true } : {});
             if (fetched && typeof fetched === "object" && "id" in fetched) {
-              rawWooProduct = fetched;
-              wooProductCacheRef.current.set(wooId, fetched);
+              const hydrated = hydrateWooProductCategoryNames(
+                fetched,
+                wooCategoryNameByIdRef.current,
+              );
+              rawWooProduct = hydrated;
+              wooProductCacheRef.current.set(wooId, hydrated);
             }
           } catch (error) {
             console.debug("[Catalog] Failed to fetch Woo product payload", {
@@ -5739,8 +5824,12 @@ export default function App() {
       if (!raw || typeof raw !== "object" || !("id" in raw)) {
         return;
       }
-      wooProductCacheRef.current.set(wooId, raw);
-      const mapped = mapWooProductToProduct(raw, []);
+      const hydrated = hydrateWooProductCategoryNames(
+        raw,
+        wooCategoryNameByIdRef.current,
+      );
+      wooProductCacheRef.current.set(wooId, hydrated);
+      const mapped = mapWooProductToProduct(hydrated, []);
       mapped.image_loaded =
         mapped.image !== WOO_PLACEHOLDER_IMAGE &&
         Boolean(imagePrefetchStateRef.current.get(mapped.image)?.loaded);
@@ -8062,6 +8151,21 @@ export default function App() {
                       name.toLowerCase() !== "10ml amber glass vials w/ silver top",
                   )
               : [];
+            const categoryNameById = new Map<number, string>();
+            if (Array.isArray(wooCategories)) {
+              for (const category of wooCategories) {
+                const id =
+                  typeof category?.id === "number"
+                    ? category.id
+                    : Number.parseInt(String((category as any)?.id ?? ""), 10);
+                if (!Number.isFinite(id)) continue;
+                const name =
+                  typeof category?.name === "string" ? category.name.trim() : "";
+                if (!name) continue;
+                categoryNameById.set(Number(id), name);
+              }
+            }
+            wooCategoryNameByIdRef.current = categoryNameById;
             if (categoryNamesFromApi.length > 0) {
               setCatalogCategories(categoryNamesFromApi);
               if (CATALOG_DEBUG) {
@@ -8080,22 +8184,26 @@ export default function App() {
 	        wooProductCacheRef.current = new Map<number, WooProduct>(
 	          (wooProducts ?? [])
 	            .filter((item): item is WooProduct =>
-              Boolean(item && typeof item === "object" && "id" in item),
-            )
-            .map((item) => {
-              const id =
-                typeof item.id === "number"
-                  ? item.id
-                  : Number.parseInt(String(item.id).replace(/[^\d]/g, ""), 10);
-              if (!Number.isFinite(id)) {
-                return null;
-              }
-              return [id, item] as const;
-            })
-            .filter((entry): entry is readonly [number, WooProduct] =>
-              Boolean(entry),
-            ),
-        );
+	              Boolean(item && typeof item === "object" && "id" in item),
+	            )
+	            .map((item) => {
+	              const hydrated = hydrateWooProductCategoryNames(
+	                item,
+	                wooCategoryNameByIdRef.current,
+	              );
+	              const id =
+	                typeof hydrated.id === "number"
+	                  ? hydrated.id
+	                  : Number.parseInt(String(hydrated.id).replace(/[^\d]/g, ""), 10);
+	              if (!Number.isFinite(id)) {
+	                return null;
+	              }
+	              return [id, hydrated] as const;
+	            })
+	            .filter((entry): entry is readonly [number, WooProduct] =>
+	              Boolean(entry),
+	            ),
+	        );
 
         const applyCatalogState = (products: Product[]) => {
           if (!products || products.length === 0) {
@@ -8143,17 +8251,21 @@ export default function App() {
             message?: string;
           }> = [];
 
-	        const baseProducts = (wooProducts ?? [])
-	          .filter((item): item is WooProduct =>
-	            Boolean(item && typeof item === "object" && "id" in item),
-	          )
-	          .map((item) => {
-	            try {
-	              return mapWooProductToProduct(
-	                item,
-	                [],
-	              );
-	            } catch (error) {
+		        const baseProducts = (wooProducts ?? [])
+		          .filter((item): item is WooProduct =>
+		            Boolean(item && typeof item === "object" && "id" in item),
+		          )
+		          .map((item) => {
+		            try {
+		              const hydrated = hydrateWooProductCategoryNames(
+		                item,
+		                wooCategoryNameByIdRef.current,
+		              );
+		              return mapWooProductToProduct(
+		                hydrated,
+		                [],
+		              );
+		            } catch (error) {
                 mapFailures += 1;
                 if (sampleMapFailures.length < 5) {
                   sampleMapFailures.push({

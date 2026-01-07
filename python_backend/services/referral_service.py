@@ -410,6 +410,25 @@ def _enrich_referral(referral: Dict) -> Dict:
         except Exception:
             pass
 
+    # Promote prospect status to nurturing once the referred contact has placed an order.
+    # This is derived from the `orders` table (PepPro checkout), not Woo.
+    if contact_account and contact_account.get("id") and contact_order_count > 0:
+        current = (enriched.get("status") or "").lower()
+        if current in ("pending", "contact_form", "contacted", "account_created"):
+            enriched["status"] = "nurturing"
+            if prospect and sales_rep_id:
+                try:
+                    sales_prospect_repository.upsert(
+                        {
+                            "id": str(prospect.get("id")),
+                            "salesRepId": str(sales_rep_id),
+                            "doctorId": str(contact_account.get("id")),
+                            "status": "nurturing",
+                        }
+                    )
+                except Exception:
+                    pass
+
     return enriched
 
 
