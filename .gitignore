@@ -11,6 +11,10 @@ build/
 .cache/
 coverage/
 *.tsbuildinfo
+*.zip
+public/content/
+public/physicians-choice.html
+public/care-compliance.html
 
 # Logs & env
 *.log

@@ -106,6 +106,7 @@ function replaceRegionalAdministrator(html) {
 async function convertDocument({ docx, html }) {
   const inputPath = path.join(projectRoot, docx);
   const outputPath = path.join(projectRoot, html);
+  const publicContentRoot = path.join(projectRoot, 'public', 'content');
 
   const rawHtml = await convertWithTextutil(inputPath);
   const styleBlocks = [...rawHtml.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((match) => match[0]);
@@ -124,6 +125,27 @@ async function convertDocument({ docx, html }) {
   const finalHtml = `${styles ? `${styles}\n` : ''}${replaceRegionalAdministrator(linkifyEmails(content))}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
+
+  // Also mirror into `public/content/...` so dev + static builds can fetch these
+  // documents at `/content/...` without requiring a special backend route.
+  const marker = path.join('src', 'content') + path.sep;
+  const normalizedHtml = html.split('/').join(path.sep);
+  const idx = normalizedHtml.indexOf(marker);
+  if (idx >= 0) {
+    const relative = normalizedHtml.slice(idx + marker.length);
+    const publicPath = path.join(publicContentRoot, relative);
+    await fs.mkdir(path.dirname(publicPath), { recursive: true });
+    await fs.writeFile(publicPath, finalHtml, 'utf8');
+  }
+
+  // Back-compat aliases (some deployments/link targets expect these at the web root).
+  if (html.endsWith('src/content/landing/physicians-choice.html')) {
+    await fs.writeFile(path.join(projectRoot, 'public', 'physicians-choice.html'), finalHtml, 'utf8');
+  }
+  if (html.endsWith('src/content/landing/care-compliance.html')) {
+    await fs.writeFile(path.join(projectRoot, 'public', 'care-compliance.html'), finalHtml, 'utf8');
+  }
+
   console.log(`Converted ${docx} -> ${html}`);
 }
 

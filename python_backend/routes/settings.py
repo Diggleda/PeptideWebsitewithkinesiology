@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+import os
 import time
+import threading
 
 from flask import Blueprint, request, g
 
@@ -15,6 +17,9 @@ from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
+
+_USER_ACTIVITY_CACHE_LOCK = threading.Lock()
+_USER_ACTIVITY_CACHE: dict[str, dict] = {}
 
 def _is_admin() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
@@ -229,16 +234,18 @@ def longpoll_user_activity():
         timeout_ms = max(1000, min(timeout_ms, 30000))
 
         started = time.monotonic()
-        # First compute immediately.
-        report = _compute_user_activity(window_key, raw_window=raw_window, include_logs=False)
+        # First compute immediately (cached to avoid hammering storage on small VPS instances).
+        report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
         etag = str(report.get("etag") or "").strip() or None
         if not client_etag or not etag or client_etag != etag:
             return report
 
         # Wait until the snapshot changes or we hit timeout.
+        poll_interval_s = float(os.environ.get("USER_ACTIVITY_LONGPOLL_INTERVAL_SECONDS") or 1.0)
+        poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
         while (time.monotonic() - started) * 1000 < timeout_ms:
-            time.sleep(0.15)
-            report = _compute_user_activity(window_key, raw_window=raw_window, include_logs=False)
+            time.sleep(poll_interval_s)
+            report = _compute_user_activity_cached(window_key, raw_window=raw_window, include_logs=False)
             etag = str(report.get("etag") or "").strip() or None
             if not etag or etag != client_etag:
                 return report
@@ -246,6 +253,35 @@ def longpoll_user_activity():
         return report
 
     return handle_action(action)
+
+def _compute_user_activity_cached(
+    window_key: str,
+    *,
+    raw_window: str | None = None,
+    include_logs: bool = True,
+) -> dict:
+    """
+    User activity reports are polled frequently. Recomputing the report every ~150ms
+    per request can overload small VPS instances and lead to upstream 502/504s.
+    Cache for a short TTL so concurrent longpolls share work.
+    """
+    now = time.monotonic()
+    ttl_s = float(os.environ.get("USER_ACTIVITY_CACHE_TTL_SECONDS") or 1.0)
+    ttl_s = max(0.25, min(ttl_s, 5.0))
+
+    cache_key = window_key
+    with _USER_ACTIVITY_CACHE_LOCK:
+        cached = _USER_ACTIVITY_CACHE.get(cache_key) or {}
+        cached_at = float(cached.get("at") or 0.0)
+        if cached and cached_at > 0 and (now - cached_at) < ttl_s:
+            payload = cached.get("payload")
+            if isinstance(payload, dict):
+                return payload
+
+    payload = _compute_user_activity(window_key, raw_window=raw_window, include_logs=include_logs)
+    with _USER_ACTIVITY_CACHE_LOCK:
+        _USER_ACTIVITY_CACHE[cache_key] = {"at": now, "payload": payload}
+    return payload
 
 
 def _compute_user_activity(window_key: str, *, raw_window: str | None = None, include_logs: bool = True) -> dict:
