@@ -1920,6 +1920,19 @@ const titleCaseFromSlug = (slug: string): string => {
     .join(" ");
 };
 
+const normalizeWooCategoryLabel = (name: string): string => {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith("10ml amber glass vials")) {
+    return "Vials";
+  }
+  if (lowered.startsWith("nasal / oral sprays")) {
+    return "Sprays";
+  }
+  return trimmed;
+};
+
 const hydrateWooProductCategoryNames = (
   product: WooProduct,
   categoryNameById: Map<number, string>,
@@ -1949,6 +1962,9 @@ const hydrateWooProductCategoryNames = (
       }
       if (!name && typeof cat.slug === "string" && cat.slug.trim()) {
         name = titleCaseFromSlug(cat.slug);
+      }
+      if (name) {
+        name = normalizeWooCategoryLabel(name);
       }
       const itemChanged =
         (name !== existingName) || (id !== null && cat.id !== id);
@@ -1980,13 +1996,6 @@ const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
 ): Product => {
-  const hiddenCategoryLabels = new Set(
-    [
-      "Nasal / Oral Sprays (15ml White Bottle w/ Spray Top)",
-      "10ml Amber Glass Vials w/ Silver Top",
-    ].map((label) => label.toLowerCase()),
-  );
-
   const parseStockQuantity = (value: unknown): number | null => {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -2005,11 +2014,11 @@ const mapWooProductToProduct = (
     const categories = Array.isArray(product.categories) ? product.categories : [];
     const normalized: string[] = [];
     for (const cat of categories) {
-      const name = (cat?.name ?? "").toString().trim();
-      const lowered = name.toLowerCase();
+      const rawName = (cat?.name ?? "").toString().trim();
+      const name = rawName ? normalizeWooCategoryLabel(rawName) : "";
+      const lowered = rawName.toLowerCase();
       if (!name) continue;
       if (lowered.includes("subscription")) continue;
-      if (hiddenCategoryLabels.has(lowered)) continue;
       normalized.push(name);
     }
     if (normalized.length === 0) {
@@ -8145,11 +8154,9 @@ export default function App() {
                   .filter(
                     (name): name is string =>
                       Boolean(name) &&
-                      !name.toLowerCase().includes("subscription") &&
-                      name.toLowerCase() !==
-                        "nasal / oral sprays (15ml white bottle w/ spray top)" &&
-                      name.toLowerCase() !== "10ml amber glass vials w/ silver top",
+                      !name.toLowerCase().includes("subscription"),
                   )
+                  .map((name) => normalizeWooCategoryLabel(name))
               : [];
             const categoryNameById = new Map<number, string>();
             if (Array.isArray(wooCategories)) {
@@ -8159,8 +8166,9 @@ export default function App() {
                     ? category.id
                     : Number.parseInt(String((category as any)?.id ?? ""), 10);
                 if (!Number.isFinite(id)) continue;
-                const name =
+                const rawName =
                   typeof category?.name === "string" ? category.name.trim() : "";
+                const name = rawName ? normalizeWooCategoryLabel(rawName) : "";
                 if (!name) continue;
                 categoryNameById.set(Number(id), name);
               }

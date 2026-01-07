@@ -47,11 +47,13 @@ type AuthTabEvent = {
   type: 'LOGIN';
   tabId: string;
   sessionId: string;
+  userId?: string | null;
   at: number;
 };
 
 const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
 const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
+const AUTH_USER_ID_KEY = 'peppro_user_id_v1';
 const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
 const AUTH_EVENT_NAME = 'peppro:force-logout';
 
@@ -103,6 +105,28 @@ const clearSessionId = () => {
   }
 };
 
+const getAuthUserId = () => {
+  try {
+    const value = sessionStorage.getItem(AUTH_USER_ID_KEY);
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const setAuthUserId = (userId: string | null | undefined) => {
+  try {
+    const normalized = typeof userId === 'string' ? userId.trim() : '';
+    if (!normalized) {
+      sessionStorage.removeItem(AUTH_USER_ID_KEY);
+      return;
+    }
+    sessionStorage.setItem(AUTH_USER_ID_KEY, normalized);
+  } catch {
+    // ignore
+  }
+};
+
 const emitAuthEvent = (payload: AuthTabEvent) => {
   if (typeof window === 'undefined') return;
   try {
@@ -148,6 +172,13 @@ const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
   if (!payload || payload.type !== 'LOGIN') return;
   const tabId = getOrCreateTabId();
   if (payload.tabId === tabId) return;
+
+  const localUserId = getAuthUserId();
+  const payloadUserId = typeof payload.userId === 'string' ? payload.userId : null;
+  // Scope cross-tab enforcement to the same account only.
+  if (!localUserId || !payloadUserId || localUserId !== payloadUserId) {
+    return;
+  }
 
   const localSessionId = getSessionId();
   if (!localSessionId || localSessionId === payload.sessionId) return;
@@ -228,12 +259,16 @@ const persistAuthToken = (token: string) => {
     // Ignore sessionStorage errors (Safari private mode, etc.)
   }
 
+  // Prefer scoping to account id so other accounts can remain signed in in other tabs.
+  // Callers should set `peppro_user_id_v1` (via `setAuthUserId`) before persisting the token.
+
   const sessionId = _randomId();
   setSessionId(sessionId);
   emitAuthEvent({
     type: 'LOGIN',
     tabId: getOrCreateTabId(),
     sessionId,
+    userId: getAuthUserId(),
     at: Date.now(),
   });
 };
@@ -248,6 +283,11 @@ const clearAuthToken = () => {
     sessionStorage.removeItem('auth_token');
   } catch {
     // ignore storage errors
+  }
+  try {
+    sessionStorage.removeItem(AUTH_USER_ID_KEY);
+  } catch {
+    // ignore
   }
 };
 
@@ -718,6 +758,7 @@ export const authAPI = {
       body: JSON.stringify({ email, password }),
     });
 
+    setAuthUserId(data?.user?.id);
     persistAuthToken(data.token);
     return data.user;
   },
@@ -769,7 +810,9 @@ export const authAPI = {
 
   getCurrentUser: async () => {
     try {
-      return await fetchWithAuth(`${API_BASE_URL}/auth/me`);
+      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`);
+      setAuthUserId((user as any)?.id);
+      return user;
     } catch (error) {
       const maybeAny = error as any;
       const status = typeof maybeAny?.status === 'number' ? maybeAny.status : null;
@@ -780,6 +823,7 @@ export const authAPI = {
         || (status === 403 && typeof authCode === 'string' && authCode.startsWith('TOKEN_'));
       if (isAuthFailure) {
         // Token already cleared by fetchWithAuth(); caller can treat null as "logged out".
+        setAuthUserId(null);
         return null;
       }
       throw error;
@@ -845,6 +889,7 @@ export const authAPI = {
         throw new Error(message || 'PASSKEY_AUTH_FAILED');
       }
       const data = await response.json();
+      setAuthUserId(data?.user?.id);
       persistAuthToken(data.token);
       return data.user;
     },
