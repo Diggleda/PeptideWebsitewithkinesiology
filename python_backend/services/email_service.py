@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import smtplib
 from datetime import datetime
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 import logging
@@ -38,21 +40,42 @@ def _email_settings() -> Dict[str, Any]:
         except (TypeError, ValueError):
             return fallback
 
-    api_key = (
-        os.environ.get("SENDGRID_API_KEY")
-        or os.environ.get("SENDGRID_API_TOKEN")
-        or os.environ.get("SMTP_PASS")
-        or os.environ.get("EMAIL_PASS")
-    )
+    sendgrid_key = os.environ.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_TOKEN")
+    smtp_host = os.environ.get("SMTP_HOST") or os.environ.get("EMAIL_HOST")
+    smtp_user = os.environ.get("SMTP_USER") or os.environ.get("EMAIL_USER")
+    smtp_pass = os.environ.get("SMTP_PASS") or os.environ.get("EMAIL_PASS")
+    smtp_port = _to_int(os.environ.get("SMTP_PORT") or os.environ.get("EMAIL_PORT"), 587)
+    smtp_ssl = str(os.environ.get("SMTP_SSL") or "").strip().lower() in ("1", "true", "yes", "on")
+    smtp_starttls = str(os.environ.get("SMTP_STARTTLS") or "").strip().lower()
+    smtp_starttls_enabled = smtp_starttls not in ("0", "false", "no", "off")
+
     settings = {
         "from": os.environ.get("MAIL_FROM") or "PepPro <support@peppro.net>",
         "timeout": _to_int(os.environ.get("SENDGRID_TIMEOUT") or os.environ.get("SMTP_TIMEOUT"), 15),
-        "api_key": api_key,
-        "endpoint": os.environ.get("SENDGRID_API_URL") or SENDGRID_ENDPOINT,
+        "sendgrid_api_key": sendgrid_key,
+        "sendgrid_endpoint": os.environ.get("SENDGRID_API_URL") or SENDGRID_ENDPOINT,
+        "smtp": {
+            "host": smtp_host,
+            "user": smtp_user,
+            "pass": smtp_pass,
+            "port": smtp_port,
+            "ssl": smtp_ssl,
+            "starttls": smtp_starttls_enabled,
+        },
     }
     logger.info(
         "Loaded email settings",
-        extra={"from": settings["from"], "hasSendGridKey": bool(settings["api_key"]), "endpoint": settings["endpoint"]},
+        extra={
+            "from": settings["from"],
+            "hasSendGridKey": bool(settings["sendgrid_api_key"]),
+            "sendgridEndpoint": settings["sendgrid_endpoint"],
+            "hasSmtpHost": bool(smtp_host),
+            "hasSmtpUser": bool(smtp_user),
+            "hasSmtpPass": bool(smtp_pass),
+            "smtpPort": smtp_port,
+            "smtpSsl": smtp_ssl,
+            "smtpStarttls": smtp_starttls_enabled,
+        },
     )
     return settings
 
@@ -76,9 +99,9 @@ def _send_via_sendgrid(
     settings: Dict[str, Any],
     plain_text: Optional[str] = None,
 ) -> None:
-    api_key = settings.get("api_key")
+    api_key = settings.get("sendgrid_api_key")
     if not api_key:
-        logger.warning("SendGrid API key missing, falling back to dev logging")
+        logger.warning("SendGrid API key missing")
         raise RuntimeError("SendGrid API key is not configured")
 
     content_blocks = []
@@ -105,7 +128,7 @@ def _send_via_sendgrid(
     }
 
     timeout = settings.get("timeout") or 15
-    response = http_client.post(settings["endpoint"], json=payload, headers=headers, timeout=timeout)
+    response = http_client.post(settings["sendgrid_endpoint"], json=payload, headers=headers, timeout=timeout)
     if response.status_code >= 400:
         logger.error(
             "SendGrid API call failed",
@@ -113,6 +136,62 @@ def _send_via_sendgrid(
         )
         response.raise_for_status()
     logger.info("Password reset email dispatched via SendGrid", extra={"recipient": recipient})
+
+def _send_via_smtp(
+    recipient: str,
+    subject: str,
+    html: str,
+    settings: Dict[str, Any],
+    plain_text: Optional[str] = None,
+) -> None:
+    smtp = settings.get("smtp") or {}
+    host = (smtp.get("host") or "").strip()
+    user = (smtp.get("user") or "").strip()
+    password = (smtp.get("pass") or "").strip()
+    port = int(smtp.get("port") or 587)
+    use_ssl = bool(smtp.get("ssl"))
+    use_starttls = bool(smtp.get("starttls"))
+    timeout = int(settings.get("timeout") or 15)
+
+    if not host:
+        raise RuntimeError("SMTP host is not configured")
+    if not password:
+        raise RuntimeError("SMTP password is not configured")
+
+    from_addr = _format_from_address(settings["from"])
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["To"] = recipient
+    msg["From"] = (
+        f"{from_addr.get('name')} <{from_addr.get('email')}>" if from_addr.get("name") else from_addr.get("email")
+    )
+
+    msg.set_content(plain_text or html.replace("<p>", "").replace("</p>", "\n"))
+    msg.add_alternative(html, subtype="html")
+
+    server: smtplib.SMTP | smtplib.SMTP_SSL
+    if use_ssl:
+        server = smtplib.SMTP_SSL(host=host, port=port, timeout=timeout)
+    else:
+        server = smtplib.SMTP(host=host, port=port, timeout=timeout)
+
+    try:
+        server.ehlo()
+        if not use_ssl and use_starttls:
+            server.starttls()
+            server.ehlo()
+        if user:
+            server.login(user, password)
+        else:
+            # Some relays authenticate only by IP; still require password to avoid accidental open relay config.
+            server.login(from_addr.get("email") or "", password)
+        server.send_message(msg)
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+    logger.info("Password reset email dispatched via SMTP", extra={"recipient": recipient, "host": host, "port": port})
 
 
 def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str]:
@@ -181,7 +260,8 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
     """
     Dispatch a password reset link. In development we log the URL locally so engineers can click it.
     """
-    logger.info("Dispatching password reset email", extra={"recipient": recipient, "reset_url": reset_url})
+    # Never log the reset URL/token (it can be used to take over the account).
+    logger.info("Dispatching password reset email", extra={"recipient": recipient})
     config = get_config()
     subject = "Password Reset Request"
     base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
@@ -189,11 +269,24 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
     settings = _email_settings()
 
     if config.is_production:
-        try:
-            _send_via_sendgrid(recipient, subject, html, settings, plain_text=plain_text)
-            return
-        except Exception:
-            logger.error("Failed to send password reset email", exc_info=True)
+        if settings.get("sendgrid_api_key"):
+            try:
+                _send_via_sendgrid(recipient, subject, html, settings, plain_text=plain_text)
+                return
+            except Exception:
+                logger.error("Failed to send password reset email via SendGrid", exc_info=True)
+        smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
+        if smtp_cfg.get("host") and (smtp_cfg.get("pass") or ""):
+            try:
+                _send_via_smtp(recipient, subject, html, settings, plain_text=plain_text)
+                return
+            except Exception:
+                logger.error("Failed to send password reset email via SMTP", exc_info=True)
+
+        logger.error(
+            "No email provider succeeded for password reset; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS",
+            extra={"recipient": recipient},
+        )
 
     _write_dev_mail(subject, recipient, plain_text)
     logger.info("Password reset email logged locally", extra={"recipient": recipient})
