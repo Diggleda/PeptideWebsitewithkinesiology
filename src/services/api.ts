@@ -123,10 +123,22 @@ const emitAuthEvent = (payload: AuthTabEvent) => {
   }
 };
 
-const dispatchForceLogout = (reason: string) => {
+type ForceLogoutDetail = {
+  reason: string;
+  authCode?: string;
+};
+
+let _lastForceLogoutAt = 0;
+
+const dispatchForceLogout = (reason: string, meta?: { authCode?: string }) => {
   if (typeof window === 'undefined') return;
+  // Debounce: multiple concurrent API calls can all observe TOKEN_* and trigger logout.
+  const now = Date.now();
+  if (now - _lastForceLogoutAt < 1500) return;
+  _lastForceLogoutAt = now;
   try {
-    window.dispatchEvent(new CustomEvent(AUTH_EVENT_NAME, { detail: { reason } }));
+    const detail: ForceLogoutDetail = { reason, ...(meta?.authCode ? { authCode: meta.authCode } : {}) };
+    window.dispatchEvent(new CustomEvent(AUTH_EVENT_NAME, { detail }));
   } catch {
     // ignore
   }
@@ -326,7 +338,9 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       // Only broadcast a logout if this tab *thought* it was authenticated.
       // Otherwise (e.g., calling /auth/logout without a token) we'd recurse.
       if (token) {
-        dispatchForceLogout('auth_revoked');
+        const authCode = typeof codeField === 'string' ? codeField : undefined;
+        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+        dispatchForceLogout(reason, { authCode });
       }
       (error as any).code = 'AUTH_REQUIRED';
       if (typeof codeField === 'string') {
@@ -435,7 +449,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
       clearAuthToken();
       clearSessionId();
       if (token) {
-        dispatchForceLogout('auth_revoked');
+        const authCode = typeof codeField === 'string' ? codeField : undefined;
+        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+        dispatchForceLogout(reason, { authCode });
       }
       (error as any).code = 'AUTH_REQUIRED';
       if (typeof codeField === 'string') {
@@ -521,7 +537,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
       clearAuthToken();
       clearSessionId();
       if (token) {
-        dispatchForceLogout('auth_revoked');
+        const authCode = typeof codeField === 'string' ? codeField : undefined;
+        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+        dispatchForceLogout(reason, { authCode });
       }
       (error as any).code = 'AUTH_REQUIRED';
       if (typeof codeField === 'string') {

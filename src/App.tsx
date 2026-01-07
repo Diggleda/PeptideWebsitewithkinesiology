@@ -9077,7 +9077,24 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
-    const handleForcedLogout = () => {
+    const handleForcedLogout = (event?: Event) => {
+      const detail = (event as any)?.detail || {};
+      const reason =
+        typeof detail?.reason === "string" ? detail.reason : "";
+      const authCode =
+        typeof detail?.authCode === "string" ? detail.authCode : "";
+
+      const forcedByOtherLogin =
+        reason === "another_tab_login" ||
+        reason === "credentials_used_elsewhere" ||
+        authCode === "TOKEN_REVOKED";
+
+      if (forcedByOtherLogin) {
+        toast.error(
+          "Another login with your credentials has forced your logout. If this wasn't you, reset your password.",
+        );
+      }
+
       handleLogout();
     };
     window.addEventListener(
