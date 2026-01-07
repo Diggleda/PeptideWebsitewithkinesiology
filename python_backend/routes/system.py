@@ -9,12 +9,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, Optional, Tuple
 
 from ..services import get_config
 from ..services import news_service
 from ..integrations import ship_engine, woo_commerce
 from ..middleware.auth import require_auth
 from ..queue import ping as queue_ping
+from ..queue import get_queue as get_rq_queue
 from ..queue import enqueue as queue_enqueue
 from ..jobs.product_docs import sync_product_documents
 from ..utils.http import handle_action
@@ -63,6 +65,40 @@ def _read_linux_meminfo() -> dict | None:
         return None
 
 
+def _read_linux_cpu_percent(sample_ms: int = 150) -> float | None:
+    """
+    Return overall system CPU usage percent based on /proc/stat deltas.
+    This is closer to what hosting dashboards show than loadavg.
+    """
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        sample_ms = max(50, min(int(sample_ms), 500))
+
+        def read_cpu() -> Tuple[int, int]:
+            parts = Path("/proc/stat").read_text(encoding="utf-8", errors="ignore").splitlines()[0].split()
+            if not parts or parts[0] != "cpu":
+                raise RuntimeError("unexpected /proc/stat format")
+            values = [int(x) for x in parts[1:]]
+            # idle = idle + iowait
+            idle = (values[3] if len(values) > 3 else 0) + (values[4] if len(values) > 4 else 0)
+            total = sum(values)
+            return total, idle
+
+        total1, idle1 = read_cpu()
+        time.sleep(sample_ms / 1000.0)
+        total2, idle2 = read_cpu()
+
+        total_delta = max(0, total2 - total1)
+        idle_delta = max(0, idle2 - idle1)
+        if total_delta <= 0:
+            return None
+        used = max(0.0, float(total_delta - idle_delta) / float(total_delta))
+        return round(used * 100.0, 2)
+    except Exception:
+        return None
+
+
 def _process_memory_mb() -> float | None:
     try:
         import resource  # type: ignore
@@ -79,6 +115,26 @@ def _process_memory_mb() -> float | None:
         return None
 
 
+def _process_rss_current_mb() -> float | None:
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        status_path = Path("/proc/self/status")
+        if not status_path.exists():
+            return None
+        for line in status_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if not line.startswith("VmRSS:"):
+                continue
+            # Example: "VmRSS:	   12345 kB"
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                kb = int(parts[1])
+                return round(kb / 1024.0, 2)
+        return None
+    except Exception:
+        return None
+
+
 def _disk_usage(path: str) -> dict | None:
     try:
         usage = shutil.disk_usage(path)
@@ -88,6 +144,7 @@ def _disk_usage(path: str) -> dict | None:
         used_pct = round((used / total) * 100, 2) if total else None
         return {
             "totalGb": round(total / (1024**3), 2),
+            "usedGb": round(used / (1024**3), 2),
             "freeGb": round(free / (1024**3), 2),
             "usedPercent": used_pct,
         }
@@ -99,6 +156,7 @@ def _server_usage() -> dict:
     cpu_count = os.cpu_count() or 0
     load_avg = None
     load_pct = None
+    cpu_usage_pct = _read_linux_cpu_percent(int(os.environ.get("HEALTH_CPU_SAMPLE_MS") or 150))
     try:
         if hasattr(os, "getloadavg"):
             one, five, fifteen = os.getloadavg()
@@ -116,10 +174,11 @@ def _server_usage() -> dict:
             "count": cpu_count or None,
             "loadAvg": load_avg,
             "loadPercent": load_pct,
+            "usagePercent": cpu_usage_pct,
         },
         "memory": _read_linux_meminfo(),
         "disk": _disk_usage(data_dir),
-        "process": {"maxRssMb": _process_memory_mb()},
+        "process": {"maxRssMb": _process_memory_mb(), "rssMb": _process_rss_current_mb()},
         "platform": platform.platform(),
     }
 
@@ -157,6 +216,44 @@ def _detect_worker_count() -> int | None:
         return None
 
 
+def _parse_gunicorn_args(cmdline: str) -> dict[str, Any] | None:
+    if "gunicorn" not in cmdline:
+        return None
+    tokens = cmdline.split()
+    parsed: dict[str, Any] = {}
+
+    def read_flag(name: str) -> Optional[str]:
+        for i, tok in enumerate(tokens):
+            if tok == name and i + 1 < len(tokens):
+                return tokens[i + 1]
+            if tok.startswith(name + "="):
+                return tok.split("=", 1)[1]
+        return None
+
+    for flag, key in (("--workers", "workers"), ("--threads", "threads"), ("--timeout", "timeoutSeconds")):
+        raw = read_flag(flag)
+        if raw and raw.isdigit():
+            parsed[key] = int(raw)
+    return parsed or None
+
+
+def _read_proc_cmdline(pid: int) -> str | None:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        parts = [p.decode("utf-8", errors="ignore") for p in raw.split(b"\0") if p]
+        return " ".join(parts).strip() or None
+    except Exception:
+        return None
+
+
+def _queue_stats() -> dict[str, Any] | None:
+    try:
+        q = get_rq_queue()
+        return {"name": q.name, "length": q.count}
+    except Exception:
+        return None
+
+
 @blueprint.get("/health")
 def health():
     def action():
@@ -166,11 +263,17 @@ def health():
             usage = _server_usage()
             status = "ok"
             mysql_enabled = bool(getattr(config, "mysql", {}).get("enabled"))
+            pid = os.getpid()
+            ppid = os.getppid()
+            master_cmdline = _read_proc_cmdline(ppid) if ppid else None
             workers = {
                 "configured": _configured_worker_target(),
                 "detected": _detect_worker_count(),
-                "pid": os.getpid(),
+                "pid": pid,
+                "ppid": ppid,
+                "gunicorn": _parse_gunicorn_args(master_cmdline or "") if master_cmdline else None,
             }
+            queue = _queue_stats()
         except Exception:
             # Never allow health checks to 500; return a degraded payload instead.
             build = os.environ.get("BACKEND_BUILD", "unknown")
@@ -178,6 +281,7 @@ def health():
             status = "degraded"
             mysql_enabled = None
             workers = None
+            queue = None
         return {
             "status": status,
             "message": "Server is running",
@@ -185,6 +289,7 @@ def health():
             "mysql": {"enabled": mysql_enabled},
             "usage": usage,
             "workers": workers,
+            "queue": queue,
             "timestamp": _now(),
         }
 
