@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.68";
+  "v1.9.69";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -8708,6 +8708,7 @@ export default function App() {
     context?: "checkout" | null,
   ): Promise<AuthActionResult> => {
     const loginContextAtStart = context ?? loginContext;
+    const startedAt = Date.now();
     console.debug("[Auth] Login attempt", { email, attempt });
     try {
       const user = await authAPI.login(email, password);
@@ -8723,6 +8724,7 @@ export default function App() {
     } catch (error: any) {
       console.warn("[Auth] Login failed", { email, error });
       const message = error.message || "LOGIN_ERROR";
+      const errorCode = typeof error?.code === "string" ? error.code : null;
 
       if (message === "EMAIL_NOT_FOUND") {
         return { status: "email_not_found" };
@@ -8742,11 +8744,18 @@ export default function App() {
         typeof message === "string" ? message.toUpperCase() : "";
       const isNetworkError =
         message === "Failed to fetch" ||
+        normalizedMessage.includes("LOAD FAILED") ||
         normalizedMessage.includes("NETWORKERROR") ||
         normalizedMessage.includes("NETWORK_ERROR");
       const isServerError = statusCode !== null && statusCode >= 500;
+      const isTimeout = errorCode === "TIMEOUT" || normalizedMessage.includes("TIMED OUT");
+      const elapsedMs = Date.now() - startedAt;
 
-      if (attempt === 0 && (isNetworkError || isServerError)) {
+      if (isTimeout || isNetworkError) {
+        return { status: "error", message: "NETWORK_UNAVAILABLE" };
+      }
+
+      if (attempt === 0 && isServerError && statusCode !== null && [502, 503, 504].includes(statusCode) && elapsedMs < 4000) {
         console.warn(
           "[Auth] Transient login failure detected, retrying immediately after health ping",
           {
@@ -8757,6 +8766,7 @@ export default function App() {
         );
         // Fire-and-forget a health ping to wake cold starts, but don't block the retry.
         void checkServerHealth().catch(() => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 500));
         return loginWithRetry(email, password, attempt + 1, loginContextAtStart);
       }
 
@@ -14155,7 +14165,7 @@ export default function App() {
 	                                  issue === "offline"
 	                                    ? "No internet connection detected. Please turn on Wi‑Fi or cellular data and try again."
 	                                    : issue === "network"
-	                                      ? "Can't reach PepPro right now. This usually means your internet is offline or very slow. Please check your connection and try again."
+	                                      ? "We cannot reach the PepPro serverright now. Please check your connection and try again in a minute."
 	                                      : "Unable to log in. Please try again.",
 	                                );
 	                              } finally {

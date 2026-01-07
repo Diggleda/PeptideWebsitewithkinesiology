@@ -266,6 +266,38 @@ const dispatchApiReachability = (payload: { ok: boolean; status?: number | null;
   }
 };
 
+const _PEPPRO_DEFAULT_TIMEOUT_MS = 15000;
+const _PEPPRO_AUTH_TIMEOUT_MS = 12000;
+const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
+const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
+
+const _timeoutMsForRequest = (url: string, method: string) => {
+  const normalized = String(url || '').toLowerCase();
+  if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
+  if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
+  if (normalized.includes('/api/settings/user-activity/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  if (method === 'GET') return _PEPPRO_DEFAULT_TIMEOUT_MS;
+  return _PEPPRO_DEFAULT_TIMEOUT_MS;
+};
+
+const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
+  if (typeof window === 'undefined' || timeoutMs <= 0 || !Number.isFinite(timeoutMs)) {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  const existingSignal = init.signal;
+  if (existingSignal) {
+    if (existingSignal.aborted) controller.abort();
+    else existingSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   const token = getAuthToken();
@@ -288,7 +320,8 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
 
   let response: Response;
   try {
-    response = await fetch(requestUrl, {
+    const timeoutMs = _timeoutMsForRequest(requestUrl, method);
+    response = await _fetchWithTimeout(requestUrl, {
       cache: options.cache ?? 'no-store',
       ...options,
       headers: {
@@ -296,10 +329,17 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
         Pragma: 'no-cache',
         ...headers,
       },
-    });
+    }, timeoutMs);
   } catch (error: any) {
-    const message = typeof error?.message === 'string' ? error.message : null;
+    const isAbort = error?.name === 'AbortError';
+    const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
     dispatchApiReachability({ ok: false, status: null, message });
+    if (isAbort) {
+      const wrapped = new Error('Request timed out');
+      (wrapped as any).code = 'TIMEOUT';
+      (wrapped as any).status = null;
+      throw wrapped;
+    }
     throw error;
   }
 
@@ -414,8 +454,9 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   }
 
   let response: Response;
+  const method = (options.method || 'GET').toUpperCase();
   try {
-    response = await fetch(url, {
+    response = await _fetchWithTimeout(url, {
       cache: options.cache ?? 'no-store',
       ...options,
       headers: {
@@ -423,10 +464,17 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
         Pragma: 'no-cache',
         ...headers,
       },
-    });
+    }, _timeoutMsForRequest(url, method));
   } catch (error: any) {
-    const message = typeof error?.message === 'string' ? error.message : null;
+    const isAbort = error?.name === 'AbortError';
+    const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
     dispatchApiReachability({ ok: false, status: null, message });
+    if (isAbort) {
+      const wrapped = new Error('Request timed out');
+      (wrapped as any).code = 'TIMEOUT';
+      (wrapped as any).status = null;
+      throw wrapped;
+    }
     throw error;
   }
 
@@ -529,8 +577,9 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
   }
 
   let response: Response;
+  const method = (options.method || 'GET').toUpperCase();
   try {
-    response = await fetch(url, {
+    response = await _fetchWithTimeout(url, {
       cache: options.cache ?? 'no-store',
       ...options,
       headers: {
@@ -538,10 +587,17 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
         Pragma: 'no-cache',
         ...headers,
       },
-    });
+    }, _timeoutMsForRequest(url, method));
   } catch (error: any) {
-    const message = typeof error?.message === 'string' ? error.message : null;
+    const isAbort = error?.name === 'AbortError';
+    const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
     dispatchApiReachability({ ok: false, status: null, message });
+    if (isAbort) {
+      const wrapped = new Error('Request timed out');
+      (wrapped as any).code = 'TIMEOUT';
+      (wrapped as any).status = null;
+      throw wrapped;
+    }
     throw error;
   }
 
