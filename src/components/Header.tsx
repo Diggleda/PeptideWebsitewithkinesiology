@@ -873,6 +873,9 @@ export function Header({
 
 	    let mounted = true;
 	    const connQualityRef = { current: null as NetworkQuality | null };
+	    const apiQualityRef = { current: null as NetworkQuality | null };
+	    const apiLastOkAtRef = { current: 0 };
+	    const apiConsecutiveFailuresRef = { current: 0 };
 	    const pingQualityRef = { current: null as NetworkQuality | null };
 	    const throughputQualityRef = { current: null as NetworkQuality | null };
 	    const combinedQualityRef = { current: 'fair' as NetworkQuality };
@@ -940,15 +943,56 @@ export function Header({
 	    const updateCombined = () => {
 	      const next = (() => {
 	        if (connQualityRef.current === 'offline') return 'offline';
+	        if (apiQualityRef.current === 'offline') return 'offline';
 	        const hasThroughput = Boolean(throughputQualityRef.current);
 	        return computeConservative(
 	          hasThroughput
-	            ? [pingQualityRef.current, throughputQualityRef.current]
-	            : [connQualityRef.current, pingQualityRef.current],
+	            ? [
+	                connQualityRef.current,
+	                apiQualityRef.current,
+	                pingQualityRef.current,
+	                throughputQualityRef.current,
+	              ]
+	            : [
+	                connQualityRef.current,
+	                apiQualityRef.current,
+	                pingQualityRef.current,
+	              ],
 	        );
 	      })();
 	      combinedQualityRef.current = next;
 	      if (mounted) setNetworkQuality(next);
+	    };
+
+	    const updateApiQuality = (next: { ok: boolean; status?: number | null; message?: string | null; at?: number | null }) => {
+	      const now = typeof next.at === 'number' ? next.at : Date.now();
+	      if (next.ok) {
+	        apiLastOkAtRef.current = now;
+	        apiConsecutiveFailuresRef.current = 0;
+	        apiQualityRef.current = null;
+	        updateCombined();
+	        return;
+	      }
+
+	      apiConsecutiveFailuresRef.current += 1;
+	      const status = typeof next.status === 'number' ? next.status : null;
+	      const message = typeof next.message === 'string' ? next.message.toLowerCase() : '';
+	      const looksLikeBackendDown =
+	        status === 429 ||
+	        status === 500 ||
+	        status === 502 ||
+	        status === 503 ||
+	        status === 504 ||
+	        message.includes('failed to fetch') ||
+	        message.includes('load failed');
+	      if (!looksLikeBackendDown) {
+	        return;
+	      }
+
+	      const recentOk = apiLastOkAtRef.current > 0 && now - apiLastOkAtRef.current < 9_000;
+	      apiQualityRef.current =
+	        apiConsecutiveFailuresRef.current >= 2 && !recentOk ? 'offline' : 'poor';
+	      updateCombined();
 	    };
 
     const deriveFromConnection = (): NetworkQuality | null => {
@@ -1219,6 +1263,15 @@ export function Header({
 
     window.addEventListener('online', updateFromConnection);
     window.addEventListener('offline', updateFromConnection);
+    const apiListener = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail as any;
+      if (detail && typeof detail.ok === 'boolean') {
+        updateApiQuality(detail);
+      } else {
+        updateApiQuality({ ok: false });
+      }
+    };
+    window.addEventListener('peppro:api-reachability', apiListener as any);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     const conn = (navigator as any)?.connection;
@@ -1242,6 +1295,7 @@ export function Header({
       if (throughputAbort) throughputAbort.abort();
       window.removeEventListener('online', updateFromConnection);
       window.removeEventListener('offline', updateFromConnection);
+      window.removeEventListener('peppro:api-reachability', apiListener as any);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (conn && typeof conn.removeEventListener === 'function') {
         conn.removeEventListener('change', updateFromConnection);

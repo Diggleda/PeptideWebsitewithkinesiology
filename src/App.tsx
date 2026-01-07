@@ -4844,7 +4844,12 @@ export default function App() {
     mysql?: { enabled?: boolean | null } | null;
     queue?: { name?: string | null; length?: number | null } | null;
     usage?: {
-      cpu?: { count?: number | null; loadAvg?: Record<string, number> | null; loadPercent?: number | null } | null;
+      cpu?: {
+        count?: number | null;
+        loadAvg?: Record<string, number> | null;
+        loadPercent?: number | null;
+        usagePercent?: number | null;
+      } | null;
       memory?: { totalMb?: number; availableMb?: number; usedPercent?: number } | null;
       disk?: { totalGb?: number; freeGb?: number; usedPercent?: number } | null;
       process?: { maxRssMb?: number; rssMb?: number } | null;
@@ -11002,7 +11007,12 @@ export default function App() {
                       const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
                       const uptime = serverHealthPayload?.uptime || null;
                       const queue = serverHealthPayload?.queue || null;
-                      const cpuLabel =
+                      const cpuUsageLabel =
+                        typeof cpu?.usagePercent === "number" &&
+                        Number.isFinite(cpu.usagePercent)
+                          ? `CPU usage: ${cpu.usagePercent}%`
+                          : null;
+                      const cpuLoadLabel =
                         cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
                           ? `CPU load: ${cpu.loadPercent}%`
                           : cpu?.loadAvg
@@ -11101,7 +11111,8 @@ export default function App() {
                       })();
 
                       const pills = [
-                        cpuLabel,
+                        cpuUsageLabel,
+                        cpuLoadLabel,
                         memLabel,
                         diskLabel,
                         cgroupLabel,

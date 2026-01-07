@@ -129,6 +129,27 @@ def _cache_ttl_seconds_for_endpoint(endpoint: str) -> int:
     return 60
 
 
+def _timeout_seconds_for_endpoint(endpoint: str) -> float:
+    """
+    Keep WooCommerce proxy calls bounded. Large timeouts can tie up gunicorn threads,
+    causing the whole API (including /api/health and auth) to appear down.
+    """
+    endpoint = (endpoint or "").lstrip("/")
+    # Variations can be heavy; prefer failing fast and serving cached/stale data.
+    if re.match(r"^products/[^/]+/variations", endpoint):
+        return float(os.environ.get("WOO_VARIATIONS_TIMEOUT_SECONDS", "8").strip() or 8)
+    if endpoint.startswith("products"):
+        return float(os.environ.get("WOO_PRODUCTS_TIMEOUT_SECONDS", "10").strip() or 10)
+    return float(os.environ.get("WOO_DEFAULT_TIMEOUT_SECONDS", "12").strip() or 12)
+
+
+def _max_attempts_for_endpoint(endpoint: str) -> int:
+    endpoint = (endpoint or "").lstrip("/")
+    if re.match(r"^products/[^/]+/variations", endpoint):
+        return max(1, min(int(os.environ.get("WOO_VARIATIONS_MAX_ATTEMPTS", "2").strip() or 2), 4))
+    return _WOO_HTTP_MAX_ATTEMPTS
+
+
 def _build_cache_key(endpoint: str, params: Optional[Mapping[str, Any]]) -> str:
     cleaned = _sanitize_params(params or {})
     normalized = endpoint.lstrip("/")
@@ -198,7 +219,8 @@ def _fetch_catalog_http(
     cleaned = _sanitize_params(params or {})
 
     semaphore_timeout = float(_WOO_HTTP_ACQUIRE_TIMEOUT_SECONDS if acquire_timeout is None else acquire_timeout)
-    max_attempts = _WOO_HTTP_MAX_ATTEMPTS
+    max_attempts = _max_attempts_for_endpoint(endpoint)
+    request_timeout = min(float(timeout or 25), _timeout_seconds_for_endpoint(endpoint))
     for attempt in range(max_attempts):
         try:
             acquired = _woo_http_semaphore.acquire(timeout=semaphore_timeout)
@@ -207,7 +229,7 @@ def _fetch_catalog_http(
                 setattr(err, "status", 503)
                 raise err
             try:
-                response = requests.get(url, params=cleaned, auth=auth, timeout=timeout)
+                response = requests.get(url, params=cleaned, auth=auth, timeout=request_timeout)
             finally:
                 try:
                     _woo_http_semaphore.release()

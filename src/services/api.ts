@@ -251,6 +251,21 @@ const clearAuthToken = () => {
   }
 };
 
+const dispatchApiReachability = (payload: { ok: boolean; status?: number | null; message?: string | null }) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const detail = {
+      ok: Boolean(payload.ok),
+      status: typeof payload.status === 'number' ? payload.status : null,
+      message: typeof payload.message === 'string' ? payload.message : null,
+      at: Date.now(),
+    };
+    window.dispatchEvent(new CustomEvent('peppro:api-reachability', { detail }));
+  } catch {
+    // ignore
+  }
+};
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   const token = getAuthToken();
@@ -271,15 +286,28 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     requestUrl = `${requestUrl}${separator}_ts=${Date.now()}`;
   }
 
-  const response = await fetch(requestUrl, {
-    cache: options.cache ?? 'no-store',
-    ...options,
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      Pragma: 'no-cache',
-      ...headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(requestUrl, {
+      cache: options.cache ?? 'no-store',
+      ...options,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        ...headers,
+      },
+    });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : null;
+    dispatchApiReachability({ ok: false, status: null, message });
+    throw error;
+  }
+
+  if (response.ok) {
+    dispatchApiReachability({ ok: true, status: response.status });
+  } else if (response.status >= 500 || response.status === 429) {
+    dispatchApiReachability({ ok: false, status: response.status });
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get('content-type') || '';
@@ -385,15 +413,28 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    cache: options.cache ?? 'no-store',
-    ...options,
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      Pragma: 'no-cache',
-      ...headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: options.cache ?? 'no-store',
+      ...options,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        ...headers,
+      },
+    });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : null;
+    dispatchApiReachability({ ok: false, status: null, message });
+    throw error;
+  }
+
+  if (response.ok) {
+    dispatchApiReachability({ ok: true, status: response.status });
+  } else if (response.status >= 500 || response.status === 429) {
+    dispatchApiReachability({ ok: false, status: response.status });
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get('content-type') || '';
@@ -487,15 +528,28 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    cache: options.cache ?? 'no-store',
-    ...options,
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      Pragma: 'no-cache',
-      ...headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: options.cache ?? 'no-store',
+      ...options,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        ...headers,
+      },
+    });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : null;
+    dispatchApiReachability({ ok: false, status: null, message });
+    throw error;
+  }
+
+  if (response.ok) {
+    dispatchApiReachability({ ok: true, status: response.status });
+  } else if (response.status >= 500 || response.status === 429) {
+    dispatchApiReachability({ ok: false, status: response.status });
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get('content-type') || '';
