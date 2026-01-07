@@ -1288,7 +1288,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.66";
+  "v1.9.68";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -1933,15 +1933,26 @@ const mapWooProductToProduct = (
     .filter((src): src is string => Boolean(src));
   const categoryName = (() => {
     const categories = Array.isArray(product.categories) ? product.categories : [];
+    const normalized: string[] = [];
     for (const cat of categories) {
       const name = (cat?.name ?? "").toString().trim();
       const lowered = name.toLowerCase();
       if (!name) continue;
       if (lowered.includes("subscription")) continue;
       if (hiddenCategoryLabels.has(lowered)) continue;
-      return name;
+      normalized.push(name);
     }
-    return "";
+    if (normalized.length === 0) {
+      return "";
+    }
+    // Woo often includes "Uncategorized" alongside the real category; prefer the real category.
+    const withoutUncategorized = normalized.filter(
+      (name) => name.toLowerCase() !== "uncategorized",
+    );
+    if (withoutUncategorized.length > 0) {
+      return withoutUncategorized[0];
+    }
+    return normalized[0];
   })();
   const subscriptionMetaFlag = (product.meta_data ?? []).some((meta) => {
     const key = (meta?.key ?? "").toString().toLowerCase();
@@ -2677,13 +2688,17 @@ export default function App() {
           typeof (error as any)?.status === "number" ? (error as any).status : null;
         const message =
           typeof (error as any)?.message === "string" ? (error as any).message : "";
+        const errorName =
+          typeof (error as any)?.name === "string" ? (error as any).name : "";
         const shouldBackoff =
           status === 429 ||
           status === 500 ||
           status === 502 ||
           status === 503 ||
           status === 504 ||
-          message === "Failed to fetch";
+          message === "Failed to fetch" ||
+          message === "Load failed" ||
+          errorName === "TypeError";
         if (!shouldForce && shouldBackoff) {
           wooBackoffAttemptRef.current += 1;
           const attempt = Math.min(8, wooBackoffAttemptRef.current);
@@ -4826,12 +4841,27 @@ export default function App() {
     message?: string;
     build?: string;
     timestamp?: string;
+    mysql?: { enabled?: boolean | null } | null;
+    queue?: { name?: string | null; length?: number | null } | null;
     usage?: {
       cpu?: { count?: number | null; loadAvg?: Record<string, number> | null; loadPercent?: number | null } | null;
       memory?: { totalMb?: number; availableMb?: number; usedPercent?: number } | null;
       disk?: { totalGb?: number; freeGb?: number; usedPercent?: number } | null;
       process?: { maxRssMb?: number; rssMb?: number } | null;
       platform?: string | null;
+    } | null;
+    cgroup?: { memory?: { usageMb?: number | null; limitMb?: number | null; usedPercent?: number | null } | null } | null;
+    uptime?: { serviceSeconds?: number | null; workerSeconds?: number | null } | null;
+    workers?: {
+      configured?: number | null;
+      detected?: number | null;
+      pid?: number | null;
+      ppid?: number | null;
+      gunicorn?: { workers?: number | null; threads?: number | null; timeoutSeconds?: number | null } | null;
+    } | null;
+    processes?: {
+      master?: { pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null } | null;
+      children?: Array<{ pid?: number | null; vmRssMb?: number | null; vmSizeMb?: number | null; threads?: number | null; state?: string | null }> | null;
     } | null;
   };
   const [serverHealthPayload, setServerHealthPayload] =
@@ -8206,6 +8236,30 @@ export default function App() {
 	                (error as any).message.trim().length > 0
 	                  ? (error as any).message
 	                  : "Catalog fetch failed";
+                const status =
+                  typeof (error as any)?.status === "number"
+                    ? (error as any).status
+                    : null;
+                const errorName =
+                  typeof (error as any)?.name === "string" ? (error as any).name : "";
+                const shouldBackoff =
+                  status === 429 ||
+                  status === 500 ||
+                  status === 502 ||
+                  status === 503 ||
+                  status === 504 ||
+                  message === "Failed to fetch" ||
+                  message === "Load failed" ||
+                  errorName === "TypeError";
+                if (shouldBackoff) {
+                  wooBackoffAttemptRef.current += 1;
+                  const attempt = Math.min(8, wooBackoffAttemptRef.current);
+                  const delayMs = Math.min(
+                    5 * 60 * 1000,
+                    2000 * Math.pow(2, attempt - 1),
+                  );
+                  wooBackoffUntilRef.current = Date.now() + delayMs;
+                }
                 if (!background) {
                   catalogFailureCountRef.current += 1;
                   // Retry quickly on the first failure; back off on subsequent failures.
@@ -8213,13 +8267,17 @@ export default function App() {
                     catalogFailureCountRef.current === 1
                       ? CATALOG_RETRY_FAST_DELAY_MS
                       : CATALOG_RETRY_DELAY_MS;
+                  const retryDelayMs = Math.max(
+                    fastRetry,
+                    Math.max(0, wooBackoffUntilRef.current - Date.now()),
+                  );
                   // Only surface a scary error state after multiple consecutive failures.
                   if (catalogFailureCountRef.current >= 2) {
                     setCatalogError(message);
                   } else {
                     setCatalogTransientIssue(true);
                   }
-                  scheduleRetry(false, fastRetry);
+                  scheduleRetry(false, retryDelayMs);
                   return;
                 }
 			          console.error("[Catalog] Catalog fetch failed", { message, error });
@@ -10936,11 +10994,14 @@ export default function App() {
 
 	                  <div className="sales-rep-table-wrapper">
 	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
-	                      {(() => {
+                      {(() => {
 	                      const usage = serverHealthPayload?.usage || null;
                       const cpu = usage?.cpu || null;
                       const mem = usage?.memory || null;
                       const disk = usage?.disk || null;
+                      const cgroupMem = serverHealthPayload?.cgroup?.memory || null;
+                      const uptime = serverHealthPayload?.uptime || null;
+                      const queue = serverHealthPayload?.queue || null;
                       const cpuLabel =
                         cpu?.loadPercent !== null && cpu?.loadPercent !== undefined
                           ? `CPU load: ${cpu.loadPercent}%`
@@ -10950,11 +11011,31 @@ export default function App() {
                       const memLabel =
                         mem?.usedPercent !== null && mem?.usedPercent !== undefined
                           ? `Memory: ${mem.usedPercent}%`
+                          : typeof mem?.availableMb === "number" && typeof mem?.totalMb === "number"
+                            ? `Memory: ${(100 - (mem.availableMb / mem.totalMb) * 100).toFixed(0)}%`
                           : "Memory: —";
                       const diskLabel =
                         disk?.usedPercent !== null && disk?.usedPercent !== undefined
                           ? `Disk: ${disk.usedPercent}%`
                           : "Disk: —";
+                      const cgroupLabel = (() => {
+                        if (
+                          typeof cgroupMem?.usedPercent === "number" &&
+                          Number.isFinite(cgroupMem.usedPercent)
+                        ) {
+                          return `CGroup mem: ${cgroupMem.usedPercent}%`;
+                        }
+                        if (
+                          typeof cgroupMem?.usageMb === "number" &&
+                          Number.isFinite(cgroupMem.usageMb) &&
+                          typeof cgroupMem?.limitMb === "number" &&
+                          Number.isFinite(cgroupMem.limitMb) &&
+                          cgroupMem.limitMb > 0
+                        ) {
+                          return `CGroup mem: ${cgroupMem.usageMb.toFixed(0)}/${cgroupMem.limitMb.toFixed(0)} MB`;
+                        }
+                        return null;
+                      })();
                       const rssLabel = (() => {
                         const rss =
                           usage?.process?.maxRssMb ?? usage?.process?.rssMb ?? null;
@@ -10962,6 +11043,34 @@ export default function App() {
                           return `App RSS: ${rss.toFixed(0)} MB`;
                         }
                         return "App RSS: —";
+                      })();
+                      const mysqlLabel = (() => {
+                        const enabled = serverHealthPayload?.mysql?.enabled;
+                        if (typeof enabled === "boolean") {
+                          return enabled ? "MySQL: enabled" : "MySQL: disabled";
+                        }
+                        return null;
+                      })();
+                      const queueLabel = (() => {
+                        const length = queue?.length;
+                        if (typeof length === "number" && Number.isFinite(length)) {
+                          return `Queue: ${length}`;
+                        }
+                        return null;
+                      })();
+                      const uptimeLabel = (() => {
+                        const seconds = uptime?.serviceSeconds;
+                        if (typeof seconds === "number" && Number.isFinite(seconds)) {
+                          const mins = Math.floor(seconds / 60);
+                          if (mins < 60) return `Uptime: ${mins}m`;
+                          const hours = Math.floor(mins / 60);
+                          const remMins = mins % 60;
+                          if (hours < 24) return `Uptime: ${hours}h ${remMins}m`;
+                          const days = Math.floor(hours / 24);
+                          const remHours = hours % 24;
+                          return `Uptime: ${days}d ${remHours}h`;
+                        }
+                        return null;
                       })();
                       const buildLabel = serverHealthPayload?.build
                         ? `Build: ${serverHealthPayload.build}`
@@ -10981,8 +11090,30 @@ export default function App() {
                         }
                         return null;
                       })();
+                      const gunicornLabel = (() => {
+                        const gunicorn = serverHealthPayload?.workers?.gunicorn;
+                        if (!gunicorn) return null;
+                        const parts: string[] = [];
+                        if (typeof gunicorn.workers === "number") parts.push(`${gunicorn.workers}w`);
+                        if (typeof gunicorn.threads === "number") parts.push(`${gunicorn.threads}t`);
+                        if (typeof gunicorn.timeoutSeconds === "number") parts.push(`timeout ${gunicorn.timeoutSeconds}s`);
+                        return parts.length ? `Gunicorn: ${parts.join(" ")}` : null;
+                      })();
 
-                      const pills = [cpuLabel, memLabel, diskLabel, rssLabel, workerLabel, buildLabel, tsLabel].filter(
+                      const pills = [
+                        cpuLabel,
+                        memLabel,
+                        diskLabel,
+                        cgroupLabel,
+                        rssLabel,
+                        workerLabel,
+                        gunicornLabel,
+                        queueLabel,
+                        mysqlLabel,
+                        uptimeLabel,
+                        buildLabel,
+                        tsLabel,
+                      ].filter(
                         (x): x is string => typeof x === "string" && x.trim().length > 0,
                       );
                       return pills.map((label) => (

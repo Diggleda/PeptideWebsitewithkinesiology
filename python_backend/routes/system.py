@@ -391,6 +391,61 @@ def _read_cgroup_memory() -> dict[str, Any] | None:
         return None
 
 
+def _read_linux_uptime_seconds() -> float | None:
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        uptime_path = Path("/proc/uptime")
+        if not uptime_path.exists():
+            return None
+        raw = uptime_path.read_text(encoding="utf-8", errors="ignore").strip().split()
+        if not raw:
+            return None
+        return float(raw[0])
+    except Exception:
+        return None
+
+
+def _read_proc_starttime_seconds(pid: int) -> float | None:
+    """
+    Return process start time in seconds since boot using /proc/<pid>/stat.
+    """
+    try:
+        if platform.system().lower() != "linux":
+            return None
+        stat_path = Path(f"/proc/{pid}/stat")
+        if not stat_path.exists():
+            return None
+        # /proc/<pid>/stat has the comm in parentheses which may contain spaces.
+        raw = stat_path.read_text(encoding="utf-8", errors="ignore").strip()
+        rparen = raw.rfind(")")
+        if rparen == -1:
+            return None
+        rest = raw[rparen + 1 :].strip().split()
+        # starttime is field 22 overall => field index 20 in "rest" (since fields 1-2 removed).
+        if len(rest) <= 20:
+            return None
+        ticks = int(rest[20])
+        hz = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", "SC_CLK_TCK"))  # type: ignore[arg-type]
+        hz = int(hz) if hz else 100
+        if hz <= 0:
+            hz = 100
+        return float(ticks) / float(hz)
+    except Exception:
+        return None
+
+
+def _process_uptime_seconds(pid: int) -> float | None:
+    try:
+        boot_uptime = _read_linux_uptime_seconds()
+        start_since_boot = _read_proc_starttime_seconds(pid)
+        if boot_uptime is None or start_since_boot is None:
+            return None
+        return round(max(0.0, boot_uptime - start_since_boot), 2)
+    except Exception:
+        return None
+
+
 def _queue_stats() -> dict[str, Any] | None:
     try:
         q = get_rq_queue()
@@ -413,6 +468,10 @@ def health():
             master_cmdline = _read_proc_cmdline(ppid) if ppid else None
             master = _read_process_snapshot(ppid) if ppid else None
             children = _read_child_processes(ppid) if ppid else None
+            uptime = {
+                "serviceSeconds": _process_uptime_seconds(ppid) if ppid else None,
+                "workerSeconds": _process_uptime_seconds(pid) if pid else None,
+            }
             workers = {
                 "configured": _configured_worker_target(),
                 "detected": _detect_worker_count(),
@@ -431,6 +490,7 @@ def health():
             queue = None
             master = None
             children = None
+            uptime = None
         return {
             "status": status,
             "message": "Server is running",
@@ -440,6 +500,7 @@ def health():
             "cgroup": {"memory": _read_cgroup_memory()},
             "workers": workers,
             "processes": {"master": master, "children": children},
+            "uptime": uptime,
             "queue": queue,
             "timestamp": _now(),
         }
