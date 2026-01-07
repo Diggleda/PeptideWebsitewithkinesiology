@@ -51,7 +51,47 @@ def _compact_json(data: Any) -> bytes:
     return json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _product_light_snapshot(product: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_product_categories(
+    product: Dict[str, Any],
+    *,
+    category_by_id: Dict[int, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    raw = product.get("categories")
+    if not isinstance(raw, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for cat in raw:
+        if isinstance(cat, dict):
+            cat_id = cat.get("id")
+            try:
+                cat_id_int = int(cat_id) if cat_id is not None else None
+            except Exception:
+                cat_id_int = None
+
+            name = cat.get("name")
+            if (not isinstance(name, str) or not name.strip()) and cat_id_int is not None:
+                fallback = category_by_id.get(cat_id_int)
+                if isinstance(fallback, dict):
+                    name = fallback.get("name")
+
+            normalized.append(
+                {
+                    "id": cat_id_int,
+                    "name": name,
+                    "slug": cat.get("slug") or (category_by_id.get(cat_id_int, {}) if cat_id_int is not None else {}).get("slug"),
+                }
+            )
+        else:
+            try:
+                cat_id_int = int(cat)
+            except Exception:
+                continue
+            fallback = category_by_id.get(cat_id_int) or {}
+            normalized.append({"id": cat_id_int, "name": fallback.get("name"), "slug": fallback.get("slug")})
+    return normalized
+
+
+def _product_light_snapshot(product: Dict[str, Any], *, category_by_id: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
     """
     Keep this intentionally small: enough for catalog browsing without variations.
     """
@@ -68,15 +108,20 @@ def _product_light_snapshot(product: Dict[str, Any]) -> Dict[str, Any]:
         "stock_status": product.get("stock_status"),
         "stock_quantity": product.get("stock_quantity"),
         "images": product.get("images") if isinstance(product.get("images"), list) else [],
-        "categories": product.get("categories") if isinstance(product.get("categories"), list) else [],
+        "categories": _normalize_product_categories(product, category_by_id=category_by_id),
         "attributes": product.get("attributes") if isinstance(product.get("attributes"), list) else [],
         "meta_data": product.get("meta_data") if isinstance(product.get("meta_data"), list) else [],
         "updated_at": product.get("date_modified_gmt") or product.get("date_modified") or None,
     }
 
 
-def _product_full_snapshot(product: Dict[str, Any], variations: List[Dict[str, Any]]) -> Dict[str, Any]:
-    base = _product_light_snapshot(product)
+def _product_full_snapshot(
+    product: Dict[str, Any],
+    variations: List[Dict[str, Any]],
+    *,
+    category_by_id: Dict[int, Dict[str, Any]],
+) -> Dict[str, Any]:
+    base = _product_light_snapshot(product, category_by_id=category_by_id)
     base["variations"] = variations
     return base
 
@@ -142,6 +187,15 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
 
     products = _fetch_all_products()
     categories = _fetch_categories()
+    category_by_id: Dict[int, Dict[str, Any]] = {}
+    for cat in categories:
+        try:
+            cat_id = int(cat.get("id")) if isinstance(cat, dict) and cat.get("id") is not None else None
+        except Exception:
+            cat_id = None
+        if cat_id is None:
+            continue
+        category_by_id[cat_id] = {"id": cat_id, "name": cat.get("name"), "slug": cat.get("slug")}
 
     product_count = 0
     variation_products = 0
@@ -164,7 +218,7 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
         name = product.get("name") if isinstance(product.get("name"), str) else None
         sku = product.get("sku") if isinstance(product.get("sku"), str) else None
 
-        light = _product_light_snapshot(product)
+        light = _product_light_snapshot(product, category_by_id=category_by_id)
         product_document_repository.upsert_payload(
             woo_product_id=woo_id,
             kind=KIND_CATALOG_PRODUCT_LIGHT,
@@ -197,7 +251,7 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
         variation_products += 1
         variation_rows += len(variations)
 
-        full = _product_full_snapshot(product, variations)
+        full = _product_full_snapshot(product, variations, category_by_id=category_by_id)
         product_document_repository.upsert_payload(
             woo_product_id=woo_id,
             kind=KIND_CATALOG_PRODUCT_FULL,
