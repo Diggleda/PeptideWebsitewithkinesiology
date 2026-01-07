@@ -204,7 +204,12 @@ def _detect_worker_count() -> int | None:
             return None
         marker = "wsgi-loader.py"
         proc_name = Path(sys.argv[0]).name
-        output = subprocess.check_output(["ps", "-eo", "cmd"], text=True, stderr=subprocess.DEVNULL)
+        output = subprocess.check_output(
+            ["ps", "-eo", "cmd"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=float(os.environ.get("HEALTH_PS_TIMEOUT_SECONDS") or 0.6),
+        )
         matches = 0
         for line in output.splitlines():
             if marker in line:
@@ -212,6 +217,8 @@ def _detect_worker_count() -> int | None:
             elif proc_name and proc_name in line:
                 matches += 1
         return matches if matches > 0 else None
+    except subprocess.TimeoutExpired:
+        return None
     except Exception:
         return None
 

@@ -61,8 +61,11 @@ def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
         import logging
 
         logger = logging.getLogger("peppro.api")
-        logger.exception(
-            "Unhandled API error",
-            extra={"method": request.method, "path": request.path, "status": getattr(exc, "status", 500)},
-        )
+        http_status = int(getattr(exc, "status", 500) or 500)
+        log_extra = {"method": request.method, "path": request.path, "status": http_status}
+        # Avoid noisy tracebacks for expected 4xx control-flow errors (auth/validation/etc.).
+        if http_status >= 500:
+            logger.exception("Unhandled API error", extra=log_extra)
+        else:
+            logger.warning("API request rejected", extra=log_extra)
         return json_error(exc)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,22 @@ def _load_dotenv() -> None:
         candidate = BASE_DIR / ".env"
     if load_dotenv:
         load_dotenv(candidate)
+
+def _default_backend_build() -> str:
+    """
+    Best-effort build id derived from the repo `package.json` version.
+    Keeps deployments consistent when code is updated via `git pull` + restart.
+    """
+    try:
+        package_json = BASE_DIR / "package.json"
+        if package_json.exists():
+            data = json.loads(package_json.read_text(encoding="utf-8"))
+            version = str(data.get("version") or "").strip()
+            if version:
+                return f"v{version}" if not version.lower().startswith("v") else version
+    except Exception:
+        pass
+    return "unknown"
 
 
 def _to_int(value: Optional[str], fallback: int) -> int:
@@ -109,7 +126,7 @@ def load_config() -> AppConfig:
         data_dir=_resolve_path(os.environ.get("DATA_DIR"), "server-data"),
         cors_allow_list=cors_allow_list,
         body_limit=os.environ.get("BODY_LIMIT", "1mb"),
-        backend_build=os.environ.get("BACKEND_BUILD", "v1.9.64"),
+        backend_build=(os.environ.get("BACKEND_BUILD") or _default_backend_build()),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
             "store_url": _s(os.environ.get("WC_STORE_URL")),

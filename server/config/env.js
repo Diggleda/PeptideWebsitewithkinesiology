@@ -57,6 +57,22 @@ const resolvePath = (value, fallback) => {
     : path.join(process.cwd(), candidate);
 };
 
+const resolveBackendBuild = () => {
+  try {
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      const parsed = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      const version = String(parsed?.version || '').trim();
+      if (version) {
+        return version.toLowerCase().startsWith('v') ? version : `v${version}`;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return 'unknown';
+};
+
 // Stripe Tax defaults
 const DEFAULT_STRIPE_TAX_CODE = 'txcd_99999999'; // tangible personal property
 const DEFAULT_STRIPE_SHIPPING_TAX_CODE = 'txcd_92010001'; // shipping / delivery charges
@@ -75,7 +91,7 @@ const env = {
     // so default to 50mb to comfortably support ~25-35mb binary images.
     limit: process.env.BODY_LIMIT || '50mb',
   },
-  backendBuild: process.env.BACKEND_BUILD || 'v1.9.64',
+  backendBuild: process.env.BACKEND_BUILD || resolveBackendBuild(),
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   logPretty: process.env.LOG_PRETTY === 'true',
   rateLimit: {

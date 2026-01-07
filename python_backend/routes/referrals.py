@@ -156,6 +156,10 @@ def admin_dashboard():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
+        from ..services import get_config
+
+        config = get_config()
+        build = config.backend_build
         requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
         scope_all = (request.args.get("scope") or "").lower() == "all"
         # Admins can view all referrals; sales reps stay scoped to their own assignments.
@@ -175,7 +179,7 @@ def admin_dashboard():
             scope_all=scope_all and (user.get("role") or "").lower() == "admin",
         )
         return {
-            "version": "backend_v1.9.64",
+            "version": f"backend_{build}",
             "referrals": referrals,
             "codes": codes,
             "users": users,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import faulthandler
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -13,6 +15,13 @@ if str(PROJECT_ROOT) not in sys.path:
 from python_backend import create_app  # type: ignore  # noqa: E402
 
 app = create_app()
+
+try:
+    # Allow dumping all thread stack traces on demand (helps debug "hung" VPS backends).
+    # Usage (on VPS): `sudo kill -USR1 <gunicorn_worker_pid>` then check service logs.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+except Exception:
+    pass
 
 
 if __name__ == "__main__":
