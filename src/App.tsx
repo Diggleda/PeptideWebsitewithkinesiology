@@ -10859,9 +10859,9 @@ export default function App() {
             ref={filterSidebarRef}
             className="filter-sidebar-container lg:min-w-[18rem] lg:max-w-[24rem] xl:min-w-[20rem] xl:max-w-[26rem] lg:pl-4 xl:pl-6"
           >
-            {catalogCategories.length > 0 ? (
+            {visibleCatalogCategories.length > 0 ? (
               <CategoryFilter
-                categories={catalogCategories}
+                categories={visibleCatalogCategories}
                 types={[]}
                 filters={filters}
                 onFiltersChange={setFilters}
@@ -13542,16 +13542,45 @@ export default function App() {
     return filtered;
   }, [filteredProductCatalog, searchQuery, filters]);
 
-  // Get product counts by category
+  const categoryCountsAll = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const product of filteredProductCatalog) {
+      const category = (product.category || "").trim();
+      if (!category) continue;
+      counts[category] = (counts[category] || 0) + 1;
+    }
+    return counts;
+  }, [filteredProductCatalog]);
+
+  const visibleCatalogCategories = useMemo(() => {
+    const uncategorizedCount = categoryCountsAll["Uncategorized"] || 0;
+    return catalogCategories.filter((category) => {
+      if (category.toLowerCase() === "uncategorized") {
+        return uncategorizedCount > 0;
+      }
+      return true;
+    });
+  }, [catalogCategories, categoryCountsAll]);
+
+  useEffect(() => {
+    if (filters.categories.length === 0) {
+      return;
+    }
+    const valid = new Set(visibleCatalogCategories);
+    const next = filters.categories.filter((category) => valid.has(category));
+    if (next.length === filters.categories.length) {
+      return;
+    }
+    setFilters((prev) => ({ ...prev, categories: next }));
+  }, [filters.categories, visibleCatalogCategories]);
+
   const productCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    catalogCategories.forEach((category) => {
-      counts[category] = filteredProductCatalog.filter(
-        (product) => product.category === category,
-      ).length;
-    });
+    for (const category of visibleCatalogCategories) {
+      counts[category] = categoryCountsAll[category] || 0;
+    }
     return counts;
-  }, [filteredProductCatalog, catalogCategories]);
+  }, [visibleCatalogCategories, categoryCountsAll]);
 
   // Add springy scroll effect to filter sidebar on large screens - DISABLED FOR TESTING
   // useEffect(() => {
@@ -15081,7 +15110,11 @@ export default function App() {
           )}
         </div>
 
-      {user ? <LegalFooter showContactCTA={false} /> : null}
+      {user ? (
+        <LegalFooter showContactCTA={false} variant="full" />
+      ) : (
+        <LegalFooter showContactCTA variant="ctaOnly" />
+      )}
       </div>
 
       {/* Checkout Modal */}

@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 from datetime import datetime
 from pathlib import Path
 from time import time
@@ -20,6 +21,7 @@ from ..repositories import (
     user_repository,
 )
 from ..database import mysql_client
+from ..integrations import woo_commerce
 from . import get_config
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,38 @@ LEGACY_STATUS_ALIASES = {
     "in_review": "account_created",
     "verifying": "verified",
 }
+
+_WOO_ORDER_PRESENCE_TTL_SECONDS = 60
+_woo_order_presence_cache_lock = threading.Lock()
+_woo_order_presence_cache: Dict[str, Dict[str, object]] = {}
+
+
+def _has_woo_order_for_email(email: str) -> bool:
+    normalized = _sanitize_email(email) or None
+    if not normalized:
+        return False
+    if not woo_commerce.is_configured():
+        return False
+
+    now = time()
+    with _woo_order_presence_cache_lock:
+        cached = _woo_order_presence_cache.get(normalized)
+        if cached and float(cached.get("expiresAt") or 0) > now:
+            return bool(cached.get("hasOrder"))
+
+    has_order = False
+    try:
+        orders = woo_commerce.fetch_orders_by_email(normalized, per_page=1)
+        has_order = isinstance(orders, list) and len(orders) > 0
+    except Exception:
+        has_order = False
+
+    with _woo_order_presence_cache_lock:
+        _woo_order_presence_cache[normalized] = {
+            "hasOrder": has_order,
+            "expiresAt": now + _WOO_ORDER_PRESENCE_TTL_SECONDS,
+        }
+    return has_order
 
 
 def _sanitize_text(value: Optional[str], max_length: int = 190) -> Optional[str]:
@@ -428,6 +462,10 @@ def _enrich_referral(referral: Dict) -> Dict:
                     )
                 except Exception:
                     pass
+            try:
+                sales_prospect_repository.mark_doctor_as_nurturing_if_purchased(str(contact_account.get("id")))
+            except Exception:
+                pass
 
     return enriched
 
@@ -1709,7 +1747,16 @@ def apply_referral_credit(doctor_id: str, amount: float, order_id: str) -> Dict:
 
 
 def count_orders_for_doctor(doctor_id: str) -> int:
-    return order_repository.count_by_user_id(doctor_id)
+    base_count = order_repository.count_by_user_id(doctor_id)
+    if base_count > 0:
+        return base_count
+
+    try:
+        doctor = user_repository.find_by_id(str(doctor_id))
+    except Exception:
+        doctor = None
+    email = (doctor.get("email") if isinstance(doctor, dict) else None) or ""
+    return 1 if _has_woo_order_for_email(email) else 0
 
 
 def _service_error(message: str, status: int) -> Exception:

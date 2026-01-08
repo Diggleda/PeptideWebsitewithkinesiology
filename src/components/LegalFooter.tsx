@@ -36,10 +36,11 @@ const LEGAL_DOCUMENTS: Record<LegalDocumentKey, LegalDocumentContent> = {
 };
 
 interface LegalFooterProps {
+  variant?: 'full' | 'ctaOnly';
   showContactCTA?: boolean;
 }
 
-export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
+export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFooterProps) {
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -225,6 +226,24 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
     <>
       <footer className="relative z-10 mt-24 glass-strong">
         <div className="w-full px-4 sm:px-8 pt-12 pb-10">
+          {variant === 'ctaOnly' ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-6">
+              <p className="text-sm font-medium text-slate-900">Interested in joining the network?</p>
+              {showContactCTA ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new Event('peppro:close-dialogs'));
+                    handleContactOpen();
+                  }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
+                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                >
+                  Contact a Representative
+                </button>
+              ) : null}
+            </div>
+          ) : (
           <div className="legal-footer-layout gap-4 items-start text-center lg:text-left lg:items-start lg:justify-items-start">
             {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
@@ -272,6 +291,7 @@ export function LegalFooter({ showContactCTA = true }: LegalFooterProps) {
               </nav>
             </div>
           </div>
+          )}
         </div>
       </footer>
 

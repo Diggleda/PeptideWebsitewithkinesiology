@@ -1099,6 +1099,22 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
 
+    try:
+        nurturing_candidates = sorted(
+            {
+                str(order.get("doctorId"))
+                for order in summaries
+                if order.get("doctorId") is not None and str(order.get("doctorId")).strip()
+            }
+        )
+        for doctor_id in nurturing_candidates:
+            try:
+                sales_prospect_repository.mark_doctor_as_nurturing_if_purchased(doctor_id)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     logger.info(
         "[SalesRep] Fetch complete salesRepId=%s doctorCount=%s orderCount=%s sampleOrders=%s",
         sales_rep_id,
