@@ -13,7 +13,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
-import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X } from 'lucide-react';
+import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X, Landmark } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
 import { ordersAPI, paymentsAPI, shippingAPI } from '../services/api';
@@ -141,6 +141,7 @@ interface CheckoutModalProps {
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
+    paymentMethod?: 'stripe' | 'bacs' | string | null;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -233,6 +234,7 @@ export function CheckoutModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'bacs'>('stripe');
   const [cardholderName, setCardholderName] = useState(defaultCardholderName);
   const cardholderAutofillRef = useRef(defaultCardholderName);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -360,7 +362,9 @@ export function CheckoutModal({
     .map((value) => normalizeAddressField(value).toUpperCase())
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
-  const isPaymentValid = stripeReady ? cardholderName.trim().length >= 2 : true;
+  const isPaymentValid = paymentMethod === 'bacs'
+    ? true
+    : (stripeReady ? cardholderName.trim().length >= 2 : true);
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
@@ -531,6 +535,7 @@ export function CheckoutModal({
         expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
         physicianCertificationAccepted: termsAccepted,
         taxTotal: taxAmount,
+        paymentMethod,
       });
       createdOrderId = result?.order?.id ?? null;
       const stripeInfo = result && typeof result === 'object'
@@ -545,7 +550,8 @@ export function CheckoutModal({
         result?.integrations?.wooCommerce?.response?.payment_url
         || result?.integrations?.wooCommerce?.response?.paymentUrl
         || null;
-      const shouldUseStripe = stripeReady && Boolean(clientSecret);
+      const shouldUseStripe = paymentMethod === 'stripe' && stripeReady && Boolean(clientSecret);
+      const shouldRedirectToWoo = paymentMethod === 'stripe' && Boolean(paymentUrl) && wooRedirectEnabled && !shouldUseStripe;
 
       console.debug('[CheckoutModal] Checkout integrations', {
         stripeReady,
@@ -594,7 +600,7 @@ export function CheckoutModal({
             );
           });
         }
-      } else if (stripeReady && !clientSecret) {
+      } else if (paymentMethod === 'stripe' && stripeReady && !clientSecret) {
         console.warn('[CheckoutModal] Stripe onsite enabled but no clientSecret returned', stripeInfo);
         if (paymentUrl && wooRedirectEnabled) {
           toast.info('Redirecting to complete payment…');
@@ -604,7 +610,7 @@ export function CheckoutModal({
         const reasonTextRaw =
           stripeInfo?.message || stripeInfo?.reason || 'Payment is unavailable right now.';
         throw new Error(sanitizeServiceNames(String(reasonTextRaw)));
-      } else if (!stripeReady && paymentUrl && wooRedirectEnabled) {
+      } else if (paymentMethod === 'stripe' && !stripeReady && paymentUrl && wooRedirectEnabled) {
         toast.info('Redirecting to complete payment…');
         window.location.assign(paymentUrl);
         return;
@@ -627,12 +633,11 @@ export function CheckoutModal({
         setCheckoutStatus('idle');
         setCheckoutStatusMessage(null);
         onClose();
-        if (paymentUrl && wooRedirectEnabled && !shouldUseStripe) {
+        if (shouldRedirectToWoo && paymentUrl) {
           window.location.assign(paymentUrl);
         }
-      }, paymentUrl && wooRedirectEnabled && !shouldUseStripe ? 600 : 1800);
-      if (paymentUrl && wooRedirectEnabled && !shouldUseStripe) {
-        // Redirect to store checkout only when explicitly enabled.
+      }, shouldRedirectToWoo ? 600 : 1800);
+      if (shouldRedirectToWoo) {
         toast.info('Redirecting to complete payment…');
       }
     } catch (error: any) {
@@ -733,6 +738,7 @@ export function CheckoutModal({
       setIsProcessing(false);
       setBulkOpenMap({});
       setTermsAccepted(false);
+      setPaymentMethod('stripe');
       setCardholderName(defaultCardholderName);
       cardholderAutofillRef.current = defaultCardholderName;
       setCheckoutStatus('idle');
@@ -1257,23 +1263,53 @@ export function CheckoutModal({
                 <h3>Payment Information</h3>
                 {stripeReady ? (
                   <div className="grid grid-cols-1 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="cardName">Cardholder Name</Label>
-                      <Input
-                        id="cardName"
-                        name="cc-name"
-                        autoComplete="cc-name"
-                        placeholder="John Doe"
-                        className="squircle-sm mt-1 bg-slate-50 border-2"
-                        value={cardholderName}
-                        onChange={(event) => setCardholderName(event.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>Card Details</Label>
-                      <div className="squircle-sm mt-1 border-2 bg-white px-3 py-2">
-                        <CardElement options={cardElementOptions} />
+                    {paymentMethod === 'stripe' ? (
+                      <>
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="cardName">Cardholder Name</Label>
+                          <Input
+                            id="cardName"
+                            name="cc-name"
+                            autoComplete="cc-name"
+                            placeholder="John Doe"
+                            className="squircle-sm mt-1 bg-slate-50 border-2"
+                            value={cardholderName}
+                            onChange={(event) => setCardholderName(event.target.value)}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label>Card Details</Label>
+                          <div className="squircle-sm mt-1 border-2 bg-white px-3 py-2">
+                            <CardElement options={cardElementOptions} />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700">
+                        You selected Direct Bank Transfer. After placing your order, you’ll receive payment instructions by email.
                       </div>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant={paymentMethod === 'bacs' ? 'default' : 'secondary'}
+                        onClick={() => setPaymentMethod('bacs')}
+                        className="squircle-sm justify-center gap-2"
+                      >
+                        <Landmark className="h-4 w-4" />
+                        Direct Bank Transfer
+                      </Button>
+                      {paymentMethod === 'bacs' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => setPaymentMethod('stripe')}
+                          className="justify-center gap-2 text-slate-600"
+                        >
+                          <CreditCard className="h-4 w-4" />
+                          Use Credit Card Instead
+                        </Button>
+                      )}
                     </div>
                   </div>
 	                ) : (

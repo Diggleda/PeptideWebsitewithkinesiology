@@ -9667,6 +9667,7 @@ export default function App() {
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
+    paymentMethod?: string | null;
   }) => {
     console.debug("[Checkout] Attempt", {
       items: cartItems.length,
@@ -9733,6 +9734,7 @@ export default function App() {
             options?.physicianCertificationAccepted === true,
         },
         taxTotal,
+        options?.paymentMethod ?? null,
       );
       try {
         const wooNumber =
@@ -12502,10 +12504,10 @@ export default function App() {
                               : isManualLead
                                 ? "Manual"
                                 : "Referral";
-                          const hasContactAccount =
-                            typeof record.referredContactHasAccount === "boolean"
-                              ? record.referredContactHasAccount
-                              : false;
+	                          const hasContactAccount =
+	                            typeof record.referredContactHasAccount === "boolean"
+	                              ? record.referredContactHasAccount
+	                              : false;
 	                          const creditEligible =
 	                            kind === "referral"
 	                              ? Boolean(record.referredContactEligibleForCredit)
@@ -12538,12 +12540,25 @@ export default function App() {
 				                          const permitInputId = `reseller-permit-${String(record?.id || "")
 				                            .replace(/[^a-zA-Z0-9_-]/g, "_")
 				                            .slice(0, 64)}`;
-				                          const currentStatusLabel =
-				                            selectedStatusValue === "pending"
-				                              ? "Pending"
-				                              : humanizeReferralStatus(selectedStatusValue);
+				                          const shouldShowAccountCreatedForVerified =
+				                            hasContactAccount && selectedStatusValue === "verified";
+				                          const currentStatusLabel = (() => {
+				                            if (selectedStatusValue === "pending") {
+				                              return "Pending";
+				                            }
+				                            if (shouldShowAccountCreatedForVerified) {
+				                              return "Account Created";
+				                            }
+				                            return humanizeReferralStatus(selectedStatusValue);
+				                          })();
 			                          const nextPromotion = (() => {
 			                            if (isSyntheticAccount) {
+			                              if (selectedStatusValue === "converted") {
+			                                return null;
+			                              }
+			                              return { value: "converted", label: "Converted", disabled: false };
+			                            }
+			                            if (shouldShowAccountCreatedForVerified) {
 			                              return { value: "converted", label: "Converted", disabled: false };
 			                            }
 			                            switch (selectedStatusValue) {

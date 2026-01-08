@@ -881,8 +881,15 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     if sales_rep_code:
         meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
 
-    return {
-        "status": "pending",
+    payment_method = str(order.get("paymentMethod") or "").strip().lower()
+    if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
+        payment_method = "bacs"
+    else:
+        payment_method = ""
+
+    status = "on-hold" if payment_method == "bacs" else "pending"
+    payload = {
+        "status": status,
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
         "line_items": build_line_items(order.get("items")),
@@ -893,6 +900,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "billing": billing_address,
         "shipping": shipping_address,
     }
+    if payment_method == "bacs":
+        payload["payment_method"] = "bacs"
+        payload["payment_method_title"] = "Direct Bank Transfer"
+    return payload
 
 
 def forward_order(order: Dict, customer: Dict) -> Dict:

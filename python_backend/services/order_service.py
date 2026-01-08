@@ -372,6 +372,7 @@ def create_order(
     items: List[Dict],
     total: float,
     referral_code: Optional[str],
+    payment_method: Optional[str] = None,
     tax_total: Optional[float] = None,
     shipping_total: Optional[float] = None,
     shipping_address: Optional[Dict] = None,
@@ -397,6 +398,11 @@ def create_order(
 
     tax_exempt = _is_tax_exempt_for_checkout(user)
     sales_rep_ctx = _resolve_sales_rep_context(user)
+    normalized_payment_method = str(payment_method or "").strip().lower()
+    if normalized_payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
+        normalized_payment_method = "bacs"
+    else:
+        normalized_payment_method = "stripe"
 
     now = datetime.now(timezone.utc).isoformat()
     shipping_address = shipping_address or {}
@@ -436,6 +442,7 @@ def create_order(
         "createdAt": now,
         "expectedShipmentWindow": (expected_shipment_window or None),
         "physicianCertificationAccepted": bool(physician_certified),
+        "paymentMethod": normalized_payment_method,
         "doctorSalesRepId": sales_rep_ctx.get("id"),
         "doctorSalesRepName": sales_rep_ctx.get("name"),
         "doctorSalesRepEmail": sales_rep_ctx.get("email"),
@@ -529,7 +536,7 @@ def create_order(
             "details": getattr(exc, "response", None),
         }
 
-    if order.get("wooOrderId"):
+    if order.get("wooOrderId") and normalized_payment_method != "bacs":
         try:
             t0 = time.perf_counter()
             integrations["stripe"] = stripe_payments.create_payment_intent(order)
@@ -554,6 +561,8 @@ def create_order(
                 "message": str(exc),
                 "details": getattr(exc, "response", None),
             }
+    elif normalized_payment_method == "bacs":
+        integrations["stripe"] = {"status": "skipped", "reason": "payment_method_bacs"}
     else:
         integrations["stripe"] = {
             "status": "skipped",

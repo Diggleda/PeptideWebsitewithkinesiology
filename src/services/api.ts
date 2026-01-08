@@ -1075,6 +1075,7 @@ export const ordersAPI = {
       physicianCertification?: boolean;
     },
     taxTotal?: number | null,
+    paymentMethod?: string | null,
   ) => {
     const fingerprint = buildOrderFingerprint({
       items,
@@ -1094,6 +1095,7 @@ export const ordersAPI = {
         items,
         total,
         referralCode,
+        paymentMethod: paymentMethod ?? null,
         shippingAddress: shipping?.address,
         shippingEstimate: shipping?.estimate,
         shippingTotal: shipping?.shippingTotal ?? null,
