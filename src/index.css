@@ -3786,6 +3786,52 @@ html {
   z-index: 0;
 }
 
+.checkout-item-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+.checkout-item-scroll-inner {
+  min-width: 500px;
+  width: max-content;
+  position: relative;
+}
+
+.checkout-item-image {
+  width: 180px;
+  height: 180px;
+  flex: 0 0 80px;
+}
+
+.checkout-bank-transfer-note {
+  padding: 0.35rem 0.7rem;
+  text-align: left;
+}
+
+@media (min-width: 640px) {
+  .checkout-item-image {
+    width: 180px;
+    height: 180px;
+    flex-basis: 96px;
+  }
+
+  .checkout-bank-transfer-note {
+    padding: 0.35rem 0.7rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .checkout-item-scroll {
+    overflow-x: visible;
+  }
+
+  .checkout-item-scroll-inner {
+    min-width: 100%;
+    width: 100%;
+  }
+}
+
 .sales-order-card {
   width: 100%;
 }
@@ -3899,7 +3945,7 @@ html {
 .lead-list-item:hover {
   border-color: rgb(95, 179, 249);
   box-shadow: 0 16px 34px -22px rgba(95, 179, 249, 0.65);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .lead-list-meta {
@@ -3912,6 +3958,41 @@ html {
 .lead-list-name {
   font-weight: 600;
   color: rgb(15, 23, 42);
+  text-align: left;
+}
+
+.lead-list-name-text {
+  text-align: left;
+  align-self: flex-start;
+  display: block;
+}
+
+.lead-list-name-icon {
+  transform: none !important;
+  transition: none !important;
+}
+
+.lead-list-item:hover .lead-list-name-icon {
+  transform: none !important;
+}
+
+.lead-list-name svg,
+.lead-list-name-icon svg,
+.lead-list-item:hover svg {
+  transform: none !important;
+  transition: none !important;
+}
+
+.lucide-notebook-pen {
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+.lead-list-item:hover .lucide-notebook-pen {
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
 }
 
 .lead-list-detail {
@@ -4033,7 +4114,7 @@ html {
 }
 
 .prospect-permit-container {
-  width: fit-content;
+  width: min(22rem, 100%);
   max-width: 100%;
   display: flex;
   flex-direction: column;
@@ -4043,6 +4124,12 @@ html {
   border-radius: 14px;
   padding: 0.55rem 0.65rem 0.45rem;
   background: rgba(248, 250, 252, 0.85);
+}
+
+.prospect-permit-instructions {
+  width: min(22rem, 100%);
+  align-self: flex-end;
+  text-align: left;
 }
 
 .prospect-permit-caption {
@@ -4129,6 +4216,7 @@ html {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: min(12rem, 100%);
 }
 
 .prospect-permit-file-meta {
@@ -4137,6 +4225,7 @@ html {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  max-width: min(12rem, 100%);
 }
 
 .prospect-permit-file-name-button {
@@ -4146,6 +4235,13 @@ html {
   text-align: left;
   cursor: pointer;
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: min(11rem, 100%);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .prospect-permit-file-name-button:hover,
@@ -4224,6 +4320,10 @@ html {
 
   .prospect-permit-container {
     align-items: flex-start;
+  }
+
+  .prospect-permit-instructions {
+    align-self: flex-start;
   }
 
   .prospect-permit-caption {
@@ -5539,38 +5639,88 @@ html {
 [role="dialog"],
 [data-radix-dialog-overlay],
 [data-radix-dialog-content],
+[data-slot="dialog-overlay"],
+[data-slot="dialog-content"],
 .modal,
 .dialog {
   z-index: 9999 !important;
+  transition-property: opacity, transform !important;
+  transition-duration: 55ms !important;
+  transition-timing-function: ease !important;
+}
+
+[data-radix-dialog-overlay][data-state="open"],
+[data-radix-dialog-content][data-state="open"],
+[data-slot="dialog-overlay"][data-state="open"],
+[data-slot="dialog-content"][data-state="open"] {
+  animation: dialog-fade-in 55ms ease-out both;
+}
+
+[data-radix-dialog-overlay][data-state="closed"],
+[data-radix-dialog-content][data-state="closed"],
+[data-slot="dialog-overlay"][data-state="closed"],
+[data-slot="dialog-content"][data-state="closed"] {
+  animation: dialog-fade-out 55ms ease-out both;
+}
+
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dialog-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
 
 /* Elevate elements inside dialogs */
 [data-radix-dialog-content] .glass,
 [data-radix-dialog-content] .glass-card,
-[data-radix-dialog-content] .glass-strong {
+[data-radix-dialog-content] .glass-strong,
+[data-slot="dialog-content"] .glass,
+[data-slot="dialog-content"] .glass-card,
+[data-slot="dialog-content"] .glass-strong {
   background-color: rgba(255, 255, 255, 0.98) !important;
   border-color: rgba(15, 23, 42, 0.08) !important;
   box-shadow:
-    0 26px 65px -32px rgba(15, 23, 42, 0.55),
-    0 14px 30px -18px rgba(15, 23, 42, 0.45),
+    0 18px 44px -30px rgba(15, 23, 42, 0.2),
+    0 10px 22px -16px rgba(15, 23, 42, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
 }
 
 [data-radix-dialog-content] .glass-brand,
 [data-radix-dialog-content] button.squircle-sm,
-[data-radix-dialog-content] .btn-hover-lighter {
+[data-radix-dialog-content] .btn-hover-lighter,
+[data-slot="dialog-content"] .glass-brand,
+[data-slot="dialog-content"] button.squircle-sm,
+[data-slot="dialog-content"] .btn-hover-lighter {
   box-shadow:
-    0 18px 40px -24px rgba(95, 179, 249, 0.45),
-    0 10px 24px -18px rgba(7, 27, 27, 0.35) !important;
+    0 12px 28px -20px rgba(95, 179, 249, 0.3),
+    0 8px 18px -14px rgba(7, 27, 27, 0.25) !important;
   transform: translateY(0);
 }
 
 [data-radix-dialog-content] .glass-brand:focus-visible,
 [data-radix-dialog-content] .glass-brand:hover,
-[data-radix-dialog-content] button.squircle-sm:hover {
+[data-radix-dialog-content] button.squircle-sm:hover,
+[data-slot="dialog-content"] .glass-brand:focus-visible,
+[data-slot="dialog-content"] .glass-brand:hover,
+[data-slot="dialog-content"] button.squircle-sm:hover {
   box-shadow:
-    0 24px 48px -22px rgba(95, 179, 249, 0.55),
-    0 14px 30px -20px rgba(7, 27, 27, 0.4) !important;
+    0 16px 34px -20px rgba(95, 179, 249, 0.38),
+    0 10px 22px -16px rgba(7, 27, 27, 0.3) !important;
 }
 
 

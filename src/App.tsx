@@ -10892,8 +10892,8 @@ export default function App() {
 
         {/* Products Grid */}
         <div className="w-full min-w-0 flex-1">
-          <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 mb-6">
-            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+          <div className="flex flex-col gap-3 mb-6 lg:flex-row lg:flex-nowrap lg:items-center">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 order-2 lg:order-1">
               <h2 className="mr-1">Products</h2>
               <div className="flex flex-wrap items-center gap-2">
                 {statusChips.map((chip) => {
@@ -10917,13 +10917,13 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-end">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-start order-1 lg:order-2 lg:justify-end">
               {totalCartItems > 0 && (
                 <Button
                   variant="ghost"
                   onClick={() => setCheckoutOpen(true)}
                   ref={checkoutButtonRef}
-                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center"
+                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
                 >
                   <ShoppingCart className="w-4 h-4 mr-2" />
                   Checkout ({totalCartItems})
@@ -12544,7 +12544,7 @@ export default function App() {
 				                            .slice(0, 64)}`;
 				                          const shouldShowAccountCreatedForVerified =
 				                            hasContactAccount && selectedStatusValue === "verified";
-				                          const currentStatusLabel = (() => {
+			                          const currentStatusLabel = (() => {
 				                            if (selectedStatusValue === "pending") {
 				                              return "Pending";
 				                            }
@@ -12580,6 +12580,21 @@ export default function App() {
 			                                return null;
 			                            }
 			                          })();
+                              const stageInstructionKey =
+                                shouldShowAccountCreatedForVerified
+                                  ? "account_created"
+                                  : selectedStatusValue;
+                              const stageInstructions: Record<string, string> = {
+                                pending: "Move to Contacting when ready to reach out.",
+                                contacted:
+                                  "Reach out to them, verify their practice, ensure they have an NPI number, and note down any other personal and practice details. Collect their reseller permit if available for their tax exemption. When verified, advance their status.",
+                                verified:
+                                  "Now that they are verified, help them create an account by sharing your referral code. You can see when they have created an account with the label in this container.",
+                                account_created:
+                                  "Now that their account is created, walk them through the platform. Ensure to promote their educational and research excellence and our support for them. You can preemptively move them to the Converted status for your convenience if you wish. It will note when they make their first purchase automatically.",
+                              };
+                              const stageInstruction =
+                                stageInstructions[stageInstructionKey] || "";
 			                          const backwardStatuses = (() => {
 			                            const order = [
 			                              "pending",
@@ -12648,10 +12663,10 @@ export default function App() {
 	                            <li key={record.id} className="lead-list-item">
 	                              <div className="lead-list-meta">
 	                                <div className="lead-list-name min-w-0">
-	                                  <button
-	                                    type="button"
-	                                    className="flex items-start justify-start gap-2 min-w-0 text-left w-full"
-	                                    onClick={() => {
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-start gap-1 min-w-0 text-left"
+                                    onClick={() => {
 	                                      const doctorId =
 	                                        (record as any).referredContactAccountId ||
 	                                        (record as any).referredContactId ||
@@ -12709,34 +12724,34 @@ export default function App() {
 	                                      padding: 0,
 	                                    }}
 	                                  >
-	                                    {hasContactAccount && (
-	                                      <div
-	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
-	                                        style={{ width: 28, height: 28, minWidth: 28 }}
-	                                      >
-	                                        {leadAccountProfile?.profileImageUrl ? (
-	                                          <img
-	                                            src={leadAccountProfile.profileImageUrl}
-	                                            alt={leadDisplayName}
-	                                            className="h-full w-full object-cover"
-	                                            loading="lazy"
-	                                            decoding="async"
-	                                          />
-	                                        ) : (
-	                                          <span className="text-[11px] font-semibold text-slate-600">
-	                                            {getInitials(leadDisplayName)}
-	                                          </span>
-	                                        )}
-	                                      </div>
-	                                    )}
-		                                    <NotebookPen
-		                                      className="h-4 w-4 text-slate-400 shrink-0 mt-[2px]"
-		                                      aria-hidden="true"
-		                                    />
-		                                    <span className="min-w-0 whitespace-normal break-words leading-snug text-left">
-		                                      {leadDisplayName}
-		                                    </span>
-		                                  </button>
+                                    <span className="flex items-center gap-1.5 min-w-0 text-left">
+                                      <div
+                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
+                                        style={{ width: 28, height: 28, minWidth: 28 }}
+                                      >
+                                        {leadAccountProfile?.profileImageUrl ? (
+                                          <img
+                                            src={leadAccountProfile.profileImageUrl}
+                                            alt={leadDisplayName}
+                                            className="h-full w-full object-cover"
+                                            loading="lazy"
+                                            decoding="async"
+                                          />
+                                        ) : (
+                                          <span className="text-[11px] font-semibold text-slate-600">
+                                            {getInitials(leadDisplayName)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <NotebookPen
+                                        className="h-4 w-4 text-slate-400 shrink-0 lead-list-name-icon"
+                                        aria-hidden="true"
+                                      />
+                                      <span className="lead-list-name-text min-w-0 flex-1 break-words justify-start text-left leading-snug mt-[1px] self-start w-full">
+                                        {leadDisplayName}
+                                      </span>
+                                    </span>
+                                  </button>
 	                                </div>
 	                                {record.referredContactEmail && (
 	                                  <div className="lead-list-detail">
@@ -12820,41 +12835,45 @@ export default function App() {
 		                                    </option>
 			                                  ))}
 			                                </select>
-			                                {isVerified && (
-			                                  <div className="mt-1 flex flex-col items-center gap-1">
-			                                    <button
-			                                      type="button"
-			                                      onClick={openAccountDetailsTab}
-			                                      className="text-[rgb(95,179,249)] text-xs font-semibold hover:underline"
-			                                    >
-			                                      Share Referral Code
-			                                    </button>
-			                                    {typeof (user as any)?.referralCode === "string" &&
-			                                    (user as any).referralCode.trim() ? (
-			                                      <button
-			                                        type="button"
-			                                        className="text-[11px] font-semibold tracking-wide text-slate-700 hover:underline"
-			                                        title="Copy your sales code"
-			                                        onClick={() => {
-			                                          const code = String((user as any).referralCode || "")
-			                                            .trim()
-			                                            .toUpperCase();
-			                                          if (!code) return;
-			                                          try {
-			                                            void navigator.clipboard?.writeText(code);
-			                                          } catch {
-			                                            // ignore
-			                                          }
-			                                        }}
-			                                      >
-			                                        Code:{" "}
-			                                        {String((user as any).referralCode || "")
-			                                          .trim()
-			                                          .toUpperCase()}
-			                                      </button>
-			                                    ) : null}
-			                                  </div>
-	                                )}
+                                {stageInstruction ? (
+                                  <div className="prospect-permit-instructions mt-2 text-xs leading-snug text-slate-500">
+                                    {stageInstruction}
+                                  </div>
+                                ) : null}
+                                {isVerified && (
+                                  <div className="mt-1 text-xs text-slate-700 text-center">
+                                    {typeof (user as any)?.referralCode === "string" &&
+                                    (user as any).referralCode.trim() ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="text-[11px] font-semibold tracking-wide text-slate-700 hover:text-[rgb(37,99,235)]"
+                                          title="Copy your sales code"
+                                          onClick={() => {
+                                            const code = String((user as any).referralCode || "")
+                                              .trim()
+                                              .toUpperCase();
+                                            if (!code) return;
+                                            try {
+                                              void navigator.clipboard?.writeText(code);
+                                            } catch {
+                                              // ignore
+                                            }
+                                          }}
+                                        >
+                                          Your referral code:{" "}
+                                          {String((user as any).referralCode || "")
+                                            .trim()
+                                            .toUpperCase()}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="font-semibold tracking-wide text-slate-700">
+                                        Your referral code: —
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 {awaitingFirstPurchase && (
                                   <div className="text-xs text-amber-600 text-center mt-1">
                                     Awaiting their first purchase
@@ -12953,31 +12972,37 @@ export default function App() {
 			                                            </label>
 			                                            {hasResellerPermitFile ? (
 			                                              <div className="prospect-permit-file-meta">
-			                                                <button
-			                                                  type="button"
-			                                                  className="prospect-permit-file-name prospect-permit-file-name-button"
-			                                                  disabled={
-			                                                    isUpdating || isPermitBusy
-			                                                  }
-			                                                  onClick={() => {
-			                                                    const display =
-			                                                      resellerPermitFileName ||
-			                                                      resellerPermitFilePath
-			                                                        .split("/")
-			                                                        .pop() ||
-			                                                      "reseller_permit";
-			                                                    void viewResellerPermit(
-			                                                      String(record.id),
-			                                                      display,
-			                                                    );
-			                                                  }}
-			                                                >
-			                                                  {resellerPermitFileName ||
-			                                                    resellerPermitFilePath
-			                                                      .split("/")
-			                                                      .pop() ||
-			                                                    "Uploaded permit"}
-			                                                </button>
+                                            {(() => {
+                                              const fullName =
+                                                resellerPermitFileName ||
+                                                resellerPermitFilePath
+                                                  .split("/")
+                                                  .pop() ||
+                                                "reseller_permit";
+                                              const shortName =
+                                                fullName.length <= 12
+                                                  ? fullName
+                                                  : `${fullName.slice(0, 8)}…${fullName.slice(-3)}`;
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  className="prospect-permit-file-name prospect-permit-file-name-button"
+                                                  disabled={
+                                                    isUpdating || isPermitBusy
+                                                  }
+                                                  aria-label="Download uploaded reseller permit"
+                                                  title={fullName}
+                                                  onClick={() => {
+                                                    void viewResellerPermit(
+                                                      String(record.id),
+                                                      fullName,
+                                                    );
+                                                  }}
+                                                >
+                                                  {shortName}
+                                                </button>
+                                              );
+                                            })()}
 			                                                <button
 			                                                  type="button"
 			                                                  className="prospect-permit-file-delete"
@@ -13909,12 +13934,12 @@ export default function App() {
                           , {user.name}!
                         </p>
                         <div
-                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500`}
+                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500 mt-6`}
                           aria-live="polite"
                         >
                           {!quoteReady && (
                             <div className="min-h-[56px] flex items-center justify-center w-full">
-                              <p className="text-sm font-semibold text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
+                              <p className="text-sm font-semibold mt-3 text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
                                 Loading today&apos;s quote…
                               </p>
                             </div>

@@ -10,6 +10,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const systemRoutes = require('./routes/systemRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const wooRoutes = require('./routes/wooRoutes');
+const catalogRoutes = require('./routes/catalogRoutes');
 const quotesRoutes = require('./routes/quotesRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const referralRoutes = require('./routes/referralRoutes');
@@ -229,6 +230,7 @@ const createApp = () => {
   app.use('/api/shipping', shippingRoutes);
   app.use('/api/referrals', referralRoutes);
   app.use('/api/woo', wooRoutes);
+  app.use('/api/catalog', catalogRoutes);
   app.use('/api/quotes', quotesRoutes);
   app.use('/api/news', newsRoutes);
   app.use('/api/password-reset', passwordResetRoutes);

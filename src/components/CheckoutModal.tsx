@@ -977,13 +977,13 @@ export function CheckoutModal({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6" ref={checkoutScrollRef}>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6" ref={checkoutScrollRef}>
           <div className="space-y-6 pt-6">
             <>
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 auto-rows-fr">
+                <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item, index) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
@@ -1000,131 +1000,132 @@ export function CheckoutModal({
                       key={item.id}
                       className="glass squircle-sm h-full w-full"
                     >
-                      <CardContent className="p-4 relative">
-                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[92px] sm:w-[150px] text-right">
-                          <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveItem(item.id)}
-                            className="text-red-500 hover:text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Remove item</span>
-                          </Button>
-                        </div>
-                        <div className="flex items-start gap-4 pr-[120px] sm:pr-[180px]">
-                          <div className="flex items-center gap-4 flex-grow">
-                            <div
-                              className="flex-shrink-0 self-stretch"
-                              style={{ flexBasis: '25%', maxWidth: '25%' }}
-                            >
-                              <ProductImageCarousel
-                                images={carouselImages}
-                                alt={item.product.name}
-                                className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2"
-                                imageClassName="h-full w-full object-contain"
-                                style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.75vw, 0.7rem)' } as CSSProperties}
-                                showDots={carouselImages.length > 1}
-                                showArrows={false}
-                              />
+                      <CardContent className="p-3 relative">
+                        <div className="checkout-item-scroll">
+                          <div className="checkout-item-scroll-inner">
+                            <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[92px] sm:w-[150px] text-right">
+                              <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveItem(item.id)}
+                                className="text-red-500 hover:text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Remove item</span>
+                              </Button>
                             </div>
-                            <div>
-                              <h4 className="line-clamp-1">#{index + 1} — {item.product.name}</h4>
-                              <p className="text-sm text-gray-600">{item.product.dosage}</p>
-                              {item.variant && (
-                                <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
-                              )}
-                              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                <span className="text-green-600 font-bold">
-                                  ${unitPrice.toFixed(2)}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => handleDecreaseQuantity(item.id, item.quantity)}
-                                    disabled={item.quantity <= 1}
-                                    className="squircle-sm bg-slate-50 border-2"
-                                  >
-                                    <Minus className="h-4 w-4" />
-                                  </Button>
-                                  <Input
-                                    value={quantityInputs[item.id] ?? String(item.quantity)}
-                                    onChange={(event) => handleQuantityInputChange(item.id, event.target.value)}
-                                    onBlur={() => handleQuantityInputBlur(item.id)}
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    className="w-16 text-center squircle-sm bg-slate-50 border-2"
+                            <div className="flex items-start gap-4 pr-[120px] sm:pr-[180px]">
+                              <div className="flex items-center gap-4 flex-grow">
+                                <div className="checkout-item-image self-start">
+                                  <ProductImageCarousel
+                                    images={carouselImages}
+                                    alt={item.product.name}
+                                    className="flex h-full w-full items-center justify-center rounded-lg bg-white/80 p-2"
+                                    imageClassName="h-full w-full object-contain"
+                                    style={{ '--product-image-frame-padding': 'clamp(0.35rem, 0.75vw, 0.7rem)' } as CSSProperties}
+                                    showDots={carouselImages.length > 1}
+                                    showArrows={false}
                                   />
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => handleIncreaseQuantity(item.id, item.quantity)}
-                                    className="squircle-sm bg-slate-50 border-2"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
                                 </div>
-                              </div>
-                              {visibleTiers.length > 0 && (
-                                <div className="mt-3 glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between text-xs font-semibold text-slate-700"
-                                    onClick={() =>
-                                      setBulkOpenMap((prev) => ({ ...prev, [item.id]: !isBulkOpen }))
-                                    }
-                                  >
-                                    <span className="tracking-wide uppercase text-[0.65rem]">Bulk Pricing</span>
-                                    <span className="text-[rgb(95,179,249)] text-[0.65rem]">
-                                      {isBulkOpen ? 'Hide' : 'Show'}
+                                <div>
+                                  <h4 className="line-clamp-1">#{index + 1} — {item.product.name}</h4>
+                                  <p className="text-sm text-gray-600">{item.product.dosage}</p>
+                                  {item.variant && (
+                                    <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
+                                  )}
+                                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                                    <span className="text-green-600 font-bold">
+                                      ${unitPrice.toFixed(2)}
                                     </span>
-                                  </button>
-                                  {isBulkOpen && (
-                                    <>
-                                      <div className="space-y-1.5 pt-1">
-                                        {visibleTiers.map((tier) => (
-                                          <div
-                                            key={`${tier.minQuantity}-${tier.discountPercentage}`}
-                                            className="flex items-center justify-between rounded-md px-2 py-1 text-[0.8rem]"
-                                          >
-                                            <span
-                                              className={
-                                                item.quantity >= tier.minQuantity
-                                                  ? 'text-green-600 font-semibold'
-                                                  : 'text-slate-600'
-                                              }
-                                            >
-                                              Buy {tier.minQuantity}+
-                                            </span>
-                                            <span
-                                              className={`tabular-nums ${
-                                                item.quantity >= tier.minQuantity
-                                                  ? 'text-green-600 font-semibold'
-                                                  : 'text-slate-600'
-                                              }`}
-                                            >
-                                              Save {tier.discountPercentage}%
-                                            </span>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={() => handleDecreaseQuantity(item.id, item.quantity)}
+                                        disabled={item.quantity <= 1}
+                                        className="squircle-sm bg-slate-50 border-2"
+                                      >
+                                        <Minus className="h-4 w-4" />
+                                      </Button>
+                                      <Input
+                                        value={quantityInputs[item.id] ?? String(item.quantity)}
+                                        onChange={(event) => handleQuantityInputChange(item.id, event.target.value)}
+                                        onBlur={() => handleQuantityInputBlur(item.id)}
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        className="w-16 text-center squircle-sm bg-slate-50 border-2"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={() => handleIncreaseQuantity(item.id, item.quantity)}
+                                        className="squircle-sm bg-slate-50 border-2"
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  {visibleTiers.length > 0 && (
+                                    <div className="mt-3 glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between text-xs font-semibold text-slate-700"
+                                        onClick={() =>
+                                          setBulkOpenMap((prev) => ({ ...prev, [item.id]: !isBulkOpen }))
+                                        }
+                                      >
+                                        <span className="tracking-wide uppercase text-[0.65rem]">Bulk Pricing</span>
+                                        <span className="text-[rgb(95,179,249)] text-[0.65rem]">
+                                          {isBulkOpen ? 'Hide' : 'Show'}
+                                        </span>
+                                      </button>
+                                      {isBulkOpen && (
+                                        <>
+                                          <div className="space-y-1.5 pt-1">
+                                            {visibleTiers.map((tier) => (
+                                              <div
+                                                key={`${tier.minQuantity}-${tier.discountPercentage}`}
+                                                className="flex items-center justify-between rounded-md px-2 py-1 text-[0.8rem]"
+                                              >
+                                                <span
+                                                  className={
+                                                    item.quantity >= tier.minQuantity
+                                                      ? 'text-green-600 font-semibold'
+                                                      : 'text-slate-600'
+                                                  }
+                                                >
+                                                  Buy {tier.minQuantity}+
+                                                </span>
+                                                <span
+                                                  className={`tabular-nums ${
+                                                    item.quantity >= tier.minQuantity
+                                                      ? 'text-green-600 font-semibold'
+                                                      : 'text-slate-600'
+                                                  }`}
+                                                >
+                                                  Save {tier.discountPercentage}%
+                                                </span>
+                                              </div>
+                                            ))}
                                           </div>
-                                        ))}
-                                      </div>
-                                      {upcomingTier && (
-                                        <p className="text-xs text-[rgb(95,179,249)] font-medium">
-                                          Buy {upcomingTier.minQuantity - item.quantity} more to save {upcomingTier.discountPercentage}%
-                                        </p>
+                                          {upcomingTier && (
+                                            <p className="text-xs text-[rgb(95,179,249)] font-medium">
+                                              Buy {upcomingTier.minQuantity - item.quantity} more to save {upcomingTier.discountPercentage}%
+                                            </p>
+                                          )}
+                                        </>
                                       )}
-                                    </>
+                                    </div>
+                                  )}
+                                  {item.note && (
+                                    <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
                                   )}
                                 </div>
-                              )}
-                              {item.note && (
-                                <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
-                              )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1265,7 +1266,7 @@ export function CheckoutModal({
 
               {/* Payment Form */}
               <div className="space-y-5">
-                <h3>Payment Information</h3>
+                <h3 className="mb-2">Payment Information</h3>
                 {stripeReady ? (
                   <div className="grid grid-cols-1 gap-4">
                     {paymentMethod === 'stripe' ? (
@@ -1290,7 +1291,7 @@ export function CheckoutModal({
                         </div>
                       </>
                     ) : (
-                      <div className="rounded-xl border border-slate-200 bg-white/70 px-6 py-5 text-sm text-slate-700 leading-relaxed">
+                      <div className="checkout-bank-transfer-note rounded-xl border border-slate-200 bg-white/70 text-sm text-slate-700 leading-relaxed">
                         You selected Direct Bank Transfer. After placing your order, you’ll receive payment instructions by email.
                       </div>
                     )}

@@ -197,9 +197,13 @@ const proxyCatalog = async (req, res, next) => {
   try {
     // Support both wildcard param capture (e.g. '/*') and middleware usage
     // where we rely on req.path under the '/api/woo' mount.
-    const requestedEndpoint = normalizeEndpoint((req.params && (req.params[0] || req.params.path)) || req.path || '');
+    let requestedEndpoint = normalizeEndpoint((req.params && (req.params[0] || req.params.path)) || req.path || '');
     if (!requestedEndpoint) {
       throw createHttpError('Missing WooCommerce endpoint', 400);
+    }
+
+    if (requestedEndpoint === 'categories') {
+      requestedEndpoint = 'products/categories';
     }
 
     if (!isAllowedEndpoint(requestedEndpoint)) {
