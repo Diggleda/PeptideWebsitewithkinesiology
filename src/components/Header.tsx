@@ -2131,10 +2131,10 @@ export function Header({
       return;
     }
 
-    if (result.status === 'referral_code_unavailable') {
-      setSignupError('This referral code isn\'t available. Please confirm it with your sales representative.');
-      return;
-    }
+	    if (result.status === 'referral_code_unavailable') {
+	      setSignupError('This onboarding code isn\'t available. Please confirm it with your representative.');
+	      return;
+	    }
 
     if (result.status === 'name_email_required') {
       setSignupError('Name and email are required to create your account.');

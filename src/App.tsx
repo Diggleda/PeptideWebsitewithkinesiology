@@ -11010,12 +11010,12 @@ export default function App() {
 	              </p>
 	            </div>
 	            {isAdmin(user?.role) && (
-	              <div className="flex flex-wrap items-center gap-2">
+	              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
 	                <a
 	                  href="https://shop.peppro.net/wp-admin/"
 	                  target="_blank"
 	                  rel="noopener noreferrer"
-	                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+	                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
 	                  title="Open PepPro WooCommerce Dashboard"
 	                >
                     <img
@@ -11026,13 +11026,14 @@ export default function App() {
                       loading="lazy"
                       decoding="async"
                     />
-	                  <span>PepPro WooCommerce Dashboard</span>
+	                  <span className="hidden sm:inline">PepPro WooCommerce Dashboard</span>
+	                  <span className="sm:hidden">WooCommerce Dashboard</span>
 	                </a>
                   <a
                     href={stripeDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
                     title="Open Stripe Dashboard"
                   >
                     <img
@@ -11049,7 +11050,7 @@ export default function App() {
                     href={shipStationDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-[rgba(95,179,249,0.65)] hover:bg-white transition-colors"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
                     title="Open ShipStation Dashboard"
                   >
                     <img
@@ -14838,16 +14839,16 @@ export default function App() {
                                 setLandingSignupError(
                                   "We couldn't locate that referral code. Please confirm it with your representative.",
                                 );
-                              } else if (
-                                res.status === "referral_code_unavailable"
-                              ) {
-                                setLandingSignupError(
-                                  "This referral code isn't available. Please confirm it with your representative.",
-                                );
-                              } else if (res.status === "name_email_required") {
-                                setLandingSignupError(
-                                  "Name and email are required to create your account.",
-                                );
+	                              } else if (
+	                                res.status === "referral_code_unavailable"
+	                              ) {
+	                                setLandingSignupError(
+	                                  "This onboarding code isn't available. Please confirm it with your representative.",
+	                                );
+	                              } else if (res.status === "name_email_required") {
+	                                setLandingSignupError(
+	                                  "Name and email are required to create your account.",
+	                                );
                               } else if (res.status === "password_mismatch") {
                                 setLandingSignupError(
                                   "Passwords do not match. Please confirm and try again.",

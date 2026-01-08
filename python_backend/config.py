@@ -129,7 +129,14 @@ def load_config() -> AppConfig:
         backend_build=(os.environ.get("BACKEND_BUILD") or _default_backend_build()),
         log_level=os.environ.get("LOG_LEVEL", "info" if node_env == "production" else "debug"),
         woo_commerce={
-            "store_url": _s(os.environ.get("WC_STORE_URL")),
+            # Support a few common env var names to reduce misconfig risk.
+            "store_url": _s(
+                os.environ.get("WC_STORE_URL")
+                or os.environ.get("WOO_STORE_URL")
+                or os.environ.get("WOOCOMMERCE_STORE_URL")
+                or os.environ.get("SHOP_URL")
+                or ""
+            ),
             "consumer_key": _s(os.environ.get("WC_CONSUMER_KEY")),
             "consumer_secret": _s(os.environ.get("WC_CONSUMER_SECRET")),
             "webhook_secret": _s(os.environ.get("WC_WEBHOOK_SECRET")),

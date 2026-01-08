@@ -524,6 +524,11 @@ def _dispatch_woo_password_reset(email: str) -> bool:
     store_url = (config.woo_commerce or {}).get("store_url") or ""
     store_url = str(store_url).strip()
     if not store_url:
+        if (config.woo_commerce or {}).get("consumer_key"):
+            logger.warning(
+                "Woo password reset requested but WC_STORE_URL is not configured; falling back to PepPro email",
+                extra={"email": email},
+            )
         return False
 
     url = f"{store_url.rstrip('/')}/wp-login.php?action=lostpassword"
@@ -543,13 +548,20 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         logger.warning("Woo password reset request failed", exc_info=exc, extra={"email": email})
         return False
 
-    # WordPress typically responds with 200 (form + message) or a redirect to checkemail=confirm.
     if response.status_code >= 500:
         logger.warning(
             "Woo password reset returned server error",
             extra={"status": response.status_code, "email": email},
         )
         return False
+    if response.status_code >= 400:
+        logger.warning(
+            "Woo password reset returned client error",
+            extra={"status": response.status_code, "email": email},
+        )
+        return False
+
+    # WordPress typically responds with 200 (form + message) or a redirect to checkemail=confirm.
     return True
 
 
