@@ -800,6 +800,7 @@ export function Header({
   const logoHaloBackground = 'rgba(95, 179, 249, 0.08)';
   const [loginOpen, setLoginOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [signupName, setSignupName] = useState('');
   const [signupSuffix, setSignupSuffix] = useState('');
@@ -2808,6 +2809,7 @@ export function Header({
 		    const repView = false;
 		    const doctorView = Boolean(localUser && isDoctorRole(localUser.role));
 		    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
+        const normalizedQuery = ordersSearchQuery.trim().toLowerCase();
 		    const visibleOrders = cachedAccountOrders
 	      .filter((order) => {
         const source = (order.source || '').toLowerCase();
@@ -2822,6 +2824,37 @@ export function Header({
           return true;
         }
         return !isCanceledOrRefundedStatus(order.status);
+      })
+      .filter((order) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        const integrationDetails = parseMaybeJson((order as any).integrationDetails);
+        const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
+        const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+        const wooOrderNumber =
+          normalizeStringField(order.wooOrderNumber) ||
+          normalizeStringField(wooResponse?.number) ||
+          normalizeStringField(wooIntegration?.wooOrderNumber) ||
+          normalizeStringField(order.number) ||
+          normalizeStringField(order.id) ||
+          '';
+        const trackingNumber = resolveTrackingNumber(order);
+        const lineItemNames = (order.lineItems || [])
+          .map((line) => (line?.name || '').toString())
+          .filter(Boolean)
+          .join(' ');
+        const haystack = [
+          wooOrderNumber,
+          order.status || '',
+          trackingNumber || '',
+          lineItemNames,
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        return haystack.includes(normalizedQuery);
       });
 
     if (!visibleOrders.length) {
@@ -3506,6 +3539,14 @@ export function Header({
               {formatRelativeMinutes(ordersLastSyncedAt)}
             </button>
           )}
+
+          <Input
+            value={ordersSearchQuery}
+            onChange={(event) => setOrdersSearchQuery(event.target.value)}
+            placeholder="Search orders…"
+            className="h-7 w-full sm:w-[16rem] md:w-[18rem] text-xs squircle-sm bg-white/80 border border-[var(--brand-glass-border-1)] focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.35)]"
+          />
+
           <div className="flex items-center gap-2 ml-auto">
             <Button
               type="button"
@@ -3762,7 +3803,7 @@ export function Header({
 	              </DialogDescription>
 	              {authMode === 'signup' && (
 	                <p className="text-base leading-snug" style={{ color: secondaryColor }}>
-	                  Your regional manager will work with you, if intended, to collect your resellers permit.
+	                  Your representative will work with you, if intended, to collect your resellers permit.
 	                </p>
 	              )}
 	            </div>

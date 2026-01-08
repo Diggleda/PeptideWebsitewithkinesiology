@@ -7201,15 +7201,17 @@ export default function App() {
     if (salesTrackingOrders.length === 0) {
       return null;
     }
-    const shouldCountRevenueForStatus = (status?: string | null) => {
-      const normalized = String(status || "").toLowerCase().trim();
-      return (
-        normalized !== "cancelled" &&
-        normalized !== "canceled" &&
-        normalized !== "trash" &&
-        normalized !== "refunded"
-      );
-    };
+	    const shouldCountRevenueForStatus = (status?: string | null) => {
+	      const normalized = String(status || "").toLowerCase().trim();
+	      return (
+	        normalized !== "cancelled" &&
+	        normalized !== "canceled" &&
+	        normalized !== "on-hold" &&
+	        normalized !== "on_hold" &&
+	        normalized !== "trash" &&
+	        normalized !== "refunded"
+	      );
+	    };
     const activeOrders = salesTrackingOrders.filter((order) => {
       return shouldCountRevenueForStatus(order.status);
     });
@@ -9993,7 +9995,7 @@ export default function App() {
 	      });
       setReferralStatusMessage({
         type: "success",
-        message: "Referral sent to your regional manager.",
+        message: "Referral sent to your representative.",
       });
       setReferralForm({
         contactName: "",
@@ -10376,7 +10378,7 @@ export default function App() {
               <div className="pt-1 flex w-full justify-end">
                 <div className="inline-flex flex-col items-start gap-3 text-left sm:flex-nowrap sm:flex-row sm:items-center sm:justify-end sm:text-right">
                   <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
-                    Your regional manager will credit you $50 each time
+                    Your representative will credit you $50 each time
                     your new referee has completed their first checkout.
                   </p>
                   <Button
@@ -12819,13 +12821,39 @@ export default function App() {
 			                                  ))}
 			                                </select>
 			                                {isVerified && (
-			                                  <button
-			                                    type="button"
-			                                    onClick={openAccountDetailsTab}
-		                                    className="text-[rgb(95,179,249)] text-xs font-semibold hover:underline mt-1"
-	                                  >
-	                                    Share Referral Code
-	                                  </button>
+			                                  <div className="mt-1 flex flex-col items-center gap-1">
+			                                    <button
+			                                      type="button"
+			                                      onClick={openAccountDetailsTab}
+			                                      className="text-[rgb(95,179,249)] text-xs font-semibold hover:underline"
+			                                    >
+			                                      Share Referral Code
+			                                    </button>
+			                                    {typeof (user as any)?.referralCode === "string" &&
+			                                    (user as any).referralCode.trim() ? (
+			                                      <button
+			                                        type="button"
+			                                        className="text-[11px] font-semibold tracking-wide text-slate-700 hover:underline"
+			                                        title="Copy your sales code"
+			                                        onClick={() => {
+			                                          const code = String((user as any).referralCode || "")
+			                                            .trim()
+			                                            .toUpperCase();
+			                                          if (!code) return;
+			                                          try {
+			                                            void navigator.clipboard?.writeText(code);
+			                                          } catch {
+			                                            // ignore
+			                                          }
+			                                        }}
+			                                      >
+			                                        Code:{" "}
+			                                        {String((user as any).referralCode || "")
+			                                          .trim()
+			                                          .toUpperCase()}
+			                                      </button>
+			                                    ) : null}
+			                                  </div>
 	                                )}
                                 {awaitingFirstPurchase && (
                                   <div className="text-xs text-amber-600 text-center mt-1">
@@ -14150,7 +14178,7 @@ export default function App() {
                         {!(isRep(user.role) || isAdmin(user.role)) && (
                           <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                             <p className="text-sm font-medium text-slate-700">
-                              Please contact your Regional Manager
+                              Please contact your Representative
                               anytime.
                             </p>
                             <div className="space-y-1 text-sm text-slate-600">
@@ -14783,13 +14811,13 @@ export default function App() {
                                 res.status === "referral_code_not_found"
                               ) {
                                 setLandingSignupError(
-                                  "We couldn't locate that referral code. Please confirm it with your regional manager.",
+                                  "We couldn't locate that referral code. Please confirm it with your representative.",
                                 );
                               } else if (
                                 res.status === "referral_code_unavailable"
                               ) {
                                 setLandingSignupError(
-                                  "This referral code isn't available. Please confirm it with your regional manager.",
+                                  "This referral code isn't available. Please confirm it with your representative.",
                                 );
                               } else if (res.status === "name_email_required") {
                                 setLandingSignupError(
@@ -15071,7 +15099,7 @@ export default function App() {
                               />
                               <p className="text-xs text-slate-500">
                                 Codes are 5 characters and issued by your
-                                regional manager.
+                                representative.
                               </p>
                             </div>
                             {landingSignupError && (

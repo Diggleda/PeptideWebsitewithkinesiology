@@ -27,6 +27,7 @@ CREATE_TABLE_STATEMENTS = [
         office_postal_code VARCHAR(32) NULL,
         office_country VARCHAR(64) NULL,
         profile_image_url LONGTEXT NULL,
+        downloads LONGTEXT NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
         visits INT NOT NULL DEFAULT 0,
@@ -213,6 +214,7 @@ def ensure_schema() -> None:
     migrations = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS downloads LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",

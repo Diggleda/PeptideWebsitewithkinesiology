@@ -5,9 +5,9 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Input } from './ui/input';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { ShoppingCart, Minus, Plus, Loader2, Download, X } from 'lucide-react';
-import { wooAPI } from '../services/api';
+import { api, wooAPI } from '../services/api';
 
 const AUTO_OPEN_STRENGTH_ENABLED = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_STRENGTH ?? '').toLowerCase().trim();
@@ -482,6 +482,18 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     document.body.appendChild(link);
     link.click();
     link.remove();
+
+    try {
+      void api.post('/settings/downloads/track', {
+        kind: 'coa',
+        wooProductId,
+        productId: product?.id,
+        filename,
+        at: new Date().toISOString(),
+      });
+    } catch {
+      // Best-effort telemetry only.
+    }
   };
 
 			  const productMeta = (
@@ -756,7 +768,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
                       Download
                     </Button>
                     <DialogClose
-                      className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                      className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                      style={{
+                        backgroundColor: 'rgb(95, 179, 249)',
+                        borderRadius: '50%',
+                      }}
                       aria-label="Close certificate"
                     >
                       <X className="h-4 w-4" />

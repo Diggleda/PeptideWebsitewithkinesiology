@@ -209,6 +209,56 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
         return None
 
 
+@blueprint.post("/downloads/track")
+@require_auth
+def track_download_event():
+    def action():
+        payload = request.get_json(silent=True) or {}
+        user_id = str((getattr(g, "current_user", None) or {}).get("id") or "").strip()
+        if not user_id:
+            err = RuntimeError("Authentication required")
+            setattr(err, "status", 401)
+            raise err
+
+        kind = payload.get("kind") or payload.get("type") or payload.get("event")
+        kind = str(kind or "").strip().lower()
+        if not kind:
+            err = RuntimeError("Download kind required")
+            setattr(err, "status", 400)
+            raise err
+
+        raw_at = payload.get("at") if isinstance(payload.get("at"), str) else None
+        at = (
+            _parse_iso_datetime(raw_at).isoformat().replace("+00:00", "Z")
+            if raw_at and _parse_iso_datetime(raw_at)
+            else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
+
+        event = {
+            "kind": kind,
+            "at": at,
+            "wooProductId": payload.get("wooProductId") or payload.get("woo_product_id") or payload.get("wooId"),
+            "productId": payload.get("productId") or payload.get("product_id"),
+            "filename": payload.get("filename"),
+        }
+
+        user = user_repository.find_by_id(user_id) or {}
+        downloads = user.get("downloads")
+        if not isinstance(downloads, list):
+            downloads = []
+        downloads.append(event)
+        # Keep the list bounded so the users table doesn't grow unbounded.
+        max_events = int(os.environ.get("USER_DOWNLOAD_EVENTS_MAX") or 5000)
+        max_events = max(100, min(max_events, 50000))
+        if len(downloads) > max_events:
+            downloads = downloads[-max_events:]
+
+        user_repository.update({**user, "id": user_id, "downloads": downloads})
+        return {"ok": True}
+
+    return handle_action(action)
+
+
 @blueprint.get("/user-activity")
 @require_auth
 def get_user_activity():

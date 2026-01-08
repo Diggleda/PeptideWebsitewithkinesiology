@@ -41,6 +41,17 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized["officePostalCode"] = (normalized.get("officePostalCode") or None)
     normalized["officeCountry"] = (normalized.get("officeCountry") or None)
     normalized.setdefault("profileImageUrl", None)
+    downloads = normalized.get("downloads")
+    if isinstance(downloads, str):
+        try:
+            downloads = json.loads(downloads)
+        except json.JSONDecodeError:
+            downloads = None
+    if downloads is None:
+        downloads = []
+    if not isinstance(downloads, list):
+        downloads = []
+    normalized["downloads"] = downloads
     normalized["mustResetPassword"] = bool(normalized.get("mustResetPassword", False))
     normalized.setdefault("firstOrderBonusGrantedAt", None)
     normalized.setdefault("createdAt", normalized.get("createdAt") or None)
@@ -259,7 +270,8 @@ def _mysql_insert(user: Dict) -> Dict:
             session_id,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, referral_credits, total_referrals, visits,
+            office_postal_code, office_country, profile_image_url, downloads,
+            referral_credits, total_referrals, visits,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
@@ -267,7 +279,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(referrer_doctor_id)s, %(session_id)s, %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(referral_credits)s,
+            %(profile_image_url)s, %(downloads)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
@@ -292,6 +304,7 @@ def _mysql_insert(user: Dict) -> Dict:
             office_postal_code = VALUES(office_postal_code),
             office_country = VALUES(office_country),
             profile_image_url = VALUES(profile_image_url),
+            downloads = VALUES(downloads),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
             visits = VALUES(visits),
@@ -340,6 +353,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             office_postal_code = %(office_postal_code)s,
             office_country = %(office_country)s,
             profile_image_url = %(profile_image_url)s,
+            downloads = %(downloads)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
             visits = %(visits)s,
@@ -377,6 +391,13 @@ def _row_to_user(row: Dict) -> Dict:
         except json.JSONDecodeError:
             verification = None
 
+    downloads = row.get("downloads")
+    if isinstance(downloads, str):
+        try:
+            downloads = json.loads(downloads)
+        except json.JSONDecodeError:
+            downloads = None
+
     return _ensure_defaults(
         {
             "id": row.get("id"),
@@ -400,6 +421,7 @@ def _row_to_user(row: Dict) -> Dict:
             "officePostalCode": row.get("office_postal_code"),
             "officeCountry": row.get("office_country"),
             "profileImageUrl": row.get("profile_image_url"),
+            "downloads": downloads,
             "referralCode": row.get("referral_code"),
             "referralCredits": float(row.get("referral_credits") or 0),
             "totalReferrals": int(row.get("total_referrals") or 0),
@@ -451,6 +473,7 @@ def _to_db_params(user: Dict) -> Dict:
         "office_postal_code": user.get("officePostalCode"),
         "office_country": user.get("officeCountry"),
         "profile_image_url": user.get("profileImageUrl"),
+        "downloads": json.dumps(user.get("downloads") or []),
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
         "visits": int(user.get("visits") or 0),

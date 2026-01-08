@@ -464,13 +464,14 @@ def _sanitize_user(user: Dict) -> Dict:
     sanitized = dict(user)
     sanitized.pop("password", None)
     sanitized.pop("sessionId", None)
+    sanitized.pop("downloads", None)
     rep_id = sanitized.get("salesRepId")
     sales_rep = None
     if rep_id:
         sales_rep = sales_rep_repository.find_by_id(rep_id)
         # Some environments store the sales rep in the main `users` table (role=sales_rep),
         # while doctors reference that id. Fall back to `user_repository` so the UI can
-        # render "Regional Manager" contact details reliably.
+        # render "Representative" contact details reliably.
         if not sales_rep:
             rep_user = user_repository.find_by_id(str(rep_id))
             if rep_user and (rep_user.get("role") or "").lower() in ("sales_rep", "rep", "admin"):

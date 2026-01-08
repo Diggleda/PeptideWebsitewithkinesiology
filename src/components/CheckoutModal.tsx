@@ -964,7 +964,12 @@ export function CheckoutModal({
               </DialogTitle>
               <DialogDescription>Review your order and complete your purchase</DialogDescription>
             </div>
-            <DialogClose className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+            <DialogClose
+              className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              style={{
+                backgroundColor: 'rgb(95, 179, 249)',
+                borderRadius: '50%',
+              }}
               aria-label="Close checkout"
             >
               <X className="h-4 w-4" />
@@ -978,7 +983,7 @@ export function CheckoutModal({
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
-                <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2 lg:mx-0 lg:px-0 lg:grid lg:overflow-visible lg:grid-cols-2 auto-rows-fr">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item, index) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
@@ -993,10 +998,10 @@ export function CheckoutModal({
                   return (
                     <Card
                       key={item.id}
-                      className="glass squircle-sm h-full shrink-0 min-w-[min(22rem,85vw)] lg:min-w-0"
+                      className="glass squircle-sm h-full w-full"
                     >
                       <CardContent className="p-4 relative">
-                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[120px] sm:w-[150px] text-right">
+                        <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[92px] sm:w-[150px] text-right">
                           <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
                           <Button
                             type="button"
@@ -1009,7 +1014,7 @@ export function CheckoutModal({
                             <span className="sr-only">Remove item</span>
                           </Button>
                         </div>
-                        <div className="flex items-start gap-4 pr-[150px] sm:pr-[180px]">
+                        <div className="flex items-start gap-4 pr-[120px] sm:pr-[180px]">
                           <div className="flex items-center gap-4 flex-grow">
                             <div
                               className="flex-shrink-0 self-stretch"
@@ -1285,7 +1290,7 @@ export function CheckoutModal({
                         </div>
                       </>
                     ) : (
-                      <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700">
+                      <div className="rounded-xl border border-slate-200 bg-white/70 px-6 py-5 text-sm text-slate-700 leading-relaxed">
                         You selected Direct Bank Transfer. After placing your order, you’ll receive payment instructions by email.
                       </div>
                     )}

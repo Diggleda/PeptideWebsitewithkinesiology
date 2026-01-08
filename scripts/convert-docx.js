@@ -97,9 +97,9 @@ function replaceRegionalAdministrator(html) {
   return html.replace(/regional administrator/gi, (match) => {
     const firstChar = match.charAt(0);
     if (firstChar && firstChar === firstChar.toUpperCase()) {
-      return "Regional Manager";
+      return "Representative";
     }
-    return "regional manager";
+    return "representative";
   });
 }
 
