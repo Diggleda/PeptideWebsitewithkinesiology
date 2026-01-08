@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from queue import Empty, Queue
 from contextlib import contextmanager
 from typing import Callable, Dict, Iterator, Optional, TypeVar
 
@@ -10,27 +11,33 @@ from pymysql.cursors import DictCursor
 from ..config import AppConfig
 
 _config: Optional[AppConfig] = None
-_thread_local = threading.local()
+_pool: Optional[Queue[pymysql.connections.Connection]] = None
+_pool_lock = threading.Lock()
+_pool_total = 0
 _RetryResult = TypeVar("_RetryResult")
 
 
 def configure(config: AppConfig) -> None:
     global _config
+    global _pool
+    global _pool_total
     _config = config
+    with _pool_lock:
+        _pool_total = 0
+        limit = _pool_limit()
+        _pool = Queue(maxsize=limit)
 
-
-def _get_connection() -> pymysql.connections.Connection:
+def _pool_limit() -> int:
     if not _config:
         raise RuntimeError("MySQL configuration has not been initialised")
+    mysql_config = _config.mysql
+    limit = int(mysql_config.get("connection_limit", 3) or 3)
+    return max(1, min(limit, 32))
 
-    connection = getattr(_thread_local, "connection", None)
-    if connection and connection.open:
-        try:
-            connection.ping(reconnect=True)
-            return connection
-        except pymysql.err.Error:
-            _reset_connection()
 
+def _create_connection() -> pymysql.connections.Connection:
+    if not _config:
+        raise RuntimeError("MySQL configuration has not been initialised")
     mysql_config = _config.mysql
 
     ssl_disabled = not mysql_config.get("ssl")
@@ -38,7 +45,7 @@ def _get_connection() -> pymysql.connections.Connection:
     if not ssl_disabled:
         ssl_params = {"ssl": {}}
 
-    connection = pymysql.connect(
+    return pymysql.connect(
         host=mysql_config.get("host"),
         port=int(mysql_config.get("port", 3306)),
         user=mysql_config.get("user"),
@@ -53,25 +60,102 @@ def _get_connection() -> pymysql.connections.Connection:
         write_timeout=max(1, int(mysql_config.get("write_timeout", 15) or 15)),
     )
 
-    _thread_local.connection = connection
+
+def _discard_connection(connection: Optional[pymysql.connections.Connection]) -> None:
+    global _pool_total
+    if not connection:
+        return
+    try:
+        connection.close()
+    except Exception:
+        pass
+    with _pool_lock:
+        _pool_total = max(0, _pool_total - 1)
+
+
+def _acquire_connection() -> pymysql.connections.Connection:
+    global _pool_total
+    if not _config:
+        raise RuntimeError("MySQL configuration has not been initialised")
+    if _pool is None:
+        configure(_config)
+    assert _pool is not None
+
+    connection: Optional[pymysql.connections.Connection] = None
+    try:
+        connection = _pool.get_nowait()
+    except Empty:
+        pass
+
+    if connection is None:
+        with _pool_lock:
+            limit = _pool_limit()
+            if _pool_total < limit:
+                _pool_total += 1
+                try:
+                    connection = _create_connection()
+                except Exception:
+                    _pool_total = max(0, _pool_total - 1)
+                    raise
+
+    if connection is None:
+        # Pool saturated; wait briefly for a free slot.
+        try:
+            connection = _pool.get(timeout=max(0.25, min(2.0, float(_config.mysql.get("connect_timeout", 5) or 5))))
+        except Empty as exc:
+            raise pymysql.err.OperationalError(1203, "MySQL connection pool exhausted") from exc
+
+    if not connection.open:
+        _discard_connection(connection)
+        with _pool_lock:
+            _pool_total += 1
+        connection = _create_connection()
+
+    try:
+        connection.ping(reconnect=True)
+    except pymysql.err.Error:
+        _discard_connection(connection)
+        with _pool_lock:
+            _pool_total += 1
+        connection = _create_connection()
+
     return connection
+
+
+def _release_connection(connection: Optional[pymysql.connections.Connection]) -> None:
+    if connection is None:
+        return
+    if not connection.open:
+        _discard_connection(connection)
+        return
+    if _pool is None:
+        _discard_connection(connection)
+        return
+    try:
+        _pool.put_nowait(connection)
+    except Exception:
+        _discard_connection(connection)
 
 
 @contextmanager
 def cursor() -> Iterator[pymysql.cursors.DictCursor]:
-    connection = _get_connection()
+    connection: Optional[pymysql.connections.Connection] = _acquire_connection()
     cur = connection.cursor()
     try:
         yield cur
         connection.commit()
-    except Exception:
+    except Exception as exc:
         try:
             connection.rollback()
         finally:
             pass
+        if isinstance(exc, (pymysql.err.OperationalError, pymysql.err.InterfaceError)):
+            _discard_connection(connection)
+            connection = None
         raise
     finally:
         cur.close()
+        _release_connection(connection)
 
 
 def _should_retry(error: Exception) -> bool:
@@ -84,23 +168,12 @@ def _should_retry(error: Exception) -> bool:
     return False
 
 
-def _reset_connection() -> None:
-    connection = getattr(_thread_local, "connection", None)
-    if connection:
-        try:
-            connection.close()
-        except Exception:
-            pass
-    _thread_local.connection = None
-
-
 def _run_with_retry(operation: Callable[[], _RetryResult]) -> _RetryResult:
     try:
         return operation()
     except (pymysql.err.OperationalError, pymysql.err.InterfaceError) as error:
         if not _should_retry(error):
             raise
-        _reset_connection()
         return operation()
 
 

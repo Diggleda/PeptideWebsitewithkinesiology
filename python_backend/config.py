@@ -207,7 +207,7 @@ def load_config() -> AppConfig:
             "user": os.environ.get("MYSQL_USER", ""),
             "password": os.environ.get("MYSQL_PASSWORD", ""),
             "database": os.environ.get("MYSQL_DATABASE", ""),
-            "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE"), 8),
+            "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE"), 3),
             "ssl": os.environ.get("MYSQL_SSL", "").lower() == "true",
             "timezone": os.environ.get("MYSQL_TIMEZONE", "Z"),
             "connect_timeout": _to_int(os.environ.get("MYSQL_CONNECT_TIMEOUT_SECONDS"), 5),
