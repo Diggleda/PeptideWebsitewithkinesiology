@@ -10397,12 +10397,12 @@ export default function App() {
           </div>
 
           <div className="mt-8 grid gap-6 md:grid-cols-2 w-full max-w-none px-1 sm:px-5">
-            <div className="glass squircle-lg p-8 shadow-sm space-y-6 w-full max-w-none">
+            <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl space-y-6 w-full max-w-none">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center squircle-sm bg-emerald-100">
+                  <div className="flex h-10 w-10 items-center justify-center squircle-sm bg-emerald-100">
                     <svg
-                      className="w-4 h-4 text-emerald-600"
+                      className="w-5 h-5 text-emerald-600"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -10415,7 +10415,7 @@ export default function App() {
                       />
                     </svg>
                   </div>
-                  <h3 className="text-base font-semibold text-slate-800">
+                  <h3 className="text-lg font-semibold text-slate-900">
                     Your Referrals
                   </h3>
                 </div>
@@ -10431,7 +10431,7 @@ export default function App() {
                   {referralDataLoading && (
                     <span className="text-xs text-slate-500 flex items-center gap-1">
                       <svg
-                        className="animate-spin h-3 w-3"
+                        className="animate-spin h-4 w-4"
                         fill="none"
                         viewBox="0 0 24 24"
                       >
@@ -10647,12 +10647,12 @@ export default function App() {
               )}
             </div>
 
-            <div className="glass squircle-lg p-8 shadow-sm min-w-0 space-y-6 w-full max-w-none">
+            <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl min-w-0 space-y-6 w-full max-w-none">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center squircle-sm bg-amber-100">
+                  <div className="flex h-10 w-10 items-center justify-center squircle-sm bg-amber-100">
                     <svg
-                      className="w-4 h-4 text-amber-600"
+                      className="w-5 h-5 text-amber-600"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -10665,8 +10665,8 @@ export default function App() {
                       />
                     </svg>
                   </div>
-                  <h3 className="text-base font-semibold text-slate-800">
-                    Credit Activity
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Your Credits
                   </h3>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-4 text-right">
@@ -10689,7 +10689,7 @@ export default function App() {
                   {recentLedger.length > 0 && (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                       <svg
-                        className="w-3 h-3"
+                        className="w-4 h-4"
                         fill="currentColor"
                         viewBox="0 0 20 20"
                       >
@@ -12057,7 +12057,7 @@ export default function App() {
                 <div className="sales-rep-leads-title">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
-                      <h3>Your Sales</h3>
+                      <h3 className="text-lg sm:text-xl">Your Sales</h3>
                       <p className="text-sm text-slate-600">
                         Live orders grouped by your doctors.
                       </p>
@@ -12380,7 +12380,7 @@ export default function App() {
                 <div className="sales-rep-leads-title">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
-                      <h3>Your Leads</h3>
+                      <h3 className="text-lg sm:text-xl">Your Leads</h3>
                       <p>
                         Advance referrals and inbound requests through your
                         pipeline.

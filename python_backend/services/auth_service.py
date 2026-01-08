@@ -466,6 +466,13 @@ def _sanitize_user(user: Dict) -> Dict:
     sales_rep = None
     if rep_id:
         sales_rep = sales_rep_repository.find_by_id(rep_id)
+        # Some environments store the sales rep in the main `users` table (role=sales_rep),
+        # while doctors reference that id. Fall back to `user_repository` so the UI can
+        # render "Regional Manager" contact details reliably.
+        if not sales_rep:
+            rep_user = user_repository.find_by_id(str(rep_id))
+            if rep_user and (rep_user.get("role") or "").lower() in ("sales_rep", "rep", "admin"):
+                sales_rep = rep_user
     else:
         role = (sanitized.get("role") or "").lower()
         if role in ("admin", "sales_rep"):

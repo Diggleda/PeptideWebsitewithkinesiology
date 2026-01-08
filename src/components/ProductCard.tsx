@@ -729,38 +729,45 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
           }
         }}
 	      >
-			      <DialogContent className="max-w-4xl" hideCloseButton>
-				        <div className="sticky top-0 z-30 -mx-6 -mt-6 mb-4 border-b border-slate-200/70 bg-white px-6 pt-6 pb-4 shadow-sm">
-			          <div className="flex items-start justify-between gap-3">
-			            <div className="min-w-0">
-			              <DialogTitle>Certificate of Analysis</DialogTitle>
-			              <DialogDescription className="truncate">{product.name}</DialogDescription>
-			            </div>
-			            <div className="flex items-center gap-3 shrink-0">
-			              <Button
-			                type="button"
-			                variant="outline"
-			                size="sm"
-			                className="gap-2"
-			                onClick={downloadCertificateOfAnalysis}
-			                disabled={!coaObjectUrl || coaLoading}
-			                title={coaObjectUrl ? 'Download certificate' : 'Certificate not loaded yet'}
-			              >
-			                <Download className="h-4 w-4" aria-hidden="true" />
-			                Download
-			              </Button>
-			              <DialogClose
-			                className="dialog-close-btn mb-2 inline-flex flex-none items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 disabled:pointer-events-none"
-			                aria-label="Close"
-			                style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}
-			              >
-			                <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-			              </DialogClose>
-			            </div>
-			          </div>
-			        </div>
+			      <DialogContent
+              className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+              style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+              hideCloseButton
+            >
+              <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+                      Certificate of Analysis
+                    </DialogTitle>
+                    <DialogDescription className="truncate">{product.name}</DialogDescription>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={downloadCertificateOfAnalysis}
+                      disabled={!coaObjectUrl || coaLoading}
+                      title={coaObjectUrl ? 'Download certificate' : 'Certificate not loaded yet'}
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      Download
+                    </Button>
+                    <DialogClose
+                      className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                      aria-label="Close certificate"
+                    >
+                      <X className="h-4 w-4" />
+                    </DialogClose>
+                  </div>
+                </div>
+              </DialogHeader>
 		
-		          <div className="min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
+		          <div className="flex-1 overflow-y-auto px-6 pb-6">
+                <div className="space-y-6 pt-6">
+                  <div className="min-h-[320px] rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 p-3 sm:p-4 flex items-center justify-center">
 		            {coaLoading ? (
 		              <div className="flex items-center gap-2 text-sm text-slate-600">
 		                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -777,7 +784,9 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
 		                {coaError || 'Unable to load certificate.'}
 		              </div>
 		            )}
-		          </div>
+                  </div>
+                </div>
+              </div>
 		        </DialogContent>
 		      </Dialog>
 		    </>
