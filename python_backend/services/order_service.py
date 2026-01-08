@@ -1609,6 +1609,7 @@ def get_sales_by_rep(
         debug_samples: List[Dict[str, object]] = []
         counted_rep = 0
         counted_house = 0
+        skipped_unattributed = 0
         skipped_status = 0
         skipped_refunded = 0
         skipped_outside_period = 0
@@ -1659,8 +1660,13 @@ def get_sales_by_rep(
                 if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
+                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+
                 if not rep_id:
-                    billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                    # If a sales rep placed the order, it should never be counted as "house".
+                    rep_id = user_rep_id_by_email.get(billing_email, "")
+
+                if not rep_id:
                     doctor = doctors_by_email.get(billing_email)
                     rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
                     if rep_id:
@@ -1675,9 +1681,28 @@ def get_sales_by_rep(
                     rep_totals[rep_id] = current
                     counted_rep += 1
                 else:
-                    house_totals["totalOrders"] += 1.0
-                    house_totals["totalRevenue"] += total
-                    counted_house += 1
+                    # "House" sales are only for doctors acquired via the contact form.
+                    is_house_contact_form = False
+                    if billing_email:
+                        doctor = doctors_by_email.get(billing_email)
+                        if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
+                            is_house_contact_form = True
+                        else:
+                            try:
+                                from ..repositories import sales_prospect_repository
+
+                                prospect = sales_prospect_repository.find_by_contact_email(billing_email)
+                                if prospect and str(prospect.get("salesRepId") or "") == "house":
+                                    is_house_contact_form = True
+                            except Exception:
+                                is_house_contact_form = False
+
+                    if is_house_contact_form:
+                        house_totals["totalOrders"] += 1.0
+                        house_totals["totalRevenue"] += total
+                        counted_house += 1
+                    else:
+                        skipped_unattributed += 1
 
                 if len(debug_samples) < 10:
                     debug_samples.append(
@@ -1759,6 +1784,7 @@ def get_sales_by_rep(
                 "perPage": per_page,
                 "countedRep": counted_rep,
                 "countedHouse": counted_house,
+                "skippedUnattributed": skipped_unattributed,
                 "skippedStatus": skipped_status,
                 "skippedRefunded": skipped_refunded,
                 "skippedOutsidePeriod": skipped_outside_period,

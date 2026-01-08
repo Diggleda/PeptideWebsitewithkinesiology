@@ -123,6 +123,28 @@ def find_by_sales_rep_and_doctor(sales_rep_id: str, doctor_id: str) -> Optional[
     )
 
 
+def find_by_contact_email(email: str) -> Optional[Dict]:
+    if not email:
+        return None
+    email_norm = str(email).strip().lower()
+    if not email_norm:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            "SELECT * FROM sales_prospects WHERE LOWER(contact_email) = %(email)s LIMIT 1",
+            {"email": email_norm},
+        )
+        return _row_to_record(row)
+    return next(
+        (
+            _ensure_defaults(item)
+            for item in _get_store().read()
+            if str(item.get("contactEmail") or "").strip().lower() == email_norm
+        ),
+        None,
+    )
+
+
 def find_by_sales_rep_and_referral(sales_rep_id: str, referral_id: str) -> Optional[Dict]:
     if not sales_rep_id or not referral_id:
         return None
