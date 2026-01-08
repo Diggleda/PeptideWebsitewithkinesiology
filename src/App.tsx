@@ -10929,13 +10929,13 @@ export default function App() {
           </div>
 
           {showSkeletonGrid ? (
-            <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {productSkeletons.map((_, index) => (
                 <CatalogSkeletonCard key={`catalog-skeleton-${index}`} />
               ))}
             </div>
 	          ) : filteredProducts.length > 0 ? (
-	            <div className="grid gap-6 w-full pr-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+	            <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
 		              {filteredProducts.map((product) => (
 		                <LazyCatalogProductCard
 		                  key={product.id}
@@ -11002,7 +11002,7 @@ export default function App() {
 	                  : "Sales Rep Dashboard"}
 	              </h2>
 	              <p className="text-sm text-slate-600">
-	                Monitor referral progress and keep statuses in sync.
+	                Monitor PepPro business activities, sales resp, and keep track of your sales.
 	              </p>
 	            </div>
 	            {isAdmin(user?.role) && (

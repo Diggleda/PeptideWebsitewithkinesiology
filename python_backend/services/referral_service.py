@@ -737,7 +737,34 @@ def list_referrals_for_doctor(doctor_identifier: str):
     doctor_id = _resolve_user_id(doctor_identifier)
     if not doctor_id:
         return []
-    return referral_repository.find_by_referrer(doctor_id)
+    referrals = referral_repository.find_by_referrer(doctor_id)
+    if not isinstance(referrals, list):
+        return []
+
+    def _pick_status(prospects: list[dict]) -> tuple[str, str | None]:
+        if not prospects:
+            return "pending", None
+        # Prefer the most recently updated prospect; fall back to record order.
+        def ts(p: dict) -> float:
+            raw = p.get("updatedAt") or p.get("createdAt") or ""
+            return _normalize_timestamp(raw)
+
+        best = max(prospects, key=ts)
+        status = str(best.get("status") or "pending").strip().lower() or "pending"
+        updated_at = best.get("updatedAt") or best.get("createdAt") or None
+        return status, str(updated_at) if updated_at else None
+
+    enriched: list[dict] = []
+    for ref in referrals:
+        if not isinstance(ref, dict) or not ref.get("id"):
+            continue
+        prospects = sales_prospect_repository.find_all_by_referral_id(str(ref.get("id")))
+        prospects = [p for p in prospects if isinstance(p, dict)]
+        status, updated_at = _pick_status(prospects)
+        # Doctor "Your Referrals" should reflect sales_prospects status, not the legacy referrals table.
+        enriched.append({**ref, "status": status, "prospectUpdatedAt": updated_at})
+
+    return enriched
 
 
 def _resolve_sales_rep_aliases(identifiers: List[str]) -> set[str]:
