@@ -40,14 +40,25 @@ CREATE_TABLE_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS sales_reps (
         id VARCHAR(32) PRIMARY KEY,
+        legacy_user_id VARCHAR(32) NULL,
         name VARCHAR(190) NOT NULL,
         email VARCHAR(190) NULL UNIQUE,
         phone VARCHAR(32) NULL,
         territory VARCHAR(120) NULL,
         initials VARCHAR(10) NULL,
         sales_code VARCHAR(8) NULL UNIQUE,
+        password VARCHAR(255) NULL,
+        role VARCHAR(32) NOT NULL DEFAULT 'sales_rep',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         session_id VARCHAR(64) NULL,
+        referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
+        total_referrals INT NOT NULL DEFAULT 0,
+        visits INT NOT NULL DEFAULT 0,
+        last_login_at DATETIME NULL,
+        must_reset_password TINYINT(1) NOT NULL DEFAULT 0,
+        first_order_bonus_granted_at DATETIME NULL,
+        total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0,
+        total_revenue_updated_at DATETIME NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL
     ) CHARACTER SET utf8mb4
@@ -220,6 +231,15 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS visits INT NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS legacy_user_id VARCHAR(32) NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS password VARCHAR(255) NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'sales_rep'",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_referrals INT NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS visits INT NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS last_login_at DATETIME NULL",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS must_reset_password TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS first_order_bonus_granted_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
@@ -307,5 +327,13 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("sales_reps", "session_id"):
             mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN session_id VARCHAR(64) NULL")
+    except Exception:
+        pass
+
+    # Ensure sales rep visit tracking exists (used during login/account creation flows).
+    try:
+        if not _column_exists("sales_reps", "visits"):
+            mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN visits INT NOT NULL DEFAULT 0")
+        mysql_client.execute("ALTER TABLE sales_reps MODIFY COLUMN visits INT NOT NULL DEFAULT 0")
     except Exception:
         pass
