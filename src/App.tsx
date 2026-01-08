@@ -14789,7 +14789,7 @@ export default function App() {
                                 res.status === "referral_code_unavailable"
                               ) {
                                 setLandingSignupError(
-                                  "This referral code has already been used. Ask your regional manager for a new code.",
+                                  "This referral code isn't available. Please confirm it with your regional manager.",
                                 );
                               } else if (res.status === "name_email_required") {
                                 setLandingSignupError(

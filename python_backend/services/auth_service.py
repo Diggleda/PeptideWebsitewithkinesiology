@@ -116,16 +116,18 @@ def register(data: Dict) -> Dict:
     npi_last_verified_at = datetime.now(timezone.utc).isoformat()
     npi_status = "verified"
 
-    onboarding_record = referral_service.get_onboarding_code(code)
-    sales_rep = None
+    # Referral codes are typically sales-rep codes and are intentionally reusable
+    # across multiple doctors (commission attribution). "Onboarding" codes (if
+    # configured) may be one-time use.
+    sales_rep = sales_rep_repository.find_by_sales_code(code)
+    onboarding_record = None
 
-    if onboarding_record:
+    if not sales_rep:
+        onboarding_record = referral_service.get_onboarding_code(code)
+        if not onboarding_record:
+            raise _not_found("REFERRAL_CODE_NOT_FOUND")
         if onboarding_record.get("status") != "available":
             raise _conflict("REFERRAL_CODE_UNAVAILABLE")
-    else:
-        sales_rep = sales_rep_repository.find_by_sales_code(code)
-        if not sales_rep:
-            raise _not_found("REFERRAL_CODE_NOT_FOUND")
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     now = datetime.now(timezone.utc).isoformat()

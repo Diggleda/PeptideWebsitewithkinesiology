@@ -2121,7 +2121,7 @@ export function Header({
     }
 
     if (result.status === 'referral_code_not_found') {
-      setSignupError('We couldn\'t locate that onboarding code. Please confirm it with your sales representative.');
+      setSignupError('We couldn\'t locate that referral code. Please confirm it with your sales representative.');
       return;
     }
 
@@ -2131,7 +2131,7 @@ export function Header({
     }
 
     if (result.status === 'referral_code_unavailable') {
-      setSignupError('This onboarding code has already been used. Please request a new code from your sales representative.');
+      setSignupError('This referral code isn\'t available. Please confirm it with your sales representative.');
       return;
     }
 
