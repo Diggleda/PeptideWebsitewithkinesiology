@@ -10,6 +10,7 @@ import bcrypt
 import jwt
 
 from ..repositories import user_repository, sales_rep_repository
+from ..utils import http_client
 from . import email_service, get_config, npi_service, referral_service
 
 
@@ -513,10 +514,56 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     return sanitized
 
 
+def _dispatch_woo_password_reset(email: str) -> bool:
+    """
+    Trigger WordPress/WooCommerce's native password reset email.
+
+    This avoids relying on PepPro's email transport for customer accounts.
+    """
+    config = get_config()
+    store_url = (config.woo_commerce or {}).get("store_url") or ""
+    store_url = str(store_url).strip()
+    if not store_url:
+        return False
+
+    url = f"{store_url.rstrip('/')}/wp-login.php?action=lostpassword"
+    data = {
+        "user_login": email,
+        "redirect_to": "",
+        "wp-submit": "Get New Password",
+    }
+    headers = {
+        "User-Agent": "PepPro-API/1.0 (+https://peppro.net)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    try:
+        response = http_client.post(url, data=data, headers=headers, allow_redirects=True, timeout=(3.5, 8.0))
+    except Exception as exc:
+        logger.warning("Woo password reset request failed", exc_info=exc, extra={"email": email})
+        return False
+
+    # WordPress typically responds with 200 (form + message) or a redirect to checkemail=confirm.
+    if response.status_code >= 500:
+        logger.warning(
+            "Woo password reset returned server error",
+            extra={"status": response.status_code, "email": email},
+        )
+        return False
+    return True
+
+
 def request_password_reset(email: Optional[str]) -> Dict:
     normalized = _normalize_email(email or "")
     if not normalized:
         raise _bad_request("EMAIL_REQUIRED")
+
+    # Prefer WooCommerce / WordPress native reset emails (customer accounts) when configured.
+    if _dispatch_woo_password_reset(normalized):
+        response: Dict[str, Any] = {"status": "ok"}
+        if not get_config().is_production:
+            response["debug"] = {"mode": "woo"}
+        return response
 
     account: Optional[Dict[str, Any]] = user_repository.find_by_email(normalized)
     account_type = "user"

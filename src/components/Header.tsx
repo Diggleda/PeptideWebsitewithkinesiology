@@ -3808,7 +3808,11 @@ export function Header({
 	              )}
 	            </div>
             <DialogClose
-              className="dialog-close-btn inline-flex h-9 w-9 items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+              style={{
+                backgroundColor: 'rgb(95, 179, 249)',
+                borderRadius: '50%',
+              }}
               aria-label="Close account modal"
             >
               <X className="h-4 w-4" />

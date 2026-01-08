@@ -962,7 +962,7 @@ export function CheckoutModal({
               <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
                 Checkout
               </DialogTitle>
-              <DialogDescription>Review your order and complete your purchase</DialogDescription>
+              <DialogDescription>Review and place your order.</DialogDescription>
             </div>
             <DialogClose
               className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"

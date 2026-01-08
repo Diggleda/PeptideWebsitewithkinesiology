@@ -228,7 +228,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
         <div className="w-full px-4 sm:px-8 pt-12 pb-10">
           {variant === 'ctaOnly' ? (
             <div className="flex flex-col items-center justify-center gap-3 pt-10 pb-10">
-              <p className="text-sm font-medium text-slate-900">Interested in joining the network?</p>
+              <p className="mt-6 text-sm font-medium text-slate-900">Interested in joining the network?</p>
               {showContactCTA ? (
                 <button
                   type="button"
