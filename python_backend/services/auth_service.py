@@ -548,6 +548,9 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         logger.warning("Woo password reset request failed", exc_info=exc, extra={"email": email})
         return False
 
+    final_url = str(getattr(response, "url", "") or "")
+    body = str(getattr(response, "text", "") or "")
+
     if response.status_code >= 500:
         logger.warning(
             "Woo password reset returned server error",
@@ -561,7 +564,18 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         )
         return False
 
-    # WordPress typically responds with 200 (form + message) or a redirect to checkemail=confirm.
+    # WordPress typically redirects to `checkemail=confirm`. If we don't see that (or a similar
+    # confirmation hint), assume the request didn't actually trigger the email (e.g. security
+    # plugins / WAF / captcha / nonces) and fall back to PepPro email.
+    looks_confirmed = ("checkemail=confirm" in final_url) or ("checkemail=confirm" in body.lower())
+    if not looks_confirmed:
+        logger.warning(
+            "Woo password reset response did not look confirmed; falling back to PepPro email",
+            extra={"status": response.status_code, "email": email, "finalUrl": final_url[:250]},
+        )
+        return False
+
+    logger.info("Woo password reset dispatched", extra={"email": email, "finalUrl": final_url[:250]})
     return True
 
 
