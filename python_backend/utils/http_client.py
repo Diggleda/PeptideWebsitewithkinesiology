@@ -29,6 +29,28 @@ _ACQUIRE_TIMEOUT_SECONDS = float(
 TimeoutArg = Union[None, float, int, Tuple[float, float]]
 
 
+def request_with_session(
+    session: requests.Session, method: str, url: str, *, timeout: TimeoutArg = None, **kwargs: Any
+) -> requests.Response:
+    """
+    Like `request()`, but uses an existing requests.Session (for cookies/connection pooling).
+    """
+    effective_timeout: TimeoutArg = timeout
+    if effective_timeout is None:
+        effective_timeout = DEFAULT_TIMEOUT
+
+    acquired = _http_semaphore.acquire(timeout=_ACQUIRE_TIMEOUT_SECONDS)
+    if not acquired:
+        raise requests.Timeout("Outbound HTTP concurrency limit reached")
+    try:
+        return session.request(method, url, timeout=effective_timeout, **kwargs)
+    finally:
+        try:
+            _http_semaphore.release()
+        except ValueError:
+            pass
+
+
 def request(method: str, url: str, *, timeout: TimeoutArg = None, **kwargs: Any) -> requests.Response:
     """
     Small wrapper around requests.request() that:
@@ -57,4 +79,3 @@ def get(url: str, *, timeout: TimeoutArg = None, **kwargs: Any) -> requests.Resp
 
 def post(url: str, *, timeout: TimeoutArg = None, **kwargs: Any) -> requests.Response:
     return request("POST", url, timeout=timeout, **kwargs)
-

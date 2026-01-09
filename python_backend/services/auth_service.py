@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import bcrypt
 import jwt
+import requests
 
 from ..repositories import user_repository, sales_rep_repository
 from ..utils import http_client
@@ -532,20 +533,75 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         return False
 
     url = f"{store_url.rstrip('/')}/wp-login.php?action=lostpassword"
-    data = {
-        "user_login": email,
-        "redirect_to": "",
-        "wp-submit": "Get New Password",
-    }
     headers = {
         "User-Agent": "PepPro-API/1.0 (+https://peppro.net)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
     try:
-        response = http_client.post(url, data=data, headers=headers, allow_redirects=True, timeout=(3.5, 8.0))
+        session = requests.Session()
+        get_response = http_client.request_with_session(
+            session,
+            "GET",
+            url,
+            headers=headers,
+            allow_redirects=True,
+            timeout=(3.5, 8.0),
+        )
     except Exception as exc:
         logger.warning("Woo password reset request failed", exc_info=exc, extra={"email": email})
+        return False
+
+    if get_response.status_code >= 500:
+        logger.warning(
+            "Woo password reset returned server error (GET form)",
+            extra={"status": get_response.status_code, "email": email},
+        )
+        return False
+    if get_response.status_code >= 400:
+        logger.warning(
+            "Woo password reset returned client error (GET form)",
+            extra={"status": get_response.status_code, "email": email},
+        )
+        return False
+
+    html = str(getattr(get_response, "text", "") or "")
+    nonce_match = re.search(r'name=["\\\']_wpnonce["\\\'][^>]*value=["\\\']([^"\\\']+)["\\\']', html, re.I)
+    referer_match = re.search(
+        r'name=["\\\']_wp_http_referer["\\\'][^>]*value=["\\\']([^"\\\']+)["\\\']', html, re.I
+    )
+    nonce = nonce_match.group(1) if nonce_match else ""
+    http_referer = referer_match.group(1) if referer_match else ""
+
+    if not nonce:
+        # Many WP sites require a nonce for lost password; if we can't find it, we likely won't trigger an email.
+        logger.warning(
+            "Woo password reset form nonce not found; falling back to PepPro email",
+            extra={"email": email},
+        )
+        return False
+
+    post_data = {
+        "user_login": email,
+        "redirect_to": "",
+        "wp-submit": "Get New Password",
+        "_wpnonce": nonce,
+    }
+    if http_referer:
+        post_data["_wp_http_referer"] = http_referer
+
+    try:
+        response = http_client.request_with_session(
+            session,
+            "POST",
+            url,
+            data=post_data,
+            headers={**headers, "Referer": url},
+            allow_redirects=True,
+            timeout=(3.5, 12.0),
+        )
+    except Exception as exc:
+        logger.warning("Woo password reset request failed (POST form)", exc_info=exc, extra={"email": email})
         return False
 
     final_url = str(getattr(response, "url", "") or "")
@@ -564,10 +620,19 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         )
         return False
 
+    lowered = body.lower()
+    if "invalid username" in lowered or "invalid email" in lowered or "unknown email" in lowered:
+        # WP does not reveal whether an account exists, but some themes/plugins do; don't treat this as success.
+        logger.warning(
+            "Woo password reset returned an error response; falling back to PepPro email",
+            extra={"status": response.status_code, "email": email, "finalUrl": final_url[:250]},
+        )
+        return False
+
     # WordPress typically redirects to `checkemail=confirm`. If we don't see that (or a similar
     # confirmation hint), assume the request didn't actually trigger the email (e.g. security
     # plugins / WAF / captcha / nonces) and fall back to PepPro email.
-    looks_confirmed = ("checkemail=confirm" in final_url) or ("checkemail=confirm" in body.lower())
+    looks_confirmed = ("checkemail=confirm" in final_url) or ("checkemail=confirm" in lowered)
     if not looks_confirmed:
         logger.warning(
             "Woo password reset response did not look confirmed; falling back to PepPro email",
