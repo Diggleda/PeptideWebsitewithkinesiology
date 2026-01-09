@@ -491,6 +491,20 @@ def _resolve_referred_contact_account(referral: Dict):
     return contact_account, order_count
 
 
+def _apply_referred_contact_account_fields(record: Dict) -> Dict:
+    contact_account, contact_order_count = _resolve_referred_contact_account(record)
+    record["referredContactHasAccount"] = bool(contact_account)
+    record["referredContactAccountId"] = contact_account.get("id") if contact_account else None
+    record["referredContactAccountName"] = contact_account.get("name") if contact_account else None
+    record["referredContactAccountEmail"] = contact_account.get("email") if contact_account else None
+    record["referredContactAccountCreatedAt"] = (
+        (contact_account.get("createdAt") or contact_account.get("created_at")) if contact_account else None
+    )
+    record["referredContactTotalOrders"] = contact_order_count
+    record["referredContactEligibleForCredit"] = contact_order_count > 0
+    return record
+
+
 def _ensure_sales_rep(sales_rep_id: Optional[str]) -> Dict:
     if not sales_rep_id:
         raise _service_error("SALES_REP_REQUIRED", 400)
@@ -835,20 +849,21 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
 
     try:
         if mysql_enabled and sales_rep_id:
-            rows = mysql_client.fetch_all(
-                """
-                SELECT
-                    cf.id,
-                    cf.name,
-                    cf.email,
-                    cf.phone,
-                    cf.source,
-                    cf.created_at,
-                    sp.status AS prospect_status,
-                    sp.notes AS prospect_notes,
-                    sp.updated_at AS prospect_updated_at,
-                    sp.reseller_permit_exempt AS reseller_permit_exempt,
-                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+	            rows = mysql_client.fetch_all(
+	                """
+	                SELECT
+	                    cf.id,
+	                    cf.name,
+	                    cf.email,
+	                    cf.phone,
+	                    cf.source,
+	                    cf.created_at,
+	                    sp.doctor_id AS prospect_doctor_id,
+	                    sp.status AS prospect_status,
+	                    sp.notes AS prospect_notes,
+	                    sp.updated_at AS prospect_updated_at,
+	                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+	                    sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
                 FROM sales_prospects sp
@@ -861,21 +876,22 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                 {"sales_rep_id": str(sales_rep_id)},
             )
         elif mysql_enabled:
-            rows = mysql_client.fetch_all(
-                """
-                SELECT
-                    cf.id,
-                    cf.name,
-                    cf.email,
-                    cf.phone,
-                    cf.source,
-                    cf.created_at,
-                    sp.sales_rep_id AS prospect_sales_rep_id,
-                    sp.status AS prospect_status,
-                    sp.notes AS prospect_notes,
-                    sp.updated_at AS prospect_updated_at,
-                    sp.reseller_permit_exempt AS reseller_permit_exempt,
-                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+	            rows = mysql_client.fetch_all(
+	                """
+	                SELECT
+	                    cf.id,
+	                    cf.name,
+	                    cf.email,
+	                    cf.phone,
+	                    cf.source,
+	                    cf.created_at,
+	                    sp.sales_rep_id AS prospect_sales_rep_id,
+	                    sp.doctor_id AS prospect_doctor_id,
+	                    sp.status AS prospect_status,
+	                    sp.notes AS prospect_notes,
+	                    sp.updated_at AS prospect_updated_at,
+	                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+	                    sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
                 FROM contact_forms cf
@@ -932,39 +948,40 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                 )
             except Exception:
                 pass
-        records.append(
-            {
-                "id": record_id,
-                "referrerDoctorId": None,
-                "salesRepId": str(sales_rep_id) if sales_rep_id else (str(prospect_sales_rep_id) if prospect_sales_rep_id else None),
-                "referredContactName": row.get("name") or "Contact Form Lead",
-                "referredContactEmail": row.get("email") or None,
-                "referredContactPhone": row.get("phone") or None,
-                "status": status,
-                "salesRepNotes": row.get("prospect_notes") or None,
-                "notes": row.get("source") or "Contact form submission",
-                "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
-                "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
-                "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
-                "resellerPermitUploadedAt": (
-                    row.get("reseller_permit_uploaded_at").isoformat()
-                    if isinstance(row.get("reseller_permit_uploaded_at"), datetime)
-                    else row.get("reseller_permit_uploaded_at")
-                ),
-                "createdAt": created_at,
-                "updatedAt": updated_at,
-                "convertedDoctorId": None,
-                "convertedAt": None,
-                "referredContactHasAccount": False,
-                "referredContactAccountId": None,
-                "referredContactAccountName": None,
-                "referredContactAccountEmail": None,
-                "referredContactAccountCreatedAt": None,
-                "referredContactTotalOrders": 0,
-                "referredContactEligibleForCredit": False,
-                "isManual": False,
-            }
-        )
+        base = {
+            "id": record_id,
+            "referrerDoctorId": None,
+            "salesRepId": str(sales_rep_id)
+            if sales_rep_id
+            else (str(prospect_sales_rep_id) if prospect_sales_rep_id else None),
+            "referredContactName": row.get("name") or "Contact Form Lead",
+            "referredContactEmail": row.get("email") or None,
+            "referredContactPhone": row.get("phone") or None,
+            "status": status,
+            "salesRepNotes": row.get("prospect_notes") or None,
+            "notes": row.get("source") or "Contact form submission",
+            "resellerPermitExempt": bool(row.get("reseller_permit_exempt") or 0),
+            "resellerPermitFilePath": row.get("reseller_permit_file_path") or None,
+            "resellerPermitFileName": row.get("reseller_permit_file_name") or None,
+            "resellerPermitUploadedAt": (
+                row.get("reseller_permit_uploaded_at").isoformat()
+                if isinstance(row.get("reseller_permit_uploaded_at"), datetime)
+                else row.get("reseller_permit_uploaded_at")
+            ),
+            "createdAt": created_at,
+            "updatedAt": updated_at,
+            "convertedDoctorId": row.get("prospect_doctor_id") or None,
+            "convertedAt": None,
+            "referredContactHasAccount": False,
+            "referredContactAccountId": None,
+            "referredContactAccountName": None,
+            "referredContactAccountEmail": None,
+            "referredContactAccountCreatedAt": None,
+            "referredContactTotalOrders": 0,
+            "referredContactEligibleForCredit": False,
+            "isManual": False,
+        }
+        records.append(_apply_referred_contact_account_fields(base))
     return records
 
 
@@ -1008,8 +1025,9 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     def _load_manual_prospects(rep_id: str) -> list[dict]:
         prospects = sales_prospect_repository.find_by_sales_rep(rep_id)
         manual = [p for p in prospects if p and p.get("isManual")]
-        return [
-            {
+        records: list[dict] = []
+        for p in manual:
+            base = {
                 "id": p.get("id"),
                 "referrerDoctorId": None,
                 "salesRepId": p.get("salesRepId"),
@@ -1025,7 +1043,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
                 "resellerPermitUploadedAt": p.get("resellerPermitUploadedAt") or None,
                 "createdAt": p.get("createdAt"),
                 "updatedAt": p.get("updatedAt"),
-                "convertedDoctorId": None,
+                "convertedDoctorId": p.get("doctorId") or None,
                 "convertedAt": None,
                 "referredContactHasAccount": False,
                 "referredContactAccountId": None,
@@ -1036,8 +1054,8 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
                 "referredContactEligibleForCredit": False,
                 "isManual": True,
             }
-            for p in manual
-        ]
+            records.append(_apply_referred_contact_account_fields(base))
+        return records
 
     if is_admin:
         referrals = referral_repository.get_all() if scope_all else referral_repository.find_by_sales_rep(str(sales_rep_id))

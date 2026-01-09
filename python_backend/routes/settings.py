@@ -372,7 +372,7 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     logger = logging.getLogger("peppro.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
-    idle_threshold_s = float(60)
+    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or 60)
     idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
     now_epoch = time.time()
 
@@ -398,24 +398,38 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         presence_entry = presence.get(str(user.get("id") or ""))
         presence_public = presence_service.to_public_fields(presence_entry)
         last_interaction_epoch = None
+        last_seen_epoch = None
         try:
             if presence_entry and presence_entry.get("lastInteractionAt"):
                 last_interaction_epoch = float(presence_entry.get("lastInteractionAt"))
         except Exception:
             last_interaction_epoch = None
+        try:
+            if presence_entry and presence_entry.get("lastHeartbeatAt"):
+                last_seen_epoch = float(presence_entry.get("lastHeartbeatAt"))
+        except Exception:
+            last_seen_epoch = None
         is_idle_flag = (
             bool(presence_entry.get("isIdle"))
             if presence_entry and isinstance(presence_entry.get("isIdle"), bool)
             else None
         )
-        computed_idle = (
-            bool(is_idle_flag)
-            or (
-                isinstance(last_interaction_epoch, (int, float))
-                and last_interaction_epoch > 0
-                and (now_epoch - last_interaction_epoch) >= idle_threshold_s
-            )
-        )
+        basis_epoch = None
+        if isinstance(last_interaction_epoch, (int, float)) and last_interaction_epoch > 0:
+            basis_epoch = last_interaction_epoch
+        elif isinstance(last_seen_epoch, (int, float)) and last_seen_epoch > 0:
+            basis_epoch = last_seen_epoch
+        else:
+            last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
+            if last_login_dt:
+                try:
+                    basis_epoch = float(last_login_dt.timestamp())
+                except Exception:
+                    basis_epoch = None
+
+        computed_idle = bool(is_idle_flag)
+        if not computed_idle and isinstance(basis_epoch, (int, float)) and basis_epoch > 0:
+            computed_idle = (now_epoch - basis_epoch) >= idle_threshold_s
         entry = {
             "id": user.get("id"),
             "name": user.get("name") or None,
