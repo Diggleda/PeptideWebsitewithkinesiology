@@ -372,7 +372,7 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     logger = logging.getLogger("peppro.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
-    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or 600)
+    idle_threshold_s = float(60)
     idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
     now_epoch = time.time()
 
