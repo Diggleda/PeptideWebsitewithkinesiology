@@ -709,7 +709,9 @@ def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name
             mailer_url,
             json=payload,
             headers=headers,
-            timeout=(3.5, 8.0),
+            # The WP/Woo mail system can take >8s under load (plugins, SMTP, Cloudflare, etc).
+            # Keep connect timeout tight, but allow more time for the response so we don't log false failures.
+            timeout=(3.5, 25.0),
         )
     except Exception as exc:
         logger.warning("Woo mailer password reset request failed", exc_info=exc, extra={"email": email})

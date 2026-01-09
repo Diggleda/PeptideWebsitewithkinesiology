@@ -11,7 +11,7 @@ Sends PepPro password reset emails using WooCommerce/WordPress email delivery (`
 ```php
 define('PEPPR_MAILER_SECRET', 'CHANGE_ME_TO_A_LONG_RANDOM_STRING');
 define('PEPPR_MAIL_FROM_EMAIL', 'support@peppro.com');
-define('PEPPR_MAIL_FROM_NAME', 'no-reply');
+define('PEPPR_MAIL_FROM_NAME', 'PepPro');
 define('PEPPR_MAIL_REPLY_TO', 'no-reply@peppro.com');
 // Comma-separated allowlist for `resetUrl` hostnames (default: peppro.net)
 define('PEPPR_MAIL_ALLOWED_HOSTS', 'peppro.net');
@@ -47,4 +47,5 @@ Response:
 
 - This does **not** require a Woo/WP user account. It only uses Woo's mailer to deliver PepPro's reset link.
 - To ensure `support@peppro.com` doesn't receive replies, the email sets `Reply-To: no-reply@peppro.com`.
+- The plugin adds a small WooCommerce email CSS override to keep the header logo from rendering too large.
 - For safety, the plugin only accepts `https://<allowed-host>/reset-password?...` URLs.

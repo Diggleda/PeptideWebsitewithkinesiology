@@ -100,7 +100,7 @@ function peppr_mailer_bridge_send_password_reset_email(WP_REST_Request $request)
     }
 
     $from_email = defined('PEPPR_MAIL_FROM_EMAIL') ? (string) PEPPR_MAIL_FROM_EMAIL : 'support@peppro.com';
-    $from_name = defined('PEPPR_MAIL_FROM_NAME') ? (string) PEPPR_MAIL_FROM_NAME : 'no-reply';
+    $from_name = defined('PEPPR_MAIL_FROM_NAME') ? (string) PEPPR_MAIL_FROM_NAME : 'PepPro';
     $reply_to = defined('PEPPR_MAIL_REPLY_TO') ? (string) PEPPR_MAIL_REPLY_TO : 'no-reply@peppro.com';
 
     $subject = 'Reset your PepPro password';
@@ -125,6 +125,17 @@ function peppr_mailer_bridge_send_password_reset_email(WP_REST_Request $request)
 
     return rest_ensure_response(array('ok' => true, 'status' => 'ok'));
 }
+
+// Reduce WooCommerce email header logo size for PepPro-branded emails.
+add_filter('woocommerce_email_styles', function ($css) {
+    $css .= "\n"
+        . "#template_header_image img {"
+        . "max-width: 120px !important;"
+        . "width: auto !important;"
+        . "height: auto !important;"
+        . "}\n";
+    return $css;
+}, 100);
 
 add_action('rest_api_init', function () {
     register_rest_route('peppr/v1', '/email/password-reset', array(
