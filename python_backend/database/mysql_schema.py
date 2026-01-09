@@ -197,6 +197,20 @@ CREATE_TABLE_STATEMENTS = [
         updated_at DATETIME NULL,
         PRIMARY KEY (woo_product_id, kind)
     ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token_sha256 CHAR(64) PRIMARY KEY,
+        account_type VARCHAR(32) NOT NULL,
+        account_id VARCHAR(64) NOT NULL,
+        recipient_email VARCHAR(190) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        consumed_at DATETIME NULL,
+        created_at DATETIME NOT NULL,
+        KEY idx_password_reset_tokens_email (recipient_email),
+        KEY idx_password_reset_tokens_expires (expires_at),
+        KEY idx_password_reset_tokens_consumed (consumed_at)
+    ) CHARACTER SET utf8mb4
     """
 ]
 

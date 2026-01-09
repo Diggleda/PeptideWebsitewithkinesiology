@@ -11,7 +11,7 @@ import html as _html
 import jwt
 import requests
 
-from ..repositories import user_repository, sales_rep_repository
+from ..repositories import password_reset_token_repository, sales_rep_repository, user_repository
 from ..utils import http_client
 from . import email_service, get_config, npi_service, referral_service
 
@@ -30,7 +30,7 @@ def _normalize_email(value: str) -> str:
 
 def _build_reset_url(token: str) -> str:
     config = get_config()
-    base = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    base = (config.password_reset_public_base_url or config.frontend_base_url or "http://localhost:3000").rstrip("/")
     return f"{base}/reset-password?token={token}"
 
 
@@ -672,17 +672,103 @@ def _dispatch_woo_password_reset(email: str) -> bool:
     return True
 
 
+def _dispatch_woo_mailer_password_reset(email: str, reset_url: str, display_name: str = "") -> bool:
+    """
+    Send a PepPro password reset email using WooCommerce/WordPress's mail system via a small bridge plugin.
+
+    This supports PepPro-only accounts (not necessarily WordPress/Woo customers) and avoids scraping
+    `wp-login.php?action=lostpassword`, which can be blocked by WAF/Cloudflare challenges.
+    """
+    config = get_config()
+    woo_cfg = (config.woo_commerce or {}) if isinstance(config.woo_commerce, dict) else {}
+
+    mailer_url = str(woo_cfg.get("mailer_url") or "").strip()
+    mailer_secret = str(woo_cfg.get("mailer_secret") or "").strip()
+
+    if not mailer_url or not mailer_secret:
+        logger.warning(
+            "Woo mailer not configured; falling back to PepPro email",
+            extra={"hasUrl": bool(mailer_url), "hasSecret": bool(mailer_secret), "email": email},
+        )
+        return False
+
+    payload: Dict[str, str] = {"email": email, "resetUrl": reset_url}
+    safe_name = _sanitize_name(display_name)
+    if safe_name:
+        payload["displayName"] = safe_name
+
+    headers = {
+        "User-Agent": "PepPro-API/1.0 (+https://peppro.net)",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-PEPPR-SECRET": mailer_secret,
+    }
+
+    try:
+        response = http_client.post(
+            mailer_url,
+            json=payload,
+            headers=headers,
+            timeout=(3.5, 8.0),
+        )
+    except Exception as exc:
+        logger.warning("Woo mailer password reset request failed", exc_info=exc, extra={"email": email})
+        return False
+
+    if response.status_code >= 500:
+        logger.warning(
+            "Woo mailer password reset returned server error",
+            extra={
+                "status": response.status_code,
+                "contentType": response.headers.get("Content-Type", ""),
+                "email": email,
+            },
+        )
+        return False
+    if response.status_code >= 400:
+        logger.warning(
+            "Woo mailer password reset returned client error",
+            extra={
+                "status": response.status_code,
+                "contentType": response.headers.get("Content-Type", ""),
+                "email": email,
+            },
+        )
+        return False
+
+    try:
+        data = response.json() if response.content else {}
+    except Exception:
+        data = {}
+
+    ok = bool(isinstance(data, dict) and (data.get("ok") is True or data.get("status") == "ok"))
+    if not ok:
+        body_snippet = ""
+        try:
+            body_snippet = (response.text or "")[:250]
+        except Exception:
+            body_snippet = ""
+
+        logger.warning(
+            "Woo mailer password reset response did not look confirmed",
+            extra={
+                "status": response.status_code,
+                "contentType": response.headers.get("Content-Type", ""),
+                "email": email,
+                "body": str(data)[:250],
+                "bodyText": body_snippet,
+            },
+        )
+        return False
+
+    logger.info("Woo mailer password reset dispatched", extra={"email": email})
+    return True
+
+
 def request_password_reset(email: Optional[str]) -> Dict:
     normalized = _normalize_email(email or "")
     if not normalized:
         raise _bad_request("EMAIL_REQUIRED")
-
-    # Prefer WooCommerce / WordPress native reset emails (customer accounts) when configured.
-    if _dispatch_woo_password_reset(normalized):
-        response: Dict[str, Any] = {"status": "ok"}
-        if not get_config().is_production:
-            response["debug"] = {"mode": "woo"}
-        return response
 
     account: Optional[Dict[str, Any]] = user_repository.find_by_email(normalized)
     account_type = "user"
@@ -702,22 +788,44 @@ def request_password_reset(email: Optional[str]) -> Dict:
             logger.info("Password reset requested for unknown email", extra={"email": normalized})
             return {"status": "ok"}
 
-    token = secrets.token_hex(32)
-    expires = datetime.now(timezone.utc) + timedelta(hours=1)
-    _PASSWORD_RESET_TOKENS[token] = {
-        "account_type": account_type,
-        "account_id": account_id,
-        "expires": expires,
-    }
+    config = get_config()
+    token = ""
+    reset_url = ""
 
-    reset_url = _build_reset_url(token)
-    try:
-        email_service.send_password_reset_email(recipient, reset_url)
-    except Exception as exc:  # pragma: no cover - email transport failures should not break flow
-        logger.warning("Failed to dispatch password reset email", exc_info=exc)
+    if config.mysql.get("enabled") and account_id:
+        token = password_reset_token_repository.create_token(
+            account_type=account_type,
+            account_id=str(account_id),
+            recipient_email=recipient,
+        )
+        reset_url = _build_reset_url(token)
+    else:
+        token = secrets.token_hex(32)
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        _PASSWORD_RESET_TOKENS[token] = {
+            "account_type": account_type,
+            "account_id": account_id,
+            "expires": expires,
+        }
+        reset_url = _build_reset_url(token)
+
+    # Prefer Woo/WordPress mailer (via plugin endpoint) so PepPro-only users still get emails
+    # from the same system as WooCommerce.
+    display_name = str(account.get("name") or "") if account else ""
+    if not _dispatch_woo_mailer_password_reset(recipient, reset_url, display_name):
+        if not config.password_reset_fallback_email_enabled:
+            logger.warning(
+                "Woo mailer password reset failed; fallback email disabled",
+                extra={"email": recipient},
+            )
+        else:
+            try:
+                email_service.send_password_reset_email(recipient, reset_url)
+            except Exception as exc:  # pragma: no cover - email transport failures should not break flow
+                logger.warning("Failed to dispatch password reset email", exc_info=exc)
 
     response: Dict[str, Any] = {"status": "ok"}
-    if not get_config().is_production:
+    if (not config.is_production) and bool(getattr(config, "password_reset_debug_response_enabled", False)):
         response["debug"] = {"token": token, "resetUrl": reset_url}
     return response
 
@@ -728,40 +836,59 @@ def reset_password(data: Dict) -> Dict:
     if not token or not password:
         raise _bad_request("TOKEN_AND_PASSWORD_REQUIRED")
 
-    token_details = _PASSWORD_RESET_TOKENS.get(token)
-    if not token_details or token_details.get("expires") < datetime.now(timezone.utc):
-        raise _bad_request("TOKEN_INVALID")
+    config = get_config()
+    token_details: Optional[Dict[str, Any]] = None
+
+    if config.mysql.get("enabled"):
+        token_details = password_reset_token_repository.get_valid_token(token)
+        if not token_details:
+            raise _bad_request("TOKEN_INVALID")
+    else:
+        token_details = _PASSWORD_RESET_TOKENS.get(token)
+        if not token_details or token_details.get("expires") < datetime.now(timezone.utc):
+            raise _bad_request("TOKEN_INVALID")
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     account_type = token_details.get("account_type")
     account_id = token_details.get("account_id")
 
-    if account_type == "sales_rep":
-        rep = sales_rep_repository.find_by_id(str(account_id))
-        if not rep:
+    try:
+        if account_type == "sales_rep":
+            rep = sales_rep_repository.find_by_id(str(account_id))
+            if not rep:
+                raise _not_found("USER_NOT_FOUND")
+            new_session_id = _new_session_id()
+            sales_rep_repository.update(
+                {**rep, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
+            )
+            legacy_id = rep.get("legacyUserId")
+            if legacy_id:
+                linked_user = user_repository.find_by_id(str(legacy_id))
+                if linked_user:
+                    user_repository.update(
+                        {
+                            **linked_user,
+                            "password": hashed_password,
+                            "mustResetPassword": False,
+                            "sessionId": new_session_id,
+                        }
+                    )
+        else:
+            user = user_repository.find_by_id(str(account_id))
+            if not user:
+                raise _not_found("USER_NOT_FOUND")
+            user_repository.update(
+                {**user, "password": hashed_password, "mustResetPassword": False, "sessionId": _new_session_id()}
+            )
+    finally:
+        if config.mysql.get("enabled"):
+            try:
+                password_reset_token_repository.consume_token(token)
+            except Exception as exc:
+                logger.warning("Failed to consume password reset token", exc_info=exc)
+        else:
             _PASSWORD_RESET_TOKENS.pop(token, None)
-            raise _not_found("USER_NOT_FOUND")
-        new_session_id = _new_session_id()
-        sales_rep_repository.update(
-            {**rep, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
-        )
-        legacy_id = rep.get("legacyUserId")
-        if legacy_id:
-            linked_user = user_repository.find_by_id(str(legacy_id))
-            if linked_user:
-                user_repository.update(
-                    {**linked_user, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
-                )
-    else:
-        user = user_repository.find_by_id(str(account_id))
-        if not user:
-            _PASSWORD_RESET_TOKENS.pop(token, None)
-            raise _not_found("USER_NOT_FOUND")
-        user_repository.update(
-            {**user, "password": hashed_password, "mustResetPassword": False, "sessionId": _new_session_id()}
-        )
 
-    _PASSWORD_RESET_TOKENS.pop(token, None)
     return {"status": "ok"}
 
 

@@ -100,6 +100,9 @@ class AppConfig:
     integrations: Dict[str, Any]
     quotes: Dict[str, Any]
     frontend_base_url: str
+    password_reset_public_base_url: str
+    password_reset_fallback_email_enabled: bool
+    password_reset_debug_response_enabled: bool
     flask_settings: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -142,6 +145,10 @@ def load_config() -> AppConfig:
             "webhook_secret": _s(os.environ.get("WC_WEBHOOK_SECRET")),
             "api_version": _s(os.environ.get("WC_API_VERSION") or "wc/v3"),
             "auto_submit_orders": os.environ.get("WC_AUTO_SUBMIT_ORDERS", "").lower() == "true",
+            # Optional: send PepPro emails using WooCommerce's mailer via a small WP plugin endpoint.
+            # This works even when the user only exists in PepPro (not as a WP/Woo customer).
+            "mailer_url": _s(os.environ.get("WC_MAILER_URL") or os.environ.get("WC_EMAIL_SERVICE_URL") or ""),
+            "mailer_secret": _s(os.environ.get("WC_MAILER_SECRET") or os.environ.get("WC_EMAIL_SERVICE_SECRET") or ""),
         },
         ship_engine={
             "api_key": os.environ.get("SHIPENGINE_API_KEY", ""),
@@ -240,6 +247,19 @@ def load_config() -> AppConfig:
             or os.environ.get("APP_BASE_URL")
             or "http://localhost:3000"
         ),
+        password_reset_public_base_url=_s(
+            os.environ.get("PASSWORD_RESET_PUBLIC_BASE_URL")
+            or os.environ.get("PASSWORD_RESET_BASE_URL")
+            or ""
+        ),
+        password_reset_fallback_email_enabled=_to_bool(
+            os.environ.get("PASSWORD_RESET_FALLBACK_EMAIL_ENABLED"),
+            True,
+        ),
+        password_reset_debug_response_enabled=_to_bool(
+            os.environ.get("PASSWORD_RESET_DEBUG_RESPONSE_ENABLED"),
+            False,
+        ),
         flask_settings={
             "JSON_SORT_KEYS": False,
             # Allow larger JSON payloads (e.g., base64 certificate uploads).
@@ -249,6 +269,14 @@ def load_config() -> AppConfig:
     )
 
     config.data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Woo mailer endpoint default (if the optional WP plugin is installed).
+    try:
+        wc_store_url = (config.woo_commerce.get("store_url") or "").rstrip("/")
+        if wc_store_url and not (config.woo_commerce.get("mailer_url") or "").strip():
+            config.woo_commerce["mailer_url"] = f"{wc_store_url}/wp-json/peppr/v1/email/password-reset"
+    except Exception:
+        pass
 
     # Resolve Stripe secret key based on mode (defaults to test).
     stripe_mode = (config.stripe.get("mode") or "test").strip().lower()
