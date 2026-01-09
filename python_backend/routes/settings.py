@@ -13,6 +13,7 @@ from flask import Blueprint, request, g
 from ..middleware.auth import require_auth
 from ..repositories import user_repository
 from ..services import get_config
+from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
 
@@ -54,6 +55,26 @@ def update_shop():
         enabled = bool(payload.get("enabled", False))
         settings_service.update_settings({"shopEnabled": enabled})
         return {"shopEnabled": enabled}
+
+    return handle_action(action)
+
+
+@blueprint.post("/presence")
+@require_auth
+def record_presence():
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        user_id = current_user.get("id")
+        if not user_id:
+            err = RuntimeError("Authenticated user required")
+            setattr(err, "status", 401)
+            raise err
+        payload = request.get_json(silent=True) or {}
+        kind = str(payload.get("kind") or "heartbeat").strip().lower()
+        is_idle_raw = payload.get("isIdle")
+        is_idle = is_idle_raw if isinstance(is_idle_raw, bool) else None
+        presence_service.record_ping(str(user_id), kind=kind, is_idle=is_idle)
+        return {"ok": True}
 
     return handle_action(action)
 
@@ -350,6 +371,10 @@ def _compute_user_activity_cached(
 def _compute_user_activity(window_key: str, *, raw_window: str | None = None, include_logs: bool = True) -> dict:
     logger = logging.getLogger("peppro.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
+    presence = presence_service.snapshot()
+    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or 600)
+    idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
+    now_epoch = time.time()
 
     if include_logs:
         print(
@@ -370,6 +395,27 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     recent: list[dict] = []
     live_users: list[dict] = []
     for user in users:
+        presence_entry = presence.get(str(user.get("id") or ""))
+        presence_public = presence_service.to_public_fields(presence_entry)
+        last_interaction_epoch = None
+        try:
+            if presence_entry and presence_entry.get("lastInteractionAt"):
+                last_interaction_epoch = float(presence_entry.get("lastInteractionAt"))
+        except Exception:
+            last_interaction_epoch = None
+        is_idle_flag = (
+            bool(presence_entry.get("isIdle"))
+            if presence_entry and isinstance(presence_entry.get("isIdle"), bool)
+            else None
+        )
+        computed_idle = (
+            bool(is_idle_flag)
+            or (
+                isinstance(last_interaction_epoch, (int, float))
+                and last_interaction_epoch > 0
+                and (now_epoch - last_interaction_epoch) >= idle_threshold_s
+            )
+        )
         entry = {
             "id": user.get("id"),
             "name": user.get("name") or None,
@@ -378,7 +424,10 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
             "isOnline": bool(user.get("isOnline")),
             "lastLoginAt": user.get("lastLoginAt") or None,
             "profileImageUrl": user.get("profileImageUrl") or None,
+            **presence_public,
         }
+        if entry["isOnline"]:
+            entry["isIdle"] = computed_idle if isinstance(computed_idle, bool) else False
 
         if entry["isOnline"]:
             live_users.append(entry)
@@ -408,6 +457,7 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
                 "id": entry.get("id"),
                 "role": role,
                 "isOnline": bool(entry.get("isOnline")),
+                "isIdle": entry.get("isIdle") if isinstance(entry.get("isIdle"), bool) else None,
                 "lastLoginAt": entry.get("lastLoginAt") or None,
                 "profileImageUrl": entry.get("profileImageUrl") or None,
             }
@@ -420,6 +470,7 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
             "id": entry.get("id"),
             "role": entry.get("role") or "unknown",
             "isOnline": bool(entry.get("isOnline")),
+            "isIdle": entry.get("isIdle") if isinstance(entry.get("isIdle"), bool) else None,
             "lastLoginAt": entry.get("lastLoginAt") or None,
             "profileImageUrl": entry.get("profileImageUrl") or None,
         }

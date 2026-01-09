@@ -173,11 +173,29 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
 
 
 def find_by_email(email: str) -> Optional[Dict]:
-    email = (email or "").strip().lower()
+    email = (email or "").strip()
+    if email.lower().startswith("mailto:"):
+        email = email.split(":", 1)[-1].strip()
+    angle_match = re.search(r"<([^>]+)>", email)
+    if angle_match and angle_match.group(1):
+        email = angle_match.group(1).strip()
+    email = re.sub(r"\s+", "", email).lower()
+    if not email or "@" not in email:
+        return None
     if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM users WHERE email = %(email)s", {"email": email})
+        row = mysql_client.fetch_one(
+            "SELECT * FROM users WHERE LOWER(TRIM(email)) = %(email)s",
+            {"email": email},
+        )
         return _row_to_user(row)
-    return next((user for user in _load() if user.get("email") == email), None)
+    return next(
+        (
+            user
+            for user in _load()
+            if (user.get("email") or "").strip().lower() == email
+        ),
+        None,
+    )
 
 
 def find_by_id(user_id: str) -> Optional[Dict]:

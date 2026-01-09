@@ -3813,6 +3813,50 @@ export default function App() {
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
+
+  const normalizeEmailIdentity = useCallback((value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    let email = String(value).trim();
+    if (!email) return null;
+    email = email.replace(/^mailto:/i, "").trim();
+    const angleMatch = email.match(/<([^>]+)>/);
+    if (angleMatch?.[1]) {
+      email = angleMatch[1].trim();
+    }
+    email = email.replace(/\s+/g, "").toLowerCase();
+    return email && email.includes("@") ? email : null;
+  }, []);
+
+  const buildPhoneIdentityKeys = useCallback((value: unknown): string[] => {
+    if (value === null || value === undefined) return [];
+    const raw = String(value).trim();
+    if (!raw) return [];
+    const digits = raw.replace(/\D/g, "");
+    const keys = new Set<string>();
+    keys.add(`phone:${raw}`);
+    if (digits) {
+      keys.add(`phone:${digits}`);
+      if (digits.length === 11 && digits.startsWith("1")) {
+        keys.add(`phone:${digits.slice(1)}`);
+      }
+    }
+    return Array.from(keys);
+  }, []);
+
+  const normalizeIdentityKey = useCallback((value: string | null): string | null => {
+    if (!value) return null;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized ? normalized : null;
+  }, []);
+
+  const debugAccountMatch = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const raw = new URLSearchParams(window.location.search).get("debugAccountMatch");
+    if (raw === null) return false;
+    if (raw === "" || raw === "1") return true;
+    return ["true", "yes", "on"].includes(raw.toLowerCase().trim());
+  }, []);
+
   const accountIdentitySet = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
     const rawAccounts = [
@@ -3831,8 +3875,9 @@ export default function App() {
       }
     };
     rawAccounts.forEach((acct: any) => {
-      const email =
-        (acct?.email || acct?.referredContactEmail || "").toString().trim();
+      const email = normalizeEmailIdentity(
+        acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail,
+      );
       const phone =
         acct?.phone ||
         acct?.phoneNumber ||
@@ -3840,15 +3885,30 @@ export default function App() {
         acct?.referredContactPhone ||
         null;
       addKey(email);
-      addKey(phone ? `phone:${phone}` : null);
-      addKey(acct?.id ? `acct:${acct.id}` : null);
-      addKey(acct?.userId ? `acct:${acct.userId}` : null);
-      addKey(acct?.doctorId ? `acct:${acct.doctorId}` : null);
-      addKey(acct?.accountId ? `acct:${acct.accountId}` : null);
-      addKey(acct?.account_id ? `acct:${acct.account_id}` : null);
+      addKey(email ? `email:${email}` : null);
+      buildPhoneIdentityKeys(phone).forEach((key) => addKey(key));
+      addKey(acct?.id !== undefined && acct?.id !== null ? `acct:${String(acct.id).trim()}` : null);
+      addKey(
+        acct?.userId !== undefined && acct?.userId !== null ? `acct:${String(acct.userId).trim()}` : null,
+      );
+      addKey(
+        acct?.doctorId !== undefined && acct?.doctorId !== null
+          ? `acct:${String(acct.doctorId).trim()}`
+          : null,
+      );
+      addKey(
+        acct?.accountId !== undefined && acct?.accountId !== null
+          ? `acct:${String(acct.accountId).trim()}`
+          : null,
+      );
+      addKey(
+        acct?.account_id !== undefined && acct?.account_id !== null
+          ? `acct:${String(acct.account_id).trim()}`
+          : null,
+      );
     });
     return keys;
-  }, [salesRepDashboard]);
+  }, [buildPhoneIdentityKeys, normalizeEmailIdentity, salesRepDashboard]);
 
   const accountProfileLookup = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -3873,8 +3933,9 @@ export default function App() {
     };
 
     rawAccounts.forEach((acct: any) => {
-      const email =
-        (acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail || "").toString().trim();
+      const email = normalizeEmailIdentity(
+        acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail,
+      );
       const phone =
         acct?.phone ||
         acct?.phoneNumber ||
@@ -3912,47 +3973,93 @@ export default function App() {
       };
 
       if (email) {
-        setKey(email.toLowerCase(), profile);
-        setKey(`email:${email.toLowerCase()}`, profile);
+        setKey(email, profile);
+        setKey(`email:${email}`, profile);
       }
       if (phone) {
-        setKey(`phone:${phone}`, profile);
+        buildPhoneIdentityKeys(phone).forEach((key) => setKey(key, profile));
       }
       if (accountId) {
-        setKey(`acct:${accountId}`, profile);
-        setKey(`acct:${String(accountId).toLowerCase()}`, profile);
-        setKey(String(accountId), profile);
+        const trimmed = String(accountId).trim();
+        if (trimmed) {
+          setKey(`acct:${trimmed}`, profile);
+          setKey(`acct:${trimmed.toLowerCase()}`, profile);
+          setKey(trimmed, profile);
+        }
       }
     });
 
     return map;
-  }, [salesRepDashboard]);
+  }, [buildPhoneIdentityKeys, normalizeEmailIdentity, salesRepDashboard]);
   const normalizedReferrals = useMemo(
     () =>
-      (salesRepDashboard?.referrals ?? []).map((ref) => {
-        const emailKey = ref.referredContactEmail
-          ? ref.referredContactEmail.toLowerCase()
-          : null;
-        const phoneKey = ref.referredContactPhone
-          ? `phone:${ref.referredContactPhone}`
-          : null;
-        const acctKey = ref.referredContactAccountId
-          ? `acct:${ref.referredContactAccountId}`
-          : null;
-        const hasAccountMatch =
-          ref.referredContactHasAccount ||
-          (emailKey ? accountIdentitySet.has(emailKey) : false) ||
-          (phoneKey ? accountIdentitySet.has(phoneKey) : false) ||
-          (acctKey ? accountIdentitySet.has(acctKey) : false);
-        return {
-          ...ref,
-          status: sanitizeReferralStatus(ref.status),
-          referredContactName: toTitleCase(ref.referredContactName),
-          referrerDoctorName: toTitleCase(ref.referrerDoctorName),
-          referredContactHasAccount: hasAccountMatch,
+      (() => {
+        let debugPrinted = 0;
+        const hasKey = (key: string | null): boolean => {
+          const normalized = normalizeIdentityKey(key);
+          return normalized ? accountIdentitySet.has(normalized) : false;
         };
-      }),
-    [accountIdentitySet, salesRepDashboard?.referrals],
+
+        return (salesRepDashboard?.referrals ?? []).map((ref) => {
+          const email = normalizeEmailIdentity(ref.referredContactEmail);
+          const emailKey = email;
+          const emailKeyPrefixed = email ? `email:${email}` : null;
+          const phoneKeys = buildPhoneIdentityKeys(ref.referredContactPhone);
+          const acctIdRaw =
+            ref.referredContactAccountId !== undefined && ref.referredContactAccountId !== null
+              ? String(ref.referredContactAccountId).trim()
+              : "";
+          const acctKey = acctIdRaw ? `acct:${acctIdRaw}` : null;
+
+          const matchByEmail = hasKey(emailKey) || hasKey(emailKeyPrefixed);
+          const matchByPhone = phoneKeys.some((key) => hasKey(key));
+          const matchByAccountId = hasKey(acctKey);
+          const hasAccountMatch =
+            Boolean(ref.referredContactHasAccount) || matchByEmail || matchByPhone || matchByAccountId;
+
+          if (
+            debugAccountMatch &&
+            !hasAccountMatch &&
+            debugPrinted < 25 &&
+            (emailKey || phoneKeys.length > 0 || acctKey)
+          ) {
+            debugPrinted += 1;
+            console.info("[AccountMatch] no match", {
+              referredContactName: ref.referredContactName || null,
+              referredContactEmail: ref.referredContactEmail || null,
+              referredContactPhone: ref.referredContactPhone || null,
+              referredContactAccountId: ref.referredContactAccountId || null,
+              normalizedKeys: {
+                emailKey,
+                emailKeyPrefixed,
+                phoneKeys,
+                acctKey,
+              },
+              matched: {
+                byEmail: matchByEmail,
+                byPhone: matchByPhone,
+                byAccountId: matchByAccountId,
+              },
+            });
+          }
+
+          return {
+            ...ref,
+            status: sanitizeReferralStatus(ref.status),
+            referredContactName: toTitleCase(ref.referredContactName),
+            referrerDoctorName: toTitleCase(ref.referrerDoctorName),
+            referredContactHasAccount: hasAccountMatch,
+          };
+        });
+      })(),
+    [
+      accountIdentitySet,
+      buildPhoneIdentityKeys,
+      debugAccountMatch,
+      normalizeEmailIdentity,
+      normalizeIdentityKey,
+      salesRepDashboard?.referrals,
+    ],
   );
   const resolveOrderDoctorId = useCallback(
     (order: AccountOrderSummary): string | null => {
@@ -5002,32 +5109,38 @@ export default function App() {
     | "month"
     | "6months"
     | "year";
-  type UserActivityReport = {
-    window: UserActivityWindow;
-    etag?: string;
-    generatedAt: string;
-    cutoff: string;
-    total: number;
-    byRole: Record<string, number>;
-    liveUsers?: Array<{
-      id: string;
-      name: string | null;
-      email: string | null;
-      role: string;
-      isOnline: boolean;
-      lastLoginAt: string | null;
-      profileImageUrl?: string | null;
-    }>;
-    users: Array<{
-      id: string;
-      name: string | null;
-      email: string | null;
-      role: string;
-      isOnline: boolean;
-      lastLoginAt: string | null;
-      profileImageUrl?: string | null;
-    }>;
-  };
+	  type UserActivityReport = {
+	    window: UserActivityWindow;
+	    etag?: string;
+	    generatedAt: string;
+	    cutoff: string;
+	    total: number;
+	    byRole: Record<string, number>;
+	    liveUsers?: Array<{
+	      id: string;
+	      name: string | null;
+	      email: string | null;
+	      role: string;
+	      isOnline: boolean;
+	      isIdle?: boolean | null;
+	      lastLoginAt: string | null;
+	      lastSeenAt?: string | null;
+	      lastInteractionAt?: string | null;
+	      profileImageUrl?: string | null;
+	    }>;
+	    users: Array<{
+	      id: string;
+	      name: string | null;
+	      email: string | null;
+	      role: string;
+	      isOnline: boolean;
+	      isIdle?: boolean | null;
+	      lastLoginAt: string | null;
+	      lastSeenAt?: string | null;
+	      lastInteractionAt?: string | null;
+	      profileImageUrl?: string | null;
+	    }>;
+	  };
   const [userActivityWindow, setUserActivityWindow] =
     useState<UserActivityWindow>("day");
   const [userActivityReport, setUserActivityReport] =
@@ -5038,11 +5151,18 @@ export default function App() {
   );
   const userActivityPollInFlightRef = useRef(false);
   const userActivityEtagRef = useRef<string | null>(null);
-  const userActivityLongPollDisabledRef = useRef(false);
-  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
-  const [isIdle, setIsIdle] = useState(false);
-  const lastActivityAtRef = useRef<number>(Date.now());
-  const idleLogoutFiredRef = useRef(false);
+	  const userActivityLongPollDisabledRef = useRef(false);
+	  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+	  const [isIdle, setIsIdle] = useState(false);
+	  const isIdleRef = useRef(false);
+	  const lastActivityAtRef = useRef<number>(Date.now());
+	  const idleLogoutFiredRef = useRef(false);
+	  const lastPresenceHeartbeatPingAtRef = useRef(0);
+	  const lastPresenceInteractionPingAtRef = useRef(0);
+
+	  useEffect(() => {
+	    isIdleRef.current = isIdle;
+	  }, [isIdle]);
 
   useEffect(() => {
     if (!isAdmin(user?.role)) return;
@@ -9321,11 +9441,22 @@ export default function App() {
     idleLogoutFiredRef.current = false;
     setIsIdle(false);
 
-    const markActivity = () => {
-      lastActivityAtRef.current = Date.now();
-      idleLogoutFiredRef.current = false;
-      setIsIdle(false);
-    };
+	    const markActivity = () => {
+	      lastActivityAtRef.current = Date.now();
+	      idleLogoutFiredRef.current = false;
+	      setIsIdle(false);
+	      const now = Date.now();
+	      const throttleMs = 15_000;
+	      if (now - lastPresenceInteractionPingAtRef.current < throttleMs) {
+	        return;
+	      }
+	      lastPresenceInteractionPingAtRef.current = now;
+	      try {
+	        void settingsAPI.pingPresence({ kind: "interaction", isIdle: false });
+	      } catch {
+	        // ignore
+	      }
+	    };
 
     const checkIdle = () => {
       const idleForMs = Date.now() - lastActivityAtRef.current;
@@ -9355,11 +9486,48 @@ export default function App() {
       events.forEach((evt) => window.removeEventListener(evt, markActivity));
       window.clearInterval(interval);
     };
-  }, [user?.id, handleLogout]);
+	  }, [user?.id, handleLogout]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!user) return;
+	  useEffect(() => {
+	    if (typeof window === "undefined") return;
+	    if (!user?.id || postLoginHold) {
+	      lastPresenceHeartbeatPingAtRef.current = 0;
+	      lastPresenceInteractionPingAtRef.current = 0;
+	      return;
+	    }
+
+	    let cancelled = false;
+	    const heartbeatMs = 30_000;
+
+	    const sendHeartbeat = () => {
+	      if (cancelled) return;
+	      if (!isOnline() || !isPageVisible()) return;
+	      const now = Date.now();
+	      const throttleMs = Math.max(10_000, Math.floor(heartbeatMs * 0.75));
+	      if (now - lastPresenceHeartbeatPingAtRef.current < throttleMs) return;
+	      lastPresenceHeartbeatPingAtRef.current = now;
+	      try {
+	        void settingsAPI.pingPresence({
+	          kind: "heartbeat",
+	          isIdle: isIdleRef.current,
+	        });
+	      } catch {
+	        // ignore
+	      }
+	    };
+
+	    sendHeartbeat();
+	    const id = window.setInterval(sendHeartbeat, heartbeatMs);
+
+	    return () => {
+	      cancelled = true;
+	      window.clearInterval(id);
+	    };
+	  }, [user?.id, postLoginHold]);
+
+	  useEffect(() => {
+	    if (typeof window === "undefined") return;
+	    if (!user) return;
 
     let cancelled = false;
     const intervalMs = 5_000;
@@ -11583,18 +11751,21 @@ export default function App() {
                             const avatarUrl = entry.profileImageUrl || null;
                             const displayName =
                               entry.name || entry.email || "User";
-                            const isCurrentUser =
-                              (user?.id && entry.id === user.id) ||
-                              (user?.email &&
-                                entry.email &&
-                                user.email.toLowerCase() ===
-                                  entry.email.toLowerCase());
-                            const showIdle = isCurrentUser && isIdle;
-                            return (
-                              <div
-                                key={entry.id}
-                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-                              >
+	                            const isCurrentUser =
+	                              (user?.id && entry.id === user.id) ||
+	                              (user?.email &&
+	                                entry.email &&
+	                                user.email.toLowerCase() ===
+	                                  entry.email.toLowerCase());
+	                            const entryIdleRaw = (entry as any)?.isIdle;
+	                            const showIdle =
+	                              (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
+	                              (isCurrentUser && isIdle);
+	                            return (
+	                              <div
+	                                key={entry.id}
+	                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+	                              >
                                 <div
                                   className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
                                   style={{
@@ -11616,32 +11787,34 @@ export default function App() {
                                       {getInitials(displayName)}
                                     </span>
                                   )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-sm font-semibold text-slate-800 truncate">
-                                      {displayName}
-                                    </span>
-                                    <span
-                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
-                                        showIdle
-                                          ? "bg-slate-100 text-slate-600"
-                                          : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-                                      }`}
-                                    >
-                                      {showIdle ? "Idling" : "Online"}
-                                    </span>
-                                  </div>
-                                  <div className="text-xs text-slate-500 truncate">
-                                    {entry.email || "—"}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-slate-600 whitespace-nowrap">
-                                  {formatOnlineDuration(entry.lastLoginAt)}
-                                </div>
-                              </div>
-                            );
-                          })}
+	                                </div>
+	                                <div className="min-w-0 flex-1">
+	                                  <div className="flex items-center gap-2 min-w-0">
+	                                    <span className="text-sm font-semibold text-slate-800 truncate">
+	                                      {displayName}
+	                                    </span>
+	                                  </div>
+	                                  <div className="text-xs text-slate-500 truncate">
+	                                    {entry.email || "—"}
+	                                  </div>
+	                                </div>
+	                                <div className="flex flex-col items-end gap-1 whitespace-nowrap">
+	                                  <span
+	                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
+	                                      showIdle
+	                                        ? "bg-slate-100 text-slate-600"
+	                                        : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+	                                    }`}
+	                                  >
+	                                    {showIdle ? "Idle" : "Online"}
+	                                  </span>
+	                                  <div className="text-xs text-slate-600 whitespace-nowrap">
+	                                    {formatOnlineDuration(entry.lastLoginAt)}
+	                                  </div>
+	                                </div>
+	                              </div>
+	                            );
+	                          })}
                         </div>
                       );
                     })()

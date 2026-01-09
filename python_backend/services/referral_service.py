@@ -479,7 +479,8 @@ def _resolve_referred_contact_account(referral: Dict):
         contact_account = user_repository.find_by_id(str(converted_doctor_id))
 
     if (contact_account is None) and referral.get("referredContactEmail"):
-        contact_account = user_repository.find_by_email(referral.get("referredContactEmail"))
+        normalized_email = _sanitize_email(referral.get("referredContactEmail"))
+        contact_account = user_repository.find_by_email(normalized_email or referral.get("referredContactEmail"))
 
     if contact_account and contact_account.get("id"):
         try:

@@ -947,6 +947,12 @@ export const settingsAPI = {
       signal,
     });
   },
+  pingPresence: async (payload?: { kind?: 'heartbeat' | 'interaction'; isIdle?: boolean }) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/presence`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
   getReportSettings: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'GET',
