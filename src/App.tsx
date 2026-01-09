@@ -4496,7 +4496,7 @@ export default function App() {
     [mergeSalesOrderDetail],
   );
 
-	  const openSalesDoctorDetail = useCallback(
+  const openSalesDoctorDetail = useCallback(
 	    (bucket: {
 	      doctorId: string;
 	      referralId?: string | null;
@@ -4563,6 +4563,75 @@ export default function App() {
       });
     },
     [],
+  );
+
+  const openLiveUserDetail = useCallback(
+    (entry: any) => {
+      const id = String(entry?.id || "").trim();
+      if (!id) return;
+
+      const avatarUrl = entry?.profileImageUrl || null;
+      const displayName = entry?.name || entry?.email || "User";
+
+      openSalesDoctorDetail({
+        doctorId: id,
+        referralId: null,
+        doctorName: displayName,
+        doctorEmail: entry?.email || null,
+        doctorAvatar: avatarUrl,
+        doctorPhone: null,
+        doctorAddress: null,
+        orders: [],
+        total: 0,
+      });
+
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+
+      (async () => {
+        try {
+          const [profileResp, ordersResp] = await Promise.all([
+            settingsAPI.getAdminUserProfile(id) as any,
+            ordersAPI.getAdminOrdersForUser(id) as any,
+          ]);
+
+          const profile = (profileResp as any)?.user || null;
+          const normalizedOrders = normalizeAccountOrdersResponse(ordersResp, {
+            includeCanceled: true,
+          });
+          const total = normalizedOrders.reduce(
+            (sum, order) => sum + (coerceNumber(order.total) || 0),
+            0,
+          );
+
+          const addressParts = [
+            profile?.officeAddressLine1,
+            profile?.officeAddressLine2,
+            [profile?.officeCity, profile?.officeState, profile?.officePostalCode]
+              .filter(Boolean)
+              .join(", "),
+            profile?.officeCountry,
+          ].filter((part) => typeof part === "string" && part.trim().length > 0);
+          const address = addressParts.length > 0 ? addressParts.join("\n") : null;
+
+          openSalesDoctorDetail({
+            doctorId: id,
+            referralId: null,
+            doctorName: profile?.name || displayName,
+            doctorEmail: profile?.email || entry?.email || null,
+            doctorAvatar: profile?.profileImageUrl || avatarUrl,
+            doctorPhone: profile?.phone || null,
+            doctorAddress: address,
+            orders: normalizedOrders,
+            total,
+          });
+        } catch (error) {
+          console.warn("[Admin] Failed to hydrate live user detail", error);
+        }
+      })();
+    },
+    [openSalesDoctorDetail, user?.role],
   );
 
   const renderSalesOrderSkeleton = () => (
@@ -11713,7 +11782,7 @@ export default function App() {
                       Live users
                     </h4>
                     <p className="text-sm text-slate-600">
-                      Users currently online.
+                      Users currently online or idle.
                     </p>
                   </div>
 
@@ -11729,21 +11798,48 @@ export default function App() {
                     </div>
                   ) : userActivityReport ? (
                     (() => {
-                      const liveUsers =
-                        Array.isArray(userActivityReport.liveUsers) &&
-                        userActivityReport.liveUsers.length > 0
-                          ? userActivityReport.liveUsers
-                          : (userActivityReport.users || []).filter(
-                              (entry) => entry.isOnline,
-                            );
+	                      const rawLiveUsers =
+	                        Array.isArray(userActivityReport.liveUsers) &&
+	                        userActivityReport.liveUsers.length > 0
+	                          ? userActivityReport.liveUsers
+	                          : (userActivityReport.users || []).filter(
+	                              (entry) => entry.isOnline,
+	                            );
 
-                      if (liveUsers.length === 0) {
-                        return (
-                          <div className="px-4 py-3 text-sm text-slate-500">
-                            No users are online right now.
-                          </div>
-                        );
-                      }
+	                      const isEntryCurrentUser = (entry: any) => {
+	                        return (
+	                          (user?.id && entry?.id === user.id) ||
+	                          (user?.email &&
+	                            entry?.email &&
+	                            String(user.email).toLowerCase() ===
+	                              String(entry.email).toLowerCase())
+	                        );
+	                      };
+
+	                      const getEntryIdle = (entry: any) => {
+	                        const entryIdleRaw = entry?.isIdle;
+	                        if (typeof entryIdleRaw === "boolean") {
+	                          return entryIdleRaw;
+	                        }
+	                        return isEntryCurrentUser(entry) && isIdle;
+	                      };
+
+	                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
+	                        const aIdle = getEntryIdle(a);
+	                        const bIdle = getEntryIdle(b);
+	                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
+	                        const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+	                        const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
+	                        return aName.localeCompare(bName);
+	                      });
+
+	                      if (liveUsers.length === 0) {
+	                        return (
+	                          <div className="px-4 py-3 text-sm text-slate-500">
+	                            No users are online right now.
+	                          </div>
+	                        );
+	                      }
 
                       return (
                         <div className="flex flex-col gap-2">
@@ -11762,48 +11858,62 @@ export default function App() {
 	                              (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
 	                              (isCurrentUser && isIdle);
 	                            return (
-	                              <div
-	                                key={entry.id}
-	                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-	                              >
-                                <div
-                                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
-                                  style={{
-                                    width: 34,
-                                    height: 34,
-                                    minWidth: 34,
-                                  }}
-                                >
-                                  {avatarUrl ? (
-                                    <img
-                                      src={avatarUrl}
-                                      alt={displayName}
-                                      className="h-full w-full object-cover"
-                                      loading="lazy"
-                                      decoding="async"
-                                    />
-                                  ) : (
-                                    <span className="text-[11px] font-semibold text-slate-600">
-                                      {getInitials(displayName)}
-                                    </span>
-                                  )}
-	                                </div>
-	                                <div className="min-w-0 flex-1">
-	                                  <div className="flex items-center gap-2 min-w-0">
-	                                    <span className="text-sm font-semibold text-slate-800 truncate">
-	                                      {displayName}
-	                                    </span>
+		                              <div
+		                                key={entry.id}
+		                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+		                              >
+		                                <button
+		                                  type="button"
+		                                  aria-label={`Open ${displayName} profile`}
+		                                  onClick={() => openLiveUserDetail(entry)}
+		                                  style={{ background: "transparent", border: "none", padding: 0 }}
+		                                  className="shrink-0"
+		                                >
+	                                  <div
+	                                    className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm transition hover:shadow-md hover:border-slate-300"
+	                                    style={{
+	                                      width: 34,
+	                                      height: 34,
+	                                      minWidth: 34,
+	                                    }}
+	                                  >
+	                                    {avatarUrl ? (
+	                                      <img
+	                                        src={avatarUrl}
+	                                        alt={displayName}
+	                                        className="h-full w-full object-cover"
+	                                        loading="lazy"
+	                                        decoding="async"
+	                                      />
+	                                    ) : (
+	                                      <span className="text-[11px] font-semibold text-slate-600">
+	                                        {getInitials(displayName)}
+	                                      </span>
+	                                    )}
 	                                  </div>
-	                                  <div className="text-xs text-slate-500 truncate">
-	                                    {entry.email || "—"}
-	                                  </div>
-	                                </div>
-	                                <div className="flex flex-col items-end gap-1 whitespace-nowrap">
-	                                  <span
-	                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
-	                                      showIdle
-	                                        ? "bg-slate-100 text-slate-600"
-	                                        : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+	                                </button>
+		                                <button
+		                                  type="button"
+		                                  onClick={() => openLiveUserDetail(entry)}
+		                                  aria-label={`Open ${displayName} profile`}
+		                                  className="min-w-0 flex-1 text-left"
+		                                  style={{ background: "transparent", border: "none", padding: 0 }}
+		                                >
+		                                  <div className="flex items-center gap-2 min-w-0">
+		                                    <span className="text-sm font-semibold text-slate-800 truncate">
+		                                      {displayName}
+		                                    </span>
+		                                  </div>
+		                                  <div className="text-xs text-slate-500 truncate">
+		                                    {entry.email || "—"}
+		                                  </div>
+		                                </button>
+		                                <div className="ml-auto flex w-[140px] flex-col items-end gap-1 whitespace-nowrap text-right">
+		                                  <span
+		                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
+		                                      showIdle
+		                                        ? "bg-slate-100 text-slate-600"
+		                                        : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
 	                                    }`}
 	                                  >
 	                                    {showIdle ? "Idle" : "Online"}

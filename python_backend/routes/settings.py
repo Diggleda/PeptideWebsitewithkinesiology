@@ -37,6 +37,38 @@ def _require_admin():
         raise err
 
 
+def _public_user_profile(user: dict) -> dict:
+    if not isinstance(user, dict):
+        return {}
+    return {
+        "id": user.get("id"),
+        "name": user.get("name") or None,
+        "email": user.get("email") or None,
+        "role": user.get("role") or None,
+        "status": user.get("status") or None,
+        "isOnline": bool(user.get("isOnline")),
+        "lastLoginAt": user.get("lastLoginAt") or None,
+        "createdAt": user.get("createdAt") or None,
+        "profileImageUrl": user.get("profileImageUrl") or None,
+        "phone": user.get("phone") or None,
+        "officeAddressLine1": user.get("officeAddressLine1") or None,
+        "officeAddressLine2": user.get("officeAddressLine2") or None,
+        "officeCity": user.get("officeCity") or None,
+        "officeState": user.get("officeState") or None,
+        "officePostalCode": user.get("officePostalCode") or None,
+        "officeCountry": user.get("officeCountry") or None,
+        "salesRepId": user.get("salesRepId") or None,
+        "leadType": user.get("leadType") or None,
+        "leadTypeSource": user.get("leadTypeSource") or None,
+        "leadTypeLockedAt": user.get("leadTypeLockedAt") or None,
+        "referralCredits": user.get("referralCredits"),
+        "totalReferrals": user.get("totalReferrals"),
+        "npiNumber": user.get("npiNumber") or None,
+        "npiStatus": user.get("npiStatus") or None,
+        "npiLastVerifiedAt": user.get("npiLastVerifiedAt") or None,
+    }
+
+
 @blueprint.get("/shop")
 def get_shop():
     def action():
@@ -75,6 +107,26 @@ def record_presence():
         is_idle = is_idle_raw if isinstance(is_idle_raw, bool) else None
         presence_service.record_ping(str(user_id), kind=kind, is_idle=is_idle)
         return {"ok": True}
+
+    return handle_action(action)
+
+
+@blueprint.get("/users/<user_id>")
+@require_auth
+def get_user_profile(user_id: str):
+    def action():
+        _require_admin()
+        target_id = (user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+        user = user_repository.find_by_id(target_id)
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+        return {"user": _public_user_profile(user)}
 
     return handle_action(action)
 

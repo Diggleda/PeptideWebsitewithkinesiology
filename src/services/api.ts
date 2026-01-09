@@ -953,6 +953,14 @@ export const settingsAPI = {
       body: JSON.stringify(payload || {}),
     });
   },
+  getAdminUserProfile: async (userId: string | number) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/settings/users/${encodeURIComponent(String(userId))}`, {
+      method: 'GET',
+    });
+  },
   getReportSettings: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'GET',
@@ -1177,6 +1185,15 @@ export const ordersAPI = {
       ? `${API_BASE_URL}/orders/admin/sales-rep-summary?${query}`
       : `${API_BASE_URL}/orders/admin/sales-rep-summary`;
     return fetchWithAuth(url);
+  },
+
+  getAdminOrdersForUser: async (userId: string | number) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/orders/admin/users/${encodeURIComponent(String(userId))}`, {
+      method: 'GET',
+    });
   },
 
   getSalesRepOrderDetail: async (orderId: string | number, doctorEmailOrId?: string | null) => {

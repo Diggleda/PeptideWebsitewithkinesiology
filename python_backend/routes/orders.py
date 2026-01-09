@@ -219,6 +219,25 @@ def admin_sales_by_rep():
     return handle_action(action)
 
 
+@blueprint.get("/admin/users/<user_id>")
+@require_auth
+def admin_orders_for_user(user_id: str):
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        target_id = (user_id or "").strip()
+        if not target_id:
+            err = ValueError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+        return order_service.get_orders_for_user(target_id)
+
+    return handle_action(action)
+
+
 @blueprint.post("/estimate")
 @require_auth
 def estimate_order_totals():
