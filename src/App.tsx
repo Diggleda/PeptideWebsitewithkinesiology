@@ -3819,6 +3819,8 @@ export default function App() {
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+      ...(Array.isArray(dashboardAny?.salesReps) ? dashboardAny.salesReps : []),
+      ...(Array.isArray(dashboardAny?.sales_reps) ? dashboardAny.sales_reps : []),
     ];
     const keys = new Set<string>();
     const addKey = (value?: string | null) => {
@@ -3854,6 +3856,8 @@ export default function App() {
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
+      ...(Array.isArray(dashboardAny?.salesReps) ? dashboardAny.salesReps : []),
+      ...(Array.isArray(dashboardAny?.sales_reps) ? dashboardAny.sales_reps : []),
     ];
 
     type Profile = { name: string; email?: string | null; profileImageUrl?: string | null };
@@ -5036,6 +5040,9 @@ export default function App() {
   const userActivityEtagRef = useRef<string | null>(null);
   const userActivityLongPollDisabledRef = useRef(false);
   const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+  const [isIdle, setIsIdle] = useState(false);
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const idleLogoutFiredRef = useRef(false);
 
   useEffect(() => {
     if (!isAdmin(user?.role)) return;
@@ -9302,6 +9309,56 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!user?.id) {
+      setIsIdle(false);
+      return;
+    }
+
+    const idleThresholdMs = 10 * 60 * 1000;
+    const idleLogoutMs = 60 * 60 * 1000;
+
+    lastActivityAtRef.current = Date.now();
+    idleLogoutFiredRef.current = false;
+    setIsIdle(false);
+
+    const markActivity = () => {
+      lastActivityAtRef.current = Date.now();
+      idleLogoutFiredRef.current = false;
+      setIsIdle(false);
+    };
+
+    const checkIdle = () => {
+      const idleForMs = Date.now() - lastActivityAtRef.current;
+      if (idleForMs >= idleLogoutMs) {
+        if (!idleLogoutFiredRef.current) {
+          idleLogoutFiredRef.current = true;
+          handleLogout();
+        }
+        return;
+      }
+      setIsIdle(idleForMs >= idleThresholdMs);
+    };
+
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "focus",
+    ];
+    events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
+    const interval = window.setInterval(checkIdle, 30_000);
+    window.setTimeout(checkIdle, 1_000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, markActivity));
+      window.clearInterval(interval);
+    };
+  }, [user?.id, handleLogout]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!user) return;
 
     let cancelled = false;
@@ -11526,6 +11583,13 @@ export default function App() {
                             const avatarUrl = entry.profileImageUrl || null;
                             const displayName =
                               entry.name || entry.email || "User";
+                            const isCurrentUser =
+                              (user?.id && entry.id === user.id) ||
+                              (user?.email &&
+                                entry.email &&
+                                user.email.toLowerCase() ===
+                                  entry.email.toLowerCase());
+                            const showIdle = isCurrentUser && isIdle;
                             return (
                               <div
                                 key={entry.id}
@@ -11558,8 +11622,14 @@ export default function App() {
                                     <span className="text-sm font-semibold text-slate-800 truncate">
                                       {displayName}
                                     </span>
-                                    <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(95,179,249)] shrink-0">
-                                      Online
+                                    <span
+                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
+                                        showIdle
+                                          ? "bg-slate-100 text-slate-600"
+                                          : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+                                      }`}
+                                    >
+                                      {showIdle ? "Idling" : "Online"}
                                     </span>
                                   </div>
                                   <div className="text-xs text-slate-500 truncate">
@@ -14590,9 +14660,7 @@ export default function App() {
                                 className="text-sm text-emerald-600"
                                 role="status"
                               >
-                                Check your inbox for the reset link. If it
-                                doesn&rsquo;t arrive within a few minutes,
-                                please check your spam folder.
+                                Your reset link will likely arrive in your spam folder within the next 30 seconds.
                               </p>
                             )}
                             <Button

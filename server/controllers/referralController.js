@@ -105,6 +105,68 @@ const extractContactFormId = (identifier) => {
   return value ? String(value).trim() : null;
 };
 
+const normalizeEmail = (value) => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized ? normalized : null;
+};
+
+const normalizePhoneDigits = (value) => {
+  if (typeof value !== 'string') return null;
+  const digits = value.replace(/[^0-9]/g, '');
+  return digits ? digits : null;
+};
+
+const buildAccountIndex = () => {
+  const byEmail = new Map();
+  const byPhone = new Map();
+  try {
+    userRepository.getAll().forEach((user) => {
+      const email = normalizeEmail(user?.email);
+      if (email) {
+        byEmail.set(email, {
+          id: user?.id != null ? String(user.id) : null,
+          email,
+          source: 'user',
+        });
+      }
+      const phone = normalizePhoneDigits(user?.phone);
+      if (phone) {
+        byPhone.set(phone, {
+          id: user?.id != null ? String(user.id) : null,
+          phone,
+          source: 'user',
+        });
+      }
+    });
+  } catch {
+    // ignore
+  }
+  try {
+    salesRepRepository.getAll().forEach((rep) => {
+      const email = normalizeEmail(rep?.email);
+      if (email && !byEmail.has(email)) {
+        byEmail.set(email, {
+          id: rep?.id != null ? String(rep.id) : null,
+          email,
+          source: 'sales_rep',
+        });
+      }
+      const phone = normalizePhoneDigits(rep?.phone);
+      if (phone && !byPhone.has(phone)) {
+        byPhone.set(phone, {
+          id: rep?.id != null ? String(rep.id) : null,
+          phone,
+          source: 'sales_rep',
+        });
+      }
+    });
+  } catch {
+    // ignore
+  }
+  return { byEmail, byPhone };
+};
+
 const submitDoctorReferral = (req, res, next) => {
   try {
     ensureDoctor(req.user, 'submitDoctorReferral');
@@ -532,6 +594,37 @@ const getSalesRepDashboard = async (req, res, next) => {
       referrals = merged;
     } catch (error) {
       logger.warn({ err: error }, 'Failed to overlay sales prospect data onto dashboard referrals');
+    }
+
+    // Ensure leads can reflect account creation even when the owning rep doesn't "own" the account user record.
+    // We only return a boolean + optional account id; we do not expose user records.
+    try {
+      const accountIndex = buildAccountIndex();
+      referrals = (referrals || []).map((referral) => {
+        const existingHasAccount = referral?.referredContactHasAccount === true;
+        if (existingHasAccount) return referral;
+
+        const email = normalizeEmail(referral?.referredContactEmail);
+        const phone = normalizePhoneDigits(referral?.referredContactPhone);
+        const accountMatch =
+          (email ? accountIndex.byEmail.get(email) : null)
+          || (phone ? accountIndex.byPhone.get(phone) : null)
+          || null;
+
+        if (!accountMatch) {
+          // Always normalize to an explicit boolean so the UI doesn't have to guess.
+          if (typeof referral?.referredContactHasAccount === 'boolean') return referral;
+          return { ...referral, referredContactHasAccount: false };
+        }
+
+        return {
+          ...referral,
+          referredContactHasAccount: true,
+          referredContactAccountId: referral?.referredContactAccountId || accountMatch.id || null,
+        };
+      });
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to enrich dashboard referrals with account detection');
     }
 
     res.json({
