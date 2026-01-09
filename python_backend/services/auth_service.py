@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import bcrypt
+import html as _html
 import jwt
 import requests
 
@@ -566,27 +567,54 @@ def _dispatch_woo_password_reset(email: str) -> bool:
         return False
 
     html = str(getattr(get_response, "text", "") or "")
-    nonce_match = re.search(r'name=["\\\']_wpnonce["\\\'][^>]*value=["\\\']([^"\\\']+)["\\\']', html, re.I)
-    referer_match = re.search(
-        r'name=["\\\']_wp_http_referer["\\\'][^>]*value=["\\\']([^"\\\']+)["\\\']', html, re.I
-    )
-    nonce = nonce_match.group(1) if nonce_match else ""
-    http_referer = referer_match.group(1) if referer_match else ""
+    lowered_html = html.lower()
 
-    if not nonce:
-        # Many WP sites require a nonce for lost password; if we can't find it, we likely won't trigger an email.
+    def _parse_hidden_inputs(page_html: str) -> Dict[str, str]:
+        hidden: Dict[str, str] = {}
+        for tag_match in re.finditer(r"<input[^>]*>", page_html, re.I):
+            tag = tag_match.group(0)
+            if not re.search(r'\btype=["\\\']hidden["\\\']', tag, re.I):
+                continue
+            name_match = re.search(r'\bname=["\\\']([^"\\\']+)["\\\']', tag, re.I)
+            if not name_match:
+                continue
+            value_match = re.search(r'\bvalue=["\\\']([^"\\\']*)["\\\']', tag, re.I)
+            name = name_match.group(1)
+            value = _html.unescape(value_match.group(1)) if value_match else ""
+            hidden[name] = value
+        return hidden
+
+    hidden_inputs = _parse_hidden_inputs(html)
+    # Some WP installs (or plugins/themes) use different names for the nonce field.
+    # Prefer the canonical `_wpnonce`, but accept any `*nonce*` hidden field.
+    nonce_value = hidden_inputs.get("_wpnonce", "")
+    if not nonce_value:
+        for key, value in hidden_inputs.items():
+            if "nonce" in key.lower() and value:
+                nonce_value = value
+                break
+
+    http_referer = hidden_inputs.get("_wp_http_referer", "")
+
+    if "<form" not in lowered_html:
         logger.warning(
-            "Woo password reset form nonce not found; falling back to PepPro email",
-            extra={"email": email},
+            "Woo password reset form not detected; falling back to PepPro email",
+            extra={
+                "email": email,
+                "status": get_response.status_code,
+                "htmlHint": lowered_html[:120],
+            },
         )
         return False
 
-    post_data = {
-        "user_login": email,
-        "redirect_to": "",
-        "wp-submit": "Get New Password",
-        "_wpnonce": nonce,
-    }
+    post_data: Dict[str, str] = dict(hidden_inputs)
+    post_data["user_login"] = email
+    post_data.setdefault("redirect_to", "")
+    post_data.setdefault("wp-submit", "Get New Password")
+    if nonce_value and "_wpnonce" not in post_data:
+        # If a nonce exists but isn't named `_wpnonce`, we already included it via hidden inputs.
+        # If a plugin/theme expects `_wpnonce` specifically, provide it as well.
+        post_data["_wpnonce"] = nonce_value
     if http_referer:
         post_data["_wp_http_referer"] = http_referer
 
