@@ -808,10 +808,12 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         tax_total = 0.0
     tax_total = max(0.0, tax_total)
     tax_rate_id = _ensure_peppro_manual_tax_rate_id() if tax_total > 0 else None
-    # Always send PepPro tax as a fee line so Woo order creation is resilient.
-    # A companion Woo plugin (PepPro Manual Tax Sync) converts this + meta into a true tax line item.
-    if tax_total > 0:
-        fee_lines.append({"name": "Estimated tax", "total": f"{tax_total:.2f}", "tax_status": "none"})
+    # Prefer representing tax as a true Woo tax total (tax fields on line_items). Only fall back
+    # to the legacy fee-line approach when we cannot resolve a manual tax rate id.
+    if tax_total > 0 and tax_rate_id is None:
+        fee_lines.append(
+            {"name": "Estimated tax", "total": f"{tax_total:.2f}", "tax_status": "none"}
+        )
 
     shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
@@ -892,7 +894,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "status": status,
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
-        "line_items": build_line_items(order.get("items")),
+        "line_items": build_line_items(order.get("items"), tax_total=tax_total, tax_rate_id=tax_rate_id),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,

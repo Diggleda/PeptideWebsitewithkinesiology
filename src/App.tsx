@@ -6937,6 +6937,9 @@ export default function App() {
   const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
     const role = userRole;
     const salesRepId = userSalesRepId || userId;
+    const currentUserId = userId != null ? String(userId).trim() : "";
+    const currentUserEmail =
+      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
     if (!role || (!isRep(role) && !isAdmin(role))) {
       setSalesTrackingOrders([]);
       setSalesTrackingDoctors(new Map());
@@ -7222,6 +7225,41 @@ export default function App() {
               null,
           };
         })
+        .filter((order) => {
+          if (!currentUserId && !currentUserEmail) return true;
+          const candidateId =
+            resolveOrderDoctorId(order) ||
+            (order as any)?.doctorId ||
+            (order as any)?.doctor_id ||
+            (order as any)?.userId ||
+            (order as any)?.user_id ||
+            null;
+          if (
+            currentUserId &&
+            candidateId != null &&
+            String(candidateId).trim() === currentUserId
+          ) {
+            return false;
+          }
+          if (currentUserEmail) {
+            const candidateEmails = [
+              (order as any)?.userEmail,
+              (order as any)?.user_email,
+              (order as any)?.doctorEmail,
+              (order as any)?.doctor_email,
+              (order as any)?.email,
+              (order as any)?.billing?.email,
+              (order as any)?.billing_email,
+            ]
+              .filter((value) => typeof value === "string")
+              .map((value) => String(value).trim().toLowerCase())
+              .filter(Boolean);
+            if (candidateEmails.includes(currentUserEmail)) {
+              return false;
+            }
+          }
+          return true;
+        })
         .sort((a, b) => {
           const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -7360,6 +7398,7 @@ export default function App() {
 	    userId,
 	    userRole,
 	    userSalesRepId,
+	    user?.email,
 	    postLoginHold,
 	    resolveOrderDoctorId,
 	    enrichMissingOrderDetails,
@@ -13008,7 +13047,10 @@ export default function App() {
 	                            record.referredContactEmail ||
 	                            "—";
 	                          return (
-	                            <li key={record.id} className="lead-list-item">
+	                            <li
+	                              key={record.id}
+	                              className="lead-list-item lead-list-item--active-prospect"
+	                            >
 	                              <div className="lead-list-meta">
 	                                <div className="lead-list-name min-w-0">
                                   <button
@@ -13129,271 +13171,270 @@ export default function App() {
                                     : "No Account Yet"}
                                 </span>
                               </div>
-			                              <div className="lead-list-actions">
-			                                <select
-			                                  value={selectedStatusValue}
-			                                  disabled={isUpdating || isPermitBusy}
+				                              <div className="active-prospect-status">
+				                                <select
+				                                  value={selectedStatusValue}
+				                                  disabled={isUpdating || isPermitBusy}
 				                                  onChange={(event) => {
-			                                    const nextValue = event.target.value;
-		                                    if (nextValue === selectedStatusValue) {
-		                                      return;
-		                                    }
-	                                    if (
-	                                      isManualLead &&
-	                                      nextValue === MANUAL_PROSPECT_DELETE_VALUE
-	                                    ) {
-	                                      handleDeleteManualProspect(record.id);
-	                                      return;
-	                                    }
-	                                    if (
-	                                      nextValue === "account_created" &&
-	                                      !hasContactAccount &&
-	                                      !window.confirm(
-	                                        "They have not yet created a PepPro account, are you sure you want to promote them to Account Created?",
-	                                      )
-	                                    ) {
-	                                      return;
-	                                    }
-	                                    if (isSyntheticAccount) {
-	                                      void promoteSyntheticAccountProspect(
-	                                        record,
-	                                        nextValue,
-	                                      );
-                                      return;
-                                    }
-                                    handleUpdateReferralStatus(
-                                      record.id,
-                                      nextValue,
-                                    );
-			                                  }}
-			                                  className="lead-status-select"
-			                                >
-		                                  {isManualLead && (
-		                                    <option value={MANUAL_PROSPECT_DELETE_VALUE}>
-		                                      Delete
-		                                    </option>
-		                                  )}
-		                                  {promotionOptions.map((option) => (
-		                                    <option
-		                                      key={option.value}
-		                                      value={option.value}
-		                                      disabled={option.disabled}
-		                                    >
-		                                      {option.label}
-		                                    </option>
-			                                  ))}
-			                                </select>
-                                {stageInstruction ? (
-                                  <div className="prospect-permit-instructions mt-2 text-xs leading-snug text-slate-500">
-                                    {stageInstruction}
-                                  </div>
-                                ) : null}
-                                {isVerified && (
-                                  <div className="mt-1 text-xs text-slate-700 text-center">
-                                    {typeof (user as any)?.referralCode === "string" &&
-                                    (user as any).referralCode.trim() ? (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="text-[11px] font-semibold tracking-wide text-slate-700 hover:text-[rgb(37,99,235)]"
-                                          title="Copy your sales code"
-                                          onClick={() => {
-                                            const code = String((user as any).referralCode || "")
-                                              .trim()
-                                              .toUpperCase();
-                                            if (!code) return;
-                                            try {
-                                              void navigator.clipboard?.writeText(code);
-                                            } catch {
-                                              // ignore
-                                            }
-                                          }}
-                                        >
-                                          Your referral code:{" "}
-                                          {String((user as any).referralCode || "")
-                                            .trim()
-                                            .toUpperCase()}
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <span className="font-semibold tracking-wide text-slate-700">
-                                        Your referral code: —
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {awaitingFirstPurchase && (
-                                  <div className="text-xs text-amber-600 text-center mt-1">
-                                    Awaiting their first purchase
-                                  </div>
-                                )}
-	                                {kind === "referral" &&
-	                                  !isManualLead &&
-	                                  normalizedStatus === "converted" &&
-	                                  !referralCreditTimestamp &&
-	                                  creditEligible && (
-	                                    <Button
-                                      type="button"
-                                      disabled={isCrediting}
-                                      onClick={() =>
-                                        handleReferralCredit(
-                                          record as ReferralRecord,
-                                        )
-                                      }
-                                      className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter justify-center"
-                                    >
-                                      {isCrediting
-                                        ? "Crediting…"
-                                        : `Credit ${referralDisplayName} $50`}
-                                    </Button>
-                                  )}
+				                                    const nextValue = event.target.value;
+				                                    if (nextValue === selectedStatusValue) {
+				                                      return;
+				                                    }
+				                                    if (
+				                                      isManualLead &&
+				                                      nextValue === MANUAL_PROSPECT_DELETE_VALUE
+				                                    ) {
+				                                      handleDeleteManualProspect(record.id);
+				                                      return;
+				                                    }
+				                                    if (
+				                                      nextValue === "account_created" &&
+				                                      !hasContactAccount &&
+				                                      !window.confirm(
+				                                        "They have not yet created a PepPro account, are you sure you want to promote them to Account Created?",
+				                                      )
+				                                    ) {
+				                                      return;
+				                                    }
+				                                    if (isSyntheticAccount) {
+				                                      void promoteSyntheticAccountProspect(
+				                                        record,
+				                                        nextValue,
+				                                      );
+				                                      return;
+				                                    }
+				                                    handleUpdateReferralStatus(record.id, nextValue);
+				                                  }}
+				                                  className="lead-status-select"
+				                                >
+				                                  {isManualLead && (
+				                                    <option value={MANUAL_PROSPECT_DELETE_VALUE}>
+				                                      Delete
+				                                    </option>
+				                                  )}
+				                                  {promotionOptions.map((option) => (
+				                                    <option
+				                                      key={option.value}
+				                                      value={option.value}
+				                                      disabled={option.disabled}
+				                                    >
+				                                      {option.label}
+				                                    </option>
+				                                  ))}
+				                                </select>
+				                              </div>
+				                              <div className="active-prospect-right">
+	                                {stageInstruction ? (
+	                                  <div className="prospect-permit-instructions mt-2 text-xs leading-snug text-slate-500">
+	                                    {stageInstruction}
+	                                  </div>
+	                                ) : null}
+	                                {isVerified && (
+	                                  <div className="mt-1 text-xs text-slate-700 text-center">
+	                                    {typeof (user as any)?.referralCode === "string" &&
+	                                    (user as any).referralCode.trim() ? (
+	                                      <>
+	                                        <button
+	                                          type="button"
+	                                          className="text-[11px] font-semibold tracking-wide text-slate-700 hover:text-[rgb(37,99,235)]"
+	                                          title="Copy your sales code"
+	                                          onClick={() => {
+	                                            const code = String((user as any).referralCode || "")
+	                                              .trim()
+	                                              .toUpperCase();
+	                                            if (!code) return;
+	                                            try {
+	                                              void navigator.clipboard?.writeText(code);
+	                                            } catch {
+	                                              // ignore
+	                                            }
+	                                          }}
+	                                        >
+	                                          Your referral code:{" "}
+	                                          {String((user as any).referralCode || "")
+	                                            .trim()
+	                                            .toUpperCase()}
+	                                        </button>
+	                                      </>
+	                                    ) : (
+	                                      <span className="font-semibold tracking-wide text-slate-700">
+	                                        Your referral code: —
+	                                      </span>
+	                                    )}
+	                                  </div>
+	                                )}
+	                                {awaitingFirstPurchase && (
+	                                  <div className="text-xs text-amber-600 text-center mt-1">
+	                                    Awaiting their first purchase
+	                                  </div>
+	                                )}
 		                                {kind === "referral" &&
 		                                  !isManualLead &&
 		                                  normalizedStatus === "converted" &&
 		                                  !referralCreditTimestamp &&
-		                                  !creditEligible && (
-		                                    <div className="text-xs text-slate-500 text-center mt-1">
-		                                      Awaiting first order to credit
-		                                    </div>
-		                                  )}
-	                                <div className="lead-list-actions-footer">
-	                                  {selectedStatusValue === "contacted" &&
-	                                    !isSyntheticAccount && (
-	                                      <div className="prospect-permit-container">
-	                                        <div className="prospect-permit-caption">
-	                                          Reseller Permit Verification
-	                                        </div>
-	                                        <div className="prospect-permit-controls">
-		                                          <label className="prospect-permit-checkbox">
-		                                            <input
-		                                              type="checkbox"
-		                                              checked={resellerPermitExempt}
-		                                              disabled={
-		                                                isUpdating ||
-		                                                isPermitBusy ||
-		                                                (hasResellerPermitFile &&
-		                                                  !resellerPermitExempt)
-		                                              }
-		                                              onChange={(event) => {
-		                                                void updateResellerPermitExempt(
-		                                                  String(record.id),
-		                                                  event.target.checked,
-	                                                );
-	                                              }}
-	                                              className="prospect-permit-checkbox-input"
-	                                            />
-	                                            Doctor does not have a resellers permit
-	                                          </label>
-		                                          <div className="prospect-permit-file-picker">
+		                                  creditEligible && (
+		                                    <Button
+	                                      type="button"
+	                                      disabled={isCrediting}
+	                                      onClick={() =>
+	                                        handleReferralCredit(
+	                                          record as ReferralRecord,
+	                                        )
+	                                      }
+	                                      className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter justify-center"
+	                                    >
+	                                      {isCrediting
+	                                        ? "Crediting…"
+	                                        : `Credit ${referralDisplayName} $50`}
+	                                    </Button>
+	                                  )}
+			                                {kind === "referral" &&
+			                                  !isManualLead &&
+			                                  normalizedStatus === "converted" &&
+			                                  !referralCreditTimestamp &&
+			                                  !creditEligible && (
+			                                    <div className="text-xs text-slate-500 text-center mt-1">
+			                                      Awaiting first order to credit
+			                                    </div>
+			                                  )}
+		                                <div className="lead-list-actions-footer">
+		                                  {selectedStatusValue === "contacted" &&
+		                                    !isSyntheticAccount && (
+		                                      <div className="prospect-permit-container">
+		                                        <div className="prospect-permit-caption">
+		                                          Reseller Permit Verification
+		                                        </div>
+		                                        <div className="prospect-permit-controls">
+			                                          <label className="prospect-permit-checkbox">
 			                                            <input
-			                                              id={permitInputId}
-			                                              type="file"
-			                                              accept="application/pdf,image/*"
+			                                              type="checkbox"
+			                                              checked={resellerPermitExempt}
 			                                              disabled={
 			                                                isUpdating ||
 			                                                isPermitBusy ||
-			                                                resellerPermitExempt
+			                                                (hasResellerPermitFile &&
+			                                                  !resellerPermitExempt)
 			                                              }
 			                                              onChange={(event) => {
-			                                                const file =
-			                                                  event.target.files?.[0];
-			                                                if (file) {
-		                                                  void uploadResellerPermit(
-		                                                    String(record.id),
-		                                                    file,
-		                                                  );
-		                                                  event.target.value = "";
-		                                                }
+			                                                void updateResellerPermitExempt(
+			                                                  String(record.id),
+			                                                  event.target.checked,
+		                                                );
 		                                              }}
-		                                              className="prospect-permit-file-input"
+		                                              className="prospect-permit-checkbox-input"
 		                                            />
-			                                            <label
-			                                              htmlFor={permitInputId}
-			                                              className="prospect-permit-file-button"
-			                                              aria-disabled={
-			                                                isUpdating ||
-			                                                isPermitBusy ||
-			                                                resellerPermitExempt
-			                                              }
-			                                            >
-			                                              Upload Permit
-			                                            </label>
-			                                            {hasResellerPermitFile ? (
-			                                              <div className="prospect-permit-file-meta">
-                                            {(() => {
-                                              const fullName =
-                                                resellerPermitFileName ||
-                                                resellerPermitFilePath
-                                                  .split("/")
-                                                  .pop() ||
-                                                "reseller_permit";
-                                              const shortName =
-                                                fullName.length <= 12
-                                                  ? fullName
-                                                  : `${fullName.slice(0, 8)}…${fullName.slice(-3)}`;
-                                              return (
-                                                <button
-                                                  type="button"
-                                                  className="prospect-permit-file-name prospect-permit-file-name-button"
-                                                  disabled={
-                                                    isUpdating || isPermitBusy
-                                                  }
-                                                  aria-label="Download uploaded reseller permit"
-                                                  title={fullName}
-                                                  onClick={() => {
-                                                    void viewResellerPermit(
-                                                      String(record.id),
-                                                      fullName,
-                                                    );
-                                                  }}
-                                                >
-                                                  {shortName}
-                                                </button>
-                                              );
-                                            })()}
-			                                                <button
-			                                                  type="button"
-			                                                  className="prospect-permit-file-delete"
-			                                                  disabled={
-			                                                    isUpdating || isPermitBusy
-			                                                  }
-			                                                  title="Delete uploaded permit"
-			                                                  onClick={() => {
-			                                                    void deleteResellerPermit(
-			                                                      String(record.id),
-			                                                    );
-			                                                  }}
-			                                                >
-			                                                  <Trash2
-			                                                    className="h-4 w-4"
-			                                                    aria-hidden="true"
-			                                                  />
-			                                                </button>
-			                                              </div>
-			                                            ) : (
-			                                              <span className="prospect-permit-file-name">
-			                                                No file selected
-			                                              </span>
-			                                            )}
-		                                          </div>
+		                                            Doctor does not have a resellers permit
+		                                          </label>
+			                                          <div className="prospect-permit-file-picker">
+				                                            <input
+				                                              id={permitInputId}
+				                                              type="file"
+				                                              accept="application/pdf,image/*"
+				                                              disabled={
+				                                                isUpdating ||
+				                                                isPermitBusy ||
+				                                                resellerPermitExempt
+				                                              }
+				                                              onChange={(event) => {
+				                                                const file =
+				                                                  event.target.files?.[0];
+				                                                if (file) {
+			                                                  void uploadResellerPermit(
+			                                                    String(record.id),
+			                                                    file,
+			                                                  );
+			                                                  event.target.value = "";
+			                                                }
+			                                              }}
+			                                              className="prospect-permit-file-input"
+			                                            />
+				                                            <label
+				                                              htmlFor={permitInputId}
+				                                              className="prospect-permit-file-button"
+				                                              aria-disabled={
+				                                                isUpdating ||
+				                                                isPermitBusy ||
+				                                                resellerPermitExempt
+				                                              }
+				                                            >
+				                                              Upload Permit
+				                                            </label>
+				                                            {hasResellerPermitFile ? (
+				                                              <div className="prospect-permit-file-meta">
+	                                            {(() => {
+	                                              const fullName =
+	                                                resellerPermitFileName ||
+	                                                resellerPermitFilePath
+	                                                  .split("/")
+	                                                  .pop() ||
+	                                                "reseller_permit";
+	                                              const shortName =
+	                                                fullName.length <= 12
+	                                                  ? fullName
+	                                                  : `${fullName.slice(0, 8)}…${fullName.slice(-3)}`;
+	                                              return (
+	                                                <button
+	                                                  type="button"
+	                                                  className="prospect-permit-file-name prospect-permit-file-name-button"
+	                                                  disabled={
+	                                                    isUpdating || isPermitBusy
+	                                                  }
+	                                                  aria-label="Download uploaded reseller permit"
+	                                                  title={fullName}
+	                                                  onClick={() => {
+	                                                    void viewResellerPermit(
+	                                                      String(record.id),
+	                                                      fullName,
+	                                                    );
+	                                                  }}
+	                                                >
+	                                                  {shortName}
+	                                                </button>
+	                                              );
+	                                            })()}
+				                                                <button
+				                                                  type="button"
+				                                                  className="prospect-permit-file-delete"
+				                                                  disabled={
+				                                                    isUpdating || isPermitBusy
+				                                                  }
+				                                                  title="Delete uploaded permit"
+				                                                  onClick={() => {
+				                                                    void deleteResellerPermit(
+				                                                      String(record.id),
+				                                                    );
+				                                                  }}
+				                                                >
+				                                                  <Trash2
+				                                                    className="h-4 w-4"
+				                                                    aria-hidden="true"
+				                                                  />
+				                                                </button>
+				                                              </div>
+				                                            ) : (
+				                                              <span className="prospect-permit-file-name">
+				                                                No file selected
+				                                              </span>
+				                                            )}
+			                                          </div>
+			                                        </div>
+			                                      </div>
+			                                    )}
+		                                  <div className="lead-list-updated-block">
+		                                    {kind === "referral" &&
+		                                      referralCreditTimestamp && (
+		                                        <div className="text-xs font-semibold text-emerald-600 text-right break-words">
+		                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
 		                                        </div>
-		                                      </div>
-		                                    )}
-	                                  <div className="lead-list-updated-block">
-	                                    {kind === "referral" &&
-	                                      referralCreditTimestamp && (
-	                                        <div className="text-xs font-semibold text-emerald-600 text-right break-words">
-	                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
-	                                        </div>
-	                                      )}
-	                                    <div className="lead-updated text-right">
-	                                      {record.updatedAt
-	                                        ? `Updated ${formatDateTime(record.updatedAt)}`
-	                                        : formatDateTime(record.createdAt)}
-	                                    </div>
-	                                  </div>
-	                                </div>
-			                              </div>
+		                                      )}
+		                                    <div className="lead-updated text-right">
+		                                      {record.updatedAt
+		                                        ? `Updated ${formatDateTime(record.updatedAt)}`
+		                                        : formatDateTime(record.createdAt)}
+		                                    </div>
+		                                  </div>
+		                                </div>
+				                              </div>
 			                            </li>
 			                          );
 			                        })}

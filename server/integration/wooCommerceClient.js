@@ -602,14 +602,15 @@ const buildOrderPayload = async ({ order, customer }) => {
   }
 
   if (taxTotal > 0) {
-    // Woo REST does not reliably accept custom tax line items/totals. Always send tax as a fee line
-    // so the amount is reflected in Woo order total; a small Woo-side plugin can convert this fee
-    // (and/or the peppro_tax_total meta) into a proper tax line item.
-    feeLines.push({
-      name: 'Estimated tax',
-      total: taxTotal.toFixed(2),
-      tax_status: 'none',
-    });
+    // Prefer representing tax as a true Woo tax total (tax fields on line_items). Only fall back
+    // to the legacy fee-line approach when we cannot resolve a manual tax rate id.
+    if (!manualTaxRateId) {
+      feeLines.push({
+        name: 'Estimated tax',
+        total: taxTotal.toFixed(2),
+        tax_status: 'none',
+      });
+    }
   }
 
   const payload = {
@@ -618,10 +619,10 @@ const buildOrderPayload = async ({ order, customer }) => {
     customer_note: `PepPro Order ${order.id}${order.referralCode ? ` — Referral code used: ${order.referralCode}` : ''}`,
     set_paid: false,
     total: finalTotal.toFixed(2),
-    total_tax: '0.00',
-    cart_tax: '0.00',
+    total_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',
+    cart_tax: manualTaxRateId ? taxTotal.toFixed(2) : '0.00',
     shipping_tax: '0.00',
-    line_items: buildLineItems(order.items || [], { taxTotal: 0, taxRateId: null }),
+    line_items: buildLineItems(order.items || [], { taxTotal, taxRateId: manualTaxRateId }),
     meta_data: metaData,
     billing: {
       first_name: customer.name || 'PepPro',
