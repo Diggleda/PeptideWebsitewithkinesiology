@@ -957,6 +957,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                 )
                 return cached.get("value")
     users = user_repository.get_all()
+    user_by_id = {str(u.get("id")): u for u in users if isinstance(u, dict) and u.get("id") is not None}
     rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
     allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
 
@@ -977,7 +978,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
         pass
 
     doctor_lookup = {
-        doc.get("id"): {
+        str(doc.get("id")): {
             "id": doc.get("id"),
             "name": doc.get("name") or doc.get("email") or "Doctor",
             "email": doc.get("email"),
@@ -994,7 +995,94 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             "country": doc.get("officeCountry"),
         }
         for doc in doctors
+        if doc.get("id") is not None
     }
+
+    def _normalize_rep_id(value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    def _meta_value(meta: object, key: str):
+        if not isinstance(meta, list):
+            return None
+        for entry in meta:
+            if isinstance(entry, dict) and entry.get("key") == key:
+                return entry.get("value")
+        return None
+
+    # Pull local PepPro orders to support:
+    # - reps seeing orders even when billing email doesn't match the doctor email
+    # - resolving doctorId via Woo meta `peppro_order_id`
+    local_by_id: Dict[str, Dict] = {}
+    try:
+        doctor_ids = [str(doc.get("id")) for doc in doctors if doc.get("id") is not None]
+        local_orders = order_repository.find_by_user_ids(doctor_ids) if doctor_ids else []
+    except Exception:
+        local_orders = []
+
+    # Fallback scan catches cases where the doctor user isn't linked to the rep, but the order payload contains doctorSalesRepId.
+    if not local_orders:
+        try:
+            local_orders = order_repository.list_recent(750)
+        except Exception:
+            local_orders = []
+
+    seen_local_doctor_ids = set(str(doc.get("id")) for doc in doctors if doc.get("id") is not None)
+    for local in local_orders or []:
+        if not isinstance(local, dict):
+            continue
+        local_id = local.get("id")
+        if local_id is None:
+            continue
+        local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
+        if not local_user_id:
+            continue
+
+        local_user = user_by_id.get(local_user_id)
+        local_role = (local_user.get("role") or "").lower() if isinstance(local_user, dict) else ""
+        if local_role and local_role not in ("doctor", "test_doctor"):
+            continue
+
+        rep_from_order = _normalize_rep_id(
+            local.get("doctorSalesRepId")
+            or local.get("salesRepId")
+            or local.get("sales_rep_id")
+            or local.get("doctor_sales_rep_id")
+        )
+        rep_from_user = _normalize_rep_id(
+            (local_user or {}).get("salesRepId")
+            or (local_user or {}).get("sales_rep_id")
+        )
+        if not (
+            (rep_from_order and rep_from_order in allowed_rep_ids)
+            or (rep_from_user and rep_from_user in allowed_rep_ids)
+        ):
+            continue
+
+        local_by_id[str(local_id)] = local
+
+        # Ensure the doctor appears in the `doctors` payload even if their `salesRepId` wasn't set.
+        if local_user_id not in doctor_lookup and isinstance(local_user, dict):
+            doctor_lookup[local_user_id] = {
+                "id": local_user.get("id"),
+                "name": local_user.get("name") or local_user.get("email") or "Doctor",
+                "email": local_user.get("email"),
+                "phone": local_user.get("phone"),
+                "profileImageUrl": local_user.get("profileImageUrl"),
+                "leadType": local_user.get("leadType"),
+                "leadTypeSource": local_user.get("leadTypeSource"),
+                "leadTypeLockedAt": local_user.get("leadTypeLockedAt"),
+                "address1": local_user.get("officeAddressLine1"),
+                "address2": local_user.get("officeAddressLine2"),
+                "city": local_user.get("officeCity"),
+                "state": local_user.get("officeState"),
+                "postalCode": local_user.get("officePostalCode"),
+                "country": local_user.get("officeCountry"),
+            }
+        if local_user_id and local_user_id not in seen_local_doctor_ids and isinstance(local_user, dict):
+            doctors.append(local_user)
+            seen_local_doctor_ids.add(local_user_id)
 
     summaries: List[Dict] = []
     seen_keys = set()
@@ -1074,12 +1162,41 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             for woo_order in orders:
                 if not isinstance(woo_order, dict):
                     continue
+                meta_data = woo_order.get("meta_data") or []
+                rep_id = _normalize_rep_id(_meta_value(meta_data, "peppro_sales_rep_id"))
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
-                if not billing_email or billing_email not in email_to_doctors:
+                if not (
+                    (rep_id and rep_id in allowed_rep_ids)
+                    or (billing_email and billing_email in email_to_doctors)
+                ):
                     continue
 
-                for doctor_meta in email_to_doctors.get(billing_email, []):
-                    key = f"woo:{woo_order.get('id')}"
+                doctor_metas: List[Dict[str, object]] = []
+                if billing_email and billing_email in email_to_doctors:
+                    doctor_metas = email_to_doctors.get(billing_email, [])
+                else:
+                    # Fallback: resolve doctor via local PepPro order id (`peppro_order_id`).
+                    peppro_order_id = _meta_value(meta_data, "peppro_order_id")
+                    peppro_order_id = str(peppro_order_id).strip() if peppro_order_id is not None else ""
+                    local = local_by_id.get(peppro_order_id) if peppro_order_id else None
+                    if local:
+                        local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
+                        doctor_meta = doctor_lookup.get(local_user_id) if local_user_id else None
+                        if doctor_meta:
+                            doctor_metas = [doctor_meta]
+
+                if not doctor_metas:
+                    # Still show activity for rep-attributed orders even if we can't map to a doctor row.
+                    doctor_metas = [
+                        {
+                            "id": billing_email or None,
+                            "name": billing_email or "Doctor",
+                            "email": billing_email or None,
+                        }
+                    ]
+
+                for doctor_meta in doctor_metas:
+                    key = f"woo:{woo_order.get('id')}:{doctor_meta.get('id') or billing_email or ''}"
                     if key in seen_keys:
                         continue
                     seen_keys.add(key)
@@ -1089,6 +1206,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                         "doctorId": doctor_meta.get("id"),
                         "doctorName": doctor_meta.get("name"),
                         "doctorEmail": doctor_meta.get("email"),
+                        "userId": doctor_meta.get("id"),
                         "source": "woocommerce",
                     }
                     _enrich_with_shipstation(summary)
@@ -1105,6 +1223,43 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             per_page,
             orders_seen,
         )
+
+    # If Woo is not configured, fall back to local PepPro orders so reps can still see activity.
+    if not woo_enabled and local_by_id:
+        for local in local_by_id.values():
+            local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
+            doctor_meta = doctor_lookup.get(local_user_id) or {}
+            key = f"local:{local.get('id')}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            summary = {
+                "id": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "wooOrderId": local.get("wooOrderId") or None,
+                "wooOrderNumber": local.get("wooOrderNumber") or None,
+                "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "status": local.get("status") or "pending",
+                "total": float(local.get("grandTotal") or local.get("total") or 0),
+                "taxTotal": float(local.get("taxTotal") or 0),
+                "grandTotal": float(local.get("grandTotal") or local.get("total") or 0),
+                "currency": local.get("currency") or "USD",
+                "paymentMethod": local.get("paymentMethod") or None,
+                "paymentDetails": local.get("paymentDetails") or local.get("paymentMethod") or None,
+                "shippingTotal": float(local.get("shippingTotal") or 0),
+                "createdAt": local.get("createdAt") or None,
+                "updatedAt": local.get("updatedAt") or None,
+                "shippingAddress": local.get("shippingAddress") or None,
+                "billingAddress": local.get("billingAddress") or None,
+                "shippingEstimate": local.get("shippingEstimate") or None,
+                "lineItems": local.get("items") or [],
+                "doctorId": doctor_meta.get("id") or local_user_id or None,
+                "doctorName": doctor_meta.get("name") or doctor_meta.get("email") or "Doctor",
+                "doctorEmail": doctor_meta.get("email") or None,
+                "userId": doctor_meta.get("id") or local_user_id or None,
+                "source": "peppro",
+            }
+            _enrich_with_shipstation(summary)
+            summaries.append(summary)
 
     summaries.sort(key=lambda o: o.get("createdAt") or "", reverse=True)
 

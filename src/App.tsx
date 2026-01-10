@@ -11857,74 +11857,68 @@ export default function App() {
 	                            const showIdle =
 	                              (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
 	                              (isCurrentUser && isIdle);
-	                            return (
+		                            return (
 		                              <div
 		                                key={entry.id}
 		                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
 		                              >
 		                                <button
 		                                  type="button"
-		                                  aria-label={`Open ${displayName} profile`}
-		                                  onClick={() => openLiveUserDetail(entry)}
-		                                  style={{ background: "transparent", border: "none", padding: 0 }}
-		                                  className="shrink-0"
-		                                >
-	                                  <div
-	                                    className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm transition hover:shadow-md hover:border-slate-300"
-	                                    style={{
-	                                      width: 34,
-	                                      height: 34,
-	                                      minWidth: 34,
-	                                    }}
-	                                  >
-	                                    {avatarUrl ? (
-	                                      <img
-	                                        src={avatarUrl}
-	                                        alt={displayName}
-	                                        className="h-full w-full object-cover"
-	                                        loading="lazy"
-	                                        decoding="async"
-	                                      />
-	                                    ) : (
-	                                      <span className="text-[11px] font-semibold text-slate-600">
-	                                        {getInitials(displayName)}
-	                                      </span>
-	                                    )}
-	                                  </div>
-	                                </button>
-		                                <button
-		                                  type="button"
 		                                  onClick={() => openLiveUserDetail(entry)}
 		                                  aria-label={`Open ${displayName} profile`}
-		                                  className="min-w-0 flex-1 text-left"
+		                                  className="min-w-0 flex-1"
 		                                  style={{ background: "transparent", border: "none", padding: 0 }}
 		                                >
-		                                  <div className="flex items-center gap-2 min-w-0">
-		                                    <span className="text-sm font-semibold text-slate-800 truncate">
-		                                      {displayName}
-		                                    </span>
-		                                  </div>
-		                                  <div className="text-xs text-slate-500 truncate">
-		                                    {entry.email || "—"}
+		                                  <div className="flex items-center gap-3 min-w-0">
+		                                    <div
+		                                      className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
+		                                      style={{
+		                                        width: 34,
+		                                        height: 34,
+		                                        minWidth: 34,
+		                                      }}
+		                                    >
+		                                      {avatarUrl ? (
+		                                        <img
+		                                          src={avatarUrl}
+		                                          alt={displayName}
+		                                          className="h-full w-full object-cover"
+		                                          loading="lazy"
+		                                          decoding="async"
+		                                        />
+		                                      ) : (
+		                                        <span className="text-[11px] font-semibold text-slate-600">
+		                                          {getInitials(displayName)}
+		                                        </span>
+		                                      )}
+		                                    </div>
+		                                    <div className="min-w-0 text-left">
+		                                      <div className="text-sm font-semibold text-slate-800 truncate">
+		                                        {displayName}
+		                                      </div>
+		                                      <div className="text-xs text-slate-500 truncate">
+		                                        {entry.email || "—"}
+		                                      </div>
+		                                    </div>
 		                                  </div>
 		                                </button>
-		                                <div className="ml-auto flex w-[140px] flex-col items-end gap-1 whitespace-nowrap text-right">
+		                                <div className="ml-auto flex flex-col items-end gap-1 whitespace-nowrap text-right">
 		                                  <span
 		                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
 		                                      showIdle
 		                                        ? "bg-slate-100 text-slate-600"
 		                                        : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-	                                    }`}
-	                                  >
-	                                    {showIdle ? "Idle" : "Online"}
-	                                  </span>
-	                                  <div className="text-xs text-slate-600 whitespace-nowrap">
-	                                    {formatOnlineDuration(entry.lastLoginAt)}
-	                                  </div>
-	                                </div>
-	                              </div>
-	                            );
-	                          })}
+		                                    }`}
+		                                  >
+		                                    {showIdle ? "Idle" : "Online"}
+		                                  </span>
+		                                  <div className="text-xs text-slate-600 whitespace-nowrap">
+		                                    {formatOnlineDuration(entry.lastLoginAt)}
+		                                  </div>
+		                                </div>
+		                              </div>
+		                            );
+		                          })}
                         </div>
                       );
                     })()
@@ -15716,18 +15710,21 @@ export default function App() {
 	        <DialogContent className="max-w-2xl">
 	          {salesDoctorDetail && (
 	            <div className="space-y-4">
-	              <DialogHeader>
-	                <DialogTitle>{salesDoctorDetail.name}</DialogTitle>
-	                <DialogDescription>
-	                  {salesDoctorDetail.email ? (
-	                    <a href={`mailto:${salesDoctorDetail.email}`}>
-	                      {salesDoctorDetail.email}
-	                    </a>
-	                  ) : (
-	                    "Doctor details"
-	                  )}
-	                </DialogDescription>
-	              </DialogHeader>
+		              <DialogHeader>
+		                <DialogTitle className="space-y-0.5">
+		                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
+		                  <div className="text-sm font-normal text-slate-600">
+		                    {salesDoctorDetail.email ? (
+		                      <a href={`mailto:${salesDoctorDetail.email}`} className="hover:underline">
+		                        {salesDoctorDetail.email}
+		                      </a>
+		                    ) : (
+		                      "—"
+		                    )}
+		                  </div>
+		                </DialogTitle>
+		                <DialogDescription>Account details</DialogDescription>
+		              </DialogHeader>
 			              <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 			                <p className="text-sm font-semibold text-slate-800">Notes</p>
 			                  <Textarea
@@ -15851,25 +15848,32 @@ export default function App() {
                 <p className="text-sm font-semibold text-slate-700">
                   Recent Orders
                 </p>
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {salesDoctorDetail.orders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
-                    >
-                      <div className="text-sm text-slate-700">
-                        {`Order #${order.number ?? order.id}`}
-                        <div className="text-xs text-slate-500">
-                          {order.createdAt
-                            ? formatDateTime(order.createdAt)
-                            : "Date unavailable"}
-                        </div>
-                      </div>
-                      <div className="text-right text-sm font-semibold text-slate-900">
-                        {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
-                      </div>
-                    </div>
-                  ))}
+	                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+	                  {salesDoctorDetail.orders.map((order) => (
+	                    <div
+	                      key={order.id}
+	                      className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
+	                    >
+	                      <div className="min-w-0 text-sm text-slate-700">
+	                        <div className="flex items-center gap-2 min-w-0">
+	                          <span className="font-semibold text-slate-800 truncate">
+	                            {`Order #${order.number ?? order.id}`}
+	                          </span>
+	                          <span className="sales-tracking-row-status shrink-0">
+	                            {describeSalesOrderStatus(order as any)}
+	                          </span>
+	                        </div>
+	                        <div className="text-xs text-slate-500">
+	                          {order.createdAt
+	                            ? formatDateTime(order.createdAt)
+	                            : "Date unavailable"}
+	                        </div>
+	                      </div>
+	                      <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
+	                        {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
+	                      </div>
+	                    </div>
+	                  ))}
                   {salesDoctorDetail.orders.length === 0 && (
                     <p className="text-xs text-slate-500">
                       No orders available.

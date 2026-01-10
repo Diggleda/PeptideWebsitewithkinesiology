@@ -1721,14 +1721,37 @@ const getOrdersForSalesRep = async (
       }
     }
   } else {
-    logger.warn(
+    const doctorIdSet = new Set(doctorIds);
+    const localOrders = orderRepository.getAll().filter((order) => doctorIdSet.has(normalizeId(order?.userId)));
+    logger.info(
       {
+        doctors: doctors.length,
+        doctorIds: doctorIds.length,
+        localOrders: localOrders.length,
         mysqlEnabled: mysqlClient.isEnabled(),
         wooConfigured: !!wooCommerceClient?.isConfigured?.(),
-        doctors: doctors.length,
       },
-      'Sales rep fetch: no order source enabled (neither MySQL nor WooCommerce)',
+      'Sales rep fetch: using local JSON order source',
     );
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const rawOrder of localOrders) {
+      const baseSummary = buildLocalOrderSummary(rawOrder);
+      if (!baseSummary) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const summary = await enrichOrderWithShipStation(baseSummary);
+      const key = `local:${summary.id}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      summaries.push({
+        ...summary,
+        doctorId: rawOrder.userId,
+        doctorName: doctorLookup.get(normalizeId(rawOrder.userId))?.name || 'Doctor',
+        doctorEmail: doctorLookup.get(normalizeId(rawOrder.userId))?.email || null,
+        doctorProfileImageUrl: doctorLookup.get(normalizeId(rawOrder.userId))?.profileImageUrl || null,
+        source: 'local',
+      });
+    }
   }
 
   summaries.sort((a, b) => {

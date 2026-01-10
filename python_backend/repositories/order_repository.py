@@ -50,6 +50,47 @@ def find_by_user_id(user_id: str) -> List[Dict]:
     return [order for order in _load() if order.get("userId") == user_id]
 
 
+def find_by_user_ids(user_ids: List[str]) -> List[Dict]:
+    ids = [str(uid).strip() for uid in (user_ids or []) if str(uid).strip()]
+    if not ids:
+        return []
+    if _using_mysql():
+        results: List[Dict] = []
+        chunk_size = 500
+        for offset in range(0, len(ids), chunk_size):
+            chunk = ids[offset : offset + chunk_size]
+            placeholders = ", ".join([f"%(user_id_{idx})s" for idx in range(len(chunk))])
+            params = {f"user_id_{idx}": user_id for idx, user_id in enumerate(chunk)}
+            rows = mysql_client.fetch_all(
+                f"SELECT * FROM orders WHERE user_id IN ({placeholders})",
+                params,
+            )
+            for row in rows or []:
+                mapped = _row_to_order(row)
+                if mapped:
+                    results.append(mapped)
+        return results
+    id_set = set(ids)
+    return [order for order in _load() if str(order.get("userId") or "") in id_set]
+
+
+def list_recent(limit: int = 500) -> List[Dict]:
+    try:
+        limit_value = int(limit)
+    except Exception:
+        limit_value = 500
+    limit_value = max(1, min(limit_value, 5000))
+    if _using_mysql():
+        rows = mysql_client.fetch_all(
+            "SELECT * FROM orders ORDER BY created_at DESC LIMIT %(limit)s",
+            {"limit": limit_value},
+        )
+        return [_row_to_order(row) for row in rows]
+    orders = list(_load())
+    orders.sort(key=lambda o: str(o.get("createdAt") or ""), reverse=True)
+    return orders[:limit_value]
+
+
 def count_by_user_id(user_id: str) -> int:
     if _using_mysql():
         row = mysql_client.fetch_one(
