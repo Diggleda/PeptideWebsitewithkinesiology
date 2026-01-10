@@ -902,6 +902,19 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "billing": billing_address,
         "shipping": shipping_address,
     }
+    if tax_total > 0 and tax_rate_id is not None:
+        payload["cart_tax"] = f"{tax_total:.2f}"
+        payload["shipping_tax"] = "0.00"
+        payload["total_tax"] = f"{tax_total:.2f}"
+        payload["tax_lines"] = [
+            {
+                "rate_id": int(tax_rate_id),
+                "label": _PEPPRO_MANUAL_TAX_RATE_NAME,
+                "compound": False,
+                "tax_total": f"{tax_total:.2f}",
+                "shipping_tax_total": "0.00",
+            }
+        ]
     if payment_method == "bacs":
         payload["payment_method"] = "bacs"
         payload["payment_method_title"] = "Direct Bank Transfer"

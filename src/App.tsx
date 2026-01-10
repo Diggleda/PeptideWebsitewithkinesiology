@@ -3827,6 +3827,37 @@ export default function App() {
     return email && email.includes("@") ? email : null;
   }, []);
 
+  const buildEmailIdentityKeys = useCallback(
+    (value: unknown): string[] => {
+      const email = normalizeEmailIdentity(value);
+      if (!email) return [];
+      const keys = new Set<string>();
+      const add = (candidate: string) => {
+        const normalized = candidate.trim().toLowerCase();
+        if (!normalized) return;
+        keys.add(normalized);
+        keys.add(`email:${normalized}`);
+      };
+      add(email);
+      const [local, domain] = email.split("@", 2);
+      if (!local || !domain) {
+        return Array.from(keys);
+      }
+      const localNoPlus = local.split("+", 1)[0];
+      if (localNoPlus) {
+        add(`${localNoPlus}@${domain}`);
+      }
+      if (domain === "gmail.com" || domain === "googlemail.com") {
+        const gmailLocal = localNoPlus.replace(/\./g, "");
+        if (gmailLocal) {
+          add(`${gmailLocal}@${domain}`);
+        }
+      }
+      return Array.from(keys);
+    },
+    [normalizeEmailIdentity],
+  );
+
   const buildPhoneIdentityKeys = useCallback((value: unknown): string[] => {
     if (value === null || value === undefined) return [];
     const raw = String(value).trim();
@@ -3863,8 +3894,6 @@ export default function App() {
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
-      ...(Array.isArray(dashboardAny?.salesReps) ? dashboardAny.salesReps : []),
-      ...(Array.isArray(dashboardAny?.sales_reps) ? dashboardAny.sales_reps : []),
     ];
     const keys = new Set<string>();
     const addKey = (value?: string | null) => {
@@ -3875,17 +3904,19 @@ export default function App() {
       }
     };
     rawAccounts.forEach((acct: any) => {
-      const email = normalizeEmailIdentity(
-        acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail,
-      );
+      const acctRole = normalizeRole(acct?.role);
+      if (acctRole === "admin" || acctRole === "sales_rep" || acctRole === "rep") {
+        return;
+      }
+      const emailValue =
+        acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail;
       const phone =
         acct?.phone ||
         acct?.phoneNumber ||
         acct?.phone_number ||
         acct?.referredContactPhone ||
         null;
-      addKey(email);
-      addKey(email ? `email:${email}` : null);
+      buildEmailIdentityKeys(emailValue).forEach((key) => addKey(key));
       buildPhoneIdentityKeys(phone).forEach((key) => addKey(key));
       addKey(acct?.id !== undefined && acct?.id !== null ? `acct:${String(acct.id).trim()}` : null);
       addKey(
@@ -3908,7 +3939,7 @@ export default function App() {
       );
     });
     return keys;
-  }, [buildPhoneIdentityKeys, normalizeEmailIdentity, salesRepDashboard]);
+  }, [buildEmailIdentityKeys, buildPhoneIdentityKeys, salesRepDashboard]);
 
   const accountProfileLookup = useMemo(() => {
     const dashboardAny = salesRepDashboard as any;
@@ -3916,8 +3947,6 @@ export default function App() {
       ...(Array.isArray(dashboardAny?.users) ? dashboardAny.users : []),
       ...(Array.isArray(dashboardAny?.accounts) ? dashboardAny.accounts : []),
       ...(Array.isArray(dashboardAny?.doctors) ? dashboardAny.doctors : []),
-      ...(Array.isArray(dashboardAny?.salesReps) ? dashboardAny.salesReps : []),
-      ...(Array.isArray(dashboardAny?.sales_reps) ? dashboardAny.sales_reps : []),
     ];
 
     type Profile = { name: string; email?: string | null; profileImageUrl?: string | null };
@@ -3933,6 +3962,10 @@ export default function App() {
     };
 
     rawAccounts.forEach((acct: any) => {
+      const acctRole = normalizeRole(acct?.role);
+      if (acctRole === "admin" || acctRole === "sales_rep" || acctRole === "rep") {
+        return;
+      }
       const email = normalizeEmailIdentity(
         acct?.email || acct?.referredContactEmail || acct?.userEmail || acct?.doctorEmail,
       );
@@ -3972,10 +4005,7 @@ export default function App() {
         profileImageUrl,
       };
 
-      if (email) {
-        setKey(email, profile);
-        setKey(`email:${email}`, profile);
-      }
+      buildEmailIdentityKeys(email).forEach((key) => setKey(key, profile));
       if (phone) {
         buildPhoneIdentityKeys(phone).forEach((key) => setKey(key, profile));
       }
@@ -3990,7 +4020,7 @@ export default function App() {
     });
 
     return map;
-  }, [buildPhoneIdentityKeys, normalizeEmailIdentity, salesRepDashboard]);
+  }, [buildEmailIdentityKeys, buildPhoneIdentityKeys, normalizeEmailIdentity, salesRepDashboard]);
   const normalizedReferrals = useMemo(
     () =>
       (() => {
@@ -4001,9 +4031,7 @@ export default function App() {
         };
 
         return (salesRepDashboard?.referrals ?? []).map((ref) => {
-          const email = normalizeEmailIdentity(ref.referredContactEmail);
-          const emailKey = email;
-          const emailKeyPrefixed = email ? `email:${email}` : null;
+          const emailKeys = buildEmailIdentityKeys(ref.referredContactEmail);
           const phoneKeys = buildPhoneIdentityKeys(ref.referredContactPhone);
           const acctIdRaw =
             ref.referredContactAccountId !== undefined && ref.referredContactAccountId !== null
@@ -4011,7 +4039,7 @@ export default function App() {
               : "";
           const acctKey = acctIdRaw ? `acct:${acctIdRaw}` : null;
 
-          const matchByEmail = hasKey(emailKey) || hasKey(emailKeyPrefixed);
+          const matchByEmail = emailKeys.some((key) => hasKey(key));
           const matchByPhone = phoneKeys.some((key) => hasKey(key));
           const matchByAccountId = hasKey(acctKey);
           const hasAccountMatch =
@@ -4021,7 +4049,7 @@ export default function App() {
             debugAccountMatch &&
             !hasAccountMatch &&
             debugPrinted < 25 &&
-            (emailKey || phoneKeys.length > 0 || acctKey)
+            (emailKeys.length > 0 || phoneKeys.length > 0 || acctKey)
           ) {
             debugPrinted += 1;
             console.info("[AccountMatch] no match", {
@@ -4030,8 +4058,7 @@ export default function App() {
               referredContactPhone: ref.referredContactPhone || null,
               referredContactAccountId: ref.referredContactAccountId || null,
               normalizedKeys: {
-                emailKey,
-                emailKeyPrefixed,
+                emailKeys,
                 phoneKeys,
                 acctKey,
               },
@@ -4055,6 +4082,7 @@ export default function App() {
     [
       accountIdentitySet,
       buildPhoneIdentityKeys,
+      buildEmailIdentityKeys,
       debugAccountMatch,
       normalizeEmailIdentity,
       normalizeIdentityKey,

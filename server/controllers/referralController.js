@@ -122,6 +122,10 @@ const buildAccountIndex = () => {
   const byPhone = new Map();
   try {
     userRepository.getAll().forEach((user) => {
+      const role = normalizeRole(user?.role);
+      if (role === 'admin' || role === 'sales_rep' || role === 'rep') {
+        return;
+      }
       const email = normalizeEmail(user?.email);
       if (email) {
         byEmail.set(email, {
@@ -136,28 +140,6 @@ const buildAccountIndex = () => {
           id: user?.id != null ? String(user.id) : null,
           phone,
           source: 'user',
-        });
-      }
-    });
-  } catch {
-    // ignore
-  }
-  try {
-    salesRepRepository.getAll().forEach((rep) => {
-      const email = normalizeEmail(rep?.email);
-      if (email && !byEmail.has(email)) {
-        byEmail.set(email, {
-          id: rep?.id != null ? String(rep.id) : null,
-          email,
-          source: 'sales_rep',
-        });
-      }
-      const phone = normalizePhoneDigits(rep?.phone);
-      if (phone && !byPhone.has(phone)) {
-        byPhone.set(phone, {
-          id: rep?.id != null ? String(rep.id) : null,
-          phone,
-          source: 'sales_rep',
         });
       }
     });

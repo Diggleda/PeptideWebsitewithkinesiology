@@ -629,6 +629,15 @@ const buildOrderPayload = async ({ order, customer }) => {
       email: customer.email || 'orders@peppro.example',
     },
   };
+  if (manualTaxRateId && taxTotal > 0) {
+    payload.tax_lines = [{
+      rate_id: Number(manualTaxRateId),
+      label: 'PepPro Manual Tax',
+      compound: false,
+      tax_total: taxTotal.toFixed(2),
+      shipping_tax_total: '0.00',
+    }];
+  }
 
   if (feeLines.length > 0) {
     payload.fee_lines = feeLines;
