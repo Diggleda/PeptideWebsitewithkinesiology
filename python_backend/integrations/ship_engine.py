@@ -34,10 +34,18 @@ def build_shipment_payload(order: Dict, customer: Dict) -> Optional[Dict]:
 
     shipping = order.get("shippingAddress") or {}
     total_weight = 0.0
+    missing_qty = 0.0
     for item in order.get("items") or []:
-        weight = float(item.get("weightOz") or 0)
         quantity = float(item.get("quantity") or 0)
-        total_weight += weight * quantity
+        if quantity <= 0:
+            continue
+        weight = float(item.get("weightOz") or 0)
+        if weight > 0:
+            total_weight += weight * quantity
+        else:
+            missing_qty += quantity
+    if missing_qty > 0:
+        total_weight += 16.0 * missing_qty
 
     config = get_config()
     return {

@@ -6,14 +6,28 @@ const { logger } = require('../config/logger');
 const validateItems = (items) => Array.isArray(items)
   && items.every((item) => Number(item?.quantity) > 0);
 
-const calculateTotalWeightOz = (items = []) => items.reduce((sum, item) => {
-  const unitWeight = Number(item?.weightOz) || 0;
-  const quantity = Number(item?.quantity) || 0;
-  if (!Number.isFinite(unitWeight) || unitWeight <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-    return sum;
+const DEFAULT_ITEM_WEIGHT_OZ = 16;
+const calculateTotalWeightOz = (items = []) => {
+  let total = 0;
+  let missingWeightQty = 0;
+  items.forEach((item) => {
+    const quantity = Number(item?.quantity) || 0;
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return;
+    }
+    const unitWeight = Number(item?.weightOz);
+    if (Number.isFinite(unitWeight) && unitWeight > 0) {
+      total += unitWeight * quantity;
+      return;
+    }
+    missingWeightQty += quantity;
+  });
+
+  if (missingWeightQty > 0) {
+    total += DEFAULT_ITEM_WEIGHT_OZ * missingWeightQty;
   }
-  return sum + (unitWeight * quantity);
-}, 0);
+  return total > 0 ? total : DEFAULT_ITEM_WEIGHT_OZ;
+};
 
 const getRates = async (req, res, next) => {
   try {

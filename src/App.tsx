@@ -4031,22 +4031,32 @@ export default function App() {
         };
 
         return (salesRepDashboard?.referrals ?? []).map((ref) => {
-          const emailKeys = buildEmailIdentityKeys(ref.referredContactEmail);
-          const phoneKeys = buildPhoneIdentityKeys(ref.referredContactPhone);
+          const hasAccountFlag = typeof ref.referredContactHasAccount === "boolean"
+            ? ref.referredContactHasAccount
+            : null;
+          const shouldUseFallback = hasAccountFlag === null;
+          const emailKeys = shouldUseFallback
+            ? buildEmailIdentityKeys(ref.referredContactEmail)
+            : [];
+          const phoneKeys = shouldUseFallback
+            ? buildPhoneIdentityKeys(ref.referredContactPhone)
+            : [];
           const acctIdRaw =
             ref.referredContactAccountId !== undefined && ref.referredContactAccountId !== null
               ? String(ref.referredContactAccountId).trim()
               : "";
           const acctKey = acctIdRaw ? `acct:${acctIdRaw}` : null;
 
-          const matchByEmail = emailKeys.some((key) => hasKey(key));
-          const matchByPhone = phoneKeys.some((key) => hasKey(key));
-          const matchByAccountId = hasKey(acctKey);
-          const hasAccountMatch =
-            Boolean(ref.referredContactHasAccount) || matchByEmail || matchByPhone || matchByAccountId;
+          const matchByEmail = shouldUseFallback ? emailKeys.some((key) => hasKey(key)) : false;
+          const matchByPhone = shouldUseFallback ? phoneKeys.some((key) => hasKey(key)) : false;
+          const matchByAccountId = shouldUseFallback ? hasKey(acctKey) : false;
+          const hasAccountMatch = shouldUseFallback
+            ? (matchByEmail || matchByPhone || matchByAccountId)
+            : Boolean(hasAccountFlag);
 
           if (
             debugAccountMatch &&
+            shouldUseFallback &&
             !hasAccountMatch &&
             debugPrinted < 25 &&
             (emailKeys.length > 0 || phoneKeys.length > 0 || acctKey)

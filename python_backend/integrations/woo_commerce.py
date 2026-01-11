@@ -837,6 +837,18 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         }
     )
 
+    order_total = 0.0
+    try:
+        order_total = float(order.get("grandTotal") or 0) or 0.0
+    except Exception:
+        order_total = 0.0
+    if order_total <= 0:
+        try:
+            items_total = float(order.get("total") or 0) or 0.0
+        except Exception:
+            items_total = 0.0
+        order_total = max(0.0, items_total - applied_credit + shipping_total + tax_total)
+
     address = order.get("shippingAddress") or {}
     billing_address = {
         "first_name": customer.get("name") or "PepPro",
@@ -902,6 +914,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "billing": billing_address,
         "shipping": shipping_address,
     }
+    if order_total > 0:
+        payload["total"] = f"{order_total:.2f}"
     if tax_total > 0 and tax_rate_id is not None:
         payload["cart_tax"] = f"{tax_total:.2f}"
         payload["shipping_tax"] = "0.00"

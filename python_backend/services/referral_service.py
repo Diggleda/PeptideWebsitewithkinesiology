@@ -471,144 +471,14 @@ def _enrich_referral(referral: Dict) -> Dict:
 
 
 def _resolve_referred_contact_account(referral: Dict):
-    # Cache a lightweight index of doctor accounts for matching. This keeps
-    # account-created detection reliable without leaking full user lists to reps.
-    global _contact_account_index_cache  # noqa: PLW0603
-
-    def _normalize_role(value: Optional[str]) -> str:
-        return str(value or "").strip().lower()
-
-    def _is_doctor_account(user: Optional[Dict]) -> bool:
-        if not user or not isinstance(user, dict):
-            return False
-        role = _normalize_role(user.get("role"))
-        return role in ("doctor", "test_doctor") or role == ""
-
-    def _normalize_phone_last10(value: Optional[object]) -> Optional[str]:
-        if value is None:
-            return None
-        digits = re.sub(r"[^0-9]", "", str(value or "").strip())
-        if not digits:
-            return None
-        if len(digits) >= 10:
-            return digits[-10:]
-        return None
-
-    def _email_candidates(email_raw: Optional[object]) -> list[str]:
-        normalized = _sanitize_email(email_raw)
-        if not normalized:
-            return []
-        candidates = {normalized}
-        try:
-            local, domain = normalized.split("@", 1)
-        except ValueError:
-            return list(candidates)
-        local_no_plus = local.split("+", 1)[0]
-        if local_no_plus and domain:
-            candidates.add(f"{local_no_plus}@{domain}")
-        if domain in ("gmail.com", "googlemail.com"):
-            gmail_local = local_no_plus.replace(".", "")
-            if gmail_local:
-                candidates.add(f"{gmail_local}@{domain}")
-        return [c for c in candidates if c]
-
-    now = time()
-    ttl_seconds = 15.0
-    cache = globals().get("_contact_account_index_cache")
-    if (
-        not isinstance(cache, dict)
-        or (now - float(cache.get("ts") or 0)) > ttl_seconds
-        or "by_id" not in cache
-    ):
-        by_id: Dict[str, Dict] = {}
-        by_email: Dict[str, str] = {}
-        by_phone: Dict[str, str] = {}
-        ambiguous = "__ambiguous__"
-
-        def _index_put(map_ref: Dict[str, str], key: Optional[str], user_id: str) -> None:
-            if not key:
-                return
-            existing = map_ref.get(key)
-            if existing is None:
-                map_ref[key] = user_id
-                return
-            if existing != user_id:
-                map_ref[key] = ambiguous
-
-        try:
-            for user in user_repository.get_all():
-                if not _is_doctor_account(user):
-                    continue
-                uid_raw = user.get("id")
-                if uid_raw is None:
-                    continue
-                uid = str(uid_raw).strip()
-                if not uid:
-                    continue
-                by_id[uid] = user
-                for email_key in _email_candidates(user.get("email")):
-                    _index_put(by_email, email_key, uid)
-                phone_key = _normalize_phone_last10(user.get("phone"))
-                _index_put(by_phone, phone_key, uid)
-        except Exception:
-            by_id = {}
-            by_email = {}
-            by_phone = {}
-
-        cache = {
-            "ts": now,
-            "by_id": by_id,
-            "by_email": by_email,
-            "by_phone": by_phone,
-            "ambiguous": ambiguous,
-        }
-        globals()["_contact_account_index_cache"] = cache
-
-    by_id = cache.get("by_id") or {}
-    by_email = cache.get("by_email") or {}
-    by_phone = cache.get("by_phone") or {}
-    ambiguous = cache.get("ambiguous") or "__ambiguous__"
-
-    def _get_user_by_id(user_id: Optional[object]) -> Optional[Dict]:
-        if user_id is None:
-            return None
-        uid = str(user_id).strip()
-        if not uid:
-            return None
-        return by_id.get(uid)
-
-    contact_account: Optional[Dict] = None
+    email = _sanitize_email(referral.get("referredContactEmail"))
+    contact_account = user_repository.find_by_email(email) if email else None
     order_count = 0
-
-    # Prefer explicit ids when present.
-    for key in ("referredContactAccountId", "convertedDoctorId"):
-        contact_account = _get_user_by_id(referral.get(key))
-        if contact_account:
-            break
-
-    # Match by email (supports gmail dots/plus and plus addressing).
-    if contact_account is None:
-        for email_key in _email_candidates(referral.get("referredContactEmail")):
-            mapped = by_email.get(email_key)
-            if not mapped or mapped == ambiguous:
-                continue
-            contact_account = by_id.get(mapped)
-            if contact_account:
-                break
-
-    # Match by phone (last 10 digits).
-    if contact_account is None:
-        phone_key = _normalize_phone_last10(referral.get("referredContactPhone"))
-        mapped = by_phone.get(phone_key) if phone_key else None
-        if mapped and mapped != ambiguous:
-            contact_account = by_id.get(mapped)
-
     if contact_account and contact_account.get("id"):
         try:
             order_count = count_orders_for_doctor(contact_account.get("id"))
         except Exception:
             order_count = 0
-
     return contact_account, order_count
 
 

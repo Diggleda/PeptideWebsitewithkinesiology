@@ -4040,6 +4040,8 @@ html {
 .lead-list-detail {
   font-size: 0.8rem;
   color: rgb(100, 116, 139);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .lead-source-pill {
@@ -4106,12 +4108,17 @@ html {
 
 .lead-status-select {
   width: min(240px, 100%);
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.5);
   border-radius: 10px;
   padding: 0.45rem 0.65rem;
   font-size: 0.85rem;
   background: white;
   color: rgb(30, 41, 59);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notes-textarea {
@@ -4350,7 +4357,7 @@ html {
 
   .lead-list-item--active-prospect {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
     grid-template-rows: auto auto;
     column-gap: 0.6rem;
     row-gap: 0.75rem;
@@ -4366,6 +4373,14 @@ html {
     grid-row: 1;
     justify-self: end;
     align-self: start;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .lead-list-item--active-prospect .active-prospect-status .lead-status-select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .lead-list-item--active-prospect .active-prospect-right {
@@ -4405,6 +4420,30 @@ html {
 
   .lead-updated {
     text-align: left;
+  }
+}
+
+@media (max-width: 520px) {
+  .lead-list-item--active-prospect {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+
+  .lead-list-item--active-prospect .lead-list-meta {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .lead-list-item--active-prospect .active-prospect-status {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+    width: min(240px, 100%);
+  }
+
+  .lead-list-item--active-prospect .active-prospect-right {
+    grid-column: 1;
+    grid-row: 3;
   }
 }
 

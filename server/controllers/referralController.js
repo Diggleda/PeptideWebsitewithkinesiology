@@ -106,9 +106,18 @@ const extractContactFormId = (identifier) => {
 };
 
 const normalizeEmail = (value) => {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  return normalized ? normalized : null;
+  if (value == null) return null;
+  let normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith('mailto:')) {
+    normalized = normalized.slice(7).trim();
+  }
+  const angleMatch = normalized.match(/<([^>]+)>/);
+  if (angleMatch?.[1]) {
+    normalized = angleMatch[1].trim();
+  }
+  normalized = normalized.replace(/\s+/g, '');
+  return normalized || null;
 };
 
 const normalizePhoneDigits = (value) => {
@@ -147,6 +156,38 @@ const buildAccountIndex = () => {
     // ignore
   }
   return { byEmail, byPhone };
+};
+
+const fetchMysqlAccountLookup = async (emails) => {
+  if (!mysqlClient.isEnabled()) {
+    return null;
+  }
+  const normalized = Array.from(
+    new Set((emails || []).map((email) => normalizeEmail(email)).filter(Boolean)),
+  );
+  if (normalized.length === 0) {
+    return new Map();
+  }
+  const placeholders = normalized.map(() => '?').join(', ');
+  const query = `SELECT id, email FROM users WHERE LOWER(TRIM(email)) IN (${placeholders})`;
+  try {
+    const rows = await mysqlClient.fetchAll(query, normalized);
+    const lookup = new Map();
+    (rows || []).forEach((row) => {
+      const email = normalizeEmail(row?.email);
+      if (email) {
+        lookup.set(email, {
+          id: row?.id != null ? String(row.id) : null,
+          email,
+          source: 'mysql',
+        });
+      }
+    });
+    return lookup;
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to query MySQL for referral account lookup');
+    return null;
+  }
 };
 
 const submitDoctorReferral = (req, res, next) => {
@@ -578,20 +619,22 @@ const getSalesRepDashboard = async (req, res, next) => {
       logger.warn({ err: error }, 'Failed to overlay sales prospect data onto dashboard referrals');
     }
 
-    // Ensure leads can reflect account creation even when the owning rep doesn't "own" the account user record.
+    // Ensure leads can reflect account creation by checking the MySQL users table (email match).
     // We only return a boolean + optional account id; we do not expose user records.
     try {
-      const accountIndex = buildAccountIndex();
+      const useMysql = mysqlClient.isEnabled();
+      const mysqlLookup = useMysql
+        ? await fetchMysqlAccountLookup((referrals || []).map((referral) => referral?.referredContactEmail))
+        : null;
+      const fallbackIndex = !useMysql ? buildAccountIndex() : null;
       referrals = (referrals || []).map((referral) => {
         const existingHasAccount = referral?.referredContactHasAccount === true;
         if (existingHasAccount) return referral;
 
         const email = normalizeEmail(referral?.referredContactEmail);
-        const phone = normalizePhoneDigits(referral?.referredContactPhone);
-        const accountMatch =
-          (email ? accountIndex.byEmail.get(email) : null)
-          || (phone ? accountIndex.byPhone.get(phone) : null)
-          || null;
+        const accountMatch = useMysql
+          ? (email ? mysqlLookup?.get(email) : null)
+          : (email ? fallbackIndex?.byEmail.get(email) : null);
 
         if (!accountMatch) {
           // Always normalize to an explicit boolean so the UI doesn't have to guess.
@@ -603,6 +646,7 @@ const getSalesRepDashboard = async (req, res, next) => {
           ...referral,
           referredContactHasAccount: true,
           referredContactAccountId: referral?.referredContactAccountId || accountMatch.id || null,
+          referredContactAccountEmail: referral?.referredContactAccountEmail || accountMatch.email || null,
         };
       });
     } catch (error) {

@@ -241,6 +241,7 @@ export function CheckoutModal({
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
   const checkoutStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQuotedAddressRef = useRef<string | null>(null);
+  const lastQuotedCartRef = useRef<string | null>(null);
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
     name: defaultShippingAddress?.name || physicianName || customerName || '',
     addressLine1: defaultShippingAddress?.addressLine1 || '',
@@ -503,6 +504,7 @@ export function CheckoutModal({
       setShippingRates(rates);
       setSelectedRateIndex(rates.length > 0 ? 0 : null);
       lastQuotedAddressRef.current = rates.length > 0 ? shippingAddressSignature : null;
+      lastQuotedCartRef.current = rates.length > 0 ? cartLineItemSignature : null;
       if (!rates.length) {
         setShippingRateError('No shipping rates available for this address.');
       }
@@ -746,6 +748,7 @@ export function CheckoutModal({
       setShippingRates(null);
       setSelectedRateIndex(null);
       setShippingRateError(null);
+      lastQuotedCartRef.current = null;
       setTaxEstimate(null);
       setTaxEstimateError(null);
       setTaxEstimatePending(false);
@@ -827,6 +830,20 @@ export function CheckoutModal({
     setSelectedRateIndex(null);
     setShippingRateError('Shipping address changed. Please fetch shipping rates again.');
   }, [shippingAddressSignature, shippingRates]);
+
+  useEffect(() => {
+    if (!shippingRates || shippingRates.length === 0) {
+      lastQuotedCartRef.current = null;
+      return;
+    }
+    if (lastQuotedCartRef.current === cartLineItemSignature) {
+      return;
+    }
+    lastQuotedCartRef.current = null;
+    setShippingRates(null);
+    setSelectedRateIndex(null);
+    setShippingRateError('Cart updated. Please fetch shipping rates again.');
+  }, [cartLineItemSignature, shippingRates]);
 
   const requestTaxEstimate = useCallback(async (options?: { force?: boolean }) => {
     if (!shouldFetchTax || !taxQuoteKey) {

@@ -249,11 +249,21 @@ def _normalize_items(raw_items) -> List[Dict]:
 
 
 def _total_weight(items: List[Dict]) -> float:
-    weight = 0.0
+    total = 0.0
+    missing_qty = 0.0
     for item in items:
-        weight += item["quantity"] * item["weightOz"]
+        quantity = float(item.get("quantity") or 0)
+        if quantity <= 0:
+            continue
+        weight = float(item.get("weightOz") or 0)
+        if weight > 0:
+            total += quantity * weight
+        else:
+            missing_qty += quantity
+    if missing_qty > 0:
+        total += 16.0 * missing_qty
     # Preserve true cumulative weight; only fall back when weights are missing.
-    return weight if weight > 0 else 16.0
+    return total if total > 0 else 16.0
 
 
 def _create_fingerprint(address: Dict) -> str:

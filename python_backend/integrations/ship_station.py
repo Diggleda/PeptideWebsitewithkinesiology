@@ -141,8 +141,18 @@ def _http_args():
 
 def _sum_weight_ounces(items: List[Dict]) -> float:
     total = 0.0
+    missing_qty = 0.0
     for item in items or []:
-        total += float(item.get("quantity") or 0) * float(item.get("weightOz") or 0)
+        quantity = float(item.get("quantity") or 0)
+        if quantity <= 0:
+            continue
+        weight = float(item.get("weightOz") or 0)
+        if weight > 0:
+            total += quantity * weight
+        else:
+            missing_qty += quantity
+    if missing_qty > 0:
+        total += 16.0 * missing_qty
     # Preserve true cumulative weight; only fall back when weights are missing.
     return total if total > 0 else 16.0
 

@@ -9,14 +9,27 @@ const isConfigured = () => Boolean(
   || (env.shipStation.apiKey && env.shipStation.apiSecret),
 );
 
-// ShipStation wants weights in ounces for rate quoting when using package dimensions/weight
+const DEFAULT_ITEM_WEIGHT_OZ = 16;
+// ShipStation wants weights in ounces for rate quoting when using package dimensions/weight.
 const normalizeWeightOz = (items = []) => {
-  const total = items.reduce((sum, item) => {
-    const weightOz = Number(item?.weightOz) || 0;
+  let total = 0;
+  let missingWeightQty = 0;
+  items.forEach((item) => {
     const qty = Number(item?.quantity) || 0;
-    return sum + (weightOz * qty);
-  }, 0);
-  return total > 0 ? total : 16; // default 1 lb
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return;
+    }
+    const weightOz = Number(item?.weightOz);
+    if (Number.isFinite(weightOz) && weightOz > 0) {
+      total += weightOz * qty;
+      return;
+    }
+    missingWeightQty += qty;
+  });
+  if (missingWeightQty > 0) {
+    total += DEFAULT_ITEM_WEIGHT_OZ * missingWeightQty;
+  }
+  return total > 0 ? total : DEFAULT_ITEM_WEIGHT_OZ; // default 1 lb
 };
 
 const aggregatePackageDimensions = (items = []) => {
