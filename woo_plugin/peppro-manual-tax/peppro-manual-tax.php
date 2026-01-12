@@ -23,6 +23,7 @@ final class PepPro_Manual_Tax_Sync {
   public static function init(): void {
     add_action('woocommerce_rest_insert_shop_order_object', [__CLASS__, 'handle_rest_insert'], 20, 3);
     add_action('updated_post_meta', [__CLASS__, 'handle_meta_update'], 20, 4);
+    add_action('woocommerce_after_order_object_save', [__CLASS__, 'handle_order_save'], 20, 2);
   }
 
   public static function handle_rest_insert($order, $request, $creating): void {
@@ -33,6 +34,14 @@ final class PepPro_Manual_Tax_Sync {
       'order_id' => $order->get_id(),
       'creating' => (bool) $creating,
     ]);
+    $requestTax = self::extract_request_meta_value($request, self::META_TAX_TOTAL);
+    $requestRateId = self::extract_request_meta_value($request, self::META_RATE_ID);
+    if ($requestTax !== null && $requestTax > 0) {
+      $order->update_meta_data(self::META_TAX_TOTAL, wc_format_decimal($requestTax, 2));
+    }
+    if ($requestRateId !== null && $requestRateId > 0) {
+      $order->update_meta_data(self::META_RATE_ID, (int) $requestRateId);
+    }
     self::apply_manual_tax($order);
   }
 
@@ -49,6 +58,17 @@ final class PepPro_Manual_Tax_Sync {
       'meta_key' => (string) $meta_key,
       'meta_value' => (string) $meta_value,
     ]);
+    self::apply_manual_tax($order);
+  }
+
+  public static function handle_order_save($order, $data_store): void {
+    if (!$order instanceof WC_Order) {
+      return;
+    }
+    $taxTotal = self::normalize_money($order->get_meta(self::META_TAX_TOTAL, true));
+    if ($taxTotal <= 0) {
+      return;
+    }
     self::apply_manual_tax($order);
   }
 
@@ -81,6 +101,31 @@ final class PepPro_Manual_Tax_Sync {
       return 0.0;
     }
     return round($numeric + 1e-9, 2);
+  }
+
+  private static function extract_request_meta_value($request, string $key): ?float {
+    if (!$request) {
+      return null;
+    }
+    $meta = null;
+    if (is_object($request) && method_exists($request, 'get_param')) {
+      $meta = $request->get_param('meta_data');
+    } elseif (is_array($request) && isset($request['meta_data'])) {
+      $meta = $request['meta_data'];
+    }
+    if (!is_array($meta)) {
+      return null;
+    }
+    foreach ($meta as $entry) {
+      if (!is_array($entry) || !isset($entry['key'])) {
+        continue;
+      }
+      if ((string) $entry['key'] !== $key) {
+        continue;
+      }
+      return self::normalize_money($entry['value'] ?? null);
+    }
+    return null;
   }
 
   private static function resolve_tax_total(WC_Order $order): float {

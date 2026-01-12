@@ -485,14 +485,20 @@ export function CheckoutModal({
     setShippingRateError(null);
     setIsFetchingRates(true);
     try {
+      const defaultWeightOz = 16;
       const payload = {
         shippingAddress,
         items: cartItems.map((item) => {
           const dimensions = item.variant?.dimensions || item.product.dimensions || {};
+          const rawWeight = item.variant?.weightOz ?? item.product.weightOz ?? null;
+          const unitWeight =
+            typeof rawWeight === 'number' && Number.isFinite(rawWeight) && rawWeight > 0
+              ? rawWeight
+              : defaultWeightOz;
           return {
             name: item.product.name,
             quantity: item.quantity,
-            weightOz: item.variant?.weightOz ?? item.product.weightOz ?? null,
+            weightOz: unitWeight,
             lengthIn: dimensions?.lengthIn ?? null,
             widthIn: dimensions?.widthIn ?? null,
             heightIn: dimensions?.heightIn ?? null,

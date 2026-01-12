@@ -8958,7 +8958,6 @@ export default function App() {
   }, [user, postLoginHold]);
 
   useEffect(() => {
-    // No background polling for reps/admins; rely on initial load + manual refresh
     if (
       !user ||
       (!isRep(user.role) && !isAdmin(user.role)) ||
@@ -8967,8 +8966,20 @@ export default function App() {
     ) {
       return undefined;
     }
-    return undefined;
-  }, [user?.id, user?.role, postLoginHold, referralPollingSuppressed]);
+    const intervalMs = Math.max(REFERRAL_BACKGROUND_MIN_INTERVAL_MS, 45000);
+    const intervalId = window.setInterval(() => {
+      tracedRefreshReferralData("sales-rep-auto-refresh", { showLoading: false });
+    }, intervalMs);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    user?.id,
+    user?.role,
+    postLoginHold,
+    referralPollingSuppressed,
+    tracedRefreshReferralData,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -8977,7 +8988,7 @@ export default function App() {
 
     if (
       !user ||
-      (!isDoctorRole(user.role) && !isAdmin(user.role)) ||
+      (!isDoctorRole(user.role) && !isRep(user.role) && !isAdmin(user.role)) ||
       postLoginHold ||
       referralPollingSuppressed
     ) {
