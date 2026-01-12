@@ -11904,22 +11904,41 @@ export default function App() {
 	                        );
 	                      };
 
-	                      const getEntryIdle = (entry: any) => {
-	                        const entryIdleRaw = entry?.isIdle;
-	                        if (typeof entryIdleRaw === "boolean") {
-	                          return entryIdleRaw;
-	                        }
-	                        return isEntryCurrentUser(entry) && isIdle;
-	                      };
+                      const getEntryIdle = (entry: any) => {
+                        const entryIdleRaw = entry?.isIdle;
+                        if (typeof entryIdleRaw === "boolean") {
+                          return entryIdleRaw;
+                        }
+                        return isEntryCurrentUser(entry) && isIdle;
+                      };
 
-	                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
-	                        const aIdle = getEntryIdle(a);
-	                        const bIdle = getEntryIdle(b);
-	                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
-	                        const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
-	                        const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
-	                        return aName.localeCompare(bName);
-	                      });
+                      const getOnlineDurationMs = (entry: any) => {
+                        const lastLogin = entry?.lastLoginAt;
+                        if (!lastLogin) {
+                          return 0;
+                        }
+                        const startedAt = new Date(lastLogin).getTime();
+                        if (!Number.isFinite(startedAt)) {
+                          return Number.MAX_SAFE_INTEGER;
+                        }
+                        return Math.max(0, Date.now() - startedAt);
+                      };
+
+                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
+                        const aIdle = getEntryIdle(a);
+                        const bIdle = getEntryIdle(b);
+                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
+
+                        const aDuration = getOnlineDurationMs(a);
+                        const bDuration = getOnlineDurationMs(b);
+                        if (aDuration !== bDuration) {
+                          return aDuration - bDuration;
+                        }
+
+                        const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+                        const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
+                        return aName.localeCompare(bName);
+                      });
 
 	                      if (liveUsers.length === 0) {
 	                        return (
@@ -11930,83 +11949,85 @@ export default function App() {
 	                      }
 
                       return (
-                        <div className="flex flex-col gap-2">
-                          {liveUsers.map((entry) => {
-                            const avatarUrl = entry.profileImageUrl || null;
-                            const displayName =
-                              entry.name || entry.email || "User";
-	                            const isCurrentUser =
-	                              (user?.id && entry.id === user.id) ||
-	                              (user?.email &&
-	                                entry.email &&
-	                                user.email.toLowerCase() ===
-	                                  entry.email.toLowerCase());
-	                            const entryIdleRaw = (entry as any)?.isIdle;
-	                            const showIdle =
-	                              (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
-	                              (isCurrentUser && isIdle);
-		                            return (
-		                              <div
-		                                key={entry.id}
-		                                className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-		                              >
-		                                <button
-		                                  type="button"
-		                                  onClick={() => openLiveUserDetail(entry)}
-		                                  aria-label={`Open ${displayName} profile`}
-		                                  className="min-w-0 flex-1"
-		                                  style={{ background: "transparent", border: "none", padding: 0 }}
-		                                >
-		                                  <div className="flex items-center gap-3 min-w-0">
-		                                    <div
-		                                      className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-		                                      style={{
-		                                        width: 34,
-		                                        height: 34,
-		                                        minWidth: 34,
-		                                      }}
-		                                    >
-		                                      {avatarUrl ? (
-		                                        <img
-		                                          src={avatarUrl}
-		                                          alt={displayName}
-		                                          className="h-full w-full object-cover"
-		                                          loading="lazy"
-		                                          decoding="async"
-		                                        />
-		                                      ) : (
-		                                        <span className="text-[11px] font-semibold text-slate-600">
-		                                          {getInitials(displayName)}
-		                                        </span>
-		                                      )}
-		                                    </div>
-		                                    <div className="min-w-0 text-left">
-		                                      <div className="text-sm font-semibold text-slate-800 truncate">
-		                                        {displayName}
-		                                      </div>
-		                                      <div className="text-xs text-slate-500 truncate">
-		                                        {entry.email || "—"}
-		                                      </div>
-		                                    </div>
-		                                  </div>
-		                                </button>
-		                                <div className="ml-auto flex flex-col items-end gap-1 whitespace-nowrap text-right">
-		                                  <span
-		                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 ${
-		                                      showIdle
-		                                        ? "bg-slate-100 text-slate-600"
-		                                        : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-		                                    }`}
-		                                  >
-		                                    {showIdle ? "Idle" : "Online"}
-		                                  </span>
-		                                  <div className="text-xs text-slate-600 whitespace-nowrap">
-		                                    {formatOnlineDuration(entry.lastLoginAt)}
-		                                  </div>
-		                                </div>
-		                              </div>
-		                            );
-		                          })}
+                        <div className="sales-rep-table-wrapper live-users-scroll">
+                          <div className="flex w-full min-w-[900px] flex-col gap-2">
+                            {liveUsers.map((entry) => {
+                              const avatarUrl = entry.profileImageUrl || null;
+                              const displayName =
+                                entry.name || entry.email || "User";
+                              const isCurrentUser =
+                                (user?.id && entry.id === user.id) ||
+                                (user?.email &&
+                                  entry.email &&
+                                  user.email.toLowerCase() ===
+                                    entry.email.toLowerCase());
+                              const entryIdleRaw = (entry as any)?.isIdle;
+                              const showIdle =
+                                (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
+                                (isCurrentUser && isIdle);
+                              return (
+                                <div
+                                  key={entry.id}
+                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => openLiveUserDetail(entry)}
+                                    aria-label={`Open ${displayName} profile`}
+                                    className="min-w-0 flex-1 overflow-hidden"
+                                    style={{ background: "transparent", border: "none", padding: 0 }}
+                                  >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div
+                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
+                                        style={{
+                                          width: 34,
+                                          height: 34,
+                                          minWidth: 34,
+                                        }}
+                                      >
+                                        {avatarUrl ? (
+                                          <img
+                                            src={avatarUrl}
+                                            alt={displayName}
+                                            className="h-full w-full object-cover"
+                                            loading="lazy"
+                                            decoding="async"
+                                          />
+                                        ) : (
+                                          <span className="text-[11px] font-semibold text-slate-600">
+                                            {getInitials(displayName)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1 text-left">
+                                        <div className="text-sm font-semibold text-slate-800 truncate">
+                                          {displayName}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate">
+                                          {entry.email || "—"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </button>
+                                  <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
+                                    <span
+                                      className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+                                        showIdle
+                                          ? "bg-slate-100 text-slate-600"
+                                          : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+                                      }`}
+                                    >
+                                      {showIdle ? "Idle" : "Online"}
+                                    </span>
+                                    <div className="text-xs text-slate-600 whitespace-nowrap">
+                                      {formatOnlineDuration(entry.lastLoginAt)}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })()

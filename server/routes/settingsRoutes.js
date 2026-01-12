@@ -138,28 +138,144 @@ const windowMs = (windowKey) => {
 };
 
 const normalizeUserRole = (role) => String(role || '').trim().toLowerCase() || 'unknown';
+const parseNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+const fallbackLiveUsers = [
+  {
+    id: 'pseudo-live-1',
+    name: 'Courtney Gillenwater',
+    email: 'demo.live1@peppro.net',
+    role: 'sales_rep',
+  },
+  {
+    id: 'pseudo-live-2',
+    name: 'Linden Mosk',
+    email: 'demo.live2@peppro.net',
+    role: 'admin',
+  },
+  {
+    id: 'pseudo-live-3',
+    name: 'Avery Stone',
+    email: 'demo.live3@peppro.net',
+    role: 'doctor',
+  },
+  {
+    id: 'pseudo-live-4',
+    name: 'Jordan Miles',
+    email: 'demo.live4@peppro.net',
+    role: 'sales_rep',
+  },
+  {
+    id: 'pseudo-live-5',
+    name: 'Riley Quinn',
+    email: 'demo.live5@peppro.net',
+    role: 'doctor',
+  },
+];
 
 router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
   const windowKey = parseActivityWindow(req.query?.window);
   const cutoffMs = Date.now() - windowMs(windowKey);
+  const nowMs = Date.now();
+  const onlineThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_ONLINE_THRESHOLD_MINUTES, 45),
+    1,
+    24 * 60,
+  );
+  const idleThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_IDLE_THRESHOLD_MINUTES, 5),
+    1,
+    12 * 60,
+  );
+  const pseudoLiveEnabled = String(
+    process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS || 'true',
+  ).toLowerCase() !== 'false';
+  const pseudoLiveCount = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS_COUNT, 4),
+    1,
+    12,
+  );
+  const onlineThresholdMs = onlineThresholdMinutes * 60 * 1000;
+  const idleThresholdMs = idleThresholdMinutes * 60 * 1000;
 
   const users = userRepository.getAll();
-  const recent = users
-    .filter((user) => {
-      const raw = user?.lastLoginAt;
-      if (!raw) return false;
-      const ts = Date.parse(raw);
-      if (Number.isNaN(ts)) return false;
-      return ts >= cutoffMs;
-    })
-    .map((user) => ({
+  const normalized = users.map((user) => {
+    const lastLoginAt = user?.lastLoginAt || null;
+    const lastLoginMs = lastLoginAt ? Date.parse(lastLoginAt) : NaN;
+    const hasLoginTs = Number.isFinite(lastLoginMs);
+    const explicitOnline = typeof user?.isOnline === 'boolean' ? user.isOnline : false;
+    const isOnline = explicitOnline || (hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
+    const explicitIdle = typeof user?.isIdle === 'boolean' ? user.isIdle : null;
+    const computedIdle = isOnline && hasLoginTs ? (nowMs - lastLoginMs) >= idleThresholdMs : null;
+    return {
       id: user.id,
       name: user.name || null,
       email: user.email || null,
       role: normalizeUserRole(user.role),
-      lastLoginAt: user.lastLoginAt || null,
-    }))
+      isOnline,
+      isIdle: explicitIdle ?? computedIdle,
+      lastLoginAt,
+      profileImageUrl: user.profileImageUrl || null,
+    };
+  });
+
+  let recent = normalized
+    .filter((user) => {
+      if (!user.lastLoginAt) return false;
+      const ts = Date.parse(user.lastLoginAt);
+      if (Number.isNaN(ts)) return false;
+      return ts >= cutoffMs;
+    })
     .sort((a, b) => Date.parse(b.lastLoginAt || '') - Date.parse(a.lastLoginAt || ''));
+
+  let liveUsers = normalized.filter((user) => user.isOnline);
+  if (pseudoLiveEnabled && liveUsers.length < pseudoLiveCount) {
+    const liveIds = new Set(liveUsers.map((user) => user.id));
+    const seed = (recent.length > 0 ? recent : normalized)
+      .filter((user) => !liveIds.has(user.id));
+    const needed = Math.max(0, pseudoLiveCount - liveUsers.length);
+    if (seed.length > 0 && needed > 0) {
+      const pseudo = seed.slice(0, needed).map((user, index) => ({
+        ...user,
+        isOnline: true,
+        isIdle: (liveUsers.length + index) % 3 === 0,
+      }));
+      const pseudoMap = new Map(pseudo.map((user) => [user.id, user]));
+      recent = recent.map((user) => pseudoMap.get(user.id) || user);
+      liveUsers = [...liveUsers, ...pseudo];
+    }
+  }
+  if (pseudoLiveEnabled && liveUsers.length < pseudoLiveCount) {
+    const liveIds = new Set(liveUsers.map((user) => user.id));
+    const liveEmails = new Set(
+      liveUsers.map((user) => user.email).filter((email) => email),
+    );
+    const needed = Math.max(0, pseudoLiveCount - liveUsers.length);
+    const extras = fallbackLiveUsers
+      .filter((entry) => !liveIds.has(entry.id) && !liveEmails.has(entry.email))
+      .slice(0, needed)
+      .map((entry, index) => ({
+        id: entry.id,
+        name: entry.name || null,
+        email: entry.email || null,
+        role: normalizeUserRole(entry.role),
+        isOnline: true,
+        isIdle: (liveUsers.length + index) % 3 === 0,
+        lastLoginAt: new Date(nowMs - (index + 1) * 12 * 60 * 1000).toISOString(),
+        profileImageUrl: null,
+      }));
+    if (extras.length > 0) {
+      liveUsers = [...liveUsers, ...extras];
+    }
+  }
+  liveUsers = liveUsers.sort((a, b) =>
+    String(a?.name || a?.email || a?.id || '')
+      .toLowerCase()
+      .localeCompare(String(b?.name || b?.email || b?.id || '').toLowerCase()),
+  );
 
   const byRole = recent.reduce((acc, user) => {
     const role = user.role || 'unknown';
@@ -171,6 +287,7 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
     window: windowKey,
     generatedAt: new Date().toISOString(),
     cutoff: new Date(cutoffMs).toISOString(),
+    liveUsers,
     total: recent.length,
     byRole,
     users: recent,
