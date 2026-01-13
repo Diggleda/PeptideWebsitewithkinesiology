@@ -30,6 +30,26 @@ _WOO_MEDIA_FETCH_CONCURRENCY = int(os.environ.get("WOO_MEDIA_FETCH_CONCURRENCY")
 _WOO_MEDIA_FETCH_CONCURRENCY = max(1, min(_WOO_MEDIA_FETCH_CONCURRENCY, 32))
 _WOO_MEDIA_FETCH_SEMAPHORE = threading.BoundedSemaphore(_WOO_MEDIA_FETCH_CONCURRENCY)
 
+
+def _with_publish_status(args) -> dict:
+    """
+    The Woo REST API can return non-public products when authenticated.
+    These `/api/woo/*` endpoints are exposed to the storefront; always constrain to published products.
+    """
+    params = dict(args or {})
+    params["status"] = "publish"
+    return params
+
+
+def _reject_if_not_published(payload) -> None:
+    if isinstance(payload, dict):
+        status = str(payload.get("status") or "").strip().lower()
+        if status and status != "publish":
+            err = RuntimeError("NOT_FOUND")
+            setattr(err, "status", 404)
+            raise err
+
+
 def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int, no_store: bool = False) -> Response:
     response = jsonify(data)
     if no_store:
@@ -43,7 +63,7 @@ def _json_with_cache_headers(data, *, cache: str, ttl_seconds: int, no_store: bo
 @blueprint.get("/products")
 def list_products():
     try:
-        data, meta = woo_commerce.fetch_catalog_proxy("products", request.args)
+        data, meta = woo_commerce.fetch_catalog_proxy("products", _with_publish_status(request.args))
         return _json_with_cache_headers(
             data,
             cache=str(meta.get("cache") or "MISS"),
@@ -72,7 +92,7 @@ def list_categories():
 def list_product_variations(product_id: int):
     try:
         endpoint = f"products/{product_id}/variations"
-        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, request.args)
+        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, _with_publish_status(request.args))
         return _json_with_cache_headers(
             data,
             cache=str(meta.get("cache") or "MISS"),
@@ -87,7 +107,8 @@ def list_product_variations(product_id: int):
 def get_product(product_id: int):
     try:
         endpoint = f"products/{product_id}"
-        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, request.args)
+        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, _with_publish_status(request.args))
+        _reject_if_not_published(data)
         return _json_with_cache_headers(
             data,
             cache=str(meta.get("cache") or "MISS"),
@@ -102,7 +123,7 @@ def get_product(product_id: int):
 def get_product_variation(product_id: int, variation_id: int):
     try:
         endpoint = f"products/{product_id}/variations/{variation_id}"
-        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, request.args)
+        data, meta = woo_commerce.fetch_catalog_proxy(endpoint, _with_publish_status(request.args))
         return _json_with_cache_headers(
             data,
             cache=str(meta.get("cache") or "MISS"),
