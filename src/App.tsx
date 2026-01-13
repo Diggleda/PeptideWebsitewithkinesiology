@@ -4289,40 +4289,44 @@ export default function App() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-	  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-	    doctorId: string;
-	    referralId?: string | null;
-	    name: string;
-	    email?: string | null;
-	    avatar?: string | null;
-	    revenue: number;
-	    orders: AccountOrderSummary[];
-	    phone?: string | null;
-	    address?: string | null;
-	    lastOrderDate?: string | null;
-	    avgOrderValue?: number | null;
-	  } | null>(null);
-	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
-	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
-	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
-	  const triggerSalesDoctorNotesSaved = useCallback(() => {
-	    setSalesDoctorNotesSaved(true);
-	    if (salesDoctorNotesSavedTimeoutRef.current) {
-	      window.clearTimeout(salesDoctorNotesSavedTimeoutRef.current);
-	    }
-	    salesDoctorNotesSavedTimeoutRef.current = window.setTimeout(() => {
-	      setSalesDoctorNotesSaved(false);
-	      salesDoctorNotesSavedTimeoutRef.current = null;
-	    }, 1000);
-	  }, []);
+  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+    doctorId: string;
+    referralId?: string | null;
+    name: string;
+    email?: string | null;
+    avatar?: string | null;
+    revenue: number;
+    orders: AccountOrderSummary[];
+    phone?: string | null;
+    address?: string | null;
+    lastOrderDate?: string | null;
+    avgOrderValue?: number | null;
+    role: string;
+    ownerSalesRepId?: string | null;
+  } | null>(null);
+  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
+  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
+  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
+  const triggerSalesDoctorNotesSaved = useCallback(() => {
+    setSalesDoctorNotesSaved(true);
+    if (salesDoctorNotesSavedTimeoutRef.current) {
+      window.clearTimeout(salesDoctorNotesSavedTimeoutRef.current);
+    }
+    salesDoctorNotesSavedTimeoutRef.current = window.setTimeout(() => {
+      setSalesDoctorNotesSaved(false);
+      salesDoctorNotesSavedTimeoutRef.current = null;
+    }, 1000);
+  }, []);
+  const [salesDoctorPhoneDraft, setSalesDoctorPhoneDraft] = useState<string>("");
+  const [salesDoctorPhoneSaving, setSalesDoctorPhoneSaving] = useState(false);
 	
-	  useEffect(() => {
-	    if (!salesDoctorDetail?.doctorId) {
-	      setSalesDoctorNoteDraft("");
-	      setSalesDoctorNotesLoading(false);
-	      setSalesDoctorNotesSaved(false);
-	      return;
-	    }
+  useEffect(() => {
+    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
+      setSalesDoctorNoteDraft("");
+      setSalesDoctorNotesLoading(false);
+      setSalesDoctorNotesSaved(false);
+      return;
+    }
 	    const doctorId = String(salesDoctorDetail.doctorId);
 	    let canceled = false;
 	    (async () => {
@@ -4344,11 +4348,19 @@ export default function App() {
 	          setSalesDoctorNotesSaved(false);
 	        }
 	      }
-	    })();
-	    return () => {
-	      canceled = true;
-	    };
-	  }, [salesDoctorDetail?.doctorId, salesDoctorNotes]);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.role, salesDoctorNotes]);
+
+  useEffect(() => {
+    if (!salesDoctorDetail?.doctorId) {
+      setSalesDoctorPhoneDraft("");
+      return;
+    }
+    setSalesDoctorPhoneDraft(salesDoctorDetail.phone || "");
+  }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.phone]);
 
 	  useEffect(() => {
 	    return () => {
@@ -4359,8 +4371,8 @@ export default function App() {
 	    };
 	  }, []);
 	
-	  const saveSalesDoctorNotes = useCallback(async () => {
-	    if (!salesDoctorDetail?.doctorId) {
+  const saveSalesDoctorNotes = useCallback(async () => {
+	    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
 	      return;
 	    }
 	    const doctorId = String(salesDoctorDetail.doctorId);
@@ -4387,27 +4399,63 @@ export default function App() {
 	        setAdminActionState((prev) => ({ ...prev, updatingReferral: null }));
 	      }
 	    }
-	
-		    // Fallback: per-rep local notes when we can't attach to a referral row.
-		    const key = String(salesDoctorDetail.doctorId);
-		    const nextText = normalizeNotesValue(salesDoctorNoteDraft);
-		    const next = { ...salesDoctorNotes };
-		    if (nextText) {
-		      next[key] = nextText;
-		    } else {
+
+	    // Fallback: per-rep local notes when we can't attach to a referral row.
+	    const key = String(salesDoctorDetail.doctorId);
+	    const nextText = normalizeNotesValue(salesDoctorNoteDraft);
+	    const next = { ...salesDoctorNotes };
+	    if (nextText) {
+	      next[key] = nextText;
+	    } else {
 	      delete next[key];
 	    }
 	    persistSalesDoctorNotes(next);
 	    triggerSalesDoctorNotesSaved();
-		  }, [
-		    persistSalesDoctorNotes,
-		    salesDoctorDetail?.doctorId,
-		    salesDoctorNoteDraft,
-		    salesDoctorNotes,
-		    normalizeNotesValue,
-		    triggerSalesDoctorNotesSaved,
-		    user,
-		  ]);
+  }, [
+    persistSalesDoctorNotes,
+    salesDoctorDetail?.doctorId,
+    salesDoctorDetail?.role,
+    salesDoctorNoteDraft,
+    salesDoctorNotes,
+    normalizeNotesValue,
+    triggerSalesDoctorNotesSaved,
+    user,
+  ]);
+
+  const saveSalesDoctorPhone = useCallback(async () => {
+    if (!salesDoctorDetail?.doctorId) {
+      return;
+    }
+    const trimmed = salesDoctorPhoneDraft.trim();
+    const existing = salesDoctorDetail.phone || "";
+    if (trimmed === existing) {
+      return;
+    }
+    setSalesDoctorPhoneSaving(true);
+    try {
+      await settingsAPI.updateUserProfile(salesDoctorDetail.doctorId, {
+        phone: trimmed || null,
+      });
+      setSalesDoctorDetail((current) =>
+        current ? { ...current, phone: trimmed || null } : current,
+      );
+      toast.success("Phone number updated.");
+    } catch (error: any) {
+      console.warn("[SalesDoctor] Failed to update phone number", error);
+      toast.error(
+        typeof error?.message === "string" && error.message
+          ? error.message
+          : "Unable to update phone number right now.",
+      );
+    } finally {
+      setSalesDoctorPhoneSaving(false);
+    }
+  }, [
+    salesDoctorDetail?.doctorId,
+    salesDoctorDetail?.phone,
+    salesDoctorPhoneDraft,
+    settingsAPI,
+  ]);
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
@@ -4534,18 +4582,33 @@ export default function App() {
     [mergeSalesOrderDetail],
   );
 
+  const shouldCountRevenueForStatus = (status?: string | null) => {
+    const normalized = String(status || "").toLowerCase().trim();
+    return ![
+      "cancelled",
+      "canceled",
+      "on-hold",
+      "on_hold",
+      "trash",
+      "refunded",
+    ].includes(normalized);
+  };
+
   const openSalesDoctorDetail = useCallback(
-	    (bucket: {
-	      doctorId: string;
-	      referralId?: string | null;
-	      doctorName: string;
-	      doctorEmail?: string | null;
-	      doctorAvatar?: string | null;
-	      doctorPhone?: string | null;
-	      doctorAddress?: string | null;
-	      orders: AccountOrderSummary[];
-	      total: number;
-	    }) => {
+	    (
+	      bucket: {
+	        doctorId: string;
+	        referralId?: string | null;
+	        doctorName: string;
+	        doctorEmail?: string | null;
+	        doctorAvatar?: string | null;
+	        doctorPhone?: string | null;
+	        doctorAddress?: string | null;
+	        orders: AccountOrderSummary[];
+	        total: number;
+	      },
+	      sourceRole?: string,
+	    ) => {
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -4579,16 +4642,22 @@ export default function App() {
           ? bucket.doctorAddress
           : addressFromOrder || null;
       const lastOrderDate = latestOrder?.createdAt || null;
+      const relevantOrders = bucket.orders.filter((order) =>
+        shouldCountRevenueForStatus(order.status),
+      );
       const avgOrderValue =
-        bucket.orders.length > 0 ? bucket.total / bucket.orders.length : null;
+        relevantOrders.length > 0
+          ? bucket.total / relevantOrders.length
+          : null;
+      const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
 
-	      setSalesDoctorDetail({
-	        doctorId: bucket.doctorId,
-	        referralId: bucket.referralId ?? null,
-	        name: bucket.doctorName,
-	        email: bucket.doctorEmail,
-	        avatar: bucket.doctorAvatar ?? null,
-	        revenue: bucket.total,
+      setSalesDoctorDetail({
+        doctorId: bucket.doctorId,
+        referralId: bucket.referralId ?? null,
+        name: bucket.doctorName,
+        email: bucket.doctorEmail,
+        avatar: bucket.doctorAvatar ?? null,
+        revenue: bucket.total,
         orders: bucket.orders,
         phone:
           bucket.doctorPhone ||
@@ -4598,6 +4667,8 @@ export default function App() {
         address,
         lastOrderDate,
         avgOrderValue,
+        role: normalizedRole,
+        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
       });
     },
     [],
@@ -4610,18 +4681,22 @@ export default function App() {
 
       const avatarUrl = entry?.profileImageUrl || null;
       const displayName = entry?.name || entry?.email || "User";
+      const entryRole = normalizeRole(entry?.role);
 
-      openSalesDoctorDetail({
-        doctorId: id,
-        referralId: null,
-        doctorName: displayName,
-        doctorEmail: entry?.email || null,
-        doctorAvatar: avatarUrl,
-        doctorPhone: null,
-        doctorAddress: null,
-        orders: [],
-        total: 0,
-      });
+      openSalesDoctorDetail(
+        {
+          doctorId: id,
+          referralId: null,
+          doctorName: displayName,
+          doctorEmail: entry?.email || null,
+          doctorAvatar: avatarUrl,
+          doctorPhone: null,
+          doctorAddress: null,
+          orders: [],
+          total: 0,
+        },
+        entryRole || "doctor",
+      );
 
       if (!isAdmin(user?.role)) {
         return;
@@ -4638,10 +4713,12 @@ export default function App() {
           const normalizedOrders = normalizeAccountOrdersResponse(ordersResp, {
             includeCanceled: true,
           });
-          const total = normalizedOrders.reduce(
-            (sum, order) => sum + (coerceNumber(order.total) || 0),
-            0,
-          );
+          const total = normalizedOrders.reduce((sum, order) => {
+            if (!shouldCountRevenueForStatus(order.status)) {
+              return sum;
+            }
+            return sum + (coerceNumber(order.total) || 0);
+          }, 0);
 
           const addressParts = [
             profile?.officeAddressLine1,
@@ -4653,17 +4730,20 @@ export default function App() {
           ].filter((part) => typeof part === "string" && part.trim().length > 0);
           const address = addressParts.length > 0 ? addressParts.join("\n") : null;
 
-          openSalesDoctorDetail({
-            doctorId: id,
-            referralId: null,
-            doctorName: profile?.name || displayName,
-            doctorEmail: profile?.email || entry?.email || null,
-            doctorAvatar: profile?.profileImageUrl || avatarUrl,
-            doctorPhone: profile?.phone || null,
-            doctorAddress: address,
-            orders: normalizedOrders,
-            total,
-          });
+          openSalesDoctorDetail(
+            {
+              doctorId: id,
+              referralId: null,
+              doctorName: profile?.name || displayName,
+              doctorEmail: profile?.email || entry?.email || null,
+              doctorAvatar: profile?.profileImageUrl || avatarUrl,
+              doctorPhone: profile?.phone || null,
+              doctorAddress: address,
+              orders: normalizedOrders,
+              total,
+            },
+            profile?.role || entryRole || "doctor",
+          );
         } catch (error) {
           console.warn("[Admin] Failed to hydrate live user detail", error);
         }
@@ -7470,21 +7550,10 @@ export default function App() {
     };
   }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
 
-	  const salesTrackingSummary = useMemo(() => {
+  const salesTrackingSummary = useMemo(() => {
     if (salesTrackingOrders.length === 0) {
       return null;
     }
-	    const shouldCountRevenueForStatus = (status?: string | null) => {
-	      const normalized = String(status || "").toLowerCase().trim();
-	      return (
-	        normalized !== "cancelled" &&
-	        normalized !== "canceled" &&
-	        normalized !== "on-hold" &&
-	        normalized !== "on_hold" &&
-	        normalized !== "trash" &&
-	        normalized !== "refunded"
-	      );
-	    };
     const activeOrders = salesTrackingOrders.filter((order) => {
       return shouldCountRevenueForStatus(order.status);
     });
@@ -7547,6 +7616,7 @@ export default function App() {
         doctorEmail?: string | null;
         doctorAvatar?: string | null;
         doctorPhone?: string | null;
+        ownerSalesRepId?: string | null;
         leadType?: string | null;
         leadTypeSource?: string | null;
         leadTypeLockedAt?: string | null;
@@ -7597,6 +7667,11 @@ export default function App() {
         (order as any)?.billing?.email ||
         (order as any)?.billing_email ||
         null;
+      const ownerSalesRepId =
+        (order as any)?.salesRepId ||
+        (order as any)?.sales_rep_id ||
+        (order as any)?.salesRep?.id ||
+        null;
       const bucket =
         buckets.get(doctorId) ||
         (() => {
@@ -7606,6 +7681,9 @@ export default function App() {
             doctorEmail: doctorEmailFromOrder,
             doctorAvatar,
             doctorPhone,
+            ownerSalesRepId: ownerSalesRepId
+              ? String(ownerSalesRepId)
+              : null,
             leadType,
             leadTypeSource,
             leadTypeLockedAt,
@@ -7616,14 +7694,12 @@ export default function App() {
           buckets.set(doctorId, created);
           return created;
         })();
+      if (ownerSalesRepId && !bucket.ownerSalesRepId) {
+        bucket.ownerSalesRepId = String(ownerSalesRepId);
+      }
       bucket.orders.push(order);
-      const status = (order.status || "").toLowerCase();
-      if (
-        status !== "cancelled" &&
-        status !== "canceled" &&
-        status !== "trash" &&
-        status !== "refunded"
-      ) {
+      const status = order.status;
+      if (shouldCountRevenueForStatus(status)) {
         bucket.total += coerceNumber(order.total) ?? 0;
       }
     }
@@ -11387,9 +11463,11 @@ export default function App() {
 	                  ? "Admin Dashboard"
 	                  : "Sales Rep Dashboard"}
 	              </h2>
-	              <p className="text-sm text-slate-600">
-	                Monitor PepPro business activities, sales resp, and keep track of your sales.
-	              </p>
+              <p className="text-sm text-slate-600">
+                {isAdmin(user?.role)
+                  ? "Monitor PepPro business activities, sales reps, and keep track of your sales."
+                  : "Develop your leads and sales."}
+              </p>
 	            </div>
 	            {isAdmin(user?.role) && (
 	              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
@@ -12109,9 +12187,6 @@ export default function App() {
                                 <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
                                   <tr>
                                     <th className="px-4 py-2 text-center">
-                                      Online
-                                    </th>
-                                    <th className="px-4 py-2 text-center">
                                       Name
                                     </th>
                                     <th className="px-4 py-2 text-center">
@@ -12128,15 +12203,6 @@ export default function App() {
                                 <tbody className="divide-y divide-slate-100 bg-white/70">
                                   {userActivityReport.users.map((entry) => (
                                     <tr key={entry.id}>
-                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
-                                        {entry.isOnline ? (
-                                          <span className="inline-flex items-center rounded-full bg-[rgba(95,179,249,0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(95,179,249)]">
-                                            Online
-                                          </span>
-                                        ) : (
-                                          "—"
-                                        )}
-                                      </td>
                                       <td className="px-4 py-3 text-sm font-medium text-slate-800 text-center">
                                         {entry.name || "—"}
                                       </td>
@@ -12198,35 +12264,37 @@ export default function App() {
                       Orders placed by doctors assigned to each rep.
                     </p>
                     <form
-                      className="sales-rep-period-form mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-end"
+                      className="sales-rep-period-form mt-3 flex flex-col gap-3 text-sm sm:flex-row sm:items-end"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void refreshSalesBySalesRepSummary();
                       }}
                     >
-                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-                        Start
-                        <Input
-                          type="date"
-                          value={salesRepPeriodStart}
-                          onChange={(event) => setSalesRepPeriodStart(event.target.value)}
-                          placeholder="YYYY-MM-DD"
-                          className="block w-full min-w-0 text-slate-900"
-                          style={{ colorScheme: "light" }}
-                        />
-                      </label>
-                      <label className="flex w-full flex-col gap-1 text-xs font-semibold text-slate-700 sm:w-auto">
-                        End
-                        <Input
-                          type="date"
-                          value={salesRepPeriodEnd}
-                          onChange={(event) => setSalesRepPeriodEnd(event.target.value)}
-                          placeholder="YYYY-MM-DD"
-                          className="block w-full min-w-0 text-slate-900"
-                          style={{ colorScheme: "light" }}
-                        />
-                      </label>
-                      <div className="sales-rep-period-actions flex items-center gap-2 self-start sm:self-end">
+                      {["Start", "End"].map((labelText, index) => {
+                        const value =
+                          index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
+                        const setter =
+                          index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
+                        return (
+                          <label
+                            key={labelText}
+                            className="flex w-full flex-col gap-2 text-xs font-semibold text-slate-700 sm:w-auto"
+                          >
+                            <span className="text-sm font-semibold text-slate-900">
+                              {labelText}
+                            </span>
+                            <Input
+                              type="date"
+                              value={value}
+                              onChange={(event) => setter(event.target.value)}
+                              placeholder="YYYY-MM-DD"
+                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
+                              style={{ colorScheme: "light" }}
+                            />
+                          </label>
+                        );
+                      })}
+                      <div className="sales-rep-period-actions flex flex-wrap items-center gap-2 self-start sm:self-end">
                         <Button
                           type="submit"
                           size="sm"
@@ -12239,8 +12307,8 @@ export default function App() {
                         <Button
                           type="button"
                           size="sm"
-                          variant="ghost"
-                          className="whitespace-nowrap"
+                          variant="outline"
+                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
                           onClick={() => {
                             setSalesRepPeriodStart("");
                             setSalesRepPeriodEnd("");
@@ -12660,25 +12728,31 @@ export default function App() {
                                   className="flex items-center gap-3 min-w-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-	                                    openSalesDoctorDetail({
-	                                      ...bucket,
-	                                      referralId: resolveReferralIdForDoctorNotes(
-	                                        bucket.doctorId,
-	                                        bucket.doctorEmail,
-	                                      ),
-	                                    });
+                                    openSalesDoctorDetail(
+                                      {
+                                        ...bucket,
+                                        referralId: resolveReferralIdForDoctorNotes(
+                                          bucket.doctorId,
+                                          bucket.doctorEmail,
+                                        ),
+                                      },
+                                      "doctor",
+                                    );
                                   }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" || e.key === " ") {
                                       e.preventDefault();
                                       e.stopPropagation();
-	                                      openSalesDoctorDetail({
-	                                        ...bucket,
-	                                        referralId: resolveReferralIdForDoctorNotes(
-	                                          bucket.doctorId,
-	                                          bucket.doctorEmail,
-	                                        ),
-	                                      });
+                                      openSalesDoctorDetail(
+                                        {
+                                          ...bucket,
+                                          referralId: resolveReferralIdForDoctorNotes(
+                                            bucket.doctorId,
+                                            bucket.doctorEmail,
+                                          ),
+                                        },
+                                        "doctor",
+                                      );
                                     }
                                   }}
                                   aria-label={`View ${bucket.doctorName} details`}
@@ -13137,18 +13211,21 @@ export default function App() {
 	                                        record.referredContactEmail ||
 	                                        (leadAccountProfile?.email ?? null) ||
 	                                        null;
-	                                    openSalesDoctorDetail({
-	                                        doctorId: String(doctorId || record.id),
-	                                        referralId: kind === "referral" ? String(record.id) : null,
-	                                        doctorName: leadDisplayName,
-	                                        doctorEmail,
-	                                        doctorAvatar:
-	                                          leadAccountProfile?.profileImageUrl ?? null,
-	                                        doctorPhone: record.referredContactPhone || null,
-	                                        doctorAddress: null,
-	                                        orders: [],
-	                                        total: 0,
-	                                      });
+                                    openSalesDoctorDetail(
+                                      {
+                                        doctorId: String(doctorId || record.id),
+                                        referralId: kind === "referral" ? String(record.id) : null,
+                                        doctorName: leadDisplayName,
+                                        doctorEmail,
+                                        doctorAvatar:
+                                          leadAccountProfile?.profileImageUrl ?? null,
+                                        doctorPhone: record.referredContactPhone || null,
+                                        doctorAddress: null,
+                                        orders: [],
+                                        total: 0,
+                                      },
+                                      "doctor",
+                                    );
 	                                    }}
 	                                    onKeyDown={(e) => {
 	                                      if (e.key === "Enter" || e.key === " ") {
@@ -13163,18 +13240,21 @@ export default function App() {
 	                                          record.referredContactEmail ||
 	                                          (leadAccountProfile?.email ?? null) ||
 	                                          null;
-	                                        openSalesDoctorDetail({
-	                                          doctorId: String(doctorId || record.id),
-	                                          referralId: kind === "referral" ? String(record.id) : null,
-	                                          doctorName: leadDisplayName,
-	                                          doctorEmail,
-	                                          doctorAvatar:
-	                                            leadAccountProfile?.profileImageUrl ?? null,
-	                                          doctorPhone: record.referredContactPhone || null,
-	                                          doctorAddress: null,
-	                                          orders: [],
-	                                          total: 0,
-	                                        });
+                                        openSalesDoctorDetail(
+                                          {
+                                            doctorId: String(doctorId || record.id),
+                                            referralId: kind === "referral" ? String(record.id) : null,
+                                            doctorName: leadDisplayName,
+                                            doctorEmail,
+                                            doctorAvatar:
+                                              leadAccountProfile?.profileImageUrl ?? null,
+                                            doctorPhone: record.referredContactPhone || null,
+                                            doctorAddress: null,
+                                            orders: [],
+                                            total: 0,
+                                          },
+                                          "doctor",
+                                        );
 	                                      }
 	                                    }}
 	                                    aria-label={`View ${leadDisplayName} details`}
@@ -15836,35 +15916,39 @@ export default function App() {
 		                </DialogTitle>
 		                <DialogDescription>Account details</DialogDescription>
 		              </DialogHeader>
-			              <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
-			                <p className="text-sm font-semibold text-slate-800">Notes</p>
-			                  <Textarea
-			                  value={salesDoctorNoteDraft}
-			                  onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
-			                  rows={4}
-			                  placeholder={
-			                    salesDoctorNotesLoading
-			                      ? "Loading notes..."
-			                      : "Add notes about this doctor"
-			                  }
-			                  className="text-sm notes-textarea"
-			                  disabled={salesDoctorNotesLoading}
-			                />
-			                <div className="mt-2 mb-1 flex items-center justify-end gap-2">
-			                  {salesDoctorNotesSaved && (
-			                    <CheckSquare className="h-4 w-4 text-emerald-600" />
-			                  )}
-			                  <Button
-		                    type="button"
-		                    variant="outline"
-		                    onClick={() => void saveSalesDoctorNotes()}
-		                    className="h-8 px-3 text-xs"
+		              {salesDoctorDetail && isDoctorRole(salesDoctorDetail.role) && (
+		                <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
+		                  <p className="text-sm font-semibold justify-center text-slate-800">
+                        Shared Notes (Rep and Admin only)
+		                  </p>
+		                  <Textarea
+		                    value={salesDoctorNoteDraft}
+		                    onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
+		                    rows={4}
+		                    placeholder={
+		                      salesDoctorNotesLoading
+		                        ? "Loading notes..."
+		                        : "Add notes about this doctor"
+		                    }
+		                    className="text-sm notes-textarea"
 		                    disabled={salesDoctorNotesLoading}
-		                  >
-		                    Save
-		                  </Button>
+		                  />
+		                  <div className="mt-2 mb-1 flex items-center justify-end gap-2">
+		                    {salesDoctorNotesSaved && (
+		                      <CheckSquare className="h-4 w-4 text-emerald-600" />
+		                    )}
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      onClick={() => void saveSalesDoctorNotes()}
+		                      className="h-8 px-3 text-xs"
+		                      disabled={salesDoctorNotesLoading}
+		                    >
+		                      Save
+		                    </Button>
+		                  </div>
 		                </div>
-		              </div>
+		              )}
 		              <div className="flex items-center gap-4">
 		                <div
 		                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
@@ -15910,7 +15994,49 @@ export default function App() {
                     </div>
                     <div>
                       <span className="font-semibold text-slate-800">Phone: </span>
-                      <span>{salesDoctorDetail.phone || "Unavailable"}</span>
+                      {(() => {
+                        const canEditPhone =
+                          Boolean(
+                            salesDoctorDetail &&
+                              (isAdmin(user?.role) ||
+                                (isRep(user?.role) &&
+                                  userSalesRepId &&
+                                  salesDoctorDetail.ownerSalesRepId &&
+                                  userSalesRepId ===
+                                    salesDoctorDetail.ownerSalesRepId)),
+                          );
+                        const trimmedDraft = salesDoctorPhoneDraft.trim();
+                        const existingPhone = salesDoctorDetail.phone || "";
+                        const hasChanges = trimmedDraft !== existingPhone.trim();
+                        if (!canEditPhone) {
+                          return (
+                            <span>{salesDoctorDetail.phone || "Unavailable"}</span>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-2">
+                            <Input
+                              type="tel"
+                              value={salesDoctorPhoneDraft}
+                              onChange={(event) =>
+                                setSalesDoctorPhoneDraft(event.target.value)
+                              }
+                              className="block w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
+                              placeholder="Enter phone number"
+                            />
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              className="self-start whitespace-nowrap"
+                              onClick={() => void saveSalesDoctorPhone()}
+                              disabled={salesDoctorPhoneSaving || !hasChanges}
+                            >
+                              {salesDoctorPhoneSaving ? "Saving…" : "Save"}
+                            </Button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -15924,36 +16050,43 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Total Orders
-                  </p>
-                  <p className="text-lg font-semibold text-slate-900">
-                    {salesDoctorDetail.orders.length}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Last Order
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {salesDoctorDetail.lastOrderDate
-                      ? formatDateTime(salesDoctorDetail.lastOrderDate)
-                      : "Unavailable"}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Avg Order Value
-                  </p>
-                  <p className="text-lg font-semibold text-slate-900">
-                    {salesDoctorDetail.avgOrderValue
-                      ? formatCurrency(salesDoctorDetail.avgOrderValue)
-                      : "—"}
-                  </p>
-                </div>
-              </div>
+              {(() => {
+                const visibleOrdersCount = salesDoctorDetail.orders.filter(
+                  (order) => shouldCountRevenueForStatus(order.status),
+                ).length;
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Total Orders
+                      </p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {visibleOrdersCount}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Last Order
+                      </p>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {salesDoctorDetail.lastOrderDate
+                          ? formatDateTime(salesDoctorDetail.lastOrderDate)
+                          : "Unavailable"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Avg Order Value
+                      </p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {salesDoctorDetail.avgOrderValue
+                          ? formatCurrency(salesDoctorDetail.avgOrderValue)
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-slate-700">

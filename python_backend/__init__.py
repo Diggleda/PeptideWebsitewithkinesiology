@@ -1,24 +1,31 @@
-from flask import Flask
+from __future__ import annotations
 
-from .config import load_config
-from .logging_config import configure_logging
-from .storage import init_storage
-from .routes import register_blueprints
-from .services import configure_services
-from .services.product_document_sync_service import start_product_document_sync
-from .database import init_database
-from .middleware.request_logging import init_request_logging
-from .middleware.rate_limit import init_rate_limit
-from .repositories import sales_prospect_repository
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flask import Flask
 
 
-def create_app() -> Flask:
+def create_app() -> "Flask":
     """
     Application factory used by both local development and cPanel's WSGI loader.
     """
+    from .config import load_config
+    from .database import init_database
+    from .logging_config import configure_logging
+    from .middleware.rate_limit import init_rate_limit
+    from .middleware.request_logging import init_request_logging
+    from .repositories import sales_prospect_repository
+    from .routes import register_blueprints
+    from .services import configure_services
+    from .services.product_document_sync_service import start_product_document_sync
+    from .storage import init_storage
+
     config = load_config()
 
     configure_logging(config)
+
+    from flask import Flask
 
     app = Flask(__name__)
     app.config.update(config.flask_settings)

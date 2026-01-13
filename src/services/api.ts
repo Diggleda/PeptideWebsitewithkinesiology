@@ -961,6 +961,15 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  updateUserProfile: async (userId: string | number, payload: Record<string, any>) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/settings/users/${encodeURIComponent(String(userId))}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
   getReportSettings: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'GET',

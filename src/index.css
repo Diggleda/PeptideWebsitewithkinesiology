@@ -4776,6 +4776,22 @@ html {
 
 .live-users-scroll {
   padding: 0.75rem;
+  max-height: calc(var(--live-user-row-height, 3.75rem) * 4.5);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.live-users-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.live-users-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.live-users-scroll > .flex > div {
+  min-height: var(--live-user-row-height, 3.75rem);
 }
 
 /* Manual credit styling */

@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..database import mysql_client
 from ..integrations import woo_commerce
@@ -32,6 +32,25 @@ def _enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _prune_enabled() -> bool:
+    raw = str(os.environ.get("CATALOG_SNAPSHOT_PRUNE_ENABLED", "true")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _prune_min_products() -> int:
+    raw = str(os.environ.get("CATALOG_SNAPSHOT_PRUNE_MIN_PRODUCTS", "1")).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = 1
+    return max(0, min(value, 1000))
+
+
+def _prune_coa_stubs_enabled() -> bool:
+    raw = str(os.environ.get("CATALOG_SNAPSHOT_PRUNE_COA_STUBS", "true")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _try_acquire_lock(name: str) -> bool:
     try:
         row = mysql_client.fetch_one("SELECT GET_LOCK(%(name)s, 0) AS acquired", {"name": name})
@@ -49,6 +68,115 @@ def _release_lock(name: str) -> None:
 
 def _compact_json(data: Any) -> bytes:
     return json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def _chunked(values: List[int], *, size: int) -> List[List[int]]:
+    if not values:
+        return []
+    safe_size = max(1, min(int(size), 2000))
+    return [values[i : i + safe_size] for i in range(0, len(values), safe_size)]
+
+
+def _existing_snapshot_product_ids() -> Set[int]:
+    rows = mysql_client.fetch_all(
+        """
+        SELECT DISTINCT woo_product_id
+        FROM product_documents
+        WHERE kind IN (%(kind_light)s, %(kind_full)s)
+          AND woo_product_id <> 0
+        """,
+        {"kind_light": KIND_CATALOG_PRODUCT_LIGHT, "kind_full": KIND_CATALOG_PRODUCT_FULL},
+    )
+    ids: Set[int] = set()
+    for row in rows or []:
+        try:
+            ids.add(int((row or {}).get("woo_product_id")))
+        except Exception:
+            continue
+    return ids
+
+
+def _delete_snapshot_rows(woo_product_ids: List[int]) -> int:
+    deleted = 0
+    for batch in _chunked(sorted(set(woo_product_ids)), size=500):
+        placeholders: List[str] = []
+        params: Dict[str, Any] = {
+            "kind_light": KIND_CATALOG_PRODUCT_LIGHT,
+            "kind_full": KIND_CATALOG_PRODUCT_FULL,
+        }
+        for index, woo_id in enumerate(batch):
+            key = f"woo_id_{index}"
+            placeholders.append(f"%({key})s")
+            params[key] = int(woo_id)
+        deleted += int(
+            mysql_client.execute(
+                f"""
+                DELETE FROM product_documents
+                WHERE woo_product_id IN ({", ".join(placeholders)})
+                  AND kind IN (%(kind_light)s, %(kind_full)s)
+                """,
+                params,
+            )
+        )
+    return deleted
+
+
+def _delete_coa_stub_rows(woo_product_ids: List[int]) -> int:
+    if not _prune_coa_stubs_enabled():
+        return 0
+    deleted = 0
+    for batch in _chunked(sorted(set(woo_product_ids)), size=500):
+        placeholders: List[str] = []
+        params: Dict[str, Any] = {"kind": product_document_repository.DEFAULT_KIND_COA}
+        for index, woo_id in enumerate(batch):
+            key = f"woo_id_{index}"
+            placeholders.append(f"%({key})s")
+            params[key] = int(woo_id)
+        deleted += int(
+            mysql_client.execute(
+                f"""
+                DELETE FROM product_documents
+                WHERE woo_product_id IN ({", ".join(placeholders)})
+                  AND kind = %(kind)s
+                  AND (data IS NULL OR OCTET_LENGTH(data) = 0)
+                  AND (sha256 IS NULL OR sha256 = '')
+                """,
+                params,
+            )
+        )
+    return deleted
+
+
+def _prune_missing_products(seen_woo_product_ids: Set[int], *, fetch_hit_limit: bool) -> Dict[str, Any]:
+    """
+    Remove MySQL snapshot rows for products no longer present in WooCommerce.
+
+    Safety rails:
+      - Skips if Woo fetch returned too few products (likely a transient upstream issue).
+      - Skips if the Woo fetch hit the page limit (incomplete view of catalog).
+      - Only deletes catalog snapshot kinds, plus (optionally) COA *stubs* with no payload.
+    """
+    if not _prune_enabled():
+        return {"ok": False, "skipped": True, "reason": "prune_disabled"}
+    if fetch_hit_limit:
+        return {"ok": False, "skipped": True, "reason": "fetch_incomplete"}
+    min_products = _prune_min_products()
+    if len(seen_woo_product_ids) < min_products:
+        return {"ok": False, "skipped": True, "reason": "too_few_products", "minProducts": min_products}
+
+    existing_ids = _existing_snapshot_product_ids()
+    stale_ids = sorted(existing_ids - set(int(x) for x in seen_woo_product_ids))
+    if not stale_ids:
+        return {"ok": True, "prunedProducts": 0, "deletedSnapshotRows": 0, "deletedCoaStubRows": 0}
+
+    deleted_snapshot_rows = _delete_snapshot_rows(stale_ids)
+    deleted_coa_stub_rows = _delete_coa_stub_rows(stale_ids)
+    return {
+        "ok": True,
+        "prunedProducts": len(stale_ids),
+        "deletedSnapshotRows": deleted_snapshot_rows,
+        "deletedCoaStubRows": deleted_coa_stub_rows,
+    }
 
 
 def _normalize_product_categories(
@@ -126,11 +254,12 @@ def _product_full_snapshot(
     return base
 
 
-def _fetch_all_products() -> List[Dict[str, Any]]:
+def _fetch_all_products() -> Tuple[List[Dict[str, Any]], bool]:
     per_page = 100
     page = 1
     results: List[Dict[str, Any]] = []
     max_pages = 250
+    hit_limit = False
 
     while page <= max_pages:
         data, _meta = woo_commerce.fetch_catalog_proxy(
@@ -148,8 +277,11 @@ def _fetch_all_products() -> List[Dict[str, Any]]:
         results.extend([item for item in data if isinstance(item, dict)])
         if len(data) < per_page:
             break
+        if page == max_pages:
+            hit_limit = True
+            break
         page += 1
-    return results
+    return results, hit_limit
 
 
 def _fetch_product_variations(product_id: int) -> List[Dict[str, Any]]:
@@ -185,7 +317,7 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
     started_at = _utc_now()
     now_sql = _utc_now_sql()
 
-    products = _fetch_all_products()
+    products, hit_limit = _fetch_all_products()
     categories = _fetch_categories()
     category_by_id: Dict[int, Dict[str, Any]] = {}
     for cat in categories:
@@ -283,11 +415,21 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
             woo_synced_at=now_sql,
         )
 
+        seen_ids: Set[int] = set()
+        for product in products:
+            try:
+                seen_ids.add(int((product or {}).get("id")))
+            except Exception:
+                continue
+
+        prune_result = _prune_missing_products(seen_ids, fetch_hit_limit=hit_limit)
+
         return {
             "ok": True,
             "products": product_count,
             "variableProducts": variation_products,
             "variationRows": variation_rows,
+            "prune": prune_result,
             "durationMs": int((_utc_now() - started_at).total_seconds() * 1000),
         }
     finally:
