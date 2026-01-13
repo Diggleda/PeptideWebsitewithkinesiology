@@ -71,31 +71,91 @@ def _read_linux_cpu_percent(sample_ms: int = 150) -> float | None:
     Return overall system CPU usage percent based on /proc/stat deltas.
     This is closer to what hosting dashboards show than loadavg.
     """
+    # Backwards-compatible wrapper: keep returning a single number for callers that
+    # only want "busy" CPU percent.
+    usage = _read_linux_cpu_usage(sample_ms=sample_ms)
+    value = (usage or {}).get("usagePercent")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+_CPU_LAST: tuple[float, int, int, int, int] | None = None
+
+
+def _read_linux_cpu_usage(sample_ms: int = 150, *, min_window_ms: int = 250) -> dict[str, Any] | None:
+    """
+    Return overall system CPU usage percent based on /proc/stat deltas.
+
+    Notes:
+    - "usagePercent" is computed as (total-idle)/total, where idle includes iowait.
+    - VPS "steal" time can look like high CPU even when your processes are idle; we
+      surface it separately as "stealPercent".
+    - To avoid noisy spike alerts, prefer using the cached delta between calls when
+      possible (method="delta"). Falls back to a short sleep sample (method="sleep").
+    """
     try:
         if platform.system().lower() != "linux":
             return None
-        sample_ms = max(50, min(int(sample_ms), 500))
+        sample_ms = max(50, min(int(sample_ms), 1000))
+        min_window_ms = max(50, min(int(min_window_ms), 5000))
 
-        def read_cpu() -> Tuple[int, int]:
+        def read_cpu() -> Tuple[int, int, int, int]:
             parts = Path("/proc/stat").read_text(encoding="utf-8", errors="ignore").splitlines()[0].split()
             if not parts or parts[0] != "cpu":
                 raise RuntimeError("unexpected /proc/stat format")
             values = [int(x) for x in parts[1:]]
-            # idle = idle + iowait
-            idle = (values[3] if len(values) > 3 else 0) + (values[4] if len(values) > 4 else 0)
+            idle = values[3] if len(values) > 3 else 0
+            iowait = values[4] if len(values) > 4 else 0
+            steal = values[7] if len(values) > 7 else 0
+            idle_total = idle + iowait
             total = sum(values)
-            return total, idle
+            return total, idle_total, iowait, steal
 
-        total1, idle1 = read_cpu()
+        def calc(total1: int, idle1: int, iowait1: int, steal1: int, total2: int, idle2: int, iowait2: int, steal2: int) -> dict[str, float] | None:
+            total_delta = max(0, total2 - total1)
+            if total_delta <= 0:
+                return None
+            idle_delta = max(0, idle2 - idle1)
+            iowait_delta = max(0, iowait2 - iowait1)
+            steal_delta = max(0, steal2 - steal1)
+            used = max(0.0, float(total_delta - idle_delta) / float(total_delta))
+            return {
+                "usagePercent": round(used * 100.0, 2),
+                "iowaitPercent": round((float(iowait_delta) / float(total_delta)) * 100.0, 2),
+                "stealPercent": round((float(steal_delta) / float(total_delta)) * 100.0, 2),
+            }
+
+        now = time.monotonic()
+        total2, idle2, iowait2, steal2 = read_cpu()
+
+        global _CPU_LAST
+        if _CPU_LAST is not None:
+            last_ts, total1, idle1, iowait1, steal1 = _CPU_LAST
+            dt_ms = max(0.0, (now - last_ts) * 1000.0)
+            if dt_ms >= float(min_window_ms):
+                payload = calc(total1, idle1, iowait1, steal1, total2, idle2, iowait2, steal2)
+                _CPU_LAST = (now, total2, idle2, iowait2, steal2)
+                if payload:
+                    return {
+                        **payload,
+                        "windowSeconds": round(dt_ms / 1000.0, 3),
+                        "method": "delta",
+                    }
+
+        total1, idle1, iowait1, steal1 = total2, idle2, iowait2, steal2
         time.sleep(sample_ms / 1000.0)
-        total2, idle2 = read_cpu()
+        now2 = time.monotonic()
+        total2, idle2, iowait2, steal2 = read_cpu()
+        _CPU_LAST = (now2, total2, idle2, iowait2, steal2)
 
-        total_delta = max(0, total2 - total1)
-        idle_delta = max(0, idle2 - idle1)
-        if total_delta <= 0:
+        payload = calc(total1, idle1, iowait1, steal1, total2, idle2, iowait2, steal2)
+        if not payload:
             return None
-        used = max(0.0, float(total_delta - idle_delta) / float(total_delta))
-        return round(used * 100.0, 2)
+        return {
+            **payload,
+            "windowSeconds": round(max(0.0, now2 - now), 3),
+            "method": "sleep",
+            "sampleMs": int(sample_ms),
+        }
     except Exception:
         return None
 
@@ -157,7 +217,7 @@ def _server_usage() -> dict:
     cpu_count = os.cpu_count() or 0
     load_avg = None
     load_pct = None
-    cpu_usage_pct = _read_linux_cpu_percent(int(os.environ.get("HEALTH_CPU_SAMPLE_MS") or 150))
+    cpu_usage = _read_linux_cpu_usage(sample_ms=int(os.environ.get("HEALTH_CPU_SAMPLE_MS") or 150))
     try:
         if hasattr(os, "getloadavg"):
             one, five, fifteen = os.getloadavg()
@@ -175,7 +235,12 @@ def _server_usage() -> dict:
             "count": cpu_count or None,
             "loadAvg": load_avg,
             "loadPercent": load_pct,
-            "usagePercent": cpu_usage_pct,
+            "usagePercent": (cpu_usage or {}).get("usagePercent"),
+            "iowaitPercent": (cpu_usage or {}).get("iowaitPercent"),
+            "stealPercent": (cpu_usage or {}).get("stealPercent"),
+            "usageWindowSeconds": (cpu_usage or {}).get("windowSeconds"),
+            "usageMethod": (cpu_usage or {}).get("method"),
+            "usageSampleMs": (cpu_usage or {}).get("sampleMs"),
         },
         "memory": _read_linux_meminfo(),
         "disk": _disk_usage(data_dir),

@@ -273,6 +273,45 @@ def _fetch_catalog_http(
             raise err
 
 
+def fetch_catalog_fresh(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> tuple[Any, Dict[str, Any]]:
+    """
+    Fetch from WooCommerce *synchronously* (bypassing stale-while-revalidate behavior),
+    while still populating the same in-memory/disk caches used by `fetch_catalog_proxy`.
+    """
+    if not is_configured():
+        err = IntegrationError("WooCommerce is not configured")
+        setattr(err, "status", 503)
+        raise err
+
+    ttl_seconds = _cache_ttl_seconds_for_endpoint(endpoint)
+    cache_key = _build_cache_key(endpoint, params)
+
+    data = _fetch_catalog_http(endpoint, params, acquire_timeout=2)
+    _clear_proxy_failure(cache_key)
+
+    now_ms = _now_ms()
+    expires_at = now_ms + ttl_seconds * 1000
+
+    event: threading.Event | None = None
+    with _catalog_cache_lock:
+        _set_in_memory_cache(cache_key, data, expires_at)
+        inflight = _inflight.get(cache_key)
+        if inflight:
+            inflight["data"] = data
+            inflight["error"] = None
+            event = inflight.get("event")
+            _inflight.pop(cache_key, None)
+
+    if event is not None:
+        try:
+            event.set()
+        except Exception:
+            pass
+
+    _write_disk_cache(cache_key, {"data": data, "fetchedAt": now_ms, "expiresAt": expires_at})
+    return data, {"cache": "FRESH", "ttlSeconds": ttl_seconds, "noStore": True}
+
+
 def fetch_catalog_proxy(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> tuple[Any, Dict[str, Any]]:
     """
     Woo proxy endpoint fetch with:

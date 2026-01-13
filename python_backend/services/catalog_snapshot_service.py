@@ -262,7 +262,7 @@ def _fetch_all_products() -> Tuple[List[Dict[str, Any]], bool]:
     hit_limit = False
 
     while page <= max_pages:
-        data, _meta = woo_commerce.fetch_catalog_proxy(
+        data, _meta = woo_commerce.fetch_catalog_fresh(
             "products",
             {
                 "per_page": per_page,
@@ -285,7 +285,7 @@ def _fetch_all_products() -> Tuple[List[Dict[str, Any]], bool]:
 
 
 def _fetch_product_variations(product_id: int) -> List[Dict[str, Any]]:
-    data, _meta = woo_commerce.fetch_catalog_proxy(
+    data, _meta = woo_commerce.fetch_catalog_fresh(
         f"products/{product_id}/variations",
         {"per_page": 100, "status": "publish"},
     )
@@ -295,7 +295,7 @@ def _fetch_product_variations(product_id: int) -> List[Dict[str, Any]]:
 
 
 def _fetch_categories() -> List[Dict[str, Any]]:
-    data, _meta = woo_commerce.fetch_catalog_proxy("products/categories", {"per_page": 100})
+    data, _meta = woo_commerce.fetch_catalog_fresh("products/categories", {"per_page": 100})
     if not isinstance(data, list):
         return []
     return [item for item in data if isinstance(item, dict)]

@@ -61,7 +61,7 @@ import {
   Bar,
   LabelList,
 } from "recharts@2.15.2";
-	import {
+import {
 	  authAPI,
 	  ordersAPI,
 	  referralAPI,
@@ -73,7 +73,6 @@ import {
 	  settingsAPI,
 	  API_BASE_URL,
 	} from "./services/api";
-import physiciansChoiceHtml from "./content/landing/physicians-choice.html?raw";
 import careComplianceHtml from "./content/landing/care-compliance.html?raw";
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
@@ -14774,17 +14773,6 @@ export default function App() {
                         <div className="relative flex flex-col gap-6 max-h-[70vh]">
                           <div className="flex-1 overflow-y-auto pr-1 space-y-16">
                             {/* Removed: Customer experiences & referrals section */}
-
-                            <div className="mb-4">
-                              <section className="squircle glass-card landing-glass border border-[var(--brand-glass-border-2)] p-6 shadow-sm mb-4">
-                                <div
-                                  className="landing-richtext text-sm text-gray-700 leading-relaxed"
-                                  dangerouslySetInnerHTML={{
-                                    __html: physiciansChoiceHtml,
-                                  }}
-                                />
-                              </section>
-                            </div>
 
                             <section className="squircle glass-strong landing-glass-strong border border-[var(--brand-glass-border-3)] p-6 text-slate-900 shadow-sm">
                               <div
