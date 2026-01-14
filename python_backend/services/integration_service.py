@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from ..repositories import sales_rep_repository, user_repository
 from . import get_config
+from . import peptide_forum_service
 
 
 def _sanitize_string(value: str, max_length: int = 190) -> str:
@@ -74,6 +75,19 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
         upserted += 1
 
     return {"success": True, "upserted": upserted, "skipped": skipped, "total": len(rows)}
+
+def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
+    config = get_config()
+    secret = config.integrations.get("google_sheets_secret")
+    if secret:
+        header_secret = headers.get("x-webhook-signature") or headers.get("authorization", "")
+        header_secret = re.sub(r"^(Bearer|Basic)\s+", "", header_secret, flags=re.I)
+        if header_secret != secret:
+            raise _service_error("Unauthorized webhook request", 401)
+
+    items: List[Dict] = payload.get("items") if isinstance(payload.get("items"), list) else []
+    result = peptide_forum_service.replace_from_webhook(items)
+    return {"success": True, **result}
 
 
 def _service_error(message: str, status: int) -> Exception:

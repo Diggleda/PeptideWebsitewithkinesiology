@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
+    "peptideForumEnabled": True,
     # "test" | "live" | None (None = follow env)
     "stripeMode": None,
     # ISO timestamp (admin report)
@@ -94,6 +95,7 @@ def _normalize_iso_timestamp(value: Any) -> Optional[str]:
 def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
+    merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
     merged["stripeMode"] = _normalize_mode(merged.get("stripeMode"))
     merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("salesBySalesRepCsvDownloadedAt")

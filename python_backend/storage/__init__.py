@@ -15,6 +15,7 @@ credit_ledger_store: Optional[JsonStore[List[dict]]] = None
 contact_form_store: Optional[JsonStore[List[dict]]] = None
 contact_form_status_store: Optional[JsonStore[dict]] = None
 settings_store: Optional[JsonStore[dict]] = None
+peptide_forum_store: Optional[JsonStore[dict]] = None
 
 
 def _make_store(config, file_name: str, default) -> JsonStore:
@@ -34,7 +35,7 @@ def _make_store(config, file_name: str, default) -> JsonStore:
 
 
 def init_storage(config) -> None:
-    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, sales_prospect_store, credit_ledger_store, contact_form_store, contact_form_status_store, settings_store
+    global user_store, order_store, sales_rep_store, referral_code_store, referral_store, sales_prospect_store, credit_ledger_store, contact_form_store, contact_form_status_store, settings_store, peptide_forum_store
 
     user_store = _make_store(config, "users.json", [])
     order_store = _make_store(config, "orders.json", [])
@@ -48,7 +49,12 @@ def init_storage(config) -> None:
     settings_store = _make_store(
         config,
         "settings.json",
-        {"shopEnabled": True, "stripeMode": None, "salesBySalesRepCsvDownloadedAt": None},
+        {"shopEnabled": True, "peptideForumEnabled": True, "stripeMode": None, "salesBySalesRepCsvDownloadedAt": None},
+    )
+    peptide_forum_store = _make_store(
+        config,
+        "the-peptide-forum.json",
+        {"updatedAt": None, "items": []},
     )
 
     for store in (
@@ -62,6 +68,7 @@ def init_storage(config) -> None:
         contact_form_store,
         contact_form_status_store,
         settings_store,
+        peptide_forum_store,
     ):
         if store:
             store.init()
@@ -79,4 +86,5 @@ __all__ = [
     "contact_form_store",
     "contact_form_status_store",
     "settings_store",
+    "peptide_forum_store",
 ]

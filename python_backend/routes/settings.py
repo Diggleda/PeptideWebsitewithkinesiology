@@ -77,6 +77,14 @@ def get_shop():
 
     return handle_action(action)
 
+@blueprint.get("/forum")
+def get_forum():
+    def action():
+        settings = settings_service.get_settings()
+        return {"peptideForumEnabled": bool(settings.get("peptideForumEnabled", True))}
+
+    return handle_action(action)
+
 
 @blueprint.put("/shop")
 @require_auth
@@ -87,6 +95,18 @@ def update_shop():
         enabled = bool(payload.get("enabled", False))
         settings_service.update_settings({"shopEnabled": enabled})
         return {"shopEnabled": enabled}
+
+    return handle_action(action)
+
+@blueprint.put("/forum")
+@require_auth
+def update_forum():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", False))
+        settings_service.update_settings({"peptideForumEnabled": enabled})
+        return {"peptideForumEnabled": enabled}
 
     return handle_action(action)
 
