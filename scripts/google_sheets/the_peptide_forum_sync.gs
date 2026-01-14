@@ -13,7 +13,7 @@ function onOpen() {
     .addToUi();
 }
 
-// Column A = Title, Column B = Date, Column C = Time, Column D = Description, Column E = Link, Column F = Sync Status
+// Column A = Title, Column B = Date, Column C = Time (PST), Column D = Description, Column E = Link, Column F = Recording (Link), Column G = Sync Status
 function syncPeptideForum() {
   const sheet = SpreadsheetApp.getActiveSheet();
   // Use display values so "Time" stays exactly what the Sheet shows (prevents timezone shifts
@@ -42,13 +42,14 @@ function syncPeptideForum() {
     const time = norm(displayRows[i]?.[2] ?? formatSheetTime(rows[i][2])); // Col C
     const description = norm(displayRows[i]?.[3] ?? rows[i][3]); // Col D
     const link = norm(displayRows[i]?.[4] ?? rows[i][4]); // Col E
+    const recording = norm(displayRows[i]?.[5] ?? rows[i][5]); // Col F
 
     // consider a row "non-empty" only if it has title or link content
-    if (title === '' && link === '') continue;
-    items.push({ title, date, time, description, link });
+    if (title === '' && link === '' && recording === '') continue;
+    items.push({ title, date, time, description, link, recording });
   }
 
-  // Prepare a status column buffer (Column F) sized to all data rows
+  // Prepare a status column buffer (Column G) sized to all data rows
   const statusValues = rows.map(() => ['']);
 
   // Tell the server this list is authoritative (enables mirror deletions).
@@ -95,9 +96,9 @@ function syncPeptideForum() {
     });
   }
 
-  // Write statuses to Column F for all data rows
+  // Write statuses to Column G for all data rows
   if (rows.length > 0) {
-    sheet.getRange(2, 6, rows.length, 1).setValues(statusValues);
+    sheet.getRange(2, 7, rows.length, 1).setValues(statusValues);
   }
 }
 

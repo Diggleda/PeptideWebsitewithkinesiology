@@ -104,7 +104,7 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit or 250), 1000))
     rows = mysql_client.fetch_all(
         """
-        SELECT id, title, date_at, date_raw, time_raw, description, link, created_at, updated_at
+        SELECT id, title, date_at, date_raw, time_raw, description, link, recording_link, created_at, updated_at
         FROM peptide_forum_posts
         ORDER BY
           (CASE WHEN date_at IS NULL THEN 1 ELSE 0 END),
@@ -136,6 +136,7 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
                 "timeRaw": str(time_raw) if time_raw else None,
                 "description": row.get("description"),
                 "link": row.get("link"),
+                "recording": row.get("recording_link"),
                 "createdAt": _to_iso(row.get("created_at"), tz=PST),
                 "updatedAt": _to_iso(row.get("updated_at"), tz=PST),
             }
@@ -149,9 +150,9 @@ def upsert_post(post: Dict[str, Any]) -> None:
     mysql_client.execute(
         """
         INSERT INTO peptide_forum_posts
-          (id, title, date_at, date_raw, time_raw, description, link, created_at, updated_at)
+          (id, title, date_at, date_raw, time_raw, description, link, recording_link, created_at, updated_at)
         VALUES
-          (%(id)s, %(title)s, %(date_at)s, %(date_raw)s, %(time_raw)s, %(description)s, %(link)s, NOW(), NOW())
+          (%(id)s, %(title)s, %(date_at)s, %(date_raw)s, %(time_raw)s, %(description)s, %(link)s, %(recording_link)s, NOW(), NOW())
         ON DUPLICATE KEY UPDATE
           title = VALUES(title),
           date_at = VALUES(date_at),
@@ -159,6 +160,7 @@ def upsert_post(post: Dict[str, Any]) -> None:
           time_raw = VALUES(time_raw),
           description = VALUES(description),
           link = VALUES(link),
+          recording_link = VALUES(recording_link),
           updated_at = NOW()
         """,
         {
@@ -169,6 +171,7 @@ def upsert_post(post: Dict[str, Any]) -> None:
             "time_raw": post.get("time_raw"),
             "description": post.get("description"),
             "link": post.get("link"),
+            "recording_link": post.get("recording_link"),
         },
     )
 

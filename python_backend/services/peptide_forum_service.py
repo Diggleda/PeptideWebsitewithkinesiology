@@ -142,15 +142,16 @@ def _normalize_item(item: Any, index: int) -> Tuple[Optional[Dict[str, Any]], Op
     title = _norm_text((item or {}).get("title") if isinstance(item, dict) else "")
     description = _norm_text((item or {}).get("description") if isinstance(item, dict) else "")
     link = _norm_text((item or {}).get("link") if isinstance(item, dict) else "")
+    recording = _norm_text((item or {}).get("recording") if isinstance(item, dict) else "")
     date_iso, date_raw, time_raw = _try_parse_datetime(
         (item or {}).get("date") if isinstance(item, dict) else None,
         (item or {}).get("time") if isinstance(item, dict) else None,
     )
 
-    if not title and not link:
-        return None, f"Row {index}: missing title and link"
+    if not title and not link and not recording:
+        return None, f"Row {index}: missing title/link/recording"
 
-    id_base = f"{title or 'post'}|{date_iso or date_raw or 'nodate'}|{time_raw or ''}|{link or 'nolink'}"
+    id_base = f"{title or 'post'}|{date_iso or date_raw or 'nodate'}|{time_raw or ''}|{link or 'nolink'}|{recording or ''}"
     post_id = base64.urlsafe_b64encode(id_base.encode("utf-8")).decode("utf-8").rstrip("=")[:48]
 
     return (
@@ -161,6 +162,7 @@ def _normalize_item(item: Any, index: int) -> Tuple[Optional[Dict[str, Any]], Op
             "time": time_raw or None,
             "description": description or None,
             "link": link or None,
+            "recording": recording or None,
         },
         None,
     )
@@ -207,6 +209,7 @@ def replace_from_webhook(items: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "time_raw": time_raw,
                     "description": post.get("description"),
                     "link": post.get("link"),
+                    "recording_link": post.get("recording"),
                 }
             )
 

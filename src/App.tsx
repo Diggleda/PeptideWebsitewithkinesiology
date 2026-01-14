@@ -2514,6 +2514,7 @@ export default function App() {
       date?: string | null;
       description?: string | null;
       link?: string | null;
+      recording?: string | null;
     }>
   >([]);
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
@@ -14905,7 +14906,7 @@ export default function App() {
                             !peptideForumError &&
                             peptideForumItems.length === 0 && (
                               <p className="text-xs text-slate-500">
-                                No upcoming classes posted yet.
+                                No webinars or recordings posted yet.
                               </p>
                             )}
                           {!peptideForumLoading &&
@@ -14926,6 +14927,19 @@ export default function App() {
                                     const bTime = toTime(b?.date ?? null);
                                     return bTime - aTime;
                                   })
+                                  .filter((item) => {
+                                    const dateValue = item?.date ?? null;
+                                    const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
+                                    if (!Number.isFinite(dateMs)) {
+                                      // If we can't parse a date, keep the row if it has something actionable.
+                                      return Boolean((item?.link && String(item.link).trim()) || (item?.recording && String(item.recording).trim()));
+                                    }
+                                    const hasRecording = Boolean(item?.recording && String(item.recording).trim());
+                                    const hasWebinarLink = Boolean(item?.link && String(item.link).trim());
+                                    const isPast = dateMs < Date.now();
+                                    if (isPast) return hasRecording;
+                                    return hasWebinarLink || hasRecording;
+                                  })
                                   .map((item) => (
                                     <li
                                       key={item.id}
@@ -14943,18 +14957,31 @@ export default function App() {
                                             {item.description}
                                           </p>
                                         )}
-                                        {item.link && (
-                                          <p className="text-xs">
-                                            <a
-                                              href={item.link}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4"
-                                            >
-                                              Link
-                                            </a>
-                                          </p>
-                                        )}
+                                        {(() => {
+                                          const dateValue = item?.date ?? null;
+                                          const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
+                                          const isPast = Number.isFinite(dateMs) ? dateMs < Date.now() : false;
+                                          const recording = item?.recording && String(item.recording).trim() ? String(item.recording).trim() : null;
+                                          const webinarLink = item?.link && String(item.link).trim() ? String(item.link).trim() : null;
+
+                                          const href = isPast ? recording : webinarLink;
+                                          if (!href) return null;
+
+                                          const label = isPast ? "Recording Available" : "Watch the Webinar";
+
+                                          return (
+                                            <p className="text-xs">
+                                              <a
+                                                href={href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4"
+                                              >
+                                                {label}
+                                              </a>
+                                            </p>
+                                          );
+                                        })()}
                                       </div>
                                     </li>
                                   ))}
