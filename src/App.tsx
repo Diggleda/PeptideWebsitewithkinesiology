@@ -14865,9 +14865,6 @@ export default function App() {
                               <p className="text-sm font-semibold text-slate-800">
                                 The Peptide Forum
                               </p>
-                              <p className="text-xs text-slate-600">
-                                Schedule is synced from our Google Sheet.
-                              </p>
                               {!peptideForumEnabled &&
                                 isAdmin(user?.role) && (
                                   <p className="text-[11px] text-amber-700">
@@ -14917,40 +14914,45 @@ export default function App() {
                                 {peptideForumItems
                                   .slice()
                                   .sort((a, b) => {
-                                    const aTime = a?.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
-                                    const bTime = b?.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
-                                    return aTime - bTime;
+                                    const toTime = (value?: string | null) => {
+                                      if (!value) return Number.NEGATIVE_INFINITY;
+                                      const parsed = Date.parse(value);
+                                      return Number.isFinite(parsed)
+                                        ? parsed
+                                        : Number.NEGATIVE_INFINITY;
+                                    };
+                                    const aTime = toTime(a?.date ?? null);
+                                    const bTime = toTime(b?.date ?? null);
+                                    return bTime - aTime;
                                   })
                                   .map((item) => (
                                     <li
                                       key={item.id}
                                       className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm"
                                     >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0 space-y-1">
-                                          <p className="text-sm font-semibold text-slate-800 truncate">
-                                            {item.title}
+                                      <div className="space-y-1.5">
+                                        <p className="text-sm font-semibold text-slate-800">
+                                          {item.date
+                                            ? `${formatDateTime(item.date)} — `
+                                            : ""}
+                                          {item.title}
+                                        </p>
+                                        {item.description && (
+                                          <p className="text-xs text-slate-600 leading-relaxed">
+                                            {item.description}
                                           </p>
-                                          {item.date && (
-                                            <p className="text-xs text-slate-600">
-                                              {formatDateTime(item.date)}
-                                            </p>
-                                          )}
-                                          {item.description && (
-                                            <p className="text-xs text-slate-600 leading-relaxed">
-                                              {item.description}
-                                            </p>
-                                          )}
-                                        </div>
+                                        )}
                                         {item.link && (
-                                          <a
-                                            href={item.link}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-xs font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4 whitespace-nowrap"
-                                          >
-                                            Open
-                                          </a>
+                                          <p className="text-xs">
+                                            <a
+                                              href={item.link}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4"
+                                            >
+                                              Link
+                                            </a>
+                                          </p>
                                         )}
                                       </div>
                                     </li>

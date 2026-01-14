@@ -183,6 +183,20 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS peptide_forum_posts (
+        id VARCHAR(64) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        date_at DATETIME NULL,
+        date_raw VARCHAR(190) NULL,
+        description LONGTEXT NULL,
+        link VARCHAR(1024) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_peptide_forum_posts_date (date_at),
+        INDEX idx_peptide_forum_posts_updated (updated_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS product_documents (
         woo_product_id BIGINT UNSIGNED NOT NULL,
         kind VARCHAR(64) NOT NULL,

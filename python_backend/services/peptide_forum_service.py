@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..repositories import peptide_forum_repository
+from ..services import get_config
 from ..storage import peptide_forum_store
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,11 @@ def _try_parse_date(value: Any) -> Tuple[Optional[str], Optional[str]]:
 
 
 def list_items() -> Dict[str, Any]:
+    config = get_config()
+    if bool(config.mysql.get("enabled")):
+        items = peptide_forum_repository.list_posts(limit=500)
+        return {"updatedAt": _now_iso(), "items": items}
+
     if not peptide_forum_store:
         return {"updatedAt": None, "items": []}
     payload = peptide_forum_store.read() or {}
@@ -81,17 +88,49 @@ def replace_from_webhook(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         if value:
             normalized_items.append(value)
 
-    payload = {"updatedAt": _now_iso(), "items": normalized_items}
+    config = get_config()
+    updated_at = _now_iso()
 
-    if peptide_forum_store:
-        peptide_forum_store.write(payload)
+    if bool(config.mysql.get("enabled")):
+        for post in normalized_items:
+            date_value = post.get("date")
+            date_iso, date_raw = _try_parse_date(date_value)
+            date_at = None
+            if date_iso:
+                try:
+                    date_at = (
+                        datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+                        .astimezone(timezone.utc)
+                        .replace(tzinfo=None)
+                    )
+                except Exception:
+                    date_at = None
+
+            peptide_forum_repository.upsert_post(
+                {
+                    "id": post.get("id"),
+                    "title": post.get("title"),
+                    "date_at": date_at,
+                    "date_raw": date_raw,
+                    "description": post.get("description"),
+                    "link": post.get("link"),
+                }
+            )
+
+        # Treat webhook payload as authoritative (mirror the sheet).
+        peptide_forum_repository.delete_missing_ids(
+            [p.get("id") for p in normalized_items if p.get("id")]
+        )
     else:
-        logger.warning("peptide_forum_store not initialized; skipping persistence")
+        payload = {"updatedAt": updated_at, "items": normalized_items}
+        if peptide_forum_store:
+            peptide_forum_store.write(payload)
+        else:
+            logger.warning("peptide_forum_store not initialized; skipping persistence")
 
     return {
-        "updatedAt": payload["updatedAt"],
+        "updatedAt": updated_at,
         "received": len(rows),
         "stored": len(normalized_items),
         "errors": errors,
     }
-
