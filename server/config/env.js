@@ -132,6 +132,14 @@ const env = {
     sourceUrl: process.env.QUOTES_SOURCE_URL || 'https://port.peppro.net/api/integrations/google-sheets/quotes/quotes.php',
     secret: process.env.QUOTES_WEBHOOK_SECRET || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
   },
+  googleSheets: {
+    webhookSecret: process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
+    classesWebhookSecret:
+      process.env.PEPTIDES101_CLASSES_WEBHOOK_SECRET
+      || process.env.PEPTIDES_CLASSES_WEBHOOK_SECRET
+      || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET
+      || '',
+  },
   frontendBaseUrl: process.env.FRONTEND_BASE_URL
     || process.env.APP_BASE_URL
     || 'http://localhost:3000',

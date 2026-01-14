@@ -67,6 +67,7 @@ import {
 	  referralAPI,
 	  newsAPI,
 	  quotesAPI,
+	  classesAPI,
 	  wooAPI,
 	  checkServerHealth,
 	  passwordResetAPI,
@@ -2501,6 +2502,18 @@ export default function App() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
+  const [peptides101ClassesLoading, setPeptides101ClassesLoading] = useState(false);
+  const [peptides101ClassesError, setPeptides101ClassesError] = useState<string | null>(null);
+  const [peptides101ClassesUpdatedAt, setPeptides101ClassesUpdatedAt] = useState<string | null>(null);
+  const [peptides101Classes, setPeptides101Classes] = useState<
+    Array<{
+      id: string;
+      title: string;
+      date?: string | null;
+      description?: string | null;
+      link?: string | null;
+    }>
+  >([]);
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
     useState(false);
   const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
@@ -2568,6 +2581,48 @@ export default function App() {
       console.debug("[Catalog] Failed to persist variation cache", error);
     }
   }, []);
+
+  const refreshPeptides101Classes = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+    setPeptides101ClassesLoading(true);
+    setPeptides101ClassesError(null);
+    try {
+      const response = await classesAPI.listPeptides101();
+      const items = Array.isArray((response as any)?.items) ? (response as any).items : [];
+      setPeptides101Classes(items);
+      setPeptides101ClassesUpdatedAt(
+        typeof (response as any)?.updatedAt === "string" ? (response as any).updatedAt : null,
+      );
+    } catch (error: any) {
+      setPeptides101Classes([]);
+      setPeptides101ClassesUpdatedAt(null);
+      setPeptides101ClassesError(
+        typeof error?.message === "string" && error.message
+          ? error.message
+          : "Unable to load The Peptide Forum right now.",
+      );
+    } finally {
+      setPeptides101ClassesLoading(false);
+    }
+  }, [user]);
+
+  const shouldShowPeptides101ClassesCard =
+    peptides101ClassesEnabled || isAdmin(user?.role);
+
+  useEffect(() => {
+    if (!postLoginHold || !user) {
+      return;
+    }
+    if (!shouldShowPeptides101ClassesCard) {
+      setPeptides101Classes([]);
+      setPeptides101ClassesUpdatedAt(null);
+      setPeptides101ClassesError(null);
+      return;
+    }
+    void refreshPeptides101Classes();
+  }, [postLoginHold, user?.id, refreshPeptides101Classes, shouldShowPeptides101ClassesCard]);
 
   const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
     new Map(),
@@ -3701,20 +3756,44 @@ export default function App() {
     } catch {
       setShopEnabled(true);
     }
+    try {
+      const stored = localStorage.getItem("peppro:peptides101-classes-enabled");
+      if (stored !== null) {
+        setPeptides101ClassesEnabled(stored !== "false");
+      }
+    } catch {
+      setPeptides101ClassesEnabled(true);
+    }
     let cancelled = false;
     const fetchSetting = async () => {
       try {
-        const data = await settingsAPI.getShopStatus();
-        if (!cancelled && data && typeof data.shopEnabled === "boolean") {
-          setShopEnabled(data.shopEnabled);
+        const [shop, classes] = await Promise.all([
+          settingsAPI.getShopStatus(),
+          settingsAPI.getClassesStatus(),
+        ]);
+        if (cancelled) return;
+        if (shop && typeof (shop as any).shopEnabled === "boolean") {
+          setShopEnabled((shop as any).shopEnabled);
           localStorage.setItem(
             "peppro:shop-enabled",
-            data.shopEnabled ? "true" : "false",
+            (shop as any).shopEnabled ? "true" : "false",
+          );
+        }
+        if (
+          classes &&
+          typeof (classes as any).peptides101ClassesEnabled === "boolean"
+        ) {
+          setPeptides101ClassesEnabled(
+            (classes as any).peptides101ClassesEnabled,
+          );
+          localStorage.setItem(
+            "peppro:peptides101-classes-enabled",
+            (classes as any).peptides101ClassesEnabled ? "true" : "false",
           );
         }
       } catch (error) {
         console.warn(
-          "[Shop] Unable to load shop setting, using local fallback",
+          "[Settings] Unable to load settings, using local fallback",
           error,
         );
       }
@@ -3759,6 +3838,29 @@ export default function App() {
         await settingsAPI.updateShopStatus(value);
       } catch (error) {
         console.warn("[Shop] Failed to update shop toggle", error);
+      }
+    },
+    [user?.role],
+  );
+
+  const handlePeptides101ClassesToggle = useCallback(
+    async (value: boolean) => {
+      if (!isAdmin(user?.role)) {
+        return;
+      }
+      setPeptides101ClassesEnabled(value);
+      try {
+        localStorage.setItem(
+          "peppro:peptides101-classes-enabled",
+          value ? "true" : "false",
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        await settingsAPI.updateClassesStatus(value);
+      } catch (error) {
+        console.warn("[Classes] Failed to update classes toggle", error);
       }
     },
     [user?.role],
@@ -5208,6 +5310,8 @@ export default function App() {
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [shopEnabled, setShopEnabled] = useState(true);
+  const [peptides101ClassesEnabled, setPeptides101ClassesEnabled] =
+    useState(true);
   type ServerHealthPayload = {
     status?: string;
     message?: string;
@@ -11914,6 +12018,10 @@ export default function App() {
                     Shop: {shopEnabled ? "Enabled" : "Disabled"}
                   </span>
                   <span>
+                    Classes:{" "}
+                    {peptides101ClassesEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                  <span>
                     Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
                   </span>
                 </div>
@@ -11926,6 +12034,20 @@ export default function App() {
 		                    className="brand-checkbox"
 		                  />
 		                  <span className="cursor-default select-none">Enable Shop button for users</span>
+		                </div>
+		                <div className="flex items-center gap-2 text-sm text-slate-700">
+		                  <input
+		                    type="checkbox"
+                        aria-label="Enable The Peptide Forum card"
+		                    checked={peptides101ClassesEnabled}
+		                    onChange={(e) =>
+		                      handlePeptides101ClassesToggle(e.target.checked)
+		                    }
+		                    className="brand-checkbox"
+		                  />
+		                  <span className="cursor-default select-none">
+		                    Show The Peptide Forum on info page
+		                  </span>
 		                </div>
 		                <div className="flex items-center gap-2 text-sm text-slate-700">
 			                  <input
@@ -14737,6 +14859,107 @@ export default function App() {
                             </span>
                           )}
                         </div>
+                        {shouldShowPeptides101ClassesCard && (
+                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-slate-800">
+                                The Peptide Forum
+                              </p>
+                              <p className="text-xs text-slate-600">
+                                Schedule is synced from our Google Sheet.
+                              </p>
+                              {!peptides101ClassesEnabled &&
+                                isAdmin(user?.role) && (
+                                  <p className="text-[11px] text-amber-700">
+                                    Hidden for users (admin override)
+                                  </p>
+                                )}
+                              {peptides101ClassesUpdatedAt && (
+                                <p className="text-[11px] text-slate-500">
+                                  Updated{" "}
+                                  {formatDateTime(peptides101ClassesUpdatedAt)}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="squircle-sm"
+                              onClick={() => void refreshPeptides101Classes()}
+                              disabled={peptides101ClassesLoading}
+                            >
+                              {peptides101ClassesLoading ? "Refreshing…" : "Refresh"}
+                            </Button>
+                          </div>
+
+                          {peptides101ClassesLoading && (
+                            <p className="text-xs text-slate-500">
+                              Loading schedule…
+                            </p>
+                          )}
+                          {!peptides101ClassesLoading && peptides101ClassesError && (
+                            <p className="text-xs text-red-600" role="alert">
+                              {peptides101ClassesError}
+                            </p>
+                          )}
+                          {!peptides101ClassesLoading &&
+                            !peptides101ClassesError &&
+                            peptides101Classes.length === 0 && (
+                              <p className="text-xs text-slate-500">
+                                No upcoming classes posted yet.
+                              </p>
+                            )}
+                          {!peptides101ClassesLoading &&
+                            !peptides101ClassesError &&
+                            peptides101Classes.length > 0 && (
+                              <ul className="space-y-3">
+                                {peptides101Classes
+                                  .slice()
+                                  .sort((a, b) => {
+                                    const aTime = a?.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
+                                    const bTime = b?.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
+                                    return aTime - bTime;
+                                  })
+                                  .map((item) => (
+                                    <li
+                                      key={item.id}
+                                      className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm"
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 space-y-1">
+                                          <p className="text-sm font-semibold text-slate-800 truncate">
+                                            {item.title}
+                                          </p>
+                                          {item.date && (
+                                            <p className="text-xs text-slate-600">
+                                              {formatDateTime(item.date)}
+                                            </p>
+                                          )}
+                                          {item.description && (
+                                            <p className="text-xs text-slate-600 leading-relaxed">
+                                              {item.description}
+                                            </p>
+                                          )}
+                                        </div>
+                                        {item.link && (
+                                          <a
+                                            href={item.link}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4 whitespace-nowrap"
+                                          >
+                                            Open
+                                          </a>
+                                        )}
+                                      </div>
+                                    </li>
+                                  ))}
+                              </ul>
+                            )}
+                        </div>
+                        )}
                         {/* Regional contact info for doctors */}
                         {!(isRep(user.role) || isAdmin(user.role)) && (
                           <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">

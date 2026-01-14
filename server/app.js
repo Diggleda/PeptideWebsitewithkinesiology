@@ -17,6 +17,8 @@ const referralRoutes = require('./routes/referralRoutes');
 const passwordResetRoutes = require('./routes/passwordReset');
 const contactRoutes = require('./routes/contactRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const classesRoutes = require('./routes/classesRoutes');
+const googleSheetsRoutes = require('./routes/googleSheetsRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { requestContext } = require('./config/requestContext');
@@ -236,6 +238,8 @@ const createApp = () => {
   app.use('/api/password-reset', passwordResetRoutes);
   app.use('/api/contact', contactRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/classes', classesRoutes);
+  app.use('/api/integrations/google-sheets', googleSheetsRoutes);
   app.use('/api', systemRoutes);
 
   app.use('/api', (req, res) => {

@@ -5,6 +5,7 @@ const { env } = require('../config/env');
 
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
+  peptides101ClassesEnabled: true,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
 };
@@ -29,6 +30,7 @@ const normalizeIsoTimestamp = (value) => {
 const normalizeSettings = (settings = {}) => {
   const merged = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   merged.shopEnabled = Boolean(merged.shopEnabled);
+  merged.peptides101ClassesEnabled = Boolean(merged.peptides101ClassesEnabled);
   const stripeMode = typeof merged.stripeMode === 'string'
     ? merged.stripeMode.toLowerCase().trim()
     : null;
@@ -130,11 +132,26 @@ const getShopEnabled = async () => {
   return Boolean(settings.shopEnabled);
 };
 
+const getPeptides101ClassesEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.peptides101ClassesEnabled);
+};
+
 const setShopEnabled = async (enabled) => {
   const next = normalizeSettings({ ...loadFromStore(), shopEnabled: Boolean(enabled) });
   persistToStore(next);
   await persistToSql(next);
   return next.shopEnabled;
+};
+
+const setPeptides101ClassesEnabled = async (enabled) => {
+  const next = normalizeSettings({
+    ...loadFromStore(),
+    peptides101ClassesEnabled: Boolean(enabled),
+  });
+  persistToStore(next);
+  await persistToSql(next);
+  return next.peptides101ClassesEnabled;
 };
 
 const resolveStripeMode = (settings) => {
@@ -182,6 +199,8 @@ module.exports = {
   getSettings,
   getShopEnabled,
   setShopEnabled,
+  getPeptides101ClassesEnabled,
+  setPeptides101ClassesEnabled,
   getStripeMode,
   getStripeModeSync,
   setStripeMode,

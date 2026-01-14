@@ -902,8 +902,19 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getClassesStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/classes`, {
+      method: 'GET',
+    });
+  },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updateClassesStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/classes`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });
@@ -1571,6 +1582,25 @@ export const quotesAPI = {
     return response.json() as Promise<{
       text: string;
       author: string;
+    }>;
+  },
+};
+
+export const classesAPI = {
+  listPeptides101: async () => {
+    const response = await fetchWithAuth(`${API_BASE_URL}/classes/peptides-101`, {
+      method: 'GET',
+    });
+    return response.json() as Promise<{
+      ok?: boolean;
+      updatedAt?: string | null;
+      items?: Array<{
+        id: string;
+        title: string;
+        date?: string | null;
+        description?: string | null;
+        link?: string | null;
+      }>;
     }>;
   },
 };

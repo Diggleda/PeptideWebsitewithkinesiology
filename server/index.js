@@ -29,10 +29,48 @@ const assertSecureRuntimeConfig = () => {
 };
 
 const isPortAvailable = async (port) => new Promise((resolve) => {
-  const tester = net.createServer()
-    .once('error', () => resolve(false))
-    .once('listening', () => tester.close(() => resolve(true)))
-    .listen(port, '0.0.0.0');
+  const tester = net.createServer();
+
+  const cleanup = (available) => {
+    try {
+      tester.close(() => resolve(available));
+    } catch {
+      resolve(available);
+    }
+  };
+
+  tester.once('error', (err) => {
+    // Retry on IPv4-only stacks; otherwise treat as unavailable.
+    if (err && (err.code === 'EAFNOSUPPORT' || err.code === 'EADDRNOTAVAIL')) {
+      try {
+        const ipv4Tester = net.createServer()
+          .once('error', () => resolve(false))
+          .once('listening', function onListening() {
+            ipv4Tester.close(() => resolve(true));
+          });
+        ipv4Tester.listen(port, '0.0.0.0');
+        return;
+      } catch {
+        resolve(false);
+        return;
+      }
+    }
+    resolve(false);
+  });
+
+  tester.once('listening', () => cleanup(true));
+
+  // Match `server.listen(port)` behavior which prefers IPv6 dual-stack (`::`) when available.
+  try {
+    tester.listen({ port, host: '::' });
+  } catch {
+    // If the platform doesn't support IPv6, fall back to IPv4.
+    try {
+      tester.listen(port, '0.0.0.0');
+    } catch {
+      resolve(false);
+    }
+  }
 });
 
 const findAvailablePort = async (startPort, attempts = 5) => {

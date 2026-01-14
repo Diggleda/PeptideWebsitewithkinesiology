@@ -76,6 +76,8 @@ const getHelp = (_req, res) => {
       '/api/referrals/doctor/summary',
       '/api/referrals/admin/dashboard',
       '/api/integrations/google-sheets/sales-reps',
+      '/api/integrations/google-sheets/peptides-101-classes',
+      '/api/classes/peptides-101',
       '/api/help',
       '/api/health',
     ],
