@@ -59,12 +59,31 @@ def _try_parse_datetime(date_value: Any, time_value: Any = None) -> Tuple[Option
     if not date_raw and not time_raw:
         return None, None, None
 
-    # 1) ISO input (preferred): accept full timestamps with timezone or trailing Z.
+    # 1) ISO input: accept full timestamps with timezone or trailing Z.
+    #    Special case: if the ISO string represents a "date-only" value at midnight (00:00:00),
+    #    and a separate time is provided, treat the ISO value as the calendar date and combine
+    #    with the provided time in PST.
     if date_raw:
         try:
             parsed = datetime.fromisoformat(date_raw.replace("Z", "+00:00"))
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
+
+            if time_raw and parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0:
+                time_parts = _parse_time_parts(time_raw) or (0, 0, 0)
+                local_date = parsed.astimezone(PST).date()
+                local_dt = datetime(
+                    local_date.year,
+                    local_date.month,
+                    local_date.day,
+                    time_parts[0],
+                    time_parts[1],
+                    time_parts[2],
+                    tzinfo=PST,
+                )
+                iso = local_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                return iso, local_date.isoformat(), (time_raw or None)
+
             return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"), date_raw, (time_raw or None)
         except Exception:
             pass

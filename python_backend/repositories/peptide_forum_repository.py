@@ -33,6 +33,18 @@ def _parse_date_raw(date_raw: Optional[str]) -> Optional[tuple[int, int, int]]:
     if not raw:
         return None
 
+    # ISO timestamp (e.g. 2026-01-15T00:00:00Z) -> interpret as an instant, convert to PST,
+    # then use the local calendar date.
+    if "T" in raw:
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            local = parsed.astimezone(PST).date()
+            return local.year, local.month, local.day
+        except Exception:
+            pass
+
     m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", raw)
     if m:
         return int(m.group(1)), int(m.group(2)), int(m.group(3))
