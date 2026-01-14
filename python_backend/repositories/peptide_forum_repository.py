@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-
-try:  # Python 3.9+
-    from zoneinfo import ZoneInfo  # type: ignore
-except Exception:  # pragma: no cover
-    ZoneInfo = None  # type: ignore
 
 from ..database import mysql_client
 from ..services import get_config
@@ -16,12 +11,7 @@ def _mysql_enabled() -> bool:
     return bool(get_config().mysql.get("enabled"))
 
 
-_PACIFIC_TZ = None
-if ZoneInfo is not None:  # pragma: no branch
-    try:
-        _PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
-    except Exception:
-        _PACIFIC_TZ = None
+PST = timezone(timedelta(hours=-8))
 
 
 def _to_iso(dt: Optional[datetime], *, tz=None) -> Optional[str]:
@@ -65,13 +55,13 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
             {
                 "id": row.get("id"),
                 "title": row.get("title"),
-                # Emit Pacific time for backend consistency; frontend will still render in user-local time.
-                "date": _to_iso(date_at, tz=_PACIFIC_TZ or timezone.utc)
+                # Emit fixed PST for backend consistency; frontend will still render in user-local time.
+                "date": _to_iso(date_at, tz=PST)
                 or (date_fallback or (str(date_raw) if date_raw else None)),
                 "description": row.get("description"),
                 "link": row.get("link"),
-                "createdAt": _to_iso(row.get("created_at"), tz=_PACIFIC_TZ or timezone.utc),
-                "updatedAt": _to_iso(row.get("updated_at"), tz=_PACIFIC_TZ or timezone.utc),
+                "createdAt": _to_iso(row.get("created_at"), tz=PST),
+                "updatedAt": _to_iso(row.get("updated_at"), tz=PST),
             }
         )
     return result

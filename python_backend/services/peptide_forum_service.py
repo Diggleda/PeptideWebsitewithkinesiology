@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 try:  # Python 3.9+
@@ -16,18 +16,12 @@ from ..storage import peptide_forum_store
 
 logger = logging.getLogger(__name__)
 
+PST = timezone(timedelta(hours=-8))
+
 
 def _now_iso() -> str:
-    tz = timezone.utc
-    if ZoneInfo is not None:
-        try:
-            tz = ZoneInfo("America/Los_Angeles")
-        except Exception:
-            tz = timezone.utc
-    now = datetime.now(tz)
-    if tz is timezone.utc:
-        return now.isoformat().replace("+00:00", "Z")
-    return now.isoformat()
+    # Backend time is fixed PST by request (no DST).
+    return datetime.now(PST).isoformat()
 
 
 def _to_str(value: Any) -> str:
@@ -75,7 +69,7 @@ def _try_parse_datetime(date_value: Any, time_value: Any = None) -> Tuple[Option
         except Exception:
             pass
 
-    # 2) Sheet-style "date" + optional "time" in America/Los_Angeles (PST/PDT).
+    # 2) Sheet-style "date" + optional "time" in fixed PST (UTC-08:00, no DST).
     #    Supports: YYYY-MM-DD, M/D/YYYY, MM/DD/YY.
     if not date_raw:
         return None, None, (time_raw or None)
@@ -103,17 +97,8 @@ def _try_parse_datetime(date_value: Any, time_value: Any = None) -> Tuple[Option
         if parts:
             hour, minute, second = parts
 
-    tz = None
-    if ZoneInfo is not None:
-        try:
-            tz = ZoneInfo("America/Los_Angeles")
-        except Exception:
-            tz = None
-    if tz is None:
-        tz = timezone.utc
-
     try:
-        local_dt = datetime(y, mth, d, hour, minute, second, tzinfo=tz)
+        local_dt = datetime(y, mth, d, hour, minute, second, tzinfo=PST)
         iso = local_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         return iso, date_raw, (time_raw or None)
     except Exception:

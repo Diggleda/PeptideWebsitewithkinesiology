@@ -1,4 +1,5 @@
-const TIMEZONE = 'America/Los_Angeles';
+// Fixed PST (no DST). Keep the Sheet timezone consistent with this (Spreadsheet settings → Time zone).
+const TIMEZONE = 'GMT-08:00';
 // Keep this in sync with the backend env var: GOOGLE_SHEETS_WEBHOOK_SECRET
 const WEBHOOK_SECRET = 'REPLACE_ME';
 

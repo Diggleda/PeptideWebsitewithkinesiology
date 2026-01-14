@@ -8362,6 +8362,7 @@ export default function App() {
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      timeZoneName: "short",
     });
   }, []);
 
