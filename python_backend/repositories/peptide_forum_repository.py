@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,64 @@ def _to_iso(dt: Optional[datetime], *, tz=None) -> Optional[str]:
     return converted.isoformat()
 
 
+def _parse_date_raw(date_raw: Optional[str]) -> Optional[tuple[int, int, int]]:
+    raw = (date_raw or "").strip()
+    if not raw:
+        return None
+
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", raw)
+    if m:
+        return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$", raw)
+    if m:
+        month = int(m.group(1))
+        day = int(m.group(2))
+        year = int(m.group(3))
+        if year < 100:
+            year = 2000 + year
+        return year, month, day
+
+    return None
+
+
+def _parse_time_raw(time_raw: Optional[str]) -> Optional[tuple[int, int, int]]:
+    raw = (time_raw or "").strip()
+    if not raw:
+        return None
+
+    m = re.match(r"^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*([AaPp][Mm])?$", raw)
+    if not m:
+        return None
+
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    second = int(m.group(3) or 0)
+    ampm = (m.group(4) or "").lower()
+    if ampm == "pm" and hour < 12:
+        hour += 12
+    if ampm == "am" and hour == 12:
+        hour = 0
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour, minute, second
+
+
+def _derive_pst_iso(date_raw: Optional[str], time_raw: Optional[str]) -> Optional[str]:
+    # Prefer the Sheet's raw date/time as source of truth for display.
+    date_parts = _parse_date_raw(date_raw)
+    if not date_parts:
+        return None
+    time_parts = _parse_time_raw(time_raw) or (0, 0, 0)
+    year, month, day = date_parts
+    hour, minute, second = time_parts
+    try:
+        return datetime(year, month, day, hour, minute, second, tzinfo=PST).isoformat()
+    except Exception:
+        return None
+
+
 def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
     if not _mysql_enabled():
         return []
@@ -48,16 +107,21 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
         date_at = row.get("date_at")
         date_raw = row.get("date_raw")
         time_raw = row.get("time_raw")
-        date_fallback = None
-        if date_raw and time_raw:
-            date_fallback = f"{date_raw} {time_raw}".strip()
+        derived_iso = _derive_pst_iso(
+            str(date_raw) if date_raw else None,
+            str(time_raw) if time_raw else None,
+        )
+        date_fallback = derived_iso or (f"{date_raw} {time_raw}".strip() if date_raw and time_raw else None)
         result.append(
             {
                 "id": row.get("id"),
                 "title": row.get("title"),
                 # Emit fixed PST for backend consistency; frontend will still render in user-local time.
-                "date": _to_iso(date_at, tz=PST)
-                or (date_fallback or (str(date_raw) if date_raw else None)),
+                # Use date_at for ordering but prefer derived PST date/time from raw values for display
+                # (this prevents subtle drift if an older sync stored date_at incorrectly).
+                "date": derived_iso or _to_iso(date_at, tz=PST) or (date_fallback or (str(date_raw) if date_raw else None)),
+                "dateRaw": str(date_raw) if date_raw else None,
+                "timeRaw": str(time_raw) if time_raw else None,
                 "description": row.get("description"),
                 "link": row.get("link"),
                 "createdAt": _to_iso(row.get("created_at"), tz=PST),
