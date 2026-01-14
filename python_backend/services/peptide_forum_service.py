@@ -18,7 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    tz = timezone.utc
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo("America/Los_Angeles")
+        except Exception:
+            tz = timezone.utc
+    now = datetime.now(tz)
+    if tz is timezone.utc:
+        return now.isoformat().replace("+00:00", "Z")
+    return now.isoformat()
 
 
 def _to_str(value: Any) -> str:

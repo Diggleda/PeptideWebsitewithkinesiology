@@ -3,6 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+try:  # Python 3.9+
+    from zoneinfo import ZoneInfo  # type: ignore
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
+
 from ..database import mysql_client
 from ..services import get_config
 
@@ -11,12 +16,25 @@ def _mysql_enabled() -> bool:
     return bool(get_config().mysql.get("enabled"))
 
 
-def _to_iso(dt: Optional[datetime]) -> Optional[str]:
+_PACIFIC_TZ = None
+if ZoneInfo is not None:  # pragma: no branch
+    try:
+        _PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
+    except Exception:
+        _PACIFIC_TZ = None
+
+
+def _to_iso(dt: Optional[datetime], *, tz=None) -> Optional[str]:
     if not dt:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    tz = tz or timezone.utc
+    converted = dt.astimezone(tz)
+    # Keep RFC3339 style for UTC; otherwise emit explicit offset (-08:00 / -07:00).
+    if tz is timezone.utc:
+        return converted.isoformat().replace("+00:00", "Z")
+    return converted.isoformat()
 
 
 def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
@@ -47,11 +65,13 @@ def list_posts(limit: int = 250) -> List[Dict[str, Any]]:
             {
                 "id": row.get("id"),
                 "title": row.get("title"),
-                "date": _to_iso(date_at) or (date_fallback or (str(date_raw) if date_raw else None)),
+                # Emit Pacific time for backend consistency; frontend will still render in user-local time.
+                "date": _to_iso(date_at, tz=_PACIFIC_TZ or timezone.utc)
+                or (date_fallback or (str(date_raw) if date_raw else None)),
                 "description": row.get("description"),
                 "link": row.get("link"),
-                "createdAt": _to_iso(row.get("created_at")),
-                "updatedAt": _to_iso(row.get("updated_at")),
+                "createdAt": _to_iso(row.get("created_at"), tz=_PACIFIC_TZ or timezone.utc),
+                "updatedAt": _to_iso(row.get("updated_at"), tz=_PACIFIC_TZ or timezone.utc),
             }
         )
     return result
