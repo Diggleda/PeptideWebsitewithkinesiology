@@ -15,11 +15,16 @@ function onOpen() {
 // Column A = Title, Column B = Date, Column C = Time, Column D = Description, Column E = Link, Column F = Sync Status
 function syncPeptideForum() {
   const sheet = SpreadsheetApp.getActiveSheet();
-  const data = sheet.getDataRange().getValues();
+  // Use display values so "Time" stays exactly what the Sheet shows (prevents timezone shifts
+  // when Apps Script converts time-only cells into Date objects).
+  const range = sheet.getDataRange();
+  const data = range.getValues();
+  const display = range.getDisplayValues();
   // Even if only header row is present, POST an empty list to keep the sheet authoritative
   // (this is how you wipe the DB list intentionally).
 
   const rows = data.length > 1 ? data.slice(1) : []; // skip header
+  const displayRows = display.length > 1 ? display.slice(1) : [];
   const stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 
   const toStr = (v) => (v == null ? '' : String(v));
@@ -28,14 +33,14 @@ function syncPeptideForum() {
   const formatSheetTime = (v) => (v instanceof Date ? Utilities.formatDate(v, TIMEZONE, 'h:mm a') : norm(v));
 
   const items = [];
-  const hasAnyData = rows.map(r => r.some(c => c && String(c).trim() !== ''));
+  const hasAnyData = displayRows.map(r => r.some(c => c && String(c).trim() !== ''));
 
   for (let i = 0; i < rows.length; i++) {
-    const title = norm(rows[i][0]); // Col A
-    const date = formatSheetDate(rows[i][1]); // Col B
-    const time = formatSheetTime(rows[i][2]); // Col C
-    const description = norm(rows[i][3]); // Col D
-    const link = norm(rows[i][4]); // Col E
+    const title = norm(displayRows[i]?.[0] ?? rows[i][0]); // Col A
+    const date = norm(displayRows[i]?.[1] ?? formatSheetDate(rows[i][1])); // Col B
+    const time = norm(displayRows[i]?.[2] ?? formatSheetTime(rows[i][2])); // Col C
+    const description = norm(displayRows[i]?.[3] ?? rows[i][3]); // Col D
+    const link = norm(displayRows[i]?.[4] ?? rows[i][4]); // Col E
 
     // consider a row "non-empty" only if it has title or link content
     if (title === '' && link === '') continue;
