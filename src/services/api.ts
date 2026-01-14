@@ -902,8 +902,8 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
-  getClassesStatus: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/settings/classes`, {
+  getForumStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
       method: 'GET',
     });
   },
@@ -913,8 +913,8 @@ export const settingsAPI = {
       body: JSON.stringify({ enabled }),
     });
   },
-  updateClassesStatus: async (enabled: boolean) => {
-    return fetchWithAuth(`${API_BASE_URL}/settings/classes`, {
+  updateForumStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });
@@ -1586,9 +1586,9 @@ export const quotesAPI = {
   },
 };
 
-export const classesAPI = {
-  listPeptides101: async () => {
-    const response = await fetchWithAuth(`${API_BASE_URL}/classes/peptides-101`, {
+export const forumAPI = {
+  listPeptideForum: async () => {
+    const response = await fetchWithAuth(`${API_BASE_URL}/forum/the-peptide-forum`, {
       method: 'GET',
     });
     return response.json() as Promise<{

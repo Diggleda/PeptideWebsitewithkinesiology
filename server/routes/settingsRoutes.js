@@ -3,8 +3,8 @@ const { authenticate } = require('../middleware/authenticate');
 const {
   getShopEnabled,
   setShopEnabled,
-  getPeptides101ClassesEnabled,
-  setPeptides101ClassesEnabled,
+  getPeptideForumEnabled,
+  setPeptideForumEnabled,
   getStripeMode,
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
@@ -49,9 +49,9 @@ router.get('/shop', async (_req, res) => {
   res.json({ shopEnabled: enabled });
 });
 
-router.get('/classes', async (_req, res) => {
-  const enabled = await getPeptides101ClassesEnabled();
-  res.json({ peptides101ClassesEnabled: enabled });
+router.get('/forum', async (_req, res) => {
+  const enabled = await getPeptideForumEnabled();
+  res.json({ peptideForumEnabled: enabled });
 });
 
 router.put('/shop', authenticate, requireAdmin, async (req, res) => {
@@ -60,10 +60,10 @@ router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   res.json({ shopEnabled: updated });
 });
 
-router.put('/classes', authenticate, requireAdmin, async (req, res) => {
-  const enabled = req.body?.peptides101ClassesEnabled ?? req.body?.enabled;
-  const updated = await setPeptides101ClassesEnabled(Boolean(enabled));
-  res.json({ peptides101ClassesEnabled: updated });
+router.put('/forum', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.peptideForumEnabled ?? req.body?.enabled;
+  const updated = await setPeptideForumEnabled(Boolean(enabled));
+  res.json({ peptideForumEnabled: updated });
 });
 
 router.get('/stripe', async (_req, res) => {

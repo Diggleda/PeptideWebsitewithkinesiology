@@ -10,8 +10,16 @@ const isReplit = Boolean(
   process.env.REPLIT_DB_URL
 );
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  define: {
+    // Force React to pick production builds during `vite build`.
+    'process.env.NODE_ENV': JSON.stringify(command === 'build' ? 'production' : 'development'),
+  },
+  esbuild: {
+    // Ensure production builds never emit `jsxDEV` calls (which rely on react/jsx-dev-runtime).
+    jsxDev: command !== 'build',
+  },
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     alias: {
@@ -73,4 +81,4 @@ export default defineConfig({
       ? { hmr: { protocol: 'wss', clientPort: 443 } }
       : { hmr: { protocol: 'ws', host: 'localhost', port: 3000 } }),
   },
-})
+}))

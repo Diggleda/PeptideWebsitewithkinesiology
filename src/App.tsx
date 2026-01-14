@@ -61,13 +61,13 @@ import {
   Bar,
   LabelList,
 } from "recharts@2.15.2";
-import {
+	import {
 	  authAPI,
 	  ordersAPI,
 	  referralAPI,
 	  newsAPI,
 	  quotesAPI,
-	  classesAPI,
+	  forumAPI,
 	  wooAPI,
 	  checkServerHealth,
 	  passwordResetAPI,
@@ -2502,10 +2502,12 @@ export default function App() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
-  const [peptides101ClassesLoading, setPeptides101ClassesLoading] = useState(false);
-  const [peptides101ClassesError, setPeptides101ClassesError] = useState<string | null>(null);
-  const [peptides101ClassesUpdatedAt, setPeptides101ClassesUpdatedAt] = useState<string | null>(null);
-  const [peptides101Classes, setPeptides101Classes] = useState<
+  const [peptideForumEnabled, setPeptideForumEnabled] =
+    useState(true);
+  const [peptideForumLoading, setPeptideForumLoading] = useState(false);
+  const [peptideForumError, setPeptideForumError] = useState<string | null>(null);
+  const [peptideForumUpdatedAt, setPeptideForumUpdatedAt] = useState<string | null>(null);
+  const [peptideForumItems, setPeptideForumItems] = useState<
     Array<{
       id: string;
       title: string;
@@ -2582,47 +2584,47 @@ export default function App() {
     }
   }, []);
 
-  const refreshPeptides101Classes = useCallback(async () => {
+  const refreshPeptideForum = useCallback(async () => {
     if (!user) {
       return;
     }
-    setPeptides101ClassesLoading(true);
-    setPeptides101ClassesError(null);
+    setPeptideForumLoading(true);
+    setPeptideForumError(null);
     try {
-      const response = await classesAPI.listPeptides101();
+      const response = await forumAPI.listPeptideForum();
       const items = Array.isArray((response as any)?.items) ? (response as any).items : [];
-      setPeptides101Classes(items);
-      setPeptides101ClassesUpdatedAt(
+      setPeptideForumItems(items);
+      setPeptideForumUpdatedAt(
         typeof (response as any)?.updatedAt === "string" ? (response as any).updatedAt : null,
       );
     } catch (error: any) {
-      setPeptides101Classes([]);
-      setPeptides101ClassesUpdatedAt(null);
-      setPeptides101ClassesError(
+      setPeptideForumItems([]);
+      setPeptideForumUpdatedAt(null);
+      setPeptideForumError(
         typeof error?.message === "string" && error.message
           ? error.message
           : "Unable to load The Peptide Forum right now.",
       );
     } finally {
-      setPeptides101ClassesLoading(false);
+      setPeptideForumLoading(false);
     }
   }, [user]);
 
-  const shouldShowPeptides101ClassesCard =
-    peptides101ClassesEnabled || isAdmin(user?.role);
+  const shouldShowPeptideForumCard =
+    peptideForumEnabled || isAdmin(user?.role);
 
   useEffect(() => {
     if (!postLoginHold || !user) {
       return;
     }
-    if (!shouldShowPeptides101ClassesCard) {
-      setPeptides101Classes([]);
-      setPeptides101ClassesUpdatedAt(null);
-      setPeptides101ClassesError(null);
+    if (!shouldShowPeptideForumCard) {
+      setPeptideForumItems([]);
+      setPeptideForumUpdatedAt(null);
+      setPeptideForumError(null);
       return;
     }
-    void refreshPeptides101Classes();
-  }, [postLoginHold, user?.id, refreshPeptides101Classes, shouldShowPeptides101ClassesCard]);
+    void refreshPeptideForum();
+  }, [postLoginHold, user?.id, refreshPeptideForum, shouldShowPeptideForumCard]);
 
   const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
     new Map(),
@@ -3757,19 +3759,19 @@ export default function App() {
       setShopEnabled(true);
     }
     try {
-      const stored = localStorage.getItem("peppro:peptides101-classes-enabled");
+      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
       if (stored !== null) {
-        setPeptides101ClassesEnabled(stored !== "false");
+        setPeptideForumEnabled(stored !== "false");
       }
     } catch {
-      setPeptides101ClassesEnabled(true);
+      setPeptideForumEnabled(true);
     }
     let cancelled = false;
     const fetchSetting = async () => {
       try {
         const [shop, classes] = await Promise.all([
           settingsAPI.getShopStatus(),
-          settingsAPI.getClassesStatus(),
+          settingsAPI.getForumStatus(),
         ]);
         if (cancelled) return;
         if (shop && typeof (shop as any).shopEnabled === "boolean") {
@@ -3781,14 +3783,14 @@ export default function App() {
         }
         if (
           classes &&
-          typeof (classes as any).peptides101ClassesEnabled === "boolean"
+          typeof (classes as any).peptideForumEnabled === "boolean"
         ) {
-          setPeptides101ClassesEnabled(
-            (classes as any).peptides101ClassesEnabled,
+          setPeptideForumEnabled(
+            (classes as any).peptideForumEnabled,
           );
           localStorage.setItem(
-            "peppro:peptides101-classes-enabled",
-            (classes as any).peptides101ClassesEnabled ? "true" : "false",
+            "peppro:peptide-forum-enabled",
+            (classes as any).peptideForumEnabled ? "true" : "false",
           );
         }
       } catch (error) {
@@ -3843,24 +3845,24 @@ export default function App() {
     [user?.role],
   );
 
-  const handlePeptides101ClassesToggle = useCallback(
+  const handlePeptideForumToggle = useCallback(
     async (value: boolean) => {
       if (!isAdmin(user?.role)) {
         return;
       }
-      setPeptides101ClassesEnabled(value);
+      setPeptideForumEnabled(value);
       try {
         localStorage.setItem(
-          "peppro:peptides101-classes-enabled",
+          "peppro:peptide-forum-enabled",
           value ? "true" : "false",
         );
       } catch {
         // ignore
       }
       try {
-        await settingsAPI.updateClassesStatus(value);
+        await settingsAPI.updateForumStatus(value);
       } catch (error) {
-        console.warn("[Classes] Failed to update classes toggle", error);
+        console.warn("[Forum] Failed to update forum toggle", error);
       }
     },
     [user?.role],
@@ -5310,8 +5312,6 @@ export default function App() {
   const [referralDataLoading, setReferralDataLoading] = useState(false);
   const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
   const [shopEnabled, setShopEnabled] = useState(true);
-  const [peptides101ClassesEnabled, setPeptides101ClassesEnabled] =
-    useState(true);
   type ServerHealthPayload = {
     status?: string;
     message?: string;
@@ -12018,8 +12018,7 @@ export default function App() {
                     Shop: {shopEnabled ? "Enabled" : "Disabled"}
                   </span>
                   <span>
-                    Classes:{" "}
-                    {peptides101ClassesEnabled ? "Enabled" : "Disabled"}
+                    Forum: {peptideForumEnabled ? "Enabled" : "Disabled"}
                   </span>
                   <span>
                     Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
@@ -12039,9 +12038,9 @@ export default function App() {
 		                  <input
 		                    type="checkbox"
                         aria-label="Enable The Peptide Forum card"
-		                    checked={peptides101ClassesEnabled}
+		                    checked={peptideForumEnabled}
 		                    onChange={(e) =>
-		                      handlePeptides101ClassesToggle(e.target.checked)
+		                      handlePeptideForumToggle(e.target.checked)
 		                    }
 		                    className="brand-checkbox"
 		                  />
@@ -14859,7 +14858,7 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        {shouldShowPeptides101ClassesCard && (
+                        {shouldShowPeptideForumCard && (
                         <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-1">
@@ -14869,16 +14868,16 @@ export default function App() {
                               <p className="text-xs text-slate-600">
                                 Schedule is synced from our Google Sheet.
                               </p>
-                              {!peptides101ClassesEnabled &&
+                              {!peptideForumEnabled &&
                                 isAdmin(user?.role) && (
                                   <p className="text-[11px] text-amber-700">
                                     Hidden for users (admin override)
                                   </p>
                                 )}
-                              {peptides101ClassesUpdatedAt && (
+                              {peptideForumUpdatedAt && (
                                 <p className="text-[11px] text-slate-500">
                                   Updated{" "}
-                                  {formatDateTime(peptides101ClassesUpdatedAt)}
+                                  {formatDateTime(peptideForumUpdatedAt)}
                                 </p>
                               )}
                             </div>
@@ -14887,35 +14886,35 @@ export default function App() {
                               variant="outline"
                               size="sm"
                               className="squircle-sm"
-                              onClick={() => void refreshPeptides101Classes()}
-                              disabled={peptides101ClassesLoading}
+                              onClick={() => void refreshPeptideForum()}
+                              disabled={peptideForumLoading}
                             >
-                              {peptides101ClassesLoading ? "Refreshing…" : "Refresh"}
+                              {peptideForumLoading ? "Refreshing…" : "Refresh"}
                             </Button>
                           </div>
 
-                          {peptides101ClassesLoading && (
+                          {peptideForumLoading && (
                             <p className="text-xs text-slate-500">
                               Loading schedule…
                             </p>
                           )}
-                          {!peptides101ClassesLoading && peptides101ClassesError && (
+                          {!peptideForumLoading && peptideForumError && (
                             <p className="text-xs text-red-600" role="alert">
-                              {peptides101ClassesError}
+                              {peptideForumError}
                             </p>
                           )}
-                          {!peptides101ClassesLoading &&
-                            !peptides101ClassesError &&
-                            peptides101Classes.length === 0 && (
+                          {!peptideForumLoading &&
+                            !peptideForumError &&
+                            peptideForumItems.length === 0 && (
                               <p className="text-xs text-slate-500">
                                 No upcoming classes posted yet.
                               </p>
                             )}
-                          {!peptides101ClassesLoading &&
-                            !peptides101ClassesError &&
-                            peptides101Classes.length > 0 && (
+                          {!peptideForumLoading &&
+                            !peptideForumError &&
+                            peptideForumItems.length > 0 && (
                               <ul className="space-y-3">
-                                {peptides101Classes
+                                {peptideForumItems
                                   .slice()
                                   .sort((a, b) => {
                                     const aTime = a?.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;

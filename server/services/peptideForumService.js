@@ -1,4 +1,4 @@
-const { peptides101ClassesStore } = require('../storage');
+const { peptideForumStore } = require('../storage');
 
 const normalizeText = (value) => {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -51,7 +51,7 @@ const normalizeItem = (item, index) => {
 };
 
 const list = () => {
-  const payload = peptides101ClassesStore.read();
+  const payload = peptideForumStore.read();
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const updatedAt = typeof payload?.updatedAt === 'string' ? payload.updatedAt : null;
   return { updatedAt, items };
@@ -75,7 +75,7 @@ const replaceFromWebhook = (incoming) => {
     updatedAt: new Date().toISOString(),
     items,
   };
-  peptides101ClassesStore.write(next);
+  peptideForumStore.write(next);
 
   return {
     updatedAt: next.updatedAt,

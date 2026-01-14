@@ -8,13 +8,13 @@ const referralStore = new JsonStore(env.dataDir, 'referrals.json', []);
 const referralCodeStore = new JsonStore(env.dataDir, 'referral-codes.json', []);
 const salesProspectStore = new JsonStore(env.dataDir, 'sales-prospects.json', []);
 const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
-const peptides101ClassesStore = new JsonStore(env.dataDir, 'peptides-101-classes.json', {
+const peptideForumStore = new JsonStore(env.dataDir, 'the-peptide-forum.json', {
   updatedAt: null,
   items: [],
 });
 const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
   shopEnabled: true,
-  peptides101ClassesEnabled: true,
+  peptideForumEnabled: true,
   stripeMode: null,
   salesBySalesRepCsvDownloadedAt: null,
 });
@@ -27,7 +27,7 @@ const initStorage = () => {
   referralCodeStore.init();
   salesProspectStore.init();
   creditLedgerStore.init();
-  peptides101ClassesStore.init();
+  peptideForumStore.init();
   settingsStore.init();
 };
 
@@ -39,7 +39,7 @@ module.exports = {
   referralCodeStore,
   salesProspectStore,
   creditLedgerStore,
-  peptides101ClassesStore,
+  peptideForumStore,
   settingsStore,
   initStorage,
 };

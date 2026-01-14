@@ -134,9 +134,8 @@ const env = {
   },
   googleSheets: {
     webhookSecret: process.env.GOOGLE_SHEETS_WEBHOOK_SECRET || '',
-    classesWebhookSecret:
-      process.env.PEPTIDES101_CLASSES_WEBHOOK_SECRET
-      || process.env.PEPTIDES_CLASSES_WEBHOOK_SECRET
+    peptideForumWebhookSecret:
+      process.env.PEPTIDE_FORUM_WEBHOOK_SECRET
       || process.env.GOOGLE_SHEETS_WEBHOOK_SECRET
       || '',
   },
