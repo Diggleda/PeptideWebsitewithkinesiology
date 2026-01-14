@@ -898,14 +898,18 @@ export const authAPI = {
 
 export const settingsAPI = {
   getShopStatus: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
-      method: 'GET',
+    const response = await fetch(`${API_BASE_URL}/settings/shop`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
     });
+    return response.json();
   },
   getForumStatus: async () => {
-    return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
-      method: 'GET',
+    const response = await fetch(`${API_BASE_URL}/settings/forum`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
     });
+    return response.json();
   },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
@@ -1588,9 +1592,14 @@ export const quotesAPI = {
 
 export const forumAPI = {
   listPeptideForum: async () => {
-    const response = await fetchWithAuth(`${API_BASE_URL}/forum/the-peptide-forum`, {
-      method: 'GET',
+    const response = await fetch(`${API_BASE_URL}/forum/the-peptide-forum?_ts=${Date.now()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
     });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Forum request failed (${response.status})`);
+    }
     return response.json() as Promise<{
       ok?: boolean;
       updatedAt?: string | null;

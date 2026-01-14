@@ -1,10 +1,9 @@
 const { Router } = require('express');
-const { authenticate } = require('../middleware/authenticate');
 const peptideForumController = require('../controllers/peptideForumController');
 
 const router = Router();
 
-router.get('/the-peptide-forum', authenticate, peptideForumController.list);
+// Public: used on the login/info page; keep it unauthenticated to avoid CORS preflight.
+router.get('/the-peptide-forum', peptideForumController.list);
 
 module.exports = router;
-
