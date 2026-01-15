@@ -48,38 +48,35 @@ const resolvePublishableKey = (mode) => {
 
 router.get('/shop', async (_req, res) => {
   const enabled = await getShopEnabled();
-  res.json({ shopEnabled: enabled });
+  res.json({ shopEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/forum', async (_req, res) => {
   const enabled = await getPeptideForumEnabled();
-  res.json({ peptideForumEnabled: enabled });
+  res.json({ peptideForumEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/research', async (_req, res) => {
   const enabled = await getResearchDashboardEnabled();
-  res.json({ researchDashboardEnabled: enabled });
+  res.json({ researchDashboardEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
-  await setShopEnabled(enabled);
-  const confirmed = await getShopEnabled();
-  res.json({ shopEnabled: confirmed });
+  const confirmed = await setShopEnabled(enabled);
+  res.json({ shopEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/forum', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.peptideForumEnabled ?? req.body?.enabled;
-  await setPeptideForumEnabled(Boolean(enabled));
-  const confirmed = await getPeptideForumEnabled();
-  res.json({ peptideForumEnabled: confirmed });
+  const confirmed = await setPeptideForumEnabled(Boolean(enabled));
+  res.json({ peptideForumEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/research', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.researchDashboardEnabled ?? req.body?.enabled;
-  await setResearchDashboardEnabled(Boolean(enabled));
-  const confirmed = await getResearchDashboardEnabled();
-  res.json({ researchDashboardEnabled: confirmed });
+  const confirmed = await setResearchDashboardEnabled(Boolean(enabled));
+  res.json({ researchDashboardEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/stripe', async (_req, res) => {

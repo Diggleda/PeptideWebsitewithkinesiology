@@ -121,6 +121,7 @@ const persistToSql = async (settings) => {
       { err: error, keys: SETTINGS_KEYS, mysqlEnabled: true },
       'Failed to persist settings to MySQL',
     );
+    throw error;
   }
 };
 
@@ -149,30 +150,48 @@ const getResearchDashboardEnabled = async () => {
 };
 
 const setShopEnabled = async (enabled) => {
-  const next = normalizeSettings({ ...loadFromStore(), shopEnabled: Boolean(enabled) });
+  const base = await getSettings();
+  const next = normalizeSettings({ ...(base || loadFromStore()), shopEnabled: Boolean(enabled) });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.shopEnabled);
+  }
   persistToStore(next);
-  await persistToSql(next);
-  return next.shopEnabled;
+  return Boolean(next.shopEnabled);
 };
 
 const setPeptideForumEnabled = async (enabled) => {
+  const base = await getSettings();
   const next = normalizeSettings({
-    ...loadFromStore(),
+    ...(base || loadFromStore()),
     peptideForumEnabled: Boolean(enabled),
   });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.peptideForumEnabled);
+  }
   persistToStore(next);
-  await persistToSql(next);
-  return next.peptideForumEnabled;
+  return Boolean(next.peptideForumEnabled);
 };
 
 const setResearchDashboardEnabled = async (enabled) => {
+  const base = await getSettings();
   const next = normalizeSettings({
-    ...loadFromStore(),
+    ...(base || loadFromStore()),
     researchDashboardEnabled: Boolean(enabled),
   });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.researchDashboardEnabled);
+  }
   persistToStore(next);
-  await persistToSql(next);
-  return next.researchDashboardEnabled;
+  return Boolean(next.researchDashboardEnabled);
 };
 
 const resolveStripeMode = (settings) => {
@@ -194,9 +213,15 @@ const getStripeModeSync = () => resolveStripeMode(loadFromStore());
 const setStripeMode = async (mode) => {
   const normalizedMode = String(mode || '').toLowerCase().trim();
   const value = normalizedMode === 'live' ? 'live' : 'test';
-  const next = normalizeSettings({ ...loadFromStore(), stripeMode: value });
+  const base = await getSettings();
+  const next = normalizeSettings({ ...(base || loadFromStore()), stripeMode: value });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return resolveStripeMode(confirmed);
+  }
   persistToStore(next);
-  await persistToSql(next);
   return resolveStripeMode(next);
 };
 
@@ -207,13 +232,19 @@ const getSalesBySalesRepCsvDownloadedAt = async () => {
 
 const setSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
   const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const base = await getSettings();
   const next = normalizeSettings({
-    ...loadFromStore(),
+    ...(base || loadFromStore()),
     salesBySalesRepCsvDownloadedAt: normalized,
   });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return confirmed.salesBySalesRepCsvDownloadedAt || null;
+  }
   persistToStore(next);
-  await persistToSql(next);
-  return next.salesBySalesRepCsvDownloadedAt;
+  return next.salesBySalesRepCsvDownloadedAt || null;
 };
 
 module.exports = {

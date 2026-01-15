@@ -3791,45 +3791,70 @@ export default function App() {
 	    } catch {
 	      setResearchDashboardEnabled(false);
 	    }
+	    let researchSupported = true;
+	    try {
+	      const stored = localStorage.getItem("peppro:settings-support:research");
+	      if (stored !== null) {
+	        researchSupported = stored !== "false";
+	      }
+	    } catch {
+	      researchSupported = true;
+	    }
+	    setSettingsSupport((prev) => ({ ...prev, research: researchSupported }));
 	    let cancelled = false;
 	    const fetchSetting = async () => {
 	      try {
-	        const [shop, classes, research] = await Promise.all([
+	        const [shopResult, forumResult, researchResult] = await Promise.allSettled([
 	          settingsAPI.getShopStatus(),
 	          settingsAPI.getForumStatus(),
-	          settingsAPI.getResearchStatus(),
+	          researchSupported
+	            ? settingsAPI.getResearchStatus()
+	            : Promise.resolve({ researchDashboardEnabled: researchDashboardEnabled } as any),
 	        ]);
 	        if (cancelled) return;
-	        if (shop && typeof (shop as any).shopEnabled === "boolean") {
-	          setShopEnabled((shop as any).shopEnabled);
-	          localStorage.setItem(
-	            "peppro:shop-enabled",
-	            (shop as any).shopEnabled ? "true" : "false",
-	          );
+	        if (shopResult.status === "fulfilled") {
+	          const shop = shopResult.value as any;
+	          if (shop && typeof shop.shopEnabled === "boolean") {
+	            setShopEnabled(shop.shopEnabled);
+	            localStorage.setItem(
+	              "peppro:shop-enabled",
+	              shop.shopEnabled ? "true" : "false",
+	            );
+	          }
 	        }
-	        if (
-	          classes &&
-	          typeof (classes as any).peptideForumEnabled === "boolean"
-	        ) {
-	          setPeptideForumEnabled(
-	            (classes as any).peptideForumEnabled,
-	          );
-	          localStorage.setItem(
-	            "peppro:peptide-forum-enabled",
-	            (classes as any).peptideForumEnabled ? "true" : "false",
-	          );
+
+	        if (forumResult.status === "fulfilled") {
+	          const classes = forumResult.value as any;
+	          if (classes && typeof classes.peptideForumEnabled === "boolean") {
+	            setPeptideForumEnabled(classes.peptideForumEnabled);
+	            localStorage.setItem(
+	              "peppro:peptide-forum-enabled",
+	              classes.peptideForumEnabled ? "true" : "false",
+	            );
+	          }
 	        }
-	        if (
-	          research &&
-	          typeof (research as any).researchDashboardEnabled === "boolean"
-	        ) {
-	          setResearchDashboardEnabled(
-	            (research as any).researchDashboardEnabled,
-	          );
-	          localStorage.setItem(
-	            "peppro:research-dashboard-enabled",
-	            (research as any).researchDashboardEnabled ? "true" : "false",
-	          );
+
+	        if (researchResult.status === "fulfilled") {
+	          const research = researchResult.value as any;
+	          if (research && typeof research.researchDashboardEnabled === "boolean") {
+	            setSettingsSupport((prev) => ({ ...prev, research: true }));
+	            setResearchDashboardEnabled(research.researchDashboardEnabled);
+	            localStorage.setItem(
+	              "peppro:research-dashboard-enabled",
+	              research.researchDashboardEnabled ? "true" : "false",
+	            );
+	          }
+	        } else {
+	          const reason: any = (researchResult as PromiseRejectedResult).reason;
+	          const status = typeof reason?.status === "number" ? reason.status : null;
+	          if (status === 404) {
+	            setSettingsSupport((prev) => ({ ...prev, research: false }));
+	            try {
+	              localStorage.setItem("peppro:settings-support:research", "false");
+	            } catch {
+	              // ignore
+	            }
+	          }
 	        }
 	      } catch (error) {
 	        console.warn(
@@ -3869,7 +3894,11 @@ export default function App() {
 	        return;
 	      }
 	      setSettingsSaving((prev) => ({ ...prev, shop: true }));
-	      setShopEnabled(value);
+	      let previousValue = true;
+	      setShopEnabled((prev) => {
+	        previousValue = prev;
+	        return value;
+	      });
 	      try {
 	        localStorage.setItem("peppro:shop-enabled", value ? "true" : "false");
 	      } catch {
@@ -3892,11 +3921,13 @@ export default function App() {
 	        }
 	      } catch (error) {
 	        console.warn("[Shop] Failed to update shop toggle", error);
+	        toast.error("Unable to update Shop setting right now.");
+	        setShopEnabled(previousValue);
 	        try {
-	          const shop = await settingsAPI.getShopStatus();
-	          if (shop && typeof (shop as any).shopEnabled === "boolean") {
-	            setShopEnabled((shop as any).shopEnabled);
-	          }
+	          localStorage.setItem(
+	            "peppro:shop-enabled",
+	            previousValue ? "true" : "false",
+	          );
 	        } catch {
 	          // ignore
 	        }
@@ -3913,7 +3944,11 @@ export default function App() {
 	        return;
 	      }
 	      setSettingsSaving((prev) => ({ ...prev, forum: true }));
-	      setPeptideForumEnabled(value);
+	      let previousValue = true;
+	      setPeptideForumEnabled((prev) => {
+	        previousValue = prev;
+	        return value;
+	      });
 	      try {
 	        localStorage.setItem(
 	          "peppro:peptide-forum-enabled",
@@ -3939,14 +3974,13 @@ export default function App() {
 	        }
 	      } catch (error) {
 	        console.warn("[Forum] Failed to update forum toggle", error);
+	        toast.error("Unable to update Forum setting right now.");
+	        setPeptideForumEnabled(previousValue);
 	        try {
-	          const classes = await settingsAPI.getForumStatus();
-	          if (
-	            classes &&
-	            typeof (classes as any).peptideForumEnabled === "boolean"
-	          ) {
-	            setPeptideForumEnabled((classes as any).peptideForumEnabled);
-	          }
+	          localStorage.setItem(
+	            "peppro:peptide-forum-enabled",
+	            previousValue ? "true" : "false",
+	          );
 	        } catch {
 	          // ignore
 	        }
@@ -3962,8 +3996,16 @@ export default function App() {
 	      if (!isAdmin(user?.role)) {
 	        return;
 	      }
+	      if (!settingsSupport.research) {
+	        toast.error("Research setting isn't available on this server yet.");
+	        return;
+	      }
 	      setSettingsSaving((prev) => ({ ...prev, research: true }));
-	      setResearchDashboardEnabled(value);
+	      let previousValue = false;
+	      setResearchDashboardEnabled((prev) => {
+	        previousValue = prev;
+	        return value;
+	      });
 	      try {
 	        localStorage.setItem(
 	          "peppro:research-dashboard-enabled",
@@ -3990,16 +4032,25 @@ export default function App() {
 	        }
 	      } catch (error) {
 	        console.warn("[Research] Failed to update research toggle", error);
-	        try {
-	          const research = await settingsAPI.getResearchStatus();
-	          if (
-	            research &&
-	            typeof (research as any).researchDashboardEnabled === "boolean"
-	          ) {
-	            setResearchDashboardEnabled(
-	              (research as any).researchDashboardEnabled,
-	            );
+	        const status = typeof (error as any)?.status === "number" ? (error as any).status : null;
+	        if (status === 404) {
+	          setSettingsSupport((prev) => ({ ...prev, research: false }));
+	          try {
+	            localStorage.setItem("peppro:settings-support:research", "false");
+	          } catch {
+	            // ignore
 	          }
+	          toast.error("Research setting isn't available on this server yet.");
+	        }
+	        if (status !== 404) {
+	          toast.error("Unable to update Research setting right now.");
+	        }
+	        setResearchDashboardEnabled(previousValue);
+	        try {
+	          localStorage.setItem(
+	            "peppro:research-dashboard-enabled",
+	            previousValue ? "true" : "false",
+	          );
 	        } catch {
 	          // ignore
 	        }
@@ -4017,11 +4068,15 @@ export default function App() {
 	      }
 	      setSettingsSaving((prev) => ({ ...prev, stripe: true }));
 	      const optimisticMode = enabled ? "test" : "live";
-	      setStripeSettings((prev) => ({
-	        ...(prev || {}),
-	        stripeMode: optimisticMode,
-        stripeTestMode: enabled,
-      }));
+	      let previousSettings: any = null;
+	      setStripeSettings((prev) => {
+	        previousSettings = prev;
+	        return {
+	          ...(prev || {}),
+	          stripeMode: optimisticMode,
+	          stripeTestMode: enabled,
+	        };
+	      });
 	      try {
 	        const updated = await settingsAPI.updateStripeTestMode(enabled);
 	        if (updated && typeof updated === "object") {
@@ -4029,14 +4084,8 @@ export default function App() {
 	        }
 	      } catch (error) {
 	        console.warn("[Stripe] Failed to update Stripe test mode", error);
-	        try {
-	          const refreshed = await settingsAPI.getStripeSettings();
-	          if (refreshed && typeof refreshed === "object") {
-	            setStripeSettings(refreshed as any);
-	          }
-	        } catch {
-	          // ignore
-	        }
+	        toast.error("Unable to update Payment mode right now.");
+	        setStripeSettings(previousSettings);
 	      } finally {
 	        setSettingsSaving((prev) => ({ ...prev, stripe: false }));
 	      }
@@ -5466,6 +5515,9 @@ export default function App() {
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
+	  const [settingsSupport, setSettingsSupport] = useState<{
+	    research: boolean;
+	  }>({ research: true });
 	  const [settingsSaving, setSettingsSaving] = useState<{
 	    shop: boolean;
 	    forum: boolean;
@@ -12173,149 +12225,147 @@ export default function App() {
 		                </div>
 	                </div>
 
-	                <div className="grid gap-3 mb-4">
-	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
-	                    <div className="flex items-start justify-between gap-4">
-	                      <label
-	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-	                      >
-	                        <input
-	                          type="checkbox"
-	                          aria-label="Enable Shop for users"
-	                          checked={shopEnabled}
-	                          onChange={(e) => handleShopToggle(e.target.checked)}
-	                          className="brand-checkbox mt-0.5"
-	                          disabled={!isAdmin(user.role) || settingsSaving.shop}
-	                        />
-	                        <span className="min-w-0">
-	                          <span className="block text-sm font-medium text-slate-800">
-	                            Shop button for users
-	                          </span>
-	                          <span className="block text-xs text-slate-600">
-	                            Controls whether doctors see the Shop button.
-	                          </span>
-	                        </span>
-	                      </label>
-	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
-	                        (Status:{" "}
-	                        {settingsSaving.shop
-	                          ? "Saving…"
-	                          : shopEnabled
-	                            ? "Enabled"
-	                            : "Disabled"}
-	                        )
-	                      </span>
-	                    </div>
-	                  </div>
-
-	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
-	                    <div className="flex items-start justify-between gap-4">
-	                      <label
-	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-	                      >
-	                        <input
-	                          type="checkbox"
-	                          aria-label="Enable The Peptide Forum card"
-	                          checked={peptideForumEnabled}
-	                          onChange={(e) =>
-	                            handlePeptideForumToggle(e.target.checked)
-	                          }
-	                          className="brand-checkbox mt-0.5"
-	                          disabled={!isAdmin(user.role) || settingsSaving.forum}
-	                        />
-	                        <span className="min-w-0">
-	                          <span className="block text-sm font-medium text-slate-800">
-	                            The Peptide Forum card
-	                          </span>
-	                          <span className="block text-xs text-slate-600">
-	                            Shows/hides the forum card on the info page.
-	                          </span>
-	                        </span>
-	                      </label>
-	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
-	                        (Status:{" "}
-	                        {settingsSaving.forum
-	                          ? "Saving…"
-	                          : peptideForumEnabled
-	                            ? "Enabled"
-	                            : "Disabled"}
-	                        )
-	                      </span>
-	                    </div>
-	                  </div>
-
-	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
-	                    <div className="flex items-start justify-between gap-4">
-	                      <label
-	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-	                      >
-	                        <input
-	                          type="checkbox"
-	                          aria-label="Payment test mode"
-	                          checked={stripeModeEffective === "test"}
-	                          onChange={(e) =>
-	                            handleStripeTestModeToggle(e.target.checked)
-	                          }
-	                          className="brand-checkbox mt-0.5"
-	                          disabled={!isAdmin(user.role) || settingsSaving.stripe}
-	                        />
-	                        <span className="min-w-0">
-	                          <span className="block text-sm font-medium text-slate-800">
-	                            Payment test mode
-	                          </span>
-	                          <span className="block text-xs text-slate-600">
-	                            Switch between Stripe test and live mode.
-	                          </span>
-	                        </span>
-	                      </label>
-	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
-	                        (Status:{" "}
-	                        {settingsSaving.stripe
-	                          ? "Saving…"
-	                          : stripeModeEffective === "test"
-	                            ? "Test"
-	                            : "Live"}
-	                        )
-	                      </span>
-	                    </div>
-	                  </div>
-
-	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
-	                    <div className="flex items-start justify-between gap-4">
-	                      <label
-	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-	                      >
-	                        <input
-	                          type="checkbox"
-	                          aria-label="Enable Research dashboard for doctors and reps"
-	                          checked={researchDashboardEnabled}
-	                          onChange={(e) =>
-	                            handleResearchDashboardToggle(e.target.checked)
-	                          }
-	                          className="brand-checkbox mt-0.5"
-	                          disabled={!isAdmin(user.role) || settingsSaving.research}
-	                        />
-	                        <span className="min-w-0">
-	                          <span className="block text-sm font-medium text-slate-800">
-	                            Research dashboard access (doctors/reps)
-	                          </span>
-	                          <span className="block text-xs text-slate-600">
-	                            When disabled, only admins and test doctors see the work-in-progress research dashboard.
-	                          </span>
-	                        </span>
-	                      </label>
-	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
-	                        (Status:{" "}
-	                        {settingsSaving.research
-	                          ? "Saving…"
-	                          : researchDashboardEnabled
-	                            ? "Enabled"
-	                            : "Disabled"}
-	                        )
-	                      </span>
-	                    </div>
-	                  </div>
-	                </div>
+		                <div className="mb-4 overflow-hidden rounded-lg border border-slate-200/70 bg-white/70">
+		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                    <label
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    >
+		                      <input
+		                        type="checkbox"
+		                        aria-label="Enable Shop for users"
+		                        checked={shopEnabled}
+		                        onChange={(e) => handleShopToggle(e.target.checked)}
+		                        className="brand-checkbox mt-0.5"
+		                        disabled={!isAdmin(user.role) || settingsSaving.shop}
+		                      />
+		                      <span className="min-w-0">
+		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+		                          <span>Shop button for users</span>
+		                          <span className="text-xs font-semibold text-slate-500">
+		                            (Status:{" "}
+		                            {settingsSaving.shop
+		                              ? "Saving…"
+		                              : shopEnabled
+		                                ? "Enabled"
+		                                : "Disabled"}
+		                            )
+		                          </span>
+		                        </span>
+		                        <span className="block text-xs text-slate-600">
+		                          Controls whether doctors see the Shop button.
+		                        </span>
+		                      </span>
+		                    </label>
+		                  </div>
+		
+		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                    <label
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    >
+		                      <input
+		                        type="checkbox"
+		                        aria-label="Enable The Peptide Forum card"
+		                        checked={peptideForumEnabled}
+		                        onChange={(e) =>
+		                          handlePeptideForumToggle(e.target.checked)
+		                        }
+		                        className="brand-checkbox mt-0.5"
+		                        disabled={!isAdmin(user.role) || settingsSaving.forum}
+		                      />
+		                      <span className="min-w-0">
+		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+		                          <span>The Peptide Forum card</span>
+		                          <span className="text-xs font-semibold text-slate-500">
+		                            (Status:{" "}
+		                            {settingsSaving.forum
+		                              ? "Saving…"
+		                              : peptideForumEnabled
+		                                ? "Enabled"
+		                                : "Disabled"}
+		                            )
+		                          </span>
+		                        </span>
+		                        <span className="block text-xs text-slate-600">
+		                          Shows/hides the forum card on the info page.
+		                        </span>
+		                      </span>
+		                    </label>
+		                  </div>
+		
+		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                    <label
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    >
+		                      <input
+		                        type="checkbox"
+		                        aria-label="Payment test mode"
+		                        checked={stripeModeEffective === "test"}
+		                        onChange={(e) =>
+		                          handleStripeTestModeToggle(e.target.checked)
+		                        }
+		                        className="brand-checkbox mt-0.5"
+		                        disabled={!isAdmin(user.role) || settingsSaving.stripe}
+		                      />
+		                      <span className="min-w-0">
+		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+		                          <span>Payment test mode</span>
+		                          <span className="text-xs font-semibold text-slate-500">
+		                            (Status:{" "}
+		                            {settingsSaving.stripe
+		                              ? "Saving…"
+		                              : stripeModeEffective === "test"
+		                                ? "Test"
+		                                : "Live"}
+		                            )
+		                          </span>
+		                        </span>
+		                        <span className="block text-xs text-slate-600">
+		                          Switch between Stripe test and live mode.
+		                        </span>
+		                      </span>
+		                    </label>
+		                  </div>
+		
+		                  <div className="px-4 py-4">
+		                    <label
+		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+		                    >
+		                      <input
+		                        type="checkbox"
+		                        aria-label="Enable Research dashboard for doctors and reps"
+		                        checked={researchDashboardEnabled}
+		                        onChange={(e) =>
+		                          handleResearchDashboardToggle(e.target.checked)
+		                        }
+		                        className="brand-checkbox mt-0.5"
+		                        disabled={
+		                          !isAdmin(user.role) ||
+		                          settingsSaving.research ||
+		                          !settingsSupport.research
+		                        }
+		                      />
+		                      <span className="min-w-0">
+		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+		                          <span>Research dashboard access (doctors/reps)</span>
+		                          <span className="text-xs font-semibold text-slate-500">
+		                            (Status:{" "}
+		                            {settingsSaving.research
+		                              ? "Saving…"
+		                              : !settingsSupport.research
+		                                ? "Unavailable"
+		                                : researchDashboardEnabled
+		                                  ? "Enabled"
+		                                  : "Disabled"}
+		                            )
+		                          </span>
+		                        </span>
+		                        <span className="block text-xs text-slate-600">
+		                          When disabled, only admins and test doctors see the work-in-progress research dashboard.
+		                        </span>
+		                      </span>
+		                    </label>
+		                  </div>
+		                </div>
 
                 <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-6">
                   <div>

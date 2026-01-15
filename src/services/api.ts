@@ -3,7 +3,6 @@ import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
-  const allowCrossOrigin = String((import.meta as any).env?.VITE_ALLOW_CROSS_ORIGIN_API || '').toLowerCase() === 'true';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -21,9 +20,8 @@ export const API_BASE_URL = (() => {
   const normalized = configured.replace(/\/+$/, '');
   const normalizedWithApi = normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 
-  // Guardrail: in production builds, default to same-origin to keep a single bundle portable
-  // across staging/prod domains. Allow explicit cross-origin only when opted-in.
-  if (import.meta.env.PROD && !allowCrossOrigin && typeof window !== 'undefined' && window.location?.origin) {
+  // Guardrail: in production builds, always default to same-origin to avoid CORS/proxy drift.
+  if (import.meta.env.PROD && typeof window !== 'undefined' && window.location?.origin) {
     try {
       if (/^https?:\/\//i.test(normalizedWithApi)) {
         const parsed = new URL(normalizedWithApi);
@@ -902,6 +900,11 @@ export const settingsAPI = {
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
+    if (!response.ok) {
+      const error = new Error(`Settings request failed (${response.status})`);
+      (error as any).status = response.status;
+      throw error;
+    }
     return response.json();
   },
   getForumStatus: async () => {
@@ -909,6 +912,11 @@ export const settingsAPI = {
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
+    if (!response.ok) {
+      const error = new Error(`Settings request failed (${response.status})`);
+      (error as any).status = response.status;
+      throw error;
+    }
     return response.json();
   },
   getResearchStatus: async () => {
@@ -916,6 +924,11 @@ export const settingsAPI = {
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
+    if (!response.ok) {
+      const error = new Error(`Settings request failed (${response.status})`);
+      (error as any).status = response.status;
+      throw error;
+    }
     return response.json();
   },
   updateShopStatus: async (enabled: boolean) => {
