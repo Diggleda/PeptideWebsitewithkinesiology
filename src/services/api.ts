@@ -896,40 +896,25 @@ export const authAPI = {
 
 export const settingsAPI = {
   getShopStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/settings/shop`, {
+    return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
+      method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
-    if (!response.ok) {
-      const error = new Error(`Settings request failed (${response.status})`);
-      (error as any).status = response.status;
-      throw error;
-    }
-    return response.json();
   },
   getForumStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/settings/forum`, {
+    return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
+      method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
-    if (!response.ok) {
-      const error = new Error(`Settings request failed (${response.status})`);
-      (error as any).status = response.status;
-      throw error;
-    }
-    return response.json();
   },
   getResearchStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/settings/research`, {
+    return fetchWithAuth(`${API_BASE_URL}/settings/research`, {
+      method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'include',
     });
-    if (!response.ok) {
-      const error = new Error(`Settings request failed (${response.status})`);
-      (error as any).status = response.status;
-      throw error;
-    }
-    return response.json();
   },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {

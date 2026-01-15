@@ -14,7 +14,10 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
-const isRep = (role?: string | null) => normalizeRole(role) === 'sales_rep';
+const isRep = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep');
+};
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized === 'doctor' || normalized === 'test_doctor';
@@ -2842,9 +2845,9 @@ export function Header({
 
   const effectiveRole = localUser?.role || user?.role || null;
   const canSeeResearchWip =
-    researchDashboardEnabled === true
-    || isAdmin(effectiveRole)
-    || normalizeRole(effectiveRole) === 'test_doctor';
+    isAdmin(effectiveRole)
+    || normalizeRole(effectiveRole) === 'test_doctor'
+    || (researchDashboardEnabled === true && (isDoctorRole(effectiveRole) || isRep(effectiveRole)));
 
   const researchPanel = canSeeResearchWip ? researchWipPanel : researchPlaceholderPanel;
 

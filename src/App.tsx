@@ -3801,17 +3801,15 @@ export default function App() {
 	      researchSupported = true;
 	    }
 	    setSettingsSupport((prev) => ({ ...prev, research: researchSupported }));
-	    let cancelled = false;
-	    const fetchSetting = async () => {
-	      try {
-	        const [shopResult, forumResult, researchResult] = await Promise.allSettled([
-	          settingsAPI.getShopStatus(),
-	          settingsAPI.getForumStatus(),
-	          researchSupported
-	            ? settingsAPI.getResearchStatus()
-	            : Promise.resolve({ researchDashboardEnabled: researchDashboardEnabled } as any),
-	        ]);
-	        if (cancelled) return;
+		    let cancelled = false;
+		    const fetchSetting = async () => {
+		      try {
+		        const [shopResult, forumResult, researchResult] = await Promise.allSettled([
+		          settingsAPI.getShopStatus(),
+		          settingsAPI.getForumStatus(),
+		          settingsAPI.getResearchStatus(),
+		        ]);
+		        if (cancelled) return;
 	        if (shopResult.status === "fulfilled") {
 	          const shop = shopResult.value as any;
 	          if (shop && typeof shop.shopEnabled === "boolean") {
@@ -3834,28 +3832,33 @@ export default function App() {
 	          }
 	        }
 
-	        if (researchResult.status === "fulfilled") {
-	          const research = researchResult.value as any;
-	          if (research && typeof research.researchDashboardEnabled === "boolean") {
-	            setSettingsSupport((prev) => ({ ...prev, research: true }));
-	            setResearchDashboardEnabled(research.researchDashboardEnabled);
-	            localStorage.setItem(
-	              "peppro:research-dashboard-enabled",
-	              research.researchDashboardEnabled ? "true" : "false",
+		        if (researchResult.status === "fulfilled") {
+		          const research = researchResult.value as any;
+		          if (research && typeof research.researchDashboardEnabled === "boolean") {
+		            setSettingsSupport((prev) => ({ ...prev, research: true }));
+		            try {
+		              localStorage.setItem("peppro:settings-support:research", "true");
+		            } catch {
+		              // ignore
+		            }
+		            setResearchDashboardEnabled(research.researchDashboardEnabled);
+		            localStorage.setItem(
+		              "peppro:research-dashboard-enabled",
+		              research.researchDashboardEnabled ? "true" : "false",
 	            );
 	          }
 	        } else {
 	          const reason: any = (researchResult as PromiseRejectedResult).reason;
 	          const status = typeof reason?.status === "number" ? reason.status : null;
-	          if (status === 404) {
-	            setSettingsSupport((prev) => ({ ...prev, research: false }));
-	            try {
-	              localStorage.setItem("peppro:settings-support:research", "false");
-	            } catch {
-	              // ignore
-	            }
-	          }
-	        }
+		          if (status === 404) {
+		            setSettingsSupport((prev) => ({ ...prev, research: false }));
+		            try {
+		              localStorage.setItem("peppro:settings-support:research", "false");
+		            } catch {
+		              // ignore
+		            }
+		          }
+		        }
 	      } catch (error) {
 	        console.warn(
 	          "[Settings] Unable to load settings, using local fallback",
@@ -3869,11 +3872,11 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchStripeSettings = async () => {
-      try {
-        const data = await settingsAPI.getStripeSettings();
+	  useEffect(() => {
+	    let cancelled = false;
+	    const fetchStripeSettings = async () => {
+	      try {
+	        const data = await settingsAPI.getStripeSettings();
         if (cancelled) return;
         if (data && typeof data === "object") {
           setStripeSettings(data as any);
@@ -3885,14 +3888,59 @@ export default function App() {
     fetchStripeSettings();
     return () => {
       cancelled = true;
-    };
-  }, []);
+	    };
+	  }, []);
 
-	  const handleShopToggle = useCallback(
-	    async (value: boolean) => {
-	      if (!isAdmin(user?.role)) {
-	        return;
+	  useEffect(() => {
+	    if (!user) return;
+	    let cancelled = false;
+	    const refreshResearchSetting = async () => {
+	      try {
+	        const research = await settingsAPI.getResearchStatus();
+	        if (cancelled) return;
+	        if (research && typeof (research as any).researchDashboardEnabled === "boolean") {
+	          setSettingsSupport((prev) => ({ ...prev, research: true }));
+	          try {
+	            localStorage.setItem("peppro:settings-support:research", "true");
+	          } catch {
+	            // ignore
+	          }
+	          setResearchDashboardEnabled((research as any).researchDashboardEnabled);
+	          try {
+	            localStorage.setItem(
+	              "peppro:research-dashboard-enabled",
+	              (research as any).researchDashboardEnabled ? "true" : "false",
+	            );
+	          } catch {
+	            // ignore
+	          }
+	        }
+	      } catch (error) {
+	        const status =
+	          typeof (error as any)?.status === "number" ? (error as any).status : null;
+	        if (status === 404) {
+	          setSettingsSupport((prev) => ({ ...prev, research: false }));
+	          try {
+	            localStorage.setItem("peppro:settings-support:research", "false");
+	          } catch {
+	            // ignore
+	          }
+	        } else {
+	          console.warn("[Research] Failed to refresh research setting", error);
+	        }
 	      }
+	    };
+	    refreshResearchSetting();
+	    return () => {
+	      cancelled = true;
+	    };
+	  }, [user?.id]);
+
+		  const handleShopToggle = useCallback(
+		    async (value: boolean) => {
+		      if (!isAdmin(user?.role)) {
+		        return;
+		      }
 	      setSettingsSaving((prev) => ({ ...prev, shop: true }));
 	      let previousValue = true;
 	      setShopEnabled((prev) => {
