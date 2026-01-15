@@ -81,7 +81,23 @@ def get_shop():
 def get_forum():
     def action():
         settings = settings_service.get_settings()
-        return {"peptideForumEnabled": bool(settings.get("peptideForumEnabled", True))}
+        config = get_config()
+        return {
+            "peptideForumEnabled": bool(settings.get("peptideForumEnabled", True)),
+            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
+
+    return handle_action(action)
+
+@blueprint.get("/research")
+def get_research():
+    def action():
+        settings = settings_service.get_settings()
+        config = get_config()
+        return {
+            "researchDashboardEnabled": bool(settings.get("researchDashboardEnabled", False)),
+            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
 
     return handle_action(action)
 
@@ -93,8 +109,12 @@ def update_shop():
         _require_admin()
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
-        settings_service.update_settings({"shopEnabled": enabled})
-        return {"shopEnabled": enabled}
+        updated = settings_service.update_settings({"shopEnabled": enabled})
+        config = get_config()
+        return {
+            "shopEnabled": bool(updated.get("shopEnabled", True)),
+            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
 
     return handle_action(action)
 
@@ -105,8 +125,28 @@ def update_forum():
         _require_admin()
         payload = request.get_json(silent=True) or {}
         enabled = bool(payload.get("enabled", False))
-        settings_service.update_settings({"peptideForumEnabled": enabled})
-        return {"peptideForumEnabled": enabled}
+        updated = settings_service.update_settings({"peptideForumEnabled": enabled})
+        config = get_config()
+        return {
+            "peptideForumEnabled": bool(updated.get("peptideForumEnabled", True)),
+            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
+
+    return handle_action(action)
+
+@blueprint.put("/research")
+@require_auth
+def update_research():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", False))
+        updated = settings_service.update_settings({"researchDashboardEnabled": enabled})
+        config = get_config()
+        return {
+            "researchDashboardEnabled": bool(updated.get("researchDashboardEnabled", False)),
+            "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
 
     return handle_action(action)
 

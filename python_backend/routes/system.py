@@ -630,6 +630,7 @@ def help_endpoint():
                 "/api/referrals/admin/dashboard",
                 "/api/settings/shop",
                 "/api/settings/forum",
+                "/api/settings/research",
                 "/api/forum/the-peptide-forum",
                 "/api/contact",
                 "/api/integrations/google-sheets/sales-reps",

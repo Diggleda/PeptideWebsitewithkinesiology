@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
     "peptideForumEnabled": True,
+    "researchDashboardEnabled": False,
     # "test" | "live" | None (None = follow env)
     "stripeMode": None,
     # ISO timestamp (admin report)
@@ -96,6 +97,7 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
     merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
+    merged["researchDashboardEnabled"] = _to_bool(merged.get("researchDashboardEnabled", False))
     merged["stripeMode"] = _normalize_mode(merged.get("stripeMode"))
     merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("salesBySalesRepCsvDownloadedAt")
@@ -183,6 +185,7 @@ def _persist_to_sql(settings: Dict[str, Any]) -> None:
         logger.info("Settings SQL write completed", extra={"keys": list(DEFAULT_SETTINGS.keys())})
     except Exception:
         logger.error("settings SQL write failed", exc_info=True)
+        raise
 
 
 def get_settings() -> Dict[str, Any]:
@@ -207,7 +210,12 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
     current = get_settings()
     merged = normalize_settings({**current, **(patch or {})})
     _persist_to_store(merged)
-    _persist_to_sql(merged)
+    if bool(get_config().mysql.get("enabled")):
+        _persist_to_sql(merged)
+        confirmed = _load_from_sql()
+        if confirmed is not None:
+            _persist_to_store(confirmed)
+            return confirmed
     return merged
 
 

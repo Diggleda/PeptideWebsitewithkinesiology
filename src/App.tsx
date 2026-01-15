@@ -4042,6 +4042,24 @@ export default function App() {
 	          }
 	          toast.error("Research setting isn't available on this server yet.");
 	        }
+	        if (status === null) {
+	          try {
+	            await settingsAPI.getResearchStatus();
+	          } catch (probeError) {
+	            const probeStatus =
+	              typeof (probeError as any)?.status === "number"
+	                ? (probeError as any).status
+	                : null;
+	            if (probeStatus === 404) {
+	              setSettingsSupport((prev) => ({ ...prev, research: false }));
+	              try {
+	                localStorage.setItem("peppro:settings-support:research", "false");
+	              } catch {
+	                // ignore
+	              }
+	            }
+	          }
+	        }
 	        if (status !== 404) {
 	          toast.error("Unable to update Research setting right now.");
 	        }
