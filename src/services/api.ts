@@ -911,6 +911,13 @@ export const settingsAPI = {
     });
     return response.json();
   },
+  getResearchStatus: async () => {
+    const response = await fetch(`${API_BASE_URL}/settings/research`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+    return response.json();
+  },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
       method: 'PUT',
@@ -919,6 +926,12 @@ export const settingsAPI = {
   },
   updateForumStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updateResearchStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/research`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });

@@ -6,6 +6,7 @@ const { env } = require('../config/env');
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
   peptideForumEnabled: true,
+  researchDashboardEnabled: false,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
 };
@@ -34,13 +35,15 @@ const normalizeSettings = (settings = {}) => {
   merged.peptideForumEnabled = Boolean(
     raw.peptideForumEnabled ?? DEFAULT_SETTINGS.peptideForumEnabled,
   );
-  const stripeMode = typeof merged.stripeMode === 'string'
-    ? merged.stripeMode.toLowerCase().trim()
+  merged.researchDashboardEnabled = Boolean(
+    raw.researchDashboardEnabled ?? DEFAULT_SETTINGS.researchDashboardEnabled,
+  );
+  const stripeMode = typeof raw.stripeMode === 'string'
+    ? raw.stripeMode.toLowerCase().trim()
     : null;
   merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
-  merged.salesBySalesRepCsvDownloadedAt = normalizeIsoTimestamp(
-    merged.salesBySalesRepCsvDownloadedAt,
-  );
+  merged.salesBySalesRepCsvDownloadedAt =
+    normalizeIsoTimestamp(raw.salesBySalesRepCsvDownloadedAt) ?? DEFAULT_SETTINGS.salesBySalesRepCsvDownloadedAt;
   return merged;
 };
 
@@ -140,6 +143,11 @@ const getPeptideForumEnabled = async () => {
   return Boolean(settings.peptideForumEnabled);
 };
 
+const getResearchDashboardEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.researchDashboardEnabled);
+};
+
 const setShopEnabled = async (enabled) => {
   const next = normalizeSettings({ ...loadFromStore(), shopEnabled: Boolean(enabled) });
   persistToStore(next);
@@ -155,6 +163,16 @@ const setPeptideForumEnabled = async (enabled) => {
   persistToStore(next);
   await persistToSql(next);
   return next.peptideForumEnabled;
+};
+
+const setResearchDashboardEnabled = async (enabled) => {
+  const next = normalizeSettings({
+    ...loadFromStore(),
+    researchDashboardEnabled: Boolean(enabled),
+  });
+  persistToStore(next);
+  await persistToSql(next);
+  return next.researchDashboardEnabled;
 };
 
 const resolveStripeMode = (settings) => {
@@ -204,6 +222,8 @@ module.exports = {
   setShopEnabled,
   getPeptideForumEnabled,
   setPeptideForumEnabled,
+  getResearchDashboardEnabled,
+  setResearchDashboardEnabled,
   getStripeMode,
   getStripeModeSync,
   setStripeMode,

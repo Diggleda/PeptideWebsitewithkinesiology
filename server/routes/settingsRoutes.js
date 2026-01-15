@@ -5,6 +5,8 @@ const {
   setShopEnabled,
   getPeptideForumEnabled,
   setPeptideForumEnabled,
+  getResearchDashboardEnabled,
+  setResearchDashboardEnabled,
   getStripeMode,
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
@@ -54,16 +56,30 @@ router.get('/forum', async (_req, res) => {
   res.json({ peptideForumEnabled: enabled });
 });
 
+router.get('/research', async (_req, res) => {
+  const enabled = await getResearchDashboardEnabled();
+  res.json({ researchDashboardEnabled: enabled });
+});
+
 router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
-  const updated = await setShopEnabled(enabled);
-  res.json({ shopEnabled: updated });
+  await setShopEnabled(enabled);
+  const confirmed = await getShopEnabled();
+  res.json({ shopEnabled: confirmed });
 });
 
 router.put('/forum', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.peptideForumEnabled ?? req.body?.enabled;
-  const updated = await setPeptideForumEnabled(Boolean(enabled));
-  res.json({ peptideForumEnabled: updated });
+  await setPeptideForumEnabled(Boolean(enabled));
+  const confirmed = await getPeptideForumEnabled();
+  res.json({ peptideForumEnabled: confirmed });
+});
+
+router.put('/research', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.researchDashboardEnabled ?? req.body?.enabled;
+  await setResearchDashboardEnabled(Boolean(enabled));
+  const confirmed = await getResearchDashboardEnabled();
+  res.json({ researchDashboardEnabled: confirmed });
 });
 
 router.get('/stripe', async (_req, res) => {
@@ -105,7 +121,8 @@ router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
     },
     'Stripe settings update requested',
   );
-  const updated = await setStripeMode(mode);
+  await setStripeMode(mode);
+  const updated = await getStripeMode();
   res.json({
     stripeMode: updated,
     stripeTestMode: updated === 'test',

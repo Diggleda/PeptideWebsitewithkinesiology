@@ -146,8 +146,8 @@ body {
 
   .post-login-news {
     order: 1;
-    flex: 0 0 33%;
-    max-width: 33%;
+    flex: 0 0 39.6%;
+    max-width: 39.6%;
   }
 
   .post-login-info {
@@ -158,8 +158,8 @@ body {
 
 @media (min-width: 1200px) {
   .post-login-news {
-    flex-basis: 42%;
-    max-width: 42%;
+    flex-basis: 50.4%;
+    max-width: 50.4%;
   }
 }
 

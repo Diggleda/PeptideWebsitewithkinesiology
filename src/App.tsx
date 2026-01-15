@@ -38,14 +38,15 @@ import {
 	  EyeOff,
 	  ArrowRight,
 	  ArrowLeft,
-	  ChevronRight,
-	  RefreshCw,
-	  ArrowUpDown,
-	  Fingerprint,
-		  Loader2,
-		  Plus,
-			  Package,
-			  Upload,
+		  ChevronRight,
+		  RefreshCw,
+		  ArrowUpDown,
+		  Fingerprint,
+		  ExternalLink,
+			  Loader2,
+			  Plus,
+				  Package,
+				  Upload,
 			  Download,
 			  NotebookPen,
 			  CheckSquare,
@@ -74,7 +75,6 @@ import {
 	  settingsAPI,
 	  API_BASE_URL,
 	} from "./services/api";
-import careComplianceHtml from "./content/landing/care-compliance.html?raw";
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
@@ -2585,21 +2585,37 @@ export default function App() {
     }
   }, []);
 
-  const refreshPeptideForum = useCallback(async () => {
-    if (!user) {
-      return;
-    }
-    setPeptideForumLoading(true);
-    setPeptideForumError(null);
-    try {
-      const response = await forumAPI.listPeptideForum();
-      const items = Array.isArray((response as any)?.items) ? (response as any).items : [];
-      setPeptideForumItems(items);
-      setPeptideForumUpdatedAt(
-        typeof (response as any)?.updatedAt === "string" ? (response as any).updatedAt : null,
-      );
-    } catch (error: any) {
-      setPeptideForumItems([]);
+	  const refreshPeptideForum = useCallback(async () => {
+	    if (!user) {
+	      return;
+	    }
+	    setPeptideForumLoading(true);
+	    setPeptideForumError(null);
+	    try {
+	      const response = await forumAPI.listPeptideForum();
+	      const items = Array.isArray((response as any)?.items) ? (response as any).items : [];
+	      const shouldAddLocalDummyForumItem =
+	        import.meta.env.DEV && /localhost|127\\.0\\.0\\.1/i.test(API_BASE_URL);
+	      const normalizedItems =
+	        shouldAddLocalDummyForumItem && items.length === 0
+	          ? ([
+	              {
+	                id: "local-dev-dummy",
+	                title: "Dummy Forum Class (Local Dev)",
+	                date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+	                description:
+	                  "Placeholder item for the local Node backend. Replace with real forum data when available.",
+	                link: "https://example.com",
+	                recording: null,
+	              },
+	            ] as typeof items)
+	          : items;
+	      setPeptideForumItems(normalizedItems);
+	      setPeptideForumUpdatedAt(
+	        typeof (response as any)?.updatedAt === "string" ? (response as any).updatedAt : null,
+	      );
+	    } catch (error: any) {
+	      setPeptideForumItems([]);
       setPeptideForumUpdatedAt(null);
       setPeptideForumError(
         typeof error?.message === "string" && error.message
@@ -3750,54 +3766,75 @@ export default function App() {
     void handleEnablePasskey();
   }, [user, passkeySupport.platform, handleEnablePasskey]);
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("peppro:shop-enabled");
-      if (stored !== null) {
-        setShopEnabled(stored !== "false");
-      }
-    } catch {
-      setShopEnabled(true);
-    }
-    try {
-      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
-      if (stored !== null) {
-        setPeptideForumEnabled(stored !== "false");
-      }
-    } catch {
-      setPeptideForumEnabled(true);
-    }
-    let cancelled = false;
-    const fetchSetting = async () => {
-      try {
-        const [shop, classes] = await Promise.all([
-          settingsAPI.getShopStatus(),
-          settingsAPI.getForumStatus(),
-        ]);
-        if (cancelled) return;
-        if (shop && typeof (shop as any).shopEnabled === "boolean") {
-          setShopEnabled((shop as any).shopEnabled);
-          localStorage.setItem(
-            "peppro:shop-enabled",
-            (shop as any).shopEnabled ? "true" : "false",
-          );
-        }
-        if (
-          classes &&
-          typeof (classes as any).peptideForumEnabled === "boolean"
-        ) {
-          setPeptideForumEnabled(
-            (classes as any).peptideForumEnabled,
-          );
-          localStorage.setItem(
-            "peppro:peptide-forum-enabled",
-            (classes as any).peptideForumEnabled ? "true" : "false",
-          );
-        }
-      } catch (error) {
-        console.warn(
-          "[Settings] Unable to load settings, using local fallback",
-          error,
+	  useEffect(() => {
+	    try {
+	      const stored = localStorage.getItem("peppro:shop-enabled");
+	      if (stored !== null) {
+	        setShopEnabled(stored !== "false");
+	      }
+	    } catch {
+	      setShopEnabled(true);
+	    }
+	    try {
+	      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
+	      if (stored !== null) {
+	        setPeptideForumEnabled(stored !== "false");
+	      }
+	    } catch {
+	      setPeptideForumEnabled(true);
+	    }
+	    try {
+	      const stored = localStorage.getItem("peppro:research-dashboard-enabled");
+	      if (stored !== null) {
+	        setResearchDashboardEnabled(stored !== "false");
+	      }
+	    } catch {
+	      setResearchDashboardEnabled(false);
+	    }
+	    let cancelled = false;
+	    const fetchSetting = async () => {
+	      try {
+	        const [shop, classes, research] = await Promise.all([
+	          settingsAPI.getShopStatus(),
+	          settingsAPI.getForumStatus(),
+	          settingsAPI.getResearchStatus(),
+	        ]);
+	        if (cancelled) return;
+	        if (shop && typeof (shop as any).shopEnabled === "boolean") {
+	          setShopEnabled((shop as any).shopEnabled);
+	          localStorage.setItem(
+	            "peppro:shop-enabled",
+	            (shop as any).shopEnabled ? "true" : "false",
+	          );
+	        }
+	        if (
+	          classes &&
+	          typeof (classes as any).peptideForumEnabled === "boolean"
+	        ) {
+	          setPeptideForumEnabled(
+	            (classes as any).peptideForumEnabled,
+	          );
+	          localStorage.setItem(
+	            "peppro:peptide-forum-enabled",
+	            (classes as any).peptideForumEnabled ? "true" : "false",
+	          );
+	        }
+	        if (
+	          research &&
+	          typeof (research as any).researchDashboardEnabled === "boolean"
+	        ) {
+	          setResearchDashboardEnabled(
+	            (research as any).researchDashboardEnabled,
+	          );
+	          localStorage.setItem(
+	            "peppro:research-dashboard-enabled",
+	            (research as any).researchDashboardEnabled ? "true" : "false",
+	          );
+	        }
+	      } catch (error) {
+	        console.warn(
+	          "[Settings] Unable to load settings, using local fallback",
+	          error,
         );
       }
     };
@@ -3826,71 +3863,186 @@ export default function App() {
     };
   }, []);
 
-  const handleShopToggle = useCallback(
-    async (value: boolean) => {
-      if (!isAdmin(user?.role)) {
-        return;
-      }
-      setShopEnabled(value);
-      try {
-        localStorage.setItem("peppro:shop-enabled", value ? "true" : "false");
-      } catch {
-        // ignore
-      }
-      try {
-        await settingsAPI.updateShopStatus(value);
-      } catch (error) {
-        console.warn("[Shop] Failed to update shop toggle", error);
-      }
-    },
-    [user?.role],
-  );
+	  const handleShopToggle = useCallback(
+	    async (value: boolean) => {
+	      if (!isAdmin(user?.role)) {
+	        return;
+	      }
+	      setSettingsSaving((prev) => ({ ...prev, shop: true }));
+	      setShopEnabled(value);
+	      try {
+	        localStorage.setItem("peppro:shop-enabled", value ? "true" : "false");
+	      } catch {
+	        // ignore
+	      }
+	      try {
+	        const updated = await settingsAPI.updateShopStatus(value);
+	        const confirmed =
+	          updated && typeof (updated as any).shopEnabled === "boolean"
+	            ? (updated as any).shopEnabled
+	            : value;
+	        setShopEnabled(confirmed);
+	        try {
+	          localStorage.setItem(
+	            "peppro:shop-enabled",
+	            confirmed ? "true" : "false",
+	          );
+	        } catch {
+	          // ignore
+	        }
+	      } catch (error) {
+	        console.warn("[Shop] Failed to update shop toggle", error);
+	        try {
+	          const shop = await settingsAPI.getShopStatus();
+	          if (shop && typeof (shop as any).shopEnabled === "boolean") {
+	            setShopEnabled((shop as any).shopEnabled);
+	          }
+	        } catch {
+	          // ignore
+	        }
+	      } finally {
+	        setSettingsSaving((prev) => ({ ...prev, shop: false }));
+	      }
+	    },
+	    [user?.role],
+	  );
 
-  const handlePeptideForumToggle = useCallback(
-    async (value: boolean) => {
-      if (!isAdmin(user?.role)) {
-        return;
-      }
-      setPeptideForumEnabled(value);
-      try {
-        localStorage.setItem(
-          "peppro:peptide-forum-enabled",
-          value ? "true" : "false",
+	  const handlePeptideForumToggle = useCallback(
+	    async (value: boolean) => {
+	      if (!isAdmin(user?.role)) {
+	        return;
+	      }
+	      setSettingsSaving((prev) => ({ ...prev, forum: true }));
+	      setPeptideForumEnabled(value);
+	      try {
+	        localStorage.setItem(
+	          "peppro:peptide-forum-enabled",
+	          value ? "true" : "false",
         );
-      } catch {
-        // ignore
-      }
-      try {
-        await settingsAPI.updateForumStatus(value);
-      } catch (error) {
-        console.warn("[Forum] Failed to update forum toggle", error);
-      }
-    },
-    [user?.role],
-  );
+	      } catch {
+	        // ignore
+	      }
+	      try {
+	        const updated = await settingsAPI.updateForumStatus(value);
+	        const confirmed =
+	          updated && typeof (updated as any).peptideForumEnabled === "boolean"
+	            ? (updated as any).peptideForumEnabled
+	            : value;
+	        setPeptideForumEnabled(confirmed);
+	        try {
+	          localStorage.setItem(
+	            "peppro:peptide-forum-enabled",
+	            confirmed ? "true" : "false",
+	          );
+	        } catch {
+	          // ignore
+	        }
+	      } catch (error) {
+	        console.warn("[Forum] Failed to update forum toggle", error);
+	        try {
+	          const classes = await settingsAPI.getForumStatus();
+	          if (
+	            classes &&
+	            typeof (classes as any).peptideForumEnabled === "boolean"
+	          ) {
+	            setPeptideForumEnabled((classes as any).peptideForumEnabled);
+	          }
+	        } catch {
+	          // ignore
+	        }
+	      } finally {
+	        setSettingsSaving((prev) => ({ ...prev, forum: false }));
+	      }
+	    },
+	    [user?.role],
+	  );
 
-  const handleStripeTestModeToggle = useCallback(
-    async (enabled: boolean) => {
-      if (!isAdmin(user?.role)) {
-        return;
-      }
-      const optimisticMode = enabled ? "test" : "live";
-      setStripeSettings((prev) => ({
-        ...(prev || {}),
-        stripeMode: optimisticMode,
+	  const handleResearchDashboardToggle = useCallback(
+	    async (value: boolean) => {
+	      if (!isAdmin(user?.role)) {
+	        return;
+	      }
+	      setSettingsSaving((prev) => ({ ...prev, research: true }));
+	      setResearchDashboardEnabled(value);
+	      try {
+	        localStorage.setItem(
+	          "peppro:research-dashboard-enabled",
+	          value ? "true" : "false",
+	        );
+	      } catch {
+	        // ignore
+	      }
+	      try {
+	        const updated = await settingsAPI.updateResearchStatus(value);
+	        const confirmed =
+	          updated &&
+	          typeof (updated as any).researchDashboardEnabled === "boolean"
+	            ? (updated as any).researchDashboardEnabled
+	            : value;
+	        setResearchDashboardEnabled(confirmed);
+	        try {
+	          localStorage.setItem(
+	            "peppro:research-dashboard-enabled",
+	            confirmed ? "true" : "false",
+	          );
+	        } catch {
+	          // ignore
+	        }
+	      } catch (error) {
+	        console.warn("[Research] Failed to update research toggle", error);
+	        try {
+	          const research = await settingsAPI.getResearchStatus();
+	          if (
+	            research &&
+	            typeof (research as any).researchDashboardEnabled === "boolean"
+	          ) {
+	            setResearchDashboardEnabled(
+	              (research as any).researchDashboardEnabled,
+	            );
+	          }
+	        } catch {
+	          // ignore
+	        }
+	      } finally {
+	        setSettingsSaving((prev) => ({ ...prev, research: false }));
+	      }
+	    },
+	    [user?.role],
+	  );
+
+	  const handleStripeTestModeToggle = useCallback(
+	    async (enabled: boolean) => {
+	      if (!isAdmin(user?.role)) {
+	        return;
+	      }
+	      setSettingsSaving((prev) => ({ ...prev, stripe: true }));
+	      const optimisticMode = enabled ? "test" : "live";
+	      setStripeSettings((prev) => ({
+	        ...(prev || {}),
+	        stripeMode: optimisticMode,
         stripeTestMode: enabled,
       }));
-      try {
-        const updated = await settingsAPI.updateStripeTestMode(enabled);
-        if (updated && typeof updated === "object") {
-          setStripeSettings(updated as any);
-        }
-      } catch (error) {
-        console.warn("[Stripe] Failed to update Stripe test mode", error);
-      }
-    },
-    [user?.role],
-  );
+	      try {
+	        const updated = await settingsAPI.updateStripeTestMode(enabled);
+	        if (updated && typeof updated === "object") {
+	          setStripeSettings(updated as any);
+	        }
+	      } catch (error) {
+	        console.warn("[Stripe] Failed to update Stripe test mode", error);
+	        try {
+	          const refreshed = await settingsAPI.getStripeSettings();
+	          if (refreshed && typeof refreshed === "object") {
+	            setStripeSettings(refreshed as any);
+	          }
+	        } catch {
+	          // ignore
+	        }
+	      } finally {
+	        setSettingsSaving((prev) => ({ ...prev, stripe: false }));
+	      }
+	    },
+	    [user?.role],
+	  );
 
   // (handled directly in handleLogin/handleCreateAccount to avoid flicker)
   const [landingLoginError, setLandingLoginError] = useState("");
@@ -5310,13 +5462,20 @@ export default function App() {
     setShowManualProspectModal(false);
     resetManualProspectForm();
   }, [resetManualProspectForm]);
-  const [referralDataLoading, setReferralDataLoading] = useState(false);
-  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
-  const [shopEnabled, setShopEnabled] = useState(true);
-  type ServerHealthPayload = {
-    status?: string;
-    message?: string;
-    build?: string;
+	  const [referralDataLoading, setReferralDataLoading] = useState(false);
+	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
+	  const [shopEnabled, setShopEnabled] = useState(true);
+	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
+	  const [settingsSaving, setSettingsSaving] = useState<{
+	    shop: boolean;
+	    forum: boolean;
+	    stripe: boolean;
+	    research: boolean;
+	  }>({ shop: false, forum: false, stripe: false, research: false });
+	  type ServerHealthPayload = {
+	    status?: string;
+	    message?: string;
+	    build?: string;
     timestamp?: string;
     mysql?: { enabled?: boolean | null } | null;
     queue?: { name?: string | null; length?: number | null } | null;
@@ -12014,55 +12173,149 @@ export default function App() {
 		                </div>
 	                </div>
 
-                <div className="flex flex-col gap-3 mb-4">
-                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                  <span>
-                    Shop: {shopEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                  <span>
-                    Forum: {peptideForumEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                  <span>
-                    Payments: {stripeModeEffective === "test" ? "Test" : "Live"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-		                  <input
-		                    type="checkbox"
-                        aria-label="Enable Shop for users"
-		                    checked={shopEnabled}
-		                    onChange={(e) => handleShopToggle(e.target.checked)}
-		                    className="brand-checkbox"
-		                  />
-		                  <span className="cursor-default select-none">Enable Shop button for users</span>
-		                </div>
-		                <div className="flex items-center gap-2 text-sm text-slate-700">
-		                  <input
-		                    type="checkbox"
-                        aria-label="Enable The Peptide Forum card"
-		                    checked={peptideForumEnabled}
-		                    onChange={(e) =>
-		                      handlePeptideForumToggle(e.target.checked)
-		                    }
-		                    className="brand-checkbox"
-		                  />
-		                  <span className="cursor-default select-none">
-		                    Show The Peptide Forum on info page
-		                  </span>
-		                </div>
-		                <div className="flex items-center gap-2 text-sm text-slate-700">
-			                  <input
-			                    type="checkbox"
-	                        aria-label="Payment test mode"
-			                    checked={stripeModeEffective === "test"}
-			                    onChange={(e) =>
-			                      handleStripeTestModeToggle(e.target.checked)
-			                    }
-			                    className="brand-checkbox"
-			                  />
-			                  <span className="cursor-default select-none">Payment test mode</span>
-			                </div>
-		              </div>
+	                <div className="grid gap-3 mb-4">
+	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
+	                    <div className="flex items-start justify-between gap-4">
+	                      <label
+	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          aria-label="Enable Shop for users"
+	                          checked={shopEnabled}
+	                          onChange={(e) => handleShopToggle(e.target.checked)}
+	                          className="brand-checkbox mt-0.5"
+	                          disabled={!isAdmin(user.role) || settingsSaving.shop}
+	                        />
+	                        <span className="min-w-0">
+	                          <span className="block text-sm font-medium text-slate-800">
+	                            Shop button for users
+	                          </span>
+	                          <span className="block text-xs text-slate-600">
+	                            Controls whether doctors see the Shop button.
+	                          </span>
+	                        </span>
+	                      </label>
+	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
+	                        (Status:{" "}
+	                        {settingsSaving.shop
+	                          ? "Saving…"
+	                          : shopEnabled
+	                            ? "Enabled"
+	                            : "Disabled"}
+	                        )
+	                      </span>
+	                    </div>
+	                  </div>
+
+	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
+	                    <div className="flex items-start justify-between gap-4">
+	                      <label
+	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          aria-label="Enable The Peptide Forum card"
+	                          checked={peptideForumEnabled}
+	                          onChange={(e) =>
+	                            handlePeptideForumToggle(e.target.checked)
+	                          }
+	                          className="brand-checkbox mt-0.5"
+	                          disabled={!isAdmin(user.role) || settingsSaving.forum}
+	                        />
+	                        <span className="min-w-0">
+	                          <span className="block text-sm font-medium text-slate-800">
+	                            The Peptide Forum card
+	                          </span>
+	                          <span className="block text-xs text-slate-600">
+	                            Shows/hides the forum card on the info page.
+	                          </span>
+	                        </span>
+	                      </label>
+	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
+	                        (Status:{" "}
+	                        {settingsSaving.forum
+	                          ? "Saving…"
+	                          : peptideForumEnabled
+	                            ? "Enabled"
+	                            : "Disabled"}
+	                        )
+	                      </span>
+	                    </div>
+	                  </div>
+
+	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
+	                    <div className="flex items-start justify-between gap-4">
+	                      <label
+	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          aria-label="Payment test mode"
+	                          checked={stripeModeEffective === "test"}
+	                          onChange={(e) =>
+	                            handleStripeTestModeToggle(e.target.checked)
+	                          }
+	                          className="brand-checkbox mt-0.5"
+	                          disabled={!isAdmin(user.role) || settingsSaving.stripe}
+	                        />
+	                        <span className="min-w-0">
+	                          <span className="block text-sm font-medium text-slate-800">
+	                            Payment test mode
+	                          </span>
+	                          <span className="block text-xs text-slate-600">
+	                            Switch between Stripe test and live mode.
+	                          </span>
+	                        </span>
+	                      </label>
+	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
+	                        (Status:{" "}
+	                        {settingsSaving.stripe
+	                          ? "Saving…"
+	                          : stripeModeEffective === "test"
+	                            ? "Test"
+	                            : "Live"}
+	                        )
+	                      </span>
+	                    </div>
+	                  </div>
+
+	                  <div className="rounded-lg border border-slate-200/70 bg-white/70 px-4 py-3">
+	                    <div className="flex items-start justify-between gap-4">
+	                      <label
+	                        className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          aria-label="Enable Research dashboard for doctors and reps"
+	                          checked={researchDashboardEnabled}
+	                          onChange={(e) =>
+	                            handleResearchDashboardToggle(e.target.checked)
+	                          }
+	                          className="brand-checkbox mt-0.5"
+	                          disabled={!isAdmin(user.role) || settingsSaving.research}
+	                        />
+	                        <span className="min-w-0">
+	                          <span className="block text-sm font-medium text-slate-800">
+	                            Research dashboard access (doctors/reps)
+	                          </span>
+	                          <span className="block text-xs text-slate-600">
+	                            When disabled, only admins and test doctors see the work-in-progress research dashboard.
+	                          </span>
+	                        </span>
+	                      </label>
+	                      <span className="text-xs text-slate-600 whitespace-nowrap pt-0.5">
+	                        (Status:{" "}
+	                        {settingsSaving.research
+	                          ? "Saving…"
+	                          : researchDashboardEnabled
+	                            ? "Enabled"
+	                            : "Disabled"}
+	                        )
+	                      </span>
+	                    </div>
+	                  </div>
+	                </div>
 
                 <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-6">
                   <div>
@@ -14381,9 +14634,10 @@ export default function App() {
     (sum, item) => sum + item.quantity,
     0,
   );
-  const shouldShowHeaderCartIcon =
-    totalCartItems > 0 && !isCheckoutButtonVisible;
-  const newsLoadingPlaceholders = Array.from({ length: 5 });
+	  const shouldShowHeaderCartIcon =
+	    totalCartItems > 0 && !isCheckoutButtonVisible;
+	  const newsLoadingPlaceholders = Array.from({ length: 5 });
+	  const forumLoadingPlaceholders = Array.from({ length: 1 });
 
   return (
     <div
@@ -14419,13 +14673,14 @@ export default function App() {
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Header - Only show when logged in */}
 	        {user && !postLoginHold && (
-	          <Header
-	            user={user}
-	            onLogin={handleLogin}
-	            onLogout={handleLogout}
-	            cartItems={totalCartItems}
-	            onSearch={handleSearch}
-	            onCreateAccount={handleCreateAccount}
+		          <Header
+		            user={user}
+		            researchDashboardEnabled={researchDashboardEnabled}
+		            onLogin={handleLogin}
+		            onLogout={handleLogout}
+		            cartItems={totalCartItems}
+		            onSearch={handleSearch}
+		            onCreateAccount={handleCreateAccount}
 	            onCartClick={() => setCheckoutOpen(true)}
 	            loginPromptToken={loginPromptToken}
 	            loginContext={loginContext}
@@ -14809,10 +15064,10 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                    <div
-                      className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl"
-                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-                    >
+	                    <div
+	                      className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] pt-6 px-6 pb-4 sm:pt-8 sm:px-8 sm:pb-5 shadow-xl"
+	                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
+	                    >
                       <div className="space-y-4">
                         <div
                           className={`flex w-full flex-wrap items-center gap-3 pb-2 ${
@@ -14860,43 +15115,51 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        {shouldShowPeptideForumCard && (
-                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-slate-800">
-                                The Peptide Forum
-                              </p>
-                              {!peptideForumEnabled &&
-                                isAdmin(user?.role) && (
-                                  <p className="text-[11px] text-amber-700">
-                                    Hidden for users (admin override)
-                                  </p>
-                                )}
-                              {peptideForumUpdatedAt && (
-                                <p className="text-[11px] text-slate-500">
-                                  Updated{" "}
-                                  {formatDateTime(peptideForumUpdatedAt)}
-                                </p>
-                              )}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="squircle-sm"
-                              onClick={() => void refreshPeptideForum()}
-                              disabled={peptideForumLoading}
-                            >
-                              {peptideForumLoading ? "Refreshing…" : "Refresh"}
-                            </Button>
-                          </div>
+	                        {shouldShowPeptideForumCard && (
+	                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
+	                          <div className="flex items-start justify-between gap-3">
+	                            <div className="space-y-1">
+	                              <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
+	                                The Peptide Forum
+	                              </h2>
+	                              {!peptideForumEnabled &&
+	                                isAdmin(user?.role) && (
+	                                  <p className="text-[11px] text-amber-700">
+	                                    Hidden for users (admin override)
+	                                  </p>
+	                                )}
+	                            </div>
+	                            <div className="flex flex-col items-end gap-1">
+	                              <Button
+	                                type="button"
+	                                variant="outline"
+	                                size="sm"
+	                                className="header-home-button squircle-sm bg-white text-slate-900"
+	                                onClick={() => void refreshPeptideForum()}
+	                                disabled={peptideForumLoading}
+	                              >
+	                                {peptideForumLoading ? "Refreshing…" : "Refresh"}
+	                              </Button>
+	                            </div>
+	                          </div>
 
-                          {peptideForumLoading && (
-                            <p className="text-xs text-slate-500">
-                              Loading schedule…
-                            </p>
-                          )}
+	                          {peptideForumLoading && (
+	                            <ul className="space-y-3" aria-live="polite">
+	                              {forumLoadingPlaceholders.map((_, index) => (
+	                                <li
+	                                  key={index}
+	                                  className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm animate-pulse min-h-[108px]"
+	                                >
+	                                  <div className="space-y-2">
+	                                    <div className="h-4 w-4/5 rounded bg-[rgba(95,179,249,0.14)]" />
+	                                    <div className="h-3 w-full rounded bg-[rgba(95,179,249,0.10)]" />
+	                                    <div className="h-3 w-11/12 rounded bg-[rgba(95,179,249,0.10)]" />
+	                                    <div className="h-3 w-1/3 rounded bg-[rgba(95,179,249,0.12)]" />
+	                                  </div>
+	                                </li>
+	                              ))}
+	                            </ul>
+	                          )}
                           {!peptideForumLoading && peptideForumError && (
                             <p className="text-xs text-red-600" role="alert">
                               {peptideForumError}
@@ -14967,21 +15230,25 @@ export default function App() {
                                           const href = isPast ? recording : webinarLink;
                                           if (!href) return null;
 
-                                          const label = isPast ? "Recording Available" : "Watch the Webinar";
-
-                                          return (
-                                            <p className="text-xs">
-                                              <a
-                                                href={href}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="font-semibold text-[rgb(95,179,249)] hover:underline underline-offset-4"
-                                              >
-                                                {label}
-                                              </a>
-                                            </p>
-                                          );
-                                        })()}
+	                                          const label = isPast ? "Recording Available" : "Join the Lecture";
+	
+	                                          return (
+	                                            <p className="text-sm mt-1 pt-0.5">
+	                                              <a
+	                                                href={href}
+	                                                target="_blank"
+	                                                rel="noopener noreferrer"
+	                                                className="font-semibold !text-[rgb(95,179,249)] hover:underline underline-offset-4"
+	                                                style={{ color: "rgb(95, 179, 249)" }}
+	                                              >
+	                                                <span className="inline-flex items-center gap-1">
+	                                                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+	                                                  <span>{label}</span>
+	                                                </span>
+	                                              </a>
+	                                            </p>
+	                                          );
+	                                        })()}
                                       </div>
                                     </li>
                                   ))}
@@ -15026,16 +15293,9 @@ export default function App() {
                           <div className="flex-1 overflow-y-auto pr-1 space-y-16">
                             {/* Removed: Customer experiences & referrals section */}
 
-                            <section className="squircle glass-strong landing-glass-strong border border-[var(--brand-glass-border-3)] p-6 text-slate-900 shadow-sm">
-                              <div
-                                className="landing-richtext text-sm"
-                                dangerouslySetInnerHTML={{
-                                  __html: careComplianceHtml,
-                                }}
-                              />
-                            </section>
-                          </div>
-                        </div>
+	                            {/* Removed: Care & Compliance container */}
+	                          </div>
+	                        </div>
                       </div>
                     </div>
                   </div>

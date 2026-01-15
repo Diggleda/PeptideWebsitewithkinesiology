@@ -201,6 +201,7 @@ interface AccountOrderSummary {
 
 interface HeaderProps {
   user: HeaderUser | null;
+  researchDashboardEnabled?: boolean;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout: () => void;
   cartItems: number;
@@ -770,6 +771,7 @@ const formatRelativeMinutes = (value?: string | null) => {
 
 export function Header({
   user,
+  researchDashboardEnabled = false,
   onLogin,
   onLogout,
   cartItems,
@@ -2796,7 +2798,7 @@ export function Header({
     </div>
   ) : null;
 
-  const researchPanel = (
+  const researchPlaceholderPanel = (
     <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
@@ -2804,6 +2806,47 @@ export function Header({
       </p>
     </div>
   );
+
+  const researchWipPanel = (
+    <div className="space-y-4">
+      <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-2)] bg-white/70">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-slate-800">Research Dashboard</h3>
+            <p className="text-sm text-slate-600">
+              Work in progress (early access). Feedback welcome.
+            </p>
+          </div>
+          <span className="text-[11px] font-semibold text-[rgb(95,179,249)] border border-[rgba(95,179,249,0.45)] bg-white/80 px-2 py-1 rounded-md">
+            BETA
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-white/40 bg-white/70 p-4">
+          <p className="text-sm font-semibold text-slate-800">Anonymous sharing</p>
+          <p className="text-xs text-slate-600">
+            Post de-identified notes and learn from peer discussions.
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/40 bg-white/70 p-4">
+          <p className="text-sm font-semibold text-slate-800">Tools & resources</p>
+          <p className="text-xs text-slate-600">
+            Access protocols, references, and internal research tools.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const effectiveRole = localUser?.role || user?.role || null;
+  const canSeeResearchWip =
+    researchDashboardEnabled === true
+    || isAdmin(effectiveRole)
+    || normalizeRole(effectiveRole) === 'test_doctor';
+
+  const researchPanel = canSeeResearchWip ? researchWipPanel : researchPlaceholderPanel;
 
 		  const renderOrdersList = () => {
 		    const repView = false;
