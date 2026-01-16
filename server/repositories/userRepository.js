@@ -193,6 +193,22 @@ const ensureUserDefaults = (user) => {
   if (!normalized.lastLoginAt) {
     normalized.lastLoginAt = normalized.createdAt || null;
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'lastSeenAt')) {
+    normalized.lastSeenAt = null;
+  } else {
+    normalized.lastSeenAt = normalizeOptionalString(normalized.lastSeenAt);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'lastInteractionAt')) {
+    normalized.lastInteractionAt = null;
+  } else {
+    normalized.lastInteractionAt = normalizeOptionalString(normalized.lastInteractionAt);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'isOnline')) {
+    normalized.isOnline = false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'isIdle')) {
+    normalized.isIdle = null;
+  }
   if (!normalized.referralCredits) {
     normalized.referralCredits = 0;
   }

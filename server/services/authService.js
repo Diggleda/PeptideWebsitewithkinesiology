@@ -324,10 +324,15 @@ const login = async ({ email, password }) => {
   }
 
   const persistStart = startTimer();
+  const nowIso = new Date().toISOString();
   const updated = userRepository.update({
     ...user,
     visits: (user.visits || 1) + 1,
-    lastLoginAt: new Date().toISOString(),
+    lastLoginAt: nowIso,
+    lastSeenAt: nowIso,
+    lastInteractionAt: nowIso,
+    isOnline: true,
+    isIdle: false,
   });
   const persistMs = elapsedMs(persistStart);
 

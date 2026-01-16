@@ -12353,6 +12353,16 @@ export default function App() {
 
 	                      const getIdleMinutesLabel = (entry: any) => {
 	                        void userActivityNowTick;
+	                        const numericMinutes =
+	                          typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+	                            ? entry.idleMinutes
+	                            : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+	                              ? entry.idleForMinutes
+	                              : null;
+	                        if (numericMinutes != null) {
+	                          if (numericMinutes < 1) return "<1min";
+	                          return `${Math.max(0, Math.floor(numericMinutes))}min`;
+	                        }
 	                        const isCurrent =
 	                          (user?.id && entry?.id === user.id) ||
 	                          (user?.email &&
@@ -12363,7 +12373,12 @@ export default function App() {
 	                          ? lastActivityAtRef.current
 	                          : (() => {
 	                              const raw =
-	                                entry?.lastInteractionAt || entry?.lastSeenAt || null;
+	                                entry?.lastInteractionAt ||
+	                                entry?.lastSeenAt ||
+	                                entry?.lastActivityAt ||
+	                                entry?.lastActiveAt ||
+	                                entry?.lastLoginAt ||
+	                                null;
 	                              if (!raw) return null;
 	                              const parsed = new Date(raw).getTime();
 	                              return Number.isFinite(parsed) ? parsed : null;

@@ -233,10 +233,23 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
     const lastLoginAt = user?.lastLoginAt || null;
     const lastLoginMs = lastLoginAt ? Date.parse(lastLoginAt) : NaN;
     const hasLoginTs = Number.isFinite(lastLoginMs);
+    const lastSeenAt = user?.lastSeenAt || lastLoginAt || null;
+    const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+    const hasSeenTs = Number.isFinite(lastSeenMs);
+    const lastInteractionAt = user?.lastInteractionAt || null;
+    const lastInteractionMs = lastInteractionAt ? Date.parse(lastInteractionAt) : NaN;
+    const hasInteractionTs = Number.isFinite(lastInteractionMs);
+
     const explicitOnline = typeof user?.isOnline === 'boolean' ? user.isOnline : false;
-    const isOnline = explicitOnline || (hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
+    const isOnline =
+      explicitOnline ||
+      (hasSeenTs && (nowMs - lastSeenMs) <= onlineThresholdMs) ||
+      (hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
+
     const explicitIdle = typeof user?.isIdle === 'boolean' ? user.isIdle : null;
-    const computedIdle = isOnline && hasLoginTs ? (nowMs - lastLoginMs) >= idleThresholdMs : null;
+    const idleAnchorMs = hasInteractionTs ? lastInteractionMs : (hasSeenTs ? lastSeenMs : lastLoginMs);
+    const hasIdleAnchor = Number.isFinite(idleAnchorMs);
+    const computedIdle = isOnline && hasIdleAnchor ? (nowMs - idleAnchorMs) >= idleThresholdMs : null;
     return {
       id: user.id,
       name: user.name || null,
@@ -245,6 +258,8 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
       isOnline,
       isIdle: explicitIdle ?? computedIdle,
       lastLoginAt,
+      lastSeenAt,
+      lastInteractionAt,
       profileImageUrl: user.profileImageUrl || null,
     };
   });
@@ -318,6 +333,41 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
     total: recent.length,
     byRole,
     users: recent,
+  });
+});
+
+router.post('/presence', authenticate, async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: 'User not found' });
+  }
+  const nowIso = new Date().toISOString();
+  const kind = (req.body?.kind || 'heartbeat').toString();
+  const isIdle = typeof req.body?.isIdle === 'boolean' ? req.body.isIdle : null;
+
+  const existing = userRepository.findById(userId);
+  if (!existing) {
+    return res.status(401).json({ error: 'User not found' });
+  }
+
+  const next = {
+    ...existing,
+    isOnline: true,
+    isIdle: isIdle ?? existing.isIdle ?? false,
+    lastSeenAt: nowIso,
+    lastInteractionAt:
+      kind === 'interaction' ? nowIso : (existing.lastInteractionAt || null),
+  };
+
+  userRepository.update(next);
+
+  return res.json({
+    ok: true,
+    now: nowIso,
+    kind,
+    isIdle: next.isIdle,
+    lastSeenAt: next.lastSeenAt,
+    lastInteractionAt: next.lastInteractionAt,
   });
 });
 
