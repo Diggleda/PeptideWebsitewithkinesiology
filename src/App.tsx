@@ -9966,7 +9966,9 @@ export default function App() {
 	      }
 	      lastPresenceInteractionPingAtRef.current = now;
 	      try {
-	        void settingsAPI.pingPresence({ kind: "interaction", isIdle: false });
+	        void settingsAPI
+	          .pingPresence({ kind: "interaction", isIdle: false })
+	          .catch(() => undefined);
 	      } catch {
 	        // ignore
 	      }
@@ -10030,10 +10032,12 @@ export default function App() {
 	      if (now - lastPresenceHeartbeatPingAtRef.current < throttleMs) return;
 	      lastPresenceHeartbeatPingAtRef.current = now;
 	      try {
-	        void settingsAPI.pingPresence({
-	          kind: "heartbeat",
-	          isIdle: isIdleRef.current,
-	        });
+	        void settingsAPI
+	          .pingPresence({
+	            kind: "heartbeat",
+	            isIdle: isIdleRef.current,
+	          })
+	          .catch(() => undefined);
 	      } catch {
 	        // ignore
 	      }
@@ -12335,22 +12339,48 @@ export default function App() {
                         return isEntryCurrentUser(entry) && isIdle;
                       };
 
-                      const getOnlineDurationMs = (entry: any) => {
-                        const lastLogin = entry?.lastLoginAt;
-                        if (!lastLogin) {
-                          return 0;
-                        }
+	                      const getOnlineDurationMs = (entry: any) => {
+	                        const lastLogin = entry?.lastLoginAt;
+	                        if (!lastLogin) {
+	                          return 0;
+	                        }
                         const startedAt = new Date(lastLogin).getTime();
                         if (!Number.isFinite(startedAt)) {
                           return Number.MAX_SAFE_INTEGER;
                         }
-                        return Math.max(0, Date.now() - startedAt);
-                      };
+	                        return Math.max(0, Date.now() - startedAt);
+	                      };
 
-                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
-                        const aIdle = getEntryIdle(a);
-                        const bIdle = getEntryIdle(b);
-                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
+	                      const getIdleMinutesLabel = (entry: any) => {
+	                        void userActivityNowTick;
+	                        const isCurrent =
+	                          (user?.id && entry?.id === user.id) ||
+	                          (user?.email &&
+	                            entry?.email &&
+	                            String(user.email).toLowerCase() ===
+	                              String(entry.email).toLowerCase());
+	                        const idleSinceMs = isCurrent
+	                          ? lastActivityAtRef.current
+	                          : (() => {
+	                              const raw =
+	                                entry?.lastInteractionAt || entry?.lastSeenAt || null;
+	                              if (!raw) return null;
+	                              const parsed = new Date(raw).getTime();
+	                              return Number.isFinite(parsed) ? parsed : null;
+	                            })();
+	                        if (!idleSinceMs) return null;
+	                        const minutes = Math.max(
+	                          0,
+	                          Math.floor((Date.now() - idleSinceMs) / 60000),
+	                        );
+	                        if (minutes < 1) return "<1min";
+	                        return `${minutes}min`;
+	                      };
+
+	                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
+	                        const aIdle = getEntryIdle(a);
+	                        const bIdle = getEntryIdle(b);
+	                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
 
                         const aDuration = getOnlineDurationMs(a);
                         const bDuration = getOnlineDurationMs(b);
@@ -12384,15 +12414,18 @@ export default function App() {
                                   entry.email &&
                                   user.email.toLowerCase() ===
                                     entry.email.toLowerCase());
-                              const entryIdleRaw = (entry as any)?.isIdle;
-                              const showIdle =
-                                (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
-                                (isCurrentUser && isIdle);
-                              return (
-                                <div
-                                  key={entry.id}
-                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-                                >
+	                              const entryIdleRaw = (entry as any)?.isIdle;
+	                              const showIdle =
+	                                (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
+	                                (isCurrentUser && isIdle);
+	                              const idleMinutesLabel = showIdle
+	                                ? getIdleMinutesLabel(entry)
+	                                : null;
+	                              return (
+	                                <div
+	                                  key={entry.id}
+	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+	                                >
                                   <button
                                     type="button"
                                     onClick={() => openLiveUserDetail(entry)}
@@ -12440,9 +12473,11 @@ export default function App() {
                                           ? "bg-slate-100 text-slate-600"
                                           : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
                                       }`}
-                                    >
-                                      {showIdle ? "Idle" : "Online"}
-                                    </span>
+	                                    >
+	                                      {showIdle
+	                                        ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
+	                                        : "Online"}
+	                                    </span>
                                     <div className="text-xs text-slate-600 whitespace-nowrap">
                                       {formatOnlineDuration(entry.lastLoginAt)}
                                     </div>

@@ -12,7 +12,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
-import { Minus, Plus, Trash2, LogIn, ShoppingCart, X, Landmark } from 'lucide-react';
+import { Minus, Plus, Trash2, LogIn, ShoppingCart, X, Landmark, ArrowLeftRight } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
 import { ordersAPI, shippingAPI } from '../services/api';
@@ -859,12 +859,13 @@ export function CheckoutModal({
         }
       }}
     >
-      <DialogContent
-        className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-        style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
-        containerStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
-        overlayStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
-        data-legal-overlay={legalModalOpen ? 'true' : 'false'}
+	      <DialogContent
+	        hideCloseButton
+	        className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+	        style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+	        containerStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
+	        overlayStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
+	        data-legal-overlay={legalModalOpen ? 'true' : 'false'}
         trapFocus={!legalModalOpen}
         disableOutsidePointerEvents={false}
       >
@@ -1176,31 +1177,41 @@ export function CheckoutModal({
                 )}
               </div>
 
-              {/* Payment Form */}
-              <div className="space-y-5">
-                <h3 className="mb-2">Payment Information</h3>
-                <div className="rounded-xl border border-slate-200 bg-white/70 px-5 py-4 mb-3 text-sm text-slate-700 leading-relaxed">
-                  <div className="flex items-start gap-2">
-                    <Landmark className="mt-0.5 h-4 w-4 text-slate-600" aria-hidden="true" />
-                    <div>
-                      <p className="font-semibold text-slate-800">
-                        {paymentMethod === 'zelle' ? 'Zelle' : 'Direct Bank Transfer'}
-                      </p>
-                      <p className="mt-1">
-                        After you place your order, we’ll email{" "}
-                        {paymentMethod === "zelle" ? "Zelle" : "bank transfer"}{" "}
-                        instructions to{" "}
-                        <span className="font-semibold">{customerEmail || "your email address"}</span>.
-                      </p>
-                      <p className="mt-2 text-[13px] text-slate-600">
-                        Important: Include your order number in the payment memo/notes (we’ll show it here after you place the order).
-                        {paymentMethod === "zelle"
-                          ? " Ensure your bank supports Zelle and that your Zelle account is set up and ready."
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+	              {/* Payment Form */}
+	              <div className="space-y-5">
+	                <h3 className="mb-2">Payment Information</h3>
+	                <div className="rounded-xl border border-slate-200 bg-white/70 px-3 py-4 mb-3 text-sm text-slate-700 leading-relaxed">
+	                  <div className="flex items-center gap-2">
+	                    {paymentMethod === "zelle" ? (
+	                      <ArrowLeftRight
+	                        size={20}
+	                        className="text-slate-600 shrink-0"
+	                        aria-hidden="true"
+	                      />
+	                    ) : (
+	                      <Landmark
+	                        size={20}
+	                        className="text-slate-600 shrink-0"
+	                        aria-hidden="true"
+	                      />
+	                    )}
+	                    <p className="font-bold text-slate-800">
+	                      {paymentMethod === "zelle" ? "Zelle" : "Direct Bank Transfer"}
+	                    </p>
+	                  </div>
+	                  <p className="mt-2">
+	                    After you place your order, we’ll email{" "}
+	                    {paymentMethod === "zelle" ? "Zelle" : "bank transfer"} instructions to{" "}
+	                    <span className="font-semibold">{customerEmail || "your email address"}</span>.
+	                  </p>
+	                  <p className="mt-2 text-[13px] text-slate-600">
+	                    Important: Include your order number in the payment memo/notes (we’ll show it here after you place
+	                    the order).
+	                    {paymentMethod === "zelle"
+	                      ? " Ensure your bank supports Zelle and that your Zelle account is set up and ready."
+	                      : ""}
+	                  </p>
+	                </div>
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Button
                     type="button"

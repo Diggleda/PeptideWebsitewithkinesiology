@@ -494,12 +494,16 @@ body {
   appearance: none;
   width: 1.15rem;
   height: 1.15rem;
+  min-width: 1.15rem;
+  min-height: 1.15rem;
+  aspect-ratio: 1 / 1;
   border-radius: 0.4rem;
   border: 2px solid rgba(148, 163, 184, 0.7);
   background: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   vertical-align: middle;
@@ -3335,6 +3339,7 @@ html {
   background: rgb(95, 179, 249);
   border-radius: 9999px;
   box-shadow: 0 4px 12px rgba(95, 179, 249, 0.45);
+  transform: translateY(1px);
   opacity: 0;
   transition: left 200ms cubic-bezier(0.22, 1, 0.36, 1), width 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
   pointer-events: none;
@@ -5807,6 +5812,16 @@ html {
   .dialog-close-btn:hover {
     background-color: rgb(147, 206, 253) !important;
   }
+}
+
+.dialog-close-btn {
+  width: calc(var(--spacing) * 9);
+  height: calc(var(--spacing) * 9);
+  min-width: calc(var(--spacing) * 9);
+  min-height: calc(var(--spacing) * 9);
+  aspect-ratio: 1 / 1;
+  border-radius: 9999px;
+  flex-shrink: 0;
 }
 
 /* Ensure modals/dialogs are always on top */

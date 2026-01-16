@@ -3775,26 +3775,32 @@ export function Header({
 		          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
               style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
 		          >
-		          <div
-		            ref={accountModalShellRef}
-		            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
-		            style={{
-                  height: "auto",
-                  maxHeight: "90vh",
-		            }}
-		          >
-		          <DialogClose
-		            className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 z-50 disabled:pointer-events-none"
-		            style={{
-		              backgroundColor: "rgb(95, 179, 249)",
-		              width: "38px",
-		              height: "38px",
-		              borderRadius: "50%",
-		            }}
-		            aria-label="Close account modal"
-		          >
-		            <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-		          </DialogClose>
+			          <div
+			            ref={accountModalShellRef}
+			            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
+			            style={{
+			              position: "relative",
+	                  height: "auto",
+	                  maxHeight: "90vh",
+			            }}
+			          >
+			          <DialogClose
+			            className="dialog-close-btn account-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 disabled:pointer-events-none"
+			            style={{
+			              backgroundColor: "rgb(95, 179, 249)",
+			              width: "38px",
+			              height: "38px",
+			              borderRadius: "50%",
+			              position: "absolute",
+			              top: "1rem",
+			              right: "1rem",
+			              zIndex: 20000,
+			              pointerEvents: "auto",
+			            }}
+			            aria-label="Close account modal"
+			          >
+			            <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+			          </DialogClose>
             <DialogHeader
               className={clsx(
                 "sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
