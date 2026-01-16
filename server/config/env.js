@@ -143,6 +143,8 @@ const env = {
     || process.env.APP_BASE_URL
     || 'http://localhost:3000',
   stripe: {
+    // Master switch to disable all outbound Stripe API usage while keeping code in place.
+    externalEnabled: process.env.STRIPE_EXTERNAL_ENABLED === 'true',
     onsiteEnabled: process.env.STRIPE_ONSITE_ENABLED === 'true',
     // Support switching between Stripe test/live without rewriting env files.
     // - STRIPE_MODE=test  -> STRIPE_SECRET_TEST_KEY (fallback STRIPE_SECRET_KEY)

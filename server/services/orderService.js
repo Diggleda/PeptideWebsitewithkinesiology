@@ -3,6 +3,7 @@ const orderRepository = require('../repositories/orderRepository');
 const userRepository = require('../repositories/userRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
 const referralService = require('./referralService');
+const emailService = require('./emailService');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const shipEngineClient = require('../integration/shipEngineClient');
 const shipStationClient = require('../integration/shipStationClient');
@@ -691,6 +692,7 @@ const createOrderInternal = async ({
   shippingTotal,
   physicianCertification,
   taxTotal,
+  paymentMethod,
 }) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
@@ -733,6 +735,14 @@ const createOrderInternal = async ({
   }
 
   const now = new Date().toISOString();
+  const resolveManualPaymentLabel = (raw) => {
+    const normalized = String(raw || '').toLowerCase().trim();
+    if (normalized === 'zelle') return 'Zelle';
+    if (normalized === 'bank_transfer' || normalized === 'bank' || normalized === 'transfer') return 'Direct Bank Transfer';
+    if (normalized === 'bacs') return 'Direct Bank Transfer';
+    return 'Zelle / Bank transfer';
+  };
+  const manualPaymentLabel = resolveManualPaymentLabel(paymentMethod);
   const order = {
     id: orderId || generateOrderId(),
     userId,
@@ -746,6 +756,8 @@ const createOrderInternal = async ({
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress),
     referralCode: referralCode || null,
     status: 'pending',
+    paymentMethod: manualPaymentLabel,
+    paymentDetails: manualPaymentLabel,
     createdAt: now,
     physicianCertificationAccepted: Boolean(physicianCertification),
     ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -805,36 +817,12 @@ const createOrderInternal = async ({
 
   shipStationOrderId = integrations.shipStation?.response?.orderId || null;
 
-  if (wooOrderId) {
-    try {
-      integrations.stripe = await paymentService.createStripePayment({
-        order,
-        customer: user,
-        wooOrderId,
-        wooOrderNumber,
-      });
-    } catch (error) {
-      logger.error({ err: error, orderId: order.id }, 'Stripe integration failed');
-      integrations.stripe = {
-        status: 'error',
-        message: error.message,
-        details: serializeCause(error.cause),
-      };
-    }
-  } else {
-    integrations.stripe = {
-      status: 'skipped',
-      reason: 'woo_order_missing',
-    };
-    logger.warn(
-      {
-        orderId: order.id,
-        wooStatus: integrations.wooCommerce?.status || 'unknown',
-        wooReason: integrations.wooCommerce?.reason || integrations.wooCommerce?.message || null,
-      },
-      'Stripe payment skipped because WooCommerce order was not created',
-    );
-  }
+  integrations.stripe = {
+    status: 'disabled',
+    reason: 'manual_payment',
+    message: 'Stripe payments are disabled; customer will pay via Zelle/bank transfer.',
+    ...(wooOrderId ? { wooOrderId, wooOrderNumber } : {}),
+  };
 
   if (shipStationClient.isConfigured()) {
     integrations.shipEngine = {
@@ -874,9 +862,6 @@ const createOrderInternal = async ({
   if (shipStationOrderId) {
     order.shipStationOrderId = shipStationOrderId;
   }
-  if (integrations.stripe?.paymentIntentId) {
-    order.paymentIntentId = integrations.stripe.paymentIntentId;
-  }
 
   try {
     integrations.mysql = await orderSqlRepository.persistOrder({
@@ -907,6 +892,21 @@ const createOrderInternal = async ({
   }
   orderRepository.update(order);
 
+  const to = user?.email || order?.billingAddress?.email || null;
+  if (to) {
+    try {
+      await emailService.sendOrderPaymentInstructionsEmail({
+        to,
+        customerName: user?.name || null,
+        orderId: order.id,
+        wooOrderNumber,
+        total: order.total,
+      });
+    } catch (error) {
+      logger.warn({ err: error, orderId: order.id }, 'Failed to send payment instructions email');
+    }
+  }
+
   return {
     success: true,
     order: sanitizeOrder(order),
@@ -928,6 +928,7 @@ const createOrder = async ({
   shippingTotal,
   physicianCertification,
   taxTotal,
+  paymentMethod,
 }) => {
   const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
   if (idempotencyKey && !normalizedIdempotencyKey) {
@@ -950,6 +951,7 @@ const createOrder = async ({
       shippingTotal,
       physicianCertification,
       taxTotal,
+      paymentMethod,
     });
   }
 
@@ -983,6 +985,7 @@ const createOrder = async ({
     shippingTotal,
     physicianCertification,
     taxTotal,
+    paymentMethod,
   });
 
   inFlightOrders.set(inFlightKey, promise);

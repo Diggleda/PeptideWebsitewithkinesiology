@@ -59,6 +59,40 @@ const buildResetUrl = (token) => {
 
 const FROM_ADDRESS = process.env.MAIL_FROM || '"PepPro" <support@peppro.net>';
 
+const normalizeEmailAddress = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  return normalized && normalized.includes('@') ? normalized : null;
+};
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const logPaymentInstructionsEmail = (to, meta = {}) => {
+  try {
+    const logPath = ensureMailLog();
+    const payload = [
+      `[${new Date().toISOString()}] Payment Instructions`,
+      `To: ${to || 'unknown'}`,
+      meta.orderId ? `Order: ${meta.orderId}` : '',
+      meta.wooOrderNumber ? `Woo Order: ${meta.wooOrderNumber}` : '',
+      Number.isFinite(meta.total) ? `Total: $${Number(meta.total).toFixed(2)}` : '',
+      meta.note ? `Note: ${meta.note}` : '',
+      meta.error ? `Error: ${meta.error}` : '',
+      '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    fs.appendFileSync(logPath, `${payload}\n`);
+  } catch {
+    // Swallow log failures; checkout should remain best-effort.
+  }
+};
+
 const sendPasswordResetEmail = async (to, token) => {
   const resetUrl = buildResetUrl(token);
   const templatePath = path.join(__dirname, '..', 'templates', 'passwordReset.html');
@@ -87,6 +121,139 @@ const sendPasswordResetEmail = async (to, token) => {
   }
 };
 
+const buildPaymentInstructionsSections = () => {
+  const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL) || 'support@peppro.net';
+  const zelleRecipient = String(process.env.PAYMENT_ZELLE_RECIPIENT || '').trim();
+  const zelleEmail = normalizeEmailAddress(process.env.PAYMENT_ZELLE_EMAIL);
+  const zellePhone = String(process.env.PAYMENT_ZELLE_PHONE || '').trim();
+
+  const bankName = String(process.env.PAYMENT_BANK_NAME || '').trim();
+  const bankAccountName = String(process.env.PAYMENT_BANK_ACCOUNT_NAME || '').trim();
+  const bankRoutingNumber = String(process.env.PAYMENT_BANK_ROUTING_NUMBER || '').trim();
+  const bankAccountNumber = String(process.env.PAYMENT_BANK_ACCOUNT_NUMBER || '').trim();
+  const bankAccountType = String(process.env.PAYMENT_BANK_ACCOUNT_TYPE || '').trim();
+
+  const zelleLines = [];
+  if (zelleRecipient) zelleLines.push(`<li><strong>Recipient</strong>: ${escapeHtml(zelleRecipient)}</li>`);
+  if (zelleEmail) zelleLines.push(`<li><strong>Zelle email</strong>: ${escapeHtml(zelleEmail)}</li>`);
+  if (zellePhone) zelleLines.push(`<li><strong>Zelle phone</strong>: ${escapeHtml(zellePhone)}</li>`);
+
+  const bankLines = [];
+  if (bankName) bankLines.push(`<li><strong>Bank</strong>: ${escapeHtml(bankName)}</li>`);
+  if (bankAccountName) bankLines.push(`<li><strong>Account name</strong>: ${escapeHtml(bankAccountName)}</li>`);
+  if (bankRoutingNumber) bankLines.push(`<li><strong>Routing number</strong>: ${escapeHtml(bankRoutingNumber)}</li>`);
+  if (bankAccountNumber) bankLines.push(`<li><strong>Account number</strong>: ${escapeHtml(bankAccountNumber)}</li>`);
+  if (bankAccountType) bankLines.push(`<li><strong>Account type</strong>: ${escapeHtml(bankAccountType)}</li>`);
+
+  const zelleSection = zelleLines.length
+    ? `
+      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option A: Pay with Zelle</h3>
+      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
+        Use Zelle in your bank app and send the <strong>Amount to send</strong> shown above to:
+      </p>
+      <ul style="margin: 8px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
+        ${zelleLines.join('\n')}
+      </ul>
+      <ol style="margin: 10px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
+        <li>Send the exact amount shown above.</li>
+        <li>Set the memo/notes to the exact value shown above.</li>
+        <li>Once received, we’ll begin processing your order.</li>
+      </ol>
+    `
+    : `
+      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option A: Pay with Zelle</h3>
+      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
+        Reply to this email or contact <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a> for Zelle instructions.
+      </p>
+    `;
+
+  const bankSection = bankLines.length
+    ? `
+      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option B: Direct Bank Transfer</h3>
+      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
+        Initiate an ACH/bank transfer for the <strong>Amount to send</strong> shown above using:
+      </p>
+      <ul style="margin: 8px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
+        ${bankLines.join('\n')}
+      </ul>
+      <ol style="margin: 10px 0 0 18px; padding: 0; color: #334155; line-height: 1.6;">
+        <li>Send the exact amount shown above.</li>
+        <li>Include the memo/notes shown above (if your bank allows).</li>
+        <li>Once received, we’ll begin processing your order.</li>
+      </ol>
+    `
+    : `
+      <h3 style="margin: 18px 0 8px; font-size: 16px; color: #0f172a;">Option B: Direct Bank Transfer</h3>
+      <p style="margin: 8px 0 0; color: #334155; line-height: 1.6;">
+        Reply to this email or contact <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a> for bank transfer instructions.
+      </p>
+    `;
+
+  return { supportEmail, zelleSection, bankSection };
+};
+
+const sendOrderPaymentInstructionsEmail = async ({
+  to,
+  customerName,
+  orderId,
+  wooOrderNumber,
+  total,
+}) => {
+  const recipient = normalizeEmailAddress(to);
+  if (!recipient) {
+    return;
+  }
+
+  const templatePath = path.join(__dirname, '..', 'templates', 'paymentInstructions.html');
+  const htmlTemplate = fs.readFileSync(templatePath, 'utf8');
+  const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
+  const displayName = String(customerName || 'PepPro Customer').trim() || 'PepPro Customer';
+  const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
+  const { supportEmail, zelleSection, bankSection } = buildPaymentInstructionsSections();
+
+  const html = htmlTemplate
+    .replaceAll('{{customerName}}', escapeHtml(displayName))
+    .replaceAll('{{orderNumber}}', escapeHtml(displayOrderNumber || ''))
+    .replaceAll('{{orderTotal}}', escapeHtml(formattedTotal))
+    .replaceAll('{{supportEmail}}', escapeHtml(supportEmail))
+    .replaceAll('{{zelleSection}}', zelleSection)
+    .replaceAll('{{bankTransferSection}}', bankSection);
+
+  const subjectBase = process.env.PAYMENT_INSTRUCTIONS_SUBJECT || 'PepPro payment instructions';
+  const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
+  const bcc = normalizeEmailAddress(process.env.PAYMENT_INSTRUCTIONS_BCC);
+
+  const mailOptions = {
+    from: FROM_ADDRESS,
+    to: recipient,
+    ...(bcc ? { bcc } : {}),
+    subject,
+    html,
+  };
+
+  if (!transporter) {
+    logPaymentInstructionsEmail(recipient, {
+      orderId: orderId || null,
+      wooOrderNumber: wooOrderNumber || null,
+      total: Number.isFinite(Number(total)) ? Number(total) : null,
+      note: 'SMTP transport unavailable; payment instructions not sent.',
+    });
+    return;
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    logPaymentInstructionsEmail(recipient, {
+      orderId: orderId || null,
+      wooOrderNumber: wooOrderNumber || null,
+      total: Number.isFinite(Number(total)) ? Number(total) : null,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
 module.exports = {
   sendPasswordResetEmail,
+  sendOrderPaymentInstructionsEmail,
 };

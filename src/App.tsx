@@ -8,9 +8,6 @@ import {
   ReactNode,
   forwardRef,
 } from "react";
-import { Elements } from "@stripe/react-stripe-js";
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
-import { getStripeMode, getStripePublishableKey } from "./lib/stripeConfig";
 import { computeUnitPrice } from "./lib/pricing";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -2423,68 +2420,12 @@ const LazyCatalogProductCard = ({
 
 // (Removed eager variation prefetching for faster catalog loads.)
 
-declare global {
-  interface Window {
-    __PEPPRO_STRIPE_PROMISE?: Promise<Stripe | null>;
-    __PEPPRO_STRIPE_PROMISES?: Record<string, Promise<Stripe | null>>;
-  }
-}
-
-const ENV_STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
-
 export default function App() {
   const BROWSER_VARIATION_CACHE_ENABLED =
     String((import.meta as any).env?.VITE_BROWSER_VARIATION_CACHE || "")
       .toLowerCase()
       .trim() === "true";
-  const [stripeSettings, setStripeSettings] = useState<{
-    stripeMode?: "test" | "live";
-    stripeTestMode?: boolean;
-    onsiteEnabled?: boolean;
-    publishableKey?: string;
-    publishableKeyLive?: string;
-    publishableKeyTest?: string;
-  } | null>(null);
-  const stripeModeEffective = useMemo(() => {
-    const serverMode = (stripeSettings?.stripeMode || "").toLowerCase().trim();
-    if (serverMode === "test" || serverMode === "live") {
-      return serverMode;
-    }
-    return getStripeMode();
-  }, [stripeSettings?.stripeMode]);
-  const stripeDashboardUrl =
-    stripeModeEffective === "live"
-      ? "https://dashboard.stripe.com/"
-      : "https://dashboard.stripe.com/test";
   const shipStationDashboardUrl = "https://ship14.shipstation.com";
-	  const stripePublishableKey = useMemo(() => {
-	    const candidate = stripeSettings
-	      ? (stripeSettings.publishableKey || "").trim()
-	      : ENV_STRIPE_PUBLISHABLE_KEY;
-
-	    const mode = (stripeModeEffective || "").toLowerCase().trim();
-	    if (mode === "live") {
-	      return candidate.startsWith("pk_live") ? candidate : "";
-	    }
-	    // default to test
-	    return candidate.startsWith("pk_test") ? candidate : "";
-	  }, [stripeSettings, stripeModeEffective]);
-  const stripeClientPromise = useMemo((): Promise<Stripe | null> => {
-    if (!stripePublishableKey) {
-      return Promise.resolve(null);
-    }
-    if (typeof window !== "undefined") {
-      if (!window.__PEPPRO_STRIPE_PROMISES) {
-        window.__PEPPRO_STRIPE_PROMISES = {};
-      }
-      const cache = window.__PEPPRO_STRIPE_PROMISES;
-      if (!cache[stripePublishableKey]) {
-        cache[stripePublishableKey] = loadStripe(stripePublishableKey);
-      }
-      return cache[stripePublishableKey];
-    }
-    return loadStripe(stripePublishableKey);
-  }, [stripePublishableKey]);
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -3089,12 +3030,6 @@ export default function App() {
   });
   const [passkeyAutopromptEnabled, setPasskeyAutopromptEnabled] =
     useState(PASSKEY_AUTOPROMPT);
-  const stripeIsTestMode = useMemo(() => {
-    if (stripeModeEffective === "test") {
-      return true;
-    }
-    return stripePublishableKey.startsWith("pk_test");
-  }, [stripeModeEffective, stripePublishableKey]);
   const passkeyConditionalInFlight = useRef(false);
   const [passkeyLoginPending, setPasskeyLoginPending] = useState(false);
   const [landingLoginPending, setLandingLoginPending] = useState(false);
@@ -3873,25 +3808,6 @@ export default function App() {
   }, []);
 
 	  useEffect(() => {
-	    let cancelled = false;
-	    const fetchStripeSettings = async () => {
-	      try {
-	        const data = await settingsAPI.getStripeSettings();
-        if (cancelled) return;
-        if (data && typeof data === "object") {
-          setStripeSettings(data as any);
-        }
-      } catch (error) {
-        console.warn("[Stripe] Failed to load admin Stripe settings", error);
-      }
-    };
-    fetchStripeSettings();
-    return () => {
-      cancelled = true;
-	    };
-	  }, []);
-
-	  useEffect(() => {
 	    if (!user) return;
 	    let cancelled = false;
 	    const refreshResearchSetting = async () => {
@@ -4122,38 +4038,6 @@ export default function App() {
 	        }
 	      } finally {
 	        setSettingsSaving((prev) => ({ ...prev, research: false }));
-	      }
-	    },
-	    [user?.role],
-	  );
-
-	  const handleStripeTestModeToggle = useCallback(
-	    async (enabled: boolean) => {
-	      if (!isAdmin(user?.role)) {
-	        return;
-	      }
-	      setSettingsSaving((prev) => ({ ...prev, stripe: true }));
-	      const optimisticMode = enabled ? "test" : "live";
-	      let previousSettings: any = null;
-	      setStripeSettings((prev) => {
-	        previousSettings = prev;
-	        return {
-	          ...(prev || {}),
-	          stripeMode: optimisticMode,
-	          stripeTestMode: enabled,
-	        };
-	      });
-	      try {
-	        const updated = await settingsAPI.updateStripeTestMode(enabled);
-	        if (updated && typeof updated === "object") {
-	          setStripeSettings(updated as any);
-	        }
-	      } catch (error) {
-	        console.warn("[Stripe] Failed to update Stripe test mode", error);
-	        toast.error("Unable to update Payment mode right now.");
-	        setStripeSettings(previousSettings);
-	      } finally {
-	        setSettingsSaving((prev) => ({ ...prev, stripe: false }));
 	      }
 	    },
 	    [user?.role],
@@ -5587,9 +5471,8 @@ export default function App() {
 	  const [settingsSaving, setSettingsSaving] = useState<{
 	    shop: boolean;
 	    forum: boolean;
-	    stripe: boolean;
 	    research: boolean;
-	  }>({ shop: false, forum: false, stripe: false, research: false });
+	  }>({ shop: false, forum: false, research: false });
 	  type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
@@ -5725,6 +5608,7 @@ export default function App() {
 	  const isIdleRef = useRef(false);
 	  const lastActivityAtRef = useRef<number>(Date.now());
 	  const idleLogoutFiredRef = useRef(false);
+	  const sessionLogoutFiredRef = useRef(false);
 	  const lastPresenceHeartbeatPingAtRef = useRef(0);
 	  const lastPresenceInteractionPingAtRef = useRef(0);
 
@@ -10051,9 +9935,24 @@ export default function App() {
 
     const idleThresholdMs = 10 * 60 * 1000;
     const idleLogoutMs = 60 * 60 * 1000;
+    const sessionMaxMs = 24 * 60 * 60 * 1000;
+    const sessionStartedAtKey = "peppro_session_started_at_v1";
+    let sessionStartedAt = Date.now();
+    try {
+      const raw = window.sessionStorage.getItem(sessionStartedAtKey);
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) {
+        sessionStartedAt = parsed;
+      } else {
+        window.sessionStorage.setItem(sessionStartedAtKey, String(sessionStartedAt));
+      }
+    } catch {
+      // ignore
+    }
 
     lastActivityAtRef.current = Date.now();
     idleLogoutFiredRef.current = false;
+    sessionLogoutFiredRef.current = false;
     setIsIdle(false);
 
 	    const markActivity = () => {
@@ -10074,6 +9973,15 @@ export default function App() {
 	    };
 
     const checkIdle = () => {
+      const sessionAgeMs = Date.now() - sessionStartedAt;
+      if (sessionAgeMs >= sessionMaxMs) {
+        if (!sessionLogoutFiredRef.current) {
+          sessionLogoutFiredRef.current = true;
+          toast.info("Session expired. Please sign in again.");
+          handleLogout();
+        }
+        return;
+      }
       const idleForMs = Date.now() - lastActivityAtRef.current;
       if (idleForMs >= idleLogoutMs) {
         if (!idleLogoutFiredRef.current) {
@@ -11672,9 +11580,6 @@ export default function App() {
         label: `Search • “${formattedSearch}”`,
       });
     }
-	    if (stripeIsTestMode) {
-	      statusChips.push({ key: "stripe", label: "Payment test mode" });
-	    }
 	    if (catalogLoading) {
 	      statusChips.push({ key: "loading", label: "loading-icon" });
 	    }
@@ -11871,23 +11776,6 @@ export default function App() {
 	                  <span className="hidden sm:inline">PepPro WooCommerce Dashboard</span>
 	                  <span className="sm:hidden">WooCommerce Dashboard</span>
 	                </a>
-                  <a
-                    href={stripeDashboardUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
-                    title="Open Stripe Dashboard"
-                  >
-                    <img
-                      src="/logos/stripe.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="h-5 w-5"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <span>Stripe Dashboard</span>
-                  </a>
                   <a
                     href={shipStationDashboardUrl}
                     target="_blank"
@@ -12286,7 +12174,7 @@ export default function App() {
 		                    Settings
 		                  </h3>
 			                  <p className="text-sm text-slate-600">
-			                    Configure storefront availability and payment mode.
+			                    Configure storefront availability.
 			                  </p>
 		                </div>
 	                </div>
@@ -12353,40 +12241,6 @@ export default function App() {
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
 		                          Shows/hides the forum card on the info page.
-		                        </span>
-		                      </span>
-		                    </label>
-		                  </div>
-		
-		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
-		                    <label
-		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
-		                    >
-		                      <input
-		                        type="checkbox"
-		                        aria-label="Payment test mode"
-		                        checked={stripeModeEffective === "test"}
-		                        onChange={(e) =>
-		                          handleStripeTestModeToggle(e.target.checked)
-		                        }
-		                        className="brand-checkbox mt-0.5"
-		                        disabled={!isAdmin(user.role) || settingsSaving.stripe}
-		                      />
-		                      <span className="min-w-0">
-		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Payment test mode</span>
-		                          <span className="text-xs font-semibold text-slate-500">
-		                            (Status:{" "}
-		                            {settingsSaving.stripe
-		                              ? "Saving…"
-		                              : stripeModeEffective === "test"
-		                                ? "Test"
-		                                : "Live"}
-		                            )
-		                          </span>
-		                        </span>
-		                        <span className="block text-xs text-slate-600">
-		                          Switch between Stripe test and live mode.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -16339,42 +16193,38 @@ export default function App() {
       </div>
 
       {/* Checkout Modal */}
-      <Elements stripe={stripeClientPromise} key={stripePublishableKey || "stripe"}>
-        <CheckoutModal
-          isOpen={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-          cartItems={cartItems}
-          onCheckout={handleCheckout}
-          onClearCart={() => setCartItems([])}
-          onPaymentSuccess={() => {
-            const requestToken = Date.now();
-            const optimisticOrder = postCheckoutOptimisticOrderRef.current;
-            setAccountModalRequest({
-              tab: "orders",
-              open: true,
-              token: requestToken,
-              order: optimisticOrder ?? undefined,
-            });
-            triggerPostCheckoutOrdersRefresh().catch(() => undefined);
-            setTimeout(() => {
-              setAccountModalRequest((prev) =>
-                prev && prev.token === requestToken ? null : prev,
-              );
-            }, 2500);
-          }}
-          onUpdateItemQuantity={handleUpdateCartItemQuantity}
-          onRemoveItem={handleRemoveCartItem}
-          isAuthenticated={Boolean(user)}
-          onRequireLogin={handleRequireLogin}
-          physicianName={user?.npiVerification?.name || user?.name || null}
-          customerEmail={user?.email || null}
-          customerName={user?.name || null}
-          defaultShippingAddress={checkoutDefaultShippingAddress}
-          availableCredits={availableReferralCredits}
-          stripeAvailable={Boolean(stripePublishableKey)}
-          stripeOnsiteEnabled={stripeSettings?.onsiteEnabled}
-        />
-      </Elements>
+      <CheckoutModal
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        cartItems={cartItems}
+        onCheckout={handleCheckout}
+        onClearCart={() => setCartItems([])}
+        onPaymentSuccess={() => {
+          const requestToken = Date.now();
+          const optimisticOrder = postCheckoutOptimisticOrderRef.current;
+          setAccountModalRequest({
+            tab: "orders",
+            open: true,
+            token: requestToken,
+            order: optimisticOrder ?? undefined,
+          });
+          triggerPostCheckoutOrdersRefresh().catch(() => undefined);
+          setTimeout(() => {
+            setAccountModalRequest((prev) =>
+              prev && prev.token === requestToken ? null : prev,
+            );
+          }, 2500);
+        }}
+        onUpdateItemQuantity={handleUpdateCartItemQuantity}
+        onRemoveItem={handleRemoveCartItem}
+        isAuthenticated={Boolean(user)}
+        onRequireLogin={handleRequireLogin}
+        physicianName={user?.npiVerification?.name || user?.name || null}
+        customerEmail={user?.email || null}
+        customerName={user?.name || null}
+        defaultShippingAddress={checkoutDefaultShippingAddress}
+        availableCredits={availableReferralCredits}
+      />
 
       <Dialog
         open={showManualProspectModal}

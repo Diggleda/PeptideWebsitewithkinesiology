@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PepPro Payment Instructions</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f8fafc; font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,Helvetica,Arial,sans-serif;">
+    <div style="max-width: 640px; margin: 0 auto; padding: 24px;">
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius: 14px; padding: 22px;">
+        <h1 style="margin: 0 0 10px; font-size: 18px; color:#0f172a;">Payment instructions</h1>
+        <p style="margin: 0 0 12px; color:#334155; line-height: 1.6;">
+          Hi {{customerName}},
+        </p>
+        <p style="margin: 0 0 12px; color:#334155; line-height: 1.6;">
+          Thanks for your PepPro order. To complete checkout, please send payment using one of the methods below.
+        </p>
+        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; background:#f8fafc;">
+          <p style="margin: 0; color:#0f172a; font-weight: 600;">Order details</p>
+          <p style="margin: 6px 0 0; color:#334155; line-height: 1.6;">
+            <strong>Order</strong>: {{orderNumber}}<br />
+            <strong>Amount to send</strong>: {{orderTotal}}<br />
+            <strong>Memo / Notes</strong>: <span style="font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;">PepPro Order {{orderNumber}}</span>
+          </p>
+          <p style="margin: 10px 0 0; color:#475569; font-size: 13px; line-height: 1.6;">
+            Please include the memo exactly as shown so we can match your payment quickly.
+          </p>
+        </div>
+
+        {{zelleSection}}
+        {{bankTransferSection}}
+
+        <p style="margin: 18px 0 0; color:#334155; line-height: 1.6;">
+          Questions? Reply to this email or contact <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.
+        </p>
+        <p style="margin: 16px 0 0; color:#94a3b8; font-size: 12px; line-height: 1.6;">
+          PepPro
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

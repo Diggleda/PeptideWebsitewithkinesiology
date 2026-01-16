@@ -2,6 +2,7 @@ const shipEngineClient = require('../integration/shipEngineClient');
 const shipStationClient = require('../integration/shipStationClient');
 const { ensureShippingAddress, createAddressFingerprint } = require('../services/shippingValidation');
 const { logger } = require('../config/logger');
+const { env } = require('../config/env');
 
 const validateItems = (items) => Array.isArray(items)
   && items.every((item) => Number(item?.quantity) > 0);
@@ -29,6 +30,34 @@ const calculateTotalWeightOz = (items = []) => {
   return total > 0 ? total : DEFAULT_ITEM_WEIGHT_OZ;
 };
 
+const toNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const isFallbackEnabled = () => {
+  const configured = String(process.env.SHIPPING_FALLBACK_ENABLED || '').toLowerCase().trim();
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+  return env.nodeEnv !== 'production';
+};
+
+const buildFallbackRates = () => {
+  const rate = Math.max(0, toNumber(process.env.SHIPPING_FALLBACK_RATE, 0));
+  return [
+    {
+      carrierId: 'manual',
+      serviceCode: 'fallback',
+      serviceType: 'Standard Shipping',
+      estimatedDeliveryDays: null,
+      deliveryDateGuaranteed: null,
+      rate,
+      currency: 'USD',
+      fallback: true,
+    },
+  ];
+};
+
 const getRates = async (req, res, next) => {
   try {
     const { shippingAddress, items } = req.body || {};
@@ -42,43 +71,79 @@ const getRates = async (req, res, next) => {
     const normalizedAddress = ensureShippingAddress(shippingAddress);
     const totalWeightOz = calculateTotalWeightOz(items || []);
 
+    const addressFingerprint = createAddressFingerprint(normalizedAddress);
+
     // Prefer ShipStation; fall back to ShipEngine on failure.
     let rates;
-    if (shipStationClient.isConfigured()) {
-      try {
+    try {
+      if (shipStationClient.isConfigured()) {
         rates = await shipStationClient.estimateRates({
           shippingAddress: normalizedAddress,
           items,
           totalWeightOz,
         });
-      } catch (shipStationError) {
-        logger.warn(
-          { err: shipStationError },
-          'ShipStation rate estimate failed; attempting ShipEngine fallback',
-        );
-        if (shipEngineClient.isConfigured()) {
+      } else if (shipEngineClient.isConfigured()) {
+        rates = await shipEngineClient.estimateRates({
+          shippingAddress: normalizedAddress,
+          items,
+          totalWeightOz,
+        });
+      } else {
+        const error = new Error('Shipping is not configured');
+        error.status = 503;
+        throw error;
+      }
+    } catch (primaryError) {
+      const primaryStatus = Number.isFinite(primaryError?.status)
+        ? primaryError.status
+        : (primaryError?.response?.status ?? null);
+
+      if (shipStationClient.isConfigured() && shipEngineClient.isConfigured()) {
+        try {
           rates = await shipEngineClient.estimateRates({
             shippingAddress: normalizedAddress,
             items,
             totalWeightOz,
           });
-        } else {
-          throw shipStationError;
+        } catch (secondaryError) {
+          const fallbackAllowed = isFallbackEnabled();
+          if (primaryStatus === 400) {
+            throw primaryError;
+          }
+          if (!fallbackAllowed) {
+            throw secondaryError;
+          }
+          logger.warn(
+            { err: secondaryError },
+            'Shipping rate providers failed; returning fallback rate',
+          );
+          return res.json({
+            success: true,
+            rates: buildFallbackRates().map((rate) => ({ ...rate, addressFingerprint })),
+            addressFingerprint,
+            warning: 'Shipping rates are temporarily unavailable. Using a fallback rate.',
+          });
         }
+      } else {
+        const fallbackAllowed = isFallbackEnabled();
+        if (primaryStatus === 400) {
+          throw primaryError;
+        }
+        if (!fallbackAllowed) {
+          throw primaryError;
+        }
+        logger.warn(
+          { err: primaryError },
+          'Shipping rate provider failed; returning fallback rate',
+        );
+        return res.json({
+          success: true,
+          rates: buildFallbackRates().map((rate) => ({ ...rate, addressFingerprint })),
+          addressFingerprint,
+          warning: 'Shipping rates are temporarily unavailable. Using a fallback rate.',
+        });
       }
-    } else if (shipEngineClient.isConfigured()) {
-      rates = await shipEngineClient.estimateRates({
-        shippingAddress: normalizedAddress,
-        items,
-        totalWeightOz,
-      });
-    } else {
-      const error = new Error('Shipping is not configured');
-      error.status = 503;
-      throw error;
     }
-
-    const addressFingerprint = createAddressFingerprint(normalizedAddress);
     const decoratedRates = Array.isArray(rates)
       ? rates.map((rate) => ({
         ...rate,

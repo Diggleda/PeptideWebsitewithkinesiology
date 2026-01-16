@@ -172,6 +172,16 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     return null;
   }
 
+  const status = typeof order?.status === 'string' ? order.status.toLowerCase().trim() : '';
+  const paymentMethod = typeof order?.paymentMethod === 'string' ? order.paymentMethod.toLowerCase() : '';
+  const isAwaitingPayment =
+    status === 'pending'
+    || status === 'on-hold'
+    || status === 'awaiting_payment'
+    || paymentMethod.includes('zelle')
+    || paymentMethod.includes('bank')
+    || paymentMethod.includes('transfer');
+
   const wooOrderId = wooOrder?.response?.id || wooOrder?.response?.orderId || null;
   const wooMetaData = Array.isArray(wooOrder?.payload?.meta_data) ? wooOrder.payload.meta_data : [];
   const wooOrderNumber = wooOrder?.response?.number
@@ -189,9 +199,9 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     orderNumber: wooOrderNumber || order.id,
     orderKey: wooOrderId ? `woo-${wooOrderId}` : order.id,
     orderSource: 'PepPro Checkout',
-    orderStatus: 'awaiting_shipment',
+    orderStatus: isAwaitingPayment ? 'awaiting_payment' : 'awaiting_shipment',
     orderDate: order.createdAt,
-    paymentDate: order.createdAt,
+    ...(isAwaitingPayment ? {} : { paymentDate: order.createdAt }),
     customerEmail: customer.email || '',
     customerNotes: order.referralCode
       ? `Referral code: ${order.referralCode}`
@@ -200,7 +210,7 @@ const buildOrderPayload = ({ order, customer, wooOrder }) => {
     carrierCode: shippingMeta.carrierCode,
     serviceCode: shippingMeta.serviceCode,
     packageCode: shippingMeta.packageCode,
-    amountPaid: Math.max(Number(order.total) || 0, 0),
+    amountPaid: isAwaitingPayment ? 0 : Math.max(Number(order.total) || 0, 0),
     shippingPaid: shippingTotal,
     taxAmount: Number(order.taxTotal) || 0,
     billTo: {

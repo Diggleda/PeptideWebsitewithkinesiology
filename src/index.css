@@ -3806,7 +3806,7 @@ html {
 }
 
 .checkout-item-scroll-inner {
-  min-width: 500px;
+  min-width: 620px;
   width: max-content;
   position: relative;
 }
@@ -3820,6 +3820,35 @@ html {
 .checkout-bank-transfer-note {
   padding: 0.35rem 0.7rem;
   text-align: left;
+}
+
+.checkout-payment-method-button {
+  background-color: rgb(148, 163, 184) !important; /* slate-400 */
+  color: #ffffff !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+}
+
+.checkout-payment-method-button--active {
+  background-color: rgb(95, 179, 249) !important; /* brand blue */
+  border-color: rgba(95, 179, 249, 0.42) !important;
+  color: #ffffff !important;
+}
+
+.checkout-payment-method-button--inactive {
+  background-color: rgb(148, 163, 184) !important; /* slate-400 */
+  border-color: rgba(148, 163, 184, 0.35) !important;
+  color: #ffffff !important;
+}
+
+@media (hover: hover) {
+  .checkout-payment-method-button--active:hover {
+    background-color: rgba(95, 179, 249, 0.92) !important;
+  }
+
+  .checkout-payment-method-button--inactive:hover {
+    background-color: rgb(203, 213, 225) !important; /* slate-300 */
+    border-color: rgba(203, 213, 225, 0.55) !important;
+  }
 }
 
 @media (min-width: 640px) {

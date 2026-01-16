@@ -6,17 +6,16 @@ import {
   useLayoutEffect,
   useMemo,
 } from 'react';
-import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
-import { Minus, Plus, CreditCard, Trash2, LogIn, ShoppingCart, X, Landmark } from 'lucide-react';
+import { Minus, Plus, Trash2, LogIn, ShoppingCart, X, Landmark } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
-import { ordersAPI, paymentsAPI, shippingAPI } from '../services/api';
+import { ordersAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 import { sanitizeServiceNames } from '../lib/publicText';
@@ -25,11 +24,16 @@ import { computeUnitPrice } from '../lib/pricing';
 interface CheckoutResult {
   success?: boolean;
   message?: string | null;
+  order?: {
+    id?: string | null;
+    wooOrderNumber?: string | null;
+  } | null;
   integrations?: {
     wooCommerce?: {
       response?: {
         payment_url?: string | null;
         paymentUrl?: string | null;
+        number?: string | number | null;
       } | null;
     } | null;
     stripe?: {
@@ -141,7 +145,7 @@ interface CheckoutModalProps {
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
-    paymentMethod?: 'stripe' | 'bacs' | string | null;
+    paymentMethod?: 'bacs' | string | null;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -154,8 +158,6 @@ interface CheckoutModalProps {
   customerName?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
   availableCredits?: number;
-  stripeAvailable?: boolean;
-  stripeOnsiteEnabled?: boolean;
 }
 
 const formatCardNumber = (value: string) =>
@@ -205,38 +207,14 @@ export function CheckoutModal({
   onPaymentSuccess,
   defaultShippingAddress,
   availableCredits = 0,
-  stripeAvailable,
-  stripeOnsiteEnabled: stripeOnsiteEnabledFromServer,
 }: CheckoutModalProps) {
-  const wooRedirectEnabled = import.meta.env.VITE_WOO_REDIRECT_ENABLED !== 'false';
-  const stripeOnsiteEnabled = typeof stripeOnsiteEnabledFromServer === 'boolean'
-    ? stripeOnsiteEnabledFromServer
-    : import.meta.env.VITE_STRIPE_ONSITE_ENABLED === 'true';
-  const stripeReady = stripeOnsiteEnabled && Boolean(stripeAvailable);
-  const stripe = useStripe();
-  const elements = useElements();
-  const cardElementOptions = useMemo(
-    () => ({
-      style: {
-        base: {
-          fontSize: '16px',
-          color: '#1f2933',
-          '::placeholder': { color: '#9ca3af' },
-        },
-        invalid: { color: '#ef4444' },
-      },
-    }),
-    [],
-  );
-  const defaultCardholderName = (defaultShippingAddress?.name || physicianName || customerName || '').trim();
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'bacs'>('stripe');
-  const [cardholderName, setCardholderName] = useState(defaultCardholderName);
-  const cardholderAutofillRef = useRef(defaultCardholderName);
+  const [paymentMethod, setPaymentMethod] = useState<'zelle' | 'bank_transfer'>('zelle');
+  const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
   const checkoutStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -363,9 +341,7 @@ export function CheckoutModal({
     .map((value) => normalizeAddressField(value).toUpperCase())
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
-  const isPaymentValid = paymentMethod === 'bacs'
-    ? true
-    : (stripeReady ? cardholderName.trim().length >= 2 : true);
+  const isPaymentValid = true;
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
@@ -390,7 +366,7 @@ export function CheckoutModal({
     ].join('|');
   }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost]);
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
-  let checkoutButtonLabel = `Complete Purchase (${total.toFixed(2)})`;
+  let checkoutButtonLabel = `Place Order (${total.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
   } else if (checkoutStatus === 'error' && checkoutStatusMessage) {
@@ -534,7 +510,6 @@ export function CheckoutModal({
       }))
     });
     setIsProcessing(true);
-    let createdOrderId: string | null = null;
     try {
       const result = await onCheckout({
         shippingAddress,
@@ -545,88 +520,27 @@ export function CheckoutModal({
         taxTotal: taxAmount,
         paymentMethod,
       });
-      createdOrderId = result?.order?.id ?? null;
-      const stripeInfo = result && typeof result === 'object'
-        ? result?.integrations?.stripe
-        : null;
-      const clientSecret = stripeInfo?.clientSecret || null;
-      const stripeIntentId = stripeInfo?.paymentIntentId || null;
+      const orderNumberCandidate =
+        result?.integrations?.wooCommerce?.response?.number
+        ?? result?.order?.wooOrderNumber
+        ?? result?.order?.id
+        ?? null;
+      const normalizedOrderNumber = orderNumberCandidate === null || orderNumberCandidate === undefined
+        ? null
+        : String(orderNumberCandidate).trim().replace(/^#/, '') || null;
+      setPlacedOrderNumber(normalizedOrderNumber);
+      const memoText = normalizedOrderNumber ? `PepPro Order ${normalizedOrderNumber}` : null;
       const successMessage = result && typeof result === 'object' && 'message' in result && result.message
         ? String(result.message)
-        : 'Order received! We\'ll email you updates.';
-      const paymentUrl =
-        result?.integrations?.wooCommerce?.response?.payment_url
-        || result?.integrations?.wooCommerce?.response?.paymentUrl
-        || null;
-      const shouldUseStripe = paymentMethod === 'stripe' && stripeReady && Boolean(clientSecret);
-      const shouldRedirectToWoo = paymentMethod === 'stripe' && Boolean(paymentUrl) && wooRedirectEnabled && !shouldUseStripe;
-
-      console.debug('[CheckoutModal] Checkout integrations', {
-        stripeReady,
-        stripeOnsiteEnabled,
-        stripeIntentId,
-        hasClientSecret: Boolean(clientSecret),
-        stripeStatus: stripeInfo?.status || null,
-        stripeReason: stripeInfo?.reason || null,
-        stripeMessage: stripeInfo?.message || null,
-        paymentUrl,
-      });
-
-      if (shouldUseStripe) {
-        if (!stripe || !elements) {
-          throw new Error('Payment form is not ready. Please refresh and try again.');
-        }
-        const cardElement = elements.getElement(CardElement);
-        if (!cardElement) {
-          throw new Error('Enter your card details to continue.');
-        }
-        const confirmation = await stripe.confirmCardPayment(clientSecret, {
-          payment_method: {
-            card: cardElement,
-            billing_details: {
-              name: cardholderName || customerName || 'PepPro Customer',
-              email: customerEmail || undefined,
-              address: {
-                postal_code: shippingAddress?.postalCode || undefined,
-              },
-            },
-          },
-        });
-        if (confirmation.error) {
-          throw new Error(confirmation.error.message || 'Payment could not be completed.');
-        }
-        const intentStatus = confirmation.paymentIntent?.status;
-        if (intentStatus !== 'succeeded') {
-          throw new Error('Payment did not complete. Please try again.');
-        }
-        console.debug('[CheckoutModal] Stripe payment confirmed', { stripeIntentId, intentStatus });
-        if (stripeIntentId) {
-          void paymentsAPI.confirmStripeIntent(stripeIntentId).catch((confirmError) => {
-            console.warn('[CheckoutModal] Failed to confirm Stripe intent server-side', confirmError);
-            toast.info(
-              'Payment received, but order sync is still pending. If you do not receive an email shortly, contact support.',
-            );
-          });
-        }
-      } else if (paymentMethod === 'stripe' && stripeReady && !clientSecret) {
-        console.warn('[CheckoutModal] Stripe onsite enabled but no clientSecret returned', stripeInfo);
-        if (paymentUrl && wooRedirectEnabled) {
-          toast.info('Redirecting to complete payment…');
-          window.location.assign(paymentUrl);
-          return;
-        }
-        const reasonTextRaw =
-          stripeInfo?.message || stripeInfo?.reason || 'Payment is unavailable right now.';
-        throw new Error(sanitizeServiceNames(String(reasonTextRaw)));
-      } else if (paymentMethod === 'stripe' && !stripeReady && paymentUrl && wooRedirectEnabled) {
-        toast.info('Redirecting to complete payment…');
-        window.location.assign(paymentUrl);
-        return;
-      }
+        : 'Order received! We\'ll email you payment instructions.';
 
       setCheckoutStatus('success');
-      setCheckoutStatusMessage(successMessage);
-      toast.success(successMessage);
+      setCheckoutStatusMessage(normalizedOrderNumber ? `Order ${normalizedOrderNumber} placed` : successMessage);
+      toast.success(
+        normalizedOrderNumber
+          ? `Order ${normalizedOrderNumber} placed. Memo: ${memoText}. Check your email for payment instructions.`
+          : successMessage,
+      );
       console.debug('[CheckoutModal] Checkout success');
       if (onClearCart) {
         onClearCart();
@@ -641,21 +555,8 @@ export function CheckoutModal({
         setCheckoutStatus('idle');
         setCheckoutStatusMessage(null);
         onClose();
-        if (shouldRedirectToWoo && paymentUrl) {
-          window.location.assign(paymentUrl);
-        }
-      }, shouldRedirectToWoo ? 600 : 1800);
-      if (shouldRedirectToWoo) {
-        toast.info('Redirecting to complete payment…');
-      }
+      }, 8000);
     } catch (error: any) {
-      if (createdOrderId) {
-        try {
-          await ordersAPI.cancelOrder(createdOrderId, error?.message ?? 'Payment confirmation failed');
-        } catch (cancelError) {
-          console.warn('[CheckoutModal] Failed to cancel order after payment failure', cancelError);
-        }
-      }
       console.warn('[CheckoutModal] Checkout handler threw', error);
       const message = typeof error?.message === 'string' && error.message.trim().length > 0
         ? error.message
@@ -671,7 +572,7 @@ export function CheckoutModal({
 
   const handlePrimaryAction = async () => {
     if (!termsAccepted || !isPaymentValid) {
-      toast.error('Enter valid payment details and accept the terms to continue.');
+      toast.error('Accept the terms to continue.');
       return;
     }
     if (!hasSelectedShippingRate) {
@@ -746,9 +647,8 @@ export function CheckoutModal({
       setIsProcessing(false);
       setBulkOpenMap({});
       setTermsAccepted(false);
-      setPaymentMethod('stripe');
-      setCardholderName(defaultCardholderName);
-      cardholderAutofillRef.current = defaultCardholderName;
+      setPaymentMethod('zelle');
+      setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
       setShippingRates(null);
@@ -777,7 +677,7 @@ export function CheckoutModal({
         checkoutStatusTimer.current = null;
       }
     }
-  }, [defaultShippingAddress, customerName, defaultCardholderName, isOpen, physicianName]);
+  }, [defaultShippingAddress, customerName, isOpen, physicianName]);
 
   useEffect(() => {
     setShippingAddress((prev) => ({
@@ -791,17 +691,6 @@ export function CheckoutModal({
       country: defaultShippingAddress?.country ?? prev.country ?? 'US',
     }));
   }, [defaultShippingAddress, physicianName, customerName]);
-
-  useEffect(() => {
-    setCardholderName((prev) => {
-      const trimmedPrev = prev.trim();
-      if (!trimmedPrev || trimmedPrev === cardholderAutofillRef.current) {
-        cardholderAutofillRef.current = defaultCardholderName;
-        return defaultCardholderName;
-      }
-      return prev;
-    });
-  }, [defaultCardholderName]);
 
   useEffect(() => {
     if (cartItems.length === 0) {
@@ -1026,21 +915,8 @@ export function CheckoutModal({
                       <CardContent className="p-3 relative">
                         <div className="checkout-item-scroll">
                           <div className="checkout-item-scroll-inner">
-                            <div className="absolute right-4 top-4 flex flex-col items-end gap-3 w-[92px] sm:w-[150px] text-right">
-                              <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleRemoveItem(item.id)}
-                                className="text-red-500 hover:text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                <span className="sr-only">Remove item</span>
-                              </Button>
-                            </div>
-                            <div className="flex items-start gap-4 pr-[120px] sm:pr-[180px]">
-                              <div className="flex items-center gap-4 flex-grow">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-4 min-w-0 flex-1">
                                 <div className="checkout-item-image self-start">
                                   <ProductImageCarousel
                                     images={carouselImages}
@@ -1052,13 +928,13 @@ export function CheckoutModal({
                                     showArrows={false}
                                   />
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                   <h4 className="line-clamp-1">#{index + 1} — {item.product.name}</h4>
                                   <p className="text-sm text-gray-600">{item.product.dosage}</p>
                                   {item.variant && (
                                     <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
                                   )}
-                                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                                  <div className="mt-2 mb-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
                                     <span className="text-green-600 font-bold">
                                       ${unitPrice.toFixed(2)}
                                     </span>
@@ -1108,7 +984,7 @@ export function CheckoutModal({
                                       </button>
                                       {isBulkOpen && (
                                         <>
-                                          <div className="space-y-1.5 pt-1">
+                                          <div className="space-y-1.5 pt-4">
                                             {visibleTiers.map((tier) => (
                                               <div
                                                 key={`${tier.minQuantity}-${tier.discountPercentage}`}
@@ -1148,6 +1024,19 @@ export function CheckoutModal({
                                     <p className="mt-2 text-xs text-gray-500">Notes: {item.note}</p>
                                   )}
                                 </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-3 shrink-0 text-right">
+                                <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveItem(item.id)}
+                                  className="text-red-500 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  <span className="sr-only">Remove item</span>
+                                </Button>
                               </div>
                             </div>
                           </div>
@@ -1290,62 +1179,65 @@ export function CheckoutModal({
               {/* Payment Form */}
               <div className="space-y-5">
                 <h3 className="mb-2">Payment Information</h3>
-                {stripeReady ? (
-                  <div className="grid grid-cols-1 gap-4">
-                    {paymentMethod === 'stripe' ? (
-                      <>
-                        <div className="flex flex-col gap-2">
-                          <Label htmlFor="cardName">Cardholder Name</Label>
-                          <Input
-                            id="cardName"
-                            name="cc-name"
-                            autoComplete="cc-name"
-                            placeholder="John Doe"
-                            className="squircle-sm mt-1 bg-slate-50 border-2"
-                            value={cardholderName}
-                            onChange={(event) => setCardholderName(event.target.value)}
-                          />
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <Label>Card Details</Label>
-                          <div className="squircle-sm mt-1 border-2 bg-white px-3 py-2">
-                            <CardElement options={cardElementOptions} />
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="checkout-bank-transfer-note rounded-xl border border-slate-200 bg-white/70 text-sm text-slate-700 leading-relaxed">
-                        You selected Direct Bank Transfer. After placing your order, you’ll receive payment instructions by email.
-                      </div>
-                    )}
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        type="button"
-                        variant={paymentMethod === 'bacs' ? 'default' : 'secondary'}
-                        onClick={() => setPaymentMethod('bacs')}
-                        className="squircle-sm justify-center gap-2"
-                      >
-                        <Landmark className="h-4 w-4" />
-                        Direct Bank Transfer
-                      </Button>
-                      {paymentMethod === 'bacs' && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setPaymentMethod('stripe')}
-                          className="justify-center gap-2 text-slate-600"
-                        >
-                          <CreditCard className="h-4 w-4" />
-                          Use Credit Card Instead
-                        </Button>
-                      )}
+                <div className="rounded-xl border border-slate-200 bg-white/70 px-5 py-4 mb-3 text-sm text-slate-700 leading-relaxed">
+                  <div className="flex items-start gap-2">
+                    <Landmark className="mt-0.5 h-4 w-4 text-slate-600" aria-hidden="true" />
+                    <div>
+                      <p className="font-semibold text-slate-800">
+                        {paymentMethod === 'zelle' ? 'Zelle' : 'Direct Bank Transfer'}
+                      </p>
+                      <p className="mt-1">
+                        After you place your order, we’ll email{" "}
+                        {paymentMethod === "zelle" ? "Zelle" : "bank transfer"}{" "}
+                        instructions to{" "}
+                        <span className="font-semibold">{customerEmail || "your email address"}</span>.
+                      </p>
+                      <p className="mt-2 text-[13px] text-slate-600">
+                        Important: Include your order number in the payment memo/notes (we’ll show it here after you place the order).
+                        {paymentMethod === "zelle"
+                          ? " Ensure your bank supports Zelle and that your Zelle account is set up and ready."
+                          : ""}
+                      </p>
                     </div>
                   </div>
-	                ) : (
-	                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-		                    On-site checkout is currently unavailable. After you place your order, you'll be redirected to complete payment.
-	                  </div>
-	                )}
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setPaymentMethod('zelle')}
+                    aria-pressed={paymentMethod === 'zelle'}
+                    className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
+                      paymentMethod === 'zelle'
+                        ? 'checkout-payment-method-button--active'
+                        : 'checkout-payment-method-button--inactive'
+                    }`}
+                  >
+                    Zelle
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setPaymentMethod('bank_transfer')}
+                    aria-pressed={paymentMethod === 'bank_transfer'}
+                    className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
+                      paymentMethod === 'bank_transfer'
+                        ? 'checkout-payment-method-button--active'
+                        : 'checkout-payment-method-button--inactive'
+                    }`}
+                  >
+                    Direct Bank Transfer
+                  </Button>
+                </div>
+                {checkoutStatus === 'success' && placedOrderNumber && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    <p className="font-semibold">Your order number: {placedOrderNumber}</p>
+                    <p className="mt-1">
+                      Use this as your payment memo/notes:{" "}
+                      <span className="font-mono">PepPro Order {placedOrderNumber}</span>
+                    </p>
+                  </div>
+                )}
 	              </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -1448,7 +1340,7 @@ export function CheckoutModal({
                   className="w-full glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                 >
                   {canCheckout ? (
-                    <CreditCard className="w-4 h-4 mr-2" />
+                    <ShoppingCart className="w-4 h-4 mr-2" />
                   ) : (
                     <LogIn className="w-4 h-4 mr-2" />
                   )}

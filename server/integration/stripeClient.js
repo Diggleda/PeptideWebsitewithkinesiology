@@ -20,7 +20,7 @@ const getEffectiveMode = () => getStripeModeSync();
 const getClient = () => {
   const mode = getEffectiveMode();
   const secretKey = resolveSecretKey(mode);
-  if (!env.stripe.onsiteEnabled || !secretKey) {
+  if (!env.stripe.externalEnabled || !env.stripe.onsiteEnabled || !secretKey) {
     const error = new Error('Stripe is not configured');
     error.status = 503;
     throw error;
@@ -37,8 +37,9 @@ const getClient = () => {
   return created;
 };
 
-const isConfigured = () => Boolean(env.stripe.onsiteEnabled && resolveSecretKey(getEffectiveMode()));
-const isTaxConfigured = () => Boolean(env.stripe.taxEnabled && isConfigured());
+const isConfigured = () =>
+  Boolean(env.stripe.externalEnabled && env.stripe.onsiteEnabled && resolveSecretKey(getEffectiveMode()));
+const isTaxConfigured = () => Boolean(env.stripe.externalEnabled && env.stripe.taxEnabled && isConfigured());
 
 const retrievePaymentIntent = async (paymentIntentId) => {
   if (!isConfigured()) {

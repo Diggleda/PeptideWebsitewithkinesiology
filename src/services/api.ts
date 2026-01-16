@@ -52,6 +52,7 @@ type AuthTabEvent = {
 const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
 const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
 const AUTH_USER_ID_KEY = 'peppro_user_id_v1';
+const AUTH_SESSION_STARTED_AT_KEY = 'peppro_session_started_at_v1';
 const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
 const AUTH_EVENT_NAME = 'peppro:force-logout';
 
@@ -98,6 +99,22 @@ const setSessionId = (sessionId: string) => {
 const clearSessionId = () => {
   try {
     sessionStorage.removeItem(AUTH_SESSION_ID_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const setSessionStartedAt = (valueMs) => {
+  try {
+    sessionStorage.setItem(AUTH_SESSION_STARTED_AT_KEY, String(Math.floor(Number(valueMs) || Date.now())));
+  } catch {
+    // ignore
+  }
+};
+
+const clearSessionStartedAt = () => {
+  try {
+    sessionStorage.removeItem(AUTH_SESSION_STARTED_AT_KEY);
   } catch {
     // ignore
   }
@@ -201,6 +218,11 @@ if (typeof window !== 'undefined') {
     if (existingToken && existingToken.trim() && !getSessionId()) {
       setSessionId(_randomId());
     }
+    const startedAtRaw = sessionStorage.getItem(AUTH_SESSION_STARTED_AT_KEY);
+    const startedAt = startedAtRaw ? Number(startedAtRaw) : NaN;
+    if (existingToken && existingToken.trim() && !Number.isFinite(startedAt)) {
+      setSessionStartedAt(Date.now());
+    }
   } catch {
     // ignore
   }
@@ -262,6 +284,7 @@ const persistAuthToken = (token: string) => {
 
   const sessionId = _randomId();
   setSessionId(sessionId);
+  setSessionStartedAt(Date.now());
   emitAuthEvent({
     type: 'LOGIN',
     tabId: getOrCreateTabId(),
@@ -287,6 +310,7 @@ const clearAuthToken = () => {
   } catch {
     // ignore
   }
+  clearSessionStartedAt();
 };
 
 const dispatchApiReachability = (payload: { ok: boolean; status?: number | null; message?: string | null }) => {
@@ -1064,6 +1088,7 @@ const buildOrderFingerprint = (payload: {
   items: any[];
   total: number;
   referralCode?: string;
+  paymentMethod?: string | null;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
 }) => {
@@ -1087,6 +1112,7 @@ const buildOrderFingerprint = (payload: {
     items: normalizedItems,
     total: Number(payload.total) || 0,
     referralCode: payload.referralCode || null,
+    paymentMethod: payload.paymentMethod || null,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     shipping: {
       postalCode: shippingPostalCode,
@@ -1131,6 +1157,7 @@ export const ordersAPI = {
       total,
       referralCode,
       shipping,
+      paymentMethod,
       taxTotal,
     });
     const idempotencyKey = getOrCreateCheckoutIdempotencyKey(fingerprint);

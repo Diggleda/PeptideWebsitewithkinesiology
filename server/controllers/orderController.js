@@ -104,6 +104,7 @@ const createOrder = async (req, res, next) => {
       referralCode: req.body.referralCode,
       physicianCertification: req.body.physicianCertification === true,
       taxTotal: req.body.taxTotal,
+      paymentMethod: req.body.paymentMethod,
     });
     res.json(result);
   } catch (error) {

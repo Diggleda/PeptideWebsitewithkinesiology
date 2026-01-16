@@ -1,10 +1,14 @@
 const paymentService = require('../services/paymentService');
 const orderRepository = require('../repositories/orderRepository');
 const { logger } = require('../config/logger');
+const { env } = require('../config/env');
 
 // Optional endpoint to create/refresh a PaymentIntent for an existing order.
 const createIntent = async (req, res, next) => {
   try {
+    if (!env.stripe.externalEnabled) {
+      return res.status(410).json({ error: 'Stripe payments are disabled' });
+    }
     const { orderId } = req.body || {};
     const order = orderRepository.findById(orderId);
     if (!order) {
@@ -30,6 +34,9 @@ const createIntent = async (req, res, next) => {
 
 const confirmIntent = async (req, res, next) => {
   try {
+    if (!env.stripe.externalEnabled) {
+      return res.status(410).json({ error: 'Stripe payments are disabled' });
+    }
     const { paymentIntentId } = req.body || {};
     if (!paymentIntentId) {
       return res.status(400).json({ error: 'paymentIntentId is required' });
@@ -43,6 +50,9 @@ const confirmIntent = async (req, res, next) => {
 
 const handleStripeWebhook = async (req, res, next) => {
   try {
+    if (!env.stripe.externalEnabled) {
+      return res.json({ received: true, ignored: true, reason: 'stripe_disabled' });
+    }
     const rawPayload = Buffer.isBuffer(req.body)
       ? req.body
       : typeof req.body === 'string'
