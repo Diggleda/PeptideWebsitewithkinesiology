@@ -273,7 +273,12 @@ def _fetch_catalog_http(
             raise err
 
 
-def fetch_catalog_fresh(endpoint: str, params: Optional[Mapping[str, Any]] = None) -> tuple[Any, Dict[str, Any]]:
+def fetch_catalog_fresh(
+    endpoint: str,
+    params: Optional[Mapping[str, Any]] = None,
+    *,
+    acquire_timeout: float | None = None,
+) -> tuple[Any, Dict[str, Any]]:
     """
     Fetch from WooCommerce *synchronously* (bypassing stale-while-revalidate behavior),
     while still populating the same in-memory/disk caches used by `fetch_catalog_proxy`.
@@ -286,7 +291,7 @@ def fetch_catalog_fresh(endpoint: str, params: Optional[Mapping[str, Any]] = Non
     ttl_seconds = _cache_ttl_seconds_for_endpoint(endpoint)
     cache_key = _build_cache_key(endpoint, params)
 
-    data = _fetch_catalog_http(endpoint, params, acquire_timeout=2)
+    data = _fetch_catalog_http(endpoint, params, acquire_timeout=acquire_timeout)
     _clear_proxy_failure(cache_key)
 
     now_ms = _now_ms()

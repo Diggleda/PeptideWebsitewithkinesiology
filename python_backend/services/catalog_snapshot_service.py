@@ -271,6 +271,7 @@ def _fetch_all_products() -> Tuple[List[Dict[str, Any]], bool]:
                 "orderby": "id",
                 "order": "asc",
             },
+            acquire_timeout=8,
         )
         if not isinstance(data, list) or len(data) == 0:
             break
@@ -288,6 +289,7 @@ def _fetch_product_variations(product_id: int) -> List[Dict[str, Any]]:
     data, _meta = woo_commerce.fetch_catalog_fresh(
         f"products/{product_id}/variations",
         {"per_page": 100, "status": "publish"},
+        acquire_timeout=15,
     )
     if not isinstance(data, list):
         return []
@@ -295,7 +297,11 @@ def _fetch_product_variations(product_id: int) -> List[Dict[str, Any]]:
 
 
 def _fetch_categories() -> List[Dict[str, Any]]:
-    data, _meta = woo_commerce.fetch_catalog_fresh("products/categories", {"per_page": 100})
+    data, _meta = woo_commerce.fetch_catalog_fresh(
+        "products/categories",
+        {"per_page": 100},
+        acquire_timeout=8,
+    )
     if not isinstance(data, list):
         return []
     return [item for item in data if isinstance(item, dict)]

@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -818,6 +818,14 @@ export function Header({
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [accountTab, setAccountTab] = useState<'details' | 'orders' | 'research'>('details');
+  const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
+  const [researchOverlayExpanded, setResearchOverlayExpanded] = useState(false);
+  const [researchOverlayRect, setResearchOverlayRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
   const referralCopyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -858,6 +866,80 @@ export function Header({
     active: number;
     queue: Array<() => void>;
   }>({ active: 0, queue: [] });
+  const researchPanelRef = useRef<HTMLDivElement | null>(null);
+  const accountModalShellRef = useRef<HTMLDivElement | null>(null);
+  const researchOverlayTimeoutRef = useRef<number | null>(null);
+  const isResearchFullscreen = accountTab === 'research' && researchDashboardExpanded;
+  const modalFullscreenHeight =
+    "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))";
+
+  const clearResearchOverlayTimeout = useCallback(() => {
+    if (researchOverlayTimeoutRef.current !== null) {
+      clearTimeout(researchOverlayTimeoutRef.current);
+      researchOverlayTimeoutRef.current = null;
+    }
+  }, []);
+
+  const collapseResearchOverlay = useCallback(
+    (immediate = false) => {
+      clearResearchOverlayTimeout();
+      setResearchOverlayExpanded(false);
+      if (immediate) {
+        setResearchDashboardExpanded(false);
+        setResearchOverlayRect(null);
+        return;
+      }
+      researchOverlayTimeoutRef.current = window.setTimeout(() => {
+        setResearchDashboardExpanded(false);
+        setResearchOverlayRect(null);
+        researchOverlayTimeoutRef.current = null;
+      }, 320);
+    },
+    [clearResearchOverlayTimeout],
+  );
+
+  const expandResearchOverlay = useCallback(() => {
+    clearResearchOverlayTimeout();
+    const panel = researchPanelRef.current;
+    const shell = accountModalShellRef.current;
+    if (panel && shell) {
+      const panelRect = panel.getBoundingClientRect();
+      const shellRect = shell.getBoundingClientRect();
+      setResearchOverlayRect({
+        top: panelRect.top - shellRect.top,
+        left: panelRect.left - shellRect.left,
+        width: panelRect.width,
+        height: panelRect.height,
+      });
+    } else {
+      setResearchOverlayRect(null);
+    }
+    setResearchOverlayExpanded(false);
+    setResearchDashboardExpanded(true);
+    requestAnimationFrame(() => setResearchOverlayExpanded(true));
+  }, [clearResearchOverlayTimeout]);
+
+  const toggleResearchOverlay = useCallback(() => {
+    if (researchDashboardExpanded) {
+      collapseResearchOverlay();
+      return;
+    }
+    expandResearchOverlay();
+  }, [collapseResearchOverlay, expandResearchOverlay, researchDashboardExpanded]);
+
+  useEffect(() => {
+    if (accountTab !== 'research') {
+      collapseResearchOverlay(true);
+    }
+  }, [accountTab, collapseResearchOverlay]);
+
+  useEffect(() => {
+    if (!welcomeOpen) {
+      collapseResearchOverlay(true);
+    }
+  }, [welcomeOpen, collapseResearchOverlay]);
+
+  useEffect(() => () => clearResearchOverlayTimeout(), [clearResearchOverlayTimeout]);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -2802,7 +2884,10 @@ export function Header({
   ) : null;
 
   const researchPlaceholderPanel = (
-    <div className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3">
+    <div
+      ref={researchPanelRef}
+      className="glass-card squircle-md p-6 border border-[var(--brand-glass-border-2)] text-center space-y-3 bg-white"
+    >
       <h3 className="text-base font-semibold text-slate-800">Research</h3>
       <p className="text-sm text-slate-600">
         This section is currently in development. Soon you&apos;ll be able to access research tools and resources here to share your findings securely and anonymously with the PepPro network of physicians.
@@ -2811,34 +2896,31 @@ export function Header({
   );
 
   const researchWipPanel = (
-    <div className="space-y-4">
-      <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-2)] bg-white/70">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <h3 className="text-base font-semibold text-slate-800">Research Dashboard</h3>
-            <p className="text-sm text-slate-600">
-              Work in progress (early access). Feedback welcome.
-            </p>
-          </div>
-          <span className="text-[11px] font-semibold text-[rgb(95,179,249)] border border-[rgba(95,179,249,0.45)] bg-white/80 px-2 py-1 rounded-md">
-            BETA
-          </span>
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-white/40 bg-white/70 p-4">
-          <p className="text-sm font-semibold text-slate-800">Anonymous sharing</p>
-          <p className="text-xs text-slate-600">
-            Post de-identified notes and learn from peer discussions.
-          </p>
-        </div>
-        <div className="rounded-lg border border-white/40 bg-white/70 p-4">
-          <p className="text-sm font-semibold text-slate-800">Tools & resources</p>
-          <p className="text-xs text-slate-600">
-            Access protocols, references, and internal research tools.
-          </p>
-        </div>
+    <div
+      ref={researchPanelRef}
+      className={clsx(
+        "transition-all duration-300 ease-in-out bg-white",
+        researchDashboardExpanded && "h-full w-full min-h-full",
+        researchDashboardExpanded ? "h-full flex flex-col" : "space-y-4",
+      )}
+    >
+      <div className="flex">
+        <button
+          type="button"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-[rgb(95,179,249)] shadow-[0_10px_18px_-12px_rgba(15,23,42,0.35)] transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.35)]"
+          aria-label={
+            researchDashboardExpanded
+              ? 'Exit full screen Research dashboard'
+              : 'Expand Research dashboard to full screen'
+          }
+          onClick={toggleResearchOverlay}
+        >
+          {researchDashboardExpanded ? (
+            <Minimize2 className="h-4 w-4" aria-hidden="true" style={{ transform: "scaleX(-1)" }} />
+          ) : (
+            <Maximize2 className="h-4 w-4" aria-hidden="true" style={{ transform: "scaleX(-1)" }} />
+          )}
+        </button>
       </div>
     </div>
   );
@@ -3647,6 +3729,25 @@ export function Header({
         ? accountOrdersPanel
         : researchPanel;
 
+  const researchOverlayStyle: React.CSSProperties =
+    researchOverlayRect && !researchOverlayExpanded
+      ? {
+          top: researchOverlayRect.top,
+          left: researchOverlayRect.left,
+          width: researchOverlayRect.width,
+          height: researchOverlayRect.height,
+          backgroundColor: "#fff",
+        }
+      : {
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "#fff",
+        };
+
   const authControls = user ? (
     <>
       <Dialog open={welcomeOpen} onOpenChange={(open) => {
@@ -3668,15 +3769,39 @@ export function Header({
               {renderAvatar(48, 'header-account-avatar')}
             </span>
           </Button>
-        </DialogTrigger>
-        <DialogContent
-          className="glass-card squircle-xl w-full max-w-[min(960px,calc(100vw-2rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-          style={{ backdropFilter: 'blur(38px) saturate(1.6)', boxShadow: '0 30px 90px -40px rgba(15,23,42,0.45), 0 20px 60px -50px rgba(95,179,249,0.35)' }}
-        >
-          <DialogHeader
-            className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4"
-            style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
-          >
+		        </DialogTrigger>
+		        <DialogContent
+		          hideCloseButton
+		          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+              style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
+		          >
+		          <div
+		            ref={accountModalShellRef}
+		            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
+		            style={{
+                  height: "auto",
+                  maxHeight: "90vh",
+		            }}
+		          >
+		          <DialogClose
+		            className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 z-50 disabled:pointer-events-none"
+		            style={{
+		              backgroundColor: "rgb(95, 179, 249)",
+		              width: "38px",
+		              height: "38px",
+		              borderRadius: "50%",
+		            }}
+		            aria-label="Close account modal"
+		          >
+		            <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+		          </DialogClose>
+            <DialogHeader
+              className={clsx(
+                "sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
+                isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",
+              )}
+              style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
+            >
             <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">
               <div className="flex items-center gap-3 flex-wrap min-w-0">
                 <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
@@ -3721,7 +3846,7 @@ export function Header({
                   onTouchEnd={handleTabScrollTouchEnd}
                   onWheel={handleTabScrollWheel}
                 >
-                  <div className="flex items-center gap-4 pb-4 account-tab-row">
+                  <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
                     {accountHeaderTabs.map((tab) => {
                       const isActive = accountTab === tab.id;
                       return (
@@ -3750,27 +3875,53 @@ export function Header({
                 />
               </div>
             </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="space-y-6 pt-4">
-              {activeAccountPanel ?? (
-                <div className="text-sm text-slate-600">
-                  Loading account details...
-                </div>
-              )}
+	          </DialogHeader>
+          <div
+            className={clsx(
+              "flex-1 overflow-y-auto px-6 pb-6",
+              isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",
+            )}
+          >
+		            <div className="space-y-6 pt-4">
+		              {!isResearchFullscreen &&
+		                (activeAccountPanel ?? (
+		                  <div className="text-sm text-slate-600">
+		                    Loading account details...
+		                  </div>
+		                ))}
+		            </div>
+		          </div>
+          {isResearchFullscreen && (
+            <div
+              className="absolute z-30 overflow-hidden bg-white opacity-100 mix-blend-normal transition-[top,left,width,height,opacity] duration-300 ease-in-out p-4 sm:p-6"
+              style={{
+                ...researchOverlayStyle,
+                borderRadius: "inherit",
+                willChange: "top, left, width, height",
+              }}
+            >
+              <div className="relative z-10 h-full w-full overflow-y-auto bg-white">
+                {researchPanel}
+              </div>
             </div>
-          </div>
-	          <div className="border-t border-[var(--brand-glass-border-1)] px-6 py-4 flex justify-end">
-	            <Button
-	              type="button"
-	              variant="outline"
-	              size="sm"
+          )}
+          <div
+            className={clsx(
+              "border-t border-[var(--brand-glass-border-1)] px-6 py-4 flex justify-end transition-opacity duration-300 ease-in-out",
+              isResearchFullscreen && "hidden",
+            )}
+          >
+		            <Button
+		              type="button"
+		              variant="outline"
+		              size="sm"
 	              className="btn-no-hover header-logout-button squircle-sm bg-transparent text-slate-900 border-0"
 	              onClick={handleLogoutClick}
 	            >
 	              <LogOut className="h-4 w-4 mr-2" />
-	              Logout
-	            </Button>
+		              Logout
+		            </Button>
+		          </div>
 	          </div>
 	        </DialogContent>
 	      </Dialog>
