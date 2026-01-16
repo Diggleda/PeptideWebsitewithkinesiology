@@ -253,7 +253,120 @@ const sendOrderPaymentInstructionsEmail = async ({
   }
 };
 
+const logManualRefundReviewEmail = (to, meta = {}) => {
+  try {
+    const logPath = ensureMailLog();
+    const payload = [
+      `[${new Date().toISOString()}] Manual Refund Review`,
+      `To: ${to || 'unknown'}`,
+      meta.orderId ? `Order: ${meta.orderId}` : '',
+      meta.wooOrderNumber ? `Woo Order: ${meta.wooOrderNumber}` : '',
+      meta.customerEmail ? `Customer: ${meta.customerEmail}` : '',
+      meta.paymentMethod ? `Payment: ${meta.paymentMethod}` : '',
+      Number.isFinite(meta.total) ? `Total: $${Number(meta.total).toFixed(2)}` : '',
+      meta.reason ? `Reason: ${meta.reason}` : '',
+      meta.note ? `Note: ${meta.note}` : '',
+      meta.error ? `Error: ${meta.error}` : '',
+      '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    fs.appendFileSync(logPath, `${payload}\n`);
+  } catch {
+    // Best-effort: refund review notifications should not block cancellation.
+  }
+};
+
+const parseRecipientList = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  return raw
+    .split(/[;,]/g)
+    .map((entry) => normalizeEmailAddress(entry))
+    .filter(Boolean);
+};
+
+const sendManualRefundReviewEmail = async ({
+  orderId,
+  wooOrderNumber,
+  customerName,
+  customerEmail,
+  paymentMethod,
+  total,
+  reason,
+}) => {
+  const recipients = parseRecipientList(process.env.REFUND_NOTIFICATION_EMAILS);
+  const supportEmail = normalizeEmailAddress(process.env.SUPPORT_EMAIL);
+  const to = recipients.length > 0 ? recipients : (supportEmail ? [supportEmail] : []);
+  if (to.length === 0) {
+    return;
+  }
+
+  const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
+  const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
+  const displayName = String(customerName || '').trim();
+  const displayEmail = String(customerEmail || '').trim();
+  const displayPayment = String(paymentMethod || 'Manual payment').trim();
+
+  const subjectBase = process.env.REFUND_NOTIFICATION_SUBJECT || 'PepPro manual refund review';
+  const subject = displayOrderNumber ? `${subjectBase} — Order ${displayOrderNumber}` : subjectBase;
+
+  const html = `
+    <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.45; color: #0f172a;">
+      <h2 style="margin: 0 0 12px; font-size: 18px;">Manual refund review needed</h2>
+      <p style="margin: 0 0 10px; color: #334155;">
+        A customer cancelled an order that used a manual payment method (Zelle / bank transfer). If payment was already received, please refund manually and record the refund.
+      </p>
+      <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
+        <tr><td style="padding: 6px 0; color: #64748b; width: 160px;">Order</td><td style="padding: 6px 0;"><strong>${escapeHtml(displayOrderNumber || orderId || '')}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #64748b;">Amount</td><td style="padding: 6px 0;">${escapeHtml(formattedTotal)}</td></tr>
+        <tr><td style="padding: 6px 0; color: #64748b;">Payment</td><td style="padding: 6px 0;">${escapeHtml(displayPayment)}</td></tr>
+        <tr><td style="padding: 6px 0; color: #64748b;">Customer</td><td style="padding: 6px 0;">${escapeHtml([displayName, displayEmail].filter(Boolean).join(' — ') || displayEmail || '—')}</td></tr>
+        <tr><td style="padding: 6px 0; color: #64748b;">Reason</td><td style="padding: 6px 0;">${escapeHtml(reason || 'Cancelled via account portal')}</td></tr>
+      </table>
+      <p style="margin: 12px 0 0; color: #64748b; font-size: 12px;">
+        Note: Woo order status was set to <strong>Cancelled</strong>. Refunds for manual payments are handled outside of Stripe.
+      </p>
+    </div>
+  `;
+
+  const mailOptions = {
+    from: FROM_ADDRESS,
+    to: to.join(', '),
+    subject,
+    html,
+  };
+
+  if (!transporter) {
+    logManualRefundReviewEmail(to.join(', '), {
+      orderId: orderId || null,
+      wooOrderNumber: wooOrderNumber || null,
+      customerEmail: customerEmail || null,
+      paymentMethod: paymentMethod || null,
+      total: Number.isFinite(Number(total)) ? Number(total) : null,
+      reason: reason || null,
+      note: 'SMTP transport unavailable; refund review email not sent.',
+    });
+    return;
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    logManualRefundReviewEmail(to.join(', '), {
+      orderId: orderId || null,
+      wooOrderNumber: wooOrderNumber || null,
+      customerEmail: customerEmail || null,
+      paymentMethod: paymentMethod || null,
+      total: Number.isFinite(Number(total)) ? Number(total) : null,
+      reason: reason || null,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
 module.exports = {
   sendPasswordResetEmail,
   sendOrderPaymentInstructionsEmail,
+  sendManualRefundReviewEmail,
 };

@@ -23,6 +23,17 @@ const sanitizeOrder = (order) => {
   return { ...rest };
 };
 
+const isManualPaymentMethod = (value) => {
+  const normalized = String(value || '').toLowerCase().trim();
+  if (!normalized) return false;
+  return (
+    normalized.includes('zelle')
+    || normalized.includes('bank')
+    || normalized.includes('transfer')
+    || normalized === 'bacs'
+  );
+};
+
 const inFlightOrders = new Map();
 
 const generateOrderId = () => {
@@ -1265,6 +1276,7 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
   const wooOrderNumber = wooOrder?.number || String(normalizedWooOrderId);
   const pepproOrderId = extractWooMetaValue(wooOrder, 'peppro_order_id');
   const stripePaymentIntentId = extractWooMetaValue(wooOrder, ['stripe_payment_intent', 'peppro_payment_intent', 'payment_intent']);
+  const wooPaymentMethodLabel = wooOrder?.payment_method_title || wooOrder?.payment_method || null;
   const totalCents = Number.isFinite(Number(wooOrder?.total))
     ? Math.max(Math.round(Number(wooOrder.total) * 100), 0)
     : null;
@@ -1303,6 +1315,35 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
         stripeRefund,
         pepproOrderId: pepproOrderId || null,
       });
+    }
+    const manualRefundReviewRequired = !stripeRefund && isManualPaymentMethod(wooPaymentMethodLabel);
+    if (manualRefundReviewRequired) {
+      if (typeof wooCommerceClient.addOrderNote === 'function') {
+        try {
+          await wooCommerceClient.addOrderNote({
+            wooOrderId: normalizedWooOrderId,
+            note:
+              `Cancelled via account portal. Manual payment (${wooPaymentMethodLabel || 'Zelle / Bank transfer'}) — ` +
+              `please review for refund if payment was already received.`,
+            isCustomerNote: false,
+          });
+        } catch (noteError) {
+          logger.warn({ err: noteError, wooOrderId: normalizedWooOrderId }, 'Failed to append WooCommerce refund review note');
+        }
+      }
+      try {
+        await emailService.sendManualRefundReviewEmail({
+          orderId: String(normalizedWooOrderId),
+          wooOrderNumber,
+          customerName: user?.name || null,
+          customerEmail: user?.email || null,
+          paymentMethod: wooPaymentMethodLabel,
+          total: Number.isFinite(Number(wooOrder?.total)) ? Number(wooOrder.total) : null,
+          reason: cancellationReason,
+        });
+      } catch (emailError) {
+        logger.warn({ err: emailError, wooOrderId: normalizedWooOrderId }, 'Failed to send manual refund review email for Woo-only cancellation');
+      }
     }
     return buildWooCancellationResponse({
       wooOrder,
@@ -1379,7 +1420,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
   }
   const normalizedStatus = (order.status || '').toLowerCase();
   const wooOrderNumber = getWooOrderNumberFromOrder(order);
-  const cancellableStatuses = new Set(['pending', 'processing', 'paid']);
+  const cancellableStatuses = new Set(['pending', 'processing', 'paid', 'on-hold', 'failed', 'payment_failed']);
   if (!cancellableStatuses.has(normalizedStatus)) {
     const error = new Error('This order can no longer be cancelled');
     error.status = 400;
@@ -1413,6 +1454,8 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
     }
   }
 
+  const manualPaymentUsed = isManualPaymentMethod(order.paymentMethod || order.paymentDetails);
+
   let wooCancellation = null;
   if (order.wooOrderId) {
     try {
@@ -1439,6 +1482,20 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
         message: error.message,
         backgroundRetryScheduled: backgroundRetry,
       };
+    }
+  }
+
+  if (manualPaymentUsed && order.wooOrderId && typeof wooCommerceClient.addOrderNote === 'function') {
+    try {
+      await wooCommerceClient.addOrderNote({
+        wooOrderId: order.wooOrderId,
+        note:
+          `Cancelled via account portal. Manual payment (${order.paymentMethod || 'Zelle / Bank transfer'}) — ` +
+          `please review for refund if payment was already received.`,
+        isCustomerNote: false,
+      });
+    } catch (error) {
+      logger.warn({ err: error, orderId: order.id, wooOrderId: order.wooOrderId }, 'Failed to append WooCommerce refund review note');
     }
   }
 
@@ -1478,6 +1535,24 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
       pepproOrderId: order.id,
     });
   }
+
+  const manualRefundReviewRequired = manualPaymentUsed && !stripeRefund;
+  if (manualRefundReviewRequired) {
+    try {
+      const customer = userRepository.findById(userId);
+      await emailService.sendManualRefundReviewEmail({
+        orderId: updatedOrder.id,
+        wooOrderNumber: wooOrderNumber || updatedOrder.wooOrderNumber || updatedOrder.wooOrderId || null,
+        customerName: customer?.name || null,
+        customerEmail: customer?.email || null,
+        paymentMethod: updatedOrder.paymentMethod || updatedOrder.paymentDetails || null,
+        total: (updatedOrder.total ?? 0) + (updatedOrder.shippingTotal ?? 0) + (updatedOrder.taxTotal ?? 0),
+        reason: cancellationReason,
+      });
+    } catch (error) {
+      logger.warn({ err: error, orderId: updatedOrder.id }, 'Failed to send manual refund review email');
+    }
+  }
   try {
     await orderSqlRepository.persistOrder({
       order: updatedOrder,
@@ -1493,6 +1568,7 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
     order: sanitizeOrder(updatedOrder),
     cancellationReason,
     wooCancellation,
+    manualRefundReviewRequired,
   };
 };
 

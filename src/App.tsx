@@ -3341,19 +3341,33 @@ export default function App() {
     }
   }, [loadAccountOrders]);
 
-  const handleCancelOrder = useCallback(
-    async (orderId: string) => {
-      if (!orderId) {
-        return;
-      }
-      try {
-        await ordersAPI.cancelOrder(orderId, "Cancelled via account portal");
-        toast.success("Order canceled. A refund is on the way.");
-        await loadAccountOrders();
-      } catch (error: any) {
-        if (error?.code === "AUTH_REQUIRED") {
-          setUser(null);
-          toast.error(
+	  const handleCancelOrder = useCallback(
+	    async (orderId: string) => {
+	      if (!orderId) {
+	        return;
+	      }
+	      try {
+	        const result = (await ordersAPI.cancelOrder(
+	          orderId,
+	          "Cancelled via account portal",
+	        )) as any;
+	        const manualRefundReviewRequired =
+	          Boolean(result?.manualRefundReviewRequired)
+	          || (() => {
+	            const paymentLabel = String(result?.order?.paymentMethod || result?.order?.paymentDetails || '');
+	            const normalized = paymentLabel.toLowerCase();
+	            return normalized.includes('zelle') || normalized.includes('bank') || normalized.includes('transfer');
+	          })();
+	        toast.success(
+	          manualRefundReviewRequired
+	            ? "Order canceled. If payment was already received, we’ll refund you manually."
+	            : "Order canceled. A refund is on the way.",
+	        );
+	        await loadAccountOrders();
+	      } catch (error: any) {
+	        if (error?.code === "AUTH_REQUIRED") {
+	          setUser(null);
+	          toast.error(
             "Your session expired. Please log in again to cancel orders.",
           );
           throw new Error("Please log in again to cancel orders.");
