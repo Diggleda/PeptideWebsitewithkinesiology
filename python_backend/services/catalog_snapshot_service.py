@@ -343,6 +343,8 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
     concurrency = int(os.environ.get("CATALOG_SNAPSHOT_VARIATION_CONCURRENCY", "2").strip() or 2)
     concurrency = max(1, min(concurrency, 8))
     semaphore = threading.BoundedSemaphore(concurrency)
+    variation_acquire_timeout = float(os.environ.get("CATALOG_SNAPSHOT_VARIATION_ACQUIRE_TIMEOUT_SECONDS", "120").strip() or 120)
+    variation_acquire_timeout = max(5.0, min(variation_acquire_timeout, 900.0))
 
     def sync_one(product: Dict[str, Any]) -> None:
         nonlocal product_count, variation_products, variation_rows
@@ -376,8 +378,12 @@ def sync_catalog_snapshots(*, include_variations: bool = True) -> Dict[str, Any]
         if not is_variable:
             return
 
-        acquired = semaphore.acquire(timeout=10)
+        acquired = semaphore.acquire(timeout=variation_acquire_timeout)
         if not acquired:
+            logger.warning(
+                "[catalog-snapshot] variation fetch skipped (semaphore timeout)",
+                extra={"wooProductId": woo_id, "timeoutSeconds": variation_acquire_timeout, "concurrency": concurrency},
+            )
             return
         try:
             variations = _fetch_product_variations(woo_id)
