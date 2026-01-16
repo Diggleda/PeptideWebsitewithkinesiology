@@ -240,11 +240,11 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
     const lastInteractionMs = lastInteractionAt ? Date.parse(lastInteractionAt) : NaN;
     const hasInteractionTs = Number.isFinite(lastInteractionMs);
 
-    const explicitOnline = typeof user?.isOnline === 'boolean' ? user.isOnline : false;
+    // Online is derived from recent presence. Do not trust a persisted `isOnline` flag,
+    // since it can become stale (e.g., a tab closed without cleanup).
     const isOnline =
-      explicitOnline ||
-      (hasSeenTs && (nowMs - lastSeenMs) <= onlineThresholdMs) ||
-      (hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
+      (hasSeenTs && (nowMs - lastSeenMs) <= onlineThresholdMs)
+      || (!hasSeenTs && hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
 
     const explicitIdle = typeof user?.isIdle === 'boolean' ? user.isIdle : null;
     const idleAnchorMs = hasInteractionTs ? lastInteractionMs : (hasSeenTs ? lastSeenMs : lastLoginMs);
