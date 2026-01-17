@@ -236,7 +236,14 @@ export function CheckoutModal({
   const checkoutScrollRef = useRef<HTMLDivElement | null>(null);
   const checkoutScrollPositionRef = useRef(0);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
-  const [taxEstimate, setTaxEstimate] = useState<{ amount: number; currency: string; grandTotal: number; source?: string | null } | null>(null);
+  const [taxEstimate, setTaxEstimate] = useState<{
+    amount: number;
+    currency: string;
+    grandTotal: number;
+    source?: string | null;
+    testPaymentOverrideApplied?: boolean;
+    originalGrandTotal?: number | null;
+  } | null>(null);
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
@@ -330,6 +337,14 @@ export function CheckoutModal({
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
   const appliedCredits = Math.min(subtotal, normalizedCredits);
   const total = Math.max(0, subtotal - appliedCredits + shippingCost + taxAmount);
+  const testOverrideApplied = taxEstimate?.testPaymentOverrideApplied === true;
+  const originalGrandTotal = typeof taxEstimate?.originalGrandTotal === 'number' && Number.isFinite(taxEstimate.originalGrandTotal)
+    ? Math.max(0, taxEstimate.originalGrandTotal)
+    : null;
+  const displayAppliedCredits = testOverrideApplied ? 0 : appliedCredits;
+  const displayShippingCost = testOverrideApplied ? 0 : shippingCost;
+  const displayTaxAmount = testOverrideApplied ? 0 : taxAmount;
+  const displayTotal = testOverrideApplied ? 0.01 : total;
   const shippingAddressSignature = [
     shippingAddress.addressLine1,
     shippingAddress.addressLine2,
@@ -363,10 +378,11 @@ export function CheckoutModal({
       shippingAddressSignature || 'address',
       rateFingerprint,
       shippingCost.toFixed(2),
+      paymentMethod || 'payment',
     ].join('|');
-  }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost]);
+  }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost, paymentMethod]);
   const canCheckout = meetsCheckoutRequirements && isAuthenticated;
-  let checkoutButtonLabel = `Place Order (${total.toFixed(2)})`;
+  let checkoutButtonLabel = `Place Order (${displayTotal.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
   } else if (checkoutStatus === 'error' && checkoutStatusMessage) {
@@ -769,6 +785,7 @@ export function CheckoutModal({
           shippingAddress,
           shippingEstimate: selectedShippingRate,
           shippingTotal: shippingCost,
+          paymentMethod,
         },
         { signal: controller.signal },
       );
@@ -779,11 +796,15 @@ export function CheckoutModal({
       const amount = Math.max(0, Number(totals?.taxTotal) || 0);
       const grandTotalFromApi = Number(totals?.grandTotal);
       const fallbackGrandTotal = Math.max(0, subtotal - appliedCredits + shippingCost + amount);
+      const testPaymentOverrideApplied = totals?.testPaymentOverrideApplied === true;
+      const originalGrandTotalCandidate = Number(totals?.originalGrandTotal);
       setTaxEstimate({
         amount,
         currency: typeof totals?.currency === 'string' && totals.currency ? totals.currency : 'USD',
         grandTotal: Number.isFinite(grandTotalFromApi) ? Math.max(0, grandTotalFromApi) : fallbackGrandTotal,
         source: totals?.source || null,
+        testPaymentOverrideApplied,
+        originalGrandTotal: Number.isFinite(originalGrandTotalCandidate) ? Math.max(0, originalGrandTotalCandidate) : null,
       });
       lastTaxQuoteRef.current = { key: taxQuoteKey, ts: Date.now() };
     } catch (error: any) {
@@ -804,7 +825,7 @@ export function CheckoutModal({
         setTaxEstimatePending(false);
       }
     }
-  }, [appliedCredits, checkoutLineItems, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
+  }, [appliedCredits, checkoutLineItems, paymentMethod, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
 
   useEffect(() => {
     if (!shouldFetchTax || !taxQuoteKey) {
@@ -1301,28 +1322,28 @@ export function CheckoutModal({
 	              </div>
 
               {/* Order Total */}
-              <div className="space-y-2">
-                <Separator />
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>${subtotal.toFixed(2)}</span>
-                </div>
-                {appliedCredits > 0 && (
-                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
-                    <span>Referral Credit</span>
-                    <span>
-                      - ${appliedCredits.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm text-slate-700">
-                  <span>Shipping:</span>
-                  <span>${shippingCost.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-700">
-                  <span>Estimated tax:</span>
-                  <span>{taxEstimatePending ? 'Calculating…' : `$${taxAmount.toFixed(2)}`}</span>
-                </div>
+	              <div className="space-y-2">
+	                <Separator />
+	                <div className="flex justify-between">
+	                  <span>Subtotal:</span>
+	                  <span>${subtotal.toFixed(2)}</span>
+	                </div>
+	                {displayAppliedCredits > 0 && (
+	                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+	                    <span>Referral Credit</span>
+	                    <span>
+	                      - ${displayAppliedCredits.toFixed(2)}
+	                    </span>
+	                  </div>
+	                )}
+	                <div className="flex justify-between text-sm text-slate-700">
+	                  <span>Shipping:</span>
+	                  <span>${displayShippingCost.toFixed(2)}</span>
+	                </div>
+	                <div className="flex justify-between text-sm text-slate-700">
+	                  <span>Estimated tax:</span>
+	                  <span>{taxEstimatePending ? 'Calculating…' : `$${displayTaxAmount.toFixed(2)}`}</span>
+	                </div>
                 {taxEstimateError && (
                   <div className="flex items-start justify-between text-xs text-red-600">
                     <span className="pr-2">{taxEstimateError}</span>
@@ -1334,13 +1355,28 @@ export function CheckoutModal({
                       Retry
                     </button>
                   </div>
-                )}
-                <Separator />
-                <div className="flex justify-between font-bold">
-                  <span>Total:</span>
-                  <span>${total.toFixed(2)}</span>
-                </div>
-              </div>
+	                )}
+	                <Separator />
+	                <div className="flex justify-between font-bold items-baseline gap-2">
+	                  <span className="flex items-baseline gap-2">
+	                    <span>Total:</span>
+	                    {testOverrideApplied && (
+	                      <span className="text-xs font-semibold text-amber-700">
+	                        Test override: $0.01
+	                      </span>
+	                    )}
+	                  </span>
+	                  <span className="tabular-nums">${displayTotal.toFixed(2)}</span>
+	                </div>
+	                {testOverrideApplied && originalGrandTotal != null && (
+	                  <div className="flex justify-between text-xs text-slate-500">
+	                    <span>Original total:</span>
+	                    <span className="tabular-nums line-through">
+	                      ${originalGrandTotal.toFixed(2)}
+	                    </span>
+	                  </div>
+	                )}
+	              </div>
 
               {/* Checkout Button */}
               <div className="pt-4">

@@ -240,6 +240,7 @@ def estimate_order_totals(
     shipping_address: Dict,
     shipping_estimate: Optional[Dict] = None,
     shipping_total: float | int | str = 0,
+    payment_method: Optional[str] = None,
 ) -> Dict:
     if not _validate_items(items):
         err = ValueError("Invalid items payload")
@@ -281,17 +282,49 @@ def estimate_order_totals(
         raise err
 
     user = user_repository.find_by_id(user_id) if user_id else None
+    role = str((user or {}).get("role") or "").strip().lower()
+    raw_payment_method = str(payment_method or "").strip().lower()
+    normalized_payment_method = raw_payment_method
+    if normalized_payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer", "zelle"):
+        normalized_payment_method = "bacs"
+    else:
+        normalized_payment_method = "stripe"
+
+    settings = settings_service.get_settings()
+    test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))
+    test_override_allowed = role in ("admin", "test_doctor")
+    test_override_payment = normalized_payment_method == "bacs"
+    test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
+
     if _is_tax_exempt_for_checkout(user):
-        grand_total = max(0.0, items_total + shipping_total_value)
+        original_grand_total = max(0.0, items_total + shipping_total_value)
+        if test_override:
+            return {
+                "success": True,
+                "totals": {
+                    "itemsTotal": 0.01,
+                    "shippingTotal": 0.0,
+                    "taxTotal": 0.0,
+                    "grandTotal": 0.01,
+                    "currency": "USD",
+                    "source": "tax_exempt",
+                    "testPaymentOverrideApplied": True,
+                    "originalItemsTotal": round(items_total, 2),
+                    "originalShippingTotal": round(shipping_total_value, 2),
+                    "originalTaxTotal": 0.0,
+                    "originalGrandTotal": round(original_grand_total, 2),
+                },
+            }
         return {
             "success": True,
             "totals": {
                 "itemsTotal": round(items_total, 2),
                 "shippingTotal": round(shipping_total_value, 2),
                 "taxTotal": 0.0,
-                "grandTotal": round(grand_total, 2),
+                "grandTotal": round(original_grand_total, 2),
                 "currency": "USD",
                 "source": "tax_exempt",
+                "testPaymentOverrideApplied": False,
             },
         }
 
@@ -333,6 +366,22 @@ def estimate_order_totals(
         "source": "stripe_tax",
         "stripeTaxCalculationId": tax_result.get("calculation_id"),
     }
+
+    if test_override:
+        totals = {
+            **totals,
+            "itemsTotal": 0.01,
+            "shippingTotal": 0.0,
+            "taxTotal": 0.0,
+            "grandTotal": 0.01,
+            "testPaymentOverrideApplied": True,
+            "originalItemsTotal": round(items_total, 2),
+            "originalShippingTotal": round(shipping_total_value, 2),
+            "originalTaxTotal": round(tax_total, 2),
+            "originalGrandTotal": round(grand_total, 2),
+        }
+    else:
+        totals["testPaymentOverrideApplied"] = False
 
     if tax_debug:
         logger.info("[TaxEstimate] Result %s", totals)

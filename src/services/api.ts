@@ -1238,6 +1238,7 @@ export const ordersAPI = {
       shippingAddress: any;
       shippingEstimate: any;
       shippingTotal: number;
+      paymentMethod?: string | null;
     },
     options?: { signal?: AbortSignal },
   ) => {

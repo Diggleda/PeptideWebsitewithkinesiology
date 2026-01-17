@@ -246,6 +246,7 @@ def estimate_order_totals():
     shipping_address = payload.get("shippingAddress") or {}
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
+    payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     user_id = g.current_user.get("id")
     return handle_action(
         lambda: order_service.estimate_order_totals(
@@ -254,6 +255,7 @@ def estimate_order_totals():
             shipping_address=shipping_address,
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
+            payment_method=payment_method,
         )
     )
 
