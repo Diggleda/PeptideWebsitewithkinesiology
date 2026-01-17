@@ -236,11 +236,16 @@ const verifyAuthentication = async ({ requestId, assertionResponse }) => {
       : pk
   ));
 
+  const nowIso = new Date().toISOString();
   const updatedUser = userRepository.update({
     ...user,
     passkeys: nextPasskeys,
     visits: (user.visits || 1) + 1,
-    lastLoginAt: new Date().toISOString(),
+    lastLoginAt: nowIso,
+    lastSeenAt: nowIso,
+    lastInteractionAt: nowIso,
+    isOnline: true,
+    isIdle: false,
   }) || user;
 
   return {

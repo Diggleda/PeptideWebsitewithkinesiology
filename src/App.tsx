@@ -5617,7 +5617,7 @@ export default function App() {
   const userActivityPollInFlightRef = useRef(false);
   const userActivityEtagRef = useRef<string | null>(null);
 	  const userActivityLongPollDisabledRef = useRef(false);
-	  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+		  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
 	  const [isIdle, setIsIdle] = useState(false);
 	  const isIdleRef = useRef(false);
 	  const lastActivityAtRef = useRef<number>(Date.now());
@@ -5630,17 +5630,62 @@ export default function App() {
 	    isIdleRef.current = isIdle;
 	  }, [isIdle]);
 
-  useEffect(() => {
-    if (!isAdmin(user?.role)) return;
-    const id = window.setInterval(() => {
-      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
-    }, 30000);
-    return () => window.clearInterval(id);
-  }, [user?.role]);
+	  useEffect(() => {
+	    if (!isAdmin(user?.role) && !isRep(user?.role)) return;
+	    const id = window.setInterval(() => {
+	      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
+	    }, 30000);
+	    return () => window.clearInterval(id);
+	  }, [user?.role]);
 
-  const formatOnlineDuration = (lastLoginAt?: string | null) => {
-    void userActivityNowTick;
-    if (!lastLoginAt) return "Online";
+	  const [liveClients, setLiveClients] = useState<any[]>([]);
+	  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
+	  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
+
+	  useEffect(() => {
+	    if (!isRep(user?.role)) {
+	      setLiveClients([]);
+	      setLiveClientsLoading(false);
+	      setLiveClientsError(null);
+	      return;
+	    }
+
+	    let cancelled = false;
+	    let timer: ReturnType<typeof window.setInterval> | null = null;
+
+	    const fetchLiveClients = async () => {
+	      try {
+	        setLiveClientsLoading(true);
+	        setLiveClientsError(null);
+	        const payload = (await settingsAPI.getLiveClients()) as any;
+	        if (cancelled) return;
+	        const clients = Array.isArray(payload?.clients) ? payload.clients : [];
+	        setLiveClients(clients);
+	      } catch (error: any) {
+	        if (cancelled) return;
+	        setLiveClients([]);
+	        setLiveClientsError(
+	          typeof error?.message === "string"
+	            ? error.message
+	            : "Unable to load live clients.",
+	        );
+	      } finally {
+	        if (!cancelled) setLiveClientsLoading(false);
+	      }
+	    };
+
+	    void fetchLiveClients();
+	    timer = window.setInterval(fetchLiveClients, 30_000);
+
+	    return () => {
+	      cancelled = true;
+	      if (timer) window.clearInterval(timer);
+	    };
+	  }, [user?.role, user?.id]);
+
+	  const formatOnlineDuration = (lastLoginAt?: string | null) => {
+	    void userActivityNowTick;
+	    if (!lastLoginAt) return "Online";
     const startedAt = new Date(lastLoginAt).getTime();
     if (!Number.isFinite(startedAt)) return "Online";
     const elapsedMs = Math.max(0, Date.now() - startedAt);
@@ -5654,8 +5699,30 @@ export default function App() {
     }
     const days = Math.floor(hours / 24);
     const remHours = hours % 24;
-    return remHours ? `Online for ${days}d ${remHours}h` : `Online for ${days}d`;
-  };
+	    return remHours ? `Online for ${days}d ${remHours}h` : `Online for ${days}d`;
+	  };
+
+	  const formatIdleMinutes = (entry: any) => {
+	    void userActivityNowTick;
+	    const rawMinutes =
+	      typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+	        ? entry.idleMinutes
+	        : null;
+	    if (rawMinutes == null) {
+	      const raw =
+	        entry?.lastInteractionAt ||
+	        entry?.lastSeenAt ||
+	        entry?.lastLoginAt ||
+	        null;
+	      if (!raw) return null;
+	      const parsed = new Date(raw).getTime();
+	      if (!Number.isFinite(parsed)) return null;
+	      const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60000));
+	      return minutes < 1 ? "<1min" : `${minutes}min`;
+	    }
+	    const minutes = Math.max(0, Math.floor(rawMinutes));
+	    return minutes < 1 ? "<1min" : `${minutes}min`;
+	  };
 
   useEffect(() => {
     if (!isAdmin(user?.role)) {
@@ -11758,11 +11825,11 @@ export default function App() {
     ).length;
     const hasChartData = salesRepChartData.some((item) => item.count > 0);
 
-    return (
-      <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
-	        <div className="flex flex-col gap-6">
-	          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-	            <div>
+	    return (
+	      <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
+		        <div className="flex flex-col gap-6">
+		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+		            <div>
 	              <h2 className="text-xl font-semibold text-slate-900">
 	                {isAdmin(user?.role)
 	                  ? "Admin Dashboard"
@@ -11776,24 +11843,23 @@ export default function App() {
 	            </div>
 	            {isAdmin(user?.role) && (
 	              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-	                <a
-	                  href="https://shop.peppro.net/wp-admin/"
-	                  target="_blank"
-	                  rel="noopener noreferrer"
-	                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
-	                  title="Open PepPro WooCommerce Dashboard"
-	                >
-                    <img
-                      src="/logos/woocommerce.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="h-5 w-5"
-                      loading="lazy"
-                      decoding="async"
-                    />
-	                  <span className="hidden sm:inline">PepPro WooCommerce Dashboard</span>
-	                  <span className="sm:hidden">WooCommerce Dashboard</span>
-	                </a>
+		                <a
+		                  href="https://shop.peppro.net/wp-admin/"
+		                  target="_blank"
+		                  rel="noopener noreferrer"
+		                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
+		                  title="Open Woocommerce dashboard"
+		                >
+	                    <img
+	                      src="/logos/woocommerce.svg"
+	                      alt=""
+	                      aria-hidden="true"
+	                      className="h-5 w-5"
+	                      loading="lazy"
+	                      decoding="async"
+	                    />
+		                  <span>Woocommerce dashboard</span>
+		                </a>
                   <a
                     href={shipStationDashboardUrl}
                     target="_blank"
@@ -11812,14 +11878,105 @@ export default function App() {
                     <span>ShipStation Dashboard</span>
                   </a>
 	              </div>
-	            )}
-	          </div>
+		            )}
+		          </div>
 
-          {adminActionState.error && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-              {adminActionState.error}
-            </p>
-          )}
+	          {isRep(user?.role) && (
+	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+	              <div className="flex flex-col gap-2">
+	                <div>
+	                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
+	                  <p className="text-sm text-slate-600">
+	                    Doctors currently online or idle.
+	                  </p>
+	                </div>
+	
+	                {liveClientsError && (
+	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+	                    {liveClientsError}
+	                  </div>
+	                )}
+	
+	                {liveClientsLoading ? (
+	                  <div className="px-4 py-3 text-sm text-slate-500">
+	                    Loading live clients…
+	                  </div>
+	                ) : liveClients.length === 0 ? (
+	                  <div className="px-4 py-3 text-sm text-slate-500">
+	                    No clients are online right now.
+	                  </div>
+	                ) : (
+	                  <div className="sales-rep-table-wrapper live-users-scroll">
+	                    <div className="flex w-full min-w-[720px] flex-col gap-2">
+	                      {liveClients.map((entry: any) => {
+	                        const avatarUrl = entry.profileImageUrl || null;
+	                        const displayName = entry.name || entry.email || "Doctor";
+	                        const showIdle = Boolean(entry.isIdle);
+	                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
+	                        return (
+	                          <div
+	                            key={entry.id}
+	                            className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+	                          >
+	                            <div className="flex items-center gap-3 min-w-0 flex-1">
+	                              <div
+	                                className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
+	                                style={{ width: 34, height: 34, minWidth: 34 }}
+	                              >
+	                                {avatarUrl ? (
+	                                  <img
+	                                    src={avatarUrl}
+	                                    alt={displayName}
+	                                    className="h-full w-full object-cover"
+	                                    loading="lazy"
+	                                    decoding="async"
+	                                  />
+	                                ) : (
+	                                  <span className="text-[11px] font-semibold text-slate-600">
+	                                    {getInitials(displayName)}
+	                                  </span>
+	                                )}
+	                              </div>
+	                              <div className="min-w-0 flex-1">
+	                                <div className="text-sm font-semibold text-slate-800 truncate">
+	                                  {displayName}
+	                                </div>
+	                                <div className="text-xs text-slate-500 truncate">
+	                                  {entry.email || "—"}
+	                                </div>
+	                              </div>
+	                            </div>
+	                            <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
+	                              <span
+	                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+	                                  showIdle
+	                                    ? "bg-slate-100 text-slate-600"
+	                                    : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+	                                }`}
+	                              >
+	                                {showIdle
+	                                  ? `Idle${idleLabel ? ` (${idleLabel})` : ""}`
+	                                  : "Online"}
+	                              </span>
+	                              <div className="text-xs text-slate-600 whitespace-nowrap">
+	                                {formatOnlineDuration(entry.lastLoginAt)}
+	                              </div>
+	                            </div>
+	                          </div>
+	                        );
+	                      })}
+	                    </div>
+	                  </div>
+	                )}
+	              </div>
+	            </div>
+	          )}
+
+	          {adminActionState.error && (
+	            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+	              {adminActionState.error}
+	            </p>
+	          )}
 
 	          {isAdmin(user?.role) && (
 	          <div className="glass-card squircle-xl p-6 border border-slate-200/70">

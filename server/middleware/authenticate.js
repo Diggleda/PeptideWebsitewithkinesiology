@@ -29,8 +29,19 @@ const authenticate = (req, res, next) => {
     const sessionMaxMs = 24 * 60 * 60 * 1000; // 24 hours
     const idleMaxMs = 60 * 60 * 1000; // 1 hour
 
+    const issuedAtMs = typeof decoded?.iat === 'number' && Number.isFinite(decoded.iat)
+      ? decoded.iat * 1000
+      : NaN;
+    if (Number.isFinite(issuedAtMs) && nowMs - issuedAtMs >= sessionMaxMs) {
+      logger.info(
+        { path: req.path, method: req.method, userId: decoded.id, issuedAtMs },
+        'Auth revoked: token max age exceeded',
+      );
+      return res.status(401).json({ error: 'Session expired', code: 'SESSION_MAX_AGE' });
+    }
+
     const lastLoginMs = user?.lastLoginAt ? Date.parse(user.lastLoginAt) : NaN;
-    if (Number.isFinite(lastLoginMs) && nowMs - lastLoginMs >= sessionMaxMs) {
+    if (!Number.isFinite(issuedAtMs) && Number.isFinite(lastLoginMs) && nowMs - lastLoginMs >= sessionMaxMs) {
       logger.info(
         { path: req.path, method: req.method, userId: decoded.id, lastLoginAt: user.lastLoginAt },
         'Auth revoked: session max age exceeded',
@@ -39,10 +50,11 @@ const authenticate = (req, res, next) => {
     }
 
     const lastInteractionMs = user?.lastInteractionAt ? Date.parse(user.lastInteractionAt) : NaN;
-    const lastSeenMs = user?.lastSeenAt ? Date.parse(user.lastSeenAt) : NaN;
+    // Idle should be driven by explicit user interactions, not presence heartbeats (`lastSeenAt`).
+    // Fall back to the session start (login / token issuance) when we don't have interactions yet.
     const idleAnchorMs = Number.isFinite(lastInteractionMs)
       ? lastInteractionMs
-      : (Number.isFinite(lastSeenMs) ? lastSeenMs : lastLoginMs);
+      : (Number.isFinite(lastLoginMs) ? lastLoginMs : issuedAtMs);
     if (Number.isFinite(idleAnchorMs) && nowMs - idleAnchorMs >= idleMaxMs) {
       logger.info(
         {

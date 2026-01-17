@@ -1003,6 +1003,16 @@ export const settingsAPI = {
       body: JSON.stringify(payload || {}),
     });
   },
+  getLiveClients: async (salesRepId?: string | null) => {
+    const params = new URLSearchParams();
+    if (salesRepId) {
+      params.set('salesRepId', String(salesRepId));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/live-clients${query}`, {
+      method: 'GET',
+    });
+  },
   getAdminUserProfile: async (userId: string | number) => {
     if (!userId) {
       throw new Error('userId is required');

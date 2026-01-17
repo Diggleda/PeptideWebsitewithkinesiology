@@ -16,11 +16,16 @@ const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const userRepository = require('../repositories/userRepository');
+const salesProspectRepository = require('../repositories/salesProspectRepository');
 
 const router = Router();
 
 const normalizeRole = (role) => (role || '').toLowerCase();
 const isAdmin = (role) => normalizeRole(role) === 'admin';
+const isSalesRep = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'sales_rep' || normalized === 'rep';
+};
 
 const requireAdmin = (req, res, next) => {
   const userId = req.user?.id;
@@ -34,6 +39,55 @@ const requireAdmin = (req, res, next) => {
   }
   req.currentUser = user;
   return next();
+};
+
+const requireSalesRepOrAdmin = (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const user = userRepository.findById(userId);
+  const role = normalizeRole(user?.role);
+  if (!isAdmin(role) && !isSalesRep(role)) {
+    return res.status(403).json({ error: 'Sales rep access required' });
+  }
+  req.currentUser = user;
+  return next();
+};
+
+const computePresenceSnapshot = ({ user, nowMs, onlineThresholdMs, idleThresholdMs }) => {
+  const lastLoginAt = user?.lastLoginAt || null;
+  const lastLoginMs = lastLoginAt ? Date.parse(lastLoginAt) : NaN;
+  const hasLoginTs = Number.isFinite(lastLoginMs);
+  const lastSeenAt = user?.lastSeenAt || lastLoginAt || null;
+  const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+  const hasSeenTs = Number.isFinite(lastSeenMs);
+  const lastInteractionAt = user?.lastInteractionAt || null;
+  const lastInteractionMs = lastInteractionAt ? Date.parse(lastInteractionAt) : NaN;
+  const hasInteractionTs = Number.isFinite(lastInteractionMs);
+
+  const isOnline =
+    (hasSeenTs && (nowMs - lastSeenMs) <= onlineThresholdMs)
+    || (!hasSeenTs && hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
+
+  const explicitIdle = typeof user?.isIdle === 'boolean' ? user.isIdle : null;
+  // "Idle" should not be reset by heartbeats (`lastSeenAt`); only by interactions or (as fallback) session start.
+  const idleAnchorMs = hasInteractionTs ? lastInteractionMs : (hasLoginTs ? lastLoginMs : lastSeenMs);
+  const hasIdleAnchor = Number.isFinite(idleAnchorMs);
+  const computedIdle = isOnline && hasIdleAnchor ? (nowMs - idleAnchorMs) >= idleThresholdMs : null;
+
+  const idleMinutes = hasIdleAnchor ? Math.max(0, Math.floor((nowMs - idleAnchorMs) / 60000)) : null;
+  const onlineMinutes = hasLoginTs ? Math.max(0, Math.floor((nowMs - lastLoginMs) / 60000)) : null;
+
+  return {
+    isOnline,
+    isIdle: explicitIdle ?? computedIdle,
+    lastLoginAt,
+    lastSeenAt,
+    lastInteractionAt,
+    idleMinutes,
+    onlineMinutes,
+  };
 };
 
 const resolvePublishableKey = (mode) => {
@@ -203,6 +257,109 @@ const fallbackLiveUsers = [
   },
 ];
 
+router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const nowMs = Date.now();
+  const onlineThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_ONLINE_THRESHOLD_MINUTES, 45),
+    1,
+    24 * 60,
+  );
+  const idleThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_IDLE_THRESHOLD_MINUTES, 5),
+    1,
+    12 * 60,
+  );
+  const onlineThresholdMs = onlineThresholdMinutes * 60 * 1000;
+  const idleThresholdMs = idleThresholdMinutes * 60 * 1000;
+
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  const role = normalizeRole(current?.role);
+  const requestedSalesRepId =
+    isAdmin(role) && typeof req.query?.salesRepId === 'string'
+      ? req.query.salesRepId
+      : null;
+  const allowedOwnerIds = Array.from(
+    new Set(
+      [
+        requestedSalesRepId,
+        current?.salesRepId,
+        current?.id,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value)),
+    ),
+  );
+
+  let prospects = [];
+  try {
+    const all = await salesProspectRepository.getAll();
+    prospects = (all || []).filter(
+      (record) => record?.salesRepId && allowedOwnerIds.includes(String(record.salesRepId)),
+    );
+  } catch (error) {
+    logger.warn(
+      { err: error, userId: current?.id || null },
+      'Failed to load sales prospects for live clients',
+    );
+  }
+
+  const doctorIdSet = new Set(
+    prospects
+      .map((record) => (record?.doctorId ? String(record.doctorId) : null))
+      .filter(Boolean),
+  );
+  const emailSet = new Set(
+    prospects
+      .map((record) => (record?.contactEmail ? String(record.contactEmail).trim().toLowerCase() : null))
+      .filter(Boolean),
+  );
+
+  const users = userRepository.getAll();
+  const doctors = (users || []).filter((candidate) => {
+    const candidateRole = normalizeUserRole(candidate?.role);
+    if (candidateRole !== 'doctor' && candidateRole !== 'test_doctor') {
+      return false;
+    }
+    const idMatch = candidate?.id && doctorIdSet.has(String(candidate.id));
+    const email = candidate?.email ? String(candidate.email).trim().toLowerCase() : '';
+    const emailMatch = email && emailSet.has(email);
+    return idMatch || emailMatch;
+  });
+
+  const clients = doctors
+    .map((user) => {
+      const snapshot = computePresenceSnapshot({
+        user,
+        nowMs,
+        onlineThresholdMs,
+        idleThresholdMs,
+      });
+      return {
+        id: user.id,
+        name: user.name || null,
+        email: user.email || null,
+        role: normalizeUserRole(user.role),
+        profileImageUrl: user.profileImageUrl || null,
+        ...snapshot,
+      };
+    })
+    .filter((entry) => entry.isOnline)
+    .sort((a, b) => {
+      const aIdle = Boolean(a.isIdle);
+      const bIdle = Boolean(b.isIdle);
+      if (aIdle !== bIdle) return aIdle ? 1 : -1;
+      const aName = String(a?.name || a?.email || a?.id || '').toLowerCase();
+      const bName = String(b?.name || b?.email || b?.id || '').toLowerCase();
+      return aName.localeCompare(bName);
+    });
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    salesRepId: requestedSalesRepId || current?.salesRepId || current?.id || null,
+    clients,
+  });
+});
+
 router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
   const windowKey = parseActivityWindow(req.query?.window);
   const cutoffMs = Date.now() - windowMs(windowKey);
@@ -247,7 +404,7 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
       || (!hasSeenTs && hasLoginTs && (nowMs - lastLoginMs) <= onlineThresholdMs);
 
     const explicitIdle = typeof user?.isIdle === 'boolean' ? user.isIdle : null;
-    const idleAnchorMs = hasInteractionTs ? lastInteractionMs : (hasSeenTs ? lastSeenMs : lastLoginMs);
+    const idleAnchorMs = hasInteractionTs ? lastInteractionMs : (hasLoginTs ? lastLoginMs : lastSeenMs);
     const hasIdleAnchor = Number.isFinite(idleAnchorMs);
     const computedIdle = isOnline && hasIdleAnchor ? (nowMs - idleAnchorMs) >= idleThresholdMs : null;
     return {
@@ -336,6 +493,92 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
   });
 });
 
+router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  try {
+    const currentUser = req.currentUser || req.user;
+    const role = normalizeRole(currentUser?.role);
+    const requestedSalesRepId = typeof req.query?.salesRepId === 'string'
+      ? req.query.salesRepId
+      : null;
+
+    const targetSalesRepId = isAdmin(role) && requestedSalesRepId
+      ? String(requestedSalesRepId)
+      : String(currentUser?.id || '');
+
+    if (!targetSalesRepId) {
+      return res.status(400).json({ error: 'salesRepId is required' });
+    }
+
+    const onlineThresholdMinutes = clampNumber(
+      parseNumber(process.env.USER_ACTIVITY_ONLINE_THRESHOLD_MINUTES, 45),
+      1,
+      24 * 60,
+    );
+    const idleThresholdMinutes = clampNumber(
+      parseNumber(process.env.USER_ACTIVITY_IDLE_THRESHOLD_MINUTES, 5),
+      1,
+      12 * 60,
+    );
+    const onlineThresholdMs = onlineThresholdMinutes * 60 * 1000;
+    const idleThresholdMs = idleThresholdMinutes * 60 * 1000;
+    const nowMs = Date.now();
+
+    const prospects = await salesProspectRepository.getAll();
+    const ownedProspects = (prospects || []).filter(
+      (p) => String(p?.salesRepId || '') === targetSalesRepId,
+    );
+    const doctorIds = new Set(
+      ownedProspects.map((p) => p?.doctorId).filter(Boolean).map(String),
+    );
+    const doctorEmails = new Set(
+      ownedProspects
+        .map((p) => (p?.contactEmail || '').toString().trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const doctorUsers = userRepository
+      .getAll()
+      .filter((candidate) => {
+        const candidateRole = normalizeRole(candidate?.role);
+        if (candidateRole !== 'doctor' && candidateRole !== 'test_doctor') {
+          return false;
+        }
+        if (doctorIds.size > 0 && doctorIds.has(String(candidate.id))) {
+          return true;
+        }
+        const email = (candidate.email || '').toString().trim().toLowerCase();
+        return Boolean(email && doctorEmails.has(email));
+      })
+      .map((doctor) => {
+        const snapshot = computePresenceSnapshot({
+          user: doctor,
+          nowMs,
+          onlineThresholdMs,
+          idleThresholdMs,
+        });
+        return {
+          id: doctor.id,
+          name: doctor.name || null,
+          email: doctor.email || null,
+          role: normalizeRole(doctor.role),
+          profileImageUrl: doctor.profileImageUrl || null,
+          ...snapshot,
+        };
+      })
+      .filter((entry) => entry.isOnline);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      salesRepId: targetSalesRepId,
+      clients: doctorUsers,
+      total: doctorUsers.length,
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to load live clients');
+    res.status(500).json({ error: 'Unable to load live clients' });
+  }
+});
+
 router.post('/presence', authenticate, async (req, res) => {
   const userId = req.user?.id;
   if (!userId) {
@@ -356,7 +599,9 @@ router.post('/presence', authenticate, async (req, res) => {
     isIdle: isIdle ?? existing.isIdle ?? false,
     lastSeenAt: nowIso,
     lastInteractionAt:
-      kind === 'interaction' ? nowIso : (existing.lastInteractionAt || null),
+      (kind === 'interaction' || (kind === 'heartbeat' && isIdle === false))
+        ? nowIso
+        : (existing.lastInteractionAt || null),
   };
 
   userRepository.update(next);

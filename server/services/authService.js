@@ -144,7 +144,8 @@ const namesRoughlyMatch = (a = '', b = '') => {
   return middleA === middleB;
 };
 
-const createAuthToken = (payload) => jwt.sign(payload, env.jwtSecret, { expiresIn: '7d' });
+// Keep auth tokens short-lived; additional server-side checks enforce idle/session limits as well.
+const createAuthToken = (payload) => jwt.sign(payload, env.jwtSecret, { expiresIn: '24h' });
 
 const comparePassword = async (plainText, hashed) => {
   if (typeof hashed !== 'string' || !BCRYPT_REGEX.test(hashed)) {
