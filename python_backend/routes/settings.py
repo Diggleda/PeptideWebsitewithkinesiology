@@ -12,6 +12,7 @@ from flask import Blueprint, request, g
 
 from ..middleware.auth import require_auth
 from ..repositories import user_repository
+from ..repositories import sales_prospect_repository
 from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
@@ -67,6 +68,76 @@ def _public_user_profile(user: dict) -> dict:
         "npiNumber": user.get("npiNumber") or None,
         "npiStatus": user.get("npiStatus") or None,
         "npiLastVerifiedAt": user.get("npiLastVerifiedAt") or None,
+    }
+
+def _normalize_role(value: object) -> str:
+    return str(value or "").strip().lower()
+
+def _is_admin_role(role: str) -> bool:
+    return _normalize_role(role) == "admin"
+
+def _is_sales_rep_role(role: str) -> bool:
+    normalized = _normalize_role(role)
+    return normalized in ("sales_rep", "rep")
+
+def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold_s: float, idle_threshold_s: float, presence: dict) -> dict:
+    user_id = str(user.get("id") or "")
+    presence_entry = presence.get(user_id)
+    presence_public = presence_service.to_public_fields(presence_entry)
+
+    last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
+    last_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
+    last_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
+
+    last_seen_epoch = None
+    try:
+        raw_seen = presence_entry.get("lastHeartbeatAt") if isinstance(presence_entry, dict) else None
+        if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
+            last_seen_epoch = float(raw_seen)
+    except Exception:
+        last_seen_epoch = None
+    if last_seen_epoch is None and last_seen_dt:
+        last_seen_epoch = float(last_seen_dt.timestamp())
+
+    derived_online = bool(last_seen_epoch and (now_epoch - float(last_seen_epoch)) <= online_threshold_s)
+
+    idle_anchor_epoch = None
+    try:
+        raw_interaction = presence_entry.get("lastInteractionAt") if isinstance(presence_entry, dict) else None
+        if isinstance(raw_interaction, (int, float)) and float(raw_interaction) > 0:
+            idle_anchor_epoch = float(raw_interaction)
+    except Exception:
+        idle_anchor_epoch = None
+    if idle_anchor_epoch is None and last_interaction_dt:
+        idle_anchor_epoch = float(last_interaction_dt.timestamp())
+    if idle_anchor_epoch is None and last_login_dt:
+        idle_anchor_epoch = float(last_login_dt.timestamp())
+    if idle_anchor_epoch is None and last_seen_epoch is not None:
+        idle_anchor_epoch = float(last_seen_epoch)
+
+    computed_idle = None
+    if derived_online and isinstance(idle_anchor_epoch, (int, float)) and float(idle_anchor_epoch) > 0:
+        computed_idle = (now_epoch - float(idle_anchor_epoch)) >= idle_threshold_s
+
+    idle_minutes = None
+    if isinstance(idle_anchor_epoch, (int, float)) and float(idle_anchor_epoch) > 0:
+        idle_minutes = max(0, int((now_epoch - float(idle_anchor_epoch)) // 60))
+
+    online_minutes = None
+    if last_login_dt:
+        online_minutes = max(0, int((now_epoch - float(last_login_dt.timestamp())) // 60))
+
+    last_seen_at = presence_public.get("lastSeenAt") or user.get("lastSeenAt") or None
+    last_interaction_at = presence_public.get("lastInteractionAt") or user.get("lastInteractionAt") or None
+
+    return {
+        "isOnline": derived_online,
+        "isIdle": computed_idle,
+        "lastLoginAt": user.get("lastLoginAt") or None,
+        "lastSeenAt": last_seen_at,
+        "lastInteractionAt": last_interaction_at,
+        "idleMinutes": idle_minutes,
+        "onlineMinutes": online_minutes,
     }
 
 
@@ -185,6 +256,99 @@ def record_presence():
         except Exception:
             pass
         return {"ok": True}
+
+    return handle_action(action)
+
+@blueprint.get("/live-clients")
+@require_auth
+def get_live_clients():
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        role = _normalize_role(current_user.get("role"))
+        if not (_is_admin_role(role) or _is_sales_rep_role(role)):
+            err = RuntimeError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
+
+        requested_sales_rep_id = request.args.get("salesRepId") if _is_admin_role(role) else None
+        target_sales_rep_id = str(requested_sales_rep_id or current_user.get("id") or "").strip()
+        if not target_sales_rep_id:
+            err = RuntimeError("salesRepId is required")
+            setattr(err, "status", 400)
+            raise err
+
+        prospects = sales_prospect_repository.find_by_sales_rep(target_sales_rep_id)
+        doctor_ids = {
+            str(p.get("doctorId")).strip()
+            for p in (prospects or [])
+            if p and p.get("doctorId")
+        }
+        contact_emails = {
+            str(p.get("contactEmail") or "").strip().lower()
+            for p in (prospects or [])
+            if p and p.get("contactEmail")
+        }
+        contact_emails = {e for e in contact_emails if e and "@" in e}
+
+        all_users = user_repository.get_all()
+        candidate_doctors = []
+        for user in all_users or []:
+            if not isinstance(user, dict):
+                continue
+            user_role = _normalize_role(user.get("role"))
+            if user_role not in ("doctor", "test_doctor"):
+                continue
+            uid = str(user.get("id") or "").strip()
+            email = str(user.get("email") or "").strip().lower()
+            if uid and uid in doctor_ids:
+                candidate_doctors.append(user)
+                continue
+            if email and email in contact_emails:
+                candidate_doctors.append(user)
+
+        now_epoch = time.time()
+        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or (45 * 60))
+        online_threshold_s = max(30.0, min(online_threshold_s, 24 * 60 * 60))
+        idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (5 * 60))
+        idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
+        presence = presence_service.snapshot()
+
+        clients = []
+        for user in candidate_doctors:
+            snapshot = _compute_presence_snapshot(
+                user,
+                now_epoch=now_epoch,
+                online_threshold_s=online_threshold_s,
+                idle_threshold_s=idle_threshold_s,
+                presence=presence,
+            )
+            if not snapshot.get("isOnline"):
+                continue
+            clients.append(
+                {
+                    "id": user.get("id"),
+                    "name": user.get("name") or None,
+                    "email": user.get("email") or None,
+                    "role": _normalize_role(user.get("role")) or "unknown",
+                    "profileImageUrl": user.get("profileImageUrl") or None,
+                    **snapshot,
+                }
+            )
+
+        # Sort non-idle first, then by name/email.
+        clients.sort(
+            key=lambda entry: (
+                1 if bool(entry.get("isIdle")) else 0,
+                str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower(),
+            )
+        )
+
+        return {
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "salesRepId": target_sales_rep_id,
+            "clients": clients,
+            "total": len(clients),
+        }
 
     return handle_action(action)
 
