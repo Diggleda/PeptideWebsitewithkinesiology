@@ -4565,6 +4565,10 @@ export default function App() {
     email?: string | null;
     avatar?: string | null;
     revenue: number;
+    personalRevenue?: number | null;
+    salesRevenue?: number | null;
+    orderQuantity?: number | null;
+    totalOrderValue?: number | null;
     orders: AccountOrderSummary[];
     phone?: string | null;
     address?: string | null;
@@ -4573,6 +4577,7 @@ export default function App() {
     role: string;
     ownerSalesRepId?: string | null;
   } | null>(null);
+  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
   const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
   const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
   const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
@@ -4875,6 +4880,11 @@ export default function App() {
 	        doctorAddress?: string | null;
 	        orders: AccountOrderSummary[];
 	        total: number;
+          personalRevenue?: number | null;
+          salesRevenue?: number | null;
+          orderQuantity?: number | null;
+          totalOrderValue?: number | null;
+          ownerSalesRepId?: string | null;
 	      },
 	      sourceRole?: string,
 	    ) => {
@@ -4927,6 +4937,10 @@ export default function App() {
         email: bucket.doctorEmail,
         avatar: bucket.doctorAvatar ?? null,
         revenue: bucket.total,
+        personalRevenue: bucket.personalRevenue ?? null,
+        salesRevenue: bucket.salesRevenue ?? null,
+        orderQuantity: bucket.orderQuantity ?? null,
+        totalOrderValue: bucket.totalOrderValue ?? null,
         orders: bucket.orders,
         phone:
           bucket.doctorPhone ||
@@ -4952,6 +4966,7 @@ export default function App() {
       const displayName = entry?.name || entry?.email || "User";
       const entryRole = normalizeRole(entry?.role);
 
+      setSalesDoctorDetailLoading(true);
       openSalesDoctorDetail(
         {
           doctorId: id,
@@ -4968,6 +4983,7 @@ export default function App() {
       );
 
       if (!isAdmin(user?.role)) {
+        setSalesDoctorDetailLoading(false);
         return;
       }
 
@@ -4982,12 +4998,16 @@ export default function App() {
           const normalizedOrders = normalizeAccountOrdersResponse(ordersResp, {
             includeCanceled: true,
           });
-          const total = normalizedOrders.reduce((sum, order) => {
+          const totalOrderValue = normalizedOrders.reduce((sum, order) => {
             if (!shouldCountRevenueForStatus(order.status)) {
               return sum;
             }
             return sum + (coerceNumber(order.total) || 0);
           }, 0);
+          const orderQuantity = normalizedOrders.filter((order) =>
+            shouldCountRevenueForStatus(order.status),
+          ).length;
+          const roleFromProfile = normalizeRole(profile?.role || entryRole || "doctor");
 
           const addressParts = [
             profile?.officeAddressLine1,
@@ -4999,6 +5019,35 @@ export default function App() {
           ].filter((part) => typeof part === "string" && part.trim().length > 0);
           const address = addressParts.length > 0 ? addressParts.join("\n") : null;
 
+          const isSalesRepProfile = roleFromProfile === "sales_rep" || roleFromProfile === "rep";
+          let salesRevenue: number | null = null;
+          let personalRevenue: number | null = null;
+
+          if (isSalesRepProfile) {
+            personalRevenue = totalOrderValue;
+            try {
+              const repOrdersResp = await ordersAPI.getForSalesRep({
+                salesRepId: id,
+                scope: "all",
+              });
+              const repOrders = (repOrdersResp as any)?.orders;
+              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
+              salesRevenue = repOrdersList.reduce((sum: number, order: any) => {
+                if (!shouldCountRevenueForStatus(order?.status)) {
+                  return sum;
+                }
+                const rawDoctorId =
+                  order?.doctorId || order?.doctor_id || order?.userId || order?.user_id || null;
+                if (rawDoctorId && String(rawDoctorId) === id) {
+                  return sum;
+                }
+                return sum + (coerceNumber(order?.total) || 0);
+              }, 0);
+            } catch (error) {
+              console.warn("[Admin] Failed to load sales rep revenue", error);
+            }
+          }
+
           openSalesDoctorDetail(
             {
               doctorId: id,
@@ -5009,12 +5058,18 @@ export default function App() {
               doctorPhone: profile?.phone || null,
               doctorAddress: address,
               orders: normalizedOrders,
-              total,
+              total: totalOrderValue,
+              personalRevenue,
+              salesRevenue,
+              orderQuantity,
+              totalOrderValue,
             },
-            profile?.role || entryRole || "doctor",
+            roleFromProfile || "doctor",
           );
         } catch (error) {
           console.warn("[Admin] Failed to hydrate live user detail", error);
+        } finally {
+          setSalesDoctorDetailLoading(false);
         }
       })();
     },
@@ -5078,6 +5133,70 @@ export default function App() {
         <div className="grid grid-cols-2 gap-2">
           {[...Array(4)].map((_, idx) => (
             <div key={idx} className="news-loading-line news-loading-shimmer w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSalesDoctorDetailSkeleton = () => (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="news-loading-line news-loading-shimmer w-60" />
+        <div className="news-loading-line news-loading-shimmer w-44" />
+      </div>
+
+      <div className="flex items-center gap-4">
+        <div
+          className="news-loading-thumb rounded-full"
+          style={{ width: 72, height: 72, minWidth: 72 }}
+        />
+        <div className="flex-1 space-y-2">
+          <div className="news-loading-line news-loading-shimmer w-40" />
+          <div className="news-loading-line news-loading-shimmer w-32" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[...Array(3)].map((_, idx) => (
+          <div
+            key={idx}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 space-y-2"
+          >
+            <div className="news-loading-line news-loading-shimmer w-24" />
+            <div className="news-loading-line news-loading-shimmer w-16" />
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[...Array(2)].map((_, idx) => (
+          <div
+            key={idx}
+            className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3 space-y-2"
+          >
+            <div className="news-loading-line news-loading-shimmer w-28" />
+            <div className="news-loading-line news-loading-shimmer w-full" />
+            <div className="news-loading-line news-loading-shimmer w-5/6" />
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="news-loading-line news-loading-shimmer w-36" />
+        <div className="space-y-2">
+          {[...Array(3)].map((_, idx) => (
+            <div
+              key={idx}
+              className="news-loading-card flex items-center gap-3 bg-white/75 shadow-none border border-slate-200/70"
+            >
+              <div className="news-loading-thumb rounded-md" />
+              <div className="flex-1 space-y-2">
+                <div className="news-loading-line news-loading-shimmer w-40" />
+                <div className="news-loading-line news-loading-shimmer w-28" />
+              </div>
+              <div className="news-loading-line news-loading-shimmer w-16" />
+            </div>
           ))}
         </div>
       </div>
@@ -12491,6 +12610,11 @@ export default function App() {
 	                          : (userActivityReport.users || []).filter(
 	                              (entry) => entry.isOnline,
 	                            );
+                        const visibleLiveUsers = (rawLiveUsers || []).filter((entry: any) => {
+                          const simulated = (entry as any)?.isSimulated === true;
+                          const id = String((entry as any)?.id || "");
+                          return !simulated && !id.startsWith("pseudo-live-");
+                        });
 
 	                      const isEntryCurrentUser = (entry: any) => {
 	                        return (
@@ -12563,7 +12687,7 @@ export default function App() {
 	                        return `${minutes}min`;
 	                      };
 
-	                      const liveUsers = [...rawLiveUsers].sort((a: any, b: any) => {
+	                      const liveUsers = [...visibleLiveUsers].sort((a: any, b: any) => {
 	                        const aIdle = getEntryIdle(a);
 	                        const bIdle = getEntryIdle(b);
 	                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
@@ -16582,11 +16706,20 @@ export default function App() {
         onOpenChange={(open) => {
           if (!open) {
             setSalesDoctorDetail(null);
+            setSalesDoctorDetailLoading(false);
           }
         }}
 	      >
 	        <DialogContent className="max-w-2xl">
-	          {salesDoctorDetail && (
+	          {salesDoctorDetailLoading ? (
+              <>
+                <VisuallyHidden>
+                  <DialogTitle>Loading account details</DialogTitle>
+                </VisuallyHidden>
+                {renderSalesDoctorDetailSkeleton()}
+              </>
+            ) : (
+              salesDoctorDetail && (
 	            <div className="space-y-4">
 		              <DialogHeader>
 		                <DialogTitle className="space-y-0.5">
@@ -16654,12 +16787,45 @@ export default function App() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-	                  <p className="text-sm text-slate-600">
-	                    Orders: {salesDoctorDetail.orders.length}
-	                  </p>
-	                  <p className="text-sm text-slate-600">
-                    Revenue: {formatCurrency(salesDoctorDetail.revenue)}
-                  </p>
+                    {isRep(salesDoctorDetail.role) ? (
+                      <>
+                        <p className="text-sm text-slate-600">
+                          Personal Revenue:{" "}
+                          {formatCurrency(
+                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
+                          )}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          Sales Revenue:{" "}
+                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
+                        </p>
+                      </>
+                    ) : isDoctorRole(salesDoctorDetail.role) ? (
+                      <>
+                        <p className="text-sm text-slate-600">
+                          Order Quantity:{" "}
+                          {salesDoctorDetail.orderQuantity ??
+                            salesDoctorDetail.orders.filter((order) =>
+                              shouldCountRevenueForStatus(order.status),
+                            ).length}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          Total Order Value:{" "}
+                          {formatCurrency(
+                            salesDoctorDetail.totalOrderValue ?? salesDoctorDetail.revenue,
+                          )}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-slate-600">
+                          Orders: {salesDoctorDetail.orders.length}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          Revenue: {formatCurrency(salesDoctorDetail.revenue)}
+                        </p>
+                      </>
+                    )}
                 </div>
               </div>
 
@@ -16813,6 +16979,7 @@ export default function App() {
                 </div>
               </div>
             </div>
+            )
           )}
         </DialogContent>
       </Dialog>

@@ -374,9 +374,10 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
     1,
     12 * 60,
   );
+  // Default OFF: pseudo-live users are only for demos/dev; they can look like "stuck online" accounts.
   const pseudoLiveEnabled = String(
-    process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS || 'true',
-  ).toLowerCase() !== 'false';
+    process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS || 'false',
+  ).toLowerCase() === 'true';
   const pseudoLiveCount = clampNumber(
     parseNumber(process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS_COUNT, 4),
     1,
@@ -441,6 +442,7 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
         ...user,
         isOnline: true,
         isIdle: (liveUsers.length + index) % 3 === 0,
+        isSimulated: true,
       }));
       const pseudoMap = new Map(pseudo.map((user) => [user.id, user]));
       recent = recent.map((user) => pseudoMap.get(user.id) || user);
@@ -463,6 +465,7 @@ router.get('/user-activity', authenticate, requireAdmin, async (req, res) => {
         role: normalizeUserRole(entry.role),
         isOnline: true,
         isIdle: (liveUsers.length + index) % 3 === 0,
+        isSimulated: true,
         lastLoginAt: new Date(nowMs - (index + 1) * 12 * 60 * 1000).toISOString(),
         profileImageUrl: null,
       }));
