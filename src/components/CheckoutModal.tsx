@@ -547,7 +547,7 @@ export function CheckoutModal({
         ? null
         : String(orderNumberCandidate).trim().replace(/^#/, '') || null;
       setPlacedOrderNumber(normalizedOrderNumber);
-      const memoText = normalizedOrderNumber ? `PepPro Order ${normalizedOrderNumber}` : null;
+      const memoText = normalizedOrderNumber ? `Order ${normalizedOrderNumber}` : null;
       const successMessage = result && typeof result === 'object' && 'message' in result && result.message
         ? String(result.message)
         : 'Order received! We\'ll email you payment instructions.';
@@ -1263,15 +1263,15 @@ export function CheckoutModal({
                     Direct Bank Transfer
                   </Button>
                 </div>
-                {checkoutStatus === 'success' && placedOrderNumber && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    <p className="font-semibold">Your order number: {placedOrderNumber}</p>
-                    <p className="mt-1">
-                      Use this as your payment memo/notes:{" "}
-                      <span className="font-mono">PepPro Order {placedOrderNumber}</span>
-                    </p>
-                  </div>
-                )}
+	                {checkoutStatus === 'success' && placedOrderNumber && (
+	                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+	                    <p className="font-semibold">Your order number: {placedOrderNumber}</p>
+	                    <p className="mt-1">
+	                      Use this as your payment memo/notes:{" "}
+	                      <span className="font-mono">Order {placedOrderNumber}</span>
+	                    </p>
+	                  </div>
+	                )}
 	              </div>
 
               <div className="flex items-center gap-3 pt-2">

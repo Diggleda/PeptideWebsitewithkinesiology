@@ -576,9 +576,16 @@ def create_order(
         woo_resp = integrations["wooCommerce"]
         if woo_resp.get("status") == "success":
             woo_response = woo_resp.get("response", {}) or {}
-            order["wooOrderId"] = woo_response.get("id")
+            woo_id = woo_response.get("id")
+            woo_number = woo_response.get("number") or woo_id
+            order["wooOrderId"] = woo_id
             order["wooOrderKey"] = woo_response.get("orderKey")
-            order["wooOrderNumber"] = woo_response.get("number")
+            order["wooOrderNumber"] = woo_number
+            # Prefer Woo status/number for immediate display + dedupe in UI.
+            if woo_response.get("status"):
+                order["status"] = woo_response.get("status")
+            if woo_number:
+                order["number"] = woo_number
             try:
                 order_repository.update_woo_fields(
                     order_id=order.get("id"),

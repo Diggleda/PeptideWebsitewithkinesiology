@@ -1085,12 +1085,13 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
                 payment_url += f"&key={order_key}"
     except Exception:
         payment_url = None
+    number = body.get("number") or body.get("id")
     return {
         "status": "success",
         "payload": payload,
         "response": {
             "id": body.get("id"),
-            "number": body.get("number"),
+            "number": number,
             "status": body.get("status"),
             "paymentUrl": payment_url,
             "orderKey": body.get("order_key") or body.get("key"),
