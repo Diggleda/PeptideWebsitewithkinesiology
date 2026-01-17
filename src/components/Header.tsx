@@ -186,6 +186,7 @@ interface AccountOrderSummary {
   status?: string | null;
   currency?: string | null;
   total?: number | null;
+  notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   source: 'local' | 'woocommerce' | 'peppro';
@@ -3609,9 +3610,9 @@ export function Header({
 	              )}
 	            </div>
 
-	            <div className="space-y-3">
-	              <h4 className="text-base font-semibold text-slate-900">Order Summary</h4>
-	              <div className="space-y-2 text-sm text-slate-700">
+		            <div className="space-y-3">
+		              <h4 className="text-base font-semibold text-slate-900">Order Summary</h4>
+		              <div className="space-y-2 text-sm text-slate-700">
 	                <div className="flex justify-between">
 	                  <span>Subtotal</span>
 	                  <span>{formatCurrency(subtotal, selectedOrder.currency || 'USD')}</span>
@@ -3638,17 +3639,28 @@ export function Header({
 	                    <span className="font-medium text-slate-900">{paymentDisplay}</span>
 	                  </div>
 	                )}
-	                <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-3">
-	                  <span>Total</span>
-	                  <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
-	                </div>
-	              </div>
-	            </div>
-	          </div>
-	        </div>
-	      </div>
-	    );
-	  };
+		                <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-3">
+		                  <span>Total</span>
+		                  <span>{formatCurrency(Math.max(grandTotal, 0), selectedOrder.currency || 'USD')}</span>
+		                </div>
+		              </div>
+		            </div>
+
+		            {typeof selectedOrder.notes === 'string' && selectedOrder.notes.trim().length > 0 && (
+		              <div className="space-y-2">
+		                <h4 className="text-base font-semibold text-slate-900">
+		                  Notes <span className="text-sm font-normal text-slate-500">(from PepPro)</span>
+		                </h4>
+		                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedOrder.notes}</p>
+		                </div>
+		              </div>
+		            )}
+		          </div>
+		        </div>
+		      </div>
+		    );
+		  };
 
   const accountOrdersPanel = localUser ? (
     <div className="space-y-4">

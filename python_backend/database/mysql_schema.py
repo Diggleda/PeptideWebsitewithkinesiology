@@ -161,6 +161,7 @@ CREATE_TABLE_STATEMENTS = [
         first_order_bonus LONGTEXT NULL,
         integrations LONGTEXT NULL,
         expected_shipment_window VARCHAR(64) NULL,
+        notes LONGTEXT NULL,
         payload LONGTEXT NULL,
         shipping_address LONGTEXT NULL,
         created_at DATETIME NULL,
@@ -280,6 +281,8 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS physician_certified TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_rate LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS expected_shipment_window VARCHAR(64) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes LONGTEXT NULL",
+        "ALTER TABLE orders MODIFY COLUMN notes LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload LONGTEXT NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_id VARCHAR(32) NULL",
@@ -373,6 +376,14 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("sales_reps", "session_id"):
             mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN session_id VARCHAR(64) NULL")
+    except Exception:
+        pass
+
+    # Ensure order notes exist (may be missing on older MySQL variants without `ADD COLUMN IF NOT EXISTS`).
+    try:
+        if not _column_exists("orders", "notes"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN notes LONGTEXT NULL")
+        mysql_client.execute("ALTER TABLE orders MODIFY COLUMN notes LONGTEXT NULL")
     except Exception:
         pass
 

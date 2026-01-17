@@ -992,6 +992,9 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         if local_order.get("expectedShipmentWindow"):
             order["expectedShipmentWindow"] = local_order.get("expectedShipmentWindow")
 
+        if local_order.get("notes") is not None:
+            order["notes"] = local_order.get("notes")
+
         if local_order.get("items") and not order.get("lineItems"):
             order["lineItems"] = local_order.get("items")
 
@@ -1012,6 +1015,59 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         order["integrationDetails"] = integrations
 
     return woo_orders
+
+
+def update_order_notes(*, order_id: str, actor: Dict, notes: Optional[str]) -> Dict:
+    """
+    Update local order notes. Notes are visible to the doctor.
+
+    Allowed:
+    - admin
+    - sales_rep/rep for orders belonging to their assigned doctors
+    """
+    if not order_id:
+        raise _service_error("ORDER_ID_REQUIRED", 400)
+    actor_role = str(actor.get("role") or "").strip().lower()
+    if actor_role not in ("admin", "sales_rep", "rep"):
+        raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
+
+    text = None
+    if notes is not None:
+        candidate = str(notes)
+        candidate = candidate.replace("\x00", "").strip()
+        candidate = candidate[:4000]
+        text = candidate or None
+
+    local_order = _find_order_by_woo_id(order_id) or order_repository.find_by_id(str(order_id))
+    if not local_order:
+        raise _service_error("ORDER_NOT_FOUND", 404)
+
+    if actor_role != "admin":
+        users = user_repository.get_all()
+        rep_records = {
+            str(rep.get("id")): rep
+            for rep in sales_rep_repository.get_all()
+            if isinstance(rep, dict) and rep.get("id") is not None
+        }
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(str(actor.get("id") or ""), users, rep_records)
+
+        doctor_id = str(local_order.get("userId") or local_order.get("user_id") or "").strip()
+        doctor = user_repository.find_by_id(doctor_id) if doctor_id else None
+        doctor_rep_id = str((doctor or {}).get("salesRepId") or (doctor or {}).get("sales_rep_id") or "").strip()
+        order_rep_id = str(
+            local_order.get("doctorSalesRepId")
+            or local_order.get("salesRepId")
+            or local_order.get("sales_rep_id")
+            or local_order.get("doctor_sales_rep_id")
+            or ""
+        ).strip()
+
+        if (doctor_rep_id and doctor_rep_id not in allowed_rep_ids) and (order_rep_id and order_rep_id not in allowed_rep_ids):
+            raise _service_error("ORDER_NOT_FOUND", 404)
+
+    updated = {**local_order, "notes": text, "updatedAt": datetime.now(timezone.utc).isoformat()}
+    saved = order_repository.update(updated) or updated
+    return {"order": saved}
 
 
 def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, force: bool = False):

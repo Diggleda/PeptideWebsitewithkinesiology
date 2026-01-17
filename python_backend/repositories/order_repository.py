@@ -156,12 +156,12 @@ def insert(order: Dict) -> Dict:
             INSERT INTO orders (
                 id, user_id, items, total, shipping_total, shipping_carrier, shipping_service,
                 physician_certified, referral_code, status,
-                referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, shipping_address, payload,
+                referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                 created_at, updated_at
             ) VALUES (
                 %(id)s, %(user_id)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                 %(physician_certified)s, %(referral_code)s, %(status)s,
-                %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(shipping_address)s, %(payload)s,
+                %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                 %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
@@ -179,6 +179,7 @@ def insert(order: Dict) -> Dict:
                 integrations = VALUES(integrations),
                 shipping_rate = VALUES(shipping_rate),
                 expected_shipment_window = VALUES(expected_shipment_window),
+                notes = VALUES(notes),
                 shipping_address = VALUES(shipping_address),
                 payload = VALUES(payload),
                 created_at = VALUES(created_at),
@@ -214,6 +215,7 @@ def update(order: Dict) -> Optional[Dict]:
                 integrations = %(integrations)s,
                 shipping_rate = %(shipping_rate)s,
                 expected_shipment_window = %(expected_shipment_window)s,
+                notes = %(notes)s,
                 shipping_address = %(shipping_address)s,
                 payload = %(payload)s,
                 updated_at = %(updated_at)s
@@ -312,6 +314,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "firstOrderBonus": parse_json(row.get("first_order_bonus"), None),
         "integrations": parse_json(row.get("integrations"), {}),
         "expectedShipmentWindow": row.get("expected_shipment_window") or None,
+        "notes": row.get("notes") if row.get("notes") is not None else None,
         "wooOrderId": row.get("woo_order_id") or None,
         "wooOrderNumber": row.get("woo_order_number") or None,
         "wooOrderKey": row.get("woo_order_key") or None,
@@ -362,6 +365,7 @@ def _to_db_params(order: Dict) -> Dict:
         "integrations": serialize_json(order.get("integrations")),
         "shipping_rate": serialize_json(order.get("shippingEstimate")),
         "expected_shipment_window": (order.get("expectedShipmentWindow") or None),
+        "notes": order.get("notes") if order.get("notes") is not None else None,
         "shipping_address": serialize_json(order.get("shippingAddress")),
         "payload": serialize_json(order),
         "created_at": parse_dt(order.get("createdAt")),

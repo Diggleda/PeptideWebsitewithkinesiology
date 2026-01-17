@@ -260,6 +260,19 @@ def estimate_order_totals():
     )
 
 
+@blueprint.patch("/<order_id>/notes")
+@require_auth
+def update_order_notes(order_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+    notes = payload.get("notes") if "notes" in payload else None
+
+    def action():
+        actor = g.current_user or {}
+        return order_service.update_order_notes(order_id=str(order_id), actor=actor, notes=notes)
+
+    return handle_action(action)
+
+
 @blueprint.get("/<order_id>/invoice")
 @require_auth
 def download_invoice(order_id: str) -> Response:

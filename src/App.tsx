@@ -301,6 +301,7 @@ interface AccountOrderSummary {
   status?: string | null;
   currency?: string | null;
   total?: number | null;
+  notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   source: "local" | "woocommerce" | "peppro";
@@ -995,6 +996,9 @@ const mergeWooSummaryIntoLocal = (
   localOrder.wooOrderNumber =
     wooOrder.wooOrderNumber || wooOrder.number || localOrder.wooOrderNumber;
   localOrder.updatedAt = wooOrder.updatedAt || localOrder.updatedAt;
+  if (typeof localOrder.notes !== "string" && typeof wooOrder.notes === "string") {
+    localOrder.notes = wooOrder.notes;
+  }
 
   if (!hasSavedAddress(localOrder.shippingAddress) && hasSavedAddress(wooOrder.shippingAddress)) {
     localOrder.shippingAddress = wooOrder.shippingAddress;
@@ -1086,6 +1090,7 @@ const normalizeAccountOrdersResponse = (
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
           total: coerceNumber(order?.total) ?? null,
+          notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
           source: "peppro",
@@ -1147,6 +1152,7 @@ const normalizeAccountOrdersResponse = (
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
           total: coerceNumber(order?.total) ?? null,
+          notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt:
             order?.createdAt ||
             order?.dateCreated ||
@@ -4640,6 +4646,8 @@ export default function App() {
   const [salesOrderDetail, setSalesOrderDetail] =
     useState<AccountOrderSummary | null>(null);
   const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
+  const [salesOrderNotesDraft, setSalesOrderNotesDraft] = useState<string>("");
+  const [salesOrderNotesSaving, setSalesOrderNotesSaving] = useState(false);
   const [salesOrderHydratingIds, setSalesOrderHydratingIds] = useState<
     Set<string>
   >(new Set());
@@ -4913,6 +4921,9 @@ export default function App() {
   const openSalesOrderDetails = useCallback(
     async (order: AccountOrderSummary) => {
       setSalesOrderDetail(order);
+      setSalesOrderNotesDraft(
+        typeof (order as any)?.notes === "string" ? String((order as any).notes) : "",
+      );
       setSalesOrderDetailLoading(true);
       try {
         const detail = await ordersAPI.getSalesRepOrderDetail(
@@ -4930,10 +4941,20 @@ export default function App() {
         if (normalized && normalized.length > 0) {
           const enriched = normalized[0];
           setSalesOrderDetail(enriched);
+          setSalesOrderNotesDraft(
+            typeof (enriched as any)?.notes === "string"
+              ? String((enriched as any).notes)
+              : "",
+          );
           mergeSalesOrderDetail(enriched);
         } else if (detail && typeof detail === "object") {
           const enriched = detail as AccountOrderSummary;
           setSalesOrderDetail(enriched);
+          setSalesOrderNotesDraft(
+            typeof (enriched as any)?.notes === "string"
+              ? String((enriched as any).notes)
+              : "",
+          );
           mergeSalesOrderDetail(enriched);
         }
       } catch (error: any) {
@@ -4949,6 +4970,66 @@ export default function App() {
     },
     [mergeSalesOrderDetail],
   );
+
+  useEffect(() => {
+    if (!salesOrderDetail) {
+      setSalesOrderNotesDraft("");
+      return;
+    }
+    setSalesOrderNotesDraft(
+      typeof (salesOrderDetail as any)?.notes === "string"
+        ? String((salesOrderDetail as any).notes)
+        : "",
+    );
+  }, [salesOrderDetail?.id]);
+
+  const handleSaveSalesOrderNotes = useCallback(async () => {
+    if (!salesOrderDetail) {
+      return;
+    }
+    if (!user?.role || (!isRep(user.role) && !isAdmin(user.role))) {
+      toast.error("You don't have permission to edit order notes.");
+      return;
+    }
+    if (salesOrderNotesSaving) {
+      return;
+    }
+    const normalizedNotes = normalizeNotesValue(salesOrderNotesDraft);
+    const orderKey =
+      salesOrderDetail.wooOrderId || salesOrderDetail.id || salesOrderDetail.number || "";
+    if (!orderKey) {
+      toast.error("Unable to identify this order.");
+      return;
+    }
+    setSalesOrderNotesSaving(true);
+    try {
+      const response = (await ordersAPI.updateOrderNotes(orderKey, normalizedNotes)) as any;
+      const updatedOrder = (response && typeof response === "object" && response.order) || null;
+      const nextNotes =
+        updatedOrder && typeof updatedOrder?.notes === "string"
+          ? String(updatedOrder.notes)
+          : normalizedNotes;
+      setSalesOrderDetail((prev) => (prev ? { ...prev, notes: nextNotes } : prev));
+      mergeSalesOrderDetail({ ...salesOrderDetail, notes: nextNotes });
+      toast.success("Order notes updated.");
+    } catch (error: any) {
+      console.warn("[Orders] Failed to update order notes", error);
+      toast.error(
+        typeof error?.message === "string" && error.message
+          ? error.message
+          : "Unable to update order notes right now.",
+      );
+    } finally {
+      setSalesOrderNotesSaving(false);
+    }
+  }, [
+    mergeSalesOrderDetail,
+    normalizeNotesValue,
+    salesOrderDetail,
+    salesOrderNotesDraft,
+    salesOrderNotesSaving,
+    user?.role,
+  ]);
 
   const shouldCountRevenueForStatus = (status?: string | null) => {
     const normalized = String(status || "").toLowerCase().trim();
@@ -17555,11 +17636,11 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="space-y-2">
-                      <h4 className="text-base font-semibold text-slate-900">
-                        Order Summary
-                      </h4>
-                      <div className="space-y-1 text-sm text-slate-700">
+	                    <div className="space-y-2">
+	                      <h4 className="text-base font-semibold text-slate-900">
+	                        Order Summary
+	                      </h4>
+	                      <div className="space-y-1 text-sm text-slate-700">
                         <div className="flex justify-between">
                           <span>Subtotal</span>
                           <span>
@@ -17586,20 +17667,83 @@ export default function App() {
 	                            </span>
 	                          </div>
 	                        )}
-                        <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-2">
-                          <span>Total</span>
-                          <span>
-                            {formatCurrency(
-                              grandTotal,
-                              salesOrderDetail.currency || "USD",
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+	                        <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-100 pt-2">
+	                          <span>Total</span>
+	                          <span>
+	                            {formatCurrency(
+	                              grandTotal,
+	                              salesOrderDetail.currency || "USD",
+	                            )}
+	                          </span>
+	                        </div>
+	                      </div>
+	                    </div>
+
+	                    <div className="space-y-2">
+	                      <h4 className="text-base font-semibold text-slate-900">
+	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the doctor)</span>
+	                      </h4>
+	                      {(() => {
+	                        const canEdit = Boolean(
+	                          user?.role && (isRep(user.role) || isAdmin(user.role)),
+	                        );
+	                        const saved =
+	                          typeof (salesOrderDetail as any)?.notes === "string"
+	                            ? String((salesOrderDetail as any).notes)
+	                            : "";
+	                        const normalizedSaved = normalizeNotesValue(saved);
+	                        const normalizedDraft = normalizeNotesValue(salesOrderNotesDraft);
+	                        const isDirty = normalizedSaved !== normalizedDraft;
+	                        const hasNotes = Boolean((normalizedSaved || normalizedDraft) && String(normalizedSaved || normalizedDraft).trim());
+
+	                        if (!canEdit) {
+	                          if (!hasNotes) {
+	                            return (
+	                              <p className="text-sm text-slate-500">
+	                                No notes for this order.
+	                              </p>
+	                            );
+	                          }
+	                          return (
+	                            <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+	                              <p className="text-sm text-slate-700 whitespace-pre-wrap">
+	                                {normalizedSaved || ""}
+	                              </p>
+	                            </div>
+	                          );
+	                        }
+
+	                        return (
+	                          <div className="space-y-2">
+	                            <textarea
+	                              value={salesOrderNotesDraft}
+	                              onChange={(e) => setSalesOrderNotesDraft(e.target.value)}
+	                              placeholder="Add an order note…"
+	                              rows={4}
+	                              className="w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                              disabled={salesOrderNotesSaving}
+	                            />
+	                            <div className="flex items-center justify-between gap-3">
+	                              <p className="text-xs text-slate-500">
+	                                {isDirty ? "Unsaved changes" : "Saved"}
+	                              </p>
+	                              <Button
+	                                type="button"
+	                                variant="outline"
+	                                onClick={handleSaveSalesOrderNotes}
+	                                disabled={salesOrderNotesSaving || !isDirty}
+	                                className="gap-2"
+	                              >
+	                                {salesOrderNotesSaving ? "Saving…" : "Save notes"}
+	                              </Button>
+	                            </div>
+	                          </div>
+	                        );
+	                      })()}
+	                    </div>
+	                  </div>
+	                );
+	              })()}
             </>
           )}
         </DialogContent>

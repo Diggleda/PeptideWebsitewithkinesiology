@@ -1330,6 +1330,16 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  updateOrderNotes: async (orderId: string | number, notes: string | null) => {
+    if (!orderId) {
+      throw new Error('orderId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/orders/${encodeURIComponent(String(orderId))}/notes`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
   downloadInvoice: async (orderId: string | number) => {
     if (!orderId) {
       throw new Error('orderId is required');
