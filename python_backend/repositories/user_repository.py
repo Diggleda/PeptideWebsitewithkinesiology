@@ -186,6 +186,8 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
                 "isOnline": is_online,
                 "profileImageUrl": user.get("profileImageUrl") or None,
                 "lastLoginAt": user.get("lastLoginAt") or None,
+                "lastSeenAt": user.get("lastSeenAt") or None,
+                "lastInteractionAt": user.get("lastInteractionAt") or None,
             }
         )
     return result

@@ -427,7 +427,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                     **user,
                     "isOnline": False,
                     "sessionId": new_session_id,
-                    "lastLogoutAt": now_iso,
                 }
             )
         _audit(
@@ -450,7 +449,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 **user,
                 "isOnline": False,
                 "sessionId": new_session_id,
-                "lastLogoutAt": now_iso,
             }
         )
         _audit(
@@ -471,7 +469,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
             {
                 **rep,
                 "sessionId": new_session_id,
-                "lastLogoutAt": now_iso,
             }
         )
         _audit(

@@ -88,7 +88,6 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
     last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
     last_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
     last_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
-    last_logout_dt = _parse_iso_datetime(user.get("lastLogoutAt") or None)
 
     last_seen_epoch = None
     try:
@@ -101,12 +100,8 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
         last_seen_epoch = float(last_seen_dt.timestamp())
 
     derived_online = bool(last_seen_epoch and (now_epoch - float(last_seen_epoch)) <= online_threshold_s)
-    if derived_online and last_logout_dt and last_seen_epoch is not None:
-        try:
-            if float(last_logout_dt.timestamp()) >= float(last_seen_epoch):
-                derived_online = False
-        except Exception:
-            pass
+    if derived_online and not bool(user.get("isOnline")):
+        derived_online = False
 
     idle_anchor_epoch = None
     try:
@@ -314,9 +309,9 @@ def get_live_clients():
                 candidate_doctors.append(user)
 
         now_epoch = time.time()
-        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or (45 * 60))
-        online_threshold_s = max(30.0, min(online_threshold_s, 24 * 60 * 60))
-        idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (5 * 60))
+        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 120)
+        online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+        idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
         idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
         presence = presence_service.snapshot()
 
@@ -673,14 +668,12 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     logger = logging.getLogger("peppro.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
-    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or (45 * 60))
-    online_threshold_s = max(30.0, min(online_threshold_s, 24 * 60 * 60))
-    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or 60)
+    # "Online right now" should reflect recent heartbeats (not a 45-minute window).
+    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 120)
+    online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+    # Match the frontend's default idle threshold (10 minutes), but keep it configurable.
+    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
     idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
-    session_max_age_s = float(os.environ.get("USER_SESSION_MAX_AGE_SECONDS") or (24 * 60 * 60))
-    session_max_age_s = max(5 * 60.0, min(session_max_age_s, 30 * 24 * 60 * 60))
-    idle_logout_s = float(os.environ.get("USER_IDLE_LOGOUT_SECONDS") or (60 * 60))
-    idle_logout_s = max(60.0, min(idle_logout_s, 24 * 60 * 60))
     now_epoch = time.time()
 
     if include_logs:
@@ -702,80 +695,68 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     recent: list[dict] = []
     live_users: list[dict] = []
     for user in users:
-        presence_entry = presence.get(str(user.get("id") or ""))
+        user_id = str(user.get("id") or "").strip()
+        if not user_id:
+            continue
+        presence_entry = presence.get(user_id)
         presence_public = presence_service.to_public_fields(presence_entry)
         persisted_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
         persisted_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
-        last_interaction_epoch = None
+        persisted_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
+
         last_seen_epoch = None
         try:
-            if presence_entry and presence_entry.get("lastInteractionAt"):
-                last_interaction_epoch = float(presence_entry.get("lastInteractionAt"))
-        except Exception:
-            last_interaction_epoch = None
-        try:
-            if presence_entry and presence_entry.get("lastHeartbeatAt"):
-                last_seen_epoch = float(presence_entry.get("lastHeartbeatAt"))
+            raw_seen = presence_entry.get("lastHeartbeatAt") if isinstance(presence_entry, dict) else None
+            if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
+                last_seen_epoch = float(raw_seen)
         except Exception:
             last_seen_epoch = None
+        if last_seen_epoch is None and persisted_seen_dt:
+            last_seen_epoch = float(persisted_seen_dt.timestamp())
+
+        last_interaction_epoch = None
+        try:
+            raw_interaction = presence_entry.get("lastInteractionAt") if isinstance(presence_entry, dict) else None
+            if isinstance(raw_interaction, (int, float)) and float(raw_interaction) > 0:
+                last_interaction_epoch = float(raw_interaction)
+        except Exception:
+            last_interaction_epoch = None
+        if last_interaction_epoch is None and persisted_interaction_dt:
+            last_interaction_epoch = float(persisted_interaction_dt.timestamp())
+
+        is_online_db = bool(user.get("isOnline"))
+        derived_online = bool(
+            is_online_db
+            and isinstance(last_seen_epoch, (int, float))
+            and float(last_seen_epoch) > 0
+            and (now_epoch - float(last_seen_epoch)) <= online_threshold_s
+        )
+
+        session_start_epoch = float(persisted_login_dt.timestamp()) if persisted_login_dt else None
+        session_age_s = (now_epoch - session_start_epoch) if session_start_epoch else None
         is_idle_flag = (
             bool(presence_entry.get("isIdle"))
-            if presence_entry and isinstance(presence_entry.get("isIdle"), bool)
+            if isinstance(presence_entry, dict) and isinstance(presence_entry.get("isIdle"), bool)
             else None
         )
-        basis_epoch = None
-        if isinstance(last_interaction_epoch, (int, float)) and last_interaction_epoch > 0:
-            basis_epoch = last_interaction_epoch
-        elif persisted_interaction_dt:
-            basis_epoch = float(persisted_interaction_dt.timestamp())
-        elif isinstance(last_seen_epoch, (int, float)) and last_seen_epoch > 0:
-            basis_epoch = last_seen_epoch
-        elif persisted_seen_dt:
-            basis_epoch = float(persisted_seen_dt.timestamp())
-        else:
-            last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
-            if last_login_dt:
-                try:
-                    basis_epoch = float(last_login_dt.timestamp())
-                except Exception:
-                    basis_epoch = None
 
-        computed_idle = bool(is_idle_flag)
-        if not computed_idle and isinstance(basis_epoch, (int, float)) and basis_epoch > 0:
-            computed_idle = (now_epoch - basis_epoch) >= idle_threshold_s
+        idle_anchor_epoch = None
+        if isinstance(last_interaction_epoch, (int, float)) and float(last_interaction_epoch) > 0:
+            idle_anchor_epoch = float(last_interaction_epoch)
+        elif isinstance(last_seen_epoch, (int, float)) and float(last_seen_epoch) > 0:
+            idle_anchor_epoch = float(last_seen_epoch)
+        elif session_start_epoch:
+            idle_anchor_epoch = float(session_start_epoch)
 
-        # Online is derived from recent heartbeats, not a sticky DB flag.
-        derived_seen_epoch = None
-        if isinstance(last_seen_epoch, (int, float)) and last_seen_epoch > 0:
-            derived_seen_epoch = last_seen_epoch
-        elif persisted_seen_dt:
-            derived_seen_epoch = float(persisted_seen_dt.timestamp())
-        derived_online = bool(derived_seen_epoch and (now_epoch - derived_seen_epoch) <= online_threshold_s)
-        last_logout_dt = _parse_iso_datetime(user.get("lastLogoutAt") or None)
-        if derived_online and last_logout_dt and isinstance(derived_seen_epoch, (int, float)) and derived_seen_epoch > 0:
-            try:
-                if float(last_logout_dt.timestamp()) >= float(derived_seen_epoch):
-                    derived_online = False
-            except Exception:
-                pass
+        idle_age_s = (
+            (now_epoch - float(idle_anchor_epoch))
+            if isinstance(idle_anchor_epoch, (int, float)) and float(idle_anchor_epoch) > 0
+            else None
+        )
 
-        last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
-        session_start_epoch = float(last_login_dt.timestamp()) if last_login_dt else None
-        session_age_s = (now_epoch - session_start_epoch) if session_start_epoch else None
-        idle_age_s = (now_epoch - basis_epoch) if isinstance(basis_epoch, (int, float)) and basis_epoch > 0 else None
-
-        # Best-effort cleanup: if a token/session is too old or idle, revoke and mark offline
-        # so the admin dashboard doesn't show "stuck online" users forever.
-        try:
-            is_online_db = bool(user.get("isOnline"))
-            if is_online_db and (
-                (session_age_s is not None and session_age_s >= session_max_age_s)
-                or (idle_age_s is not None and idle_age_s >= idle_logout_s)
-            ):
-                auth_service.logout(str(user.get("id") or ""), str(user.get("role") or ""))
-                derived_online = False
-        except Exception:
-            pass
+        computed_idle = False
+        if derived_online:
+            computed_idle = bool(is_idle_flag) or bool(idle_age_s is not None and idle_age_s >= idle_threshold_s)
 
         entry = {
             "id": user.get("id"),
@@ -788,11 +769,9 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
             **{
                 "lastSeenAt": presence_public.get("lastSeenAt") or (user.get("lastSeenAt") or None),
                 "lastInteractionAt": presence_public.get("lastInteractionAt") or (user.get("lastInteractionAt") or None),
-                "isIdle": presence_public.get("isIdle"),
+                "isIdle": computed_idle if derived_online else False,
             },
         }
-        if entry["isOnline"]:
-            entry["isIdle"] = computed_idle if isinstance(computed_idle, bool) else False
 
         if entry["isOnline"]:
             live_users.append(entry)
