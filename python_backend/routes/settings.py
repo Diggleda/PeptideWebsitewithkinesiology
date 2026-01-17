@@ -13,6 +13,7 @@ from flask import Blueprint, request, g
 from ..middleware.auth import require_auth
 from ..repositories import user_repository
 from ..services import get_config
+from ..services import auth_service
 from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..utils.http import handle_action
@@ -166,6 +167,23 @@ def record_presence():
         is_idle_raw = payload.get("isIdle")
         is_idle = is_idle_raw if isinstance(is_idle_raw, bool) else None
         presence_service.record_ping(str(user_id), kind=kind, is_idle=is_idle)
+        # Persist the heartbeat into MySQL so "online" isn't a sticky flag.
+        # This also enables server-side idle/session enforcement in `require_auth`.
+        try:
+            existing = user_repository.find_by_id(str(user_id)) or {}
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            should_bump_interaction = kind == "interaction" or (kind == "heartbeat" and is_idle is False)
+            next_user = {
+                **existing,
+                "id": str(user_id),
+                "isOnline": True,
+                "lastSeenAt": now_iso,
+                "lastInteractionAt": now_iso if should_bump_interaction else (existing.get("lastInteractionAt") or None),
+            }
+            if existing:
+                user_repository.update(next_user)
+        except Exception:
+            pass
         return {"ok": True}
 
     return handle_action(action)
@@ -484,8 +502,14 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     logger = logging.getLogger("peppro.user_activity")
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
+    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or (45 * 60))
+    online_threshold_s = max(30.0, min(online_threshold_s, 24 * 60 * 60))
     idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or 60)
     idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
+    session_max_age_s = float(os.environ.get("USER_SESSION_MAX_AGE_SECONDS") or (24 * 60 * 60))
+    session_max_age_s = max(5 * 60.0, min(session_max_age_s, 30 * 24 * 60 * 60))
+    idle_logout_s = float(os.environ.get("USER_IDLE_LOGOUT_SECONDS") or (60 * 60))
+    idle_logout_s = max(60.0, min(idle_logout_s, 24 * 60 * 60))
     now_epoch = time.time()
 
     if include_logs:
@@ -509,6 +533,8 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     for user in users:
         presence_entry = presence.get(str(user.get("id") or ""))
         presence_public = presence_service.to_public_fields(presence_entry)
+        persisted_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
+        persisted_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
         last_interaction_epoch = None
         last_seen_epoch = None
         try:
@@ -529,8 +555,12 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         basis_epoch = None
         if isinstance(last_interaction_epoch, (int, float)) and last_interaction_epoch > 0:
             basis_epoch = last_interaction_epoch
+        elif persisted_interaction_dt:
+            basis_epoch = float(persisted_interaction_dt.timestamp())
         elif isinstance(last_seen_epoch, (int, float)) and last_seen_epoch > 0:
             basis_epoch = last_seen_epoch
+        elif persisted_seen_dt:
+            basis_epoch = float(persisted_seen_dt.timestamp())
         else:
             last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
             if last_login_dt:
@@ -542,15 +572,46 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         computed_idle = bool(is_idle_flag)
         if not computed_idle and isinstance(basis_epoch, (int, float)) and basis_epoch > 0:
             computed_idle = (now_epoch - basis_epoch) >= idle_threshold_s
+
+        # Online is derived from recent heartbeats, not a sticky DB flag.
+        derived_seen_epoch = None
+        if isinstance(last_seen_epoch, (int, float)) and last_seen_epoch > 0:
+            derived_seen_epoch = last_seen_epoch
+        elif persisted_seen_dt:
+            derived_seen_epoch = float(persisted_seen_dt.timestamp())
+        derived_online = bool(derived_seen_epoch and (now_epoch - derived_seen_epoch) <= online_threshold_s)
+
+        last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
+        session_start_epoch = float(last_login_dt.timestamp()) if last_login_dt else None
+        session_age_s = (now_epoch - session_start_epoch) if session_start_epoch else None
+        idle_age_s = (now_epoch - basis_epoch) if isinstance(basis_epoch, (int, float)) and basis_epoch > 0 else None
+
+        # Best-effort cleanup: if a token/session is too old or idle, revoke and mark offline
+        # so the admin dashboard doesn't show "stuck online" users forever.
+        try:
+            is_online_db = bool(user.get("isOnline"))
+            if is_online_db and (
+                (session_age_s is not None and session_age_s >= session_max_age_s)
+                or (idle_age_s is not None and idle_age_s >= idle_logout_s)
+            ):
+                auth_service.logout(str(user.get("id") or ""), str(user.get("role") or ""))
+                derived_online = False
+        except Exception:
+            pass
+
         entry = {
             "id": user.get("id"),
             "name": user.get("name") or None,
             "email": user.get("email") or None,
             "role": str(user.get("role") or "").strip().lower() or "unknown",
-            "isOnline": bool(user.get("isOnline")),
+            "isOnline": derived_online,
             "lastLoginAt": user.get("lastLoginAt") or None,
             "profileImageUrl": user.get("profileImageUrl") or None,
-            **presence_public,
+            **{
+                "lastSeenAt": presence_public.get("lastSeenAt") or (user.get("lastSeenAt") or None),
+                "lastInteractionAt": presence_public.get("lastInteractionAt") or (user.get("lastInteractionAt") or None),
+                "isIdle": presence_public.get("isIdle"),
+            },
         }
         if entry["isOnline"]:
             entry["isIdle"] = computed_idle if isinstance(computed_idle, bool) else False

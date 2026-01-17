@@ -12006,7 +12006,7 @@ export default function App() {
 	                <div>
 	                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
 	                  <p className="text-sm text-slate-600">
-	                    Doctors currently online or idle.
+	                    Your doctors currently online or idle.
 	                  </p>
 	                </div>
 	

@@ -14,6 +14,8 @@ CREATE_TABLE_STATEMENTS = [
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         is_online TINYINT(1) NOT NULL DEFAULT 0,
         session_id VARCHAR(64) NULL,
+        last_seen_at DATETIME NULL,
+        last_interaction_at DATETIME NULL,
         sales_rep_id VARCHAR(32) NULL,
         referrer_doctor_id VARCHAR(32) NULL,
         lead_type VARCHAR(32) NULL,
@@ -259,6 +261,8 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users MODIFY COLUMN is_online TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_interaction_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS visits INT NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS legacy_user_id VARCHAR(32) NULL",
@@ -345,6 +349,16 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "session_id"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN session_id VARCHAR(64) NULL")
+    except Exception:
+        pass
+
+    # Ensure presence timestamps exist so "online"/idle can be derived from activity,
+    # not a sticky `is_online` flag.
+    try:
+        if not _column_exists("users", "last_seen_at"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN last_seen_at DATETIME NULL")
+        if not _column_exists("users", "last_interaction_at"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN last_interaction_at DATETIME NULL")
     except Exception:
         pass
 

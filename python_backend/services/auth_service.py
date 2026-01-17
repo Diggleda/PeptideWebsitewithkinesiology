@@ -39,7 +39,7 @@ def _create_auth_token(payload: Dict) -> str:
     now = datetime.now(timezone.utc)
     claims = {
         **payload,
-        "exp": now + timedelta(days=7),
+        "exp": now + timedelta(hours=24),
         "iat": now,
     }
     return jwt.encode(claims, config.jwt_secret, algorithm="HS256")
@@ -133,7 +133,7 @@ def register(data: Dict) -> Dict:
             raise _conflict("REFERRAL_CODE_UNAVAILABLE")
 
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     if onboarding_record:
         sales_rep_id = onboarding_record.get("salesRepId")
@@ -160,6 +160,8 @@ def register(data: Dict) -> Dict:
             "visits": 1,
             "createdAt": now,
             "lastLoginAt": now,
+            "lastSeenAt": now,
+            "lastInteractionAt": now,
             "isOnline": True,
             "mustResetPassword": False,
             "npiNumber": normalized_npi,
@@ -206,7 +208,7 @@ def _register_sales_rep_account(
         raise _conflict("EMAIL_EXISTS")
 
     hashed_password = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     user_record = user_repository.find_by_email(email)
     if user_record:
@@ -222,6 +224,9 @@ def _register_sales_rep_account(
                 "salesRepId": sales_rep.get("id"),
                 "visits": int(user_record.get("visits") or 0) + 1,
                 "lastLoginAt": now,
+                "lastSeenAt": now,
+                "lastInteractionAt": now,
+                "isOnline": True,
                 "mustResetPassword": False,
                 "sessionId": new_session_id,
             }
@@ -243,6 +248,9 @@ def _register_sales_rep_account(
                 "visits": 1,
                 "createdAt": now,
                 "lastLoginAt": now,
+                "lastSeenAt": now,
+                "lastInteractionAt": now,
+                "isOnline": True,
                 "mustResetPassword": False,
                 "sessionId": new_session_id,
             }
@@ -297,11 +305,14 @@ def login(data: Dict) -> Dict:
             raise _unauthorized("INVALID_PASSWORD")
 
         new_session_id = _new_session_id()
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         updated = user_repository.update(
             {
                 **user,
                 "visits": int(user.get("visits") or 1) + 1,
-                "lastLoginAt": datetime.now(timezone.utc).isoformat(),
+                "lastLoginAt": now_iso,
+                "lastSeenAt": now_iso,
+                "lastInteractionAt": now_iso,
                 "isOnline": True,
                 "mustResetPassword": False,
                 "sessionId": new_session_id,
@@ -330,7 +341,7 @@ def login(data: Dict) -> Dict:
         {
             **sales_rep,
             "visits": int(sales_rep.get("visits") or 1) + 1,
-            "lastLoginAt": datetime.now(timezone.utc).isoformat(),
+            "lastLoginAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "mustResetPassword": False,
             "sessionId": new_session_id,
         }

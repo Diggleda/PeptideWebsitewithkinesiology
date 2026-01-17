@@ -28,6 +28,8 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("status", "active")
     normalized.setdefault("isOnline", bool(normalized.get("isOnline", False)))
     normalized.setdefault("sessionId", normalized.get("sessionId") or None)
+    normalized.setdefault("lastSeenAt", normalized.get("lastSeenAt") or None)
+    normalized.setdefault("lastInteractionAt", normalized.get("lastInteractionAt") or None)
     normalized.setdefault("salesRepId", None)
     normalized.setdefault("referrerDoctorId", None)
     normalized["leadType"] = (normalized.get("leadType") or None)
@@ -110,7 +112,7 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
         cutoff_sql = cutoff.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         rows = mysql_client.fetch_all(
             """
-            SELECT id, name, email, role, is_online, last_login_at, profile_image_url
+            SELECT id, name, email, role, is_online, session_id, last_login_at, last_seen_at, last_interaction_at, profile_image_url
             FROM users
             WHERE is_online = 1
                OR (last_login_at IS NOT NULL AND last_login_at >= %(cutoff)s)
@@ -128,6 +130,20 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
                 last_login_iso = dt.astimezone(timezone.utc).isoformat()
             elif isinstance(last_login_at, str) and last_login_at.strip():
                 last_login_iso = last_login_at.strip()
+            last_seen_at = row.get("last_seen_at")
+            last_seen_iso = None
+            if isinstance(last_seen_at, datetime):
+                dt = last_seen_at if last_seen_at.tzinfo else last_seen_at.replace(tzinfo=timezone.utc)
+                last_seen_iso = dt.astimezone(timezone.utc).isoformat()
+            elif isinstance(last_seen_at, str) and last_seen_at.strip():
+                last_seen_iso = last_seen_at.strip()
+            last_interaction_at = row.get("last_interaction_at")
+            last_interaction_iso = None
+            if isinstance(last_interaction_at, datetime):
+                dt = last_interaction_at if last_interaction_at.tzinfo else last_interaction_at.replace(tzinfo=timezone.utc)
+                last_interaction_iso = dt.astimezone(timezone.utc).isoformat()
+            elif isinstance(last_interaction_at, str) and last_interaction_at.strip():
+                last_interaction_iso = last_interaction_at.strip()
             result.append(
                 {
                     "id": row.get("id"),
@@ -135,8 +151,11 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
                     "email": row.get("email") or None,
                     "role": row.get("role") or None,
                     "isOnline": bool(row.get("is_online")),
+                    "sessionId": row.get("session_id") or None,
                     "profileImageUrl": row.get("profile_image_url") or None,
                     "lastLoginAt": last_login_iso,
+                    "lastSeenAt": last_seen_iso,
+                    "lastInteractionAt": last_interaction_iso,
                 }
             )
         return result
@@ -286,6 +305,7 @@ def _mysql_insert(user: Dict) -> Dict:
         INSERT INTO users (
             id, name, email, password, role, status, is_online, sales_rep_id, referrer_doctor_id,
             session_id,
+            last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
             office_postal_code, office_country, profile_image_url, downloads,
@@ -294,7 +314,8 @@ def _mysql_insert(user: Dict) -> Dict:
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(session_id)s, %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
+            %(referrer_doctor_id)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
+            %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
             %(profile_image_url)s, %(downloads)s, %(referral_credits)s,
@@ -311,6 +332,8 @@ def _mysql_insert(user: Dict) -> Dict:
             sales_rep_id = VALUES(sales_rep_id),
             referrer_doctor_id = VALUES(referrer_doctor_id),
             session_id = VALUES(session_id),
+            last_seen_at = VALUES(last_seen_at),
+            last_interaction_at = VALUES(last_interaction_at),
             lead_type = VALUES(lead_type),
             lead_type_source = VALUES(lead_type_source),
             lead_type_locked_at = VALUES(lead_type_locked_at),
@@ -360,6 +383,8 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
             session_id = %(session_id)s,
+            last_seen_at = %(last_seen_at)s,
+            last_interaction_at = %(last_interaction_at)s,
             lead_type = %(lead_type)s,
             lead_type_source = %(lead_type_source)s,
             lead_type_locked_at = %(lead_type_locked_at)s,
@@ -428,6 +453,8 @@ def _row_to_user(row: Dict) -> Dict:
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
             "sessionId": row.get("session_id"),
+            "lastSeenAt": fmt_datetime(row.get("last_seen_at")),
+            "lastInteractionAt": fmt_datetime(row.get("last_interaction_at")),
             "leadType": row.get("lead_type"),
             "leadTypeSource": row.get("lead_type_source"),
             "leadTypeLockedAt": fmt_datetime(row.get("lead_type_locked_at")),
@@ -480,6 +507,8 @@ def _to_db_params(user: Dict) -> Dict:
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
         "session_id": user.get("sessionId"),
+        "last_seen_at": parse_dt(user.get("lastSeenAt")),
+        "last_interaction_at": parse_dt(user.get("lastInteractionAt")),
         "lead_type": user.get("leadType"),
         "lead_type_source": user.get("leadTypeSource"),
         "lead_type_locked_at": parse_dt(user.get("leadTypeLockedAt")),

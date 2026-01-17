@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable, TypeVar
 
@@ -7,9 +9,45 @@ import jwt
 from flask import Response, jsonify, request, g
 
 from ..services import get_config
+from ..services import auth_service, presence_service
 from ..repositories import user_repository, sales_rep_repository
 
 F = TypeVar("F", bound=Callable)
+
+def _parse_datetime(value) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        try:
+            seconds = float(value)
+            # Treat large values as milliseconds.
+            if seconds > 10_000_000_000:
+                seconds = seconds / 1000.0
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        # Support both ISO strings and MySQL DATETIME ("YYYY-MM-DD HH:MM:SS").
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
+
+
+def _clamp_seconds(raw: str | None, *, fallback: int, min_s: int, max_s: int) -> int:
+    try:
+        parsed = int(float(raw)) if raw is not None else fallback
+    except Exception:
+        parsed = fallback
+    return max(min_s, min(parsed, max_s))
 
 
 def require_auth(func: F) -> F:
@@ -38,6 +76,8 @@ def require_auth(func: F) -> F:
         if not token_session_id or not isinstance(token_session_id, str):
             return _forbidden("Invalid token", code="TOKEN_INVALID")
 
+        user = None
+        rep = None
         if role == "sales_rep":
             rep = sales_rep_repository.find_by_id(str(user_id))
             if rep and rep.get("sessionId"):
@@ -55,6 +95,51 @@ def require_auth(func: F) -> F:
 
         if stored_session_id != token_session_id:
             return _forbidden("Token revoked", code="TOKEN_REVOKED")
+
+        # Enforce max session age + idle timeouts server-side.
+        # This prevents "stuck online" sessions when the client stops running timers.
+        session_max_s = _clamp_seconds(
+            os.environ.get("USER_SESSION_MAX_AGE_SECONDS"),
+            fallback=24 * 60 * 60,
+            min_s=5 * 60,
+            max_s=30 * 24 * 60 * 60,
+        )
+        idle_max_s = _clamp_seconds(
+            os.environ.get("USER_IDLE_LOGOUT_SECONDS"),
+            fallback=60 * 60,
+            min_s=60,
+            max_s=24 * 60 * 60,
+        )
+
+        now_dt = datetime.now(timezone.utc)
+        issued_at_dt = _parse_datetime(payload.get("iat"))
+        session_start_dt = (
+            issued_at_dt
+            or _parse_datetime((user or {}).get("lastLoginAt"))
+            or _parse_datetime((rep or {}).get("lastLoginAt"))
+        )
+        if session_start_dt and (now_dt - session_start_dt).total_seconds() >= session_max_s:
+            try:
+                auth_service.logout(str(user_id), role)
+            except Exception:
+                pass
+            return _unauthorized("Session expired", code="SESSION_MAX_AGE")
+
+        # Prefer persisted interaction timestamps when available; otherwise fall back to in-memory presence.
+        idle_anchor_dt = _parse_datetime((user or {}).get("lastInteractionAt"))
+        if not idle_anchor_dt:
+            try:
+                entry = presence_service.snapshot().get(str(user_id))
+                idle_anchor_dt = _parse_datetime((entry or {}).get("lastInteractionAt"))
+            except Exception:
+                idle_anchor_dt = None
+        idle_anchor_dt = idle_anchor_dt or _parse_datetime((user or {}).get("lastLoginAt")) or session_start_dt
+        if idle_anchor_dt and (now_dt - idle_anchor_dt).total_seconds() >= idle_max_s:
+            try:
+                auth_service.logout(str(user_id), role)
+            except Exception:
+                pass
+            return _unauthorized("Session expired", code="SESSION_IDLE_TIMEOUT")
 
         g.current_user = payload
         return func(*args, **kwargs)
