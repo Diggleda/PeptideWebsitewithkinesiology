@@ -409,3 +409,109 @@ def _generate_id() -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def sync_referred_contact_for_account(
+    *,
+    doctor_id: str,
+    name: Optional[str],
+    email: Optional[str],
+    phone: Optional[str],
+    previous_email: Optional[str] = None,
+) -> int:
+    """
+    Keep `referrals` contact fields aligned once a referred contact has an account.
+
+    This matters because the system resolves referred-contact accounts by email.
+    If the user updates their email/phone/name, historical referral rows should
+    continue to match and display the latest info.
+    """
+    normalized_doctor_id = str(doctor_id or "").strip()
+    if not normalized_doctor_id:
+        return 0
+
+    next_email = (str(email or "").strip().lower() or None)
+    prev_email = (str(previous_email or "").strip().lower() or None)
+    next_name = (str(name or "").strip() or None)
+    next_phone = (str(phone or "").strip() or None)
+
+    email_candidates = {e for e in (next_email, prev_email) if e and "@" in e}
+    if not email_candidates and not next_name and not next_phone:
+        return 0
+
+    if _using_mysql():
+        updated = 0
+        # Update explicitly converted referrals by doctor id.
+        updated += int(
+            mysql_client.execute(
+                """
+                UPDATE referrals
+                SET referred_contact_name = COALESCE(%(name)s, referred_contact_name),
+                    referred_contact_email = COALESCE(%(email)s, referred_contact_email),
+                    referred_contact_phone = COALESCE(%(phone)s, referred_contact_phone),
+                    updated_at = UTC_TIMESTAMP()
+                WHERE converted_doctor_id = %(doctor_id)s
+                """,
+                {
+                    "doctor_id": normalized_doctor_id,
+                    "name": next_name,
+                    "email": next_email,
+                    "phone": next_phone,
+                },
+            )
+            or 0
+        )
+        # Also update any pending referrals that reference the user's email.
+        for candidate_email in email_candidates:
+            updated += int(
+                mysql_client.execute(
+                    """
+                    UPDATE referrals
+                    SET referred_contact_name = COALESCE(%(name)s, referred_contact_name),
+                        referred_contact_email = COALESCE(%(email)s, referred_contact_email),
+                        referred_contact_phone = COALESCE(%(phone)s, referred_contact_phone),
+                        updated_at = UTC_TIMESTAMP()
+                    WHERE (converted_doctor_id IS NULL OR converted_doctor_id = '')
+                      AND LOWER(TRIM(referred_contact_email)) = %(candidate_email)s
+                    """,
+                    {
+                        "candidate_email": candidate_email,
+                        "name": next_name,
+                        "email": next_email or candidate_email,
+                        "phone": next_phone,
+                    },
+                )
+                or 0
+            )
+        return updated
+
+    records = _load()
+    updated_count = 0
+    next_records: List[Dict] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        record_converted = str(record.get("convertedDoctorId") or "").strip()
+        record_email = str(record.get("referredContactEmail") or "").strip().lower()
+
+        match_converted = bool(record_converted and record_converted == normalized_doctor_id)
+        match_email_pending = bool((not record_converted) and record_email and record_email in email_candidates)
+
+        if not match_converted and not match_email_pending:
+            next_records.append(record)
+            continue
+
+        merged = dict(record)
+        if next_name:
+            merged["referredContactName"] = next_name
+        if next_email:
+            merged["referredContactEmail"] = next_email
+        if next_phone:
+            merged["referredContactPhone"] = next_phone
+        merged["updatedAt"] = _now()
+        next_records.append(_ensure_defaults(merged))
+        updated_count += 1
+
+    if updated_count > 0:
+        _save(next_records)
+    return updated_count

@@ -14,6 +14,7 @@ import requests
 
 from ..repositories import password_reset_token_repository, sales_rep_repository, user_repository
 from ..repositories import sales_prospect_repository
+from ..repositories import referral_repository
 from ..utils import http_client
 from . import email_service, get_config, npi_service, referral_service
 
@@ -576,6 +577,13 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         role = (saved.get("role") or "").strip().lower()
         if role in ("doctor", "test_doctor"):
             sales_prospect_repository.sync_contact_for_doctor(
+                doctor_id=str(saved.get("id") or ""),
+                name=saved.get("name"),
+                email=saved.get("email"),
+                phone=saved.get("phone"),
+                previous_email=user.get("email"),
+            )
+            referral_repository.sync_referred_contact_for_account(
                 doctor_id=str(saved.get("id") or ""),
                 name=saved.get("name"),
                 email=saved.get("email"),
