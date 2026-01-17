@@ -343,6 +343,105 @@ def ensure_house_sales_rep_for_contact_forms() -> int:
     return updated
 
 
+def sync_contact_for_doctor(
+    *,
+    doctor_id: str,
+    name: Optional[str],
+    email: Optional[str],
+    phone: Optional[str],
+    previous_email: Optional[str] = None,
+) -> int:
+    """
+    Keep sales_prospects contact fields aligned with the canonical users table.
+
+    - Updates rows linked to doctor_id
+    - Also "claims" rows by matching contact_email when doctor_id is missing (common for contact-form prospects)
+    """
+    normalized_doctor_id = str(doctor_id or "").strip()
+    if not normalized_doctor_id:
+        return 0
+
+    next_email = (str(email or "").strip().lower() or None)
+    prev_email = (str(previous_email or "").strip().lower() or None)
+    next_name = (str(name or "").strip() or None)
+    next_phone = (str(phone or "").strip() or None)
+
+    email_candidates = {e for e in (next_email, prev_email) if e and "@" in e}
+
+    if _using_mysql():
+        # Update by doctor id (always), and also by email when the row has no doctor_id yet.
+        updated = 0
+        updated += int(
+            mysql_client.execute(
+                """
+                UPDATE sales_prospects
+                SET contact_name = %(contact_name)s,
+                    contact_email = %(contact_email)s,
+                    contact_phone = %(contact_phone)s,
+                    updated_at = UTC_TIMESTAMP()
+                WHERE doctor_id = %(doctor_id)s
+                """,
+                {
+                    "doctor_id": normalized_doctor_id,
+                    "contact_name": next_name,
+                    "contact_email": next_email,
+                    "contact_phone": next_phone,
+                },
+            )
+            or 0
+        )
+        for candidate_email in email_candidates:
+            updated += int(
+                mysql_client.execute(
+                    """
+                    UPDATE sales_prospects
+                    SET doctor_id = %(doctor_id)s,
+                        contact_name = %(contact_name)s,
+                        contact_email = %(contact_email)s,
+                        contact_phone = %(contact_phone)s,
+                        updated_at = UTC_TIMESTAMP()
+                    WHERE (doctor_id IS NULL OR doctor_id = '')
+                      AND LOWER(TRIM(contact_email)) = %(email)s
+                    """,
+                    {
+                        "doctor_id": normalized_doctor_id,
+                        "email": candidate_email,
+                        "contact_name": next_name,
+                        "contact_email": next_email or candidate_email,
+                        "contact_phone": next_phone,
+                    },
+                )
+                or 0
+            )
+        return updated
+
+    records = [_ensure_defaults(item) for item in _get_store().read()]
+    updated_count = 0
+    next_records: List[Dict] = []
+    for record in records:
+        record_doctor_id = str(record.get("doctorId") or "").strip()
+        record_email = str(record.get("contactEmail") or "").strip().lower()
+
+        match_doctor = bool(record_doctor_id and record_doctor_id == normalized_doctor_id)
+        match_email_unclaimed = bool((not record_doctor_id) and record_email and record_email in email_candidates)
+        if not match_doctor and not match_email_unclaimed:
+            next_records.append(record)
+            continue
+
+        merged = dict(record)
+        merged["doctorId"] = normalized_doctor_id
+        merged["contactName"] = next_name or merged.get("contactName") or None
+        merged["contactEmail"] = (next_email or merged.get("contactEmail") or record_email or None)
+        merged["contactPhone"] = next_phone or merged.get("contactPhone") or None
+        merged["updatedAt"] = _now()
+        next_records.append(_ensure_defaults(merged))
+        updated_count += 1
+
+    if updated_count > 0:
+        _get_store().write(next_records)
+    return updated_count
+
+
 def mark_doctor_as_nurturing_if_purchased(doctor_id: str) -> int:
     """
     Promote sales prospects for a doctor to `nurturing` once they've placed an order.

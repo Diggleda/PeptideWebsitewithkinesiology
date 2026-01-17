@@ -940,6 +940,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getTestPaymentsOverrideStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/test-payments-override`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
       method: 'PUT',
@@ -954,6 +961,12 @@ export const settingsAPI = {
   },
   updateResearchStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/research`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updateTestPaymentsOverrideStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/test-payments-override`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });

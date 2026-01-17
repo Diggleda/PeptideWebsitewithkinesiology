@@ -838,11 +838,20 @@ def _ensure_peppro_manual_tax_rate_id() -> Optional[int]:
 
 
 def build_order_payload(order: Dict, customer: Dict) -> Dict:
+    test_override = bool((order.get("testPaymentOverride") or {}).get("enabled"))
+    override_amount = 0.0
+    if test_override:
+        try:
+            override_amount = float((order.get("testPaymentOverride") or {}).get("amount") or 0.01)
+        except Exception:
+            override_amount = 0.01
+        override_amount = max(0.01, round(override_amount, 2))
+
     # Optional referral credit applied at checkout (negative fee)
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
     fee_lines = []
     discount_total = "0"
-    if applied_credit > 0:
+    if not test_override and applied_credit > 0:
         discount_total = f"-{applied_credit:.2f}"
 
     tax_total = 0.0
@@ -946,11 +955,16 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         payment_method = ""
 
     status = "on-hold" if payment_method == "bacs" else "pending"
+    line_items_source = order.get("items")
+    if test_override:
+        line_items_source = [{**item, "price": 0.0} for item in (order.get("items") or []) if isinstance(item, dict)]
+        fee_lines.append({"name": "Test payment override", "total": f"{override_amount:.2f}", "tax_status": "none"})
+
     payload = {
         "status": status,
         "customer_note": f"Referral code used: {order.get('referralCode')}" if order.get("referralCode") else "",
         "set_paid": False,
-        "line_items": build_line_items(order.get("items"), tax_total=tax_total, tax_rate_id=tax_rate_id),
+        "line_items": build_line_items(line_items_source, tax_total=(0.0 if test_override else tax_total), tax_rate_id=tax_rate_id),
         "fee_lines": fee_lines,
         "shipping_lines": shipping_lines,
         "discount_total": discount_total,

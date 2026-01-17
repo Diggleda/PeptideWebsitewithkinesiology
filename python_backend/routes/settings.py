@@ -436,6 +436,33 @@ def update_research():
 
     return handle_action(action)
 
+@blueprint.get("/test-payments-override")
+@require_auth
+def get_test_payments_override():
+    def action():
+        _require_admin()
+        settings = settings_service.get_settings()
+        return {
+            "testPaymentsOverrideEnabled": bool(settings.get("testPaymentsOverrideEnabled", False)),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.put("/test-payments-override")
+@require_auth
+def update_test_payments_override():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", False))
+        updated = settings_service.update_settings({"testPaymentsOverrideEnabled": enabled})
+        return {
+            "testPaymentsOverrideEnabled": bool(updated.get("testPaymentsOverrideEnabled", False)),
+        }
+
+    return handle_action(action)
+
 
 @blueprint.post("/presence")
 @require_auth
@@ -566,6 +593,45 @@ def get_user_profile(user_id: str):
             setattr(err, "status", 404)
             raise err
         return {"user": _public_user_profile(user)}
+
+    return handle_action(action)
+
+@blueprint.patch("/users/<user_id>")
+@require_auth
+def patch_user_profile(user_id: str):
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        role = _normalize_role(current_user.get("role"))
+        target_id = (user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        payload = request.get_json(silent=True) or {}
+        if _is_admin_role(role):
+            return {"user": auth_service.update_profile(target_id, payload)}
+
+        if _is_sales_rep_role(role):
+            # Sales reps may only edit phone for their assigned doctors.
+            target = user_repository.find_by_id(target_id) or {}
+            target_role = _normalize_role((target or {}).get("role"))
+            if target_role not in ("doctor", "test_doctor"):
+                err = RuntimeError("Doctor access required")
+                setattr(err, "status", 403)
+                raise err
+            allowed = _compute_allowed_sales_rep_ids(str(current_user.get("id") or ""))
+            doctor_rep_id = str((target or {}).get("salesRepId") or (target or {}).get("sales_rep_id") or "").strip()
+            if not doctor_rep_id or doctor_rep_id not in allowed:
+                err = RuntimeError("Not authorized to edit this user")
+                setattr(err, "status", 403)
+                raise err
+            phone = payload.get("phone")
+            return {"user": auth_service.update_profile(target_id, {"phone": phone})}
+
+        err = RuntimeError("Admin access required")
+        setattr(err, "status", 403)
+        raise err
 
     return handle_action(action)
 

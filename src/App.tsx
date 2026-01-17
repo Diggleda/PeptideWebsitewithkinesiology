@@ -3740,6 +3740,14 @@ export default function App() {
 	    } catch {
 	      setResearchDashboardEnabled(false);
 	    }
+      try {
+        const stored = localStorage.getItem("peppro:test-payments-override-enabled");
+        if (stored !== null) {
+          setTestPaymentsOverrideEnabled(stored === "true");
+        }
+      } catch {
+        setTestPaymentsOverrideEnabled(false);
+      }
 	    let researchSupported = true;
 	    try {
 	      const stored = localStorage.getItem("peppro:settings-support:research");
@@ -3820,6 +3828,39 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!user || !isAdmin(user.role) || postLoginHold) {
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const result = (await settingsAPI.getTestPaymentsOverrideStatus()) as any;
+        if (cancelled) return;
+        if (result && typeof result.testPaymentsOverrideEnabled === "boolean") {
+          setTestPaymentsOverrideEnabled(result.testPaymentsOverrideEnabled);
+          try {
+            localStorage.setItem(
+              "peppro:test-payments-override-enabled",
+              result.testPaymentsOverrideEnabled ? "true" : "false",
+            );
+          } catch {
+            // ignore
+          }
+        }
+      } catch (error: any) {
+        const status = typeof error?.status === "number" ? error.status : null;
+        if (status && status !== 404) {
+          console.warn("[Settings] Failed to refresh test payments override", error);
+        }
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.role, postLoginHold]);
 
 	  useEffect(() => {
 	    if (!user) return;
@@ -4052,6 +4093,59 @@ export default function App() {
 	        }
 	      } finally {
 	        setSettingsSaving((prev) => ({ ...prev, research: false }));
+	      }
+	    },
+	    [user?.role],
+	  );
+
+	  const handleTestPaymentsOverrideToggle = useCallback(
+	    async (value: boolean) => {
+	      if (!isAdmin(user?.role)) {
+	        return;
+	      }
+	      setSettingsSaving((prev) => ({ ...prev, testPaymentsOverride: true }));
+	      let previousValue = false;
+	      setTestPaymentsOverrideEnabled((prev) => {
+	        previousValue = prev;
+	        return value;
+	      });
+	      try {
+	        localStorage.setItem(
+	          "peppro:test-payments-override-enabled",
+	          value ? "true" : "false",
+	        );
+	      } catch {
+	        // ignore
+	      }
+	      try {
+	        const updated = await settingsAPI.updateTestPaymentsOverrideStatus(value);
+	        const confirmed =
+	          updated && typeof (updated as any).testPaymentsOverrideEnabled === "boolean"
+	            ? (updated as any).testPaymentsOverrideEnabled
+	            : value;
+	        setTestPaymentsOverrideEnabled(confirmed);
+	        try {
+	          localStorage.setItem(
+	            "peppro:test-payments-override-enabled",
+	            confirmed ? "true" : "false",
+	          );
+	        } catch {
+	          // ignore
+	        }
+	      } catch (error) {
+	        console.warn("[Payments] Failed to update test payments override", error);
+	        toast.error("Unable to update test payments override right now.");
+	        setTestPaymentsOverrideEnabled(previousValue);
+	        try {
+	          localStorage.setItem(
+	            "peppro:test-payments-override-enabled",
+	            previousValue ? "true" : "false",
+	          );
+	        } catch {
+	          // ignore
+	        }
+	      } finally {
+	        setSettingsSaving((prev) => ({ ...prev, testPaymentsOverride: false }));
 	      }
 	    },
 	    [user?.role],
@@ -5597,6 +5691,7 @@ export default function App() {
 	  const [referralDataLoading, setReferralDataLoading] = useState(false);
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
+	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
 	  const [settingsSupport, setSettingsSupport] = useState<{
 	    research: boolean;
@@ -5605,7 +5700,8 @@ export default function App() {
 	    shop: boolean;
 	    forum: boolean;
 	    research: boolean;
-	  }>({ shop: false, forum: false, research: false });
+      testPaymentsOverride: boolean;
+	  }>({ shop: false, forum: false, research: false, testPaymentsOverride: false });
 	  type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
@@ -12643,7 +12739,7 @@ export default function App() {
 		                    </label>
 		                  </div>
 		
-		                  <div className="px-4 py-4">
+		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
 		                    <label
 		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
 		                    >
@@ -12682,6 +12778,40 @@ export default function App() {
 		                      </span>
 		                    </label>
 		                  </div>
+
+                      <div className="px-4 py-4">
+                        <label
+                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label="Enable test payments override"
+                            checked={testPaymentsOverrideEnabled}
+                            onChange={(e) =>
+                              handleTestPaymentsOverrideToggle(e.target.checked)
+                            }
+                            className="brand-checkbox mt-0.5"
+                            disabled={!isAdmin(user.role) || settingsSaving.testPaymentsOverride}
+                          />
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                              <span>Test payments override ($0.01)</span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                (Status:{" "}
+                                {settingsSaving.testPaymentsOverride
+                                  ? "Saving…"
+                                  : testPaymentsOverrideEnabled
+                                    ? "Enabled"
+                                    : "Disabled"}
+                                )
+                              </span>
+                            </span>
+                            <span className="block text-xs text-slate-600">
+                              When enabled, admin + test_doctor checkouts using Zelle/bank transfer are forced to $0.01.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
 		                </div>
 
                 <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-6">
@@ -15583,45 +15713,52 @@ export default function App() {
                               {peptideForumError}
                             </p>
                           )}
-                          {!peptideForumLoading &&
-                            !peptideForumError &&
-                            peptideForumItems.length === 0 && (
-                              <p className="text-xs text-slate-500">
-                                Stay tuned! New classes will be scheduled here and on our LinkedIn.
-                              </p>
-                            )}
-                          {!peptideForumLoading &&
-                            !peptideForumError &&
-                            peptideForumItems.length > 0 && (
+                          {!peptideForumLoading && !peptideForumError && (() => {
+                            const visibleItems = (peptideForumItems || [])
+                              .slice()
+                              .sort((a, b) => {
+                                const toTime = (value?: string | null) => {
+                                  if (!value) return Number.NEGATIVE_INFINITY;
+                                  const parsed = Date.parse(value);
+                                  return Number.isFinite(parsed)
+                                    ? parsed
+                                    : Number.NEGATIVE_INFINITY;
+                                };
+                                const aTime = toTime(a?.date ?? null);
+                                const bTime = toTime(b?.date ?? null);
+                                return bTime - aTime;
+                              })
+                              .filter((item) => {
+                                const dateValue = item?.date ?? null;
+                                const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
+                                if (!Number.isFinite(dateMs)) {
+                                  return Boolean(
+                                    (item?.link && String(item.link).trim())
+                                    || (item?.recording && String(item.recording).trim()),
+                                  );
+                                }
+                                const hasRecording = Boolean(
+                                  item?.recording && String(item.recording).trim(),
+                                );
+                                const hasWebinarLink = Boolean(
+                                  item?.link && String(item.link).trim(),
+                                );
+                                const isPast = dateMs < Date.now();
+                                if (isPast) return hasRecording;
+                                return hasWebinarLink || hasRecording;
+                              });
+
+                            if (visibleItems.length === 0) {
+                              return (
+                                <p className="text-xs text-slate-500">
+                                  Stay tuned! New classes will be scheduled here and on our LinkedIn.
+                                </p>
+                              );
+                            }
+
+                            return (
                               <ul className="space-y-3">
-                                {peptideForumItems
-                                  .slice()
-                                  .sort((a, b) => {
-                                    const toTime = (value?: string | null) => {
-                                      if (!value) return Number.NEGATIVE_INFINITY;
-                                      const parsed = Date.parse(value);
-                                      return Number.isFinite(parsed)
-                                        ? parsed
-                                        : Number.NEGATIVE_INFINITY;
-                                    };
-                                    const aTime = toTime(a?.date ?? null);
-                                    const bTime = toTime(b?.date ?? null);
-                                    return bTime - aTime;
-                                  })
-                                  .filter((item) => {
-                                    const dateValue = item?.date ?? null;
-                                    const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
-                                    if (!Number.isFinite(dateMs)) {
-                                      // If we can't parse a date, keep the row if it has something actionable.
-                                      return Boolean((item?.link && String(item.link).trim()) || (item?.recording && String(item.recording).trim()));
-                                    }
-                                    const hasRecording = Boolean(item?.recording && String(item.recording).trim());
-                                    const hasWebinarLink = Boolean(item?.link && String(item.link).trim());
-                                    const isPast = dateMs < Date.now();
-                                    if (isPast) return hasRecording;
-                                    return hasWebinarLink || hasRecording;
-                                  })
-                                  .map((item) => (
+                                {visibleItems.map((item) => (
                                     <li
                                       key={item.id}
                                       className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm"
@@ -15671,7 +15808,8 @@ export default function App() {
                                     </li>
                                   ))}
                               </ul>
-                            )}
+                            );
+                          })()}
                         </div>
                         )}
                         {/* Regional contact info for doctors */}

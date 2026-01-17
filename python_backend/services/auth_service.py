@@ -13,6 +13,7 @@ import jwt
 import requests
 
 from ..repositories import password_reset_token_repository, sales_rep_repository, user_repository
+from ..repositories import sales_prospect_repository
 from ..utils import http_client
 from . import email_service, get_config, npi_service, referral_service
 
@@ -571,6 +572,31 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     )
 
     saved = user_repository.update(updated) or updated
+    try:
+        role = (saved.get("role") or "").strip().lower()
+        if role in ("doctor", "test_doctor"):
+            sales_prospect_repository.sync_contact_for_doctor(
+                doctor_id=str(saved.get("id") or ""),
+                name=saved.get("name"),
+                email=saved.get("email"),
+                phone=saved.get("phone"),
+                previous_email=user.get("email"),
+            )
+        if role in ("sales_rep", "rep", "admin"):
+            rep = sales_rep_repository.find_by_id(str(saved.get("id") or "")) if saved.get("id") else None
+            if not rep and saved.get("email"):
+                rep = sales_rep_repository.find_by_email(str(saved.get("email") or ""))
+            if rep:
+                sales_rep_repository.update(
+                    {
+                        **rep,
+                        "name": saved.get("name") or rep.get("name"),
+                        "email": saved.get("email") or rep.get("email"),
+                        "phone": saved.get("phone") or rep.get("phone"),
+                    }
+                )
+    except Exception:
+        pass
     logger.info(
         "Profile update saved %s",
         {

@@ -398,8 +398,9 @@ def create_order(
 
     tax_exempt = _is_tax_exempt_for_checkout(user)
     sales_rep_ctx = _resolve_sales_rep_context(user)
-    normalized_payment_method = str(payment_method or "").strip().lower()
-    if normalized_payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
+    raw_payment_method = str(payment_method or "").strip().lower()
+    normalized_payment_method = raw_payment_method
+    if normalized_payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer", "zelle"):
         normalized_payment_method = "bacs"
     else:
         normalized_payment_method = "stripe"
@@ -419,6 +420,13 @@ def create_order(
     if tax_exempt:
         tax_total_value = 0.0
 
+    settings = settings_service.get_settings()
+    role = str(user.get("role") or "").strip().lower()
+    test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))
+    test_override_allowed = role in ("admin", "test_doctor")
+    test_override_payment = normalized_payment_method == "bacs"
+    test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
+
     address_updates = _extract_user_address_fields(shipping_address)
     if any(address_updates.values()):
         updated_user = user_repository.update({**user, **address_updates})
@@ -426,6 +434,8 @@ def create_order(
             user = updated_user
 
     normalized_referral = (referral_code or "").strip().upper() or None
+    if test_override:
+        normalized_referral = None
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
@@ -443,47 +453,60 @@ def create_order(
         "expectedShipmentWindow": (expected_shipment_window or None),
         "physicianCertificationAccepted": bool(physician_certified),
         "paymentMethod": normalized_payment_method,
+        "paymentDetails": raw_payment_method if normalized_payment_method == "bacs" else None,
         "doctorSalesRepId": sales_rep_ctx.get("id"),
         "doctorSalesRepName": sales_rep_ctx.get("name"),
         "doctorSalesRepEmail": sales_rep_ctx.get("email"),
         "doctorSalesRepCode": sales_rep_ctx.get("salesCode"),
     }
 
-    # Auto-apply available referral credits to this order
-    available_credit = float(user.get("referralCredits") or 0)
-    if available_credit > 0 and items_subtotal > 0:
-        applied = min(available_credit, items_subtotal)
-        order["appliedReferralCredit"] = round(applied, 2)
+    if test_override:
+        original_grand_total = round(max(0.0, items_subtotal + shipping_total_value + tax_total_value), 2)
+        order["testPaymentOverride"] = {"enabled": True, "amount": 0.01, "originalGrandTotal": float(original_grand_total)}
+        order["originalItemsSubtotal"] = float(items_subtotal)
+        order["originalShippingTotal"] = float(shipping_total_value)
+        order["originalTaxTotal"] = float(tax_total_value)
+        order["total"] = 0.01
+        order["itemsSubtotal"] = 0.01
+        order["shippingTotal"] = 0.0
+        order["taxTotal"] = 0.0
+        order["grandTotal"] = 0.01
+    else:
+        # Auto-apply available referral credits to this order
+        available_credit = float(user.get("referralCredits") or 0)
+        if available_credit > 0 and items_subtotal > 0:
+            applied = min(available_credit, items_subtotal)
+            order["appliedReferralCredit"] = round(applied, 2)
 
-    referral_effects = referral_service.handle_order_referral_effects(
-        purchaser_id=user_id,
-        referral_code=normalized_referral,
-        order_total=float(items_subtotal),
-        order_id=order["id"],
-    )
+        referral_effects = referral_service.handle_order_referral_effects(
+            purchaser_id=user_id,
+            referral_code=normalized_referral,
+            order_total=float(items_subtotal),
+            order_id=order["id"],
+        )
 
-    if referral_effects.get("checkoutBonus"):
-        bonus = referral_effects["checkoutBonus"]
-        order["referrerBonus"] = {
-            "referrerId": bonus.get("referrerId"),
-            "referrerName": bonus.get("referrerName"),
-            "commission": bonus.get("commission"),
-            "type": "checkout_code",
-        }
+        if referral_effects.get("checkoutBonus"):
+            bonus = referral_effects["checkoutBonus"]
+            order["referrerBonus"] = {
+                "referrerId": bonus.get("referrerId"),
+                "referrerName": bonus.get("referrerName"),
+                "commission": bonus.get("commission"),
+                "type": "checkout_code",
+            }
 
-    if referral_effects.get("firstOrderBonus"):
-        bonus = referral_effects["firstOrderBonus"]
-        order["firstOrderBonus"] = {
-            "referrerId": bonus.get("referrerId"),
-            "referrerName": bonus.get("referrerName"),
-            "amount": bonus.get("amount"),
-        }
+        if referral_effects.get("firstOrderBonus"):
+            bonus = referral_effects["firstOrderBonus"]
+            order["firstOrderBonus"] = {
+                "referrerId": bonus.get("referrerId"),
+                "referrerName": bonus.get("referrerName"),
+                "amount": bonus.get("amount"),
+            }
 
-    applied_credit_value = float(order.get("appliedReferralCredit") or 0) or 0.0
-    order["grandTotal"] = round(
-        max(0.0, items_subtotal - applied_credit_value + shipping_total_value + tax_total_value),
-        2,
-    )
+        applied_credit_value = float(order.get("appliedReferralCredit") or 0) or 0.0
+        order["grandTotal"] = round(
+            max(0.0, items_subtotal - applied_credit_value + shipping_total_value + tax_total_value),
+            2,
+        )
 
     order_repository.insert(order)
     try:
