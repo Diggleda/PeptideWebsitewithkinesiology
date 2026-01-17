@@ -27,13 +27,17 @@ interface CheckoutResult {
   order?: {
     id?: string | null;
     wooOrderNumber?: string | null;
+    wooOrderId?: string | null;
+    number?: string | number | null;
   } | null;
   integrations?: {
     wooCommerce?: {
       response?: {
         payment_url?: string | null;
         paymentUrl?: string | null;
+        payForOrderUrl?: string | null;
         number?: string | number | null;
+        id?: string | number | null;
       } | null;
     } | null;
     stripe?: {
@@ -515,7 +519,7 @@ export function CheckoutModal({
     }
   };
 
-  const handleCheckout = async () => {
+	  const handleCheckout = async () => {
     console.debug('[CheckoutModal] Checkout start', {
       total,
       items: cartItems.map((item) => ({
@@ -526,7 +530,7 @@ export function CheckoutModal({
       }))
     });
     setIsProcessing(true);
-    try {
+	    try {
 	      const result = await onCheckout({
 	        shippingAddress,
 	        shippingRate: selectedShippingRate,
@@ -536,29 +540,64 @@ export function CheckoutModal({
 	        taxTotal: taxAmount,
 	        paymentMethod,
 	      });
-	      const orderNumberCandidate =
-	        result?.integrations?.wooCommerce?.response?.number
-	        ?? result?.integrations?.wooCommerce?.response?.id
-	        ?? result?.order?.wooOrderNumber
-	        ?? result?.order?.wooOrderId
-	        ?? result?.order?.id
-	        ?? null;
-      const normalizedOrderNumber = orderNumberCandidate === null || orderNumberCandidate === undefined
-        ? null
-        : String(orderNumberCandidate).trim().replace(/^#/, '') || null;
-      setPlacedOrderNumber(normalizedOrderNumber);
-      const memoText = normalizedOrderNumber ? `Order ${normalizedOrderNumber}` : null;
-      const successMessage = result && typeof result === 'object' && 'message' in result && result.message
-        ? String(result.message)
-        : 'Order received! We\'ll email you payment instructions.';
+	      const extractWooOrderNumber = (value: CheckoutResult | null | undefined): string | null => {
+	        if (!value) return null;
+	        const response = value.integrations?.wooCommerce?.response || null;
+	        const paymentUrl =
+	          response?.paymentUrl || response?.payForOrderUrl || response?.payment_url || null;
+	        const parseFromPaymentUrl = () => {
+	          if (!paymentUrl) return null;
+	          const text = String(paymentUrl);
+	          const match = text.match(/order-pay\/(\d+)/i);
+	          return match && match[1] ? match[1] : null;
+	        };
 
-      setCheckoutStatus('success');
-      setCheckoutStatusMessage(normalizedOrderNumber ? `Order ${normalizedOrderNumber} placed` : successMessage);
-      toast.success(
-        normalizedOrderNumber
-          ? `Order ${normalizedOrderNumber} placed. Memo: ${memoText}. Check your email for payment instructions.`
-          : successMessage,
-      );
+	        const candidates = [
+	          response?.number,
+	          value.order?.wooOrderNumber,
+	          value.order?.number,
+	          response?.id,
+	          parseFromPaymentUrl(),
+	          value.order?.wooOrderId,
+	        ];
+
+	        for (const candidate of candidates) {
+	          if (candidate === null || candidate === undefined) continue;
+	          const normalized = String(candidate).trim().replace(/^#/, '');
+	          if (normalized) return normalized;
+	        }
+	        return null;
+	      };
+
+	      const normalizedOrderNumber = extractWooOrderNumber(result);
+	      setPlacedOrderNumber(normalizedOrderNumber);
+	      const isZelle = paymentMethod === 'zelle';
+	      const isBankTransfer = paymentMethod === 'bank_transfer';
+	      const isTransferMethod = isZelle || isBankTransfer;
+	      const transferSuccessMessage = (() => {
+	        if (isZelle) {
+	          return normalizedOrderNumber
+	            ? `We received your order! Please Zelle support@peppro.net with the memo 'Order #${normalizedOrderNumber}'. Instructions to follow in an email.`
+	            : `We received your order! Please Zelle support@peppro.net. Instructions to follow in an email.`;
+	        }
+	        if (isBankTransfer) {
+	          return 'We received your order! An email will follow with Direct Bank Trasnfer (ACH) instructions.';
+	        }
+	        return 'We received your order!';
+	      })();
+	      const defaultSuccessMessage = result && typeof result === 'object' && 'message' in result && result.message
+	        ? String(result.message)
+	        : 'We received your order!';
+	      const successMessage = isTransferMethod
+	        ? transferSuccessMessage
+	        : defaultSuccessMessage;
+
+	      setCheckoutStatus('success');
+	      setCheckoutStatusMessage(normalizedOrderNumber ? `Order #${normalizedOrderNumber} placed` : successMessage);
+	      const toastMessage = isTransferMethod
+	        ? transferSuccessMessage
+	        : (normalizedOrderNumber ? `Order #${normalizedOrderNumber} placed.` : successMessage);
+	      toast.success(toastMessage);
       console.debug('[CheckoutModal] Checkout success');
       if (onClearCart) {
         onClearCart();
@@ -1268,7 +1307,7 @@ export function CheckoutModal({
 	                    <p className="font-semibold">Your order number: {placedOrderNumber}</p>
 	                    <p className="mt-1">
 	                      Use this as your payment memo/notes:{" "}
-	                      <span className="font-mono">Order {placedOrderNumber}</span>
+	                      <span className="font-mono">Order #{placedOrderNumber}</span>
 	                    </p>
 	                  </div>
 	                )}

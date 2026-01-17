@@ -7,9 +7,9 @@
     "referralCode": "49110E",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 603,
+    "visits": 604,
     "createdAt": "2025-11-24T15:21:45.364Z",
-    "lastLoginAt": "2026-01-16T20:55:47.362Z",
+    "lastLoginAt": "2026-01-17T23:42:46.802Z",
     "role": "admin",
     "salesRepId": "rep1",
     "passkeys": [],
@@ -26,7 +26,11 @@
     "npiVerificationStatus": null,
     "isTaxExempt": false,
     "taxExemptSource": null,
-    "taxExemptReason": null
+    "taxExemptReason": null,
+    "lastSeenAt": "2026-01-17T23:42:47.034Z",
+    "lastInteractionAt": "2026-01-17T23:42:47.034Z",
+    "isOnline": true,
+    "isIdle": false
   },
   {
     "id": "1763997887996",
@@ -61,7 +65,11 @@
     "npiVerificationStatus": null,
     "isTaxExempt": false,
     "taxExemptSource": null,
-    "taxExemptReason": null
+    "taxExemptReason": null,
+    "lastSeenAt": null,
+    "lastInteractionAt": null,
+    "isOnline": false,
+    "isIdle": null
   },
   {
     "id": "1764556043938",
@@ -89,7 +97,11 @@
     "officeAddressLine2": null,
     "officeCity": null,
     "officeState": null,
-    "officePostalCode": null
+    "officePostalCode": null,
+    "lastSeenAt": null,
+    "lastInteractionAt": null,
+    "isOnline": false,
+    "isIdle": null
   },
   {
     "id": "1765228144842",
@@ -123,6 +135,10 @@
     "officeAddressLine2": null,
     "officeCity": null,
     "officeState": null,
-    "officePostalCode": null
+    "officePostalCode": null,
+    "lastSeenAt": null,
+    "lastInteractionAt": null,
+    "isOnline": false,
+    "isIdle": null
   }
 ]

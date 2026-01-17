@@ -3084,6 +3084,8 @@ export default function App() {
   >(null);
   const [showCanceledOrders, setShowCanceledOrders] = useState(false);
   const postCheckoutOrderRef = useRef<{
+    pepproOrderId: string | null;
+    wooOrderId: string | null;
     wooOrderNumber: string | null;
     createdAtMs: number;
   } | null>(null);
@@ -3252,41 +3254,50 @@ export default function App() {
     }
   }, []);
 
-  const loadAccountOrders = useCallback(
-    async (options?: { includeCanceled?: boolean }) => {
-      const includeCanceled = options?.includeCanceled ?? showCanceledOrders;
-      if (!user?.id) {
-        setAccountOrders([]);
-        setAccountOrdersSyncedAt(null);
-        setAccountOrdersError(null);
-        return [];
-      }
-      setAccountOrdersLoading(true);
-      setAccountOrdersError(null);
-      try {
-        const response = await ordersAPI.getAll({ includeCanceled });
-        let normalized = normalizeAccountOrdersResponse(response, {
-          includeCanceled,
-        });
-        const optimistic = postCheckoutOptimisticOrderRef.current;
-        const optimisticMeta = postCheckoutOrderRef.current;
-        if (optimistic && optimisticMeta) {
+		  const loadAccountOrders = useCallback(
+		    async (options?: { includeCanceled?: boolean; force?: boolean }) => {
+	      const includeCanceled = options?.includeCanceled ?? showCanceledOrders;
+	      const force = options?.force === true;
+	      if (!user?.id) {
+	        setAccountOrders([]);
+	        setAccountOrdersSyncedAt(null);
+	        setAccountOrdersError(null);
+	        return [];
+	      }
+	      setAccountOrdersLoading(true);
+	      setAccountOrdersError(null);
+	      try {
+	        const response = await ordersAPI.getAll({ includeCanceled, force });
+	        let normalized = normalizeAccountOrdersResponse(response, {
+	          includeCanceled,
+	        });
+	        const optimistic = postCheckoutOptimisticOrderRef.current;
+	        const optimisticMeta = postCheckoutOrderRef.current;
+	        if (optimistic && optimisticMeta) {
           const ageMs = Date.now() - optimisticMeta.createdAtMs;
           if (ageMs > 10 * 60 * 1000) {
             postCheckoutOptimisticOrderRef.current = null;
           } else {
-            const optimisticNumber = optimistic.number
-              ? String(optimistic.number).trim()
-              : "";
-            const optimisticId = optimistic.id ? String(optimistic.id).trim() : "";
-            const exists = normalized.some((order) => {
-              const orderNumber = order.number ? String(order.number).trim() : "";
-              const orderId = order.id ? String(order.id).trim() : "";
-              return (
-                (optimisticNumber && orderNumber && orderNumber === optimisticNumber) ||
-                (optimisticId && orderId && orderId === optimisticId)
-              );
-            });
+	            const optimisticNumber = optimistic.number
+	              ? String(optimistic.number).trim()
+	              : "";
+	            const optimisticId = optimistic.id ? String(optimistic.id).trim() : "";
+	            const optimisticPepproId = optimisticMeta.pepproOrderId
+	              ? String(optimisticMeta.pepproOrderId).trim()
+	              : "";
+	            const exists = normalized.some((order) => {
+	              const orderNumber = order.number ? String(order.number).trim() : "";
+	              const orderId = order.id ? String(order.id).trim() : "";
+	              const orderPepproId =
+	                typeof (order as any)?.integrationDetails?.wooCommerce?.pepproOrderId === "string"
+	                  ? String((order as any).integrationDetails.wooCommerce.pepproOrderId).trim()
+	                  : "";
+	              return (
+	                (optimisticNumber && orderNumber && orderNumber === optimisticNumber) ||
+	                (optimisticId && orderId && orderId === optimisticId) ||
+	                (optimisticPepproId && orderPepproId && orderPepproId === optimisticPepproId)
+	              );
+	            });
             if (exists) {
               postCheckoutOptimisticOrderRef.current = null;
             } else {
@@ -3334,35 +3345,46 @@ export default function App() {
     [user?.id, showCanceledOrders],
   );
 
-  const triggerPostCheckoutOrdersRefresh = useCallback(async () => {
-    // Best-effort: Woo order creation can be eventually consistent; poll a few times so
-    // the brand new order shows up immediately in the Orders tab.
-    postCheckoutOrdersRefreshTimersRef.current.forEach((id) => window.clearTimeout(id));
-    postCheckoutOrdersRefreshTimersRef.current = [];
+	  const triggerPostCheckoutOrdersRefresh = useCallback(async () => {
+	    // Best-effort: Woo order creation can be eventually consistent; poll a few times so
+	    // the brand new order shows up immediately in the Orders tab.
+	    postCheckoutOrdersRefreshTimersRef.current.forEach((id) => window.clearTimeout(id));
+	    postCheckoutOrdersRefreshTimersRef.current = [];
 
-    const targetWooNumber = postCheckoutOrderRef.current?.wooOrderNumber || null;
-    const attempts = [0, 900, 1800, 3500];
+	    const meta = postCheckoutOrderRef.current;
+	    const targetWooNumber = meta?.wooOrderNumber || null;
+	    const targetWooId = meta?.wooOrderId || null;
+	    const targetPepproId = meta?.pepproOrderId || null;
+	    const attempts = [0, 900, 1800, 3500];
 
-    const tryRefresh = async () => {
-      try {
-        const latest = await loadAccountOrders();
-        if (targetWooNumber) {
-          const found = latest.some((order) => String(order.number || "").trim() === targetWooNumber);
-          if (found) {
-            return true;
-          }
-        }
-      } catch {
-        // ignore
-      }
-      return false;
-    };
+	    const tryRefresh = async () => {
+	      try {
+	        const latest = await loadAccountOrders({ force: true });
+	        const found = latest.some((order) => {
+	          const number = String(order.number || "").trim();
+	          const id = String(order.id || "").trim();
+	          const pepproId =
+	            typeof (order as any)?.integrationDetails?.wooCommerce?.pepproOrderId === "string"
+	              ? String((order as any).integrationDetails.wooCommerce.pepproOrderId).trim()
+	              : "";
+	          return (
+	            (targetWooNumber && number && number === targetWooNumber) ||
+	            (targetWooId && id && id === targetWooId) ||
+	            (targetPepproId && pepproId && pepproId === targetPepproId)
+	          );
+	        });
+	        if (found) return true;
+	      } catch {
+	        // ignore
+	      }
+	      return false;
+	    };
 
-    // Immediate and a few short retries.
-    void tryRefresh();
-    for (const delayMs of attempts.slice(1)) {
-      const timerId = window.setTimeout(async () => {
-        const done = await tryRefresh();
+	    // Immediate and a few short retries.
+	    void tryRefresh();
+	    for (const delayMs of attempts.slice(1)) {
+	      const timerId = window.setTimeout(async () => {
+	        const done = await tryRefresh();
         if (done) {
           postCheckoutOrdersRefreshTimersRef.current.forEach((id) => window.clearTimeout(id));
           postCheckoutOrdersRefreshTimersRef.current = [];
@@ -11290,35 +11312,47 @@ export default function App() {
         options?.paymentMethod ?? null,
       );
 	      try {
-	        const wooNumber =
-	          response?.integrations?.wooCommerce?.response?.number ||
-	          response?.integrations?.wooCommerce?.response?.id ||
-	          response?.order?.wooOrderNumber ||
-	          response?.order?.wooOrderId ||
+	        const created = response?.order as any;
+	        const pepproOrderId = created?.id ? String(created.id).trim() : null;
+	        const wooResp = (response as any)?.integrations?.wooCommerce?.response || null;
+	        const wooOrderIdRaw =
+	          wooResp?.id ||
+	          created?.wooOrderId ||
+	          created?.woo_order_id ||
 	          null;
+	        const wooOrderNumberRaw =
+	          wooResp?.number ||
+	          wooResp?.id ||
+	          created?.wooOrderNumber ||
+	          created?.woo_order_number ||
+	          created?.wooOrderId ||
+	          created?.woo_order_id ||
+	          null;
+	        const wooOrderId = wooOrderIdRaw ? String(wooOrderIdRaw).trim() : null;
+	        const wooOrderNumber = wooOrderNumberRaw ? String(wooOrderNumberRaw).trim() : null;
 	        postCheckoutOrderRef.current = {
-	          wooOrderNumber: wooNumber ? String(wooNumber).trim() : null,
+	          pepproOrderId,
+	          wooOrderId,
+	          wooOrderNumber,
 	          createdAtMs: Date.now(),
 	        };
-	      } catch {
-	        postCheckoutOrderRef.current = { wooOrderNumber: null, createdAtMs: Date.now() };
-	      }
 
-        try {
-          const created = response?.order as any;
-          const wooId =
-            response?.integrations?.wooCommerce?.response?.id ||
-            created?.wooOrderId ||
-            created?.woo_order_id ||
-            null;
-          const wooNumber =
-            response?.integrations?.wooCommerce?.response?.number ||
-            created?.wooOrderNumber ||
-            created?.woo_order_number ||
-            null;
-          const createdAt =
-            created?.createdAt ||
-            created?.created_at ||
+	        if (created && typeof created === "object") {
+	          if (!created.wooOrderId && wooOrderId) created.wooOrderId = wooOrderId;
+	          if (!created.wooOrderNumber && wooOrderNumber) created.wooOrderNumber = wooOrderNumber;
+	        }
+		      } catch {
+		        postCheckoutOrderRef.current = { pepproOrderId: null, wooOrderId: null, wooOrderNumber: null, createdAtMs: Date.now() };
+		      }
+
+	        try {
+	          const created = response?.order as any;
+	          const meta = postCheckoutOrderRef.current;
+	          const wooId = meta?.wooOrderId || null;
+	          const wooNumber = meta?.wooOrderNumber || null;
+	          const createdAt =
+	            created?.createdAt ||
+	            created?.created_at ||
             new Date().toISOString();
           const lineItemsRaw = Array.isArray(created?.items) ? created.items : [];
           const lineItems = lineItemsRaw.map((item: any, index: number) => {
@@ -11366,14 +11400,18 @@ export default function App() {
               image: null,
             };
           });
-          const optimisticOrder: AccountOrderSummary = {
-            id: wooId ? String(wooId) : String(created?.id || Date.now()),
-            number: wooNumber ? String(wooNumber) : null,
-            status: String(created?.status || "pending"),
-            currency: "usd",
-            total:
-              typeof created?.grandTotal === "number"
-                ? created.grandTotal
+	          if (!wooId && !wooNumber) {
+	            postCheckoutOptimisticOrderRef.current = null;
+	            throw new Error("checkout_woo_id_missing");
+	          }
+	          const optimisticOrder: AccountOrderSummary = {
+	            id: wooId ? String(wooId) : String(wooNumber),
+	            number: wooNumber ? String(wooNumber) : null,
+	            status: String(created?.status || "on-hold"),
+	            currency: "usd",
+	            total:
+	              typeof created?.grandTotal === "number"
+	                ? created.grandTotal
                 : Number(created?.grandTotal) || Number(created?.total) || null,
             createdAt: typeof createdAt === "string" ? createdAt : new Date().toISOString(),
             updatedAt: null,
@@ -11399,10 +11437,10 @@ export default function App() {
                 created?.physicianCertified ??
                 false,
             ),
-            wooOrderNumber: wooNumber ? String(wooNumber) : null,
-            wooOrderId: wooId ? String(wooId) : null,
-            expectedShipmentWindow: created?.expectedShipmentWindow ?? null,
-          };
+	            wooOrderNumber: wooNumber ? String(wooNumber) : null,
+	            wooOrderId: wooId ? String(wooId) : null,
+	            expectedShipmentWindow: created?.expectedShipmentWindow ?? null,
+	          };
 
           postCheckoutOptimisticOrderRef.current = optimisticOrder;
           setAccountOrders((prev) => {
@@ -13964,7 +14002,7 @@ export default function App() {
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
                 <div className="sales-rep-leads-title">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-start mb-1 justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <h3 className="text-lg sm:text-xl">Your Sales</h3>
                       <p className="text-sm text-slate-600">

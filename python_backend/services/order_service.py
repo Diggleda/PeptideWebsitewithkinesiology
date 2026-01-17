@@ -897,7 +897,7 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
     }
 
 
-def get_orders_for_user(user_id: str):
+def get_orders_for_user(user_id: str, *, force: bool = False):
     user = user_repository.find_by_id(user_id)
     if not user:
         raise _service_error("User not found", 404)
@@ -909,7 +909,7 @@ def get_orders_for_user(user_id: str):
     if email:
         try:
             t0 = time.perf_counter()
-            woo_orders = woo_commerce.fetch_orders_by_email(email)
+            woo_orders = woo_commerce.fetch_orders_by_email(email, force=force)
             _perf_log(
                 f"woo_commerce.fetch_orders_by_email userId={user_id} count={len(woo_orders) if isinstance(woo_orders, list) else 'n/a'}",
                 duration_ms=(time.perf_counter() - t0) * 1000,

@@ -150,7 +150,8 @@ def create_order():
 @require_auth
 def list_orders():
     user_id = g.current_user.get("id")
-    return handle_action(lambda: order_service.get_orders_for_user(user_id))
+    force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
+    return handle_action(lambda: order_service.get_orders_for_user(user_id, force=force))
 
 
 @blueprint.get("/sales-rep")

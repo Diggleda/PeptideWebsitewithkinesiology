@@ -1284,10 +1284,13 @@ export const ordersAPI = {
     });
   },
 
-  getAll: async (options?: { includeCanceled?: boolean }) => {
+  getAll: async (options?: { includeCanceled?: boolean; force?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.includeCanceled) {
       params.set('includeCanceled', 'true');
+    }
+    if (options?.force) {
+      params.set('force', 'true');
     }
     const query = params.toString();
     const url = query ? `${API_BASE_URL}/orders/?${query}` : `${API_BASE_URL}/orders/`;

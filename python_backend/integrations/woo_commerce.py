@@ -1806,7 +1806,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     return mapped
 
 
-def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
+def fetch_orders_by_email(email: str, per_page: int = 15, *, force: bool = False) -> Any:
     if not email or not is_configured():
         return []
     trimmed = email.strip().lower()
@@ -1820,19 +1820,20 @@ def fetch_orders_by_email(email: str, per_page: int = 15) -> Any:
     )
     now_ms = int(time.time() * 1000)
 
-    with _orders_by_email_cache_lock:
-        cached = _orders_by_email_cache.get(cache_key)
-        if cached and cached.get("expiresAt", 0) > now_ms:
-            return cached.get("data") or []
+    if not force:
+        with _orders_by_email_cache_lock:
+            cached = _orders_by_email_cache.get(cache_key)
+            if cached and cached.get("expiresAt", 0) > now_ms:
+                return cached.get("data") or []
 
-    disk_cached = _read_disk_cache(cache_key)
-    if disk_cached and isinstance(disk_cached, dict):
-        expires_at = int(disk_cached.get("expiresAt") or 0)
-        if expires_at > now_ms:
-            data = disk_cached.get("data") or []
-            with _orders_by_email_cache_lock:
-                _orders_by_email_cache[cache_key] = {"data": data, "expiresAt": expires_at}
-            return data
+        disk_cached = _read_disk_cache(cache_key)
+        if disk_cached and isinstance(disk_cached, dict):
+            expires_at = int(disk_cached.get("expiresAt") or 0)
+            if expires_at > now_ms:
+                data = disk_cached.get("data") or []
+                with _orders_by_email_cache_lock:
+                    _orders_by_email_cache[cache_key] = {"data": data, "expiresAt": expires_at}
+                return data
 
     try:
         response = _fetch_catalog_http(
