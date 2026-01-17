@@ -58,7 +58,19 @@ def logout():
         token = parts[1] if len(parts) == 2 else parts[0]
         try:
             payload = jwt.decode(token, get_config().jwt_secret, algorithms=["HS256"])
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        except jwt.ExpiredSignatureError:
+            # If the token is expired but otherwise valid, we can still honor logout
+            # (mark offline + rotate session id) as long as the session id matches.
+            try:
+                payload = jwt.decode(
+                    token,
+                    get_config().jwt_secret,
+                    algorithms=["HS256"],
+                    options={"verify_exp": False},
+                )
+            except jwt.InvalidTokenError:
+                return {"ok": True}
+        except jwt.InvalidTokenError:
             return {"ok": True}
 
         user_id = payload.get("id")
