@@ -12,6 +12,7 @@ from flask import Blueprint, request, g
 
 from ..middleware.auth import require_auth
 from ..repositories import user_repository
+from ..repositories import sales_rep_repository
 from ..repositories import sales_prospect_repository
 from ..services import get_config
 from ..services import auth_service
@@ -79,6 +80,89 @@ def _is_admin_role(role: str) -> bool:
 def _is_sales_rep_role(role: str) -> bool:
     normalized = _normalize_role(role)
     return normalized in ("sales_rep", "rep")
+
+def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
+    """
+    Sales-rep references can be stored under multiple ids over time:
+    - sales_reps.id
+    - sales_reps.legacyUserId (older user-based reps)
+    - users.id (role=sales_rep)
+    Match all reasonable equivalents so reps see their assigned doctors.
+    """
+    normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    allowed: set[str] = {normalized_sales_rep_id} if normalized_sales_rep_id else set()
+
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    rep_records: dict[str, dict] = {}
+    for rep in reps:
+        if not isinstance(rep, dict):
+            continue
+        rep_id = str(rep.get("id") or "").strip()
+        if rep_id:
+            rep_records[rep_id] = rep
+
+    legacy_map = {
+        str(rep.get("legacyUserId")).strip(): rep_id
+        for rep_id, rep in rep_records.items()
+        if rep.get("legacyUserId")
+    }
+
+    rep_record_id = legacy_map.get(normalized_sales_rep_id)
+    if rep_record_id:
+        allowed.add(str(rep_record_id))
+
+    def add_legacy_user_id(rep: dict | None) -> None:
+        if not isinstance(rep, dict):
+            return
+        legacy_user_id = str(rep.get("legacyUserId") or "").strip()
+        if legacy_user_id:
+            allowed.add(legacy_user_id)
+
+    direct_rep_record = rep_records.get(normalized_sales_rep_id) if normalized_sales_rep_id else None
+    add_legacy_user_id(direct_rep_record if isinstance(direct_rep_record, dict) else None)
+    add_legacy_user_id(rep_records.get(str(rep_record_id)) if rep_record_id else None)
+
+    # Cross-link via email when the sales rep has both a `users` row and a `sales_reps` row.
+    try:
+        users = user_repository.get_all() or []
+    except Exception:
+        users = []
+
+    rep_user = next((u for u in users if str((u or {}).get("id") or "") == normalized_sales_rep_id), None)
+    rep_user_email = (rep_user.get("email") or "").strip().lower() if isinstance(rep_user, dict) else ""
+    if rep_user_email:
+        for rep_id, rep in rep_records.items():
+            if (rep.get("email") or "").strip().lower() == rep_user_email:
+                allowed.add(str(rep_id))
+                add_legacy_user_id(rep)
+
+    rep_email_candidates = set()
+    if rep_user_email:
+        rep_email_candidates.add(rep_user_email)
+    for record in (
+        direct_rep_record if isinstance(direct_rep_record, dict) else None,
+        rep_records.get(str(rep_record_id)) if rep_record_id else None,
+    ):
+        if isinstance(record, dict):
+            email = (record.get("email") or "").strip().lower()
+            if email:
+                rep_email_candidates.add(email)
+
+    if rep_email_candidates:
+        for user in users:
+            if not isinstance(user, dict):
+                continue
+            email = (user.get("email") or "").strip().lower()
+            if not email or email not in rep_email_candidates:
+                continue
+            role = (user.get("role") or "").lower()
+            if role in ("sales_rep", "rep", "admin"):
+                allowed.add(str(user.get("id")))
+
+    return {value for value in allowed if str(value or "").strip()}
 
 def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold_s: float, idle_threshold_s: float, presence: dict) -> dict:
     user_id = str(user.get("id") or "")
@@ -279,6 +363,7 @@ def get_live_clients():
             setattr(err, "status", 400)
             raise err
 
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(target_sales_rep_id)
         prospects = sales_prospect_repository.find_by_sales_rep(target_sales_rep_id)
         doctor_ids = {
             str(p.get("doctorId")).strip()
@@ -293,7 +378,7 @@ def get_live_clients():
         contact_emails = {e for e in contact_emails if e and "@" in e}
 
         all_users = user_repository.get_all()
-        candidate_doctors = []
+        candidate_by_id: dict[str, dict] = {}
         for user in all_users or []:
             if not isinstance(user, dict):
                 continue
@@ -301,12 +386,18 @@ def get_live_clients():
             if user_role not in ("doctor", "test_doctor"):
                 continue
             uid = str(user.get("id") or "").strip()
+            if not uid:
+                continue
             email = str(user.get("email") or "").strip().lower()
-            if uid and uid in doctor_ids:
-                candidate_doctors.append(user)
+            doctor_sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+            if doctor_sales_rep_id and doctor_sales_rep_id in allowed_rep_ids:
+                candidate_by_id[uid] = user
+                continue
+            if uid in doctor_ids:
+                candidate_by_id[uid] = user
                 continue
             if email and email in contact_emails:
-                candidate_doctors.append(user)
+                candidate_by_id[uid] = user
 
         now_epoch = time.time()
         online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
@@ -316,7 +407,7 @@ def get_live_clients():
         presence = presence_service.snapshot()
 
         clients = []
-        for user in candidate_doctors:
+        for user in candidate_by_id.values():
             snapshot = _compute_presence_snapshot(
                 user,
                 now_epoch=now_epoch,

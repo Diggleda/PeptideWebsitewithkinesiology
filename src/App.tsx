@@ -10133,7 +10133,7 @@ export default function App() {
       return;
     }
 
-    const idleThresholdMs = 10 * 60 * 1000;
+    const idleThresholdMs = 10_000;
     const idleLogoutMs = 60 * 60 * 1000;
     const sessionMaxMs = 24 * 60 * 60 * 1000;
     const sessionStartedAtKey = "peppro_session_started_at_v1";
@@ -10192,7 +10192,22 @@ export default function App() {
         }
         return;
       }
-      setIsIdle(idleForMs >= idleThresholdMs);
+      const nextIsIdle = idleForMs >= idleThresholdMs;
+      if (isIdleRef.current !== nextIsIdle) {
+        isIdleRef.current = nextIsIdle;
+        setIsIdle(nextIsIdle);
+        if (nextIsIdle) {
+          try {
+            void settingsAPI
+              .pingPresence({ kind: "heartbeat", isIdle: true })
+              .catch(() => undefined);
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+      setIsIdle(nextIsIdle);
     };
 
     const events: Array<keyof WindowEventMap> = [
@@ -10204,8 +10219,8 @@ export default function App() {
       "focus",
     ];
     events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
-    const interval = window.setInterval(checkIdle, 30_000);
-    window.setTimeout(checkIdle, 1_000);
+    const interval = window.setInterval(checkIdle, 1_000);
+    window.setTimeout(checkIdle, 200);
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, markActivity));
