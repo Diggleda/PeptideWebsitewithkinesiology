@@ -954,6 +954,13 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     else:
         payment_method = ""
 
+    raw_payment_details = str(order.get("paymentDetails") or "").strip()
+    raw_payment_method = str(order.get("paymentMethod") or "").strip()
+    if raw_payment_details:
+        meta_data.append({"key": "peppro_payment_method", "value": raw_payment_details})
+    elif raw_payment_method:
+        meta_data.append({"key": "peppro_payment_method", "value": raw_payment_method})
+
     status = "on-hold" if payment_method == "bacs" else "pending"
     line_items_source = order.get("items")
     if test_override:
@@ -989,7 +996,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         ]
     if payment_method == "bacs":
         payload["payment_method"] = "bacs"
-        payload["payment_method_title"] = "Direct Bank Transfer"
+        normalized_details = (raw_payment_details or raw_payment_method).lower().replace("-", "_").replace(" ", "_")
+        payload["payment_method_title"] = "Zelle" if "zelle" in normalized_details else "Direct Bank Transfer"
     return payload
 
 

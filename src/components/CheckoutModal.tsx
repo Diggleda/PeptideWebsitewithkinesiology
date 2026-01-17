@@ -527,20 +527,22 @@ export function CheckoutModal({
     });
     setIsProcessing(true);
     try {
-      const result = await onCheckout({
-        shippingAddress,
-        shippingRate: selectedShippingRate,
-        shippingTotal: shippingCost,
-        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
-        physicianCertificationAccepted: termsAccepted,
-        taxTotal: taxAmount,
-        paymentMethod,
-      });
-      const orderNumberCandidate =
-        result?.integrations?.wooCommerce?.response?.number
-        ?? result?.order?.wooOrderNumber
-        ?? result?.order?.id
-        ?? null;
+	      const result = await onCheckout({
+	        shippingAddress,
+	        shippingRate: selectedShippingRate,
+	        shippingTotal: shippingCost,
+	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
+	        physicianCertificationAccepted: termsAccepted,
+	        taxTotal: taxAmount,
+	        paymentMethod,
+	      });
+	      const orderNumberCandidate =
+	        result?.integrations?.wooCommerce?.response?.number
+	        ?? result?.integrations?.wooCommerce?.response?.id
+	        ?? result?.order?.wooOrderNumber
+	        ?? result?.order?.wooOrderId
+	        ?? result?.order?.id
+	        ?? null;
       const normalizedOrderNumber = orderNumberCandidate === null || orderNumberCandidate === undefined
         ? null
         : String(orderNumberCandidate).trim().replace(/^#/, '') || null;

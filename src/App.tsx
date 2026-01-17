@@ -338,6 +338,29 @@ const humanizeAccountOrderStatus = (status?: string | null): string => {
     .join(" ");
 };
 
+const formatPepProPaymentMethodLabel = (value?: string | null): string | null => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw.toLowerCase().replace(/[\s-]+/g, "_");
+
+  if (normalized.includes("zelle")) return "Zelle";
+  if (
+    normalized === "bacs" ||
+    normalized === "bank_transfer" ||
+    normalized === "direct_bank_transfer" ||
+    normalized.includes("direct_bank_transfer") ||
+    normalized.includes("direct_bank") ||
+    normalized.includes("bank_transfer") ||
+    normalized.includes("banktransfer")
+  ) {
+    return "Direct Bank Transfer";
+  }
+  if (normalized.includes("stripe")) return "Card payment";
+
+  return raw;
+};
+
 const parseMaybeJson = (value: any) => {
   if (typeof value === "string") {
     try {
@@ -11266,15 +11289,17 @@ export default function App() {
         taxTotal,
         options?.paymentMethod ?? null,
       );
-      try {
-        const wooNumber =
-          response?.integrations?.wooCommerce?.response?.number ||
-          response?.order?.wooOrderNumber ||
-          null;
-        postCheckoutOrderRef.current = {
-          wooOrderNumber: wooNumber ? String(wooNumber).trim() : null,
-          createdAtMs: Date.now(),
-        };
+	      try {
+	        const wooNumber =
+	          response?.integrations?.wooCommerce?.response?.number ||
+	          response?.integrations?.wooCommerce?.response?.id ||
+	          response?.order?.wooOrderNumber ||
+	          response?.order?.wooOrderId ||
+	          null;
+	        postCheckoutOrderRef.current = {
+	          wooOrderNumber: wooNumber ? String(wooNumber).trim() : null,
+	          createdAtMs: Date.now(),
+	        };
 	      } catch {
 	        postCheckoutOrderRef.current = { wooOrderNumber: null, createdAtMs: Date.now() };
 	      }
@@ -16180,13 +16205,22 @@ export default function App() {
                                 return hasWebinarLink || hasRecording;
                               });
 
-                            if (visibleItems.length === 0) {
-                              return (
-                                <p className="text-xs text-slate-500">
-                                  Stay tuned! New classes will be scheduled here and on our LinkedIn.
-                                </p>
-                              );
-                            }
+	                            if (visibleItems.length === 0) {
+	                              return (
+	                                <p className="text-xs text-slate-500">
+	                                  Stay tuned! New classes will be scheduled here and on our{" "}
+	                                  <a
+	                                    href="https://www.linkedin.com/company/peppro/posts/?feedView=all"
+	                                    target="_blank"
+	                                    rel="noreferrer"
+	                                    className="text-[rgb(26,85,173)] hover:underline"
+	                                  >
+	                                    LinkedIn
+	                                  </a>
+	                                  .
+	                                </p>
+	                              );
+	                            }
 
                             return (
                               <ul className="space-y-3">
@@ -17735,10 +17769,10 @@ export default function App() {
                   typeof storedGrandTotal === "number" && Number.isFinite(storedGrandTotal) && storedGrandTotal > 0
                     ? storedGrandTotal
                     : computedGrandTotal;
-	                const paymentDisplay =
-	                  (() => {
-	                    const integrations = (salesOrderDetail as any).integrationDetails || (salesOrderDetail as any).integrations || {};
-	                    const stripeMeta = integrations?.stripe || integrations?.Stripe || null;
+		                const paymentDisplay =
+		                  (() => {
+		                    const integrations = (salesOrderDetail as any).integrationDetails || (salesOrderDetail as any).integrations || {};
+		                    const stripeMeta = integrations?.stripe || integrations?.Stripe || null;
 	                    const last4 =
 	                      stripeMeta?.cardLast4 ||
 	                      stripeMeta?.card_last4 ||
@@ -17752,15 +17786,18 @@ export default function App() {
 	                    if (last4) {
 	                      return `${brand || "Card"} •••• ${last4}`;
 	                    }
-	                    const fallback =
-	                      salesOrderDetail.paymentDetails ||
-	                      salesOrderDetail.paymentMethod ||
-	                      null;
-	                    if (typeof fallback === "string" && /stripe onsite/i.test(fallback)) {
-	                      return "Card payment";
-	                    }
-	                    return fallback;
-	                  })();
+		                    const fallback =
+		                      salesOrderDetail.paymentDetails ||
+		                      salesOrderDetail.paymentMethod ||
+		                      null;
+		                    if (typeof fallback === "string" && /stripe onsite/i.test(fallback)) {
+		                      return "Card payment";
+		                    }
+		                    if (typeof fallback === "string") {
+		                      return formatPepProPaymentMethodLabel(fallback) || fallback;
+		                    }
+		                    return fallback;
+		                  })();
                 const renderAddressLines = (address: any) => {
                   if (!address) return <p className="text-sm text-slate-500">—</p>;
                   const lines = [

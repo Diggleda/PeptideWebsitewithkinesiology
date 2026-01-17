@@ -3421,7 +3421,25 @@ export function Header({
         return `${stripeMeta?.cardBrand || 'Card'} •••• ${stripeMeta.cardLast4}`;
       }
       if (typeof fallbackPayment === 'string' && fallbackPayment.trim().length > 0) {
+        const normalize = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_');
         if (/stripe onsite/i.test(fallbackPayment)) {
+          return 'Card payment';
+        }
+        const normalized = normalize(fallbackPayment);
+        if (normalized.includes('zelle')) {
+          return 'Zelle';
+        }
+        if (
+          normalized === 'bacs' ||
+          normalized === 'bank_transfer' ||
+          normalized === 'direct_bank_transfer' ||
+          normalized.includes('direct_bank') ||
+          normalized.includes('bank_transfer') ||
+          normalized.includes('banktransfer')
+        ) {
+          return 'Direct Bank Transfer';
+        }
+        if (normalized.includes('stripe')) {
           return 'Card payment';
         }
         return fallbackPayment;
