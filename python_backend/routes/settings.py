@@ -363,7 +363,6 @@ def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
 
 def _compute_live_users_payload() -> dict:
     users = user_repository.get_all()
-    rep_records = sales_rep_repository.get_all()
     users_by_id: dict[str, dict] = {}
 
     for user in users or []:
@@ -374,23 +373,7 @@ def _compute_live_users_payload() -> dict:
             continue
         users_by_id[uid] = user
 
-    # Merge in reps that may live only in the sales_reps table.
-    for rep in rep_records or []:
-        if not isinstance(rep, dict):
-            continue
-        rid = str(rep.get("id") or "").strip()
-        if not rid or rid in users_by_id:
-            continue
-        users_by_id[rid] = {
-            **rep,
-            "id": rid,
-            "role": rep.get("role") or "sales_rep",
-            "isOnline": bool(rep.get("isOnline") or rep.get("is_online")),
-            "lastLoginAt": rep.get("lastLoginAt") or rep.get("last_login_at") or rep.get("lastLogin") or None,
-            "lastSeenAt": rep.get("lastSeenAt") or rep.get("last_seen_at") or None,
-            "lastInteractionAt": rep.get("lastInteractionAt") or rep.get("last_interaction_at") or None,
-            "profileImageUrl": rep.get("profileImageUrl") or rep.get("profile_image_url") or None,
-        }
+    # Admin Live Users should only reflect the canonical `users` table to avoid duplicates.
 
     def normalize_user_role(value: object) -> str:
         normalized = _normalize_role(value)

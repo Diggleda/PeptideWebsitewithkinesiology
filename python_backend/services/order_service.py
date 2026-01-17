@@ -1591,7 +1591,7 @@ def _enrich_with_shipstation(order: Dict) -> None:
     )
 
 
-def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dict]:
+def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Optional[str] = None) -> Optional[Dict]:
     """
     Fetch a single Woo order detail and ensure it belongs to a doctor tied to this sales rep.
     """
@@ -1700,13 +1700,15 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str) -> Optional[Dic
     billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
     doctor = user_repository.find_by_email(billing_email) if billing_email else None
     if doctor:
-        users = user_repository.get_all()
-        rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
-        allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+        is_admin_request = (token_role or "").strip().lower() == "admin"
+        if not is_admin_request:
+            users = user_repository.get_all()
+            rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+            allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
 
-        doctor_sales_rep = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "")
-        if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
-            raise _service_error("Order not found", 404)
+            doctor_sales_rep = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "")
+            if doctor_sales_rep and doctor_sales_rep not in allowed_rep_ids:
+                raise _service_error("Order not found", 404)
     else:
         # If we can't associate to a known doctor, don't leak order detail to arbitrary reps.
         raise _service_error("Order not found", 404)

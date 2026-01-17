@@ -6148,6 +6148,17 @@ export default function App() {
 	    return remHours ? `Online for ${days}d ${remHours}h` : `Online for ${days}d`;
 	  };
 
+    const formatRelativeMinutes = (value?: string | null) => {
+      if (!value) return "a few moments ago";
+      const date = new Date(value);
+      const target = date.getTime();
+      if (Number.isNaN(target)) return String(value);
+      const diffMs = Math.max(0, Date.now() - target);
+      const minutes = Math.floor(diffMs / 60000);
+      if (minutes <= 1) return "a few moments ago";
+      return `${minutes} min ago`;
+    };
+
 	  const formatIdleMinutes = (entry: any) => {
 	    void userActivityNowTick;
 	    const rawMinutes =
@@ -17381,9 +17392,11 @@ export default function App() {
                 </p>
 	                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
 	                  {salesDoctorDetail.orders.map((order) => (
-	                    <div
+	                    <button
 	                      key={order.id}
-	                      className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
+	                      type="button"
+	                      onClick={() => openSalesOrderDetails(order)}
+	                      className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
 	                    >
 	                      <div className="min-w-0 text-sm text-slate-700">
 	                        <div className="flex items-center gap-2 min-w-0">
@@ -17403,7 +17416,7 @@ export default function App() {
 	                      <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
 	                        {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
 	                      </div>
-	                    </div>
+	                    </button>
 	                  ))}
                   {salesDoctorDetail.orders.length === 0 && (
                     <p className="text-xs text-slate-500">

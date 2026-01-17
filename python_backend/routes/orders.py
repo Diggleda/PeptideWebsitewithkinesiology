@@ -184,7 +184,7 @@ def get_sales_rep_order_detail(order_id: str):
             setattr(err, "status", 403)
             raise err
         sales_rep_id = g.current_user.get("id")
-        return order_service.get_sales_rep_order_detail(order_id, sales_rep_id)
+        return order_service.get_sales_rep_order_detail(order_id, sales_rep_id, token_role=role)
 
     return handle_action(action)
 
