@@ -12004,9 +12004,9 @@ export default function App() {
 	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
 	              <div className="flex flex-col gap-2">
 	                <div>
-	                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
+	                  <h4 className="text-base font-semibold text-slate-900">Clients</h4>
 	                  <p className="text-sm text-slate-600">
-	                    Your doctors currently online or idle.
+	                    Your doctors (online, idle, and offline).
 	                  </p>
 	                </div>
 	
@@ -12022,7 +12022,7 @@ export default function App() {
 	                  </div>
 	                ) : liveClients.length === 0 ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
-	                    No clients are online right now.
+	                    No clients found.
 	                  </div>
 	                ) : (
 	                  <div className="sales-rep-table-wrapper live-users-scroll">
@@ -12030,8 +12030,30 @@ export default function App() {
 	                      {liveClients.map((entry: any) => {
 	                        const avatarUrl = entry.profileImageUrl || null;
 	                        const displayName = entry.name || entry.email || "Doctor";
-	                        const showIdle = Boolean(entry.isIdle);
+	                        const isOnlineNow = Boolean(entry.isOnline);
+	                        const showIdle = isOnlineNow && Boolean(entry.isIdle);
 	                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
+	                        const offlineLabel = !isOnlineNow
+	                          ? (() => {
+	                              const raw =
+	                                entry?.lastSeenAt ||
+	                                entry?.lastInteractionAt ||
+	                                entry?.lastLoginAt ||
+	                                null;
+	                              if (!raw) return null;
+	                              const parsed = new Date(raw).getTime();
+	                              if (!Number.isFinite(parsed)) return null;
+	                              const minutes = Math.max(
+	                                0,
+	                                Math.floor((Date.now() - parsed) / 60000),
+	                              );
+	                              if (minutes < 1) return "<1min";
+	                              if (minutes < 60) return `${minutes}min`;
+	                              const hours = Math.floor(minutes / 60);
+	                              const rem = minutes % 60;
+	                              return rem ? `${hours}h ${rem}m` : `${hours}h`;
+	                            })()
+	                          : null;
 	                        return (
 	                          <div
 	                            key={entry.id}
@@ -12068,17 +12090,21 @@ export default function App() {
 	                            <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
 	                              <span
 	                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-	                                  showIdle
+	                                  !isOnlineNow
+	                                    ? "bg-slate-50 text-slate-500"
+	                                    : showIdle
 	                                    ? "bg-slate-100 text-slate-600"
 	                                    : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
 	                                }`}
 	                              >
-	                                {showIdle
-	                                  ? `Idle${idleLabel ? ` (${idleLabel})` : ""}`
-	                                  : "Online"}
+	                                {!isOnlineNow
+	                                  ? `Offline${offlineLabel ? ` (${offlineLabel})` : ""}`
+	                                  : showIdle
+	                                    ? `Idle${idleLabel ? ` (${idleLabel})` : ""}`
+	                                    : "Online"}
 	                              </span>
 	                              <div className="text-xs text-slate-600 whitespace-nowrap">
-	                                {formatOnlineDuration(entry.lastLoginAt)}
+	                                {isOnlineNow ? formatOnlineDuration(entry.lastLoginAt) : "—"}
 	                              </div>
 	                            </div>
 	                          </div>

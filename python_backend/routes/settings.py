@@ -309,7 +309,7 @@ def get_live_clients():
                 candidate_doctors.append(user)
 
         now_epoch = time.time()
-        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 120)
+        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
         online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
         idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
         idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
@@ -324,8 +324,6 @@ def get_live_clients():
                 idle_threshold_s=idle_threshold_s,
                 presence=presence,
             )
-            if not snapshot.get("isOnline"):
-                continue
             clients.append(
                 {
                     "id": user.get("id"),
@@ -337,10 +335,12 @@ def get_live_clients():
                 }
             )
 
-        # Sort non-idle first, then by name/email.
+        # Sort online+active, online+idle, then offline.
         clients.sort(
             key=lambda entry: (
-                1 if bool(entry.get("isIdle")) else 0,
+                0 if bool(entry.get("isOnline")) and not bool(entry.get("isIdle"))
+                else 1 if bool(entry.get("isOnline"))
+                else 2,
                 str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower(),
             )
         )
@@ -669,7 +669,7 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
     cutoff = datetime.now(timezone.utc) - _window_delta(window_key)
     presence = presence_service.snapshot()
     # "Online right now" should reflect recent heartbeats (not a 45-minute window).
-    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 120)
+    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
     online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
     # Match the frontend's default idle threshold (10 minutes), but keep it configurable.
     idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
