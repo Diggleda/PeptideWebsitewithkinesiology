@@ -1365,6 +1365,25 @@ export const ordersAPI = {
     });
   },
 
+  updateOrderFields: async (
+    orderId: string | number,
+    payload: {
+      trackingNumber?: string | null;
+      shippingCarrier?: string | null;
+      shippingService?: string | null;
+      status?: string | null;
+      expectedShipmentWindow?: string | null;
+    },
+  ) => {
+    if (!orderId) {
+      throw new Error('orderId is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/orders/${encodeURIComponent(String(orderId))}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
   downloadInvoice: async (orderId: string | number) => {
     if (!orderId) {
       throw new Error('orderId is required');

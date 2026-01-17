@@ -485,6 +485,7 @@ def create_order(
     normalized_referral = (referral_code or "").strip().upper() or None
     if test_override:
         normalized_referral = None
+    referral_effects: Dict = {}
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
@@ -995,6 +996,20 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         if local_order.get("notes") is not None:
             order["notes"] = local_order.get("notes")
 
+        if local_order.get("trackingNumber") is not None:
+            order["trackingNumber"] = local_order.get("trackingNumber")
+
+        if local_order.get("shippingCarrier") is not None:
+            order["shippingCarrier"] = local_order.get("shippingCarrier")
+            order.setdefault("shippingEstimate", {})
+            if isinstance(order.get("shippingEstimate"), dict):
+                order["shippingEstimate"]["carrierId"] = local_order.get("shippingCarrier")
+        if local_order.get("shippingService") is not None:
+            order["shippingService"] = local_order.get("shippingService")
+            order.setdefault("shippingEstimate", {})
+            if isinstance(order.get("shippingEstimate"), dict):
+                order["shippingEstimate"]["serviceType"] = local_order.get("shippingService")
+
         if local_order.get("items") and not order.get("lineItems"):
             order["lineItems"] = local_order.get("items")
 
@@ -1066,6 +1081,94 @@ def update_order_notes(*, order_id: str, actor: Dict, notes: Optional[str]) -> D
             raise _service_error("ORDER_NOT_FOUND", 404)
 
     updated = {**local_order, "notes": text, "updatedAt": datetime.now(timezone.utc).isoformat()}
+    saved = order_repository.update(updated) or updated
+    return {"order": saved}
+
+
+def update_order_fields(
+    *,
+    order_id: str,
+    actor: Dict,
+    tracking_number: Optional[str] = None,
+    shipping_carrier: Optional[str] = None,
+    shipping_service: Optional[str] = None,
+    status: Optional[str] = None,
+    expected_shipment_window: Optional[str] = None,
+) -> Dict:
+    """
+    Update local order fields for display in the app (PepPro-local metadata).
+
+    Allowed:
+    - admin
+    - sales_rep/rep for orders belonging to their assigned doctors
+    """
+    if not order_id:
+        raise _service_error("ORDER_ID_REQUIRED", 400)
+    actor_role = str(actor.get("role") or "").strip().lower()
+    if actor_role not in ("admin", "sales_rep", "rep"):
+        raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
+
+    def _sanitize_optional_text(value: Optional[str], *, max_len: int) -> Optional[str]:
+        if value is None:
+            return None
+        candidate = str(value).replace("\x00", "").strip()
+        candidate = candidate[:max_len]
+        return candidate or None
+
+    tracking = _sanitize_optional_text(tracking_number, max_len=64)
+    carrier = _sanitize_optional_text(shipping_carrier, max_len=64)
+    service = _sanitize_optional_text(shipping_service, max_len=128)
+    status_value = _sanitize_optional_text(status, max_len=32)
+    expected_window = _sanitize_optional_text(expected_shipment_window, max_len=64)
+
+    local_order = _find_order_by_woo_id(order_id) or order_repository.find_by_id(str(order_id))
+    if not local_order:
+        raise _service_error("ORDER_NOT_FOUND", 404)
+
+    if actor_role != "admin":
+        users = user_repository.get_all()
+        rep_records = {
+            str(rep.get("id")): rep
+            for rep in sales_rep_repository.get_all()
+            if isinstance(rep, dict) and rep.get("id") is not None
+        }
+        allowed_rep_ids = _compute_allowed_sales_rep_ids(str(actor.get("id") or ""), users, rep_records)
+
+        doctor_id = str(local_order.get("userId") or local_order.get("user_id") or "").strip()
+        doctor = user_repository.find_by_id(doctor_id) if doctor_id else None
+        doctor_rep_id = str((doctor or {}).get("salesRepId") or (doctor or {}).get("sales_rep_id") or "").strip()
+        order_rep_id = str(
+            local_order.get("doctorSalesRepId")
+            or local_order.get("salesRepId")
+            or local_order.get("sales_rep_id")
+            or local_order.get("doctor_sales_rep_id")
+            or ""
+        ).strip()
+
+        if (doctor_rep_id and doctor_rep_id not in allowed_rep_ids) and (order_rep_id and order_rep_id not in allowed_rep_ids):
+            raise _service_error("ORDER_NOT_FOUND", 404)
+
+    updated = dict(local_order)
+    if tracking_number is not None:
+        updated["trackingNumber"] = tracking
+    if shipping_carrier is not None:
+        updated["shippingCarrier"] = carrier
+    if shipping_service is not None:
+        updated["shippingService"] = service
+    if status is not None:
+        updated["status"] = status_value or updated.get("status") or "pending"
+    if expected_shipment_window is not None:
+        updated["expectedShipmentWindow"] = expected_window
+
+    if shipping_carrier is not None or shipping_service is not None:
+        estimate = _ensure_dict(updated.get("shippingEstimate"))
+        if shipping_carrier is not None:
+            estimate["carrierId"] = carrier
+        if shipping_service is not None:
+            estimate["serviceType"] = service
+        updated["shippingEstimate"] = estimate
+
+    updated["updatedAt"] = datetime.now(timezone.utc).isoformat()
     saved = order_repository.update(updated) or updated
     return {"order": saved}
 
@@ -1729,8 +1832,21 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
             local_order = order_repository.find_by_id(str(peppro_order_id))
         if not local_order:
             local_order = _find_order_by_woo_id(str(mapped.get("wooOrderId") or mapped.get("id") or mapped.get("wooOrderNumber") or "")) or None
-        if local_order and local_order.get("notes") is not None:
-            mapped["notes"] = local_order.get("notes")
+        if local_order:
+            if local_order.get("notes") is not None:
+                mapped["notes"] = local_order.get("notes")
+            if local_order.get("trackingNumber") is not None:
+                mapped["trackingNumber"] = local_order.get("trackingNumber")
+            if local_order.get("shippingCarrier") is not None:
+                mapped["shippingCarrier"] = local_order.get("shippingCarrier")
+                mapped.setdefault("shippingEstimate", {})
+                if isinstance(mapped.get("shippingEstimate"), dict):
+                    mapped["shippingEstimate"]["carrierId"] = local_order.get("shippingCarrier")
+            if local_order.get("shippingService") is not None:
+                mapped["shippingService"] = local_order.get("shippingService")
+                mapped.setdefault("shippingEstimate", {})
+                if isinstance(mapped.get("shippingEstimate"), dict):
+                    mapped["shippingEstimate"]["serviceType"] = local_order.get("shippingService")
     except Exception:
         pass
     try:

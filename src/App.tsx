@@ -298,6 +298,8 @@ interface AccountOrderSummary {
   id: string;
   number?: string | null;
   trackingNumber?: string | null;
+  shippingCarrier?: string | null;
+  shippingService?: string | null;
   status?: string | null;
   currency?: string | null;
   total?: number | null;
@@ -4643,6 +4645,77 @@ export default function App() {
 	    }
 	    return normalized;
 	  }, []);
+
+	  type SalesOrderEditableFields = {
+	    trackingNumber: string;
+	    shippingCarrier: string;
+	    shippingService: string;
+	    status: string;
+	    expectedShipmentWindow: string;
+	  };
+
+	  const deriveSalesOrderEditableFields = useCallback(
+	    (order: AccountOrderSummary | null): SalesOrderEditableFields => {
+	      const trackingResolved = order ? resolveTrackingNumber(order as any) : null;
+	      const trackingDirect =
+	        order && typeof (order as any)?.trackingNumber === "string"
+	          ? String((order as any).trackingNumber).trim()
+	          : "";
+	      const carrier =
+	        (order && typeof (order as any)?.shippingCarrier === "string"
+	          ? String((order as any).shippingCarrier)
+	          : "") ||
+	        (order && typeof (order.shippingEstimate as any)?.carrierId === "string"
+	          ? String((order.shippingEstimate as any).carrierId)
+	          : "") ||
+	        "";
+	      const service =
+	        (order && typeof (order as any)?.shippingService === "string"
+	          ? String((order as any).shippingService)
+	          : "") ||
+	        (order && typeof (order.shippingEstimate as any)?.serviceType === "string"
+	          ? String((order.shippingEstimate as any).serviceType)
+	          : "") ||
+	        "";
+	      const status = order && typeof order.status === "string" ? String(order.status) : "";
+	      const expected =
+	        order && typeof (order as any)?.expectedShipmentWindow === "string"
+	          ? String((order as any).expectedShipmentWindow)
+	          : "";
+	      return {
+	        trackingNumber: (trackingDirect || trackingResolved || "").toString().trim(),
+	        shippingCarrier: carrier.toString().trim(),
+	        shippingService: service.toString().trim(),
+	        status: status.toString().trim(),
+	        expectedShipmentWindow: expected.toString().trim(),
+	      };
+	    },
+	    [],
+	  );
+
+	  const normalizeEditableField = (value: unknown): string | null => {
+	    const trimmed = String(value || "").trim();
+	    return trimmed.length ? trimmed : null;
+	  };
+
+	  const [salesOrderFieldsDraft, setSalesOrderFieldsDraft] =
+	    useState<SalesOrderEditableFields>({
+	      trackingNumber: "",
+	      shippingCarrier: "",
+	      shippingService: "",
+	      status: "",
+	      expectedShipmentWindow: "",
+	    });
+	  const [salesOrderFieldsSaved, setSalesOrderFieldsSaved] =
+	    useState<SalesOrderEditableFields>({
+	      trackingNumber: "",
+	      shippingCarrier: "",
+	      shippingService: "",
+	      status: "",
+	      expectedShipmentWindow: "",
+	    });
+	  const [salesOrderFieldsSaving, setSalesOrderFieldsSaving] = useState(false);
+	  const salesOrderFieldsInitializedForRef = useRef<string | null>(null);
   const [salesOrderDetail, setSalesOrderDetail] =
     useState<AccountOrderSummary | null>(null);
   const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
@@ -4918,17 +4991,18 @@ export default function App() {
   useEffect(() => {
     salesTrackingOrdersRef.current = salesTrackingOrders;
   }, [salesTrackingOrders]);
-  const openSalesOrderDetails = useCallback(
-    async (order: AccountOrderSummary) => {
-      setSalesOrderDetail(order);
-      setSalesOrderNotesDraft(
-        typeof (order as any)?.notes === "string" ? String((order as any).notes) : "",
-      );
-      setSalesOrderDetailLoading(true);
-      try {
-        const detail = await ordersAPI.getSalesRepOrderDetail(
-          order.wooOrderId || order.id || order.number || "",
-          (order as any)?.doctorEmail ||
+	  const openSalesOrderDetails = useCallback(
+	    async (order: AccountOrderSummary) => {
+	      setSalesOrderDetail(order);
+	      setSalesOrderNotesDraft(
+	        typeof (order as any)?.notes === "string" ? String((order as any).notes) : "",
+	      );
+	      salesOrderFieldsInitializedForRef.current = null;
+	      setSalesOrderDetailLoading(true);
+	      try {
+	        const detail = await ordersAPI.getSalesRepOrderDetail(
+	          order.wooOrderId || order.id || order.number || "",
+	          (order as any)?.doctorEmail ||
             (order as any)?.doctor_email ||
             (order as any)?.doctorId ||
             resolveOrderDoctorId(order) ||
@@ -4938,24 +5012,30 @@ export default function App() {
           { woo: Array.isArray(detail) ? detail : [detail] },
           { includeCanceled: true },
         );
-        if (normalized && normalized.length > 0) {
-          const enriched = normalized[0];
-          setSalesOrderDetail(enriched);
-          setSalesOrderNotesDraft(
-            typeof (enriched as any)?.notes === "string"
-              ? String((enriched as any).notes)
-              : "",
-          );
-          mergeSalesOrderDetail(enriched);
-        } else if (detail && typeof detail === "object") {
-          const enriched = detail as AccountOrderSummary;
-          setSalesOrderDetail(enriched);
-          setSalesOrderNotesDraft(
-            typeof (enriched as any)?.notes === "string"
-              ? String((enriched as any).notes)
-              : "",
-          );
-          mergeSalesOrderDetail(enriched);
+	        if (normalized && normalized.length > 0) {
+	          const enriched = normalized[0];
+	          setSalesOrderDetail(enriched);
+	          const derived = deriveSalesOrderEditableFields(enriched);
+	          setSalesOrderFieldsSaved(derived);
+	          setSalesOrderFieldsDraft(derived);
+	          setSalesOrderNotesDraft(
+	            typeof (enriched as any)?.notes === "string"
+	              ? String((enriched as any).notes)
+	              : "",
+	          );
+	          mergeSalesOrderDetail(enriched);
+	        } else if (detail && typeof detail === "object") {
+	          const enriched = detail as AccountOrderSummary;
+	          setSalesOrderDetail(enriched);
+	          const derived = deriveSalesOrderEditableFields(enriched);
+	          setSalesOrderFieldsSaved(derived);
+	          setSalesOrderFieldsDraft(derived);
+	          setSalesOrderNotesDraft(
+	            typeof (enriched as any)?.notes === "string"
+	              ? String((enriched as any).notes)
+	              : "",
+	          );
+	          mergeSalesOrderDetail(enriched);
         }
       } catch (error: any) {
         console.error("[Sales Tracking] Failed to fetch order detail", error);
@@ -4967,26 +5047,60 @@ export default function App() {
       } finally {
         setSalesOrderDetailLoading(false);
       }
-    },
-    [mergeSalesOrderDetail],
-  );
+	    },
+	    [deriveSalesOrderEditableFields, mergeSalesOrderDetail],
+	  );
 
-  useEffect(() => {
-    if (!salesOrderDetail) {
-      setSalesOrderNotesDraft("");
-      return;
-    }
-    setSalesOrderNotesDraft(
-      typeof (salesOrderDetail as any)?.notes === "string"
-        ? String((salesOrderDetail as any).notes)
-        : "",
-    );
-  }, [salesOrderDetail?.id]);
+	  useEffect(() => {
+	    if (!salesOrderDetail) {
+	      setSalesOrderNotesDraft("");
+	      setSalesOrderFieldsSaved({
+	        trackingNumber: "",
+	        shippingCarrier: "",
+	        shippingService: "",
+	        status: "",
+	        expectedShipmentWindow: "",
+	      });
+	      setSalesOrderFieldsDraft({
+	        trackingNumber: "",
+	        shippingCarrier: "",
+	        shippingService: "",
+	        status: "",
+	        expectedShipmentWindow: "",
+	      });
+	      salesOrderFieldsInitializedForRef.current = null;
+	      return;
+	    }
+	    setSalesOrderNotesDraft(
+	      typeof (salesOrderDetail as any)?.notes === "string"
+	        ? String((salesOrderDetail as any).notes)
+	        : "",
+	    );
+	  }, [salesOrderDetail?.id]);
 
-  const handleSaveSalesOrderNotes = useCallback(async () => {
-    if (!salesOrderDetail) {
-      return;
-    }
+	  useEffect(() => {
+	    if (!salesOrderDetail || salesOrderDetailLoading) {
+	      return;
+	    }
+	    const key = String(
+	      salesOrderDetail.wooOrderId || salesOrderDetail.id || salesOrderDetail.number || "",
+	    );
+	    if (!key) {
+	      return;
+	    }
+	    if (salesOrderFieldsInitializedForRef.current === key) {
+	      return;
+	    }
+	    const derived = deriveSalesOrderEditableFields(salesOrderDetail);
+	    setSalesOrderFieldsSaved(derived);
+	    setSalesOrderFieldsDraft(derived);
+	    salesOrderFieldsInitializedForRef.current = key;
+	  }, [deriveSalesOrderEditableFields, salesOrderDetail, salesOrderDetailLoading]);
+
+	  const handleSaveSalesOrderNotes = useCallback(async () => {
+	    if (!salesOrderDetail) {
+	      return;
+	    }
     if (!user?.role || (!isRep(user.role) && !isAdmin(user.role))) {
       toast.error("You don't have permission to edit order notes.");
       return;
@@ -5022,14 +5136,123 @@ export default function App() {
     } finally {
       setSalesOrderNotesSaving(false);
     }
-  }, [
-    mergeSalesOrderDetail,
-    normalizeNotesValue,
-    salesOrderDetail,
-    salesOrderNotesDraft,
-    salesOrderNotesSaving,
-    user?.role,
-  ]);
+	  }, [
+	    mergeSalesOrderDetail,
+	    normalizeNotesValue,
+	    salesOrderDetail,
+	    salesOrderNotesDraft,
+	    salesOrderNotesSaving,
+	    user?.role,
+	  ]);
+
+	  const handleSaveSalesOrderFields = useCallback(async () => {
+	    if (!salesOrderDetail) {
+	      return;
+	    }
+	    if (!user?.role || (!isRep(user.role) && !isAdmin(user.role))) {
+	      toast.error("You don't have permission to edit this order.");
+	      return;
+	    }
+	    if (salesOrderFieldsSaving) {
+	      return;
+	    }
+	    const orderKey =
+	      salesOrderDetail.wooOrderId || salesOrderDetail.id || salesOrderDetail.number || "";
+	    if (!orderKey) {
+	      toast.error("Unable to identify this order.");
+	      return;
+	    }
+
+	    const payload: Record<string, string | null> = {};
+	    const fields: Array<keyof SalesOrderEditableFields> = [
+	      "trackingNumber",
+	      "shippingCarrier",
+	      "shippingService",
+	      "status",
+	      "expectedShipmentWindow",
+	    ];
+	    for (const field of fields) {
+	      const draftValue = normalizeEditableField(salesOrderFieldsDraft[field]);
+	      const savedValue = normalizeEditableField(salesOrderFieldsSaved[field]);
+	      if (draftValue !== savedValue) {
+	        payload[field] = draftValue;
+	      }
+	    }
+
+	    if (Object.keys(payload).length === 0) {
+	      toast("No changes to save.");
+	      return;
+	    }
+
+	    setSalesOrderFieldsSaving(true);
+	    try {
+	      const response = (await ordersAPI.updateOrderFields(orderKey, payload as any)) as any;
+	      const updatedOrder = (response && typeof response === "object" && response.order) || null;
+
+	      setSalesOrderDetail((prev) => {
+	        if (!prev) return prev;
+	        const patch: any = {};
+	        if (updatedOrder && typeof updatedOrder === "object") {
+	          if ("trackingNumber" in updatedOrder) patch.trackingNumber = updatedOrder.trackingNumber ?? null;
+	          if ("shippingCarrier" in updatedOrder) patch.shippingCarrier = updatedOrder.shippingCarrier ?? null;
+	          if ("shippingService" in updatedOrder) patch.shippingService = updatedOrder.shippingService ?? null;
+	          if ("status" in updatedOrder) patch.status = updatedOrder.status ?? null;
+	          if ("expectedShipmentWindow" in updatedOrder) {
+	            patch.expectedShipmentWindow = updatedOrder.expectedShipmentWindow ?? null;
+	          }
+	          if (updatedOrder.shippingEstimate) patch.shippingEstimate = updatedOrder.shippingEstimate;
+	          if (updatedOrder.updatedAt) patch.updatedAt = updatedOrder.updatedAt;
+	        } else {
+	          if ("trackingNumber" in payload) patch.trackingNumber = payload.trackingNumber;
+	          if ("shippingCarrier" in payload) patch.shippingCarrier = payload.shippingCarrier;
+	          if ("shippingService" in payload) patch.shippingService = payload.shippingService;
+	          if ("status" in payload) patch.status = payload.status;
+	          if ("expectedShipmentWindow" in payload) patch.expectedShipmentWindow = payload.expectedShipmentWindow;
+	        }
+	        const next = { ...prev, ...patch };
+	        mergeSalesOrderDetail(next);
+	        return next;
+	      });
+
+	      setSalesOrderFieldsSaved((prevSaved) => {
+	        const nextSaved = { ...prevSaved };
+	        for (const field of fields) {
+	          if (field in payload) {
+	            nextSaved[field] = normalizeEditableField((payload as any)[field]) || "";
+	          }
+	        }
+	        return nextSaved;
+	      });
+	      setSalesOrderFieldsDraft((prevDraft) => {
+	        const nextDraft = { ...prevDraft };
+	        for (const field of fields) {
+	          if (field in payload) {
+	            nextDraft[field] = normalizeEditableField((payload as any)[field]) || "";
+	          }
+	        }
+	        return nextDraft;
+	      });
+
+	      toast.success("Order updated.");
+	    } catch (error: any) {
+	      console.warn("[Orders] Failed to update order fields", error);
+	      toast.error(
+	        typeof error?.message === "string" && error.message
+	          ? error.message
+	          : "Unable to update the order right now.",
+	      );
+	    } finally {
+	      setSalesOrderFieldsSaving(false);
+	    }
+	  }, [
+	    deriveSalesOrderEditableFields,
+	    mergeSalesOrderDetail,
+	    salesOrderDetail,
+	    salesOrderFieldsDraft,
+	    salesOrderFieldsSaved,
+	    salesOrderFieldsSaving,
+	    user?.role,
+	  ]);
 
   const shouldCountRevenueForStatus = (status?: string | null) => {
     const normalized = String(status || "").toLowerCase().trim();
@@ -17443,6 +17666,7 @@ export default function App() {
           if (!open) {
             setSalesOrderDetail(null);
             setSalesOrderDetailLoading(false);
+            salesOrderFieldsInitializedForRef.current = null;
           }
         }}
       >
@@ -17654,12 +17878,12 @@ export default function App() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <h4 className="text-base font-semibold text-slate-900">
-                          Shipping Information
-                        </h4>
-                        {renderAddressLines(shippingAddress)}
-                        <div className="text-sm text-slate-700 space-y-1">
+	                      <div className="space-y-2">
+	                        <h4 className="text-base font-semibold text-slate-900">
+	                          Shipping Information
+	                        </h4>
+	                        {renderAddressLines(shippingAddress)}
+	                        <div className="text-sm text-slate-700 space-y-1">
                           {shippingServiceLabel && (
                             <p>
                               <span className="font-semibold">Service:</span>{" "}
@@ -17696,14 +17920,163 @@ export default function App() {
                               {expectedDelivery}
                             </p>
                           )}
-                          {showExpectedShipmentWindow && (
-                            <p>
-                              <span className="font-semibold">Estimated ship window:</span>{" "}
-                              {expectedShipmentWindow}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+	                          {showExpectedShipmentWindow && (
+	                            <p>
+	                              <span className="font-semibold">Estimated ship window:</span>{" "}
+	                              {expectedShipmentWindow}
+	                            </p>
+	                          )}
+	                        </div>
+
+	                        {(() => {
+	                          const canEdit = Boolean(
+	                            user?.role && (isRep(user.role) || isAdmin(user.role)),
+	                          );
+	                          const normalize = (value: string) => (value || "").trim();
+	                          const dirty =
+	                            normalize(salesOrderFieldsDraft.trackingNumber) !==
+	                              normalize(salesOrderFieldsSaved.trackingNumber) ||
+	                            normalize(salesOrderFieldsDraft.shippingCarrier) !==
+	                              normalize(salesOrderFieldsSaved.shippingCarrier) ||
+	                            normalize(salesOrderFieldsDraft.shippingService) !==
+	                              normalize(salesOrderFieldsSaved.shippingService) ||
+	                            normalize(salesOrderFieldsDraft.status) !== normalize(salesOrderFieldsSaved.status) ||
+	                            normalize(salesOrderFieldsDraft.expectedShipmentWindow) !==
+	                              normalize(salesOrderFieldsSaved.expectedShipmentWindow);
+	                          if (!canEdit) return null;
+	                          return (
+	                            <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+	                              <div className="flex items-center justify-between gap-3">
+	                                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
+	                                  Edit (PepPro)
+	                                </p>
+	                                <p className="text-[11px] text-slate-500">
+	                                  {dirty ? "Unsaved changes" : "Saved"}
+	                                </p>
+	                              </div>
+	                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+	                                <label className="text-xs text-slate-600">
+	                                  Tracking number
+	                                  <input
+	                                    value={salesOrderFieldsDraft.trackingNumber}
+	                                    onChange={(e) =>
+	                                      setSalesOrderFieldsDraft((prev) => ({
+	                                        ...prev,
+	                                        trackingNumber: e.target.value,
+	                                      }))
+	                                    }
+	                                    placeholder="Enter tracking…"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                                    disabled={salesOrderFieldsSaving}
+	                                  />
+	                                </label>
+	                                <label className="text-xs text-slate-600">
+	                                  Status
+	                                  <input
+	                                    list="peppro-order-status-options"
+	                                    value={salesOrderFieldsDraft.status}
+	                                    onChange={(e) =>
+	                                      setSalesOrderFieldsDraft((prev) => ({
+	                                        ...prev,
+	                                        status: e.target.value,
+	                                      }))
+	                                    }
+	                                    placeholder="processing / shipped / delivered…"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                                    disabled={salesOrderFieldsSaving}
+	                                  />
+	                                </label>
+	                                <label className="text-xs text-slate-600">
+	                                  Carrier
+	                                  <input
+	                                    list="peppro-order-carrier-options"
+	                                    value={salesOrderFieldsDraft.shippingCarrier}
+	                                    onChange={(e) =>
+	                                      setSalesOrderFieldsDraft((prev) => ({
+	                                        ...prev,
+	                                        shippingCarrier: e.target.value,
+	                                      }))
+	                                    }
+	                                    placeholder="UPS / USPS / FedEx…"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                                    disabled={salesOrderFieldsSaving}
+	                                  />
+	                                </label>
+	                                <label className="text-xs text-slate-600">
+	                                  Service
+	                                  <input
+	                                    value={salesOrderFieldsDraft.shippingService}
+	                                    onChange={(e) =>
+	                                      setSalesOrderFieldsDraft((prev) => ({
+	                                        ...prev,
+	                                        shippingService: e.target.value,
+	                                      }))
+	                                    }
+	                                    placeholder="Ground / 2 Day…"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                                    disabled={salesOrderFieldsSaving}
+	                                  />
+	                                </label>
+	                                <label className="text-xs text-slate-600 sm:col-span-2">
+	                                  Estimated ship window
+	                                  <input
+	                                    value={salesOrderFieldsDraft.expectedShipmentWindow}
+	                                    onChange={(e) =>
+	                                      setSalesOrderFieldsDraft((prev) => ({
+	                                        ...prev,
+	                                        expectedShipmentWindow: e.target.value,
+	                                      }))
+	                                    }
+	                                    placeholder="e.g., Ships in 1–2 business days"
+	                                    className="mt-1 w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm text-slate-800 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                                    disabled={salesOrderFieldsSaving}
+	                                  />
+	                                </label>
+	                              </div>
+	                              <div className="flex items-center justify-end gap-3">
+	                                <Button
+	                                  type="button"
+	                                  variant="outline"
+	                                  onClick={() => {
+	                                    setSalesOrderFieldsDraft(salesOrderFieldsSaved);
+	                                  }}
+	                                  disabled={salesOrderFieldsSaving || !dirty}
+	                                >
+	                                  Reset
+	                                </Button>
+	                                <Button
+	                                  type="button"
+	                                  onClick={handleSaveSalesOrderFields}
+	                                  disabled={salesOrderFieldsSaving || !dirty}
+	                                  className="gap-2"
+	                                >
+	                                  {salesOrderFieldsSaving ? "Saving…" : "Save"}
+	                                </Button>
+	                              </div>
+	                              <datalist id="peppro-order-status-options">
+	                                <option value="processing" />
+	                                <option value="awaiting_shipment" />
+	                                <option value="shipped" />
+	                                <option value="in_transit" />
+	                                <option value="out_for_delivery" />
+	                                <option value="delivered" />
+	                                <option value="completed" />
+	                                <option value="cancelled" />
+	                                <option value="refunded" />
+	                              </datalist>
+	                              <datalist id="peppro-order-carrier-options">
+	                                <option value="ups" />
+	                                <option value="usps" />
+	                                <option value="fedex" />
+	                                <option value="dhl" />
+	                              </datalist>
+	                              <p className="text-[11px] text-slate-500">
+	                                Updates are saved in PepPro for display; this does not push changes to WooCommerce/ShipStation.
+	                              </p>
+	                            </div>
+	                          );
+	                        })()}
+	                      </div>
                       <div className="space-y-2">
                         <h4 className="text-base font-semibold text-slate-900">
                           Billing Information

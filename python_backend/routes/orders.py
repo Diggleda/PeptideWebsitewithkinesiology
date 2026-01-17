@@ -273,6 +273,32 @@ def update_order_notes(order_id: str):
     return handle_action(action)
 
 
+@blueprint.patch("/<order_id>")
+@require_auth
+def patch_order(order_id: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        actor = g.current_user or {}
+        role = (actor.get("role") or "").lower()
+        if role not in ("admin", "sales_rep", "rep"):
+            err = ValueError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
+
+        return order_service.update_order_fields(
+            order_id=str(order_id),
+            actor=actor,
+            tracking_number=payload.get("trackingNumber") if "trackingNumber" in payload else None,
+            shipping_carrier=payload.get("shippingCarrier") if "shippingCarrier" in payload else None,
+            shipping_service=payload.get("shippingService") if "shippingService" in payload else None,
+            status=payload.get("status") if "status" in payload else None,
+            expected_shipment_window=payload.get("expectedShipmentWindow") if "expectedShipmentWindow" in payload else None,
+        )
+
+    return handle_action(action)
+
+
 @blueprint.get("/<order_id>/invoice")
 @require_auth
 def download_invoice(order_id: str) -> Response:
