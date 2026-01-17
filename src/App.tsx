@@ -5760,24 +5760,30 @@ export default function App() {
 	  const [liveClients, setLiveClients] = useState<any[]>([]);
 	  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
 	  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
+	  const liveClientsEtagRef = useRef<string | null>(null);
+	  const liveClientsLongPollDisabledRef = useRef(false);
 
 	  useEffect(() => {
 	    if (!isRep(user?.role)) {
 	      setLiveClients([]);
 	      setLiveClientsLoading(false);
 	      setLiveClientsError(null);
+	      liveClientsEtagRef.current = null;
+	      liveClientsLongPollDisabledRef.current = false;
 	      return;
 	    }
 
 	    let cancelled = false;
-	    let timer: ReturnType<typeof window.setInterval> | null = null;
+	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
 
-	    const fetchLiveClients = async () => {
+	    const fetchOnce = async () => {
 	      try {
 	        setLiveClientsLoading(true);
 	        setLiveClientsError(null);
 	        const payload = (await settingsAPI.getLiveClients()) as any;
 	        if (cancelled) return;
+	        liveClientsEtagRef.current =
+	          typeof payload?.etag === "string" ? payload.etag : null;
 	        const clients = Array.isArray(payload?.clients) ? payload.clients : [];
 	        setLiveClients(clients);
 	      } catch (error: any) {
@@ -5786,19 +5792,67 @@ export default function App() {
 	        setLiveClientsError(
 	          typeof error?.message === "string"
 	            ? error.message
-	            : "Unable to load live clients.",
+	            : "Unable to load clients.",
 	        );
 	      } finally {
 	        if (!cancelled) setLiveClientsLoading(false);
 	      }
 	    };
 
-	    void fetchLiveClients();
-	    timer = window.setInterval(fetchLiveClients, 30_000);
+	    const sleep = (ms: number) =>
+	      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+	    const startIntervalFallback = () => {
+	      if (intervalId) return;
+	      void fetchOnce();
+	      intervalId = window.setInterval(() => {
+	        void fetchOnce();
+	      }, 5000);
+	    };
+
+	    const controller = new AbortController();
+	    const runLongPoll = async () => {
+	      if (liveClientsLongPollDisabledRef.current) {
+	        startIntervalFallback();
+	        return;
+	      }
+	      while (!cancelled) {
+	        if (!isPageVisible() || !isOnline()) {
+	          // eslint-disable-next-line no-await-in-loop
+	          await sleep(800);
+	          continue;
+	        }
+	        try {
+	          const payload = (await settingsAPI.getLiveClientsLongPoll(
+	            null,
+	            liveClientsEtagRef.current,
+	            25000,
+	            controller.signal,
+	          )) as any;
+	          if (cancelled) break;
+	          liveClientsEtagRef.current =
+	            typeof payload?.etag === "string" ? payload.etag : null;
+	          const clients = Array.isArray(payload?.clients) ? payload.clients : [];
+	          setLiveClients(clients);
+	        } catch (error: any) {
+	          if (cancelled) break;
+	          if (typeof error?.status === "number" && error.status === 404) {
+	            liveClientsLongPollDisabledRef.current = true;
+	            startIntervalFallback();
+	            return;
+	          }
+	          // eslint-disable-next-line no-await-in-loop
+	          await sleep(1000);
+	        }
+	      }
+	    };
+
+	    void runLongPoll();
 
 	    return () => {
 	      cancelled = true;
-	      if (timer) window.clearInterval(timer);
+	      if (intervalId) window.clearInterval(intervalId);
+	      controller.abort();
 	    };
 	  }, [user?.role, user?.id]);
 
@@ -12074,34 +12128,42 @@ export default function App() {
 	                            key={entry.id}
 	                            className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
 	                          >
-	                            <div className="flex items-center gap-3 min-w-0 flex-1">
-	                              <div
-	                                className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0"
-	                                style={{ width: 34, height: 34, minWidth: 34 }}
-	                              >
-	                                {avatarUrl ? (
-	                                  <img
-	                                    src={avatarUrl}
-	                                    alt={displayName}
-	                                    className="h-full w-full object-cover"
-	                                    loading="lazy"
-	                                    decoding="async"
-	                                  />
-	                                ) : (
-	                                  <span className="text-[11px] font-semibold text-slate-600">
-	                                    {getInitials(displayName)}
-	                                  </span>
-	                                )}
-	                              </div>
-	                              <div className="min-w-0 flex-1">
-	                                <div className="text-sm font-semibold text-slate-800 truncate">
-	                                  {displayName}
+	                            <button
+	                              type="button"
+	                              onClick={() => openLiveUserDetail(entry)}
+	                              aria-label={`Open ${displayName} profile`}
+	                              className="min-w-0 flex-1 overflow-hidden"
+	                              style={{ background: "transparent", border: "none", padding: 0 }}
+	                            >
+	                              <div className="flex items-center gap-3 min-w-0">
+	                                <div
+	                                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
+	                                  style={{ width: 34, height: 34, minWidth: 34 }}
+	                                >
+	                                  {avatarUrl ? (
+	                                    <img
+	                                      src={avatarUrl}
+	                                      alt={displayName}
+	                                      className="h-full w-full object-cover"
+	                                      loading="lazy"
+	                                      decoding="async"
+	                                    />
+	                                  ) : (
+	                                    <span className="text-[11px] font-semibold text-slate-600">
+	                                      {getInitials(displayName)}
+	                                    </span>
+	                                  )}
 	                                </div>
-	                                <div className="text-xs text-slate-500 truncate">
-	                                  {entry.email || "—"}
+	                                <div className="min-w-0 flex-1 text-left">
+	                                  <div className="text-sm font-semibold text-slate-800 truncate">
+	                                    {displayName}
+	                                  </div>
+	                                  <div className="text-xs text-slate-500 truncate">
+	                                    {entry.email || "—"}
+	                                  </div>
 	                                </div>
 	                              </div>
-	                            </div>
+	                            </button>
 	                            <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
 	                              <span
 	                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
@@ -15525,7 +15587,7 @@ export default function App() {
                             !peptideForumError &&
                             peptideForumItems.length === 0 && (
                               <p className="text-xs text-slate-500">
-                                No webinars or recordings posted yet.
+                                Stay tuned! New classes will be scheduled here and on our LinkedIn.
                               </p>
                             )}
                           {!peptideForumLoading &&

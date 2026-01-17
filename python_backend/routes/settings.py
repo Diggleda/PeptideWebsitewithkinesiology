@@ -28,6 +28,12 @@ _USER_ACTIVITY_LONGPOLL_CONCURRENCY = int(os.environ.get("USER_ACTIVITY_LONGPOLL
 _USER_ACTIVITY_LONGPOLL_CONCURRENCY = max(1, min(_USER_ACTIVITY_LONGPOLL_CONCURRENCY, 20))
 _USER_ACTIVITY_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_USER_ACTIVITY_LONGPOLL_CONCURRENCY)
 
+_LIVE_CLIENTS_CACHE_LOCK = threading.Lock()
+_LIVE_CLIENTS_CACHE: dict[str, dict] = {}
+_LIVE_CLIENTS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_CLIENTS_LONGPOLL_CONCURRENCY") or 4)
+_LIVE_CLIENTS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_CLIENTS_LONGPOLL_CONCURRENCY, 20))
+_LIVE_CLIENTS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_CLIENTS_LONGPOLL_CONCURRENCY)
+
 def _is_admin() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
     return role == "admin"
@@ -226,6 +232,128 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
         "onlineMinutes": online_minutes,
     }
 
+def _compute_live_clients_payload(
+    *,
+    target_sales_rep_id: str,
+) -> dict:
+    all_users = user_repository.get_all()
+
+    allowed_rep_ids = _compute_allowed_sales_rep_ids(target_sales_rep_id)
+    prospects = sales_prospect_repository.find_by_sales_rep(target_sales_rep_id)
+    doctor_ids = {
+        str(p.get("doctorId")).strip()
+        for p in (prospects or [])
+        if p and p.get("doctorId")
+    }
+    contact_emails = {
+        str(p.get("contactEmail") or "").strip().lower()
+        for p in (prospects or [])
+        if p and p.get("contactEmail")
+    }
+    contact_emails = {e for e in contact_emails if e and "@" in e}
+
+    candidate_by_id: dict[str, dict] = {}
+    for user in all_users or []:
+        if not isinstance(user, dict):
+            continue
+        user_role = _normalize_role(user.get("role"))
+        if user_role not in ("doctor", "test_doctor"):
+            continue
+        uid = str(user.get("id") or "").strip()
+        if not uid:
+            continue
+        email = str(user.get("email") or "").strip().lower()
+        doctor_sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+        if doctor_sales_rep_id and doctor_sales_rep_id in allowed_rep_ids:
+            candidate_by_id[uid] = user
+            continue
+        if uid in doctor_ids:
+            candidate_by_id[uid] = user
+            continue
+        if email and email in contact_emails:
+            candidate_by_id[uid] = user
+
+    now_epoch = time.time()
+    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
+    online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
+    idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
+    presence = presence_service.snapshot()
+
+    clients = []
+    for user in candidate_by_id.values():
+        snapshot = _compute_presence_snapshot(
+            user,
+            now_epoch=now_epoch,
+            online_threshold_s=online_threshold_s,
+            idle_threshold_s=idle_threshold_s,
+            presence=presence,
+        )
+        clients.append(
+            {
+                "id": user.get("id"),
+                "name": user.get("name") or None,
+                "email": user.get("email") or None,
+                "role": _normalize_role(user.get("role")) or "unknown",
+                "profileImageUrl": user.get("profileImageUrl") or None,
+                **snapshot,
+            }
+        )
+
+    # Sort online+active, online+idle, then offline.
+    clients.sort(
+        key=lambda entry: (
+            0 if bool(entry.get("isOnline")) and not bool(entry.get("isIdle"))
+            else 1 if bool(entry.get("isOnline"))
+            else 2,
+            str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower(),
+        )
+    )
+
+    sig = [
+        {
+            "id": entry.get("id"),
+            "isOnline": bool(entry.get("isOnline")),
+            "isIdle": bool(entry.get("isIdle")),
+            "lastLoginAt": entry.get("lastLoginAt") or None,
+            "lastSeenAt": entry.get("lastSeenAt") or None,
+            "lastInteractionAt": entry.get("lastInteractionAt") or None,
+            "profileImageUrl": entry.get("profileImageUrl") or None,
+        }
+        for entry in clients
+    ]
+    sig.sort(key=lambda entry: str(entry.get("id") or ""))
+    etag = hashlib.sha256(
+        json.dumps({"salesRepId": target_sales_rep_id, "clients": sig}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        "etag": etag,
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "salesRepId": target_sales_rep_id,
+        "clients": clients,
+        "total": len(clients),
+    }
+
+def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
+    now = time.monotonic()
+    ttl_s = float(os.environ.get("LIVE_CLIENTS_CACHE_TTL_SECONDS") or 1.0)
+    ttl_s = max(0.25, min(ttl_s, 5.0))
+
+    cache_key = str(target_sales_rep_id or "").strip()
+    with _LIVE_CLIENTS_CACHE_LOCK:
+        cached = _LIVE_CLIENTS_CACHE.get(cache_key) or {}
+        cached_at = float(cached.get("at") or 0.0)
+        if cached and cached_at > 0 and (now - cached_at) < ttl_s:
+            payload = cached.get("payload")
+            if isinstance(payload, dict):
+                return payload
+
+    payload = _compute_live_clients_payload(target_sales_rep_id=cache_key)
+    with _LIVE_CLIENTS_CACHE_LOCK:
+        _LIVE_CLIENTS_CACHE[cache_key] = {"at": now, "payload": payload}
+    return payload
+
 
 @blueprint.get("/shop")
 def get_shop():
@@ -363,85 +491,61 @@ def get_live_clients():
             setattr(err, "status", 400)
             raise err
 
-        allowed_rep_ids = _compute_allowed_sales_rep_ids(target_sales_rep_id)
-        prospects = sales_prospect_repository.find_by_sales_rep(target_sales_rep_id)
-        doctor_ids = {
-            str(p.get("doctorId")).strip()
-            for p in (prospects or [])
-            if p and p.get("doctorId")
-        }
-        contact_emails = {
-            str(p.get("contactEmail") or "").strip().lower()
-            for p in (prospects or [])
-            if p and p.get("contactEmail")
-        }
-        contact_emails = {e for e in contact_emails if e and "@" in e}
+        return _compute_live_clients_payload(target_sales_rep_id=target_sales_rep_id)
 
-        all_users = user_repository.get_all()
-        candidate_by_id: dict[str, dict] = {}
-        for user in all_users or []:
-            if not isinstance(user, dict):
-                continue
-            user_role = _normalize_role(user.get("role"))
-            if user_role not in ("doctor", "test_doctor"):
-                continue
-            uid = str(user.get("id") or "").strip()
-            if not uid:
-                continue
-            email = str(user.get("email") or "").strip().lower()
-            doctor_sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
-            if doctor_sales_rep_id and doctor_sales_rep_id in allowed_rep_ids:
-                candidate_by_id[uid] = user
-                continue
-            if uid in doctor_ids:
-                candidate_by_id[uid] = user
-                continue
-            if email and email in contact_emails:
-                candidate_by_id[uid] = user
+    return handle_action(action)
 
-        now_epoch = time.time()
-        online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
-        online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
-        idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
-        idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
-        presence = presence_service.snapshot()
+@blueprint.get("/live-clients/longpoll")
+@require_auth
+def longpoll_live_clients():
+    def action():
+        current_user = getattr(g, "current_user", None) or {}
+        role = _normalize_role(current_user.get("role"))
+        if not (_is_admin_role(role) or _is_sales_rep_role(role)):
+            err = RuntimeError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
 
-        clients = []
-        for user in candidate_by_id.values():
-            snapshot = _compute_presence_snapshot(
-                user,
-                now_epoch=now_epoch,
-                online_threshold_s=online_threshold_s,
-                idle_threshold_s=idle_threshold_s,
-                presence=presence,
-            )
-            clients.append(
-                {
-                    "id": user.get("id"),
-                    "name": user.get("name") or None,
-                    "email": user.get("email") or None,
-                    "role": _normalize_role(user.get("role")) or "unknown",
-                    "profileImageUrl": user.get("profileImageUrl") or None,
-                    **snapshot,
-                }
-            )
+        requested_sales_rep_id = request.args.get("salesRepId") if _is_admin_role(role) else None
+        target_sales_rep_id = str(requested_sales_rep_id or current_user.get("id") or "").strip()
+        if not target_sales_rep_id:
+            err = RuntimeError("salesRepId is required")
+            setattr(err, "status", 400)
+            raise err
 
-        # Sort online+active, online+idle, then offline.
-        clients.sort(
-            key=lambda entry: (
-                0 if bool(entry.get("isOnline")) and not bool(entry.get("isIdle"))
-                else 1 if bool(entry.get("isOnline"))
-                else 2,
-                str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower(),
-            )
-        )
+        client_etag = str(request.args.get("etag") or "").strip() or None
+        try:
+            timeout_ms = int(request.args.get("timeoutMs") or 25000)
+        except Exception:
+            timeout_ms = 25000
+        timeout_ms = max(1000, min(timeout_ms, 30000))
 
-        return {
-            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "salesRepId": target_sales_rep_id,
-            "clients": clients,
-            "total": len(clients),
-        }
+        acquired = _LIVE_CLIENTS_LONGPOLL_SEMAPHORE.acquire(blocking=False)
+        if not acquired:
+            return _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+
+        try:
+            started = time.monotonic()
+            payload = _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+            etag = str(payload.get("etag") or "").strip() or None
+            if not etag or etag != client_etag:
+                return payload
+
+            poll_interval_s = float(os.environ.get("LIVE_CLIENTS_LONGPOLL_INTERVAL_SECONDS") or 1.0)
+            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
+            while (time.monotonic() - started) * 1000 < timeout_ms:
+                time.sleep(poll_interval_s)
+                payload = _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+                etag = str(payload.get("etag") or "").strip() or None
+                if not etag or etag != client_etag:
+                    return payload
+
+            return payload
+        finally:
+            try:
+                _LIVE_CLIENTS_LONGPOLL_SEMAPHORE.release()
+            except ValueError:
+                pass
 
     return handle_action(action)
 

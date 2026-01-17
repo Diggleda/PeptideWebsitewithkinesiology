@@ -1013,6 +1013,28 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getLiveClientsLongPoll: async (
+    salesRepId?: string | null,
+    etag?: string | null,
+    timeoutMs: number = 25000,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (salesRepId) {
+      params.set('salesRepId', String(salesRepId));
+    }
+    if (etag) {
+      params.set('etag', String(etag));
+    }
+    if (timeoutMs && Number.isFinite(timeoutMs)) {
+      params.set('timeoutMs', String(Math.max(1000, Math.min(timeoutMs, 30000))));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/live-clients/longpoll${query}`, {
+      method: 'GET',
+      signal,
+    });
+  },
   getAdminUserProfile: async (userId: string | number) => {
     if (!userId) {
       throw new Error('userId is required');
