@@ -88,6 +88,7 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
     last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
     last_seen_dt = _parse_iso_datetime(user.get("lastSeenAt") or None)
     last_interaction_dt = _parse_iso_datetime(user.get("lastInteractionAt") or None)
+    last_logout_dt = _parse_iso_datetime(user.get("lastLogoutAt") or None)
 
     last_seen_epoch = None
     try:
@@ -100,6 +101,12 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
         last_seen_epoch = float(last_seen_dt.timestamp())
 
     derived_online = bool(last_seen_epoch and (now_epoch - float(last_seen_epoch)) <= online_threshold_s)
+    if derived_online and last_logout_dt and last_seen_epoch is not None:
+        try:
+            if float(last_logout_dt.timestamp()) >= float(last_seen_epoch):
+                derived_online = False
+        except Exception:
+            pass
 
     idle_anchor_epoch = None
     try:
@@ -744,6 +751,13 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         elif persisted_seen_dt:
             derived_seen_epoch = float(persisted_seen_dt.timestamp())
         derived_online = bool(derived_seen_epoch and (now_epoch - derived_seen_epoch) <= online_threshold_s)
+        last_logout_dt = _parse_iso_datetime(user.get("lastLogoutAt") or None)
+        if derived_online and last_logout_dt and isinstance(derived_seen_epoch, (int, float)) and derived_seen_epoch > 0:
+            try:
+                if float(last_logout_dt.timestamp()) >= float(derived_seen_epoch):
+                    derived_online = False
+            except Exception:
+                pass
 
         last_login_dt = _parse_iso_datetime(user.get("lastLoginAt") or None)
         session_start_epoch = float(last_login_dt.timestamp()) if last_login_dt else None

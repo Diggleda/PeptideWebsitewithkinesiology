@@ -8,6 +8,7 @@ from ..middleware.auth import require_auth
 from ..repositories import sales_rep_repository, user_repository
 from ..services import get_config
 from ..services import auth_service
+from ..services import presence_service
 from ..utils.http import handle_action
 
 blueprint = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -142,7 +143,12 @@ def logout():
                 "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
             },
         )
-        return auth_service.logout(str(user_id), payload.get("role"))
+        result = auth_service.logout(str(user_id), payload.get("role"))
+        try:
+            presence_service.clear_user(str(user_id))
+        except Exception:
+            pass
+        return result
 
     return handle_action(action)
 

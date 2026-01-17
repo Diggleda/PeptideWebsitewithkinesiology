@@ -44,6 +44,15 @@ def snapshot() -> Dict[str, Dict[str, object]]:
     with _LOCK:
         return {k: dict(v) for k, v in _PRESENCE.items()}
 
+def clear_user(user_id: str) -> bool:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+    with _LOCK:
+        existed = uid in _PRESENCE
+        _PRESENCE.pop(uid, None)
+        return existed
+
 
 def to_public_fields(entry: Optional[Dict[str, object]]) -> Dict[str, Optional[object]]:
     if not entry:
@@ -59,4 +68,3 @@ def to_public_fields(entry: Optional[Dict[str, object]]) -> Dict[str, Optional[o
         "lastInteractionAt": _epoch_to_iso(float(last_interaction)) if last_interaction else None,
         "isIdle": bool(entry.get("isIdle")) if isinstance(entry.get("isIdle"), bool) else None,
     }
-

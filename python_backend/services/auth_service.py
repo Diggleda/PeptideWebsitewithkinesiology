@@ -414,6 +414,7 @@ def login(data: Dict) -> Dict:
 def logout(user_id: str, role: Optional[str] = None) -> Dict:
     normalized_role = (role or "").strip().lower()
     new_session_id = _new_session_id()
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     if normalized_role == "sales_rep":
         rep = sales_rep_repository.find_by_id(user_id) if user_id else None
@@ -421,7 +422,14 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
             sales_rep_repository.update({**rep, "sessionId": new_session_id})
         user = user_repository.find_by_id(user_id) if user_id else None
         if user:
-            user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+            user_repository.update(
+                {
+                    **user,
+                    "isOnline": False,
+                    "sessionId": new_session_id,
+                    "lastLogoutAt": now_iso,
+                }
+            )
         _audit(
             "LOGOUT",
             {
@@ -430,14 +438,21 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 "updatedUser": bool(user),
                 "updatedSalesRep": bool(rep),
                 "newSessionId": new_session_id,
-                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "at": now_iso,
             },
         )
         return {"ok": True}
 
     user = user_repository.find_by_id(user_id) if user_id else None
     if user:
-        user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+        user_repository.update(
+            {
+                **user,
+                "isOnline": False,
+                "sessionId": new_session_id,
+                "lastLogoutAt": now_iso,
+            }
+        )
         _audit(
             "LOGOUT",
             {
@@ -445,14 +460,20 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 "role": normalized_role or (user.get("role") if isinstance(user, dict) else None),
                 "updatedUser": True,
                 "newSessionId": new_session_id,
-                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "at": now_iso,
             },
         )
         return {"ok": True}
 
     rep = sales_rep_repository.find_by_id(user_id) if user_id else None
     if rep:
-        sales_rep_repository.update({**rep, "sessionId": new_session_id})
+        sales_rep_repository.update(
+            {
+                **rep,
+                "sessionId": new_session_id,
+                "lastLogoutAt": now_iso,
+            }
+        )
         _audit(
             "LOGOUT",
             {
@@ -460,7 +481,7 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 "role": normalized_role or "sales_rep",
                 "updatedSalesRep": True,
                 "newSessionId": new_session_id,
-                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "at": now_iso,
             },
         )
     return {"ok": True}
