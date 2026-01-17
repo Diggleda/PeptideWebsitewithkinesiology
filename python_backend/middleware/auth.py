@@ -14,6 +14,23 @@ from ..repositories import user_repository, sales_rep_repository
 
 F = TypeVar("F", bound=Callable)
 
+_AUDIT_LOGGER = None
+
+def _audit_enabled() -> bool:
+    return str(os.environ.get("AUTH_AUDIT_LOGS") or "").strip().lower() in ("1", "true", "yes", "on")
+
+def _audit(event: str, details: dict) -> None:
+    if not _audit_enabled():
+        return
+    global _AUDIT_LOGGER
+    if _AUDIT_LOGGER is None:
+        import logging
+        _AUDIT_LOGGER = logging.getLogger("peppro.auth_audit")
+    try:
+        _AUDIT_LOGGER.info("auth_audit %s", {"event": event, **(details or {})})
+    except Exception:
+        pass
+
 def _parse_datetime(value) -> datetime | None:
     if not value:
         return None
@@ -123,6 +140,17 @@ def require_auth(func: F) -> F:
                 auth_service.logout(str(user_id), role)
             except Exception:
                 pass
+            _audit(
+                "FORCED_LOGOUT",
+                {
+                    "reason": "SESSION_MAX_AGE",
+                    "userId": str(user_id),
+                    "role": role,
+                    "sessionMaxSeconds": session_max_s,
+                    "sessionStartedAt": session_start_dt.isoformat().replace("+00:00", "Z") if session_start_dt else None,
+                    "at": now_dt.isoformat().replace("+00:00", "Z"),
+                },
+            )
             return _unauthorized("Session expired", code="SESSION_MAX_AGE")
 
         # Prefer persisted interaction timestamps when available; otherwise fall back to in-memory presence.
@@ -139,6 +167,17 @@ def require_auth(func: F) -> F:
                 auth_service.logout(str(user_id), role)
             except Exception:
                 pass
+            _audit(
+                "FORCED_LOGOUT",
+                {
+                    "reason": "SESSION_IDLE_TIMEOUT",
+                    "userId": str(user_id),
+                    "role": role,
+                    "idleMaxSeconds": idle_max_s,
+                    "idleAnchorAt": idle_anchor_dt.isoformat().replace("+00:00", "Z") if idle_anchor_dt else None,
+                    "at": now_dt.isoformat().replace("+00:00", "Z"),
+                },
+            )
             return _unauthorized("Session expired", code="SESSION_IDLE_TIMEOUT")
 
         g.current_user = payload

@@ -12,6 +12,19 @@ from ..utils.http import handle_action
 
 blueprint = Blueprint("auth", __name__, url_prefix="/api/auth")
 
+def _audit_enabled() -> bool:
+    import os
+    return str(os.environ.get("AUTH_AUDIT_LOGS") or "").strip().lower() in ("1", "true", "yes", "on")
+
+def _audit(event: str, details: dict) -> None:
+    if not _audit_enabled():
+        return
+    import logging
+    try:
+        logging.getLogger("peppro.auth_audit").info("auth_audit %s", {"event": event, **(details or {})})
+    except Exception:
+        pass
+
 
 @blueprint.post("/register")
 def register():
@@ -52,13 +65,16 @@ def logout():
     def action():
         header = request.headers.get("Authorization", "")
         if not header:
+            _audit("LOGOUT_REQUEST_NOAUTH", {"at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")})
             return {"ok": True}
 
         parts = header.split()
         token = parts[1] if len(parts) == 2 else parts[0]
+        expired_token = False
         try:
             payload = jwt.decode(token, get_config().jwt_secret, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
+            expired_token = True
             # If the token is expired but otherwise valid, we can still honor logout
             # (mark offline + rotate session id) as long as the session id matches.
             try:
@@ -69,8 +85,10 @@ def logout():
                     options={"verify_exp": False},
                 )
             except jwt.InvalidTokenError:
+                _audit("LOGOUT_REQUEST_INVALID", {"reason": "EXPIRED_INVALID", "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")})
                 return {"ok": True}
         except jwt.InvalidTokenError:
+            _audit("LOGOUT_REQUEST_INVALID", {"reason": "INVALID_TOKEN", "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")})
             return {"ok": True}
 
         user_id = payload.get("id")
@@ -78,6 +96,16 @@ def logout():
         token_session_id = payload.get("sid") or payload.get("sessionId")
 
         if not user_id or not isinstance(token_session_id, str) or not token_session_id.strip():
+            _audit(
+                "LOGOUT_REQUEST_INVALID",
+                {
+                    "reason": "MISSING_FIELDS",
+                    "userId": user_id,
+                    "role": role,
+                    "expiredToken": expired_token,
+                    "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+            )
             return {"ok": True}
 
         # Only revoke the token if it matches the currently stored session id.
@@ -93,8 +121,27 @@ def logout():
             stored_session_id = user.get("sessionId") if user else None
 
         if not stored_session_id or str(stored_session_id) != str(token_session_id):
+            _audit(
+                "LOGOUT_REQUEST_IGNORED",
+                {
+                    "reason": "SESSION_MISMATCH",
+                    "userId": str(user_id),
+                    "role": role,
+                    "expiredToken": expired_token,
+                    "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+            )
             return {"ok": True}
 
+        _audit(
+            "LOGOUT_REQUEST_ACCEPTED",
+            {
+                "userId": str(user_id),
+                "role": role,
+                "expiredToken": expired_token,
+                "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
         return auth_service.logout(str(user_id), payload.get("role"))
 
     return handle_action(action)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -49,7 +50,21 @@ _CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}$")
 _BCRYPT_PREFIX = re.compile(r"^\$2[abxy]\$")
 
 logger = logging.getLogger(__name__)
+audit_logger = logging.getLogger("peppro.auth_audit")
 _PASSWORD_RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
+
+def _audit_enabled() -> bool:
+    return str(os.environ.get("AUTH_AUDIT_LOGS") or "").strip().lower() in ("1", "true", "yes", "on")
+
+def _audit(event: str, details: Dict[str, Any]) -> None:
+    if not _audit_enabled():
+        return
+    payload = {"event": event, **(details or {})}
+    try:
+        audit_logger.info("auth_audit %s", payload)
+    except Exception:
+        # Never break auth flows due to logging.
+        pass
 
 def _new_session_id() -> str:
     return secrets.token_urlsafe(24)
@@ -189,6 +204,17 @@ def register(data: Dict) -> Dict:
         {"id": user["id"], "email": user["email"], "role": token_role, "sid": user.get("sessionId")}
     )
 
+    _audit(
+        "REGISTER_SUCCESS",
+        {
+            "userId": user.get("id"),
+            "role": token_role,
+            "email": user.get("email"),
+            "salesRepId": user.get("salesRepId"),
+            "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+    )
+
     return {"token": token, "user": _sanitize_user(user)}
 
 def _register_sales_rep_account(
@@ -290,6 +316,17 @@ def _register_sales_rep_account(
         }
     )
 
+    _audit(
+        "REGISTER_SALES_REP_SUCCESS",
+        {
+            "salesRepId": updated_sales_rep.get("id"),
+            "legacyUserId": updated_sales_rep.get("legacyUserId"),
+            "email": updated_sales_rep.get("email"),
+            "role": "sales_rep",
+            "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+    )
+
     return {"token": token, "user": _sanitize_sales_rep(updated_sales_rep)}
 
 
@@ -323,6 +360,17 @@ def login(data: Dict) -> Dict:
         token = _create_auth_token(
             {"id": updated["id"], "email": updated["email"], "role": token_role, "sid": updated.get("sessionId")}
         )
+        _audit(
+            "LOGIN_SUCCESS",
+            {
+                "userId": updated.get("id"),
+                "role": token_role,
+                "email": updated.get("email"),
+                "sessionId": updated.get("sessionId"),
+                "isOnline": bool(updated.get("isOnline")),
+                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
         return {"token": token, "user": _sanitize_user(updated)}
 
     sales_rep = sales_rep_repository.find_by_email(email)
@@ -350,6 +398,16 @@ def login(data: Dict) -> Dict:
     token = _create_auth_token(
         {"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep", "sid": updated_rep.get("sessionId")}
     )
+    _audit(
+        "LOGIN_SALES_REP_SUCCESS",
+        {
+            "salesRepId": updated_rep.get("id"),
+            "role": "sales_rep",
+            "email": updated_rep.get("email"),
+            "sessionId": updated_rep.get("sessionId"),
+            "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+    )
     return {"token": token, "user": _sanitize_sales_rep(updated_rep)}
 
 
@@ -364,16 +422,47 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
         user = user_repository.find_by_id(user_id) if user_id else None
         if user:
             user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+        _audit(
+            "LOGOUT",
+            {
+                "userId": user_id,
+                "role": normalized_role,
+                "updatedUser": bool(user),
+                "updatedSalesRep": bool(rep),
+                "newSessionId": new_session_id,
+                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
         return {"ok": True}
 
     user = user_repository.find_by_id(user_id) if user_id else None
     if user:
         user_repository.update({**user, "isOnline": False, "sessionId": new_session_id})
+        _audit(
+            "LOGOUT",
+            {
+                "userId": user_id,
+                "role": normalized_role or (user.get("role") if isinstance(user, dict) else None),
+                "updatedUser": True,
+                "newSessionId": new_session_id,
+                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
         return {"ok": True}
 
     rep = sales_rep_repository.find_by_id(user_id) if user_id else None
     if rep:
         sales_rep_repository.update({**rep, "sessionId": new_session_id})
+        _audit(
+            "LOGOUT",
+            {
+                "userId": user_id,
+                "role": normalized_role or "sales_rep",
+                "updatedSalesRep": True,
+                "newSessionId": new_session_id,
+                "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            },
+        )
     return {"ok": True}
 
 
