@@ -13153,6 +13153,11 @@ export default function App() {
                           <input
                             value={adminLiveUsersSearch}
                             onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                              }
+                            }}
                             placeholder="Search users…"
                             className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                           />
@@ -17232,19 +17237,21 @@ export default function App() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-                    {isRep(salesDoctorDetail.role) ? (
-                      <>
-                        <p className="text-sm text-slate-600">
-                          Personal Revenue:{" "}
-                          {formatCurrency(
-                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
-                          )}
-                        </p>
-                        <p className="text-sm text-slate-600">
-                          Sales Revenue:{" "}
-                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
-                        </p>
-                      </>
+	                    {(isRep(salesDoctorDetail.role) ||
+                        typeof salesDoctorDetail.personalRevenue === "number" ||
+                        typeof salesDoctorDetail.salesRevenue === "number") ? (
+	                      <>
+	                        <p className="text-sm text-slate-600">
+	                          Personal Revenue:{" "}
+	                          {formatCurrency(
+	                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
+	                          )}
+	                        </p>
+	                        <p className="text-sm text-slate-600">
+	                          Sales Revenue:{" "}
+	                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
+	                        </p>
+	                      </>
                     ) : isDoctorRole(salesDoctorDetail.role) ? (
                       <>
                         <p className="text-sm text-slate-600">

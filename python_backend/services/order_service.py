@@ -1717,6 +1717,22 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
         mapped["doctorName"] = doctor.get("name") or billing_email
         mapped["doctorEmail"] = doctor.get("email")
         mapped["doctorSalesRepId"] = doctor.get("salesRepId")
+
+    # Pull local PepPro order fields (MySQL `orders` table) for display-only details like notes.
+    # Prefer lookup by pepproOrderId to avoid scanning all orders.
+    try:
+        integrations = _ensure_dict(mapped.get("integrationDetails") or mapped.get("integrations"))
+        woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+        peppro_order_id = woo_details.get("pepproOrderId") or woo_details.get("peppro_order_id") or None
+        local_order = None
+        if peppro_order_id:
+            local_order = order_repository.find_by_id(str(peppro_order_id))
+        if not local_order:
+            local_order = _find_order_by_woo_id(str(mapped.get("wooOrderId") or mapped.get("id") or mapped.get("wooOrderNumber") or "")) or None
+        if local_order and local_order.get("notes") is not None:
+            mapped["notes"] = local_order.get("notes")
+    except Exception:
+        pass
     try:
         logger.debug(
             "[SalesRep] Order detail return",
