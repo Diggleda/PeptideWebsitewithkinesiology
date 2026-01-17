@@ -5940,6 +5940,14 @@ export default function App() {
 	  const liveClientsEtagRef = useRef<string | null>(null);
 	  const liveClientsLongPollDisabledRef = useRef(false);
 
+	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
+	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
+	  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
+	  const adminLiveUsersEtagRef = useRef<string | null>(null);
+	  const adminLiveUsersLongPollDisabledRef = useRef(false);
+	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(true);
+	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
+
 	  useEffect(() => {
 	    if (!isRep(user?.role)) {
 	      setLiveClients([]);
@@ -6015,6 +6023,94 @@ export default function App() {
 	          if (cancelled) break;
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            liveClientsLongPollDisabledRef.current = true;
+	            startIntervalFallback();
+	            return;
+	          }
+	          // eslint-disable-next-line no-await-in-loop
+	          await sleep(1000);
+	        }
+	      }
+	    };
+
+	    void runLongPoll();
+
+	    return () => {
+	      cancelled = true;
+	      if (intervalId) window.clearInterval(intervalId);
+	      controller.abort();
+	    };
+	  }, [user?.role, user?.id]);
+
+	  useEffect(() => {
+	    if (!isAdmin(user?.role)) {
+	      setAdminLiveUsers([]);
+	      setAdminLiveUsersLoading(false);
+	      setAdminLiveUsersError(null);
+	      adminLiveUsersEtagRef.current = null;
+	      adminLiveUsersLongPollDisabledRef.current = false;
+	      return;
+	    }
+
+	    let cancelled = false;
+	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
+
+	    const fetchOnce = async () => {
+	      try {
+	        setAdminLiveUsersLoading(true);
+	        setAdminLiveUsersError(null);
+	        const payload = (await settingsAPI.getLiveUsers()) as any;
+	        if (cancelled) return;
+	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
+	        const users = Array.isArray(payload?.users) ? payload.users : [];
+	        setAdminLiveUsers(users);
+	      } catch (error: any) {
+	        if (cancelled) return;
+	        setAdminLiveUsers([]);
+	        setAdminLiveUsersError(
+	          typeof error?.message === "string" ? error.message : "Unable to load users.",
+	        );
+	      } finally {
+	        if (!cancelled) setAdminLiveUsersLoading(false);
+	      }
+	    };
+
+	    const sleep = (ms: number) =>
+	      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+	    const startIntervalFallback = () => {
+	      if (intervalId) return;
+	      void fetchOnce();
+	      intervalId = window.setInterval(() => {
+	        void fetchOnce();
+	      }, 5000);
+	    };
+
+	    const controller = new AbortController();
+	    const runLongPoll = async () => {
+	      if (adminLiveUsersLongPollDisabledRef.current) {
+	        startIntervalFallback();
+	        return;
+	      }
+	      while (!cancelled) {
+	        if (!isPageVisible() || !isOnline()) {
+	          // eslint-disable-next-line no-await-in-loop
+	          await sleep(800);
+	          continue;
+	        }
+	        try {
+	          const payload = (await settingsAPI.getLiveUsersLongPoll(
+	            adminLiveUsersEtagRef.current,
+	            25000,
+	            controller.signal,
+	          )) as any;
+	          if (cancelled) break;
+	          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
+	          const users = Array.isArray(payload?.users) ? payload.users : [];
+	          setAdminLiveUsers(users);
+	        } catch (error: any) {
+	          if (cancelled) break;
+	          if (typeof error?.status === "number" && error.status === 404) {
+	            adminLiveUsersLongPollDisabledRef.current = true;
 	            startIntervalFallback();
 	            return;
 	          }
@@ -12905,151 +13001,166 @@ export default function App() {
                     </p>
                   </div>
 
-                  {userActivityError && (
+                  {adminLiveUsersError && (
                     <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
-                      {userActivityError}
+                      {adminLiveUsersError}
                     </div>
                   )}
 
-                  {userActivityLoading ? (
+                  {adminLiveUsersLoading ? (
                     <div className="px-4 py-3 text-sm text-slate-500">
-                      Loading user activity…
+                      Loading users…
                     </div>
-                  ) : userActivityReport ? (
-                    (() => {
-	                      const rawLiveUsers =
-	                        Array.isArray(userActivityReport.liveUsers) &&
-	                        userActivityReport.liveUsers.length > 0
-	                          ? userActivityReport.liveUsers
-	                          : (userActivityReport.users || []).filter(
-	                              (entry) => entry.isOnline,
-	                            );
-                        const visibleLiveUsers = (rawLiveUsers || []).filter((entry: any) => {
-                          const simulated = (entry as any)?.isSimulated === true;
-                          const id = String((entry as any)?.id || "");
-                          return !simulated && !id.startsWith("pseudo-live-");
-                        });
+                  ) : (() => {
+                    const visibleUsers = (adminLiveUsers || []).filter((entry: any) => {
+                      const simulated = (entry as any)?.isSimulated === true;
+                      const id = String((entry as any)?.id || "");
+                      return !simulated && !id.startsWith("pseudo-live-");
+                    });
 
-	                      const isEntryCurrentUser = (entry: any) => {
-	                        return (
-	                          (user?.id && entry?.id === user.id) ||
-	                          (user?.email &&
-	                            entry?.email &&
-	                            String(user.email).toLowerCase() ===
-	                              String(entry.email).toLowerCase())
-	                        );
-	                      };
-
-                      const getEntryIdle = (entry: any) => {
-                        const entryIdleRaw = entry?.isIdle;
-                        if (typeof entryIdleRaw === "boolean") {
-                          return entryIdleRaw;
-                        }
-                        return isEntryCurrentUser(entry) && isIdle;
-                      };
-
-	                      const getOnlineDurationMs = (entry: any) => {
-	                        const lastLogin = entry?.lastLoginAt;
-	                        if (!lastLogin) {
-	                          return 0;
-	                        }
-                        const startedAt = new Date(lastLogin).getTime();
-                        if (!Number.isFinite(startedAt)) {
-                          return Number.MAX_SAFE_INTEGER;
-                        }
-	                        return Math.max(0, Date.now() - startedAt);
-	                      };
-
-	                      const getIdleMinutesLabel = (entry: any) => {
-	                        void userActivityNowTick;
-	                        const numericMinutes =
-	                          typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
-	                            ? entry.idleMinutes
-	                            : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
-	                              ? entry.idleForMinutes
-	                              : null;
-	                        if (numericMinutes != null) {
-	                          if (numericMinutes < 1) return "<1min";
-	                          return `${Math.max(0, Math.floor(numericMinutes))}min`;
-	                        }
-	                        const isCurrent =
-	                          (user?.id && entry?.id === user.id) ||
-	                          (user?.email &&
-	                            entry?.email &&
-	                            String(user.email).toLowerCase() ===
-	                              String(entry.email).toLowerCase());
-	                        const idleSinceMs = isCurrent
-	                          ? lastActivityAtRef.current
-	                          : (() => {
-	                              const raw =
-	                                entry?.lastInteractionAt ||
-	                                entry?.lastSeenAt ||
-	                                entry?.lastActivityAt ||
-	                                entry?.lastActiveAt ||
-	                                entry?.lastLoginAt ||
-	                                null;
-	                              if (!raw) return null;
-	                              const parsed = new Date(raw).getTime();
-	                              return Number.isFinite(parsed) ? parsed : null;
-	                            })();
-	                        if (!idleSinceMs) return null;
-	                        const minutes = Math.max(
-	                          0,
-	                          Math.floor((Date.now() - idleSinceMs) / 60000),
-	                        );
-	                        if (minutes < 1) return "<1min";
-	                        return `${minutes}min`;
-	                      };
-
-	                      const liveUsers = [...visibleLiveUsers].sort((a: any, b: any) => {
-	                        const aIdle = getEntryIdle(a);
-	                        const bIdle = getEntryIdle(b);
-	                        if (aIdle !== bIdle) return aIdle ? 1 : -1;
-
-                        const aDuration = getOnlineDurationMs(a);
-                        const bDuration = getOnlineDurationMs(b);
-                        if (aDuration !== bDuration) {
-                          return aDuration - bDuration;
-                        }
-
-                        const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
-                        const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
-                        return aName.localeCompare(bName);
-                      });
-
-	                      if (liveUsers.length === 0) {
-	                        return (
-	                          <div className="px-4 py-3 text-sm text-slate-500">
-	                            No users are online right now.
-	                          </div>
-	                        );
-	                      }
-
+                    const isEntryCurrentUser = (entry: any) => {
                       return (
+                        (user?.id && entry?.id === user.id) ||
+                        (user?.email &&
+                          entry?.email &&
+                          String(user.email).toLowerCase() ===
+                            String(entry.email).toLowerCase())
+                      );
+                    };
+
+                    const getEntryIdle = (entry: any) => {
+                      const entryIdleRaw = entry?.isIdle;
+                      if (typeof entryIdleRaw === "boolean") {
+                        return entryIdleRaw;
+                      }
+                      return isEntryCurrentUser(entry) && isIdle;
+                    };
+
+                    const getIdleMinutesLabel = (entry: any) => {
+                      void userActivityNowTick;
+                      const numericMinutes =
+                        typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+                          ? entry.idleMinutes
+                          : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+                            ? entry.idleForMinutes
+                            : null;
+                      if (numericMinutes != null) {
+                        if (numericMinutes < 1) return "<1min";
+                        return `${Math.max(0, Math.floor(numericMinutes))}min`;
+                      }
+                      const isCurrent =
+                        (user?.id && entry?.id === user.id) ||
+                        (user?.email &&
+                          entry?.email &&
+                          String(user.email).toLowerCase() ===
+                            String(entry.email).toLowerCase());
+                      const idleSinceMs = isCurrent
+                        ? lastActivityAtRef.current
+                        : (() => {
+                            const raw =
+                              entry?.lastInteractionAt ||
+                              entry?.lastSeenAt ||
+                              entry?.lastActivityAt ||
+                              entry?.lastActiveAt ||
+                              entry?.lastLoginAt ||
+                              null;
+                            if (!raw) return null;
+                            const parsed = new Date(raw).getTime();
+                            return Number.isFinite(parsed) ? parsed : null;
+                          })();
+                      if (!idleSinceMs) return null;
+                      const minutes = Math.max(
+                        0,
+                        Math.floor((Date.now() - idleSinceMs) / 60000),
+                      );
+                      if (minutes < 1) return "<1min";
+                      return `${minutes}min`;
+                    };
+
+                    const normalizedQuery = adminLiveUsersSearch.trim().toLowerCase();
+                    const filtered = visibleUsers.filter((entry: any) => {
+                      if (!adminLiveUsersShowOffline && !entry?.isOnline) {
+                        return false;
+                      }
+                      if (!normalizedQuery) {
+                        return true;
+                      }
+                      const haystack = [
+                        entry?.name,
+                        entry?.email,
+                        entry?.role,
+                        entry?.id,
+                      ]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLowerCase();
+                      return haystack.includes(normalizedQuery);
+                    });
+
+                    const liveUsers = [...filtered].sort((a: any, b: any) => {
+                      const aOnline = Boolean(a?.isOnline);
+                      const bOnline = Boolean(b?.isOnline);
+                      const aIdle = Boolean(getEntryIdle(a));
+                      const bIdle = Boolean(getEntryIdle(b));
+                      const rank = (online: boolean, idle: boolean) =>
+                        online ? (idle ? 1 : 0) : 2;
+                      const aRank = rank(aOnline, aIdle);
+                      const bRank = rank(bOnline, bIdle);
+                      if (aRank !== bRank) return aRank - bRank;
+                      const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+                      const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
+                      return aName.localeCompare(bName);
+                    });
+
+                    if (liveUsers.length === 0) {
+                      return (
+                        <div className="px-4 py-3 text-sm text-slate-500">
+                          No users found.
+                        </div>
+                      );
+                    }
+
+                    const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+                          <div className="flex items-center gap-3">
+                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                className="brand-checkbox"
+                                checked={adminLiveUsersShowOffline}
+                                onChange={(e) => setAdminLiveUsersShowOffline(e.target.checked)}
+                              />
+                              Show offline
+                            </label>
+                            <span className="text-xs text-slate-500">
+                              {onlineCount} online
+                            </span>
+                          </div>
+                          <input
+                            value={adminLiveUsersSearch}
+                            onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
+                            placeholder="Search users…"
+                            className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                          />
+                        </div>
+
                         <div className="sales-rep-table-wrapper live-users-scroll">
                           <div className="flex w-full min-w-[900px] flex-col gap-2">
                             {liveUsers.map((entry) => {
                               const avatarUrl = entry.profileImageUrl || null;
-                              const displayName =
-                                entry.name || entry.email || "User";
-                              const isCurrentUser =
-                                (user?.id && entry.id === user.id) ||
-                                (user?.email &&
-                                  entry.email &&
-                                  user.email.toLowerCase() ===
-                                    entry.email.toLowerCase());
-	                              const entryIdleRaw = (entry as any)?.isIdle;
-	                              const showIdle =
-	                                (typeof entryIdleRaw === "boolean" && entryIdleRaw) ||
-	                                (isCurrentUser && isIdle);
-	                              const idleMinutesLabel = showIdle
-	                                ? getIdleMinutesLabel(entry)
-	                                : null;
-	                              return (
-	                                <div
-	                                  key={entry.id}
-	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-	                                >
+                              const displayName = entry.name || entry.email || "User";
+                              const showIdle = Boolean(getEntryIdle(entry));
+                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
+                              const isOnline = Boolean(entry?.isOnline);
+
+                              return (
+                                <div
+                                  key={entry.id}
+                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+                                >
                                   <button
                                     type="button"
                                     onClick={() => openLiveUserDetail(entry)}
@@ -13060,11 +13171,7 @@ export default function App() {
                                     <div className="flex items-center gap-3 min-w-0">
                                       <div
                                         className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-                                        style={{
-                                          width: 34,
-                                          height: 34,
-                                          minWidth: 34,
-                                        }}
+                                        style={{ width: 34, height: 34, minWidth: 34 }}
                                       >
                                         {avatarUrl ? (
                                           <img
@@ -13090,20 +13197,29 @@ export default function App() {
                                       </div>
                                     </div>
                                   </button>
+
                                   <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
                                     <span
                                       className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-                                        showIdle
+                                        !isOnline
                                           ? "bg-slate-100 text-slate-600"
-                                          : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+                                          : showIdle
+                                            ? "bg-slate-100 text-slate-600"
+                                            : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
                                       }`}
-	                                    >
-	                                      {showIdle
-	                                        ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
-	                                        : "Online"}
-	                                    </span>
+                                    >
+                                      {!isOnline
+                                        ? "Offline"
+                                        : showIdle
+                                          ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
+                                          : "Online"}
+                                    </span>
                                     <div className="text-xs text-slate-600 whitespace-nowrap">
-                                      {formatOnlineDuration(entry.lastLoginAt)}
+                                      {isOnline
+                                        ? formatOnlineDuration(entry.lastLoginAt)
+                                        : entry.lastSeenAt
+                                          ? `Last seen ${formatRelativeMinutes(entry.lastSeenAt)}`
+                                          : "Offline"}
                                     </div>
                                   </div>
                                 </div>
@@ -13111,13 +13227,9 @@ export default function App() {
                             })}
                           </div>
                         </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="px-4 py-3 text-sm text-slate-500">
-                      No user activity loaded.
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="pt-6 border-t border-slate-200/70 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

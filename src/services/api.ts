@@ -1048,6 +1048,31 @@ export const settingsAPI = {
       signal,
     });
   },
+
+  getLiveUsers: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/live-users`, {
+      method: 'GET',
+    });
+  },
+
+  getLiveUsersLongPoll: async (
+    etag?: string | null,
+    timeoutMs: number = 25000,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams();
+    if (etag) {
+      params.set('etag', String(etag));
+    }
+    if (timeoutMs && Number.isFinite(timeoutMs)) {
+      params.set('timeoutMs', String(Math.max(1000, Math.min(timeoutMs, 30000))));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchWithAuth(`${API_BASE_URL}/settings/live-users/longpoll${query}`, {
+      method: 'GET',
+      signal,
+    });
+  },
   getAdminUserProfile: async (userId: string | number) => {
     if (!userId) {
       throw new Error('userId is required');

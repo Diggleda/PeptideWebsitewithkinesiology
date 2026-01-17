@@ -34,6 +34,12 @@ _LIVE_CLIENTS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_CLIENTS_LONGPOLL_C
 _LIVE_CLIENTS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_CLIENTS_LONGPOLL_CONCURRENCY, 20))
 _LIVE_CLIENTS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_CLIENTS_LONGPOLL_CONCURRENCY)
 
+_LIVE_USERS_CACHE_LOCK = threading.Lock()
+_LIVE_USERS_CACHE: dict[str, dict] = {"payload": None, "expiresAt": 0.0}
+_LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCURRENCY") or 4)
+_LIVE_USERS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_USERS_LONGPOLL_CONCURRENCY, 20))
+_LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL_CONCURRENCY)
+
 def _is_admin() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
     return role == "admin"
@@ -355,6 +361,119 @@ def _compute_live_clients_cached(*, target_sales_rep_id: str) -> dict:
     return payload
 
 
+def _compute_live_users_payload() -> dict:
+    users = user_repository.get_all()
+    rep_records = sales_rep_repository.get_all()
+    users_by_id: dict[str, dict] = {}
+
+    for user in users or []:
+        if not isinstance(user, dict):
+            continue
+        uid = str(user.get("id") or "").strip()
+        if not uid:
+            continue
+        users_by_id[uid] = user
+
+    # Merge in reps that may live only in the sales_reps table.
+    for rep in rep_records or []:
+        if not isinstance(rep, dict):
+            continue
+        rid = str(rep.get("id") or "").strip()
+        if not rid or rid in users_by_id:
+            continue
+        users_by_id[rid] = {
+            **rep,
+            "id": rid,
+            "role": rep.get("role") or "sales_rep",
+            "isOnline": bool(rep.get("isOnline") or rep.get("is_online")),
+            "lastLoginAt": rep.get("lastLoginAt") or rep.get("last_login_at") or rep.get("lastLogin") or None,
+            "lastSeenAt": rep.get("lastSeenAt") or rep.get("last_seen_at") or None,
+            "lastInteractionAt": rep.get("lastInteractionAt") or rep.get("last_interaction_at") or None,
+            "profileImageUrl": rep.get("profileImageUrl") or rep.get("profile_image_url") or None,
+        }
+
+    def normalize_user_role(value: object) -> str:
+        normalized = _normalize_role(value)
+        return normalized or "unknown"
+
+    now_epoch = time.time()
+    online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
+    online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+    idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
+    idle_threshold_s = max(10.0, min(idle_threshold_s, 6 * 60 * 60))
+    presence = presence_service.snapshot()
+
+    entries = []
+    for user in users_by_id.values():
+        snapshot = _compute_presence_snapshot(
+            user,
+            now_epoch=now_epoch,
+            online_threshold_s=online_threshold_s,
+            idle_threshold_s=idle_threshold_s,
+            presence=presence,
+        )
+        entries.append(
+            {
+                "id": user.get("id"),
+                "name": user.get("name") or None,
+                "email": user.get("email") or None,
+                "role": normalize_user_role(user.get("role")),
+                "profileImageUrl": user.get("profileImageUrl") or None,
+                **snapshot,
+            }
+        )
+
+    entries.sort(
+        key=lambda entry: (
+            0 if bool(entry.get("isOnline")) and not bool(entry.get("isIdle"))
+            else 1 if bool(entry.get("isOnline"))
+            else 2,
+            str(entry.get("name") or entry.get("email") or entry.get("id") or "").lower(),
+        )
+    )
+
+    sig = [
+        {
+            "id": entry.get("id"),
+            "role": entry.get("role") or "unknown",
+            "isOnline": bool(entry.get("isOnline")),
+            "isIdle": bool(entry.get("isIdle")),
+            "lastLoginAt": entry.get("lastLoginAt") or None,
+            "profileImageUrl": entry.get("profileImageUrl") or None,
+        }
+        for entry in entries
+    ]
+    sig.sort(key=lambda entry: str(entry.get("id") or ""))
+    etag = hashlib.sha256(
+        json.dumps({"users": sig}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        "etag": etag,
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "users": entries,
+        "total": len(entries),
+    }
+
+
+def _compute_live_users_cached() -> dict:
+    now = time.monotonic()
+    ttl_s = float(os.environ.get("LIVE_USERS_CACHE_TTL_SECONDS") or 1.0)
+    ttl_s = max(0.25, min(ttl_s, 5.0))
+
+    with _LIVE_USERS_CACHE_LOCK:
+        cached = _LIVE_USERS_CACHE.get("payload")
+        expires_at = float(_LIVE_USERS_CACHE.get("expiresAt") or 0.0)
+        if cached and expires_at > now:
+            return cached
+
+    payload = _compute_live_users_payload()
+    with _LIVE_USERS_CACHE_LOCK:
+        _LIVE_USERS_CACHE["payload"] = payload
+        _LIVE_USERS_CACHE["expiresAt"] = now + ttl_s
+    return payload
+
+
 @blueprint.get("/shop")
 def get_shop():
     def action():
@@ -571,6 +690,59 @@ def longpoll_live_clients():
         finally:
             try:
                 _LIVE_CLIENTS_LONGPOLL_SEMAPHORE.release()
+            except ValueError:
+                pass
+
+    return handle_action(action)
+
+
+@blueprint.get("/live-users")
+@require_auth
+def get_live_users():
+    def action():
+        _require_admin()
+        return _compute_live_users_cached()
+
+    return handle_action(action)
+
+
+@blueprint.get("/live-users/longpoll")
+@require_auth
+def longpoll_live_users():
+    def action():
+        _require_admin()
+
+        client_etag = str(request.args.get("etag") or "").strip() or None
+        try:
+            timeout_ms = int(request.args.get("timeoutMs") or 25000)
+        except Exception:
+            timeout_ms = 25000
+        timeout_ms = max(1000, min(timeout_ms, 30000))
+
+        acquired = _LIVE_USERS_LONGPOLL_SEMAPHORE.acquire(blocking=False)
+        if not acquired:
+            return _compute_live_users_cached()
+
+        try:
+            started = time.monotonic()
+            payload = _compute_live_users_cached()
+            etag = str(payload.get("etag") or "").strip() or None
+            if not etag or etag != client_etag:
+                return payload
+
+            poll_interval_s = float(os.environ.get("LIVE_USERS_LONGPOLL_INTERVAL_SECONDS") or 1.0)
+            poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
+            while (time.monotonic() - started) * 1000 < timeout_ms:
+                time.sleep(poll_interval_s)
+                payload = _compute_live_users_cached()
+                etag = str(payload.get("etag") or "").strip() or None
+                if not etag or etag != client_etag:
+                    return payload
+
+            return payload
+        finally:
+            try:
+                _LIVE_USERS_LONGPOLL_SEMAPHORE.release()
             except ValueError:
                 pass
 
