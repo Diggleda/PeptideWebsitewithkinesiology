@@ -1076,6 +1076,17 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         if not local_order:
             continue
 
+        # Prefer local status when present (it may be fresher due to Woo webhooks),
+        # especially when Woo order fetches are served from cache.
+        local_status = local_order.get("status")
+        if isinstance(local_status, str) and local_status.strip():
+            order["status"] = local_status.strip()
+            integrations = _ensure_dict(order.get("integrationDetails"))
+            woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+            woo_details["status"] = order.get("status")
+            integrations["wooCommerce"] = woo_details
+            order["integrationDetails"] = integrations
+
         shipping_address = local_order.get("shippingAddress") or local_order.get("shipping_address")
         billing_address = local_order.get("billingAddress") or local_order.get("billing_address")
         if shipping_address:
