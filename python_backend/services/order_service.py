@@ -1044,6 +1044,21 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         return woo_orders
 
     local_lookup = {str(order.get("id")): order for order in local_orders if order.get("id")}
+    local_by_woo_id: Dict[str, Dict] = {}
+    local_by_woo_number: Dict[str, Dict] = {}
+    for order in local_orders:
+        if not isinstance(order, dict):
+            continue
+        woo_id = order.get("wooOrderId") or order.get("woo_order_id")
+        woo_number = order.get("wooOrderNumber") or order.get("woo_order_number")
+        if woo_id is not None:
+            key = str(woo_id).strip()
+            if key:
+                local_by_woo_id[key] = order
+        if woo_number is not None:
+            key = str(woo_number).strip()
+            if key:
+                local_by_woo_number[key] = order
 
     for order in woo_orders:
         integrations = _ensure_dict(order.get("integrationDetails"))
@@ -1053,10 +1068,15 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
             or woo_details.get("peppro_order_id")
             or order.get("pepproOrderId")
         )
-        if not peppro_order_id:
-            continue
-
-        local_order = local_lookup.get(str(peppro_order_id))
+        local_order = local_lookup.get(str(peppro_order_id)) if peppro_order_id else None
+        if not local_order:
+            woo_id = order.get("wooOrderId") or order.get("id")
+            woo_number = order.get("wooOrderNumber") or order.get("number")
+            local_order = (
+                local_by_woo_id.get(str(woo_id).strip()) if woo_id is not None else None
+            ) or (
+                local_by_woo_number.get(str(woo_number).strip()) if woo_number is not None else None
+            )
         if not local_order:
             continue
 
