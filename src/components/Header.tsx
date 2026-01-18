@@ -699,17 +699,48 @@ const isTerminalOrderStatus = (status?: string | null) => {
 
 const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined): string | null => {
   if (!order) return null;
-  if (isTerminalOrderStatus(order.status ? String(order.status) : null)) {
-    const str = String(order.status || '').trim();
-    return str.length > 0 ? str : null;
+  const orderStatusRaw = order.status ? String(order.status) : '';
+  const orderStatus = orderStatusRaw.trim();
+  const orderStatusNormalized = orderStatus.toLowerCase();
+
+  // Always prefer the authoritative order status for terminal or explicit states.
+  // Shipping provider statuses are best used to improve display only when the order
+  // isn't already in a definitive state (e.g., Completed).
+  if (
+    isTerminalOrderStatus(orderStatus) ||
+    orderStatusNormalized === 'completed' ||
+    orderStatusNormalized === 'complete' ||
+    orderStatusNormalized === 'processing' ||
+    orderStatusNormalized === 'pending' ||
+    orderStatusNormalized === 'on-hold' ||
+    orderStatusNormalized === 'on_hold' ||
+    orderStatusNormalized === 'failed'
+  ) {
+    return orderStatus.length > 0 ? orderStatus : null;
   }
+
   const shippingStatus =
     (order.shippingEstimate as any)?.status ||
     (order.integrationDetails as any)?.shipStation?.status;
-  const candidate = shippingStatus || order.status || null;
-  if (!candidate) return null;
-  const str = String(candidate).trim();
-  return str.length > 0 ? str : null;
+
+  // Only override when the shipping provider has a meaningful "in-flight" status.
+  const shippingStr = shippingStatus ? String(shippingStatus).trim() : '';
+  const shippingNormalized = shippingStr.toLowerCase();
+  const shippingLooksMeaningful =
+    shippingNormalized.includes('in_transit') ||
+    shippingNormalized.includes('in-transit') ||
+    shippingNormalized.includes('out_for_delivery') ||
+    shippingNormalized.includes('out-for-delivery') ||
+    shippingNormalized.includes('delivered') ||
+    shippingNormalized.includes('awaiting_shipment') ||
+    shippingNormalized.includes('awaiting shipment') ||
+    shippingNormalized.includes('shipped');
+
+  if (shippingStr && shippingLooksMeaningful) {
+    return shippingStr;
+  }
+
+  return orderStatus.length > 0 ? orderStatus : null;
 };
 
 const describeOrderStatus = (order: AccountOrderSummary | null | undefined): string => {
@@ -1867,6 +1898,55 @@ export function Header({
   useEffect(() => {
     cachedAccountOrdersRef.current = cachedAccountOrders;
   }, [cachedAccountOrders]);
+
+  // Keep the open order details view in sync with refreshed order data.
+  // Without this, the list can refresh (showing a new status) while the modal
+  // continues to display a stale `selectedOrder` snapshot.
+  useEffect(() => {
+    if (!selectedOrder || !cachedAccountOrders.length) {
+      return;
+    }
+    const normalize = (value: any) => String(value ?? '').trim().toLowerCase();
+    const selectedKeys = [
+      selectedOrder.id,
+      selectedOrder.wooOrderId,
+      selectedOrder.wooOrderNumber,
+      selectedOrder.number,
+      selectedOrder.cancellationId,
+    ]
+      .map(normalize)
+      .filter(Boolean);
+    if (!selectedKeys.length) return;
+
+    const match = cachedAccountOrders.find((order) => {
+      const keys = [
+        order.id,
+        order.wooOrderId,
+        order.wooOrderNumber,
+        order.number,
+        order.cancellationId,
+      ]
+        .map(normalize)
+        .filter(Boolean);
+      return keys.some((key) => selectedKeys.includes(key));
+    });
+    if (!match) return;
+
+    const statusChanged = String(match.status ?? '') !== String(selectedOrder.status ?? '');
+    const updatedAtChanged = String(match.updatedAt ?? '') !== String(selectedOrder.updatedAt ?? '');
+    if (statusChanged || updatedAtChanged) {
+      setSelectedOrder(match);
+    }
+  }, [
+    cachedAccountOrders,
+    selectedOrder?.id,
+    selectedOrder?.wooOrderId,
+    selectedOrder?.wooOrderNumber,
+    selectedOrder?.number,
+    selectedOrder?.cancellationId,
+    selectedOrder?.status,
+    selectedOrder?.updatedAt,
+  ]);
   useEffect(() => {
     orderLineImageCacheRef.current = orderLineImageCache;
   }, [orderLineImageCache]);
@@ -3286,7 +3366,7 @@ export function Header({
 	        })}
 	        {doctorView && (
 		          <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] bg-white/80 px-7 py-4 text-sm text-slate-700">
-		            <div className="space-y-1 pl-5">
+		            <div className="space-y-1">
 		              {salesRepEmail && (
 		                <p>
 		                  Sales rep:{' '}

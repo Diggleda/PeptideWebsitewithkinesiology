@@ -67,6 +67,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         """
         SELECT
             id,
+            items,
+            total,
+            shipping_total,
             status,
             notes,
             shipping_address,
@@ -76,6 +79,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             woo_order_id,
             woo_order_number,
             woo_order_key,
+            created_at,
             updated_at
         FROM orders
         WHERE user_id = %(user_id)s
@@ -83,13 +87,13 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         {"user_id": user_id},
     )
 
-    def parse_json(value):
+    def parse_json(value, default=None):
         if not value:
-            return None
+            return default
         try:
             return json.loads(value)
         except Exception:
-            return None
+            return default
 
     def fmt_datetime(value):
         if not value:
@@ -103,6 +107,9 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         result.append(
             {
                 "id": row.get("id"),
+                "items": parse_json(row.get("items"), []) if row.get("items") is not None else [],
+                "total": float(row.get("total") or 0),
+                "shippingTotal": float(row.get("shipping_total") or 0),
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
                 "shippingAddress": parse_json(row.get("shipping_address")),
@@ -112,6 +119,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "wooOrderId": row.get("woo_order_id") or None,
                 "wooOrderNumber": row.get("woo_order_number") or None,
                 "wooOrderKey": row.get("woo_order_key") or None,
+                "createdAt": fmt_datetime(row.get("created_at")),
                 "updatedAt": fmt_datetime(row.get("updated_at")),
             }
         )

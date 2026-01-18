@@ -1006,6 +1006,37 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
 
     merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders or [], local_orders or [])
 
+    # Also return local orders as a fallback (e.g., if Woo lookup fails due to missing email).
+    # The frontend will dedupe/merge local vs Woo entries.
+    local_summaries: List[Dict[str, Any]] = []
+    for local in local_orders or []:
+        if not isinstance(local, dict):
+            continue
+        identifier = str(local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id") or "").strip()
+        if not identifier:
+            continue
+        local_summaries.append(
+            {
+                "id": identifier,
+                "wooOrderId": local.get("wooOrderId") or None,
+                "wooOrderNumber": local.get("wooOrderNumber") or None,
+                "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "status": local.get("status") or "pending",
+                "total": float(local.get("total") or 0),
+                "shippingTotal": float(local.get("shippingTotal") or 0),
+                "currency": local.get("currency") or "USD",
+                "notes": local.get("notes") if local.get("notes") is not None else None,
+                "createdAt": local.get("createdAt") or None,
+                "updatedAt": local.get("updatedAt") or None,
+                "shippingAddress": local.get("shippingAddress") or None,
+                "expectedShipmentWindow": local.get("expectedShipmentWindow") or None,
+                "shippingCarrier": local.get("shippingCarrier") or None,
+                "shippingService": local.get("shippingService") or None,
+                "lineItems": local.get("items") or [],
+                "source": "peppro",
+            }
+        )
+
     # Enrich Woo orders with ShipStation status/tracking
     if merged_woo_orders:
         t0 = time.perf_counter()
@@ -1032,7 +1063,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
         pass
 
     return {
-        "local": [],
+        "local": local_summaries,
         "woo": merged_woo_orders,
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
         "wooError": woo_error,

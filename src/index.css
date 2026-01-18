@@ -5652,7 +5652,8 @@ html {
 .order-cancel-button:focus-visible {
   background-color: #0f172a6c;
   color: #ffffff;
-  border: 2px solid #0f172a6c !important;
+  /* Keep the border from appearing darker on hover (use a light outline). */
+  border-color: rgba(255, 255, 255, 0.35) !important;
 }
 
 .order-cancel-button:disabled {
