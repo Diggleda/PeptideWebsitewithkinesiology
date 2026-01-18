@@ -200,7 +200,45 @@ def handle_webhook():
             )
             abort(400, "Invalid webhook payload")
 
+        billing_email = None
+        try:
+            billing_email = (event.get("billing") or {}).get("email")
+            billing_email = billing_email.strip().lower() if isinstance(billing_email, str) else None
+        except Exception:
+            billing_email = None
+
         payload = woo_commerce_webhook.handle_event(event)
+        try:
+            logger.info(
+                "Woo webhook processed",
+                extra={
+                    "path": request.path,
+                    "topic": request.headers.get("X-WC-Webhook-Topic"),
+                    "resource": request.headers.get("X-WC-Webhook-Resource"),
+                    "event": request.headers.get("X-WC-Webhook-Event"),
+                    "deliveryId": request.headers.get("X-WC-Webhook-Delivery-ID"),
+                    "orderId": event.get("id"),
+                    "orderStatus": event.get("status"),
+                    "billingEmail": billing_email,
+                    "result": payload,
+                },
+            )
+        except Exception:
+            pass
+
+        # Best-effort: refresh the orders-by-email cache so PepPro reflects status changes
+        # immediately even if the UI is reading cached Woo results.
+        if billing_email:
+            def _refresh_orders_cache(email: str) -> None:
+                try:
+                    woo_commerce.fetch_orders_by_email(email, force=True)
+                except Exception:
+                    logger.debug("Woo orders-by-email cache refresh failed", exc_info=True, extra={"email": email})
+
+            try:
+                threading.Thread(target=_refresh_orders_cache, args=(billing_email,), daemon=True).start()
+            except Exception:
+                pass
         return payload
 
     # Use shared handler to ensure 4xx/5xx are logged with useful context.
