@@ -1691,7 +1691,10 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
     raw_id = order.get("id")
     woo_order_id = str(raw_id).strip() if raw_id is not None else None
     public_number = woo_number or woo_order_id
-    identifier = public_number or f"woo-{uuid4().hex[:8]}"
+    # IMPORTANT:
+    # - `id` must be the Woo order id (used by endpoints like /orders/<id>/invoice).
+    # - `number` is the public-facing order number shown in the UI.
+    identifier = woo_order_id or public_number or f"woo-{uuid4().hex[:8]}"
 
     if not public_number:
         # Trace situations where we fall back to a generated identifier.
