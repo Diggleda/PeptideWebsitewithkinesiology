@@ -50,6 +50,123 @@ def find_by_user_id(user_id: str) -> List[Dict]:
     return [order for order in _load() if order.get("userId") == user_id]
 
 
+def list_user_overlay_fields(user_id: str) -> List[Dict]:
+    """
+    Lightweight fetch for per-user UI overlay fields (status/notes/addresses/etc).
+
+    This avoids pulling large JSON payload columns for every request, which can be costly.
+    Returns a list of dicts shaped similarly to `_row_to_order` for the fields we need.
+    """
+    if not user_id:
+        return []
+    if not _using_mysql():
+        # Non-MySQL installs are small; fall back to full records.
+        return find_by_user_id(user_id)
+
+    rows = mysql_client.fetch_all(
+        """
+        SELECT
+            id,
+            status,
+            notes,
+            shipping_address,
+            expected_shipment_window,
+            shipping_carrier,
+            shipping_service,
+            woo_order_id,
+            woo_order_number,
+            woo_order_key,
+            updated_at
+        FROM orders
+        WHERE user_id = %(user_id)s
+        """,
+        {"user_id": user_id},
+    )
+
+    def parse_json(value):
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except Exception:
+            return None
+
+    def fmt_datetime(value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=timezone.utc).isoformat()
+        return str(value)
+
+    result: List[Dict] = []
+    for row in rows or []:
+        result.append(
+            {
+                "id": row.get("id"),
+                "status": row.get("status"),
+                "notes": row.get("notes") if row.get("notes") is not None else None,
+                "shippingAddress": parse_json(row.get("shipping_address")),
+                "expectedShipmentWindow": row.get("expected_shipment_window") or None,
+                "shippingCarrier": row.get("shipping_carrier"),
+                "shippingService": row.get("shipping_service"),
+                "wooOrderId": row.get("woo_order_id") or None,
+                "wooOrderNumber": row.get("woo_order_number") or None,
+                "wooOrderKey": row.get("woo_order_key") or None,
+                "updatedAt": fmt_datetime(row.get("updated_at")),
+            }
+        )
+    return result
+
+
+def update_status_fields(
+    order_id: str,
+    *,
+    status: str | None,
+    woo_order_id: Optional[str] = None,
+    woo_order_number: Optional[str] = None,
+    woo_order_key: Optional[str] = None,
+) -> None:
+    """
+    Lightweight MySQL update for webhook-driven status changes.
+    Avoids rewriting the full `payload` column.
+    Safe on older schemas for optional Woo columns (no-op if columns are missing).
+    """
+    if not order_id:
+        return
+    if not _using_mysql():
+        # Non-MySQL installs store full dicts; callers can fall back to update().
+        return
+    try:
+        mysql_client.execute(
+            """
+            UPDATE orders
+            SET
+                status = %(status)s,
+                woo_order_id = COALESCE(%(woo_order_id)s, woo_order_id),
+                woo_order_number = COALESCE(%(woo_order_number)s, woo_order_number),
+                woo_order_key = COALESCE(%(woo_order_key)s, woo_order_key),
+                updated_at = NOW()
+            WHERE id = %(id)s
+            """,
+            {
+                "id": order_id,
+                "status": status,
+                "woo_order_id": woo_order_id,
+                "woo_order_number": woo_order_number,
+                "woo_order_key": woo_order_key,
+            },
+        )
+    except Exception:
+        # Optional columns might not exist on older installs; ignore.
+        try:
+            mysql_client.execute(
+                "UPDATE orders SET status = %(status)s, updated_at = NOW() WHERE id = %(id)s",
+                {"id": order_id, "status": status},
+            )
+        except Exception:
+            return
+
+
 def find_by_user_ids(user_ids: List[str]) -> List[Dict]:
     ids = [str(uid).strip() for uid in (user_ids or []) if str(uid).strip()]
     if not ids:

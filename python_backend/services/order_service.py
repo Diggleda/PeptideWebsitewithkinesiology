@@ -746,46 +746,29 @@ def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, 
     if not local_order:
         return {"status": "skipped", "reason": "local_order_not_found", "wooOrderId": woo_order_id}
 
-    changed = False
-    if local_order.get("status") != status:
-        local_order["status"] = status
-        changed = True
+    changed = str(local_order.get("status") or "").strip().lower() != status
 
-    if woo_order_id and local_order.get("wooOrderId") != woo_order_id:
-        local_order["wooOrderId"] = woo_order_id
-        changed = True
-    if woo_order_number and local_order.get("wooOrderNumber") != woo_order_number:
-        local_order["wooOrderNumber"] = woo_order_number
-        changed = True
-    if woo_order_key and local_order.get("wooOrderKey") != woo_order_key:
-        local_order["wooOrderKey"] = woo_order_key
-        changed = True
-
-    integrations = _ensure_dict(local_order.get("integrationDetails"))
-    woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
-    woo_details["status"] = status
-    woo_details.setdefault("wooOrderId", woo_order_id)
-    if woo_order_number:
-        woo_details.setdefault("wooOrderNumber", woo_order_number)
-    integrations["wooCommerce"] = woo_details
-    local_order["integrationDetails"] = integrations
-
-    summary = _ensure_dict(local_order.get("integrations"))
-    if summary:
-        summary["wooCommerce"] = status
-        local_order["integrations"] = summary
-
-    local_order["updatedAt"] = datetime.now(timezone.utc).isoformat()
-
-    if changed:
-        order_repository.update(local_order)
+    # Prefer a lightweight DB update to avoid rewriting large payload JSON.
+    try:
+        order_repository.update_status_fields(
+            str(local_order.get("id") or ""),
+            status=status,
+            woo_order_id=woo_order_id or None,
+            woo_order_number=woo_order_number,
+            woo_order_key=woo_order_key,
+        )
+    except Exception:
+        # Fallback: update full record for non-MySQL installs.
         try:
-            order_repository.update_woo_fields(
-                str(local_order.get("id") or ""),
-                woo_order_id=woo_order_id or None,
-                woo_order_number=woo_order_number,
-                woo_order_key=woo_order_key,
-            )
+            local_order["status"] = status
+            if woo_order_id:
+                local_order["wooOrderId"] = woo_order_id
+            if woo_order_number:
+                local_order["wooOrderNumber"] = woo_order_number
+            if woo_order_key:
+                local_order["wooOrderKey"] = woo_order_key
+            local_order["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            order_repository.update(local_order)
         except Exception:
             pass
 
@@ -995,7 +978,8 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
     woo_error = None
 
     try:
-        local_orders = order_repository.find_by_user_id(user_id) or []
+        # Avoid pulling large payload columns; only load fields needed to overlay UI.
+        local_orders = order_repository.list_user_overlay_fields(user_id) or []
     except Exception:
         local_orders = []
 

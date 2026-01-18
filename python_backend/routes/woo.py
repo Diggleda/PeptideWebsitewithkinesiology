@@ -226,19 +226,7 @@ def handle_webhook():
         except Exception:
             pass
 
-        # Best-effort: refresh the orders-by-email cache so PepPro reflects status changes
-        # immediately even if the UI is reading cached Woo results.
-        if billing_email:
-            def _refresh_orders_cache(email: str) -> None:
-                try:
-                    woo_commerce.fetch_orders_by_email(email, force=True)
-                except Exception:
-                    logger.debug("Woo orders-by-email cache refresh failed", exc_info=True, extra={"email": email})
-
-            try:
-                threading.Thread(target=_refresh_orders_cache, args=(billing_email,), daemon=True).start()
-            except Exception:
-                pass
+        # Keep webhook handler lightweight; do not trigger extra Woo API calls here.
         return payload
 
     # Use shared handler to ensure 4xx/5xx are logged with useful context.

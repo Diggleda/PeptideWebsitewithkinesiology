@@ -3082,7 +3082,7 @@ export default function App() {
   const [accountOrdersSyncedAt, setAccountOrdersSyncedAt] = useState<
     string | null
   >(null);
-  const [showCanceledOrders, setShowCanceledOrders] = useState(false);
+  const [showCanceledOrders, setShowCanceledOrders] = useState(true);
   const postCheckoutOrderRef = useRef<{
     pepproOrderId: string | null;
     wooOrderId: string | null;
