@@ -146,6 +146,7 @@ def handle_webhook():
         if not secret:
             abort(500, "Webhook secret is not configured")
 
+        signature_verified = False
         if not signature:
             # Some proxies/CDNs can strip custom headers. As a fallback, allow a query token
             # (or header) that matches the configured webhook secret.
@@ -156,11 +157,12 @@ def handle_webhook():
                     "Woo webhook accepted via token fallback (missing signature header)",
                     extra={"path": request.path},
                 )
+                signature_verified = True
             else:
                 logger.warning("Woo webhook missing signature header", extra={"path": request.path})
                 abort(400, "Missing webhook signature")
 
-        if not verify_woocommerce_webhook_signature(request.data, signature, secret):
+        if not signature_verified and not verify_woocommerce_webhook_signature(request.data, signature, secret):
             logger.warning(
                 "Woo webhook signature verification failed",
                 extra={
