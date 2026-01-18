@@ -990,8 +990,14 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
     if not user:
         raise _service_error("User not found", 404)
 
+    local_orders = []
     woo_orders = []
     woo_error = None
+
+    try:
+        local_orders = order_repository.find_by_user_id(user_id) or []
+    except Exception:
+        local_orders = []
 
     email = (user.get("email") or "").strip().lower()
     if email:
@@ -1014,7 +1020,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
             logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
             woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
 
-    merged_woo_orders = woo_orders
+    merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders or [], local_orders or [])
 
     # Enrich Woo orders with ShipStation status/tracking
     if merged_woo_orders:

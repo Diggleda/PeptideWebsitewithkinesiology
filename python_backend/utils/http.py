@@ -4,6 +4,7 @@ import re
 from typing import Any, Callable, Tuple
 
 from flask import Response, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 
 _PUBLIC_SERVICE_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
@@ -39,8 +40,17 @@ def json_success(data: Any, status: int = 200) -> Response:
 
 
 def json_error(error: Exception) -> Response:
-    status = getattr(error, "status", 500)
+    status = getattr(error, "status", None)
+    if status is None and isinstance(error, HTTPException):
+        status = getattr(error, "code", None)
+    if status is None:
+        status = 500
+
     message = getattr(error, "message", None) or str(error) or "Internal server error"
+    if isinstance(error, HTTPException):
+        description = getattr(error, "description", None)
+        if isinstance(description, str) and description.strip():
+            message = description.strip()
     message = _sanitize_public_message(message)
     return jsonify({"error": message}), status
 
@@ -61,7 +71,10 @@ def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
         import logging
 
         logger = logging.getLogger("peppro.api")
-        http_status = int(getattr(exc, "status", 500) or 500)
+        http_status = getattr(exc, "status", None)
+        if http_status is None and isinstance(exc, HTTPException):
+            http_status = getattr(exc, "code", None)
+        http_status = int(http_status or 500)
         log_extra = {"method": request.method, "path": request.path, "status": http_status}
         # Avoid noisy tracebacks for expected 4xx control-flow errors (auth/validation/etc.).
         if http_status >= 500:
