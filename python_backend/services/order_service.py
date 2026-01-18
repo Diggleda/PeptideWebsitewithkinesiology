@@ -1060,6 +1060,15 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
         if not local_order:
             continue
 
+        # Prefer local status when present. The local `orders.status` is updated immediately
+        # via Woo webhook -> MySQL, while Woo order fetches may be served from cache.
+        local_status = local_order.get("status")
+        if isinstance(local_status, str) and local_status.strip():
+            order["status"] = local_status.strip()
+            woo_details["status"] = order["status"]
+            integrations["wooCommerce"] = woo_details
+            order["integrationDetails"] = integrations
+
         shipping_address = local_order.get("shippingAddress") or local_order.get("shipping_address")
         billing_address = local_order.get("billingAddress") or local_order.get("billing_address")
         if shipping_address:
