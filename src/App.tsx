@@ -15736,14 +15736,14 @@ export default function App() {
 	            }}
 	            onUserUpdated={(next) => setUser(next as User)}
 	            accountOrders={accountOrders}
-	            accountOrdersLoading={accountOrdersLoading}
-	            accountOrdersError={accountOrdersError}
-	            ordersLastSyncedAt={accountOrdersSyncedAt}
-	            onRefreshOrders={loadAccountOrders}
-	            showCanceledOrders={showCanceledOrders}
-	            onToggleShowCanceled={toggleShowCanceledOrders}
-	            accountModalRequest={accountModalRequest}
-	            onBuyOrderAgain={handleBuyOrderAgain}
+		            accountOrdersLoading={accountOrdersLoading}
+		            accountOrdersError={accountOrdersError}
+		            ordersLastSyncedAt={accountOrdersSyncedAt}
+		            onRefreshOrders={() => loadAccountOrders({ force: true })}
+		            showCanceledOrders={showCanceledOrders}
+		            onToggleShowCanceled={toggleShowCanceledOrders}
+		            accountModalRequest={accountModalRequest}
+		            onBuyOrderAgain={handleBuyOrderAgain}
 	            onCancelOrder={handleCancelOrder}
 	            referralCodes={referralCodesForHeader}
 	            catalogLoading={catalogLoading}

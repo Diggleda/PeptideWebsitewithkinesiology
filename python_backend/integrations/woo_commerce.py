@@ -1016,6 +1016,8 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
     base_url = _strip(config.woo_commerce.get("store_url", "")).rstrip("/")
     api_version = _strip(config.woo_commerce.get("api_version", "wc/v3")).lstrip("/")
     url = f"{base_url}/wp-json/{api_version}/orders"
+    timeout_seconds = int(config.woo_commerce.get("request_timeout_seconds") or 25)
+    timeout_seconds = max(5, min(timeout_seconds, 90))
 
     try:
         response = requests.post(
@@ -1025,7 +1027,7 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
                 _strip(config.woo_commerce.get("consumer_key")),
                 _strip(config.woo_commerce.get("consumer_secret")),
             ),
-            timeout=10,
+            timeout=timeout_seconds,
         )
         response.raise_for_status()
     except requests.RequestException as exc:
@@ -1065,7 +1067,7 @@ def forward_order(order: Dict, customer: Dict) -> Dict:
         # And force a stdout/stderr line to survive any logging config quirks on cPanel/Passenger.
         try:
             print(
-                f"WOO_COMMERCE_ERROR status={status_code} json={data} text={response_text} payload={payload}",
+                f"WOO_COMMERCE_ERROR status={status_code} type={type(exc).__name__} message={exc} json={data} text={response_text} payload={payload}",
                 flush=True,
             )
         except Exception:
