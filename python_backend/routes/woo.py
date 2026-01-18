@@ -181,6 +181,15 @@ def handle_webhook():
             except Exception:
                 event = None
         if not isinstance(event, dict):
+            # Some WooCommerce admin screens "ping" the Delivery URL without a JSON body.
+            # Treat an empty/non-JSON payload as a no-op success so the webhook can be saved,
+            # while still requiring auth (signature or token).
+            if not request.data or len(request.data) == 0:
+                logger.info(
+                    "Woo webhook ping received (empty payload)",
+                    extra={"path": request.path},
+                )
+                return {"status": "ok", "reason": "ping"}
             logger.warning(
                 "Woo webhook payload not JSON object",
                 extra={
