@@ -174,7 +174,24 @@ def handle_webhook():
             )
             abort(401, "Invalid webhook signature")
 
-        payload = woo_commerce_webhook.handle_event(request.get_json(silent=True) or {})
+        event = request.get_json(silent=True)
+        if event is None and request.data:
+            try:
+                event = json.loads(request.data.decode("utf-8"))
+            except Exception:
+                event = None
+        if not isinstance(event, dict):
+            logger.warning(
+                "Woo webhook payload not JSON object",
+                extra={
+                    "path": request.path,
+                    "contentType": request.headers.get("Content-Type"),
+                    "contentLength": request.headers.get("Content-Length"),
+                },
+            )
+            abort(400, "Invalid webhook payload")
+
+        payload = woo_commerce_webhook.handle_event(event)
         return payload
 
     # Use shared handler to ensure 4xx/5xx are logged with useful context.
