@@ -12,6 +12,7 @@ from pathlib import Path
 
 import requests
 from urllib.parse import urlparse, urlunparse, quote
+from logging import getLogger
 
 from ..middleware.auth import require_auth
 from ..config import get_config
@@ -22,6 +23,7 @@ from ..utils.security import verify_woocommerce_webhook_signature
 
 
 blueprint = Blueprint("woo", __name__, url_prefix="/api/woo")
+logger = getLogger(__name__)
 
 # Certificate uploads are sent as base64 (data URL) via JSON; base64 adds ~33% overhead.
 # Keep the binary limit reasonably high for scanned COAs while still preventing abuse.
@@ -143,7 +145,20 @@ def handle_webhook():
         if not secret:
             abort(500, "Webhook secret is not configured")
 
+        if not signature:
+            logger.warning("Woo webhook missing signature header", extra={"path": request.path})
+            abort(400, "Missing webhook signature")
+
         if not verify_woocommerce_webhook_signature(request.data, signature, secret):
+            logger.warning(
+                "Woo webhook signature verification failed",
+                extra={
+                    "path": request.path,
+                    "signaturePrefix": str(signature)[:12] if signature else None,
+                    "contentType": request.headers.get("Content-Type"),
+                    "contentLength": request.headers.get("Content-Length"),
+                },
+            )
             abort(401, "Invalid webhook signature")
 
         payload = woo_commerce_webhook.handle_event(request.get_json(silent=True) or {})

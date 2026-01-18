@@ -76,6 +76,16 @@ def handle_action(action: Callable[[], Any], status: int = 200) -> Response:
             http_status = getattr(exc, "code", None)
         http_status = int(http_status or 500)
         log_extra = {"method": request.method, "path": request.path, "status": http_status}
+        try:
+            message = getattr(exc, "message", None) or str(exc) or None
+            if isinstance(exc, HTTPException):
+                description = getattr(exc, "description", None)
+                if isinstance(description, str) and description.strip():
+                    message = description.strip()
+            if isinstance(message, str) and message.strip():
+                log_extra["error"] = _sanitize_public_message(message.strip())
+        except Exception:
+            pass
         # Avoid noisy tracebacks for expected 4xx control-flow errors (auth/validation/etc.).
         if http_status >= 500:
             logger.exception("Unhandled API error", extra=log_extra)
