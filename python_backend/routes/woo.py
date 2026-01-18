@@ -9,6 +9,7 @@ import re
 import threading
 import time
 from pathlib import Path
+import hmac
 
 import requests
 from urllib.parse import urlparse, urlunparse, quote
@@ -146,8 +147,18 @@ def handle_webhook():
             abort(500, "Webhook secret is not configured")
 
         if not signature:
-            logger.warning("Woo webhook missing signature header", extra={"path": request.path})
-            abort(400, "Missing webhook signature")
+            # Some proxies/CDNs can strip custom headers. As a fallback, allow a query token
+            # (or header) that matches the configured webhook secret.
+            token = (request.args.get("token") or "").strip()
+            token_header = (request.headers.get("X-PepPro-Webhook-Token") or "").strip()
+            if (token and hmac.compare_digest(token, secret)) or (token_header and hmac.compare_digest(token_header, secret)):
+                logger.warning(
+                    "Woo webhook accepted via token fallback (missing signature header)",
+                    extra={"path": request.path},
+                )
+            else:
+                logger.warning("Woo webhook missing signature header", extra={"path": request.path})
+                abort(400, "Missing webhook signature")
 
         if not verify_woocommerce_webhook_signature(request.data, signature, secret):
             logger.warning(
