@@ -53,11 +53,9 @@ function peppro_bacs_email_instructions($order, $sent_to_admin, $plain_text, $em
     return;
   }
 
-  if (peppro_is_zelle_order($order)) {
-    $msg = "We received your order! Please Zelle support@peppro.net with the memo 'Order #{$order->get_order_number()}'. Instructions to follow in an email.";
-    echo $plain_text ? ($msg . "\n") : ('<p>' . esc_html($msg) . '</p>');
-    return;
-  }
+  // Zelle: the intro is handled by our custom on-hold email template; don't output any
+  // additional payment instructions here (avoids duplicate Zelle messaging).
+  if (peppro_is_zelle_order($order)) return;
 
   // ACH: keep Woo's normal Direct Bank Transfer instructions + bank details
   $gateways['bacs']->email_instructions($order, $sent_to_admin, $plain_text);

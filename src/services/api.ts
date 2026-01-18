@@ -332,12 +332,17 @@ const _PEPPRO_DEFAULT_TIMEOUT_MS = 15000;
 const _PEPPRO_AUTH_TIMEOUT_MS = 12000;
 const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
+const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
 
 const _timeoutMsForRequest = (url: string, method: string) => {
   const normalized = String(url || '').toLowerCase();
   if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
   if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
   if (normalized.includes('/api/settings/user-activity/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  // Order placement can be slower because it may sync with WooCommerce.
+  if (method === 'POST' && (normalized.endsWith('/api/orders') || normalized.includes('/api/orders/'))) {
+    return _PEPPRO_CHECKOUT_TIMEOUT_MS;
+  }
   if (method === 'GET') return _PEPPRO_DEFAULT_TIMEOUT_MS;
   return _PEPPRO_DEFAULT_TIMEOUT_MS;
 };
