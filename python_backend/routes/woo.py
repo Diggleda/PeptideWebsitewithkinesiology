@@ -17,7 +17,7 @@ from ..middleware.auth import require_auth
 from ..config import get_config
 from ..integrations import woo_commerce, woo_commerce_webhook
 from ..repositories import product_document_repository
-from ..utils.http import json_error
+from ..utils.http import handle_action, json_error
 from ..utils.security import verify_woocommerce_webhook_signature
 
 
@@ -136,7 +136,7 @@ def get_product_variation(product_id: int, variation_id: int):
 
 @blueprint.post("/webhook")
 def handle_webhook():
-    try:
+    def action():
         signature = request.headers.get("X-WC-Webhook-Signature")
         secret = get_config().woo_commerce.get("webhook_secret")
 
@@ -146,10 +146,11 @@ def handle_webhook():
         if not verify_woocommerce_webhook_signature(request.data, signature, secret):
             abort(401, "Invalid webhook signature")
 
-        payload = woo_commerce_webhook.handle_event(request.get_json())
-        return jsonify(payload)
-    except Exception as exc:  # pragma: no cover - defensive
-        return json_error(exc)
+        payload = woo_commerce_webhook.handle_event(request.get_json(silent=True) or {})
+        return payload
+
+    # Use shared handler to ensure 4xx/5xx are logged with useful context.
+    return handle_action(action)
 
 
 def _allowed_media_hosts() -> set[str]:
