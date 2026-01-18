@@ -710,6 +710,94 @@ def _find_order_by_woo_id(woo_order_id: str) -> Optional[Dict]:
     return None
 
 
+def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Mirror Woo order status into the local PepPro `orders` table (best-effort).
+
+    This enables near-real-time status updates (e.g., on-hold -> processing) without relying on polling.
+    """
+    if not isinstance(order_data, dict):
+        return {"status": "skipped", "reason": "invalid_payload"}
+
+    raw_id = order_data.get("id")
+    woo_order_id = str(raw_id).strip() if raw_id is not None else ""
+    woo_order_number = str(order_data.get("number") or "").strip() or None
+    woo_order_key = str(order_data.get("order_key") or "").strip() or None
+    status = str(order_data.get("status") or "").strip().lower() or None
+
+    if not woo_order_id or not status:
+        return {"status": "skipped", "reason": "missing_id_or_status"}
+
+    peppro_order_id = None
+    meta = order_data.get("meta_data") or []
+    if isinstance(meta, list):
+        for entry in meta:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("key") or "").strip() == "peppro_order_id":
+                value = entry.get("value")
+                peppro_order_id = str(value).strip() if value is not None else None
+                if peppro_order_id:
+                    break
+
+    local_order = order_repository.find_by_id(peppro_order_id) if peppro_order_id else None
+    if not local_order:
+        local_order = _find_order_by_woo_id(woo_order_id) or (_find_order_by_woo_id(woo_order_number) if woo_order_number else None)
+    if not local_order:
+        return {"status": "skipped", "reason": "local_order_not_found", "wooOrderId": woo_order_id}
+
+    changed = False
+    if local_order.get("status") != status:
+        local_order["status"] = status
+        changed = True
+
+    if woo_order_id and local_order.get("wooOrderId") != woo_order_id:
+        local_order["wooOrderId"] = woo_order_id
+        changed = True
+    if woo_order_number and local_order.get("wooOrderNumber") != woo_order_number:
+        local_order["wooOrderNumber"] = woo_order_number
+        changed = True
+    if woo_order_key and local_order.get("wooOrderKey") != woo_order_key:
+        local_order["wooOrderKey"] = woo_order_key
+        changed = True
+
+    integrations = _ensure_dict(local_order.get("integrationDetails"))
+    woo_details = _ensure_dict(integrations.get("wooCommerce") or integrations.get("woocommerce"))
+    woo_details["status"] = status
+    woo_details.setdefault("wooOrderId", woo_order_id)
+    if woo_order_number:
+        woo_details.setdefault("wooOrderNumber", woo_order_number)
+    integrations["wooCommerce"] = woo_details
+    local_order["integrationDetails"] = integrations
+
+    summary = _ensure_dict(local_order.get("integrations"))
+    if summary:
+        summary["wooCommerce"] = status
+        local_order["integrations"] = summary
+
+    local_order["updatedAt"] = datetime.now(timezone.utc).isoformat()
+
+    if changed:
+        order_repository.update(local_order)
+        try:
+            order_repository.update_woo_fields(
+                str(local_order.get("id") or ""),
+                woo_order_id=woo_order_id or None,
+                woo_order_number=woo_order_number,
+                woo_order_key=woo_order_key,
+            )
+        except Exception:
+            pass
+
+    return {
+        "status": "updated" if changed else "noop",
+        "orderId": local_order.get("id"),
+        "wooOrderId": woo_order_id,
+        "wooOrderNumber": woo_order_number,
+        "wooStatus": status,
+    }
+
+
 def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> Dict:
     """
     Cancel a WooCommerce order first (source of truth), then mirror status locally if present.

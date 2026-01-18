@@ -10,6 +10,14 @@ if (!defined('ABSPATH')) exit;
 add_action('plugins_loaded', function () {
   if (!class_exists('WooCommerce')) return;
 
+  // Override the Customer On-hold email template so we can customize the intro text
+  // based on payment method (Zelle vs ACH) without touching the theme.
+  add_filter('woocommerce_locate_template', function ($template, $template_name, $template_path) {
+    if ($template_name !== 'emails/customer-on-hold-order.php') return $template;
+    $custom = plugin_dir_path(__FILE__) . 'templates/emails/customer-on-hold-order.php';
+    return file_exists($custom) ? $custom : $template;
+  }, 10, 3);
+
   add_action('init', function () {
     if (!function_exists('WC')) return;
 

@@ -48,10 +48,13 @@ _WOO_PROXY_INFLIGHT_WAIT_SECONDS = float(os.environ.get("WOO_PROXY_INFLIGHT_WAIT
 _WOO_PROXY_INFLIGHT_WAIT_SECONDS = max(1.0, min(_WOO_PROXY_INFLIGHT_WAIT_SECONDS, 35.0))
 _orders_by_email_cache: Dict[str, Dict[str, Any]] = {}
 _orders_by_email_cache_lock = threading.Lock()
+_orders_by_email_cached_warning_at_ms: Dict[str, int] = {}
 _ORDERS_BY_EMAIL_TTL_SECONDS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_TTL_SECONDS", "30").strip() or 30)
 _ORDERS_BY_EMAIL_TTL_SECONDS = max(5, min(_ORDERS_BY_EMAIL_TTL_SECONDS, 300))
 _ORDERS_BY_EMAIL_MAX_STALE_MS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_MAX_STALE_MS", str(15 * 60 * 1000)).strip() or 0)
 _ORDERS_BY_EMAIL_MAX_STALE_MS = _ORDERS_BY_EMAIL_MAX_STALE_MS if _ORDERS_BY_EMAIL_MAX_STALE_MS > 0 else 15 * 60 * 1000
+_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS", "60000").strip() or 60000)
+_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS = max(5_000, min(_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS, 10 * 60 * 1000))
 
 
 def _now_ms() -> int:
@@ -1879,12 +1882,23 @@ def fetch_orders_by_email(email: str, per_page: int = 15, *, force: bool = False
     except IntegrationError as exc:
         status = getattr(exc, "status", None)
         if _should_retry_status(status):
+            def should_warn_cached(kind: str) -> bool:
+                now_local = int(time.time() * 1000)
+                key = f"{cache_key}::{kind}"
+                with _orders_by_email_cache_lock:
+                    last = int(_orders_by_email_cached_warning_at_ms.get(key) or 0)
+                    if last and now_local - last < _ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS:
+                        return False
+                    _orders_by_email_cached_warning_at_ms[key] = now_local
+                return True
+
             with _orders_by_email_cache_lock:
                 cached = _orders_by_email_cache.get(cache_key)
                 if cached:
                     expires_at = int(cached.get("expiresAt") or 0)
                     if now_ms - expires_at <= _ORDERS_BY_EMAIL_MAX_STALE_MS:
-                        logger.warning(
+                        log = logger.warning if should_warn_cached("memory") else logger.debug
+                        log(
                             "WooCommerce orders fetch failed; serving cached orders",
                             extra={"email": trimmed, "status": status},
                         )
@@ -1893,7 +1907,8 @@ def fetch_orders_by_email(email: str, per_page: int = 15, *, force: bool = False
             if disk_cached and isinstance(disk_cached, dict):
                 fetched_at = int(disk_cached.get("fetchedAt") or 0)
                 if now_ms - fetched_at <= _ORDERS_BY_EMAIL_MAX_STALE_MS:
-                    logger.warning(
+                    log = logger.warning if should_warn_cached("disk") else logger.debug
+                    log(
                         "WooCommerce orders fetch failed; serving cached orders from disk",
                         extra={"email": trimmed, "status": status},
                     )

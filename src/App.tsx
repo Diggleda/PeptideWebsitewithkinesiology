@@ -15739,7 +15739,7 @@ export default function App() {
 		            accountOrdersLoading={accountOrdersLoading}
 		            accountOrdersError={accountOrdersError}
 		            ordersLastSyncedAt={accountOrdersSyncedAt}
-		            onRefreshOrders={() => loadAccountOrders({ force: true })}
+		            onRefreshOrders={loadAccountOrders}
 		            showCanceledOrders={showCanceledOrders}
 		            onToggleShowCanceled={toggleShowCanceledOrders}
 		            accountModalRequest={accountModalRequest}

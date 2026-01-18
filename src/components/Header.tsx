@@ -227,7 +227,7 @@ interface HeaderProps {
   accountOrdersLoading?: boolean;
   accountOrdersError?: string | null;
   ordersLastSyncedAt?: string | null;
-  onRefreshOrders?: () => Promise<unknown> | void;
+  onRefreshOrders?: (options?: { force?: boolean }) => Promise<unknown> | void;
   accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number; order?: AccountOrderSummary } | null;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
@@ -1893,9 +1893,9 @@ export function Header({
 
   // Auto-refresh orders when the orders tab is open
   useEffect(() => {
-	    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
-	      return undefined;
-	    }
+		    if (!welcomeOpen || accountTab !== 'orders' || !onRefreshOrders || !user) {
+		      return undefined;
+		    }
 	    let cancelled = false;
 	    let inFlight = false;
 	    const leaderKey = 'orders-auto-refresh';
@@ -1907,17 +1907,17 @@ export function Header({
       return true;
     };
 
-	    const runRefresh = async () => {
-	      if (cancelled || inFlight) return;
-	      if (!shouldRefresh()) return;
-	      if (!isTabLeader(leaderKey, leaderTtlMs)) return;
-	      inFlight = true;
-	      try {
-	        await Promise.resolve(onRefreshOrders());
-	      } finally {
-	        inFlight = false;
-	      }
-	    };
+		    const runRefresh = async () => {
+		      if (cancelled || inFlight) return;
+		      if (!shouldRefresh()) return;
+		      if (!isTabLeader(leaderKey, leaderTtlMs)) return;
+		      inFlight = true;
+		      try {
+		        await Promise.resolve(onRefreshOrders());
+		      } finally {
+		        inFlight = false;
+		      }
+		    };
 
     void runRefresh();
     const intervalId = window.setInterval(() => {
@@ -2318,16 +2318,16 @@ export function Header({
       ? selectedOrder.cancellationId || selectedOrder.wooOrderId || selectedOrder.id
       : null;
 
-    void (async () => {
-      const started = Date.now();
-      const timeoutMs = 180_000;
-      const intervalMs = 1500;
-      while (Date.now() - started < timeoutMs) {
-        try {
-          await Promise.resolve(onRefreshOrders?.());
-        } catch {
-          // ignore refresh errors during polling
-        }
+	    void (async () => {
+	      const started = Date.now();
+	      const timeoutMs = 180_000;
+	      const intervalMs = 1500;
+	      while (Date.now() - started < timeoutMs) {
+	        try {
+	          await Promise.resolve(onRefreshOrders?.());
+	        } catch {
+	          // ignore refresh errors during polling
+	        }
         const match = cachedAccountOrdersRef.current.find(matchesCancellationKey);
         if (match && isTerminalCancelStatus(match.status)) {
           if (selectedCancellationId && String(selectedCancellationId) === String(orderId)) {
@@ -3685,18 +3685,18 @@ export function Header({
       {/* Header Section */}
       <div className="flex flex-col gap-4">
 	        
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {ordersLastSyncedAt && (
-            <button
-              type="button"
-              onClick={() => Promise.resolve(onRefreshOrders?.())}
-              disabled={!onRefreshOrders}
-              title={onRefreshOrders ? 'Refresh orders' : undefined}
-              className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)] disabled:opacity-70 disabled:cursor-default hover:text-slate-700 hover:border-[var(--brand-glass-border-2)] transition-colors"
-            >
-              {formatRelativeMinutes(ordersLastSyncedAt)}
-            </button>
-          )}
+	        <div className="flex flex-wrap items-center justify-between gap-3">
+	          {ordersLastSyncedAt && (
+	            <button
+	              type="button"
+	              onClick={() => Promise.resolve(onRefreshOrders?.({ force: true }))}
+	              disabled={!onRefreshOrders}
+	              title={onRefreshOrders ? 'Refresh orders' : undefined}
+	              className="text-xs text-slate-500 px-3 py-1.5 glass-card squircle-sm border border-[var(--brand-glass-border-1)] disabled:opacity-70 disabled:cursor-default hover:text-slate-700 hover:border-[var(--brand-glass-border-2)] transition-colors"
+	            >
+	              {formatRelativeMinutes(ordersLastSyncedAt)}
+	            </button>
+	          )}
 
           <Input
             value={ordersSearchQuery}

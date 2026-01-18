@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from ..config import get_config
 from ..repositories import credit_ledger_repository, user_repository
+from ..services import order_service
 from ..services.email_service import send_template
 from .service_error import ServiceError
 from logging import getLogger
@@ -14,11 +15,19 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
     order_status = order_data.get("status")
     customer_email = order_data.get("billing", {}).get("email")
 
-    if not all([order_id, order_status, customer_email]):
+    if not order_id or not order_status:
         raise ServiceError("Missing required order data", 400)
 
     if order_status != "refunded":
-        return {"status": "skipped", "reason": "not_a_refund"}
+        # Mirror status locally (best-effort) so PepPro reflects Woo changes promptly.
+        try:
+            return order_service.sync_order_status_from_woo_webhook(order_data)
+        except Exception:
+            logger.warning("Failed to sync local order from Woo webhook", exc_info=True)
+            return {"status": "skipped", "reason": "local_sync_failed"}
+
+    if not customer_email:
+        raise ServiceError("Missing required order data", 400)
 
     # Find the user by email
     user = user_repository.find_by_email(customer_email)
@@ -60,10 +69,18 @@ def handle_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a WooCommerce webhook event.
     """
-    # The actual order data is nested inside the 'arg' key for order.updated
-    order_data = event.get("arg")
+    if not isinstance(event, dict):
+        raise ServiceError("Invalid webhook payload", 400)
 
-    if not order_data:
+    # Standard WooCommerce webhooks send the order object directly.
+    # Some systems may wrap it (e.g. `{arg: {...}}` or `{order: {...}}`).
+    order_data = event.get("arg")
+    if not isinstance(order_data, dict):
+        order_data = event.get("order")
+    if not isinstance(order_data, dict) and "id" in event and "status" in event:
+        order_data = event
+
+    if not isinstance(order_data, dict):
         raise ServiceError("Invalid webhook payload", 400)
 
     # The topic is not always available, so we infer from the presence of 'arg'
