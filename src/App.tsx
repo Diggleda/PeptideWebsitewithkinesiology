@@ -1431,7 +1431,7 @@ const IMAGE_PREFETCH_DELAY_MS = (() => {
 const SALES_REP_PIPELINE = [
   {
     key: "pending_combined",
-    label: "Pending / Contact Form",
+    label: "Pending",
     statuses: ["pending", "contact_form"],
   },
   {
@@ -1505,7 +1505,7 @@ const toTitleCase = (value?: string | null): string | null => {
 };
 
 const CONTACT_FORM_STATUS_FLOW = [
-  { key: "contact_form", label: "Pending / Contact Form" },
+  { key: "contact_form", label: "Pending" },
   { key: "contacted", label: "Contacting" },
   { key: "verified", label: "Verified" },
   { key: "account_created", label: "Account Created" },
@@ -1543,6 +1543,46 @@ const wrapPipelineLabel = (label: string, maxLength = 12): string[] => {
   return lines;
 };
 
+const PipelineTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+}) => {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+  const entry = payload[0]?.payload || {};
+  const names = Array.isArray(entry.names) ? entry.names : [];
+  const count = Number(entry.count) || 0;
+  const maxNames = 10;
+  const visibleNames = names.slice(0, maxNames);
+  const remaining = names.length - visibleNames.length;
+  return (
+    <div className="pipeline-tooltip max-w-[260px] rounded-xl border border-slate-200/90 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-lg backdrop-blur-lg">
+      <div className="text-sm font-semibold text-slate-900">{label}</div>
+      <div className="text-[11px] text-slate-500">
+        {count} lead{count === 1 ? "" : "s"}
+      </div>
+      {visibleNames.length > 0 && (
+        <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[11px] text-slate-700">
+          {visibleNames.map((name: string) => (
+            <li key={name} className="truncate">
+              {name}
+            </li>
+          ))}
+          {remaining > 0 && (
+            <li className="text-slate-500">+{remaining} more</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const PipelineXAxisTick = ({
   x = 0,
   y = 0,
@@ -1578,7 +1618,7 @@ const humanizeReferralStatus = (status?: string) => {
     return match.label;
   }
   if (normalized === "contact_form") {
-    return "Contact Form";
+    return "Pending";
   }
   return status
     .split("_")
@@ -1593,6 +1633,27 @@ const stripHtml = (value?: string | null): string =>
         .replace(/\s+/g, " ")
         .trim()
     : "";
+
+const formatDateInputValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultSalesBySalesRepPeriod = (
+  now: Date = new Date(),
+): { start: string; end: string } => {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const midpointDay = Math.ceil(daysInMonth / 2);
+  const startDay = dayOfMonth <= midpointDay ? 1 : midpointDay;
+  const start = formatDateInputValue(new Date(year, month, startDay));
+  const end = formatDateInputValue(now);
+  return { start, end };
+};
 
 const formatNewsDate = (dateString?: string | null): string => {
   if (!dateString) return "";
@@ -5783,8 +5844,12 @@ export default function App() {
   const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<
     string | null
   >(null);
-  const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>("");
-  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>("");
+  const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
+    () => getDefaultSalesBySalesRepPeriod().start,
+  );
+  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
+    () => getDefaultSalesBySalesRepPeriod().end,
+  );
   const [userReferralCodes, setUserReferralCodes] = useState<string[]>([]);
   const normalizeReferralCodeValue = useCallback((value: unknown): string => {
     if (typeof value === "string") {
@@ -5917,9 +5982,18 @@ export default function App() {
     setSalesRepSalesSummaryLoading(true);
     setSalesRepSalesSummaryError(null);
     try {
+      const defaults = getDefaultSalesBySalesRepPeriod();
+      const periodStart = salesRepPeriodStart || defaults.start;
+      const periodEnd = salesRepPeriodEnd || defaults.end;
+      if (!salesRepPeriodStart) {
+        setSalesRepPeriodStart(periodStart);
+      }
+      if (!salesRepPeriodEnd) {
+        setSalesRepPeriodEnd(periodEnd);
+      }
       const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
-        periodStart: salesRepPeriodStart || undefined,
-        periodEnd: salesRepPeriodEnd || undefined,
+        periodStart: periodStart || undefined,
+        periodEnd: periodEnd || undefined,
       });
       const summaryArray = Array.isArray(salesSummaryResponse)
         ? salesSummaryResponse
@@ -6130,58 +6204,7 @@ export default function App() {
     },
     [user?.id, user?.role, postLoginHold],
   );
-  type UserActivityWindow =
-    | "hour"
-    | "day"
-    | "3days"
-    | "week"
-    | "month"
-    | "6months"
-    | "year";
-	  type UserActivityReport = {
-	    window: UserActivityWindow;
-	    etag?: string;
-	    generatedAt: string;
-	    cutoff: string;
-	    total: number;
-	    byRole: Record<string, number>;
-	    liveUsers?: Array<{
-	      id: string;
-	      name: string | null;
-	      email: string | null;
-	      role: string;
-	      isOnline: boolean;
-	      isIdle?: boolean | null;
-	      lastLoginAt: string | null;
-	      lastSeenAt?: string | null;
-	      lastInteractionAt?: string | null;
-	      profileImageUrl?: string | null;
-	    }>;
-	    users: Array<{
-	      id: string;
-	      name: string | null;
-	      email: string | null;
-	      role: string;
-	      isOnline: boolean;
-	      isIdle?: boolean | null;
-	      lastLoginAt: string | null;
-	      lastSeenAt?: string | null;
-	      lastInteractionAt?: string | null;
-	      profileImageUrl?: string | null;
-	    }>;
-	  };
-  const [userActivityWindow, setUserActivityWindow] =
-    useState<UserActivityWindow>("day");
-  const [userActivityReport, setUserActivityReport] =
-    useState<UserActivityReport | null>(null);
-  const [userActivityLoading, setUserActivityLoading] = useState(false);
-  const [userActivityError, setUserActivityError] = useState<string | null>(
-    null,
-  );
-  const userActivityPollInFlightRef = useRef(false);
-  const userActivityEtagRef = useRef<string | null>(null);
-	  const userActivityLongPollDisabledRef = useRef(false);
-		  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
+  const [userActivityNowTick, setUserActivityNowTick] = useState(0);
 	  const [isIdle, setIsIdle] = useState(false);
 	  const isIdleRef = useRef(false);
 	  const lastActivityAtRef = useRef<number>(Date.now());
@@ -6190,11 +6213,11 @@ export default function App() {
 	  const lastPresenceHeartbeatPingAtRef = useRef(0);
 	  const lastPresenceInteractionPingAtRef = useRef(0);
 
-	  useEffect(() => {
+  useEffect(() => {
 	    isIdleRef.current = isIdle;
 	  }, [isIdle]);
 
-	  useEffect(() => {
+  useEffect(() => {
 	    if (!isAdmin(user?.role) && !isRep(user?.role)) return;
 	    const id = window.setInterval(() => {
 	      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
@@ -6213,8 +6236,9 @@ export default function App() {
 	  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
 	  const adminLiveUsersLongPollDisabledRef = useRef(false);
-	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(true);
+	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(false);
 	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
+	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
 
 	  useEffect(() => {
 	    if (!isRep(user?.role)) {
@@ -6449,143 +6473,7 @@ export default function App() {
 	    return minutes < 1 ? "<1min" : `${minutes}min`;
 	  };
 
-  useEffect(() => {
-    if (!isAdmin(user?.role)) {
-      setUserActivityReport(null);
-      setUserActivityLoading(false);
-      setUserActivityError(null);
-      userActivityEtagRef.current = null;
-      return;
-    }
-    let cancelled = false;
-    setUserActivityLoading(true);
-    setUserActivityError(null);
-    const fetchUserActivity = async () => {
-      try {
-        const report = (await settingsAPI.getUserActivity(
-          userActivityWindow,
-        )) as any;
-        if (cancelled) return;
-        userActivityEtagRef.current =
-          typeof report?.etag === "string" ? report.etag : null;
-        setUserActivityReport(report as UserActivityReport);
-      } catch (error) {
-        if (cancelled) return;
-        setUserActivityReport(null);
-        setUserActivityError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load user activity.",
-        );
-      } finally {
-        if (!cancelled) setUserActivityLoading(false);
-      }
-    };
-    fetchUserActivity();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.role, userActivityWindow]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (!user || !isAdmin(user.role) || postLoginHold) {
-      return;
-    }
-
-    let cancelled = false;
-    let intervalId: number | null = null;
-    const pollIntervalMs = 4000;
-    const longPollTimeoutMs = 25000;
-
-    const poll = async () => {
-      if (cancelled) return;
-      if (!isPageVisible()) return;
-      if (!isOnline()) return;
-      if (userActivityPollInFlightRef.current) return;
-
-      userActivityPollInFlightRef.current = true;
-      try {
-        const report = (await settingsAPI.getUserActivity(
-          userActivityWindow,
-        )) as any;
-        if (!cancelled) {
-          userActivityEtagRef.current =
-            typeof report?.etag === "string" ? report.etag : null;
-          setUserActivityReport(report as UserActivityReport);
-        }
-      } catch (error) {
-        // Keep the last-known report to avoid UI flicker; next poll will retry.
-        if (!cancelled) {
-          console.debug("[Admin] User activity poll failed", error);
-        }
-      } finally {
-        userActivityPollInFlightRef.current = false;
-      }
-    };
-
-    const startIntervalFallback = () => {
-      if (intervalId !== null) return;
-      void poll();
-      intervalId = window.setInterval(() => {
-        void poll();
-      }, pollIntervalMs);
-    };
-
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-
-    const controller = new AbortController();
-    const runLongPoll = async () => {
-      if (userActivityLongPollDisabledRef.current) {
-        startIntervalFallback();
-        return;
-      }
-
-      while (!cancelled) {
-        if (!isPageVisible() || !isOnline()) {
-          // Keep the loop frontend-only and responsive.
-          // eslint-disable-next-line no-await-in-loop
-          await sleep(800);
-          continue;
-        }
-        try {
-          const report = (await settingsAPI.getUserActivityLongPoll(
-            userActivityWindow,
-            userActivityEtagRef.current,
-            longPollTimeoutMs,
-            controller.signal,
-          )) as any;
-          if (cancelled) break;
-          userActivityEtagRef.current =
-            typeof report?.etag === "string" ? report.etag : null;
-          setUserActivityReport(report as UserActivityReport);
-        } catch (error: any) {
-          if (cancelled) break;
-          if (typeof error?.status === "number" && error.status === 404) {
-            userActivityLongPollDisabledRef.current = true;
-            startIntervalFallback();
-            return;
-          }
-          // eslint-disable-next-line no-await-in-loop
-          await sleep(pollIntervalMs);
-        }
-      }
-    };
-
-    void runLongPoll();
-
-    return () => {
-      cancelled = true;
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-      controller.abort();
-    };
-  }, [postLoginHold, user?.id, user?.role, userActivityWindow]);
-
+	  
 	  useEffect(() => {
 	    if (!user || !isAdmin(user.role) || postLoginHold) {
 	      setServerHealthPayload(null);
@@ -7994,7 +7882,7 @@ export default function App() {
 		      stage.statuses.forEach((statusKey) => statusRank.set(statusKey, index));
 		    });
 
-		    const identityKeyForReferral = (referral: any, index: number): string => {
+			    const identityKeyForReferral = (referral: any, index: number): string => {
 		      const accountId =
 		        referral?.referredContactAccountId ||
 		        referral?.convertedDoctorId ||
@@ -8022,41 +7910,68 @@ export default function App() {
 		      if (referral?.id != null) {
 		        return `id:${String(referral.id)}`;
 		      }
-		      return `idx:${index}`;
-		    };
+			      return `idx:${index}`;
+			    };
 
-		    const bestByIdentity = new Map<string, { status: string }>();
-		    normalizedReferrals.forEach((referral, index) => {
-		      const status = hasLeadPlacedOrder(referral)
-		        ? "nuture"
-		        : sanitizeReferralStatus(referral.status);
-		      const key = identityKeyForReferral(referral, index);
-		      const existing = bestByIdentity.get(key);
-		      if (!existing) {
-		        bestByIdentity.set(key, { status });
-		        return;
-		      }
-		      const nextRank = statusRank.get(status) ?? -1;
-		      const prevRank = statusRank.get(existing.status) ?? -1;
-		      if (nextRank > prevRank) {
-		        bestByIdentity.set(key, { status });
-		      }
-		    });
+			    const pipelineNameForReferral = (referral: any): string => {
+			      const name =
+			        referral?.referredContactName ||
+			        referral?.referredContactEmail ||
+			        referral?.referredContactPhone ||
+			        referral?.referrerDoctorName ||
+			        "Prospect";
+			      return String(name).trim() || "Prospect";
+			    };
 
-		    const counts: Record<string, number> = {};
-		    bestByIdentity.forEach(({ status }) => {
-		      counts[status] = (counts[status] || 0) + 1;
-		    });
+			    const bestByIdentity = new Map<string, { status: string; name: string }>();
+			    normalizedReferrals.forEach((referral, index) => {
+			      const status = hasLeadPlacedOrder(referral)
+			        ? "nuture"
+			        : sanitizeReferralStatus(referral.status);
+			      const key = identityKeyForReferral(referral, index);
+			      const name = pipelineNameForReferral(referral);
+			      const existing = bestByIdentity.get(key);
+			      if (!existing) {
+			        bestByIdentity.set(key, { status, name });
+			        return;
+			      }
+			      const nextRank = statusRank.get(status) ?? -1;
+			      const prevRank = statusRank.get(existing.status) ?? -1;
+			      if (nextRank > prevRank) {
+			        bestByIdentity.set(key, { status, name });
+			      }
+			    });
 
-	    return SALES_REP_PIPELINE.map((stage) => ({
-	      status: stage.key,
-	      label: stage.label,
-      count: stage.statuses.reduce(
-        (total, statusKey) => total + (counts[statusKey] || 0),
-        0,
-      ),
-    }));
-	  }, [hasLeadPlacedOrder, normalizedReferrals]);
+			    const counts: Record<string, number> = {};
+			    const namesByStatus: Record<string, Set<string>> = {};
+			    bestByIdentity.forEach(({ status, name }) => {
+			      counts[status] = (counts[status] || 0) + 1;
+			      if (!namesByStatus[status]) {
+			        namesByStatus[status] = new Set();
+			      }
+			      if (name) {
+			        namesByStatus[status].add(name);
+			      }
+			    });
+
+		    return SALES_REP_PIPELINE.map((stage) => ({
+		      status: stage.key,
+		      label: stage.label,
+	      count: stage.statuses.reduce(
+	        (total, statusKey) => total + (counts[statusKey] || 0),
+	        0,
+	      ),
+		      names: (() => {
+		        const nameSet = new Set<string>();
+		        stage.statuses.forEach((statusKey) => {
+		          const names = namesByStatus[statusKey];
+		          if (!names) return;
+		          names.forEach((value) => nameSet.add(value));
+		        });
+		        return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+		      })(),
+	    }));
+		  }, [hasLeadPlacedOrder, normalizedReferrals]);
 
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -12693,23 +12608,23 @@ export default function App() {
 	                              return rem ? `${hours}h ${rem}m` : `${hours}h`;
 	                            })()
 	                          : null;
-	                        return (
-	                          <div
-	                            key={entry.id}
-	                            className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-	                          >
-	                            <button
-	                              type="button"
-	                              onClick={() => openLiveUserDetail(entry)}
-	                              aria-label={`Open ${displayName} profile`}
-	                              className="min-w-0 flex-1 overflow-hidden"
-	                              style={{ background: "transparent", border: "none", padding: 0 }}
-	                            >
-	                              <div className="flex items-center gap-3 min-w-0">
+	                              return (
 	                                <div
-	                                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-	                                  style={{ width: 34, height: 34, minWidth: 34 }}
+	                                  key={entry.id}
+	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
 	                                >
+	                                  <button
+	                                    type="button"
+	                                    onClick={() => openLiveUserDetail(entry)}
+	                                    aria-label={`Open ${displayName} profile`}
+	                                    className="min-w-0 flex-1 overflow-hidden"
+	                                    style={{ background: "transparent", border: "none", padding: 0 }}
+	                                  >
+	                                    <div className="flex w-full items-center gap-3 min-w-0">
+	                                      <div
+	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
+	                                        style={{ width: 42.5, height: 42.5, minWidth: 42.5 }}
+	                                      >
 	                                  {avatarUrl ? (
 	                                    <img
 	                                      src={avatarUrl}
@@ -13379,6 +13294,24 @@ export default function App() {
                       if (!adminLiveUsersShowOffline && !entry?.isOnline) {
                         return false;
                       }
+                      const role = String(entry?.role || "").toLowerCase().trim();
+                      if (adminLiveUsersRoleFilter !== "all") {
+                        if (adminLiveUsersRoleFilter === "sales_rep") {
+                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
+                            return false;
+                          }
+                        } else if (adminLiveUsersRoleFilter === "doctor") {
+                          if (role !== "doctor") {
+                            return false;
+                          }
+                        } else if (adminLiveUsersRoleFilter === "test_doctor") {
+                          if (role !== "test_doctor") {
+                            return false;
+                          }
+                        } else if (role !== adminLiveUsersRoleFilter) {
+                          return false;
+                        }
+                      }
                       if (!normalizedQuery) {
                         return true;
                       }
@@ -13409,33 +13342,41 @@ export default function App() {
                       return aName.localeCompare(bName);
                     });
 
-                    if (liveUsers.length === 0) {
-                      return (
-                        <div className="px-4 py-3 text-sm text-slate-500">
-                          No users found.
-                        </div>
-                      );
-                    }
-
                     const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
 
                     return (
                       <div className="space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
-                          <div className="flex items-center gap-3">
-                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                className="brand-checkbox"
-                                checked={adminLiveUsersShowOffline}
-                                onChange={(e) => setAdminLiveUsersShowOffline(e.target.checked)}
-                              />
-                              Show offline
-                            </label>
-                            <span className="text-xs text-slate-500">
-                              {onlineCount} online
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="brand-checkbox"
+                              checked={adminLiveUsersShowOffline}
+                              onChange={(e) => setAdminLiveUsersShowOffline(e.target.checked)}
+                            />
+                            Show offline
+                          </label>
+                          <span className="text-xs text-slate-500">
+                            {onlineCount} online
+                          </span>
+                          <label className="flex items-center gap-2 text-xs text-slate-600">
+                            <span className="uppercase tracking-wide text-[11px] text-slate-500">
+                              Type
                             </span>
-                          </div>
+                            <select
+                              value={adminLiveUsersRoleFilter}
+                              onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
+                              className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            >
+                              <option value="all">All</option>
+                              <option value="admin">Admin</option>
+                              <option value="sales_rep">Sales reps</option>
+                              <option value="doctor">Doctors</option>
+                              <option value="test_doctor">Test doctors</option>
+                            </select>
+                          </label>
+                        </div>
                           <input
                             value={adminLiveUsersSearch}
                             onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
@@ -13451,14 +13392,59 @@ export default function App() {
 
                         <div className="sales-rep-table-wrapper live-users-scroll">
                           <div className="flex w-full min-w-[900px] flex-col gap-2">
-                            {liveUsers.map((entry) => {
-                              const avatarUrl = entry.profileImageUrl || null;
-                              const displayName = entry.name || entry.email || "User";
-                              const showIdle = Boolean(getEntryIdle(entry));
-                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
-                              const isOnline = Boolean(entry?.isOnline);
+                            {liveUsers.length === 0 ? (
+                              <div className="px-4 py-3 text-sm text-slate-500">
+                                No users found.
+                              </div>
+                            ) : (
+	                            liveUsers.map((entry) => {
+                              const role = String(entry?.role || "").toLowerCase().trim();
+		                              const rolePill = (() => {
+		                                if (role === "admin") {
+		                                  return {
+		                                    label: "Admin",
+		                                    style: {
+		                                      backgroundColor: "rgb(61,43,233)",
+		                                      color: "#ffffff",
+		                                    } as React.CSSProperties,
+		                                  };
+		                                }
+		                                if (role === "sales_rep" || role === "salesrep") {
+		                                  return {
+		                                    label: "Sales reps",
+		                                    style: {
+		                                      backgroundColor: "rgb(129,221,228)",
+		                                      color: "#ffffff",
+		                                    } as React.CSSProperties,
+		                                  };
+		                                }
+		                                if (role === "doctor") {
+		                                  return {
+		                                    label: "Doctors",
+		                                    style: {
+		                                      backgroundColor: "rgb(95,179,249)",
+		                                      color: "#ffffff",
+		                                    } as React.CSSProperties,
+		                                  };
+		                                }
+		                                if (role === "test_doctor") {
+		                                  return {
+		                                    label: "Test Doctors",
+		                                    style: {
+		                                      backgroundColor: "rgb(95,179,249)",
+		                                      color: "#ffffff",
+		                                    } as React.CSSProperties,
+		                                  };
+		                                }
+		                                return null;
+		                              })();
+	                              const avatarUrl = entry.profileImageUrl || null;
+	                              const displayName = entry.name || entry.email || "User";
+	                              const showIdle = Boolean(getEntryIdle(entry));
+	                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
+	                              const isOnline = Boolean(entry?.isOnline);
 
-                              return (
+	                              return (
                                 <div
                                   key={entry.id}
                                   className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
@@ -13473,7 +13459,7 @@ export default function App() {
                                     <div className="flex items-center gap-3 min-w-0">
                                       <div
                                         className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-                                        style={{ width: 34, height: 34, minWidth: 34 }}
+	                                        style={{ width: 41.4, height: 41.4, minWidth: 41.4 }}
                                       >
                                         {avatarUrl ? (
                                           <img
@@ -13485,24 +13471,34 @@ export default function App() {
                                           />
                                         ) : (
                                           <span className="text-[11px] font-semibold text-slate-600">
-                                            {getInitials(displayName)}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="min-w-0 flex-1 text-left">
-                                        <div className="text-sm font-semibold text-slate-800 truncate">
-                                          {displayName}
-                                        </div>
-                                        <div className="text-xs text-slate-500 truncate">
-                                          {entry.email || "—"}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </button>
+	                                            {getInitials(displayName)}
+	                                          </span>
+	                                        )}
+	                                      </div>
+	                                      <div className="min-w-0 flex-1 flex flex-col items-center justify-center text-center">
+	                                        <div className="flex items-center gap-2 min-w-0 max-w-full">
+		                                          {rolePill && (
+		                                            <span
+			                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
+		                                              style={rolePill.style}
+		                                            >
+		                                              {rolePill.label}
+		                                            </span>
+		                                          )}
+	                                          <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
+	                                            {displayName}
+	                                          </span>
+	                                        </div>
+	                                        <span className="min-w-0 max-w-full truncate text-xs text-slate-600">
+	                                          {entry.email || "—"}
+	                                        </span>
+	                                      </div>
+	                                    </div>
+	                                  </button>
 
                                   <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
                                     <span
-                                      className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+	                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
                                         !isOnline
                                           ? "bg-slate-100 text-slate-600"
                                           : showIdle
@@ -13526,146 +13522,15 @@ export default function App() {
                                   </div>
                                 </div>
                               );
-                            })}
+	                            })
+                            )}
                           </div>
                         </div>
                       </div>
                     );
                   })()}
 
-                  <div className="pt-6 border-t border-slate-200/70 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div>
-                        <h4 className="text-base font-semibold text-slate-900">
-                          Recent Logins
-                        </h4>
-                        <p className="text-sm text-slate-600">
-                          Users who logged in within the selected window.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label
-                          htmlFor="admin-user-activity-window"
-                          className="text-xs text-slate-500 uppercase tracking-wide"
-                        >
-                          Window
-                        </label>
-                        <select
-                          id="admin-user-activity-window"
-                          value={userActivityWindow}
-                          onChange={(e) =>
-                            setUserActivityWindow(
-                              e.target.value as UserActivityWindow,
-                            )
-                          }
-                          className="recent-logins-select w-auto text-sm"
-                        >
-                          <option value="hour">Last hour</option>
-                          <option value="day">Last day</option>
-                          <option value="3days">Last 3 days</option>
-                          <option value="week">Last week</option>
-                          <option value="month">Last month</option>
-                          <option value="6months">Last 6 months</option>
-                          <option value="year">Last year</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {userActivityLoading ? (
-                      <div className="px-4 py-3 text-sm text-slate-500">
-                        Loading user activity…
-                      </div>
-                    ) : userActivityReport ? (
-                      <>
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {[
-                            { key: "admin", label: "Admins" },
-                            { key: "sales_rep", label: "Sales reps" },
-                            { key: "doctor", label: "Doctors" },
-                            { key: "test_doctor", label: "Test doctors" },
-                          ].map((role) => (
-                            <span
-                              key={role.key}
-                              className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700"
-                            >
-                              {role.label}:{" "}
-                              {userActivityReport.byRole?.[role.key] || 0}
-                            </span>
-                          ))}
-                        </div>
-
-                        {userActivityReport.users.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-slate-500">
-                            No logins in this window.
-                          </div>
-                        ) : (
-                          <div className="sales-rep-table-wrapper">
-                            <div className="max-h-[320px] overflow-y-auto pb-3">
-                              <table className="min-w-[720px] w-full mb-2 divide-y divide-slate-200/70">
-                                <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
-                                  <tr>
-                                    <th className="px-4 py-2 text-center">
-                                      Name
-                                    </th>
-                                    <th className="px-4 py-2 text-center">
-                                      Email
-                                    </th>
-                                    <th className="px-4 py-2 text-center">
-                                      Role
-                                    </th>
-                                    <th className="px-4 py-2 text-center">
-                                      Last login
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white/70">
-                                  {userActivityReport.users.map((entry) => (
-                                    <tr key={entry.id}>
-                                      <td className="px-4 py-3 text-sm font-medium text-slate-800 text-center">
-                                        {entry.name || "—"}
-                                      </td>
-                                      <td className="px-4 py-3 text-sm text-slate-600 text-center">
-                                        {entry.email ? (
-                                          <a href={`mailto:${entry.email}`}>
-                                            {entry.email}
-                                          </a>
-                                        ) : (
-                                          "—"
-                                        )}
-                                      </td>
-                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
-                                        {entry.role}
-                                      </td>
-                                      <td className="px-4 py-3 text-sm text-slate-700 text-center">
-                                        {entry.lastLoginAt
-                                          ? new Date(
-                                              entry.lastLoginAt,
-                                            ).toLocaleString()
-                                          : "—"}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="text-xs text-slate-500 pl-3">
-                          Cutoff:{" "}
-                          {userActivityReport.cutoff
-                            ? new Date(
-                                userActivityReport.cutoff,
-                              ).toLocaleString()
-                            : "—"}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="px-4 py-3 text-sm text-slate-500">
-                        No user activity loaded.
-                      </div>
-                    )}
-                  </div>
+                    
                 </div>
 	            </div>
 	          )}
@@ -13681,27 +13546,27 @@ export default function App() {
                     <p className="text-sm text-slate-600">
                       Orders placed by doctors assigned to each rep.
                     </p>
-                    <form
-                      className="sales-rep-period-form mt-3 flex flex-col gap-3 text-sm sm:flex-row sm:items-end"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void refreshSalesBySalesRepSummary();
-                      }}
-                    >
-                      {["Start", "End"].map((labelText, index) => {
-                        const value =
-                          index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
-                        const setter =
-                          index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
-                        return (
-                          <label
-                            key={labelText}
-                            className="flex w-full flex-col gap-2 text-xs font-semibold text-slate-700 sm:w-auto"
-                          >
-                            <span className="text-sm font-semibold text-slate-900">
-                              {labelText}
-                            </span>
-                            <Input
+	                    <form
+	                      className="sales-rep-period-form mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
+	                      onSubmit={(event) => {
+	                        event.preventDefault();
+	                        void refreshSalesBySalesRepSummary();
+	                      }}
+	                    >
+	                      {["Start", "End"].map((labelText, index) => {
+	                        const value =
+	                          index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
+	                        const setter =
+	                          index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
+	                        return (
+	                          <label
+	                            key={labelText}
+	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
+	                          >
+	                            <span className="text-sm font-semibold text-slate-900">
+	                              {labelText}
+	                            </span>
+	                            <Input
                               type="date"
                               value={value}
                               onChange={(event) => setter(event.target.value)}
@@ -13709,14 +13574,14 @@ export default function App() {
                               className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
                               style={{ colorScheme: "light" }}
                             />
-                          </label>
-                        );
-                      })}
-                      <div className="sales-rep-period-actions flex flex-wrap items-center gap-2 self-start sm:self-end">
-                        <Button
-                          type="submit"
-                          size="sm"
-                          variant="outline"
+	                          </label>
+	                        );
+	                      })}
+	                      <div className="sales-rep-period-actions flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+	                        <Button
+	                          type="submit"
+	                          size="sm"
+	                          variant="outline"
                           disabled={salesRepSalesSummaryLoading}
                           className="whitespace-nowrap"
                         >
@@ -13725,16 +13590,17 @@ export default function App() {
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
-                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-                          onClick={() => {
-                            setSalesRepPeriodStart("");
-                            setSalesRepPeriodEnd("");
-                            void refreshSalesBySalesRepSummary();
-                          }}
-                        >
-                          Clear
-                        </Button>
+                              variant="outline"
+                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
+                              onClick={() => {
+                                const defaults = getDefaultSalesBySalesRepPeriod();
+                                setSalesRepPeriodStart(defaults.start);
+                                setSalesRepPeriodEnd(defaults.end);
+                                void refreshSalesBySalesRepSummary();
+                              }}
+                            >
+                              Clear
+                            </Button>
                       </div>
                     </form>
                   </div>
@@ -13950,10 +13816,7 @@ export default function App() {
 	                    />
                     <Tooltip
                       cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
-                      formatter={(value: number) => [
-                        `${value} referral${value === 1 ? "" : "s"}`,
-                        "Leads",
-                      ]}
+                      content={PipelineTooltip}
                     />
                     <Bar
                       dataKey="count"

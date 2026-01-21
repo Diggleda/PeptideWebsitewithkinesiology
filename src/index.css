@@ -2614,6 +2614,11 @@ body {
     border-radius: .75rem;
   }
 
+  .squircle-xs {
+    shape-outside: inset(0 round .55rem);
+    border-radius: .55rem;
+  }
+
   .squircle {
     shape-outside: inset(0 round 1rem);
     border-radius: 1rem;
@@ -5445,6 +5450,18 @@ html {
   box-shadow: none;
   filter: none;
   color: #ffffff;
+  transform: none;
+}
+
+.header-account-button.btn-hover-lighter.glass-brand:hover,
+.header-account-button.btn-hover-lighter.glass-brand:active {
+  transform: none;
+}
+
+.pipeline-tooltip {
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .header-account-avatar {
