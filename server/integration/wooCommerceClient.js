@@ -1016,6 +1016,72 @@ const fetchOrdersByEmail = async (email, { perPage = 10 } = {}) => {
   }
 };
 
+const fetchOrderByNumber = async (orderNumber, { perPage = 50, maxPages = 20 } = {}) => {
+  if (!orderNumber || !isConfigured()) {
+    return null;
+  }
+
+  const normalizeToken = (value) => String(value || '').trim().replace(/^#/, '');
+  const normalized = normalizeToken(orderNumber);
+  if (!normalized) {
+    return null;
+  }
+
+  const size = Math.min(Math.max(Number(perPage) || 50, 10), 100);
+  const pageLimit = Math.min(Math.max(Number(maxPages) || 20, 1), 60);
+  const client = getClient();
+
+  const matchesToken = (value) => normalizeToken(value) === normalized;
+
+  try {
+    let page = 1;
+    while (page <= pageLimit) {
+      const response = await client.get('/orders', {
+        params: {
+          per_page: size,
+          orderby: 'date',
+          order: 'desc',
+          page,
+          status: 'any',
+          // WordPress search is best-effort; we still filter locally by order.number.
+          search: normalized,
+        },
+      });
+
+      const payload = Array.isArray(response.data) ? response.data : [];
+      if (!payload.length) {
+        break;
+      }
+
+      const match = payload.find((order) => {
+        if (matchesToken(order?.number)) return true;
+        if (matchesToken(order?.id)) return true;
+        const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
+        const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
+        if (matchesToken(pepproMeta?.value)) return true;
+        return false;
+      });
+
+      if (match) {
+        return match;
+      }
+
+      if (payload.length < size) {
+        break;
+      }
+      page += 1;
+    }
+  } catch (error) {
+    logger.error({ err: summarizeWooError(error), orderNumber: normalized }, 'Failed to lookup WooCommerce order by number');
+    const fetchError = new Error('WooCommerce order lookup failed');
+    fetchError.status = error.response?.status ?? 502;
+    fetchError.cause = buildWooErrorCause(error);
+    throw fetchError;
+  }
+
+  return null;
+};
+
 const markOrderPaid = async ({ wooOrderId, paymentIntentId }) => {
   if (!wooOrderId) {
     return { status: 'skipped', reason: 'missing_woo_order_id' };
@@ -1378,6 +1444,7 @@ module.exports = {
     }
   },
   fetchOrdersByEmail,
+  fetchOrderByNumber,
   fetchOrderById,
   mapWooOrderSummary,
   markOrderPaid,

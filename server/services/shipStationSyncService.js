@@ -8,6 +8,15 @@ const normalizeToken = (value) => String(value || '').trim().replace(/^#/, '');
 
 const safeLower = (value) => (value ? String(value).trim().toLowerCase() : '');
 
+const normalizeShipStationStatus = (value) => {
+  const raw = safeLower(value);
+  if (!raw) return '';
+  return raw
+    .replace(/\s+/g, '_')
+    .replace(/-+/g, '_')
+    .replace(/_+/g, '_');
+};
+
 const parseWooOrderIdFromShipStationOrderKey = (orderKey) => {
   const raw = typeof orderKey === 'string' ? orderKey.trim() : '';
   const match = raw.match(/^woo-(\d+)$/i);
@@ -42,9 +51,11 @@ const shouldUpdateWooStatus = (currentWooStatus, nextWooStatus) => {
 };
 
 const mapShipStationStatusToWooStatus = (shipStationStatus) => {
-  const status = safeLower(shipStationStatus);
+  const status = normalizeShipStationStatus(shipStationStatus);
   if (status === 'shipped') return 'completed';
   if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+  if (status === 'awaiting_shipment') return 'processing';
+  if (status === 'awaiting_payment' || status === 'on_hold' || status === 'onhold') return 'on-hold';
   return null;
 };
 
@@ -94,6 +105,17 @@ const resolveWooOrderId = async ({ orderNumber, shipStationOrderId, shipStationO
       }
     } catch (_error) {
       // ignore and fall back
+    }
+  }
+
+  if (normalizedOrderNumber && typeof wooCommerceClient.fetchOrderByNumber === 'function') {
+    try {
+      const wooOrder = await wooCommerceClient.fetchOrderByNumber(normalizedOrderNumber, { perPage: 50, maxPages: 20 });
+      if (wooOrder?.id) {
+        return { wooOrderId: Number(wooOrder.id), source: 'woo_search_by_number' };
+      }
+    } catch (error) {
+      logger.warn({ err: error, orderNumber: normalizedOrderNumber }, 'WooCommerce lookup by order number failed');
     }
   }
 
