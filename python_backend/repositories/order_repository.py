@@ -218,6 +218,79 @@ def list_recent(limit: int = 500) -> List[Dict]:
     return orders[:limit_value]
 
 
+def get_pricing_mode_lookup_by_woo(
+    woo_order_ids: List[str] | None = None, woo_order_numbers: List[str] | None = None
+) -> Dict[str, str]:
+    """
+    Return a lookup of Woo order id/number -> pricing mode ("wholesale"|"retail").
+
+    Keys are normalized order tokens with leading '#' removed and whitespace trimmed.
+    When MySQL is disabled or no matches are found, returns an empty dict.
+    """
+
+    if not _using_mysql():
+        return {}
+
+    def normalize_token(value: object) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        return text[1:] if text.startswith("#") else text
+
+    def normalize_mode(value: object) -> str:
+        mode = str(value or "").strip().lower()
+        return "retail" if mode == "retail" else "wholesale"
+
+    ids = [normalize_token(v) for v in (woo_order_ids or [])]
+    nums = [normalize_token(v) for v in (woo_order_numbers or [])]
+    ids = [v for v in ids if v]
+    nums = [v for v in nums if v]
+
+    if not ids and not nums:
+        return {}
+
+    lookup: Dict[str, str] = {}
+
+    def _run_in_chunks(values: List[str], column: str) -> None:
+        chunk_size = 500
+        for offset in range(0, len(values), chunk_size):
+            chunk = values[offset : offset + chunk_size]
+            placeholders = ", ".join([f"%({column}_{idx})s" for idx in range(len(chunk))])
+            params = {f"{column}_{idx}": value for idx, value in enumerate(chunk)}
+            rows = mysql_client.fetch_all(
+                f"SELECT {column}, pricing_mode FROM orders WHERE {column} IN ({placeholders})",
+                params,
+            )
+            for row in rows or []:
+                token = normalize_token(row.get(column))
+                if not token:
+                    continue
+                lookup[token] = normalize_mode(row.get("pricing_mode"))
+
+    def expand_query_values(values: List[str]) -> List[str]:
+        expanded = set()
+        for value in values:
+            token = normalize_token(value)
+            if not token:
+                continue
+            expanded.add(token)
+            expanded.add(f"#{token}")
+        return list(expanded)
+
+    try:
+        if ids:
+            _run_in_chunks(expand_query_values(ids), "woo_order_id")
+        if nums:
+            _run_in_chunks(expand_query_values(nums), "woo_order_number")
+    except Exception:
+        # Older installs may be missing Woo columns; treat as unknown.
+        return {}
+
+    return lookup
+
+
 def count_by_user_id(user_id: str) -> int:
     if _using_mysql():
         row = mysql_client.fetch_one(

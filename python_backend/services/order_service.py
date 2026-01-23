@@ -2184,8 +2184,7 @@ def get_sales_by_rep(
             },
         )
 
-        rep_totals: Dict[str, Dict[str, float]] = {}
-        house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0}
+        attributed_orders: List[Dict[str, object]] = []
         debug_samples: List[Dict[str, object]] = []
         counted_rep = 0
         counted_house = 0
@@ -2255,10 +2254,21 @@ def get_sales_by_rep(
                 total = _safe_float(woo_order.get("total"))
 
                 if rep_id and rep_id in valid_rep_ids:
-                    current = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
-                    current["totalOrders"] += 1.0
-                    current["totalRevenue"] += total
-                    rep_totals[rep_id] = current
+                    pricing_mode_hint = (
+                        _meta_value(meta_data, "peppro_pricing_mode")
+                        or _meta_value(meta_data, "peppro_pricingMode")
+                        or _meta_value(meta_data, "pricing_mode")
+                        or _meta_value(meta_data, "pricingMode")
+                    )
+                    attributed_orders.append(
+                        {
+                            "salesRepId": rep_id,
+                            "total": total,
+                            "wooId": woo_order.get("id"),
+                            "wooNumber": woo_order.get("number"),
+                            "pricingModeHint": pricing_mode_hint,
+                        }
+                    )
                     counted_rep += 1
                 else:
                     # "House" sales are only for doctors acquired via the contact form.
@@ -2278,8 +2288,21 @@ def get_sales_by_rep(
                                 is_house_contact_form = False
 
                     if is_house_contact_form:
-                        house_totals["totalOrders"] += 1.0
-                        house_totals["totalRevenue"] += total
+                        pricing_mode_hint = (
+                            _meta_value(meta_data, "peppro_pricing_mode")
+                            or _meta_value(meta_data, "peppro_pricingMode")
+                            or _meta_value(meta_data, "pricing_mode")
+                            or _meta_value(meta_data, "pricingMode")
+                        )
+                        attributed_orders.append(
+                            {
+                                "salesRepId": "__house__",
+                                "total": total,
+                                "wooId": woo_order.get("id"),
+                                "wooNumber": woo_order.get("number"),
+                                "pricingModeHint": pricing_mode_hint,
+                            }
+                        )
                         counted_house += 1
                     else:
                         skipped_unattributed += 1
@@ -2294,6 +2317,10 @@ def get_sales_by_rep(
                             "metaRepId": _meta_value(meta_data, "peppro_sales_rep_id"),
                             "billingEmail": ((woo_order.get("billing") or {}) or {}).get("email"),
                             "total": total,
+                            "pricingModeHint": _meta_value(meta_data, "peppro_pricing_mode")
+                            or _meta_value(meta_data, "peppro_pricingMode")
+                            or _meta_value(meta_data, "pricing_mode")
+                            or _meta_value(meta_data, "pricingMode"),
                         }
                     )
 
@@ -2301,6 +2328,66 @@ def get_sales_by_rep(
 
             if len(orders) < per_page:
                 break
+
+        def _normalize_token(value: object) -> str:
+            if value is None:
+                return ""
+            text = str(value).strip()
+            if not text:
+                return ""
+            return text[1:] if text.startswith("#") else text
+
+        woo_ids = []
+        woo_numbers = []
+        for entry in attributed_orders:
+            woo_id = _normalize_token(entry.get("wooId"))
+            if woo_id:
+                woo_ids.append(woo_id)
+            woo_num = _normalize_token(entry.get("wooNumber"))
+            if woo_num:
+                woo_numbers.append(woo_num)
+
+        pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
+
+        def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
+            hint = str(entry.get("pricingModeHint") or "").strip().lower()
+            if hint in ("retail", "wholesale"):
+                return hint
+            woo_id = _normalize_token(entry.get("wooId"))
+            if woo_id and woo_id in pricing_mode_lookup:
+                return pricing_mode_lookup[woo_id]
+            woo_number = _normalize_token(entry.get("wooNumber"))
+            if woo_number and woo_number in pricing_mode_lookup:
+                return pricing_mode_lookup[woo_number]
+            return "wholesale"
+
+        rep_totals: Dict[str, Dict[str, float]] = {}
+        house_totals = {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0}
+
+        for entry in attributed_orders:
+            rep_id = str(entry.get("salesRepId") or "").strip()
+            total = _safe_float(entry.get("total"))
+            pricing_mode = _resolve_pricing_mode(entry)
+            if rep_id == "__house__":
+                house_totals["totalOrders"] += 1.0
+                house_totals["totalRevenue"] += total
+                if pricing_mode == "retail":
+                    house_totals["retailRevenue"] += total
+                else:
+                    house_totals["wholesaleRevenue"] += total
+                continue
+
+            current = rep_totals.get(
+                rep_id,
+                {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
+            )
+            current["totalOrders"] += 1.0
+            current["totalRevenue"] += total
+            if pricing_mode == "retail":
+                current["retailRevenue"] += total
+            else:
+                current["wholesaleRevenue"] += total
+            rep_totals[rep_id] = current
 
         rep_lookup: Dict[str, Dict] = {}
         # Seed with canonical user rep records.
@@ -2315,7 +2402,10 @@ def get_sales_by_rep(
 
         summary: List[Dict] = []
         for rep_id in sorted(valid_rep_ids):
-            totals = rep_totals.get(rep_id, {"totalOrders": 0.0, "totalRevenue": 0.0})
+            totals = rep_totals.get(
+                rep_id,
+                {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
+            )
             rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
             rep_record = rep_records.get(rep_id) or {}
             # Prefer the user's name if available (sales reps edit their own name there).
@@ -2335,6 +2425,8 @@ def get_sales_by_rep(
                     "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
                     "totalOrders": int(totals["totalOrders"]),
                     "totalRevenue": float(totals["totalRevenue"]),
+                    "wholesaleRevenue": float(totals.get("wholesaleRevenue") or 0.0),
+                    "retailRevenue": float(totals.get("retailRevenue") or 0.0),
                 }
             )
 
@@ -2347,6 +2439,8 @@ def get_sales_by_rep(
                     "salesRepPhone": None,
                     "totalOrders": int(house_totals["totalOrders"]),
                     "totalRevenue": float(house_totals["totalRevenue"]),
+                    "wholesaleRevenue": float(house_totals.get("wholesaleRevenue") or 0.0),
+                    "retailRevenue": float(house_totals.get("retailRevenue") or 0.0),
                 }
             )
 
@@ -2354,6 +2448,8 @@ def get_sales_by_rep(
         totals_all = {
             "totalOrders": int(sum(int(r.get("totalOrders") or 0) for r in summary)),
             "totalRevenue": float(sum(float(r.get("totalRevenue") or 0) for r in summary)),
+            "wholesaleRevenue": float(sum(float(r.get("wholesaleRevenue") or 0) for r in summary)),
+            "retailRevenue": float(sum(float(r.get("retailRevenue") or 0) for r in summary)),
         }
         logger.info(
             "[SalesByRep] Summary computed",
@@ -2419,7 +2515,7 @@ def get_sales_by_rep(
         # If the leader could not populate cache in time, do not stampede the upstream.
         return {
             "orders": [],
-            "totals": {"totalOrders": 0, "totalRevenue": 0.0},
+            "totals": {"totalOrders": 0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
             **period_meta,
             "stale": True,
             "error": "Sales summary is temporarily unavailable.",

@@ -5840,12 +5840,21 @@ export default function App() {
       salesRepEmail: string | null;
       totalOrders: number;
       totalRevenue: number;
+      wholesaleRevenue?: number;
+      retailRevenue?: number;
     }[]
   >([]);
   const [salesRepSalesSummaryMeta, setSalesRepSalesSummaryMeta] = useState<{
     periodStart?: string | null;
     periodEnd?: string | null;
-    totals?: { totalOrders: number; totalRevenue: number } | null;
+    totals?:
+      | {
+          totalOrders: number;
+          totalRevenue: number;
+          wholesaleRevenue?: number;
+          retailRevenue?: number;
+        }
+      | null;
   } | null>(null);
   const [salesRepSalesSummaryLastFetchedAt, setSalesRepSalesSummaryLastFetchedAt] =
     useState<number | null>(null);
@@ -5936,13 +5945,14 @@ export default function App() {
       };
 
       const rows = [
-        ["Sales Rep", "Email", "Orders", "Revenue"].join(","),
+        ["Sales Rep", "Email", "Orders", "Wholesale", "Retail"].join(","),
         ...salesRepSalesSummary.map((rep) =>
           [
             escapeCsv(rep.salesRepName || ""),
             escapeCsv(rep.salesRepEmail || ""),
             escapeCsv(Number(rep.totalOrders || 0)),
-            escapeCsv(Number(rep.totalRevenue || 0).toFixed(2)),
+            escapeCsv(Number(rep.wholesaleRevenue || 0).toFixed(2)),
+            escapeCsv(Number(rep.retailRevenue || 0).toFixed(2)),
           ].join(","),
         ),
       ];
@@ -13703,75 +13713,88 @@ export default function App() {
                     No sales recorded yet.
                   </div>
                 ) : (
-	                  <div className="w-full" style={{ minWidth: 780 }}>
+		                  <div className="w-full" style={{ minWidth: 920 }}>
 	                    <div className="overflow-hidden rounded-xl">
-                        {(() => {
-                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
-                          const totals = metaTotals
-                            ? metaTotals
-                            : {
-                                totalOrders: salesRepSalesSummary.reduce(
-                                  (sum, row) => sum + (Number(row.totalOrders) || 0),
-                                  0,
-                                ),
-                                totalRevenue: salesRepSalesSummary.reduce(
-                                  (sum, row) => sum + (Number(row.totalRevenue) || 0),
-                                  0,
-                                ),
-                              };
-                          const hasTotals =
-                            typeof totals.totalOrders === "number" &&
-                            typeof totals.totalRevenue === "number";
-                          if (!hasTotals) return null;
-                          return (
-                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl border border-slate-200/70 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900">
-                              <span>Total Orders: {totals.totalOrders}</span>
-                              <span>Total Revenue: {formatCurrency(totals.totalRevenue)}</span>
-                            </div>
-                          );
-                        })()}
-	                      <div
-	                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-	                        style={{
-	                          gridTemplateColumns:
-	                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr)",
-	                        }}
-	                      >
-	                        <div className="whitespace-nowrap">Sales Rep</div>
-	                        <div className="whitespace-nowrap">Email</div>
-	                        <div className="whitespace-nowrap text-right">Orders</div>
-	                        <div className="whitespace-nowrap text-right">Revenue</div>
-	                      </div>
-                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl">
-                        {salesRepSalesSummary.map((rep) => (
-                          <li
-                            key={rep.salesRepId}
-                            className="grid items-center gap-3 px-4 py-3"
-                            style={{
-                              gridTemplateColumns:
-                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr)",
-                            }}
-                          >
-                            <div className="text-sm font-semibold text-slate-900">
-                              {rep.salesRepName}
-                            </div>
+	                        {(() => {
+	                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+	                          const totals = metaTotals
+	                            ? metaTotals
+	                            : {
+	                                totalOrders: salesRepSalesSummary.reduce(
+	                                  (sum, row) => sum + (Number(row.totalOrders) || 0),
+	                                  0,
+	                                ),
+	                                totalRevenue: salesRepSalesSummary.reduce(
+	                                  (sum, row) => sum + (Number(row.totalRevenue) || 0),
+	                                  0,
+	                                ),
+	                                wholesaleRevenue: salesRepSalesSummary.reduce(
+	                                  (sum, row) => sum + (Number(row.wholesaleRevenue) || 0),
+	                                  0,
+	                                ),
+	                                retailRevenue: salesRepSalesSummary.reduce(
+	                                  (sum, row) => sum + (Number(row.retailRevenue) || 0),
+	                                  0,
+	                                ),
+	                              };
+	                          const hasTotals =
+	                            typeof totals.totalOrders === "number" &&
+	                            typeof totals.totalRevenue === "number";
+	                          if (!hasTotals) return null;
+	                          return (
+	                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl border border-slate-200/70 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900">
+	                              <span>Total Orders: {totals.totalOrders}</span>
+	                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
+	                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>
+	                            </div>
+	                          );
+	                        })()}
+		                      <div
+		                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                        style={{
+		                          gridTemplateColumns:
+		                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
+		                        }}
+		                      >
+		                        <div className="whitespace-nowrap">Sales Rep</div>
+		                        <div className="whitespace-nowrap">Email</div>
+		                        <div className="whitespace-nowrap text-right">Orders</div>
+		                        <div className="whitespace-nowrap text-right">Wholesale</div>
+		                        <div className="whitespace-nowrap text-right">Retail</div>
+		                      </div>
+	                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl">
+	                        {salesRepSalesSummary.map((rep) => (
+	                          <li
+	                            key={rep.salesRepId}
+	                            className="grid items-center gap-3 px-4 py-3"
+	                            style={{
+	                              gridTemplateColumns:
+	                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
+	                            }}
+	                          >
+	                            <div className="text-sm font-semibold text-slate-900">
+	                              {rep.salesRepName}
+	                            </div>
                             <div
                               className="text-sm text-slate-700 truncate"
                               title={rep.salesRepEmail || ""}
                             >
                               {rep.salesRepEmail || "—"}
                             </div>
-                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
-                              {rep.totalOrders}
-                            </div>
-                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                              {formatCurrency(rep.totalRevenue || 0)}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
+	                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+	                              {rep.totalOrders}
+	                            </div>
+	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+	                              {formatCurrency(rep.wholesaleRevenue || 0)}
+	                            </div>
+	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+	                              {formatCurrency(rep.retailRevenue || 0)}
+	                            </div>
+	                          </li>
+	                        ))}
+	                      </ul>
+	                    </div>
+	                  </div>
                 )}
               </div>
             </div>

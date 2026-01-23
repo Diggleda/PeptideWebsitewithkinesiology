@@ -975,6 +975,7 @@ export function Header({
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchQueryRef = useRef('');
   const pendingLoginPrefill = useRef<{ email?: string; password?: string }>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -2192,19 +2193,27 @@ export function Header({
     onSearch(value);
   };
 
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  const focusSearchInput = useCallback(() => {
+    const node = searchInputRef.current;
+    if (!node) return;
+    try {
+      node.focus({ preventScroll: true });
+    } catch {
+      node.focus();
+    }
+  }, []);
+
   const toggleMobileSearch = () => {
     setMobileSearchOpen((prev) => {
       const next = !prev;
 
       if (typeof window !== 'undefined') {
         if (next) {
-          window.setTimeout(() => {
-            try {
-              searchInputRef.current?.focus({ preventScroll: true });
-            } catch {
-              searchInputRef.current?.focus();
-            }
-          }, 0);
+          window.setTimeout(() => focusSearchInput(), 0);
         } else {
           searchInputRef.current?.blur();
         }
@@ -2221,14 +2230,65 @@ export function Header({
     if (typeof window === 'undefined') {
       return;
     }
-    window.setTimeout(() => {
-      try {
-        searchInputRef.current?.focus({ preventScroll: true });
-      } catch {
-        searchInputRef.current?.focus();
+    window.setTimeout(() => focusSearchInput(), 0);
+  }, [focusSearchInput, mobileSearchOpen]);
+
+  useEffect(() => {
+    if (!mobileSearchOpen) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!target || !(target as any).tagName) return false;
+      const el = target as HTMLElement;
+      if (el === searchInputRef.current) return true;
+      const tag = String(el.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+      return Boolean((el as any).isContentEditable);
+    };
+
+    const handler = (event: KeyboardEvent) => {
+      if (!mobileSearchOpen) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileSearchOpen(false);
+        searchInputRef.current?.blur();
+        return;
       }
-    }, 0);
-  }, [mobileSearchOpen]);
+
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      // If the user is already typing into an input (including the search field), let it behave normally.
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      // Redirect typing into the search bar after it has been opened.
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        const current = searchQueryRef.current || '';
+        handleSearchChange(current.slice(0, Math.max(0, current.length - 1)));
+        focusSearchInput();
+        return;
+      }
+
+      if (event.key.length === 1) {
+        event.preventDefault();
+        const current = searchQueryRef.current || '';
+        handleSearchChange(current + event.key);
+        focusSearchInput();
+      }
+    };
+
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [focusSearchInput, handleSearchChange, mobileSearchOpen]);
 
   const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -4598,13 +4658,8 @@ export function Header({
             </div>
           </div>
 
-          {!isLargeScreen && (
-            <div
-              className={`overflow-hidden px-1 transition-all duration-300 ${
-                mobileSearchOpen ? 'max-h-28 pb-2 opacity-100' : 'max-h-0 pb-0 opacity-0 pointer-events-none'
-              }`}
-              aria-hidden={!mobileSearchOpen}
-            >
+          {mobileSearchOpen && !isLargeScreen && (
+            <div className="px-1 pb-2">
               <form onSubmit={handleSearch}>{renderSearchField()}</form>
             </div>
           )}

@@ -1924,9 +1924,23 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
     if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') return; // only count real sales reps
     if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
-    const current = repTotals.get(repId) || { totalOrders: 0, totalRevenue: 0 };
+    const current = repTotals.get(repId) || {
+      totalOrders: 0,
+      totalRevenue: 0,
+      wholesaleRevenue: 0,
+      retailRevenue: 0,
+    };
     current.totalOrders += 1;
-    current.totalRevenue += Number(order.total) || 0;
+    const orderTotal = Number(order.total) || 0;
+    current.totalRevenue += orderTotal;
+    const pricingMode = String(order.pricingMode || order.pricing_mode || '').trim().toLowerCase() === 'retail'
+      ? 'retail'
+      : 'wholesale';
+    if (pricingMode === 'retail') {
+      current.retailRevenue += orderTotal;
+    } else {
+      current.wholesaleRevenue += orderTotal;
+    }
     repTotals.set(repId, current);
   });
 
@@ -1942,6 +1956,8 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
         salesRepEmail: rep.email || null,
         totalOrders: totals.totalOrders,
         totalRevenue: totals.totalRevenue,
+        wholesaleRevenue: totals.wholesaleRevenue || 0,
+        retailRevenue: totals.retailRevenue || 0,
       };
     })
     .filter(Boolean)
