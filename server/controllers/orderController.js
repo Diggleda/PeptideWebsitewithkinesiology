@@ -144,7 +144,12 @@ const getOrdersForSalesRep = async (req, res, next) => {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
     const scope = role === 'admin' && (req.query.scope || '').toLowerCase() === 'all' ? 'all' : 'mine';
-    const requestedSalesRepId = req.query.salesRepId || req.user?.salesRepId || req.user.id;
+    const querySalesRepId = typeof req.query?.salesRepId === 'string' ? req.query.salesRepId.trim() : '';
+    const hasExplicitSalesRepId = Boolean(querySalesRepId);
+    const requestedSalesRepId =
+      role === 'admin' && scope === 'all' && !hasExplicitSalesRepId
+        ? null
+        : (querySalesRepId || req.user?.salesRepId || req.user.id);
     const response = await orderService.getOrdersForSalesRep(requestedSalesRepId, {
       includeDoctors: true,
       includeSelfOrders: role === 'admin',
@@ -255,9 +260,14 @@ const getSalesByRepForAdmin = async (req, res, next) => {
     if (role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
+    const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
+    const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
     const summary = await orderService.getSalesByRep({
       excludeSalesRepId: req.user.id,
       excludeDoctorIds: [String(req.user.id)],
+      periodStart,
+      periodEnd,
+      timeZone: 'America/Los_Angeles',
     });
     res.json(summary);
   } catch (error) {

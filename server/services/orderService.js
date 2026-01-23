@@ -1,6 +1,7 @@
 const { env } = require('../config/env');
 const orderRepository = require('../repositories/orderRepository');
 const userRepository = require('../repositories/userRepository');
+const salesRepRepository = require('../repositories/salesRepRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
 const referralService = require('./referralService');
 const emailService = require('./emailService');
@@ -14,6 +15,7 @@ const { logger } = require('../config/logger');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
 const crypto = require('crypto');
+const { resolvePacificDayWindowUtc } = require('../utils/timeZone');
 
 const sanitizeOrder = (order) => {
   if (!order || typeof order !== 'object') {
@@ -1710,7 +1712,10 @@ const getOrdersForSalesRep = async (
 
   const doctors = userRepository.getAll().filter((candidate) => {
     const role = normalizeRole(candidate.role);
-    if (role !== 'doctor' && role !== 'test_doctor') {
+    const isDoctorRole = role === 'doctor' || role === 'test_doctor';
+    const includeSalesRepCustomers = includeAllDoctors && allowedRepIds.size === 0;
+    const isSalesRepCustomerRole = includeSalesRepCustomers && (role === 'sales_rep' || role === 'rep');
+    if (!isDoctorRole && !isSalesRepCustomerRole) {
       return false;
     }
     if (includeAllDoctors) {
@@ -1880,33 +1885,83 @@ const getOrdersForSalesRep = async (
     : summaries;
 };
 
-const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] } = {}) => {
+const getSalesByRep = async ({
+  excludeSalesRepId = null,
+  excludeDoctorIds = [],
+  periodStart = null,
+  periodEnd = null,
+  timeZone = 'America/Los_Angeles',
+} = {}) => {
   const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
   const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
-  const reps = users.filter((u) => (u.role || '').toLowerCase() === 'sales_rep');
-  const repFromUsers = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
+  const repsFromUsers = users.filter((u) => normalizeRole(u.role) === 'sales_rep');
+  const repsFromStore = Array.isArray(salesRepRepository?.getAll?.())
+    ? salesRepRepository.getAll()
+    : [];
+  const repLookup = new Map();
+
+  // Seed with reps from the sales rep store (used by sales codes / contact forms).
+  for (const rep of repsFromStore) {
+    const repId = normalizeId(rep?.id || rep?.salesRepId);
+    if (!repId) continue;
+    const role = normalizeRole(rep?.role);
+    if (role && role !== 'sales_rep') continue;
+    repLookup.set(repId, {
+      id: repId,
+      name: rep?.name || rep?.email || 'Sales Rep',
+      email: rep?.email || null,
+    });
+  }
+
+  // Overlay any matching app users (more authoritative for name/email).
+  for (const rep of repsFromUsers) {
+    const repId = normalizeId(rep?.id);
+    if (!repId) continue;
+    repLookup.set(repId, {
+      id: repId,
+      name: rep?.name || rep?.email || 'Sales Rep',
+      email: rep?.email || null,
+    });
+  }
   const doctors = users.filter((u) => {
     const role = (u.role || '').toLowerCase();
     return role === 'doctor' || role === 'test_doctor';
   });
 
-  const repMap = new Map(reps.map((rep) => [normalizeId(rep.id), rep]));
   const doctorToRep = new Map();
   doctors.forEach((doc) => {
     const repId = normalizeId(doc.salesRepId);
     const doctorId = normalizeId(doc.id);
     if (!repId || !doctorId) return;
-    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
-    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') {
+    if (!repLookup.has(repId)) {
       return;
     }
-    if (repMap.has(repId)) {
-      doctorToRep.set(doctorId, repId);
-    }
+    doctorToRep.set(doctorId, repId);
   });
 
   const repTotals = new Map();
+  for (const repId of repLookup.keys()) {
+    if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    repTotals.set(repId, {
+      totalOrders: 0,
+      totalRevenue: 0,
+      wholesaleRevenue: 0,
+      retailRevenue: 0,
+    });
+  }
+
+  const window = resolvePacificDayWindowUtc({ periodStart, periodEnd, timeZone });
+  const shouldFilterByWindow = window.startMs !== null || window.endMs !== null;
+  const coerceOrderTimeMs = (order) => {
+    const raw = order?.createdAt || order?.created_at || order?.date_created || null;
+    if (!raw) return null;
+    const parsed = raw instanceof Date ? raw.getTime() : Date.parse(String(raw));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
 
   const doctorIds = doctors.map((d) => d.id);
   const sourceOrders = mysqlClient.isEnabled()
@@ -1914,6 +1969,18 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     : orderRepository.getAll();
 
   sourceOrders.forEach((order) => {
+    if (shouldFilterByWindow) {
+      const createdAtMs = coerceOrderTimeMs(order);
+      if (createdAtMs === null) {
+        return;
+      }
+      if (window.startMs !== null && createdAtMs < window.startMs) {
+        return;
+      }
+      if (window.endMs !== null && createdAtMs > window.endMs) {
+        return;
+      }
+    }
     const userId = order.userId || order.user_id || order.id;
     const normalizedUserId = normalizeId(userId);
     if (normalizedUserId && excludeDoctorSet.has(normalizedUserId)) {
@@ -1921,8 +1988,6 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     }
     const repId = doctorToRep.get(normalizedUserId);
     if (!repId) return;
-    const repUser = userRepository.findById ? userRepository.findById(repId) : repMap.get(repId);
-    if (!repUser || normalizeRole(repUser.role) !== 'sales_rep') return; // only count real sales reps
     if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
     const current = repTotals.get(repId) || {
       totalOrders: 0,
@@ -1944,12 +2009,9 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     repTotals.set(repId, current);
   });
 
-  return Array.from(repTotals.entries())
+  const rows = Array.from(repTotals.entries())
     .map(([repId, totals]) => {
-      if (!repMap.has(repId)) {
-        return null;
-      }
-      const rep = repMap.get(repId) || repFromUsers.get(repId) || {};
+      const rep = repLookup.get(repId) || {};
       return {
         salesRepId: repId,
         salesRepName: rep.name || rep.email || 'Sales Rep',
@@ -1962,6 +2024,31 @@ const getSalesByRep = async ({ excludeSalesRepId = null, excludeDoctorIds = [] }
     })
     .filter(Boolean)
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+  const totals = rows.reduce((acc, row) => {
+    acc.totalOrders += Number(row.totalOrders) || 0;
+    acc.totalRevenue += Number(row.totalRevenue) || 0;
+    acc.wholesaleRevenue += Number(row.wholesaleRevenue) || 0;
+    acc.retailRevenue += Number(row.retailRevenue) || 0;
+    return acc;
+  }, {
+    totalOrders: 0,
+    totalRevenue: 0,
+    wholesaleRevenue: 0,
+    retailRevenue: 0,
+  });
+
+  return {
+    orders: rows,
+    periodStart: window.start?.raw || null,
+    periodEnd: window.end?.raw || null,
+    timeZone: window.timeZone,
+    window: {
+      startUtc: window.startMs !== null ? new Date(window.startMs).toISOString() : null,
+      endUtc: window.endMs !== null ? new Date(window.endMs).toISOString() : null,
+    },
+    totals,
+  };
 };
 
 const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {

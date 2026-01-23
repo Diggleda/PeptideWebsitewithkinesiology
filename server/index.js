@@ -5,6 +5,7 @@ const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
 const { startOrderSyncJob } = require('./services/orderService');
+const { startShipStationStatusSyncJob } = require('./services/shipStationSyncService');
 
 process.on('uncaughtException', (err) => {
   // Ensure we see boot/runtime crashes even if logger transport is misconfigured under Passenger.
@@ -125,6 +126,7 @@ const start = async () => {
         'Backend server is ready',
       );
       startOrderSyncJob();
+      startShipStationStatusSyncJob();
     });
 
     server.on('error', (error) => {

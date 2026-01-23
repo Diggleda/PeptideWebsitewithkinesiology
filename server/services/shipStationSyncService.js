@@ -1,4 +1,5 @@
 const { logger } = require('../config/logger');
+const { env } = require('../config/env');
 const shipStationClient = require('../integration/shipStationClient');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
@@ -252,7 +253,194 @@ const syncWooFromShipStation = async ({
   };
 };
 
+let shipStationStatusSyncTimer = null;
+let shipStationStatusSyncInFlight = false;
+
+const normalizeWooOrderNumber = (order) => {
+  const candidates = [
+    order?.number,
+    order?.order_number,
+    order?.id,
+  ];
+  for (const candidate of candidates) {
+    const normalized = pickFirstString(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const fetchRecentWooOrdersForSync = async ({ lookbackDays = 14, maxOrders = 80 } = {}) => {
+  if (typeof wooCommerceClient?.isConfigured === 'function' && !wooCommerceClient.isConfigured()) {
+    return [];
+  }
+  if (typeof wooCommerceClient?.fetchCatalog !== 'function') {
+    return [];
+  }
+
+  const safeLookbackDays = Math.min(Math.max(Number(lookbackDays) || 14, 1), 90);
+  const safeMaxOrders = Math.min(Math.max(Number(maxOrders) || 80, 1), 500);
+  const afterIso = new Date(Date.now() - safeLookbackDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const perPage = Math.min(100, safeMaxOrders);
+  const maxPages = Math.min(Math.ceil(safeMaxOrders / perPage) + 2, 20);
+  const collected = [];
+
+  for (let page = 1; page <= maxPages && collected.length < safeMaxOrders; page += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const batch = await wooCommerceClient.fetchCatalog('orders', {
+      per_page: perPage,
+      page,
+      orderby: 'date',
+      order: 'desc',
+      status: 'any',
+      after: afterIso,
+    });
+    if (!Array.isArray(batch) || batch.length === 0) {
+      break;
+    }
+    collected.push(...batch);
+    if (batch.length < perPage) {
+      break;
+    }
+  }
+
+  return collected.slice(0, safeMaxOrders);
+};
+
+const runShipStationStatusSyncOnce = async () => {
+  if (shipStationStatusSyncInFlight) {
+    return { status: 'skipped', reason: 'in_flight' };
+  }
+  if (env.shipStationSync?.enabled === false) {
+    return { status: 'skipped', reason: 'disabled' };
+  }
+  if (!shipStationClient.isConfigured()) {
+    return { status: 'skipped', reason: 'shipstation_not_configured' };
+  }
+  if (typeof wooCommerceClient?.isConfigured === 'function' && !wooCommerceClient.isConfigured()) {
+    return { status: 'skipped', reason: 'woocommerce_not_configured' };
+  }
+  if (typeof wooCommerceClient?.applyShipStationShipmentUpdate !== 'function') {
+    return { status: 'skipped', reason: 'woocommerce_sync_unavailable' };
+  }
+
+  shipStationStatusSyncInFlight = true;
+  const startedAt = Date.now();
+
+  let processed = 0;
+  let updated = 0;
+  let failed = 0;
+  let missing = 0;
+
+  try {
+    const lookbackDays = env.shipStationSync?.lookbackDays;
+    const maxOrders = env.shipStationSync?.maxOrders;
+    const wooOrders = await fetchRecentWooOrdersForSync({ lookbackDays, maxOrders });
+
+    logger.info(
+      {
+        lookbackDays,
+        maxOrders,
+        fetchedWooOrders: wooOrders.length,
+      },
+      'ShipStation status sync: starting',
+    );
+
+    for (const wooOrder of wooOrders) {
+      const wooOrderId = wooOrder?.id || null;
+      const wooOrderNumber = normalizeWooOrderNumber(wooOrder);
+      if (!wooOrderNumber || !wooOrderId) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      processed += 1;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const ship = await shipStationClient.fetchOrderStatus(wooOrderNumber);
+        if (!ship) {
+          missing += 1;
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
+        const nextWooStatus = mapShipStationStatusToWooStatus(ship.status);
+        const result = await wooCommerceClient.applyShipStationShipmentUpdate({
+          wooOrderId,
+          currentWooStatus: wooOrder?.status || null,
+          nextWooStatus,
+          shipStationStatus: ship.status,
+          trackingNumber: ship.trackingNumber,
+          carrierCode: ship.carrierCode,
+          shipDate: ship.shipDate,
+          existingWooMeta: Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [],
+        });
+
+        if (result?.changed) {
+          updated += 1;
+          const note = buildShipmentNote({
+            shipStationStatus: ship.status,
+            trackingNumber: ship.trackingNumber,
+            carrierCode: ship.carrierCode,
+            shipDate: ship.shipDate,
+          });
+          if (note && typeof wooCommerceClient.addOrderNote === 'function') {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await wooCommerceClient.addOrderNote({ wooOrderId, note, isCustomerNote: false });
+            } catch (error) {
+              logger.warn({ err: error, wooOrderId }, 'ShipStation status sync: failed to append order note');
+            }
+          }
+        }
+      } catch (error) {
+        failed += 1;
+        logger.warn(
+          {
+            err: error,
+            wooOrderId,
+            wooOrderNumber,
+          },
+          'ShipStation status sync: order failed',
+        );
+      }
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    logger.info(
+      { processed, updated, missing, failed, elapsedMs },
+      'ShipStation status sync: finished',
+    );
+
+    return { status: 'success', processed, updated, missing, failed, elapsedMs };
+  } finally {
+    shipStationStatusSyncInFlight = false;
+  }
+};
+
+const startShipStationStatusSyncJob = () => {
+  if (env.shipStationSync?.enabled === false) {
+    logger.info('ShipStation status sync disabled by SHIPSTATION_STATUS_SYNC_ENABLED=false');
+    return;
+  }
+  if (shipStationStatusSyncTimer) {
+    return;
+  }
+  const intervalMs = Math.max(Number(env.shipStationSync?.intervalMs) || (5 * 60 * 1000), 60_000);
+  const runner = async () => {
+    try {
+      await runShipStationStatusSyncOnce();
+    } catch (error) {
+      logger.error({ err: error }, 'ShipStation status sync job failed');
+    }
+  };
+  runner();
+  shipStationStatusSyncTimer = setInterval(runner, intervalMs);
+  logger.info({ intervalMs }, 'ShipStation status sync scheduled');
+};
+
 module.exports = {
   syncWooFromShipStation,
   mapShipStationStatusToWooStatus,
+  startShipStationStatusSyncJob,
 };

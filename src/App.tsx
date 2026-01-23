@@ -8133,6 +8133,7 @@ export default function App() {
   const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
     const role = userRole;
     const salesRepId = userSalesRepId || userId;
+    const salesRepIdParam = isAdmin(role) ? undefined : salesRepId;
     const currentUserId = userId != null ? String(userId).trim() : "";
     const currentUserEmail =
       typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
@@ -8152,7 +8153,7 @@ export default function App() {
 
     const now = Date.now();
     const cacheTtlMs = 25_000;
-    const fetchKey = `${String(role || "").toLowerCase()}:${String(salesRepId || "")}`;
+    const fetchKey = `${String(role || "").toLowerCase()}:${String(salesRepIdParam || "")}`;
     const isKeyChanged = salesTrackingFetchKeyRef.current !== fetchKey;
     const hasExistingOrders = salesTrackingOrdersRef.current.length > 0;
     if (isKeyChanged) {
@@ -8203,8 +8204,8 @@ export default function App() {
       >();
 
       const response = await ordersAPI.getForSalesRep({
-        salesRepId: salesRepId || undefined,
-        scope: isAdmin(role) ? "mine" : "mine",
+        salesRepId: salesRepIdParam || undefined,
+        scope: isAdmin(role) ? "all" : "mine",
       });
       if (
         response &&

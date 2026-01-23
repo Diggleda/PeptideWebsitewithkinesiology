@@ -211,6 +211,12 @@ const env = {
       phone: process.env.SHIPSTATION_SHIP_FROM_PHONE || '',
     },
   },
+  shipStationSync: {
+    enabled: process.env.SHIPSTATION_STATUS_SYNC_ENABLED !== 'false',
+    intervalMs: toNumber(process.env.SHIPSTATION_STATUS_SYNC_INTERVAL_MS, 60 * 1000),
+    lookbackDays: toNumber(process.env.SHIPSTATION_STATUS_SYNC_LOOKBACK_DAYS, 14),
+    maxOrders: toNumber(process.env.SHIPSTATION_STATUS_SYNC_MAX_ORDERS, 80),
+  },
   orderSync: {
     enabled: process.env.ORDER_SYNC_ENABLED !== 'false',
     // Background task to keep MySQL in sync with WooCommerce/local orders
