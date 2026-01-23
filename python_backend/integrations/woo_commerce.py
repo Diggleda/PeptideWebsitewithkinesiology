@@ -1544,6 +1544,183 @@ def find_product_by_sku(sku: Optional[str]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def build_shipstation_note(
+    shipstation_status: Any,
+    tracking_number: Any,
+    carrier_code: Any,
+    ship_date: Any,
+) -> str:
+    parts: List[str] = []
+    status = str(shipstation_status or "").strip()
+    if status:
+        parts.append(f"ShipStation status: {status}")
+    tracking = str(tracking_number or "").strip()
+    if tracking:
+        parts.append(f"Tracking: {tracking}")
+    carrier = str(carrier_code or "").strip()
+    if carrier:
+        parts.append(f"Carrier: {carrier}")
+    shipped = str(ship_date or "").strip()
+    if shipped:
+        parts.append(f"Ship date: {shipped}")
+    return " • ".join(parts)
+
+
+def add_order_note(woo_order_id: str, note: str, *, customer_note: bool = False) -> Dict[str, Any]:
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    if not woo_order_id or not note:
+        return {"status": "skipped", "reason": "missing_params"}
+
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}/notes"
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+
+    try:
+        response = requests.post(
+            url,
+            json={"note": str(note), "customer_note": bool(customer_note)},
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        body = response.json() if response.content else {}
+        return {"status": "success", "response": {"id": (body or {}).get("id")}}
+    except requests.RequestException as exc:
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.warning("Failed to append WooCommerce order note", exc_info=False, extra={"wooOrderId": woo_order_id})
+        raise IntegrationError("Failed to append WooCommerce order note", response=data) from exc
+
+
+def apply_shipstation_shipment_update(
+    woo_order_id: str,
+    *,
+    current_status: Any = None,
+    next_status: Optional[str] = None,
+    shipstation_status: Any = None,
+    tracking_number: Any = None,
+    carrier_code: Any = None,
+    ship_date: Any = None,
+    existing_meta_data: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured", "changed": False}
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id", "changed": False}
+
+    def safe_lower(value: Any) -> str:
+        return str(value or "").strip().lower()
+
+    current = safe_lower(current_status)
+    next_val = safe_lower(next_status)
+    locked_status = current in ("cancelled", "refunded", "trash")
+    should_update_status = bool(next_val) and current != next_val and not locked_status
+
+    def norm_meta_value(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, (str, int, float, bool)):
+            text = str(value).strip()
+            return text if text else None
+        try:
+            text = json.dumps(value)
+            return text if text else None
+        except Exception:
+            return None
+
+    keys = {
+        "status": "_peppro_shipstation_status",
+        "tracking": "_peppro_shipstation_tracking_number",
+        "carrier": "_peppro_shipstation_carrier_code",
+        "shipDate": "_peppro_shipstation_ship_date",
+    }
+
+    existing = existing_meta_data if isinstance(existing_meta_data, list) else []
+
+    def find_meta(key: str) -> Optional[Dict[str, Any]]:
+        for entry in existing:
+            try:
+                if str(entry.get("key") or "") == key:
+                    return entry
+            except Exception:
+                continue
+        return None
+
+    desired = [
+        {"key": keys["status"], "value": norm_meta_value(shipstation_status)},
+        {"key": keys["tracking"], "value": norm_meta_value(tracking_number)},
+        {"key": keys["carrier"], "value": norm_meta_value(carrier_code)},
+        {"key": keys["shipDate"], "value": norm_meta_value(ship_date)},
+    ]
+    desired = [item for item in desired if item.get("value") is not None]
+
+    meta_updates: List[Dict[str, Any]] = []
+    for item in desired:
+        key = item["key"]
+        value = item["value"]
+        existing_entry = find_meta(key)
+        existing_value = norm_meta_value((existing_entry or {}).get("value"))
+        if existing_value == value:
+            continue
+        update: Dict[str, Any] = {"key": key, "value": value}
+        if existing_entry and existing_entry.get("id") is not None:
+            update["id"] = existing_entry.get("id")
+        meta_updates.append(update)
+
+    payload: Dict[str, Any] = {}
+    if should_update_status:
+        payload["status"] = str(next_status).strip()
+    if meta_updates:
+        payload["meta_data"] = meta_updates
+    if not payload:
+        return {"status": "skipped", "reason": "no_changes", "changed": False}
+
+    base_url = _strip(get_config().woo_commerce.get("store_url") or "").rstrip("/")
+    api_version = _strip(get_config().woo_commerce.get("api_version") or "wc/v3").lstrip("/")
+    url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
+    timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
+
+    try:
+        response = requests.put(
+            url,
+            json=payload,
+            auth=HTTPBasicAuth(
+                _strip(get_config().woo_commerce.get("consumer_key")),
+                _strip(get_config().woo_commerce.get("consumer_secret")),
+            ),
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        body = response.json() if response.content else {}
+        return {
+            "status": "success",
+            "changed": True,
+            "response": {"id": (body or {}).get("id"), "status": (body or {}).get("status")},
+        }
+    except requests.RequestException as exc:
+        data = None
+        if exc.response is not None:
+            try:
+                data = exc.response.json()
+            except Exception:
+                data = exc.response.text
+        logger.warning(
+            "Failed to apply ShipStation update to WooCommerce order",
+            exc_info=False,
+            extra={"wooOrderId": woo_order_id, "payloadKeys": list(payload.keys())},
+        )
+        raise IntegrationError("Failed to apply ShipStation update", response=data) from exc
+
+
 def update_product_inventory(
     product_id: Optional[int],
     stock_quantity: Optional[float],
@@ -1933,6 +2110,37 @@ def fetch_order(woo_order_id: str) -> Optional[Dict[str, Any]]:
     except Exception as exc:  # pragma: no cover - network path
         logger.error("Failed to fetch Woo order by id", exc_info=True, extra={"wooOrderId": woo_order_id})
     return None
+
+
+def fetch_order_summary(woo_order_id: str) -> Dict[str, Any]:
+    """
+    Fetch a single Woo order by id and map to PepPro order summary.
+
+    Unlike `fetch_order()`, this returns a structured status that differentiates 404/not_found
+    from transient errors so callers can safely reconcile local records.
+    """
+    if not is_configured():
+        return {"status": "skipped", "reason": "not_configured"}
+    if not woo_order_id:
+        return {"status": "skipped", "reason": "missing_woo_order_id"}
+    try:
+        result = fetch_catalog(f"orders/{woo_order_id}")
+        if not isinstance(result, dict) or not result.get("id"):
+            return {"status": "not_found", "wooOrderId": woo_order_id}
+        return {"status": "success", "wooOrderId": woo_order_id, "order": _map_woo_order_summary(result)}
+    except IntegrationError as exc:
+        status_code = getattr(exc, "status", None)
+        if status_code == 404:
+            return {"status": "not_found", "wooOrderId": woo_order_id}
+        return {
+            "status": "error",
+            "wooOrderId": woo_order_id,
+            "statusCode": status_code if status_code is not None else 502,
+            "message": str(exc) or "WooCommerce order lookup failed",
+        }
+    except Exception:
+        logger.error("Failed to fetch Woo order summary by id", exc_info=True, extra={"wooOrderId": woo_order_id})
+        return {"status": "error", "wooOrderId": woo_order_id, "statusCode": 502, "message": "WooCommerce order lookup failed"}
 
 
 def fetch_order_by_number(order_number: str, search_window: int = 25) -> Optional[Dict[str, Any]]:

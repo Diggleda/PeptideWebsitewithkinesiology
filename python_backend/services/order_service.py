@@ -45,6 +45,9 @@ _SALES_REP_ORDERS_TTL_SECONDS = max(3, min(_SALES_REP_ORDERS_TTL_SECONDS, 120))
 _sales_rep_orders_cache_lock = threading.Lock()
 _sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
 
+_WOO_ORDER_RECONCILE_MAX_LOOKUPS = int(os.environ.get("WOO_ORDER_RECONCILE_MAX_LOOKUPS", "10").strip() or 10)
+_WOO_ORDER_RECONCILE_MAX_LOOKUPS = max(0, min(_WOO_ORDER_RECONCILE_MAX_LOOKUPS, 25))
+
 
 def _normalize_email(value: Optional[str]) -> str:
     if not value:
@@ -1012,6 +1015,88 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
         except Exception as exc:  # pragma: no cover - unexpected network error path
             logger.error("Unexpected WooCommerce order lookup error", exc_info=True, extra={"userId": user_id})
             woo_error = {"message": "Unable to load WooCommerce orders.", "details": str(exc), "status": 502}
+
+    # Reconcile local overlay records against Woo truth:
+    # - If a Woo order was deleted, remove it from the local overlay response so it disappears from the UI.
+    # - If a Woo order exists but isn't in the first-page email lookup, fetch it by id so it still shows.
+    if (
+        _WOO_ORDER_RECONCILE_MAX_LOOKUPS > 0
+        and woo_error is None
+        and isinstance(woo_orders, list)
+        and isinstance(local_orders, list)
+        and len(local_orders) > 0
+        and woo_commerce.is_configured()
+    ):
+        def normalize_woo_id(value: object) -> str:
+            text = str(value or "").strip()
+            if text.startswith("#"):
+                text = text[1:]
+            if text.startswith("woo-"):
+                text = text.split("-", 1)[1]
+            return text.strip()
+
+        existing_woo_ids: set[str] = set()
+        for order in woo_orders:
+            if not isinstance(order, dict):
+                continue
+            woo_id = normalize_woo_id(order.get("wooOrderId"))
+            if woo_id:
+                existing_woo_ids.add(woo_id)
+
+        missing_ids: List[str] = []
+        for local in local_orders:
+            if not isinstance(local, dict):
+                continue
+            woo_id = normalize_woo_id(local.get("wooOrderId") or local.get("woo_order_id"))
+            if not woo_id or woo_id in existing_woo_ids:
+                continue
+            missing_ids.append(woo_id)
+
+        if missing_ids:
+            seen: set[str] = set()
+            missing_unique: List[str] = []
+            for woo_id in missing_ids:
+                if woo_id in seen:
+                    continue
+                seen.add(woo_id)
+                missing_unique.append(woo_id)
+
+            deleted_ids: set[str] = set()
+            added = 0
+            looked_up = 0
+            for woo_id in missing_unique[:_WOO_ORDER_RECONCILE_MAX_LOOKUPS]:
+                looked_up += 1
+                result = woo_commerce.fetch_order_summary(str(woo_id))
+                status = (result or {}).get("status")
+                if status == "success" and isinstance((result or {}).get("order"), dict):
+                    summary = (result or {}).get("order") or {}
+                    summary_woo_id = normalize_woo_id(summary.get("wooOrderId") or woo_id)
+                    if summary_woo_id and summary_woo_id not in existing_woo_ids:
+                        woo_orders.append(summary)
+                        existing_woo_ids.add(summary_woo_id)
+                        added += 1
+                elif status == "not_found":
+                    deleted_ids.add(woo_id)
+
+            if deleted_ids:
+                before = len(local_orders)
+                local_orders = [
+                    local
+                    for local in local_orders
+                    if not (
+                        isinstance(local, dict)
+                        and normalize_woo_id(local.get("wooOrderId") or local.get("woo_order_id")) in deleted_ids
+                    )
+                ]
+                removed = before - len(local_orders)
+                if removed > 0:
+                    logger.info(
+                        "[Orders] Filtered deleted Woo orders from local overlay userId=%s removed=%s lookedUp=%s added=%s",
+                        user_id,
+                        removed,
+                        looked_up,
+                        added,
+                    )
 
     merged_woo_orders = _merge_local_details_into_woo_orders(woo_orders or [], local_orders or [])
 

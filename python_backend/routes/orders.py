@@ -241,6 +241,42 @@ def admin_orders_for_user(user_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/admin/shipstation-sync-status")
+@require_auth
+def admin_shipstation_sync_status():
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        from ..services.shipstation_status_sync_service import get_status
+
+        return {"success": True, "state": get_status()}
+
+    return handle_action(action)
+
+
+@blueprint.post("/admin/sync-shipstation-statuses")
+@require_auth
+def admin_run_shipstation_sync_now():
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        ignore_cooldown = bool(payload.get("ignoreCooldown") is True or payload.get("ignore_cooldown") is True)
+        from ..services.shipstation_status_sync_service import run_sync_once, get_status
+
+        result = run_sync_once(ignore_cooldown=ignore_cooldown)
+        return {"success": True, "result": result, "state": get_status()}
+
+    return handle_action(action)
+
+
 @blueprint.post("/estimate")
 @require_auth
 def estimate_order_totals():
