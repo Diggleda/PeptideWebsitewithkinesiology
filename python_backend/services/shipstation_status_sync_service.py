@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timezone
@@ -27,7 +28,7 @@ _STATE: Dict[str, Any] = {
 }
 
 _LAST_RUN_SETTINGS_KEY = "shipStationWooStatusSyncLastRunAt"
-_LOCK_NAME = "peppro:sync:shipstation-woo-status"
+_LEASE_SETTINGS_KEY = "shipStationWooStatusSyncLease"
 
 
 def _enabled() -> bool:
@@ -70,17 +71,66 @@ def _max_orders() -> int:
     return max(1, min(value, 500))
 
 
-def _try_acquire_lock(name: str) -> bool:
+def _lease_seconds() -> int:
+    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_LEASE_SECONDS", "300")).strip()
     try:
-        row = mysql_client.fetch_one("SELECT GET_LOCK(%(name)s, 0) AS acquired", {"name": name})
-        return bool(row and int(row.get("acquired") or 0) == 1)
+        value = int(raw)
     except Exception:
-        return False
+        value = 300
+    return max(30, min(value, 3600))
 
 
-def _release_lock(name: str) -> None:
+def _try_acquire_lease(*, lease_seconds: int) -> Optional[str]:
+    """
+    Best-effort MySQL-backed lease using the `settings` table.
+
+    NOTE: Do not use MySQL GET_LOCK here. This codebase uses a pooled connection wrapper
+    (`mysql_client`), and advisory locks are connection-scoped, making release unreliable.
+    """
+    token = f"{os.getpid()}:{int(time.time() * 1000)}:{secrets.token_urlsafe(8)}"
     try:
-        mysql_client.fetch_one("SELECT RELEASE_LOCK(%(name)s) AS released", {"name": name})
+        mysql_client.execute(
+            """
+            INSERT INTO settings (`key`, value_json, updated_at)
+            VALUES (%(key)s, %(value)s, NOW())
+            ON DUPLICATE KEY UPDATE
+              value_json = IF(
+                updated_at < DATE_SUB(NOW(), INTERVAL %(lease_seconds)s SECOND),
+                VALUES(value_json),
+                value_json
+              ),
+              updated_at = IF(
+                updated_at < DATE_SUB(NOW(), INTERVAL %(lease_seconds)s SECOND),
+                NOW(),
+                updated_at
+              )
+            """,
+            {"key": _LEASE_SETTINGS_KEY, "value": json.dumps(token), "lease_seconds": int(lease_seconds)},
+        )
+        row = mysql_client.fetch_one(
+            "SELECT value_json FROM settings WHERE `key` = %(key)s",
+            {"key": _LEASE_SETTINGS_KEY},
+        )
+        stored = _parse_settings_json_value((row or {}).get("value_json"))
+        if stored == token:
+            return token
+    except Exception:
+        return None
+    return None
+
+
+def _release_lease(token: str, *, lease_seconds: int) -> None:
+    if not token:
+        return
+    try:
+        mysql_client.execute(
+            """
+            UPDATE settings
+            SET updated_at = DATE_SUB(NOW(), INTERVAL %(lease_seconds)s SECOND)
+            WHERE `key` = %(key)s AND value_json = %(value)s
+            """,
+            {"key": _LEASE_SETTINGS_KEY, "value": json.dumps(token), "lease_seconds": int(lease_seconds)},
+        )
     except Exception:
         return
 
@@ -244,6 +294,7 @@ def get_status() -> Dict[str, Any]:
         "intervalSeconds": _interval_seconds(),
         "lookbackDays": _lookback_days(),
         "maxOrders": _max_orders(),
+        "leaseSeconds": _lease_seconds(),
     }
 
 
@@ -280,16 +331,20 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
     missing = 0
     failed = 0
 
-    have_mysql = True
-    acquired = False
     try:
-        acquired = _try_acquire_lock(_LOCK_NAME)
-        if not acquired:
-            return {"status": "skipped", "reason": "lock_busy"}
-    except Exception:
-        have_mysql = False
+        have_mysql = True
+        lease_seconds = _lease_seconds()
+        lease_token: Optional[str] = None
+        try:
+            lease_token = _try_acquire_lease(lease_seconds=lease_seconds)
+            if not lease_token:
+                result = {"status": "skipped", "reason": "lease_busy", "leaseSeconds": lease_seconds}
+                _STATE["lastFinishedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                _STATE["lastResult"] = result
+                return result
+        except Exception:
+            have_mysql = False
 
-    try:
         # Cooldown across workers (Passenger). If settings table isn't available, fall back to per-process interval.
         interval = _interval_seconds()
         if have_mysql and not ignore_cooldown:
@@ -389,8 +444,12 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
         raise
     finally:
         try:
-            if acquired:
-                _release_lock(_LOCK_NAME)
+            try:
+                token = locals().get("lease_token")
+                if token:
+                    _release_lease(str(token), lease_seconds=_lease_seconds())
+            except Exception:
+                pass
         finally:
             with _SYNC_LOCK:
                 _IN_FLIGHT = False
