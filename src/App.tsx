@@ -5535,34 +5535,35 @@ export default function App() {
           ].filter((part) => typeof part === "string" && part.trim().length > 0);
           const address = addressParts.length > 0 ? addressParts.join("\n") : null;
 
-          const isSalesRepProfile = roleFromProfile === "sales_rep" || roleFromProfile === "rep";
-          let salesRevenue: number | null = null;
-          let personalRevenue: number | null = null;
+	          const isSalesProfile =
+	            roleFromProfile === "sales_rep" || roleFromProfile === "rep" || roleFromProfile === "admin";
+	          let salesRevenue: number | null = null;
+	          let personalRevenue: number | null = null;
 
-          if (isSalesRepProfile) {
-            personalRevenue = totalOrderValue;
-            try {
-              const repOrdersResp = await ordersAPI.getForSalesRep({
-                salesRepId: id,
-                scope: "all",
-              });
-              const repOrders = (repOrdersResp as any)?.orders;
-              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
-              salesRevenue = repOrdersList.reduce((sum: number, order: any) => {
-                if (!shouldCountRevenueForStatus(order?.status)) {
-                  return sum;
-                }
-                const rawDoctorId =
-                  order?.doctorId || order?.doctor_id || order?.userId || order?.user_id || null;
-                if (rawDoctorId && String(rawDoctorId) === id) {
-                  return sum;
-                }
-                return sum + (coerceNumber(order?.total) || 0);
-              }, 0);
-            } catch (error) {
-              console.warn("[Admin] Failed to load sales rep revenue", error);
-            }
-          }
+	          if (isSalesProfile) {
+	            personalRevenue = totalOrderValue;
+	            try {
+	              const repOrdersResp = await ordersAPI.getForSalesRep({
+	                salesRepId: id,
+	                scope: "all",
+	              });
+	              const repOrders = (repOrdersResp as any)?.orders;
+	              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
+	              salesRevenue = repOrdersList.reduce((sum: number, order: any) => {
+	                if (!shouldCountRevenueForStatus(order?.status)) {
+	                  return sum;
+	                }
+	                const rawDoctorId =
+	                  order?.doctorId || order?.doctor_id || order?.userId || order?.user_id || null;
+	                if (rawDoctorId && String(rawDoctorId) === id) {
+	                  return sum;
+	                }
+	                return sum + (coerceNumber(order?.total) || 0);
+	              }, 0);
+	            } catch (error) {
+	              console.warn("[Admin] Failed to load sales rep revenue", error);
+	            }
+	          }
 
           openSalesDoctorDetail(
             {
@@ -6443,57 +6444,126 @@ export default function App() {
 	    };
 	  }, [user?.role, user?.id]);
 
-	  const formatOnlineDuration = (lastLoginAt?: string | null) => {
-	    void userActivityNowTick;
-	    if (!lastLoginAt) return "Online";
-    const startedAt = new Date(lastLoginAt).getTime();
-    if (!Number.isFinite(startedAt)) return "Online";
-    const elapsedMs = Math.max(0, Date.now() - startedAt);
-    const totalMinutes = Math.floor(elapsedMs / 60000);
-    if (totalMinutes < 1) return "Online for <1m";
-    if (totalMinutes < 60) return `Online for ${totalMinutes}m`;
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    if (hours < 24) {
-      return minutes ? `Online for ${hours}h ${minutes}m` : `Online for ${hours}h`;
-    }
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-	    return remHours ? `Online for ${days}d ${remHours}h` : `Online for ${days}d`;
-	  };
+		  const formatOnlineDuration = (lastLoginAt?: string | null) => {
+		    void userActivityNowTick;
+		    if (!lastLoginAt) return "Online";
+	    const startedAt = new Date(lastLoginAt).getTime();
+	    if (!Number.isFinite(startedAt)) return "Online";
+	    const elapsedMs = Math.max(0, Date.now() - startedAt);
+		    const formatElapsed = (ms: number, maxParts = 2) => {
+		      const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+		      if (totalSeconds < 60) return "<1m";
+		      const units = [
+		        { label: "y", seconds: 365 * 24 * 60 * 60 },
+		        { label: "mo", seconds: 30 * 24 * 60 * 60 },
+		        { label: "d", seconds: 24 * 60 * 60 },
+		        { label: "h", seconds: 60 * 60 },
+		        { label: "m", seconds: 60 },
+		      ];
+		      let remaining = totalSeconds;
+		      const parts: string[] = [];
+		      for (const unit of units) {
+		        const qty = Math.floor(remaining / unit.seconds);
+		        if (qty > 0) {
+		          parts.push(`${qty}${unit.label}`);
+		          remaining -= qty * unit.seconds;
+		        }
+		        if (parts.length >= maxParts) break;
+		      }
+		      return parts.length ? parts.join(" ") : "<1m";
+		    };
+		    return `Online for ${formatElapsed(elapsedMs)}`;
+		  };
 
-    const formatRelativeMinutes = (value?: string | null) => {
-      if (!value) return "a few moments ago";
-      const date = new Date(value);
-      const target = date.getTime();
-      if (Number.isNaN(target)) return String(value);
-      const diffMs = Math.max(0, Date.now() - target);
-      const minutes = Math.floor(diffMs / 60000);
-      if (minutes <= 1) return "a few moments ago";
-      return `${minutes} min ago`;
-    };
+	    const formatRelativeMinutes = (value?: string | null) => {
+	      if (!value) return "a few moments ago";
+	      const date = new Date(value);
+	      const target = date.getTime();
+	      if (Number.isNaN(target)) return String(value);
+	      const diffMs = Math.max(0, Date.now() - target);
+	      if (diffMs < 90_000) return "a few moments ago";
+	      const totalSeconds = Math.floor(diffMs / 1000);
+	      const units = [
+	        { label: "y", seconds: 365 * 24 * 60 * 60 },
+	        { label: "mo", seconds: 30 * 24 * 60 * 60 },
+	        { label: "d", seconds: 24 * 60 * 60 },
+	        { label: "h", seconds: 60 * 60 },
+	        { label: "m", seconds: 60 },
+	      ];
+	      let remaining = totalSeconds;
+	      const parts: string[] = [];
+	      for (const unit of units) {
+	        const qty = Math.floor(remaining / unit.seconds);
+	        if (qty > 0) {
+	          parts.push(`${qty}${unit.label}`);
+	          remaining -= qty * unit.seconds;
+	        }
+	        if (parts.length >= 2) break;
+	      }
+	      if (!parts.length) return "a few moments ago";
+	      return `${parts.join(" ")} ago`;
+	    };
 
-	  const formatIdleMinutes = (entry: any) => {
-	    void userActivityNowTick;
+		  const formatIdleMinutes = (entry: any) => {
+		    void userActivityNowTick;
 	    const rawMinutes =
 	      typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
 	        ? entry.idleMinutes
 	        : null;
-	    if (rawMinutes == null) {
-	      const raw =
-	        entry?.lastInteractionAt ||
-	        entry?.lastSeenAt ||
-	        entry?.lastLoginAt ||
-	        null;
-	      if (!raw) return null;
-	      const parsed = new Date(raw).getTime();
-	      if (!Number.isFinite(parsed)) return null;
-	      const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60000));
-	      return minutes < 1 ? "<1min" : `${minutes}min`;
-	    }
-	    const minutes = Math.max(0, Math.floor(rawMinutes));
-	    return minutes < 1 ? "<1min" : `${minutes}min`;
-	  };
+		    if (rawMinutes == null) {
+		      const raw =
+		        entry?.lastInteractionAt ||
+		        entry?.lastSeenAt ||
+		        entry?.lastLoginAt ||
+		        null;
+		      if (!raw) return null;
+		      const parsed = new Date(raw).getTime();
+		      if (!Number.isFinite(parsed)) return null;
+		      const diffMs = Math.max(0, Date.now() - parsed);
+		      const totalSeconds = Math.floor(diffMs / 1000);
+		      if (totalSeconds < 60) return "<1m";
+		      const units = [
+		        { label: "y", seconds: 365 * 24 * 60 * 60 },
+		        { label: "mo", seconds: 30 * 24 * 60 * 60 },
+		        { label: "d", seconds: 24 * 60 * 60 },
+		        { label: "h", seconds: 60 * 60 },
+		        { label: "m", seconds: 60 },
+		      ];
+		      let remaining = totalSeconds;
+		      const parts: string[] = [];
+		      for (const unit of units) {
+		        const qty = Math.floor(remaining / unit.seconds);
+		        if (qty > 0) {
+		          parts.push(`${qty}${unit.label}`);
+		          remaining -= qty * unit.seconds;
+		        }
+		        if (parts.length >= 2) break;
+		      }
+		      return parts.length ? parts.join(" ") : "<1m";
+		    }
+		    const minutes = Math.max(0, Math.floor(rawMinutes));
+		    if (minutes < 1) return "<1m";
+		    const diffMs = minutes * 60_000;
+		    const totalSeconds = Math.floor(diffMs / 1000);
+		    const units = [
+		      { label: "y", seconds: 365 * 24 * 60 * 60 },
+		      { label: "mo", seconds: 30 * 24 * 60 * 60 },
+		      { label: "d", seconds: 24 * 60 * 60 },
+		      { label: "h", seconds: 60 * 60 },
+		      { label: "m", seconds: 60 },
+		    ];
+		    let remaining = totalSeconds;
+		    const parts: string[] = [];
+		    for (const unit of units) {
+		      const qty = Math.floor(remaining / unit.seconds);
+		      if (qty > 0) {
+		        parts.push(`${qty}${unit.label}`);
+		        remaining -= qty * unit.seconds;
+		      }
+		      if (parts.length >= 2) break;
+		    }
+		    return parts.length ? parts.join(" ") : "<1m";
+		  };
 
 	  
 	  useEffect(() => {
@@ -12606,34 +12676,74 @@ export default function App() {
 	                ) : (
 	                  <div className="sales-rep-table-wrapper live-users-scroll">
 	                    <div className="flex w-full min-w-[720px] flex-col gap-2">
-	                      {liveClients.map((entry: any) => {
-	                        const avatarUrl = entry.profileImageUrl || null;
-	                        const displayName = entry.name || entry.email || "Doctor";
-	                        const isOnlineNow = Boolean(entry.isOnline);
-	                        const showIdle = isOnlineNow && Boolean(entry.isIdle);
-	                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
-	                        const offlineLabel = !isOnlineNow
-	                          ? (() => {
-	                              const raw =
-	                                entry?.lastSeenAt ||
-	                                entry?.lastInteractionAt ||
-	                                entry?.lastLoginAt ||
-	                                null;
-	                              if (!raw) return null;
-	                              const parsed = new Date(raw).getTime();
-	                              if (!Number.isFinite(parsed)) return null;
-	                              const minutes = Math.max(
-	                                0,
-	                                Math.floor((Date.now() - parsed) / 60000),
-	                              );
-	                              if (minutes < 1) return "<1min";
-	                              if (minutes < 60) return `${minutes}min`;
-	                              const hours = Math.floor(minutes / 60);
-	                              const rem = minutes % 60;
-	                              return rem ? `${hours}h ${rem}m` : `${hours}h`;
-	                            })()
-	                          : null;
-	                              return (
+		                      {liveClients.map((entry: any) => {
+		                        const avatarUrl = entry.profileImageUrl || null;
+		                        const displayName = entry.name || entry.email || "Doctor";
+		                        const resolveLastSeenMs = () => {
+		                          const raw =
+		                            entry?.lastInteractionAt ||
+		                            entry?.lastSeenAt ||
+		                            entry?.lastActivityAt ||
+		                            entry?.lastActiveAt ||
+		                            entry?.lastLoginAt ||
+		                            null;
+		                          if (!raw) return null;
+		                          const parsed = new Date(raw).getTime();
+		                          return Number.isFinite(parsed) ? parsed : null;
+		                        };
+		                        const lastSeenMs = resolveLastSeenMs();
+		                        const minutesSinceLastSeen =
+		                          lastSeenMs != null
+		                            ? Math.max(0, (Date.now() - lastSeenMs) / 60000)
+		                            : null;
+		                        const OFFLINE_AFTER_MINUTES = 60;
+		                        const IDLE_AFTER_MINUTES = 2;
+		                        const onlineReported = Boolean(entry.isOnline);
+		                        const idleReported = Boolean(entry.isIdle);
+		                        const isOnlineNow =
+		                          onlineReported ||
+		                          (minutesSinceLastSeen != null &&
+		                            minutesSinceLastSeen < OFFLINE_AFTER_MINUTES);
+		                        const showIdle =
+		                          isOnlineNow &&
+		                          (idleReported ||
+		                            (minutesSinceLastSeen != null &&
+		                              minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
+		                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
+		                        const offlineLabel = !isOnlineNow
+		                          ? (() => {
+		                              const raw =
+		                                entry?.lastSeenAt ||
+		                                entry?.lastInteractionAt ||
+		                                entry?.lastLoginAt ||
+		                                null;
+		                              if (!raw) return null;
+		                              const parsed = new Date(raw).getTime();
+		                              if (!Number.isFinite(parsed)) return null;
+		                              const diffMs = Math.max(0, Date.now() - parsed);
+		                              const totalSeconds = Math.floor(diffMs / 1000);
+		                              if (totalSeconds < 60) return "<1m";
+		                              const units = [
+		                                { label: "y", seconds: 365 * 24 * 60 * 60 },
+		                                { label: "mo", seconds: 30 * 24 * 60 * 60 },
+		                                { label: "d", seconds: 24 * 60 * 60 },
+		                                { label: "h", seconds: 60 * 60 },
+		                                { label: "m", seconds: 60 },
+		                              ];
+		                              let remaining = totalSeconds;
+		                              const parts: string[] = [];
+		                              for (const unit of units) {
+		                                const qty = Math.floor(remaining / unit.seconds);
+		                                if (qty > 0) {
+		                                  parts.push(`${qty}${unit.label}`);
+		                                  remaining -= qty * unit.seconds;
+		                                }
+		                                if (parts.length >= 2) break;
+		                              }
+		                              return parts.length ? parts.join(" ") : "<1m";
+		                            })()
+		                          : null;
+		                              return (
 	                                <div
 	                                  key={entry.id}
 	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
@@ -12674,29 +12784,29 @@ export default function App() {
 	                                </div>
 	                              </div>
 	                            </button>
-	                            <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
-	                              <span
-	                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-	                                  !isOnlineNow
-	                                    ? "bg-slate-50 text-slate-500"
-	                                    : showIdle
-	                                    ? "bg-slate-100 text-slate-600"
-	                                    : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-	                                }`}
-	                              >
-	                                {!isOnlineNow
-	                                  ? `Offline${offlineLabel ? ` (${offlineLabel})` : ""}`
-	                                  : showIdle
+		                              <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
+		                              <span
+		                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+		                                  !isOnlineNow
+		                                    ? "bg-slate-50 text-slate-500"
+		                                    : showIdle
+		                                      ? "bg-slate-100 text-slate-600"
+		                                      : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
+		                                }`}
+		                              >
+		                                {!isOnlineNow
+		                                  ? `Offline${offlineLabel ? ` (${offlineLabel})` : ""}`
+		                                  : showIdle
 	                                    ? `Idle${idleLabel ? ` (${idleLabel})` : ""}`
 	                                    : "Online"}
-	                              </span>
-	                              <div className="text-xs text-slate-600 whitespace-nowrap">
-	                                {isOnlineNow ? formatOnlineDuration(entry.lastLoginAt) : "—"}
-	                              </div>
-	                            </div>
-	                          </div>
-	                        );
-	                      })}
+		                              </span>
+		                              <div className="text-xs text-slate-600 whitespace-nowrap">
+		                                {isOnlineNow ? formatOnlineDuration(entry.lastLoginAt) : "—"}
+		                              </div>
+		                            </div>
+		                          </div>
+		                        );
+		                      })}
 	                    </div>
 	                  </div>
 	                )}
@@ -13273,18 +13383,38 @@ export default function App() {
                       return isEntryCurrentUser(entry) && isIdle;
                     };
 
-                    const getIdleMinutesLabel = (entry: any) => {
-                      void userActivityNowTick;
-                      const numericMinutes =
-                        typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
-                          ? entry.idleMinutes
-                          : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
-                            ? entry.idleForMinutes
-                            : null;
-                      if (numericMinutes != null) {
-                        if (numericMinutes < 1) return "<1min";
-                        return `${Math.max(0, Math.floor(numericMinutes))}min`;
-                      }
+	                    const getIdleMinutesLabel = (entry: any) => {
+	                      void userActivityNowTick;
+	                      const numericMinutes =
+	                        typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+	                          ? entry.idleMinutes
+	                          : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+	                            ? entry.idleForMinutes
+	                            : null;
+	                      if (numericMinutes != null) {
+	                        const safeMinutes = Math.max(0, Math.floor(numericMinutes));
+	                        if (safeMinutes < 1) return "<1m";
+	                        const diffMs = safeMinutes * 60_000;
+	                        const totalSeconds = Math.floor(diffMs / 1000);
+	                        const units = [
+	                          { label: "y", seconds: 365 * 24 * 60 * 60 },
+	                          { label: "mo", seconds: 30 * 24 * 60 * 60 },
+	                          { label: "d", seconds: 24 * 60 * 60 },
+	                          { label: "h", seconds: 60 * 60 },
+	                          { label: "m", seconds: 60 },
+	                        ];
+	                        let remaining = totalSeconds;
+	                        const parts: string[] = [];
+	                        for (const unit of units) {
+	                          const qty = Math.floor(remaining / unit.seconds);
+	                          if (qty > 0) {
+	                            parts.push(`${qty}${unit.label}`);
+	                            remaining -= qty * unit.seconds;
+	                          }
+	                          if (parts.length >= 2) break;
+	                        }
+	                        return parts.length ? parts.join(" ") : "<1m";
+	                      }
                       const isCurrent =
                         (user?.id && entry?.id === user.id) ||
                         (user?.email &&
@@ -13305,24 +13435,60 @@ export default function App() {
                             const parsed = new Date(raw).getTime();
                             return Number.isFinite(parsed) ? parsed : null;
                           })();
-                      if (!idleSinceMs) return null;
-                      const minutes = Math.max(
-                        0,
-                        Math.floor((Date.now() - idleSinceMs) / 60000),
-                      );
-                      if (minutes < 1) return "<1min";
-                      return `${minutes}min`;
-                    };
+	                      if (!idleSinceMs) return null;
+	                      const diffMs = Math.max(0, Date.now() - idleSinceMs);
+	                      const totalSeconds = Math.floor(diffMs / 1000);
+	                      if (totalSeconds < 60) return "<1m";
+	                      const units = [
+	                        { label: "y", seconds: 365 * 24 * 60 * 60 },
+	                        { label: "mo", seconds: 30 * 24 * 60 * 60 },
+	                        { label: "d", seconds: 24 * 60 * 60 },
+	                        { label: "h", seconds: 60 * 60 },
+	                        { label: "m", seconds: 60 },
+	                      ];
+	                      let remaining = totalSeconds;
+	                      const parts: string[] = [];
+	                      for (const unit of units) {
+	                        const qty = Math.floor(remaining / unit.seconds);
+	                        if (qty > 0) {
+	                          parts.push(`${qty}${unit.label}`);
+	                          remaining -= qty * unit.seconds;
+	                        }
+	                        if (parts.length >= 2) break;
+	                      }
+	                      return parts.length ? parts.join(" ") : "<1m";
+	                    };
 
-                    const normalizedQuery = adminLiveUsersSearch.trim().toLowerCase();
-                    const filtered = visibleUsers.filter((entry: any) => {
-                      if (!adminLiveUsersShowOffline && !entry?.isOnline) {
-                        return false;
-                      }
-                      const role = String(entry?.role || "").toLowerCase().trim();
-                      if (adminLiveUsersRoleFilter !== "all") {
-                        if (adminLiveUsersRoleFilter === "sales_rep") {
-                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
+	                    const normalizedQuery = adminLiveUsersSearch.trim().toLowerCase();
+	                    const filtered = visibleUsers.filter((entry: any) => {
+	                      if (!adminLiveUsersShowOffline) {
+	                        const onlineReported = Boolean(entry?.isOnline);
+	                        if (!onlineReported) {
+	                          const raw =
+	                            entry?.lastInteractionAt ||
+	                            entry?.lastSeenAt ||
+	                            entry?.lastActivityAt ||
+	                            entry?.lastActiveAt ||
+	                            entry?.lastLoginAt ||
+	                            null;
+	                          const parsed = raw ? new Date(raw).getTime() : NaN;
+	                          const minutesSince =
+	                            Number.isFinite(parsed)
+	                              ? Math.max(0, (Date.now() - parsed) / 60000)
+	                              : null;
+	                          const OFFLINE_AFTER_MINUTES = 60;
+	                          const isEffectivelyOnline =
+	                            isEntryCurrentUser(entry) ||
+	                            (minutesSince != null && minutesSince < OFFLINE_AFTER_MINUTES);
+	                          if (!isEffectivelyOnline) {
+	                            return false;
+	                          }
+	                        }
+	                      }
+	                      const role = String(entry?.role || "").toLowerCase().trim();
+	                      if (adminLiveUsersRoleFilter !== "all") {
+	                        if (adminLiveUsersRoleFilter === "sales_rep") {
+	                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
                             return false;
                           }
                         } else if (adminLiveUsersRoleFilter === "doctor") {
@@ -13352,20 +13518,37 @@ export default function App() {
                       return haystack.includes(normalizedQuery);
                     });
 
-                    const liveUsers = [...filtered].sort((a: any, b: any) => {
-                      const aOnline = Boolean(a?.isOnline);
-                      const bOnline = Boolean(b?.isOnline);
-                      const aIdle = Boolean(getEntryIdle(a));
-                      const bIdle = Boolean(getEntryIdle(b));
-                      const rank = (online: boolean, idle: boolean) =>
-                        online ? (idle ? 1 : 0) : 2;
-                      const aRank = rank(aOnline, aIdle);
-                      const bRank = rank(bOnline, bIdle);
-                      if (aRank !== bRank) return aRank - bRank;
-                      const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
-                      const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
-                      return aName.localeCompare(bName);
-                    });
+	                    const getLastSeenMs = (entry: any) => {
+	                      if (!entry) return 0;
+	                      const isOnlineNow = Boolean(entry?.isOnline);
+	                      const isIdleNow = Boolean(getEntryIdle(entry));
+	                      if (isEntryCurrentUser(entry)) {
+	                        return isIdleNow ? lastActivityAtRef.current : Date.now();
+	                      }
+	                      // If the backend says a user is actively online (not idle), treat as "just seen now".
+	                      if (isOnlineNow && !isIdleNow) {
+	                        return Date.now();
+	                      }
+	                      const raw =
+	                        entry?.lastInteractionAt ||
+	                        entry?.lastSeenAt ||
+	                        entry?.lastActivityAt ||
+	                        entry?.lastActiveAt ||
+	                        entry?.lastLoginAt ||
+	                        null;
+	                      if (!raw) return 0;
+	                      const parsed = new Date(raw).getTime();
+	                      return Number.isFinite(parsed) ? parsed : 0;
+	                    };
+
+	                    const liveUsers = [...filtered].sort((a: any, b: any) => {
+	                      const aLast = getLastSeenMs(a);
+	                      const bLast = getLastSeenMs(b);
+	                      if (aLast !== bLast) return bLast - aLast;
+	                      const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+	                      const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
+	                      return aName.localeCompare(bName);
+	                    });
 
                     const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
 
@@ -13396,9 +13579,9 @@ export default function App() {
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
-                              <option value="sales_rep">Sales reps</option>
-                              <option value="doctor">Doctors</option>
-                              <option value="test_doctor">Test doctors</option>
+	                              <option value="sales_rep">Sales Rep</option>
+	                              <option value="doctor">Doctors</option>
+	                              <option value="test_doctor">Test doctors</option>
                             </select>
                           </label>
                         </div>
@@ -13422,7 +13605,7 @@ export default function App() {
                                 No users found.
                               </div>
                             ) : (
-	                            liveUsers.map((entry) => {
+		                            liveUsers.map((entry) => {
                               const role = String(entry?.role || "").toLowerCase().trim();
 		                              const rolePill = (() => {
 		                                if (role === "admin") {
@@ -13434,44 +13617,75 @@ export default function App() {
 		                                    } as React.CSSProperties,
 		                                  };
 		                                }
-		                                if (role === "sales_rep" || role === "salesrep") {
-		                                  return {
-		                                    label: "Sales reps",
-		                                    style: {
-		                                      backgroundColor: "rgb(129,221,228)",
-		                                      color: "#ffffff",
-		                                    } as React.CSSProperties,
-		                                  };
-		                                }
-		                                if (role === "doctor") {
-		                                  return {
-		                                    label: "Doctors",
-		                                    style: {
-		                                      backgroundColor: "rgb(95,179,249)",
-		                                      color: "#ffffff",
-		                                    } as React.CSSProperties,
-		                                  };
-		                                }
-		                                if (role === "test_doctor") {
-		                                  return {
-		                                    label: "Test Doctors",
-		                                    style: {
-		                                      backgroundColor: "rgb(95,179,249)",
-		                                      color: "#ffffff",
-		                                    } as React.CSSProperties,
-		                                  };
-		                                }
+			                                if (role === "sales_rep" || role === "salesrep") {
+			                                  return {
+			                                    label: "Sales Rep",
+			                                    style: {
+			                                      backgroundColor: "rgb(129,221,228)",
+			                                      color: "#ffffff",
+			                                    } as React.CSSProperties,
+			                                  };
+			                                }
+			                                if (role === "doctor") {
+			                                  return {
+			                                    label: "Doctor",
+			                                    style: {
+			                                      backgroundColor: "rgb(95,179,249)",
+			                                      color: "#ffffff",
+			                                    } as React.CSSProperties,
+			                                  };
+			                                }
+			                                if (role === "test_doctor") {
+			                                  return {
+			                                    label: "Test Doctor",
+			                                    style: {
+			                                      backgroundColor: "rgb(95,179,249)",
+			                                      color: "#ffffff",
+			                                    } as React.CSSProperties,
+			                                  };
+			                                }
 		                                return null;
-		                              })();
-	                              const avatarUrl = entry.profileImageUrl || null;
-	                              const displayName = entry.name || entry.email || "User";
-	                              const showIdle = Boolean(getEntryIdle(entry));
-	                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
-	                              const isOnline = Boolean(entry?.isOnline);
+			                              })();
+			                              const avatarUrl = entry.profileImageUrl || null;
+			                              const displayName = entry.name || entry.email || "User";
+			                              const resolveLastSeenMs = () => {
+			                                if (isEntryCurrentUser(entry)) {
+			                                  return lastActivityAtRef.current;
+			                                }
+		                                const raw =
+		                                  entry?.lastInteractionAt ||
+		                                  entry?.lastSeenAt ||
+		                                  entry?.lastActivityAt ||
+		                                  entry?.lastActiveAt ||
+		                                  entry?.lastLoginAt ||
+		                                  null;
+		                                if (!raw) return null;
+		                                const parsed = new Date(raw).getTime();
+		                                return Number.isFinite(parsed) ? parsed : null;
+		                              };
+		                              const lastSeenMs = resolveLastSeenMs();
+		                              const minutesSinceLastSeen =
+		                                lastSeenMs != null
+		                                  ? Math.max(0, (Date.now() - lastSeenMs) / 60000)
+		                                  : null;
+		                              const OFFLINE_AFTER_MINUTES = 60;
+		                              const IDLE_AFTER_MINUTES = 2;
+		                              const onlineReported = Boolean(entry?.isOnline);
+		                              const idleReported = Boolean(getEntryIdle(entry));
+		                              const isOnline =
+		                                onlineReported ||
+		                                (minutesSinceLastSeen != null &&
+		                                  minutesSinceLastSeen < OFFLINE_AFTER_MINUTES);
+		                              const showIdle =
+		                                isOnline &&
+		                                (idleReported ||
+		                                  (minutesSinceLastSeen != null &&
+		                                    minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
+		                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
 
-	                              return (
-                                <div
-                                  key={entry.id}
+		                              return (
+		                                <div
+		                                  key={entry.id}
                                   className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
                                 >
                                   <button
@@ -13523,10 +13737,10 @@ export default function App() {
 
                                   <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
                                     <span
-	                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-                                        !isOnline
-                                          ? "bg-slate-100 text-slate-600"
-                                          : showIdle
+		                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+		                                        !isOnline
+		                                          ? "bg-slate-100 text-slate-600"
+		                                          : showIdle
                                             ? "bg-slate-100 text-slate-600"
                                             : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
                                       }`}
@@ -13537,10 +13751,10 @@ export default function App() {
                                           ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
                                           : "Online"}
                                     </span>
-                                    <div className="text-xs text-slate-600 whitespace-nowrap">
-                                      {isOnline
-                                        ? formatOnlineDuration(entry.lastLoginAt)
-                                        : entry.lastSeenAt
+		                                    <div className="text-xs text-slate-600 whitespace-nowrap">
+		                                      {isOnline
+		                                        ? formatOnlineDuration(entry.lastLoginAt)
+		                                        : entry.lastSeenAt
                                           ? `Last seen ${formatRelativeMinutes(entry.lastSeenAt)}`
                                           : "Offline"}
                                     </div>
@@ -13742,7 +13956,7 @@ export default function App() {
 	                            typeof totals.totalRevenue === "number";
 	                          if (!hasTotals) return null;
 	                          return (
-	                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl border border-slate-200/70 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900">
+	                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-3 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 	                              <span>Total Orders: {totals.totalOrders}</span>
 	                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
 	                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>

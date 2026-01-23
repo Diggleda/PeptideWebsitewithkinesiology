@@ -4,6 +4,7 @@ const wooCommerceClient = require('../integration/wooCommerceClient');
 const axios = require('axios');
 const { env } = require('../config/env');
 const { buildInvoicePdf } = require('../services/invoicePdf');
+const { syncWooFromShipStation } = require('../services/shipStationSyncService');
 
 const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
@@ -206,6 +207,33 @@ const cancelOrder = async (req, res, next) => {
   }
 };
 
+const syncShipStationToWoo = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const orderNumber = normalizeOrderToken(req.body?.orderNumber || req.body?.wooOrderNumber || '');
+    const wooOrderId = normalizeOrderToken(req.body?.wooOrderId || req.body?.woo_order_id || '');
+    const shipStationOrderId = normalizeOrderToken(req.body?.shipStationOrderId || req.body?.shipstation_order_id || '');
+
+    const resolvedOrderNumber = orderNumber || wooOrderId || null;
+    if (!resolvedOrderNumber && !shipStationOrderId) {
+      return res.status(400).json({ error: 'orderNumber, wooOrderId, or shipStationOrderId is required' });
+    }
+
+    const result = await syncWooFromShipStation({
+      orderNumber: resolvedOrderNumber,
+      shipStationOrderId: shipStationOrderId || null,
+    });
+
+    return res.json({ success: true, result });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const estimateOrderTotals = async (req, res, next) => {
   try {
     const result = await orderService.estimateOrderTotals({
@@ -365,6 +393,7 @@ module.exports = {
   getSalesRepOrderDetail,
   getSalesByRepForAdmin,
   cancelOrder,
+  syncShipStationToWoo,
   estimateOrderTotals,
   downloadInvoice,
 };

@@ -799,9 +799,27 @@ const formatRelativeMinutes = (value?: string | null) => {
   const target = date.getTime();
   if (Number.isNaN(target)) return `Updated ${value}`;
   const diffMs = Math.max(0, now - target);
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes <= 1) return 'Updated a few moments ago';
-  return `Updated ${minutes} min ago`;
+  if (diffMs < 90_000) return 'Updated a few moments ago';
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const units = [
+    { label: 'y', seconds: 365 * 24 * 60 * 60 },
+    { label: 'mo', seconds: 30 * 24 * 60 * 60 },
+    { label: 'd', seconds: 24 * 60 * 60 },
+    { label: 'h', seconds: 60 * 60 },
+    { label: 'm', seconds: 60 },
+  ];
+  let remaining = totalSeconds;
+  const parts: string[] = [];
+  for (const unit of units) {
+    const qty = Math.floor(remaining / unit.seconds);
+    if (qty > 0) {
+      parts.push(`${qty}${unit.label}`);
+      remaining -= qty * unit.seconds;
+    }
+    if (parts.length >= 2) break;
+  }
+  if (!parts.length) return 'Updated a few moments ago';
+  return `Updated ${parts.join(' ')} ago`;
 };
 
 export function Header({
@@ -3973,43 +3991,25 @@ export function Header({
               {renderAvatar(48, 'header-account-avatar')}
             </span>
           </Button>
-		        </DialogTrigger>
-		        <DialogContent
-		          hideCloseButton
-		          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+			        </DialogTrigger>
+			        <DialogContent
+			          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
               style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-		          >
-			          <div
-			            ref={accountModalShellRef}
-			            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
+			          >
+				          <div
+				            ref={accountModalShellRef}
+				            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
 			            style={{
 			              position: "relative",
 	                  height: "auto",
-	                  maxHeight: "90vh",
-			            }}
-			          >
-			          <DialogClose
-			            className="dialog-close-btn account-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 disabled:pointer-events-none"
-			            style={{
-			              backgroundColor: "rgb(95, 179, 249)",
-			              width: "38px",
-			              height: "38px",
-			              borderRadius: "50%",
-			              position: "absolute",
-			              top: "1rem",
-			              right: "1rem",
-			              zIndex: 20000,
-			              pointerEvents: "auto",
-			            }}
-			            aria-label="Close account modal"
-			          >
-			            <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-			          </DialogClose>
-            <DialogHeader
-              className={clsx(
-                "sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
-                isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",
-              )}
+		                  maxHeight: "90vh",
+				            }}
+				          >
+	            <DialogHeader
+	              className={clsx(
+	                "sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg flex items-start justify-between gap-4 transition-opacity duration-300 ease-in-out",
+	                isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",
+	              )}
               style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
             >
             <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">

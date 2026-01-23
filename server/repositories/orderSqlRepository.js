@@ -208,6 +208,17 @@ const fetchById = async (orderId) => {
   return mapRowToOrder(row);
 };
 
+const fetchByShipStationOrderId = async (shipStationOrderId) => {
+  if (!mysqlClient.isEnabled() || !shipStationOrderId) {
+    return null;
+  }
+  const row = await mysqlClient.fetchOne(
+    'SELECT * FROM peppro_orders WHERE shipstation_order_id = :shipStationOrderId LIMIT 1',
+    { shipStationOrderId: String(shipStationOrderId) },
+  );
+  return mapRowToOrder(row);
+};
+
 const fetchByUserIds = async (userIds = []) => {
   if (!mysqlClient.isEnabled()) return [];
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
@@ -235,4 +246,5 @@ module.exports = {
   fetchByUserId,
   fetchByUserIds,
   fetchById,
+  fetchByShipStationOrderId,
 };

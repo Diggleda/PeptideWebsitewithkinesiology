@@ -363,6 +363,7 @@ const fetchOrderStatus = async (orderNumber) => {
     serviceCode: safeString(order.serviceCode),
     orderNumber: safeString(order.orderNumber),
     orderId: order.orderId || order.id || null,
+    orderKey: safeString(order.orderKey),
   };
 };
 

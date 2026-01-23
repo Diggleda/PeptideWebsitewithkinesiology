@@ -1095,6 +1095,127 @@ const cancelOrder = async ({ wooOrderId, reason, statusOverride }) => {
   }
 };
 
+const applyShipStationShipmentUpdate = async ({
+  wooOrderId,
+  currentWooStatus,
+  nextWooStatus,
+  shipStationStatus,
+  trackingNumber,
+  carrierCode,
+  shipDate,
+  existingWooMeta = [],
+}) => {
+  if (!wooOrderId) {
+    return { status: 'skipped', reason: 'missing_woo_order_id', changed: false };
+  }
+  if (!isConfigured()) {
+    const error = new Error('WooCommerce is not configured');
+    error.status = 503;
+    throw error;
+  }
+
+  const safeLower = (value) => (value ? String(value).trim().toLowerCase() : '');
+  const normalizeMetaValue = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const str = String(value).trim();
+      return str ? str : null;
+    }
+    try {
+      const str = JSON.stringify(value);
+      return str ? str : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const shouldUpdateStatus = (() => {
+    const current = safeLower(currentWooStatus);
+    const next = safeLower(nextWooStatus);
+    if (!next) return false;
+    if (current === next) return false;
+    if (current === 'cancelled' || current === 'refunded' || current === 'trash') {
+      return false;
+    }
+    return true;
+  })();
+
+  const existingMetaArray = Array.isArray(existingWooMeta) ? existingWooMeta : [];
+  const findExistingMeta = (key) => existingMetaArray.find((entry) => String(entry?.key || '') === key) || null;
+
+  const META_KEYS = {
+    status: '_peppro_shipstation_status',
+    tracking: '_peppro_shipstation_tracking_number',
+    carrier: '_peppro_shipstation_carrier_code',
+    shipDate: '_peppro_shipstation_ship_date',
+  };
+
+  const desiredMeta = [
+    { key: META_KEYS.status, value: normalizeMetaValue(shipStationStatus) },
+    { key: META_KEYS.tracking, value: normalizeMetaValue(trackingNumber) },
+    { key: META_KEYS.carrier, value: normalizeMetaValue(carrierCode) },
+    { key: META_KEYS.shipDate, value: normalizeMetaValue(shipDate) },
+  ].filter((entry) => entry.value !== null);
+
+  const metaUpdates = desiredMeta.reduce((acc, entry) => {
+    const existing = findExistingMeta(entry.key);
+    const existingValue = existing ? normalizeMetaValue(existing.value) : null;
+    if (existingValue === entry.value) {
+      return acc;
+    }
+    if (existing?.id) {
+      acc.push({ id: existing.id, key: entry.key, value: entry.value });
+      return acc;
+    }
+    acc.push({ key: entry.key, value: entry.value });
+    return acc;
+  }, []);
+
+  const payload = {};
+  if (shouldUpdateStatus) {
+    payload.status = String(nextWooStatus).trim();
+  }
+  if (metaUpdates.length > 0) {
+    payload.meta_data = metaUpdates;
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return { status: 'skipped', reason: 'no_changes', changed: false };
+  }
+
+  const attemptUpdate = async () => {
+    const client = getClient();
+    const response = await client.put(`/orders/${wooOrderId}`, payload);
+    return {
+      status: 'success',
+      changed: true,
+      response: {
+        id: response.data?.id,
+        status: response.data?.status,
+      },
+    };
+  };
+
+  try {
+    return await executeWithRetry(attemptUpdate, {
+      label: `shipstation_sync_${wooOrderId}`,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        err: summarizeWooError(error),
+        wooOrderId,
+        payload,
+      },
+      'Failed to apply ShipStation shipment update to WooCommerce order',
+    );
+    const integrationError = new Error('Failed to apply ShipStation shipment update');
+    integrationError.cause = buildWooErrorCause(error);
+    integrationError.status = error.response?.status ?? error.status ?? 502;
+    throw integrationError;
+  }
+};
+
 const fetchOrderById = async (wooOrderId, options = {}) => {
   if (!wooOrderId || !isConfigured()) {
     return null;
@@ -1261,6 +1382,7 @@ module.exports = {
   mapWooOrderSummary,
   markOrderPaid,
   cancelOrder,
+  applyShipStationShipmentUpdate,
   addOrderNote,
   fetchTaxRates,
   findProductBySku,

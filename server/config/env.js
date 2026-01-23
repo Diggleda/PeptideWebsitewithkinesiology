@@ -195,6 +195,7 @@ const env = {
     apiKey: process.env.SHIPSTATION_API_KEY || '',
     apiSecret: process.env.SHIPSTATION_API_SECRET || '',
     storeId: process.env.SHIPSTATION_STORE_ID || '',
+    webhookSecret: process.env.SHIPSTATION_WEBHOOK_SECRET || '',
     carrierCode: process.env.SHIPSTATION_CARRIER_CODE || '',
     serviceCode: process.env.SHIPSTATION_SERVICE_CODE || '',
     packageCode: process.env.SHIPSTATION_PACKAGE_CODE || 'package',
