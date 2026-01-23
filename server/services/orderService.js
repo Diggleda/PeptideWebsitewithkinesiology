@@ -90,6 +90,17 @@ const isDoctorRole = (role) => {
   return normalized === 'doctor' || normalized === 'test_doctor';
 };
 
+const normalizePricingMode = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'retail') return 'retail';
+  return 'wholesale';
+};
+
+const canSelectRetailPricing = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'admin' || normalized === 'sales_rep' || normalized === 'rep';
+};
+
 const hasResellerPermitOnFile = async (user) => {
   const doctorId = normalizeId(user?.id);
   const email = normalizeEmail(user?.email);
@@ -416,6 +427,7 @@ const buildLocalOrderSummary = (order) => {
     number: wooOrderNumber || order.id,
     status: order.status,
     total: order.total,
+    pricingMode: order.pricingMode || 'wholesale',
     currency: order.currency || 'USD',
     createdAt: order.createdAt,
     updatedAt: order.updatedAt || order.createdAt,
@@ -704,6 +716,7 @@ const createOrderInternal = async ({
   physicianCertification,
   taxTotal,
   paymentMethod,
+  pricingMode,
 }) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
@@ -723,6 +736,9 @@ const createOrderInternal = async ({
     error.status = 404;
     throw error;
   }
+
+  const requestedPricingMode = normalizePricingMode(pricingMode);
+  const effectivePricingMode = canSelectRetailPricing(user.role) ? requestedPricingMode : 'wholesale';
 
   const taxExempt = await isUserTaxExemptForCheckout(user);
   const shippingData = ensureShippingData({
@@ -759,6 +775,7 @@ const createOrderInternal = async ({
     userId,
     items,
     total: computedTotal,
+    pricingMode: effectivePricingMode,
     taxTotal: normalizedTaxTotal,
     itemsSubtotal,
     shippingTotal: shippingData.shippingTotal,
@@ -940,6 +957,7 @@ const createOrder = async ({
   physicianCertification,
   taxTotal,
   paymentMethod,
+  pricingMode,
 }) => {
   const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
   if (idempotencyKey && !normalizedIdempotencyKey) {
@@ -963,6 +981,7 @@ const createOrder = async ({
       physicianCertification,
       taxTotal,
       paymentMethod,
+      pricingMode,
     });
   }
 
@@ -997,6 +1016,7 @@ const createOrder = async ({
     physicianCertification,
     taxTotal,
     paymentMethod,
+    pricingMode,
   });
 
   inFlightOrders.set(inFlightKey, promise);

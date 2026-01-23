@@ -11226,20 +11226,21 @@ export default function App() {
 	      const response = await ordersAPI.create(
 	        items,
 	        total,
-        undefined,
-        {
-          address: options?.shippingAddress,
-          estimate: options?.shippingRate,
-          shippingTotal: options?.shippingTotal ?? null,
-        },
-        options?.expectedShipmentWindow ?? null,
-        {
-          physicianCertification:
-            options?.physicianCertificationAccepted === true,
-        },
-        taxTotal,
-        options?.paymentMethod ?? null,
-      );
+	        undefined,
+	        {
+	          address: options?.shippingAddress,
+	          estimate: options?.shippingRate,
+	          shippingTotal: options?.shippingTotal ?? null,
+	        },
+	        options?.expectedShipmentWindow ?? null,
+	        {
+	          physicianCertification:
+	            options?.physicianCertificationAccepted === true,
+	        },
+	        taxTotal,
+	        options?.paymentMethod ?? null,
+	        checkoutPricingMode,
+	      );
 	      try {
 	        const created = response?.order as any;
 	        const pepproOrderId = created?.id ? String(created.id).trim() : null;

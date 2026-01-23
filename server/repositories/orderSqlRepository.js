@@ -17,9 +17,16 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     };
   }
 
+  const normalizePricingMode = (value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'retail') return 'retail';
+    return 'wholesale';
+  };
+
   const payload = {
     id: sanitizeString(order.id),
     userId: sanitizeString(order.userId),
+    pricingMode: normalizePricingMode(order.pricingMode),
     wooOrderId: wooOrderId || null,
     shipStationOrderId: shipStationOrderId || null,
     total: Number(order.total) || 0,
@@ -43,6 +50,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         INSERT INTO peppro_orders (
           id,
           user_id,
+          pricing_mode,
           woo_order_id,
           shipstation_order_id,
           total,
@@ -58,6 +66,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         ) VALUES (
           :id,
           :userId,
+          :pricingMode,
           :wooOrderId,
           :shipStationOrderId,
           :total,
@@ -82,6 +91,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           status = VALUES(status),
           \`Payment Details\` = VALUES(\`Payment Details\`),
           payload = VALUES(payload),
+          pricing_mode = VALUES(pricing_mode),
           updated_at = VALUES(updated_at)
       `,
       payload,
@@ -128,6 +138,7 @@ const mapRowToOrder = (row) => {
     ...payloadOrder,
     id: sanitizeString(coalesce(payloadOrder.id, row.id)),
     userId: sanitizeString(coalesce(payloadOrder.userId, row.user_id)),
+    pricingMode: sanitizeString(coalesce(payloadOrder.pricingMode, row.pricing_mode)) || 'wholesale',
     wooOrderId: sanitizeString(coalesce(payloadOrder.wooOrderId, row.woo_order_id)),
     wooOrderNumber: sanitizeString(coalesce(
       payloadOrder.wooOrderNumber,

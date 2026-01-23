@@ -968,8 +968,14 @@ export function CheckoutModal({
               <div className="space-y-4">
                 <h3>Order Summary</h3>
                 {showRetailPricingToggle && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 px-4 py-3">
-                    <div className="flex items-center gap-3">
+                  <div
+                    className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
+                      retailPricingEnabled
+                        ? 'border-[rgba(34,197,94,0.38)] shadow-[0_20px_48px_-38px_rgba(34,197,94,0.35)]'
+                        : 'border-[rgba(95,179,249,0.28)] shadow-[0_20px_48px_-40px_rgba(95,179,249,0.22)] hover:border-[rgba(95,179,249,0.42)]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
                       <input
                         id="retail-pricing-toggle"
                         type="checkbox"
@@ -980,17 +986,18 @@ export function CheckoutModal({
                           onPricingModeChange?.(next);
                         }}
                       />
-                      <label htmlFor="retail-pricing-toggle" className="text-sm text-slate-700 font-semibold">
-                        Retail pricing
-                      </label>
+                      <div className="flex flex-col">
+                        <label htmlFor="retail-pricing-toggle" className="text-base font-semibold text-slate-900">
+                          Retail pricing
+                        </label>
+                        <span className="text-xs text-slate-600">For Sales Reps only</span>
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-600">
-                      {retailPricingEnabled ? (
-                        <span className="font-semibold text-green-700">Enabled</span>
-                      ) : (
-                        <span>Optional for admins/sales reps</span>
-                      )}
-                    </div>
+                    {retailPricingEnabled && (
+                      <span className="inline-flex items-center rounded-full border border-green-200/80 bg-green-50/70 px-3 py-1 text-xs font-semibold text-green-800">
+                        Enabled
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
@@ -1129,9 +1136,6 @@ export function CheckoutModal({
                               <div className="flex flex-col items-end gap-3 shrink-0 text-right">
                                 <p className={`${retailPricingEnabled ? 'text-green-700' : ''} font-bold tabular-nums tracking-tight`}>
                                   ${lineTotal.toFixed(2)}
-                                  {retailPricingEnabled ? (
-                                    <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
-                                  ) : null}
                                 </p>
                                 <Button
                                   type="button"
@@ -1409,12 +1413,7 @@ export function CheckoutModal({
 	              <div className="space-y-2">
 	                <Separator />
 		                <div className="flex justify-between">
-		                  <span className="flex items-baseline gap-2">
-                        <span>Subtotal:</span>
-                        {retailPricingEnabled ? (
-                          <span className="text-xs font-semibold text-green-700">(Retail)</span>
-                        ) : null}
-                      </span>
+		                  <span>Subtotal:</span>
 		                  <span className={retailPricingEnabled ? 'text-green-700 font-semibold tabular-nums' : 'tabular-nums'}>
                         ${subtotal.toFixed(2)}
                       </span>

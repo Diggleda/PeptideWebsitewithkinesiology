@@ -105,6 +105,7 @@ const createOrder = async (req, res, next) => {
       physicianCertification: req.body.physicianCertification === true,
       taxTotal: req.body.taxTotal,
       paymentMethod: req.body.paymentMethod,
+      pricingMode: req.body.pricingMode,
     });
     res.json(result);
   } catch (error) {

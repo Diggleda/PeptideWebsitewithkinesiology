@@ -1226,6 +1226,7 @@ export const ordersAPI = {
     },
     taxTotal?: number | null,
     paymentMethod?: string | null,
+    pricingMode?: 'wholesale' | 'retail' | string | null,
   ) => {
     const fingerprint = buildOrderFingerprint({
       items,
@@ -1246,6 +1247,7 @@ export const ordersAPI = {
         items,
         total,
         referralCode,
+        pricingMode: pricingMode ?? null,
         paymentMethod: paymentMethod ?? null,
         shippingAddress: shipping?.address,
         shippingEstimate: shipping?.estimate,

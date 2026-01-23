@@ -33,6 +33,7 @@ const STATEMENTS = [
     CREATE TABLE IF NOT EXISTS peppro_orders (
       id VARCHAR(64) PRIMARY KEY,
       user_id VARCHAR(64) NOT NULL,
+      pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
       woo_order_id BIGINT NULL,
       shipstation_order_id VARCHAR(64) NULL,
       total DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -204,6 +205,13 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN \`Payment Details\` VARCHAR(255) NULL AFTER status
+      `,
+    },
+    {
+      name: 'pricing_mode',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale' AFTER user_id
       `,
     },
   ];
