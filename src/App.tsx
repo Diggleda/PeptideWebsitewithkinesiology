@@ -8,7 +8,7 @@ import {
   ReactNode,
   forwardRef,
 } from "react";
-import { computeUnitPrice } from "./lib/pricing";
+import { computeUnitPrice, type PricingMode } from "./lib/pricing";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -2521,6 +2521,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutPricingMode, setCheckoutPricingMode] =
+    useState<PricingMode>("wholesale");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
@@ -2528,11 +2530,21 @@ export default function App() {
   const apiWarmupInFlight = useRef(false);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<"checkout" | null>(null);
+  const canUseRetailPricing = Boolean(
+    user && (isRep(user.role) || isAdmin(user.role)),
+  );
   const [landingAuthMode, setLandingAuthMode] = useState<
     "login" | "signup" | "forgot" | "reset"
   >(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
+
+  useEffect(() => {
+    if (!canUseRetailPricing && checkoutPricingMode === "retail") {
+      setCheckoutPricingMode("wholesale");
+    }
+  }, [canUseRetailPricing, checkoutPricingMode]);
+
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
   const [peptideForumEnabled, setPeptideForumEnabled] =
@@ -11172,7 +11184,9 @@ export default function App() {
       const resolvedProductId = product.wooId ?? product.id;
       const resolvedVariantId = variant?.wooId ?? variant?.id ?? null;
       const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
-      const unitPrice = computeUnitPrice(product, variant ?? null, quantity);
+      const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
+        pricingMode: checkoutPricingMode,
+      });
       const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
       const dimensions = variant?.dimensions || product.dimensions || undefined;
       return {
@@ -17177,6 +17191,9 @@ export default function App() {
         customerName={user?.name || null}
         defaultShippingAddress={checkoutDefaultShippingAddress}
         availableCredits={availableReferralCredits}
+        pricingMode={checkoutPricingMode}
+        onPricingModeChange={setCheckoutPricingMode}
+        showRetailPricingToggle={canUseRetailPricing}
       />
 
       <Dialog

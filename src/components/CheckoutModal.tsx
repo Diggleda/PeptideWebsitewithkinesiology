@@ -19,7 +19,7 @@ import { ordersAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 import { sanitizeServiceNames } from '../lib/publicText';
-import { computeUnitPrice } from '../lib/pricing';
+import { computeUnitPrice, type PricingMode } from '../lib/pricing';
 
 interface CheckoutResult {
   success?: boolean;
@@ -162,6 +162,9 @@ interface CheckoutModalProps {
   customerName?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
   availableCredits?: number;
+  pricingMode?: PricingMode;
+  onPricingModeChange?: (mode: PricingMode) => void;
+  showRetailPricingToggle?: boolean;
 }
 
 const formatCardNumber = (value: string) =>
@@ -211,6 +214,9 @@ export function CheckoutModal({
   onPaymentSuccess,
   defaultShippingAddress,
   availableCredits = 0,
+  pricingMode,
+  onPricingModeChange,
+  showRetailPricingToggle = false,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
@@ -285,6 +291,9 @@ export function CheckoutModal({
     window.dispatchEvent(new CustomEvent('peppro:open-legal', { detail: { key, preserveDialogs: true } }));
   }, [storeScrollPosition]);
 
+  const resolvedPricingMode: PricingMode = pricingMode ?? 'wholesale';
+  const retailPricingEnabled = resolvedPricingMode === 'retail';
+
   const getVisibleBulkTiers = (product: Product, quantity: number) => {
     const tiers = product.bulkPricingTiers ?? [];
     if (!tiers.length) {
@@ -304,7 +313,7 @@ export function CheckoutModal({
   const checkoutLineItems = useMemo(
     () =>
       cartItems.map(({ id, product, quantity, note, variant }, index) => {
-        const unitPrice = computeUnitPrice(product, variant, quantity);
+        const unitPrice = computeUnitPrice(product, variant, quantity, { pricingMode: resolvedPricingMode });
         return {
           cartItemId: id,
           productId: product.id,
@@ -318,7 +327,7 @@ export function CheckoutModal({
           image: variant?.image || product.image || null,
         };
       }),
-    [cartItems],
+    [cartItems, resolvedPricingMode],
   );
   const cartLineItemSignature = useMemo(
     () =>
@@ -958,13 +967,39 @@ export function CheckoutModal({
               {/* Cart Items */}
               <div className="space-y-4">
                 <h3>Order Summary</h3>
+                {showRetailPricingToggle && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--brand-glass-border-2)] bg-white/80 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="retail-pricing-toggle"
+                        type="checkbox"
+                        className="brand-checkbox"
+                        checked={retailPricingEnabled}
+                        onChange={(event) => {
+                          const next: PricingMode = event.target.checked ? 'retail' : 'wholesale';
+                          onPricingModeChange?.(next);
+                        }}
+                      />
+                      <label htmlFor="retail-pricing-toggle" className="text-sm text-slate-700 font-semibold">
+                        Retail pricing
+                      </label>
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {retailPricingEnabled ? (
+                        <span className="font-semibold text-green-700">Enabled</span>
+                      ) : (
+                        <span>Optional for admins/sales reps</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item, index) => {
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
                     : baseImages;
-                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity);
+                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, { pricingMode: resolvedPricingMode });
                   const lineTotal = unitPrice * item.quantity;
                   const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
@@ -998,8 +1033,11 @@ export function CheckoutModal({
                                     <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
                                   )}
                                   <div className="mt-2 mb-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                    <span className="text-green-600 font-bold">
+                                    <span className={retailPricingEnabled ? 'text-green-700 font-bold' : 'text-green-600 font-bold'}>
                                       ${unitPrice.toFixed(2)}
+                                      {retailPricingEnabled ? (
+                                        <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
+                                      ) : null}
                                     </span>
                                     <div className="flex items-center gap-2">
                                       <Button
@@ -1031,7 +1069,7 @@ export function CheckoutModal({
                                       </Button>
                                     </div>
                                   </div>
-                                  {visibleTiers.length > 0 && (
+                                  {!retailPricingEnabled && visibleTiers.length > 0 && (
                                     <div className="mt-3 glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">
                                       <button
                                         type="button"
@@ -1089,7 +1127,12 @@ export function CheckoutModal({
                                 </div>
                               </div>
                               <div className="flex flex-col items-end gap-3 shrink-0 text-right">
-                                <p className="font-bold tabular-nums tracking-tight">${lineTotal.toFixed(2)}</p>
+                                <p className={`${retailPricingEnabled ? 'text-green-700' : ''} font-bold tabular-nums tracking-tight`}>
+                                  ${lineTotal.toFixed(2)}
+                                  {retailPricingEnabled ? (
+                                    <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
+                                  ) : null}
+                                </p>
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -1365,10 +1408,17 @@ export function CheckoutModal({
               {/* Order Total */}
 	              <div className="space-y-2">
 	                <Separator />
-	                <div className="flex justify-between">
-	                  <span>Subtotal:</span>
-	                  <span>${subtotal.toFixed(2)}</span>
-	                </div>
+		                <div className="flex justify-between">
+		                  <span className="flex items-baseline gap-2">
+                        <span>Subtotal:</span>
+                        {retailPricingEnabled ? (
+                          <span className="text-xs font-semibold text-green-700">(Retail)</span>
+                        ) : null}
+                      </span>
+		                  <span className={retailPricingEnabled ? 'text-green-700 font-semibold tabular-nums' : 'tabular-nums'}>
+                        ${subtotal.toFixed(2)}
+                      </span>
+		                </div>
 	                {displayAppliedCredits > 0 && (
 	                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
 	                    <span>Referral Credit</span>
@@ -1398,17 +1448,22 @@ export function CheckoutModal({
                   </div>
 	                )}
 	                <Separator />
-	                <div className="flex justify-between font-bold items-baseline gap-2">
-	                  <span className="flex items-baseline gap-2">
-	                    <span>Total:</span>
-	                    {testOverrideApplied && (
-	                      <span className="text-xs font-semibold text-amber-700">
-	                        Test override: $0.01
-	                      </span>
-	                    )}
-	                  </span>
-	                  <span className="tabular-nums">${displayTotal.toFixed(2)}</span>
-	                </div>
+		                <div className="flex justify-between font-bold items-baseline gap-2">
+		                  <span className="flex items-baseline gap-2">
+		                    <span>Total:</span>
+                        {retailPricingEnabled ? (
+                          <span className="text-xs font-semibold text-green-700">(Retail)</span>
+                        ) : null}
+		                    {testOverrideApplied && (
+		                      <span className="text-xs font-semibold text-amber-700">
+		                        Test override: $0.01
+		                      </span>
+		                    )}
+		                  </span>
+		                  <span className={`${retailPricingEnabled ? 'text-green-700' : ''} tabular-nums`}>
+                        ${displayTotal.toFixed(2)}
+                      </span>
+		                </div>
 	                {testOverrideApplied && originalGrandTotal != null && (
 	                  <div className="flex justify-between text-xs text-slate-500">
 	                    <span>Original total:</span>

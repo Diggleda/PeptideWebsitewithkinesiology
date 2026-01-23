@@ -1,5 +1,7 @@
 import type { Product, ProductVariant } from '../types/product';
 
+export type PricingMode = 'wholesale' | 'retail';
+
 export const roundCurrency = (value: unknown) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -8,13 +10,38 @@ export const roundCurrency = (value: unknown) => {
   return Math.round((numeric + Number.EPSILON) * 100) / 100;
 };
 
+const resolveRetailBasePrice = (product: Product, variant: ProductVariant | null | undefined) => {
+  const candidate = variant?.originalPrice ?? product.originalPrice;
+  if (typeof candidate !== 'number') {
+    return null;
+  }
+  const rounded = roundCurrency(candidate);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    return null;
+  }
+  return rounded;
+};
+
 export const computeUnitPrice = (
   product: Product,
   variant: ProductVariant | null | undefined,
   quantity: number,
+  options?: { pricingMode?: PricingMode },
 ) => {
-  const basePriceRaw = variant?.price ?? product.price;
-  const basePrice = roundCurrency(basePriceRaw);
+  const pricingMode: PricingMode = options?.pricingMode ?? 'wholesale';
+
+  const basePrice = (() => {
+    if (pricingMode === 'retail') {
+      const retail = resolveRetailBasePrice(product, variant);
+      if (retail != null) return retail;
+    }
+    return roundCurrency(variant?.price ?? product.price);
+  })();
+
+  if (pricingMode === 'retail') {
+    return basePrice;
+  }
+
   const tiers = product.bulkPricingTiers ?? [];
 
   if (!Array.isArray(tiers) || tiers.length === 0) {
@@ -33,4 +60,3 @@ export const computeUnitPrice = (
   const discounted = basePrice * (1 - discountPercentage / 100);
   return roundCurrency(discounted);
 };
-
