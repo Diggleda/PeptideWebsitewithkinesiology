@@ -118,6 +118,7 @@ def create_order():
     total = payload.get("total")
     referral_code = payload.get("referralCode")
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
+    pricing_mode = payload.get("pricingMode") or payload.get("pricing_mode") or None
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
@@ -136,6 +137,7 @@ def create_order():
             total=total,
             referral_code=referral_code,
             payment_method=payment_method,
+            pricing_mode=pricing_mode,
             tax_total=tax_total,
             shipping_total=shipping_total,
             shipping_address=shipping_address,

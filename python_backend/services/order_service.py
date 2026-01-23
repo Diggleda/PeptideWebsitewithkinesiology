@@ -422,6 +422,7 @@ def create_order(
     total: float,
     referral_code: Optional[str],
     payment_method: Optional[str] = None,
+    pricing_mode: Optional[str] = None,
     tax_total: Optional[float] = None,
     shipping_total: Optional[float] = None,
     shipping_address: Optional[Dict] = None,
@@ -471,6 +472,13 @@ def create_order(
 
     settings = settings_service.get_settings()
     role = str(user.get("role") or "").strip().lower()
+
+    normalized_pricing_mode = str(pricing_mode or "").strip().lower()
+    if normalized_pricing_mode not in ("retail", "wholesale"):
+        normalized_pricing_mode = "wholesale"
+    if role not in ("admin", "sales_rep", "rep"):
+        normalized_pricing_mode = "wholesale"
+
     test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))
     test_override_allowed = role in ("admin", "test_doctor")
     test_override_payment = normalized_payment_method == "bacs"
@@ -490,6 +498,7 @@ def create_order(
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
         "items": items,
+        "pricingMode": normalized_pricing_mode,
         # `total` is the items subtotal; shipping/tax are tracked separately.
         "total": float(items_subtotal),
         "itemsSubtotal": float(items_subtotal),

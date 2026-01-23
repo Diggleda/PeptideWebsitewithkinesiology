@@ -149,6 +149,7 @@ CREATE_TABLE_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS orders (
         id VARCHAR(32) PRIMARY KEY,
         user_id VARCHAR(32) NOT NULL,
+        pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
         items LONGTEXT NULL,
         total DECIMAL(12,2) NOT NULL DEFAULT 0,
         shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -275,6 +276,7 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS last_login_at DATETIME NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS must_reset_password TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS first_order_bonus_granted_at DATETIME NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",

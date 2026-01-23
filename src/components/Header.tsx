@@ -2193,8 +2193,42 @@ export function Header({
   };
 
   const toggleMobileSearch = () => {
-    setMobileSearchOpen((prev) => !prev);
+    setMobileSearchOpen((prev) => {
+      const next = !prev;
+
+      if (typeof window !== 'undefined') {
+        if (next) {
+          window.setTimeout(() => {
+            try {
+              searchInputRef.current?.focus({ preventScroll: true });
+            } catch {
+              searchInputRef.current?.focus();
+            }
+          }, 0);
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+
+      return next;
+    });
   };
+
+  useEffect(() => {
+    if (!mobileSearchOpen) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.setTimeout(() => {
+      try {
+        searchInputRef.current?.focus({ preventScroll: true });
+      } catch {
+        searchInputRef.current?.focus();
+      }
+    }, 0);
+  }, [mobileSearchOpen]);
 
   const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -4564,8 +4598,13 @@ export function Header({
             </div>
           </div>
 
-          {mobileSearchOpen && !isLargeScreen && (
-            <div className="px-1 pb-2">
+          {!isLargeScreen && (
+            <div
+              className={`overflow-hidden px-1 transition-all duration-300 ${
+                mobileSearchOpen ? 'max-h-28 pb-2 opacity-100' : 'max-h-0 pb-0 opacity-0 pointer-events-none'
+              }`}
+              aria-hidden={!mobileSearchOpen}
+            >
               <form onSubmit={handleSearch}>{renderSearchField()}</form>
             </div>
           )}
