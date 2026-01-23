@@ -1577,7 +1577,14 @@ def add_order_note(woo_order_id: str, note: str, *, customer_note: bool = False)
     url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}/notes"
     timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
 
+    acquired = False
     try:
+        acquired = _woo_http_semaphore.acquire(timeout=25)
+        if not acquired:
+            err = IntegrationError("WooCommerce is busy, please retry")
+            setattr(err, "status", 503)
+            raise err
+
         response = requests.post(
             url,
             json={"note": str(note), "customer_note": bool(customer_note)},
@@ -1599,6 +1606,12 @@ def add_order_note(woo_order_id: str, note: str, *, customer_note: bool = False)
                 data = exc.response.text
         logger.warning("Failed to append WooCommerce order note", exc_info=False, extra={"wooOrderId": woo_order_id})
         raise IntegrationError("Failed to append WooCommerce order note", response=data) from exc
+    finally:
+        if acquired:
+            try:
+                _woo_http_semaphore.release()
+            except ValueError:
+                pass
 
 
 def apply_shipstation_shipment_update(
@@ -1689,7 +1702,14 @@ def apply_shipstation_shipment_update(
     url = f"{base_url}/wp-json/{api_version}/orders/{woo_order_id}"
     timeout_seconds = get_config().woo_commerce.get("request_timeout_seconds") or 25
 
+    acquired = False
     try:
+        acquired = _woo_http_semaphore.acquire(timeout=25)
+        if not acquired:
+            err = IntegrationError("WooCommerce is busy, please retry")
+            setattr(err, "status", 503)
+            raise err
+
         response = requests.put(
             url,
             json=payload,
@@ -1719,6 +1739,12 @@ def apply_shipstation_shipment_update(
             extra={"wooOrderId": woo_order_id, "payloadKeys": list(payload.keys())},
         )
         raise IntegrationError("Failed to apply ShipStation update", response=data) from exc
+    finally:
+        if acquired:
+            try:
+                _woo_http_semaphore.release()
+            except ValueError:
+                pass
 
 
 def update_product_inventory(

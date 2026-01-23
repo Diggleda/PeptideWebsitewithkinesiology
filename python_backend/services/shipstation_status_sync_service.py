@@ -63,11 +63,12 @@ def _lookback_days() -> int:
 
 
 def _max_orders() -> int:
-    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_MAX_ORDERS", "80")).strip()
+    # Keep conservative by default to avoid starving the Woo proxy / admin UI on smaller servers.
+    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_MAX_ORDERS", "25")).strip()
     try:
         value = int(raw)
     except Exception:
-        value = 80
+        value = 25
     return max(1, min(value, 500))
 
 
@@ -78,6 +79,32 @@ def _lease_seconds() -> int:
     except Exception:
         value = 300
     return max(30, min(value, 3600))
+
+
+def _throttle_ms() -> int:
+    """
+    Sleep between per-order API calls to avoid bursts (ShipStation + Woo) that can cause
+    user-facing timeouts when the backend shares limited outbound capacity.
+    """
+    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_THROTTLE_MS", "150")).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = 150
+    return max(0, min(value, 2000))
+
+
+def _max_runtime_seconds() -> int:
+    """
+    Soft runtime cap for one sync cycle. Prevents long-running jobs from continuously
+    consuming resources when upstream services are slow.
+    """
+    raw = str(os.environ.get("SHIPSTATION_STATUS_SYNC_MAX_RUNTIME_SECONDS", "45")).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = 45
+    return max(10, min(value, 15 * 60))
 
 
 def _try_acquire_lease(*, lease_seconds: int) -> Optional[str]:
@@ -295,6 +322,8 @@ def get_status() -> Dict[str, Any]:
         "lookbackDays": _lookback_days(),
         "maxOrders": _max_orders(),
         "leaseSeconds": _lease_seconds(),
+        "throttleMs": _throttle_ms(),
+        "maxRuntimeSeconds": _max_runtime_seconds(),
     }
 
 
@@ -330,6 +359,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
     updated = 0
     missing = 0
     failed = 0
+    stopped_early = False
 
     try:
         have_mysql = True
@@ -372,6 +402,8 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
 
         lookback_days = _lookback_days()
         max_orders = _max_orders()
+        max_runtime = float(_max_runtime_seconds())
+        throttle_ms = int(_throttle_ms())
         orders = _fetch_orders_for_sync(lookback_days=lookback_days, max_orders=max_orders)
 
         logger.info(
@@ -380,6 +412,9 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
         )
 
         for order in orders:
+            if time.time() - started >= max_runtime:
+                stopped_early = True
+                break
             if not isinstance(order, dict):
                 continue
             woo_order_id = order.get("id")
@@ -424,6 +459,9 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     exc_info=False,
                     extra={"wooOrderId": woo_order_id, "wooNumber": woo_number, "error": str(exc)},
                 )
+            finally:
+                if throttle_ms > 0:
+                    time.sleep(throttle_ms / 1000.0)
 
         elapsed_ms = int((time.time() - started) * 1000)
         result = {
@@ -433,6 +471,8 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
             "missing": missing,
             "failed": failed,
             "elapsedMs": elapsed_ms,
+            "stoppedEarly": stopped_early,
+            "maxRuntimeSeconds": int(max_runtime),
         }
         _STATE["lastFinishedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         _STATE["lastResult"] = result
