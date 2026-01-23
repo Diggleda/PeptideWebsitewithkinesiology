@@ -214,7 +214,7 @@ const env = {
   shipStationSync: {
     enabled: process.env.SHIPSTATION_STATUS_SYNC_ENABLED !== 'false',
     intervalMs: toNumber(process.env.SHIPSTATION_STATUS_SYNC_INTERVAL_MS, 60 * 1000),
-    lookbackDays: toNumber(process.env.SHIPSTATION_STATUS_SYNC_LOOKBACK_DAYS, 14),
+    lookbackDays: toNumber(process.env.SHIPSTATION_STATUS_SYNC_LOOKBACK_DAYS, 60),
     maxOrders: toNumber(process.env.SHIPSTATION_STATUS_SYNC_MAX_ORDERS, 80),
   },
   orderSync: {

@@ -255,6 +255,12 @@ const syncWooFromShipStation = async ({
 
 let shipStationStatusSyncTimer = null;
 let shipStationStatusSyncInFlight = false;
+const shipStationStatusSyncState = {
+  lastStartedAt: null,
+  lastFinishedAt: null,
+  lastResult: null,
+  lastError: null,
+};
 
 const normalizeWooOrderNumber = (order) => {
   const candidates = [
@@ -284,7 +290,23 @@ const fetchRecentWooOrdersForSync = async ({ lookbackDays = 14, maxOrders = 80 }
   const perPage = Math.min(100, safeMaxOrders);
   const maxPages = Math.min(Math.ceil(safeMaxOrders / perPage) + 2, 20);
   const collected = [];
+  const seenIds = new Set();
 
+  const appendBatch = (batch) => {
+    if (!Array.isArray(batch)) return;
+    for (const order of batch) {
+      const id = order?.id;
+      const key = id != null ? `id:${String(id)}` : `num:${String(order?.number || '')}`;
+      if (!key || seenIds.has(key)) continue;
+      seenIds.add(key);
+      collected.push(order);
+      if (collected.length >= safeMaxOrders) {
+        break;
+      }
+    }
+  };
+
+  // 1) Always include on-hold orders (can be older than lookback, but are most likely to be out-of-sync).
   for (let page = 1; page <= maxPages && collected.length < safeMaxOrders; page += 1) {
     // eslint-disable-next-line no-await-in-loop
     const batch = await wooCommerceClient.fetchCatalog('orders', {
@@ -292,39 +314,63 @@ const fetchRecentWooOrdersForSync = async ({ lookbackDays = 14, maxOrders = 80 }
       page,
       orderby: 'date',
       order: 'desc',
-      status: 'any',
-      after: afterIso,
+      status: 'on-hold',
     });
-    if (!Array.isArray(batch) || batch.length === 0) {
-      break;
-    }
-    collected.push(...batch);
-    if (batch.length < perPage) {
-      break;
-    }
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    appendBatch(batch);
+    if (batch.length < perPage) break;
   }
 
-  return collected.slice(0, safeMaxOrders);
+  // 2) Then include recent processing orders so shipped → completed updates still land.
+  for (let page = 1; page <= maxPages && collected.length < safeMaxOrders; page += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const batch = await wooCommerceClient.fetchCatalog('orders', {
+      per_page: perPage,
+      page,
+      orderby: 'date',
+      order: 'desc',
+      status: 'processing',
+      after: afterIso,
+    });
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    appendBatch(batch);
+    if (batch.length < perPage) break;
+  }
+
+  return collected;
 };
 
 const runShipStationStatusSyncOnce = async () => {
   if (shipStationStatusSyncInFlight) {
-    return { status: 'skipped', reason: 'in_flight' };
+    const result = { status: 'skipped', reason: 'in_flight' };
+    shipStationStatusSyncState.lastResult = result;
+    return result;
   }
   if (env.shipStationSync?.enabled === false) {
-    return { status: 'skipped', reason: 'disabled' };
+    const result = { status: 'skipped', reason: 'disabled' };
+    shipStationStatusSyncState.lastResult = result;
+    return result;
   }
   if (!shipStationClient.isConfigured()) {
-    return { status: 'skipped', reason: 'shipstation_not_configured' };
+    const result = { status: 'skipped', reason: 'shipstation_not_configured' };
+    shipStationStatusSyncState.lastResult = result;
+    return result;
   }
   if (typeof wooCommerceClient?.isConfigured === 'function' && !wooCommerceClient.isConfigured()) {
-    return { status: 'skipped', reason: 'woocommerce_not_configured' };
+    const result = { status: 'skipped', reason: 'woocommerce_not_configured' };
+    shipStationStatusSyncState.lastResult = result;
+    return result;
   }
   if (typeof wooCommerceClient?.applyShipStationShipmentUpdate !== 'function') {
-    return { status: 'skipped', reason: 'woocommerce_sync_unavailable' };
+    const result = { status: 'skipped', reason: 'woocommerce_sync_unavailable' };
+    shipStationStatusSyncState.lastResult = result;
+    return result;
   }
 
   shipStationStatusSyncInFlight = true;
+  shipStationStatusSyncState.lastStartedAt = new Date().toISOString();
+  shipStationStatusSyncState.lastFinishedAt = null;
+  shipStationStatusSyncState.lastError = null;
   const startedAt = Date.now();
 
   let processed = 0;
@@ -412,11 +458,31 @@ const runShipStationStatusSyncOnce = async () => {
       'ShipStation status sync: finished',
     );
 
-    return { status: 'success', processed, updated, missing, failed, elapsedMs };
+    const result = { status: 'success', processed, updated, missing, failed, elapsedMs };
+    shipStationStatusSyncState.lastFinishedAt = new Date().toISOString();
+    shipStationStatusSyncState.lastResult = result;
+    return result;
+  } catch (error) {
+    shipStationStatusSyncState.lastFinishedAt = new Date().toISOString();
+    shipStationStatusSyncState.lastError = {
+      message: error?.message || String(error),
+      status: error?.status ?? error?.response?.status ?? null,
+    };
+    shipStationStatusSyncState.lastResult = null;
+    throw error;
   } finally {
     shipStationStatusSyncInFlight = false;
   }
 };
+
+const getShipStationStatusSyncState = () => ({
+  ...shipStationStatusSyncState,
+  inFlight: shipStationStatusSyncInFlight,
+  intervalMs: env.shipStationSync?.intervalMs ?? null,
+  lookbackDays: env.shipStationSync?.lookbackDays ?? null,
+  maxOrders: env.shipStationSync?.maxOrders ?? null,
+  enabled: env.shipStationSync?.enabled !== false,
+});
 
 const startShipStationStatusSyncJob = () => {
   if (env.shipStationSync?.enabled === false) {
@@ -442,5 +508,7 @@ const startShipStationStatusSyncJob = () => {
 module.exports = {
   syncWooFromShipStation,
   mapShipStationStatusToWooStatus,
+  runShipStationStatusSyncOnce,
+  getShipStationStatusSyncState,
   startShipStationStatusSyncJob,
 };

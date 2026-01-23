@@ -4,7 +4,11 @@ const wooCommerceClient = require('../integration/wooCommerceClient');
 const axios = require('axios');
 const { env } = require('../config/env');
 const { buildInvoicePdf } = require('../services/invoicePdf');
-const { syncWooFromShipStation } = require('../services/shipStationSyncService');
+const {
+  syncWooFromShipStation,
+  runShipStationStatusSyncOnce,
+  getShipStationStatusSyncState,
+} = require('../services/shipStationSyncService');
 
 const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
@@ -239,6 +243,31 @@ const syncShipStationToWoo = async (req, res, next) => {
   }
 };
 
+const runShipStationStatusSyncNow = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const result = await runShipStationStatusSyncOnce();
+    return res.json({ success: true, result, state: getShipStationStatusSyncState() });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getShipStationStatusSyncInfo = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    return res.json({ success: true, state: getShipStationStatusSyncState() });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const estimateOrderTotals = async (req, res, next) => {
   try {
     const result = await orderService.estimateOrderTotals({
@@ -404,6 +433,8 @@ module.exports = {
   getSalesByRepForAdmin,
   cancelOrder,
   syncShipStationToWoo,
+  runShipStationStatusSyncNow,
+  getShipStationStatusSyncInfo,
   estimateOrderTotals,
   downloadInvoice,
 };
