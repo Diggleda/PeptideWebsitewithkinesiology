@@ -14278,7 +14278,7 @@ export default function App() {
 	                            typeof totals.totalRevenue === "number";
 	                          if (!hasTotals) return null;
 	                          return (
-	                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-3 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 	                              <span>Total Orders: {totals.totalOrders}</span>
 	                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
 	                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>
@@ -14298,16 +14298,16 @@ export default function App() {
 		                        <div className="whitespace-nowrap text-right">Wholesale</div>
 		                        <div className="whitespace-nowrap text-right">Retail</div>
 		                      </div>
-		                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
-		                        {salesRepSalesSummary.map((rep) => (
-	                          <li
-	                            key={rep.salesRepId}
-	                            className="grid items-center gap-3 px-4 py-3"
-	                            style={{
-	                              gridTemplateColumns:
-	                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
-	                            }}
-	                          >
+			                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
+			                        {salesRepSalesSummary.map((rep) => (
+		                          <li
+		                            key={rep.salesRepId}
+		                            className="grid items-center gap-3 px-4 py-2"
+		                            style={{
+		                              gridTemplateColumns:
+		                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
+		                            }}
+		                          >
 	                            <div className="text-sm font-semibold text-slate-900">
 	                              {rep.salesRepName}
 	                            </div>
@@ -14389,12 +14389,6 @@ export default function App() {
 	                        </Button>
 	                      </div>
 	                    </form>
-	                    {adminTaxesByStateMeta?.totals && (
-	                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
-	                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
-	                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
-	                      </div>
-	                    )}
 	                  </div>
                   <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                     <Button
@@ -14438,26 +14432,32 @@ export default function App() {
 	                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No tax data for this period.</div>
 	              ) : (
 	                <div className="grid grid-cols-1 gap-4">
-	                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
-	                    <div
-	                      className="grid items-center gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-	                      style={{
-	                        gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
-	                      }}
-	                    >
-	                      <div>State</div>
+		                  <div className="overflow-hidden rounded-xl">
+		                    {adminTaxesByStateMeta?.totals && (
+		                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
+		                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
+		                      </div>
+		                    )}
+		                    <div
+		                      className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                      style={{
+		                        gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
+		                      }}
+		                    >
+		                      <div>State</div>
 	                      <div className="text-right">Orders</div>
 	                      <div className="text-right">Tax</div>
 	                    </div>
-	                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto">
-	                      {adminTaxesByStateRows.map((row) => (
-	                        <li
-	                          key={row.state}
-	                          className="grid items-center gap-3 px-4 py-3"
-	                          style={{
-	                            gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
-	                          }}
-	                        >
+		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[320px] overflow-y-auto">
+		                      {adminTaxesByStateRows.map((row) => (
+		                        <li
+		                          key={row.state}
+		                          className="grid items-center gap-3 px-4 py-2"
+		                          style={{
+		                            gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
+		                          }}
+		                        >
 	                          <div className="text-sm font-semibold text-slate-900">{row.state}</div>
 	                          <div className="text-sm text-right text-slate-800 tabular-nums">
 	                            {Number(row.orderCount || 0)}
@@ -14470,37 +14470,42 @@ export default function App() {
 	                    </ul>
 	                  </div>
 
-	                  {adminTaxesByStateOrders.length > 0 && (
-	                    <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
-	                      <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
-	                        Order Tax Breakdown
-	                      </div>
-	                      <div className="grid grid-cols-[1fr_120px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
-	                        <div>Order</div>
-	                        <div className="text-right">Tax</div>
-	                      </div>
-	                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto">
-	                        {adminTaxesByStateOrders.map((line) => (
-	                          <li
-	                            key={`${line.orderNumber}-${line.state}`}
-	                            className="grid grid-cols-[1fr_120px] items-center gap-3 px-4 py-3"
-	                          >
-	                            <div className="min-w-0">
-	                              <div className="text-sm font-semibold text-slate-900 truncate">
-	                                {line.orderNumber}
-	                              </div>
-	                              <div className="text-xs text-slate-600">State: {line.state}</div>
-	                            </div>
-	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-	                              {formatCurrency(Number(line.taxTotal || 0))}
-	                            </div>
-	                          </li>
-	                        ))}
-	                      </ul>
-	                    </div>
-	                  )}
-	                </div>
-	              )}
+		                  {adminTaxesByStateOrders.length > 0 && (
+		                    <details className="overflow-hidden rounded-xl bg-white/60 border border-slate-200/70">
+		                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
+		                        <span>Order Tax Breakdown</span>
+		                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Expand</span>
+		                      </summary>
+		                      <div
+		                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                        style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(120px,160px)" }}
+		                      >
+		                        <div>Order</div>
+		                        <div className="text-right">Tax</div>
+		                      </div>
+		                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[260px] overflow-y-auto">
+		                        {adminTaxesByStateOrders.map((line) => (
+		                          <li
+		                            key={`${line.orderNumber}-${line.state}`}
+		                            className="grid items-center gap-3 px-4 py-2"
+		                            style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(120px,160px)" }}
+		                          >
+		                            <div className="min-w-0">
+		                              <div className="text-sm font-semibold text-slate-900 truncate">
+		                                {line.orderNumber}
+		                              </div>
+		                              <div className="text-xs text-slate-600 truncate">State: {line.state}</div>
+		                            </div>
+		                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+		                              {formatCurrency(Number(line.taxTotal || 0))}
+		                            </div>
+		                          </li>
+		                        ))}
+		                      </ul>
+		                    </details>
+		                  )}
+		                </div>
+		              )}
             </div>
           )}
 
@@ -14612,21 +14617,21 @@ export default function App() {
                 <div className="px-4 py-3 text-sm mb-3 text-slate-500">No data for this period.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
-                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
-                      Products
-                    </div>
-                    <div className="grid grid-cols-[1fr_140px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
-                      <div>Product</div>
-                      <div className="text-right">Qty</div>
-                    </div>
-                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
-                      {adminProductSalesRows.map((row) => (
-                        <li key={row.key} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-                              {row.name}
-                            </div>
+	                  <div className="overflow-hidden rounded-xl">
+	                    <div className="flex items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b-4 border-slate-200/70">
+	                      <span>Products</span>
+	                    </div>
+	                    <div className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]">
+	                      <div>Product</div>
+	                      <div className="text-right">Qty</div>
+	                    </div>
+	                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
+	                      {adminProductSalesRows.map((row) => (
+	                        <li key={row.key} className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2">
+	                          <div className="min-w-0">
+	                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+	                              {row.name}
+	                            </div>
                             <div className="text-xs text-slate-600 truncate">
                               {row.sku ? `SKU: ${row.sku}` : row.productId != null ? `Product ID: ${row.productId}` : "—"}
                             </div>
@@ -14639,39 +14644,43 @@ export default function App() {
                     </ul>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
-                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
-                      Commission
-                    </div>
-                    <div className="grid grid-cols-[1fr_140px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
-                      <div>Recipient</div>
-                      <div className="text-right">Amount</div>
-                    </div>
-	                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
-	                      {adminCommissionRows.map((row) => (
-	                        <li key={row.id} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
-	                          <div className="min-w-0">
-	                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-	                              {row.name}
-	                            </div>
-	                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
-	                            <div className="mt-1 text-[11px] leading-snug text-slate-500">
-	                              Retail: {Number(row.retailOrders || 0)} orders ·{" "}
-	                              {formatCurrency(Number(row.retailBase || 0))} × 0.2{" "}
-	                              <span className="mx-1">|</span>
-	                              Wholesale: {Number(row.wholesaleOrders || 0)} orders ·{" "}
-	                              {formatCurrency(Number(row.wholesaleBase || 0))} × 0.1
-	                              {Number(row.specialAdminBonus || 0) > 0 && (
-	                                <>
-	                                  <span className="mx-1">|</span>
-	                                  Bonus: {formatCurrency(Number(row.specialAdminBonus || 0))}
-	                                </>
-	                              )}
-	                            </div>
-	                          </div>
-	                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-	                            {formatCurrency(Number(row.amount || 0))}
-	                          </div>
+	                  <div className="overflow-hidden rounded-xl">
+	                    <div className="flex items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b-4 border-slate-200/70">
+	                      <span>Commission</span>
+	                    </div>
+	                    <div className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]">
+	                      <div>Recipient</div>
+	                      <div className="text-right">Amount</div>
+	                    </div>
+		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
+		                      {adminCommissionRows.map((row) => (
+		                        <li key={row.id} className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2">
+		                          <div className="min-w-0">
+		                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+		                              {row.name}
+		                            </div>
+		                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
+		                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-snug text-slate-500">
+		                              <span className="whitespace-nowrap">
+		                                Retail: {Number(row.retailOrders || 0)} · {formatCurrency(Number(row.retailBase || 0))}×0.2
+		                              </span>
+		                              <span className="text-slate-300">|</span>
+		                              <span className="whitespace-nowrap">
+		                                Wholesale: {Number(row.wholesaleOrders || 0)} · {formatCurrency(Number(row.wholesaleBase || 0))}×0.1
+		                              </span>
+		                              {Number(row.specialAdminBonus || 0) > 0 && (
+		                                <>
+		                                  <span className="text-slate-300">|</span>
+		                                  <span className="whitespace-nowrap">
+		                                    Bonus: {formatCurrency(Number(row.specialAdminBonus || 0))}
+		                                  </span>
+		                                </>
+		                              )}
+		                            </div>
+		                          </div>
+		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+		                            {formatCurrency(Number(row.amount || 0))}
+		                          </div>
 	                        </li>
 	                      ))}
                     </ul>

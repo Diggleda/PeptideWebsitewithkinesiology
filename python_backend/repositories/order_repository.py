@@ -548,6 +548,19 @@ def _to_db_params(order: Dict) -> Dict:
         value = value.replace("T", " ")
         return value[:26]
 
+    def _num(val, fallback: float = 0.0) -> float:
+        try:
+            return float(val)
+        except Exception:
+            return fallback
+
+    items_subtotal = _num(order.get("itemsSubtotal"), _num(order.get("total"), 0.0))
+    shipping_total = _num(order.get("shippingTotal"), 0.0)
+    tax_total = _num(order.get("taxTotal"), 0.0)
+    discount_total = _num(order.get("appliedReferralCredit"), 0.0)
+    grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
+    grand_total = max(0.0, grand_total)
+
     return {
         "id": order.get("id"),
         "user_id": order.get("userId"),
@@ -555,7 +568,8 @@ def _to_db_params(order: Dict) -> Dict:
         if str(order.get("pricingMode") or "").strip().lower() in ("wholesale", "retail")
         else "wholesale",
         "items": serialize_json(order.get("items")),
-        "total": float(order.get("total") or 0),
+        # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).
+        "total": float(grand_total),
         "shipping_total": float(order.get("shippingTotal") or 0),
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")

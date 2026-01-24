@@ -1002,7 +1002,9 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
     intent_amount_cents = None
     if local_order and local_order.get("paymentIntentId"):
         payment_intent_id = local_order["paymentIntentId"]
-        total_amount = float(local_order.get("total") or 0) + float(local_order.get("shippingTotal") or 0)
+        # MySQL `orders.total` is the full total (subtotal - discounts + shipping + tax).
+        # Prefer the most accurate total we have without double-counting shipping.
+        total_amount = float(local_order.get("grandTotal") or local_order.get("total") or 0)
     elif woo_order:
         meta = woo_order.get("meta_data") or []
         for entry in meta:
@@ -1010,8 +1012,8 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
                 payment_intent_id = entry.get("value")
                 break
         try:
+            # Woo's `total` is already the order total including tax+shipping.
             total_amount = float(woo_order.get("total") or 0)
-            total_amount += float(woo_order.get("shipping_total") or 0)
         except Exception:
             total_amount = None
 
@@ -3074,6 +3076,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if rep_id and email:
                 user_rep_id_by_email[email] = str(rep_id)
 
+        admin_emails = {_norm_email(a.get("email")) for a in admins if _norm_email(a.get("email"))}
+
         alias_to_rep_id: Dict[str, str] = {}
         for rep in reps:
             rep_id = rep.get("id")
@@ -3110,6 +3114,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         for rep in rep_records_list:
             rep_id = rep.get("id")
             if not rep_id:
+                continue
+            rep_email = _norm_email(rep.get("email"))
+            # If a rep record shares an admin email, do not list it as a sales rep line item.
+            # (Admins will still appear under their admin identity.)
+            if rep_email and rep_email in admin_emails:
                 continue
             canonical = alias_to_rep_id.get(str(rep_id), str(rep_id))
             if canonical in recipient_rows:
@@ -3198,6 +3207,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 recipient_id = rep_id
+                # "house" is a sentinel salesRepId for contact-form sourced doctors and should be
+                # handled as a house sale (split across admins), not a real rep id.
+                if str(recipient_id or "").strip().lower() == "house":
+                    recipient_id = ""
                 if recipient_id and recipient_id not in recipient_rows:
                     # If an admin id shows up as attribution, include it.
                     admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
