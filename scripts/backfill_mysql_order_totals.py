@@ -50,8 +50,21 @@ def main() -> int:
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
-    from python_backend.services import get_config  # noqa: WPS433
-    from python_backend.database import mysql_client  # noqa: WPS433
+    # Bootstrap config/services/database similarly to python_backend.create_app(),
+    # but without starting background services or requiring a Flask app context.
+    from python_backend.config import load_config  # noqa: WPS433
+    from python_backend.services import configure_services, get_config  # noqa: WPS433
+    from python_backend.database import init_database, mysql_client  # noqa: WPS433
+    from python_backend.storage import init_storage  # noqa: WPS433
+
+    config = load_config()
+    configure_services(config)
+    init_database(config)
+    # Some repositories expect storage to be initialised even if MySQL is enabled.
+    try:
+        init_storage(config)
+    except Exception:
+        pass
 
     if not bool(get_config().mysql.get("enabled")):
         print("MySQL is not enabled in config; nothing to backfill.", file=sys.stderr)
@@ -106,4 +119,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
