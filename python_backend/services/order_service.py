@@ -2862,6 +2862,7 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
         per_page = 100
         max_pages = 25
         bucket: Dict[str, Dict[str, float]] = {}
+        order_lines: List[Dict[str, object]] = []
         order_count = 0
         tax_total_all = 0.0
 
@@ -2908,7 +2909,16 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
                     or "UNKNOWN"
                 )
 
-                tax_total = _safe_float(_meta_value(meta_data, "peppro_tax_total")) or _safe_float(woo_order.get("total_tax"))
+                tax_source = None
+                meta_tax_raw = _meta_value(meta_data, "peppro_tax_total")
+                tax_total = _safe_float(meta_tax_raw)
+                if tax_total > 0:
+                    tax_source = "meta:peppro_tax_total"
+                else:
+                    order_tax = _safe_float(woo_order.get("total_tax"))
+                    if order_tax > 0:
+                        tax_total = order_tax
+                        tax_source = "order:total_tax"
                 if tax_total <= 0:
                     for fee in woo_order.get("fee_lines") or []:
                         try:
@@ -2917,6 +2927,7 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
                             name = ""
                         if name and "tax" in name:
                             tax_total = _safe_float((fee or {}).get("total"))
+                            tax_source = "fee_lines"
                             break
 
                 order_count += 1
@@ -2925,6 +2936,17 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
                 current["taxTotal"] = float(current.get("taxTotal") or 0.0) + float(tax_total or 0.0)
                 current["orderCount"] = float(current.get("orderCount") or 0.0) + 1.0
                 bucket[state] = current
+                order_lines.append(
+                    {
+                        "orderNumber": woo_order.get("number") or woo_order.get("id"),
+                        "wooId": woo_order.get("id"),
+                        "state": state,
+                        "status": status,
+                        "createdAt": created_at.isoformat(),
+                        "taxTotal": round(float(tax_total or 0.0), 2),
+                        "taxSource": tax_source or "unknown",
+                    }
+                )
 
             if len(orders) < per_page or reached_start:
                 break
@@ -2938,7 +2960,14 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
             for state, values in bucket.items()
         ]
         rows.sort(key=lambda r: float(r.get("taxTotal") or 0.0), reverse=True)
-        result = {"rows": rows, "totals": {"orderCount": order_count, "taxTotal": round(tax_total_all, 2)}, **period_meta}
+        # Show math lines for verification: orderNumber -> taxTotal.
+        order_lines.sort(key=lambda o: str(o.get("orderNumber") or ""))
+        result = {
+            "rows": rows,
+            "totals": {"orderCount": order_count, "taxTotal": round(tax_total_all, 2)},
+            "orderTaxes": order_lines,
+            **period_meta,
+        }
 
         now_ms = int(time.time() * 1000)
         with _admin_taxes_by_state_lock:
@@ -3033,6 +3062,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         admins = [u for u in users if (u.get("role") or "").lower() == "admin"]
         reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
         rep_records_list = sales_rep_repository.get_all()
+        report_tz = _get_report_timezone()
 
         def _norm_email(value: object) -> str:
             return str(value or "").strip().lower()
@@ -3096,6 +3126,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         recipient_rows[supplier_row_id] = {"id": supplier_row_id, "name": supplier_name, "role": "supplier", "amount": 0.0}
 
         admin_ids = [str(a.get("id")) for a in admins if a.get("id")]
+        special_admin_email = "petergibbons7@icloud.com"
+        special_admin_rate = 0.03
+        special_admin_monthly_cap = 6000.0
+        special_admin_user = next((a for a in admins if _norm_email(a.get("email")) == special_admin_email), None)
+        special_admin_id = str(special_admin_user.get("id")) if isinstance(special_admin_user, dict) and special_admin_user.get("id") else None
 
         per_page = 100
         max_pages = 25
@@ -3181,8 +3216,14 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         else:
                             try:
                                 prospect = sales_prospect_repository.find_by_contact_email(billing_email)
-                                if prospect and str(prospect.get("salesRepId") or "") == "house":
-                                    is_house_contact_form = True
+                                if prospect:
+                                    prospect_rep = str(prospect.get("salesRepId") or "").strip().lower()
+                                    prospect_source = str(prospect.get("source") or "").strip().lower()
+                                    prospect_status = str(prospect.get("status") or "").strip().lower()
+                                    if prospect_rep == "house":
+                                        is_house_contact_form = True
+                                    elif "contact" in prospect_source or prospect_status == "contact_form":
+                                        is_house_contact_form = True
                             except Exception:
                                 is_house_contact_form = False
                     if is_house_contact_form:
@@ -3214,6 +3255,12 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 total = _safe_float(woo_order.get("total"))
                 shipping_total = _safe_float(woo_order.get("shipping_total"))
                 tax_total = _safe_float(_meta_value(meta_data, "peppro_tax_total")) or _safe_float(woo_order.get("total_tax"))
+                created_at = _parse_datetime_utc(
+                    woo_order.get("date_created_gmt")
+                    or woo_order.get("date_created")
+                    or woo_order.get("date")
+                    or None
+                )
                 pricing_mode_hint = (
                     _meta_value(meta_data, "peppro_pricing_mode")
                     or _meta_value(meta_data, "peppro_pricingMode")
@@ -3229,6 +3276,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         "wooId": woo_order.get("id"),
                         "wooNumber": woo_order.get("number"),
                         "pricingModeHint": pricing_mode_hint,
+                        "createdAt": created_at.isoformat() if created_at else None,
                     }
                 )
                 orders_seen += 1
@@ -3297,6 +3345,34 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             "retailBase": 0.0,
         }
 
+        # Per-recipient math breakdown so the admin dashboard can show the calculation.
+        per_recipient_stats: Dict[str, Dict[str, object]] = {}
+        # For the special admin 3% payout: track base by month (PST/PDT calendar month).
+        special_admin_month_base: Dict[str, float] = {}
+
+        def _ensure_stats(recipient_id: str) -> Dict[str, object]:
+            row = per_recipient_stats.get(recipient_id)
+            if row is None:
+                row = {
+                    "retailOrders": 0,
+                    "wholesaleOrders": 0,
+                    "retailBase": 0.0,
+                    "wholesaleBase": 0.0,
+                }
+                per_recipient_stats[recipient_id] = row
+            return row
+
+        def _accumulate_stats(recipient_id: str, *, pricing_mode: str, base: float) -> None:
+            stats = _ensure_stats(recipient_id)
+            if pricing_mode == "retail":
+                stats["retailOrders"] = int(stats.get("retailOrders") or 0) + 1
+                stats["retailBase"] = round(float(stats.get("retailBase") or 0.0) + float(base or 0.0), 2)
+            else:
+                stats["wholesaleOrders"] = int(stats.get("wholesaleOrders") or 0) + 1
+                stats["wholesaleBase"] = round(float(stats.get("wholesaleBase") or 0.0) + float(base or 0.0), 2)
+
+        order_breakdown: List[Dict[str, object]] = []
+
         for entry in attributed_orders:
             recipient_id = str(entry.get("recipientId") or "").strip()
             base = max(0.0, float(entry.get("total") or 0.0) - float(entry.get("shippingTotal") or 0.0) - float(entry.get("taxTotal") or 0.0))
@@ -3306,6 +3382,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             rate = 0.2 if pricing_mode == "retail" else 0.1
             commission = round(base * rate, 2)
             supplier_share = round(base - commission, 2)
+            created_at = _parse_datetime_utc(entry.get("createdAt")) if entry.get("createdAt") else None
 
             totals["ordersCounted"] += 1
             totals["commissionableBase"] = round(float(totals["commissionableBase"]) + base, 2)
@@ -3316,6 +3393,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             else:
                 totals["wholesaleBase"] = round(float(totals["wholesaleBase"]) + base, 2)
 
+            if created_at:
+                local_dt = created_at.astimezone(report_tz)
+                month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
+                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(base or 0.0)
+
             if recipient_id == "__house__":
                 allocations = _split_amount(commission, admin_ids)
                 if not allocations:
@@ -3324,10 +3406,47 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 else:
                     for target_id, amount in allocations.items():
                         _add_commission(target_id, amount)
+                        # Attribute a proportional slice of the base for math display.
+                        if commission > 0:
+                            _accumulate_stats(target_id, pricing_mode=pricing_mode, base=(base * (amount / commission)))
             elif recipient_id:
                 _add_commission(recipient_id, commission)
+                _accumulate_stats(recipient_id, pricing_mode=pricing_mode, base=base)
 
             _add_commission(supplier_row_id, supplier_share)
+
+            order_breakdown.append(
+                {
+                    "orderNumber": entry.get("wooNumber") or entry.get("wooId"),
+                    "wooId": entry.get("wooId"),
+                    "pricingMode": pricing_mode,
+                    "recipientId": recipient_id or None,
+                    "commissionRate": rate,
+                    "commission": commission,
+                    "commissionableBase": round(base, 2),
+                    "taxTotal": round(float(entry.get("taxTotal") or 0.0), 2),
+                    "shippingTotal": round(float(entry.get("shippingTotal") or 0.0), 2),
+                    "orderTotal": round(float(entry.get("total") or 0.0), 2),
+                }
+            )
+
+        # Special admin 3% payout with monthly cap.
+        if special_admin_id:
+            bonus_total = 0.0
+            bonus_by_month: Dict[str, float] = {}
+            for month_key, month_base in special_admin_month_base.items():
+                raw = round(float(month_base or 0.0) * special_admin_rate, 2)
+                capped = min(raw, special_admin_monthly_cap)
+                bonus_by_month[month_key] = capped
+                bonus_total = round(bonus_total + capped, 2)
+            if bonus_total > 0:
+                _add_commission(special_admin_id, bonus_total)
+                # Track separately for display.
+                stats = _ensure_stats(special_admin_id)
+                stats["specialAdminBonus"] = bonus_total
+                stats["specialAdminBonusRate"] = special_admin_rate
+                stats["specialAdminBonusMonthlyCap"] = special_admin_monthly_cap
+                stats["specialAdminBonusByMonth"] = bonus_by_month
 
         products = list(product_totals.values())
         products.sort(key=lambda p: int(p.get("quantity") or 0), reverse=True)
@@ -3343,10 +3462,16 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     "name": row.get("name"),
                     "role": row.get("role"),
                     "amount": round(float(row.get("amount") or 0.0), 2),
+                    "retailOrders": int(per_recipient_stats.get(str(row.get("id")), {}).get("retailOrders") or 0),
+                    "wholesaleOrders": int(per_recipient_stats.get(str(row.get("id")), {}).get("wholesaleOrders") or 0),
+                    "retailBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("retailBase") or 0.0), 2),
+                    "wholesaleBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("wholesaleBase") or 0.0), 2),
+                    "specialAdminBonus": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonus") or 0.0), 2),
                 }
                 for row in commissions
             ],
             "totals": totals,
+            "orderBreakdown": order_breakdown,
             "debug": {
                 "ordersSeen": orders_seen,
                 "skippedStatus": skipped_status,

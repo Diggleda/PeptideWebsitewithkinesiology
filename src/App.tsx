@@ -5869,6 +5869,9 @@ export default function App() {
   const [adminTaxesByStateRows, setAdminTaxesByStateRows] = useState<
     { state: string; taxTotal: number; orderCount: number }[]
   >([]);
+  const [adminTaxesByStateOrders, setAdminTaxesByStateOrders] = useState<
+    { orderNumber: string; state: string; taxTotal: number }[]
+  >([]);
   const [adminTaxesByStateMeta, setAdminTaxesByStateMeta] = useState<{
     periodStart?: string | null;
     periodEnd?: string | null;
@@ -5888,7 +5891,17 @@ export default function App() {
     }[]
   >([]);
   const [adminCommissionRows, setAdminCommissionRows] = useState<
-    { id: string; name: string; role: string; amount: number }[]
+    {
+      id: string;
+      name: string;
+      role: string;
+      amount: number;
+      retailOrders?: number;
+      wholesaleOrders?: number;
+      retailBase?: number;
+      wholesaleBase?: number;
+      specialAdminBonus?: number;
+    }[]
   >([]);
   const [adminProductsCommissionMeta, setAdminProductsCommissionMeta] = useState<{
     periodStart?: string | null;
@@ -6057,6 +6070,18 @@ export default function App() {
           orderCount: Number((row as any)?.orderCount || 0),
         })),
       );
+      const orderTaxesRaw = Array.isArray((response as any)?.orderTaxes)
+        ? ((response as any).orderTaxes as any[])
+        : [];
+      setAdminTaxesByStateOrders(
+        orderTaxesRaw
+          .map((line) => ({
+            orderNumber: String((line as any)?.orderNumber || ""),
+            state: String((line as any)?.state || "UNKNOWN"),
+            taxTotal: Number((line as any)?.taxTotal || 0),
+          }))
+          .filter((line) => line.orderNumber.trim().length > 0),
+      );
       setAdminTaxesByStateMeta({
         periodStart: (response as any)?.periodStart ?? null,
         periodEnd: (response as any)?.periodEnd ?? null,
@@ -6069,6 +6094,7 @@ export default function App() {
           : "Unable to load taxes by state.";
       setAdminTaxesByStateError(message);
       setAdminTaxesByStateRows([]);
+      setAdminTaxesByStateOrders([]);
       setAdminTaxesByStateMeta(null);
     } finally {
       setAdminTaxesByStateLoading(false);
@@ -6141,6 +6167,13 @@ export default function App() {
       const commissions = Array.isArray((response as any)?.commissions)
         ? ((response as any).commissions as any[])
         : [];
+      const filteredCommissions = commissions.filter((row) => {
+        const role = String((row as any)?.role || "").toLowerCase();
+        const id = String((row as any)?.id || "");
+        if (role === "supplier") return false;
+        if (id === "__supplier__") return false;
+        return true;
+      });
       setAdminProductSalesRows(
         products.map((row) => ({
           key: String((row as any)?.key || (row as any)?.sku || ""),
@@ -6152,11 +6185,16 @@ export default function App() {
         })),
       );
       setAdminCommissionRows(
-        commissions.map((row) => ({
+        filteredCommissions.map((row) => ({
           id: String((row as any)?.id || ""),
           name: String((row as any)?.name || ""),
           role: String((row as any)?.role || ""),
           amount: Number((row as any)?.amount || 0),
+          retailOrders: Number((row as any)?.retailOrders || 0),
+          wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
+          retailBase: Number((row as any)?.retailBase || 0),
+          wholesaleBase: Number((row as any)?.wholesaleBase || 0),
+          specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
         })),
       );
       setAdminProductsCommissionMeta({
@@ -6178,8 +6216,8 @@ export default function App() {
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
-  const downloadAdminProductsCommissionCsv = useCallback(async () => {
-    try {
+	  const downloadAdminProductsCommissionCsv = useCallback(async () => {
+	    try {
       const exportedAt = new Date();
       const exportedAtIso = exportedAt.toISOString();
       const escapeCsv = (value: unknown) => {
@@ -6213,18 +6251,34 @@ export default function App() {
           ].join(","),
         );
       });
-      rows.push("");
-      rows.push(["Report", "Commissions"].join(","));
-      rows.push(["Recipient", "Role", "Amount"].join(","));
-      adminCommissionRows.forEach((row) => {
-        rows.push(
-          [
-            escapeCsv(row.name),
-            escapeCsv(row.role),
-            escapeCsv(Number(row.amount || 0).toFixed(2)),
-          ].join(","),
-        );
-      });
+	      rows.push("");
+	      rows.push(["Report", "Commissions"].join(","));
+	      rows.push(
+	        [
+	          "Recipient",
+	          "Role",
+	          "RetailOrders",
+	          "WholesaleOrders",
+	          "RetailBase",
+	          "WholesaleBase",
+	          "SpecialAdminBonus",
+	          "Amount",
+	        ].join(","),
+	      );
+	      adminCommissionRows.forEach((row) => {
+	        rows.push(
+	          [
+	            escapeCsv(row.name),
+	            escapeCsv(row.role),
+	            escapeCsv(Number(row.retailOrders || 0)),
+	            escapeCsv(Number(row.wholesaleOrders || 0)),
+	            escapeCsv(Number(row.retailBase || 0).toFixed(2)),
+	            escapeCsv(Number(row.wholesaleBase || 0).toFixed(2)),
+	            escapeCsv(Number(row.specialAdminBonus || 0).toFixed(2)),
+	            escapeCsv(Number(row.amount || 0).toFixed(2)),
+	          ].join(","),
+	        );
+	      });
 
       const csv = rows.join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -6295,6 +6349,21 @@ export default function App() {
       setSalesRepSalesSummaryLoading(false);
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
+
+  const applyAdminDashboardPeriod = useCallback(() => {
+    void refreshSalesBySalesRepSummary();
+    void refreshAdminTaxesByState();
+    void refreshAdminProductsCommission();
+  }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
+
+  const clearAdminDashboardPeriod = useCallback(() => {
+    const defaults = getDefaultSalesBySalesRepPeriod();
+    setSalesRepPeriodStart(defaults.start);
+    setSalesRepPeriodEnd(defaults.end);
+    void refreshSalesBySalesRepSummary();
+    void refreshAdminTaxesByState();
+    void refreshAdminProductsCommission();
+  }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
   const salesByRepAutoLoadedRef = useRef(false);
   useEffect(() => {
@@ -14084,22 +14153,15 @@ export default function App() {
                         >
                           Apply
                         </Button>
-                        <Button
-	                          type="button"
-	                          size="sm"
-	                              variant="outline"
-	                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-	                              onClick={() => {
-	                                const defaults = getDefaultSalesBySalesRepPeriod();
-	                                setSalesRepPeriodStart(defaults.start);
-	                                setSalesRepPeriodEnd(defaults.end);
-	                                void refreshSalesBySalesRepSummary();
-                                  void refreshAdminTaxesByState();
-                                  void refreshAdminProductsCommission();
-	                              }}
-	                            >
-	                              Clear
-	                            </Button>
+	                        <Button
+		                          type="button"
+		                          size="sm"
+		                              variant="outline"
+		                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
+		                              onClick={clearAdminDashboardPeriod}
+		                            >
+		                              Clear
+		                            </Button>
 	                      </div>
 	                    </form>
                   </div>
@@ -14236,8 +14298,8 @@ export default function App() {
 		                        <div className="whitespace-nowrap text-right">Wholesale</div>
 		                        <div className="whitespace-nowrap text-right">Retail</div>
 		                      </div>
-	                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl">
-	                        {salesRepSalesSummary.map((rep) => (
+		                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
+		                        {salesRepSalesSummary.map((rep) => (
 	                          <li
 	                            key={rep.salesRepId}
 	                            className="grid items-center gap-3 px-4 py-3"
@@ -14278,18 +14340,62 @@ export default function App() {
             <div className="glass-card squircle-xl p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-slate-900">Taxes by State</h3>
-                    <p className="text-sm text-slate-600">
-                      Cumulative tax totals by destination state for the selected period.
-                    </p>
-                    {adminTaxesByStateMeta?.totals && (
-                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
-                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
-                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
-                      </div>
-                    )}
-                  </div>
+	                  <div className="min-w-0">
+	                    <h3 className="text-lg font-semibold text-slate-900">Taxes by State</h3>
+	                    <p className="text-sm text-slate-600">
+	                      Cumulative tax totals by destination state for the selected period.
+	                    </p>
+	                    <form
+	                      className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
+	                      onSubmit={(event) => {
+	                        event.preventDefault();
+	                        applyAdminDashboardPeriod();
+	                      }}
+	                    >
+	                      {["Start", "End"].map((labelText, index) => {
+	                        const value = index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
+	                        const setter = index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
+	                        return (
+	                          <label
+	                            key={labelText}
+	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
+	                          >
+	                            <span className="text-sm font-semibold text-slate-900">
+	                              {labelText}
+	                            </span>
+	                            <Input
+	                              type="date"
+	                              value={value}
+	                              onChange={(event) => setter(event.target.value)}
+	                              placeholder="YYYY-MM-DD"
+	                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
+	                              style={{ colorScheme: "light" }}
+	                            />
+	                          </label>
+	                        );
+	                      })}
+	                      <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+	                        <Button type="submit" size="sm" variant="outline" className="whitespace-nowrap">
+	                          Apply
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="outline"
+	                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
+	                          onClick={clearAdminDashboardPeriod}
+	                        >
+	                          Clear
+	                        </Button>
+	                      </div>
+	                    </form>
+	                    {adminTaxesByStateMeta?.totals && (
+	                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+	                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
+	                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
+	                      </div>
+	                    )}
+	                  </div>
                   <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                     <Button
                       type="button"
@@ -14328,30 +14434,73 @@ export default function App() {
                 </div>
               ) : adminTaxesByStateLoading ? (
                 <div className="px-4 py-3 text-sm mb-3 text-slate-500">Loading taxes…</div>
-              ) : adminTaxesByStateRows.length === 0 ? (
-                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No tax data for this period.</div>
-              ) : (
-                <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
-                  <div className="grid grid-cols-3 gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
-                    <div>State</div>
-                    <div className="text-right">Orders</div>
-                    <div className="text-right">Tax</div>
-                  </div>
-                  <ul className="divide-y divide-slate-200/70">
-                    {adminTaxesByStateRows.map((row) => (
-                      <li key={row.state} className="grid grid-cols-3 gap-3 px-4 py-3">
-                        <div className="text-sm font-semibold text-slate-900">{row.state}</div>
-                        <div className="text-sm text-right text-slate-800 tabular-nums">
-                          {Number(row.orderCount || 0)}
-                        </div>
-                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-                          {formatCurrency(Number(row.taxTotal || 0))}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+	              ) : adminTaxesByStateRows.length === 0 ? (
+	                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No tax data for this period.</div>
+	              ) : (
+	                <div className="grid grid-cols-1 gap-4">
+	                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
+	                    <div
+	                      className="grid items-center gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                      style={{
+	                        gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
+	                      }}
+	                    >
+	                      <div>State</div>
+	                      <div className="text-right">Orders</div>
+	                      <div className="text-right">Tax</div>
+	                    </div>
+	                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto">
+	                      {adminTaxesByStateRows.map((row) => (
+	                        <li
+	                          key={row.state}
+	                          className="grid items-center gap-3 px-4 py-3"
+	                          style={{
+	                            gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
+	                          }}
+	                        >
+	                          <div className="text-sm font-semibold text-slate-900">{row.state}</div>
+	                          <div className="text-sm text-right text-slate-800 tabular-nums">
+	                            {Number(row.orderCount || 0)}
+	                          </div>
+	                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+	                            {formatCurrency(Number(row.taxTotal || 0))}
+	                          </div>
+	                        </li>
+	                      ))}
+	                    </ul>
+	                  </div>
+
+	                  {adminTaxesByStateOrders.length > 0 && (
+	                    <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
+	                      <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
+	                        Order Tax Breakdown
+	                      </div>
+	                      <div className="grid grid-cols-[1fr_120px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
+	                        <div>Order</div>
+	                        <div className="text-right">Tax</div>
+	                      </div>
+	                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto">
+	                        {adminTaxesByStateOrders.map((line) => (
+	                          <li
+	                            key={`${line.orderNumber}-${line.state}`}
+	                            className="grid grid-cols-[1fr_120px] items-center gap-3 px-4 py-3"
+	                          >
+	                            <div className="min-w-0">
+	                              <div className="text-sm font-semibold text-slate-900 truncate">
+	                                {line.orderNumber}
+	                              </div>
+	                              <div className="text-xs text-slate-600">State: {line.state}</div>
+	                            </div>
+	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+	                              {formatCurrency(Number(line.taxTotal || 0))}
+	                            </div>
+	                          </li>
+	                        ))}
+	                      </ul>
+	                    </div>
+	                  )}
+	                </div>
+	              )}
             </div>
           )}
 
@@ -14359,24 +14508,64 @@ export default function App() {
             <div className="glass-card squircle-xl p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
-                    <p className="text-sm text-slate-600">
-                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split across admins).
-                    </p>
-                    {adminProductsCommissionMeta?.totals && (
-                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
-                        <span>
-                          Base:{" "}
-                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.commissionableBase || 0))}
+	                  <div className="min-w-0">
+	                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
+	                    <p className="text-sm text-slate-600">
+	                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split across admins).
+	                    </p>
+	                    <form
+	                      className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
+	                      onSubmit={(event) => {
+	                        event.preventDefault();
+	                        applyAdminDashboardPeriod();
+	                      }}
+	                    >
+	                      {["Start", "End"].map((labelText, index) => {
+	                        const value = index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
+	                        const setter = index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
+	                        return (
+	                          <label
+	                            key={labelText}
+	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
+	                          >
+	                            <span className="text-sm font-semibold text-slate-900">
+	                              {labelText}
+	                            </span>
+	                            <Input
+	                              type="date"
+	                              value={value}
+	                              onChange={(event) => setter(event.target.value)}
+	                              placeholder="YYYY-MM-DD"
+	                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
+	                              style={{ colorScheme: "light" }}
+	                            />
+	                          </label>
+	                        );
+	                      })}
+	                      <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+	                        <Button type="submit" size="sm" variant="outline" className="whitespace-nowrap">
+	                          Apply
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="outline"
+	                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
+	                          onClick={clearAdminDashboardPeriod}
+	                        >
+	                          Clear
+	                        </Button>
+	                      </div>
+	                    </form>
+	                    {adminProductsCommissionMeta?.totals && (
+	                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+	                        <span>
+	                          Base:{" "}
+	                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.commissionableBase || 0))}
                         </span>
                         <span>
                           Commission:{" "}
                           {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.commissionTotal || 0))}
-                        </span>
-                        <span>
-                          Supplier:{" "}
-                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.supplierShare || 0))}
                         </span>
                       </div>
                     )}
@@ -14458,20 +14647,33 @@ export default function App() {
                       <div>Recipient</div>
                       <div className="text-right">Amount</div>
                     </div>
-                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
-                      {adminCommissionRows.map((row) => (
-                        <li key={row.id} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-                              {row.name}
-                            </div>
-                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
-                          </div>
-                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-                            {formatCurrency(Number(row.amount || 0))}
-                          </div>
-                        </li>
-                      ))}
+	                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
+	                      {adminCommissionRows.map((row) => (
+	                        <li key={row.id} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
+	                          <div className="min-w-0">
+	                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+	                              {row.name}
+	                            </div>
+	                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
+	                            <div className="mt-1 text-[11px] leading-snug text-slate-500">
+	                              Retail: {Number(row.retailOrders || 0)} orders ·{" "}
+	                              {formatCurrency(Number(row.retailBase || 0))} × 0.2{" "}
+	                              <span className="mx-1">|</span>
+	                              Wholesale: {Number(row.wholesaleOrders || 0)} orders ·{" "}
+	                              {formatCurrency(Number(row.wholesaleBase || 0))} × 0.1
+	                              {Number(row.specialAdminBonus || 0) > 0 && (
+	                                <>
+	                                  <span className="mx-1">|</span>
+	                                  Bonus: {formatCurrency(Number(row.specialAdminBonus || 0))}
+	                                </>
+	                              )}
+	                            </div>
+	                          </div>
+	                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+	                            {formatCurrency(Number(row.amount || 0))}
+	                          </div>
+	                        </li>
+	                      ))}
                     </ul>
                   </div>
                 </div>
