@@ -221,7 +221,9 @@ def load_config() -> AppConfig:
             "user": os.environ.get("MYSQL_USER", ""),
             "password": os.environ.get("MYSQL_PASSWORD", ""),
             "database": os.environ.get("MYSQL_DATABASE", ""),
-            "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE"), 3),
+            # MYSQL_POOL_SIZE is the legacy knob used by this codebase; MYSQL_CONNECTION_LIMIT
+            # matches the node backend naming and some hosting panels.
+            "connection_limit": _to_int(os.environ.get("MYSQL_POOL_SIZE") or os.environ.get("MYSQL_CONNECTION_LIMIT"), 8),
             "ssl": os.environ.get("MYSQL_SSL", "").lower() == "true",
             "timezone": os.environ.get("MYSQL_TIMEZONE", "Z"),
             "connect_timeout": _to_int(os.environ.get("MYSQL_CONNECT_TIMEOUT_SECONDS"), 5),
