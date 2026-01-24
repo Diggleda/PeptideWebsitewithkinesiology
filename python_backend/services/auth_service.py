@@ -71,6 +71,11 @@ def _audit(event: str, details: Dict[str, Any]) -> None:
 def _new_session_id() -> str:
     return secrets.token_urlsafe(24)
 
+def _is_multi_session_exempt(email: Optional[str]) -> bool:
+    # Shared demo account: allow concurrent sessions across devices/users.
+    # This disables single-session enforcement (session id rotation) for this one email.
+    return (email or "").strip().lower() == "test@doctor.com"
+
 
 def _safe_check_password(password: str, hashed: str) -> bool:
     encoded = (hashed or "").strip()
@@ -343,7 +348,11 @@ def login(data: Dict) -> Dict:
         if not _safe_check_password(password, str(user.get("password", ""))):
             raise _unauthorized("INVALID_PASSWORD")
 
-        new_session_id = _new_session_id()
+        # Rotate session id to invalidate other devices/sessions. For the shared demo
+        # account, keep the existing session id so multiple reps can stay logged in.
+        new_session_id = (
+            user.get("sessionId") if _is_multi_session_exempt(user.get("email")) else _new_session_id()
+        )
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         updated = user_repository.update(
             {
@@ -446,6 +455,20 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
 
     user = user_repository.find_by_id(user_id) if user_id else None
     if user:
+        if _is_multi_session_exempt(user.get("email")):
+            # Do not rotate session id or mark offline for the shared demo account;
+            # one user's logout should not boot other demos.
+            _audit(
+                "LOGOUT",
+                {
+                    "userId": user_id,
+                    "role": normalized_role or (user.get("role") if isinstance(user, dict) else None),
+                    "updatedUser": False,
+                    "skippedReason": "MULTI_SESSION_EXEMPT",
+                    "at": now_iso,
+                },
+            )
+            return {"ok": True}
         user_repository.update(
             {
                 **user,

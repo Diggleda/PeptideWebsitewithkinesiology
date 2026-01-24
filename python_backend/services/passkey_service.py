@@ -235,7 +235,13 @@ def verify_authentication_response_for_user(
     }
 
     # Rotate session id so passkey login invalidates other devices/sessions.
-    new_session_id = auth_service._new_session_id()  # pylint: disable=protected-access
+    # Shared demo account keeps the existing session id to allow multiple concurrent sessions.
+    email = (updated_user.get("email") or "").strip().lower()
+    new_session_id = (
+        updated_user.get("sessionId")
+        if email == "test@doctor.com"
+        else auth_service._new_session_id()  # pylint: disable=protected-access
+    )
     updated_user = user_repository.update({**updated_user, "sessionId": new_session_id}) or {
         **updated_user,
         "sessionId": new_session_id,

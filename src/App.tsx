@@ -5872,6 +5872,8 @@ export default function App() {
   const [adminTaxesByStateOrders, setAdminTaxesByStateOrders] = useState<
     { orderNumber: string; state: string; taxTotal: number }[]
   >([]);
+  const [adminTaxesByStateBreakdownOpen, setAdminTaxesByStateBreakdownOpen] =
+    useState(false);
   const [adminTaxesByStateMeta, setAdminTaxesByStateMeta] = useState<{
     periodStart?: string | null;
     periodEnd?: string | null;
@@ -5879,6 +5881,10 @@ export default function App() {
   } | null>(null);
   const [adminTaxesByStateLoading, setAdminTaxesByStateLoading] = useState(false);
   const [adminTaxesByStateError, setAdminTaxesByStateError] = useState<string | null>(null);
+  const [adminTaxesByStateLastFetchedAt, setAdminTaxesByStateLastFetchedAt] =
+    useState<number | null>(null);
+  const [adminTaxesByStateCsvDownloadedAt, setAdminTaxesByStateCsvDownloadedAt] =
+    useState<string | null>(null);
 
   const [adminProductSalesRows, setAdminProductSalesRows] = useState<
     {
@@ -5911,6 +5917,10 @@ export default function App() {
   const [adminProductsCommissionLoading, setAdminProductsCommissionLoading] =
     useState(false);
   const [adminProductsCommissionError, setAdminProductsCommissionError] =
+    useState<string | null>(null);
+  const [adminProductsCommissionLastFetchedAt, setAdminProductsCommissionLastFetchedAt] =
+    useState<number | null>(null);
+  const [adminProductsCommissionCsvDownloadedAt, setAdminProductsCommissionCsvDownloadedAt] =
     useState<string | null>(null);
   const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
     () => getDefaultSalesBySalesRepPeriod().start,
@@ -5978,25 +5988,36 @@ export default function App() {
     };
   }, [user?.id, user?.role]);
 
-  const downloadSalesBySalesRepCsv = useCallback(async () => {
-    try {
-      const exportedAt = new Date();
-      const exportedAtIso = exportedAt.toISOString();
-      const escapeCsv = (value: unknown) => {
-        if (value === null || value === undefined) return "";
-        const text = String(value);
-        if (/[",\n\r]/.test(text)) {
-          return `"${text.replace(/"/g, '""')}"`;
-        }
-        return text;
-      };
+	  const downloadSalesBySalesRepCsv = useCallback(async () => {
+	    try {
+	      const exportedAt = new Date();
+	      const exportedAtIso = exportedAt.toISOString();
+	      const escapeCsv = (value: unknown) => {
+	        if (value === null || value === undefined) return "";
+	        const text = String(value);
+	        if (/[",\n\r]/.test(text)) {
+	          return `"${text.replace(/"/g, '""')}"`;
+	        }
+	        return text;
+	      };
 
-      const rows = [
-        ["Sales Rep", "Email", "Orders", "Wholesale", "Retail"].join(","),
-        ...salesRepSalesSummary.map((rep) =>
-          [
-            escapeCsv(rep.salesRepName || ""),
-            escapeCsv(rep.salesRepEmail || ""),
+	      const periodStart = salesRepSalesSummaryMeta?.periodStart
+	        ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
+	        : null;
+	      const periodEnd = salesRepSalesSummaryMeta?.periodEnd
+	        ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
+	        : null;
+	      const periodTitle =
+	        periodStart && periodEnd ? `${periodStart} to ${periodEnd} (PST)` : "All time (PST)";
+
+	      const rows = [
+	        escapeCsv(`Sales by Sales Rep — ${periodTitle}`),
+	        "",
+	        ["Sales Rep", "Email", "Orders", "Wholesale", "Retail"].join(","),
+	        ...salesRepSalesSummary.map((rep) =>
+	          [
+	            escapeCsv(rep.salesRepName || ""),
+	            escapeCsv(rep.salesRepEmail || ""),
             escapeCsv(Number(rep.totalOrders || 0)),
             escapeCsv(Number(rep.wholesaleRevenue || 0).toFixed(2)),
             escapeCsv(Number(rep.retailRevenue || 0).toFixed(2)),
@@ -6004,21 +6025,15 @@ export default function App() {
         ),
       ];
 
-      const csv = rows.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const stamp = exportedAtIso.replace(/[:.]/g, "-");
-      const periodStart = salesRepSalesSummaryMeta?.periodStart
-        ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
-        : null;
-      const periodEnd = salesRepSalesSummaryMeta?.periodEnd
-        ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
-        : null;
-      const periodLabel =
-        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
-      link.href = url;
-      link.download = `sales-by-sales-rep${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
+	      const csv = rows.join("\n");
+	      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+	      const url = URL.createObjectURL(blob);
+	      const link = document.createElement("a");
+	      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+	      const periodLabel =
+	        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+	      link.href = url;
+	      link.download = `sales-by-sales-rep${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -6082,11 +6097,13 @@ export default function App() {
           }))
           .filter((line) => line.orderNumber.trim().length > 0),
       );
+      setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta({
         periodStart: (response as any)?.periodStart ?? null,
         periodEnd: (response as any)?.periodEnd ?? null,
         totals: (response as any)?.totals ?? null,
       });
+      setAdminTaxesByStateLastFetchedAt(Date.now());
     } catch (error: any) {
       const message =
         typeof error?.message === "string"
@@ -6095,17 +6112,18 @@ export default function App() {
       setAdminTaxesByStateError(message);
       setAdminTaxesByStateRows([]);
       setAdminTaxesByStateOrders([]);
+      setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta(null);
     } finally {
       setAdminTaxesByStateLoading(false);
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
-  const downloadAdminTaxesByStateCsv = useCallback(async () => {
-    try {
-      const exportedAt = new Date();
-      const exportedAtIso = exportedAt.toISOString();
-      const escapeCsv = (value: unknown) => {
+		  const downloadAdminTaxesByStateCsv = useCallback(async () => {
+		    try {
+		      const exportedAt = new Date();
+		      const exportedAtIso = exportedAt.toISOString();
+	      const escapeCsv = (value: unknown) => {
         if (value === null || value === undefined) return "";
         const text = String(value);
         if (/[",\n\r]/.test(text)) {
@@ -6116,18 +6134,22 @@ export default function App() {
       const periodStart = adminTaxesByStateMeta?.periodStart
         ? String(adminTaxesByStateMeta.periodStart).slice(0, 10)
         : null;
-      const periodEnd = adminTaxesByStateMeta?.periodEnd
-        ? String(adminTaxesByStateMeta.periodEnd).slice(0, 10)
-        : null;
-      const periodLabel =
-        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
-      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+	      const periodEnd = adminTaxesByStateMeta?.periodEnd
+	        ? String(adminTaxesByStateMeta.periodEnd).slice(0, 10)
+	        : null;
+	      const periodLabel =
+	        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+	      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+	      const periodTitle =
+	        periodStart && periodEnd ? `${periodStart} to ${periodEnd} (PST)` : "All time (PST)";
 
-      const rows = [
-        ["State", "Orders", "Tax Total"].join(","),
-        ...adminTaxesByStateRows.map((row) =>
-          [
-            escapeCsv(row.state),
+	      const rows = [
+	        escapeCsv(`Taxes by State — ${periodTitle}`),
+	        "",
+	        ["State", "Orders", "Tax Total"].join(","),
+	        ...adminTaxesByStateRows.map((row) =>
+	          [
+	            escapeCsv(row.state),
             escapeCsv(Number(row.orderCount || 0)),
             escapeCsv(Number(row.taxTotal || 0).toFixed(2)),
           ].join(","),
@@ -6140,14 +6162,15 @@ export default function App() {
       link.href = url;
       link.download = `taxes-by-state${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
       document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("[Taxes by State] CSV export failed", error);
-      toast.error("Unable to download report right now.");
-    }
-  }, [adminTaxesByStateMeta?.periodEnd, adminTaxesByStateMeta?.periodStart, adminTaxesByStateRows]);
+	      link.click();
+	      link.remove();
+	      URL.revokeObjectURL(url);
+	      setAdminTaxesByStateCsvDownloadedAt(exportedAtIso);
+	    } catch (error) {
+	      console.error("[Taxes by State] CSV export failed", error);
+	      toast.error("Unable to download report right now.");
+	    }
+	  }, [adminTaxesByStateMeta?.periodEnd, adminTaxesByStateMeta?.periodStart, adminTaxesByStateRows]);
 
   const refreshAdminProductsCommission = useCallback(async () => {
     if (!user || !isAdmin(user.role)) return;
@@ -6202,6 +6225,7 @@ export default function App() {
         periodEnd: (response as any)?.periodEnd ?? null,
         totals: (response as any)?.totals ?? null,
       });
+      setAdminProductsCommissionLastFetchedAt(Date.now());
     } catch (error: any) {
       const message =
         typeof error?.message === "string"
@@ -6218,31 +6242,35 @@ export default function App() {
 
 	  const downloadAdminProductsCommissionCsv = useCallback(async () => {
 	    try {
-      const exportedAt = new Date();
-      const exportedAtIso = exportedAt.toISOString();
-      const escapeCsv = (value: unknown) => {
-        if (value === null || value === undefined) return "";
-        const text = String(value);
-        if (/[",\n\r]/.test(text)) {
-          return `"${text.replace(/"/g, '""')}"`;
-        }
-        return text;
-      };
-      const periodStart = adminProductsCommissionMeta?.periodStart
-        ? String(adminProductsCommissionMeta.periodStart).slice(0, 10)
-        : null;
-      const periodEnd = adminProductsCommissionMeta?.periodEnd
-        ? String(adminProductsCommissionMeta.periodEnd).slice(0, 10)
-        : null;
-      const periodLabel =
-        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
-      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+	      const exportedAt = new Date();
+	      const exportedAtIso = exportedAt.toISOString();
+	      const escapeCsv = (value: unknown) => {
+	        if (value === null || value === undefined) return "";
+	        const text = String(value);
+	        if (/[",\n\r]/.test(text)) {
+	          return `"${text.replace(/"/g, '""')}"`;
+	        }
+	        return text;
+	      };
+	      const periodStart = adminProductsCommissionMeta?.periodStart
+	        ? String(adminProductsCommissionMeta.periodStart).slice(0, 10)
+	        : null;
+	      const periodEnd = adminProductsCommissionMeta?.periodEnd
+	        ? String(adminProductsCommissionMeta.periodEnd).slice(0, 10)
+	        : null;
+	      const periodLabel =
+	        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+	      const periodTitle =
+	        periodStart && periodEnd ? `${periodStart} to ${periodEnd} (PST)` : "All time (PST)";
+	      const stamp = exportedAtIso.replace(/[:.]/g, "-");
 
-      const rows: string[] = [];
-      rows.push(["Report", "Products sold"].join(","));
-      rows.push(["Product", "SKU", "ProductId", "Quantity"].join(","));
-      adminProductSalesRows.forEach((product) => {
-        rows.push(
+	      const rows: string[] = [];
+	      rows.push(escapeCsv(`Products Sold & Commission — ${periodTitle}`));
+	      rows.push("");
+	      rows.push(["Report", "Products sold"].join(","));
+	      rows.push(["Product", "SKU", "ProductId", "Quantity"].join(","));
+	      adminProductSalesRows.forEach((product) => {
+	        rows.push(
           [
             escapeCsv(product.name),
             escapeCsv(product.sku || ""),
@@ -6280,20 +6308,21 @@ export default function App() {
 	        );
 	      });
 
-      const csv = rows.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
+	      const csv = rows.join("\n");
+	      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+	      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = `products-and-commission${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
       document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("[Products/Commission] CSV export failed", error);
-      toast.error("Unable to download report right now.");
-    }
+	      link.click();
+	      link.remove();
+	      URL.revokeObjectURL(url);
+	      setAdminProductsCommissionCsvDownloadedAt(exportedAtIso);
+	    } catch (error) {
+	      console.error("[Products/Commission] CSV export failed", error);
+	      toast.error("Unable to download report right now.");
+	    }
   }, [
     adminCommissionRows,
     adminProductSalesRows,
@@ -14013,20 +14042,20 @@ export default function App() {
 		                                  key={entry.id}
                                   className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
                                 >
-                                  <button
-                                    type="button"
-                                    onClick={() => openLiveUserDetail(entry)}
-                                    aria-label={`Open ${displayName} profile`}
-                                    className="min-w-0 flex-1 overflow-hidden"
-                                    style={{ background: "transparent", border: "none", padding: 0 }}
-                                  >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <div
-                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-	                                        style={{ width: 41.4, height: 41.4, minWidth: 41.4 }}
-                                      >
-                                        {avatarUrl ? (
-                                          <img
+	                                  <button
+	                                    type="button"
+	                                    onClick={() => openLiveUserDetail(entry)}
+	                                    aria-label={`Open ${displayName} profile`}
+	                                    className="min-w-0 flex-1"
+	                                    style={{ background: "transparent", border: "none", padding: 0 }}
+	                                  >
+	                                    <div className="flex items-center gap-3 min-w-0">
+	                                      <div
+	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
+		                                        style={{ width: 41.4, height: 41.4, minWidth: 41.4 }}
+	                                      >
+	                                        {avatarUrl ? (
+	                                          <img
                                             src={avatarUrl}
                                             alt={displayName}
                                             className="h-full w-full object-cover"
@@ -14035,36 +14064,38 @@ export default function App() {
                                           />
                                         ) : (
                                           <span className="text-[11px] font-semibold text-slate-600">
-	                                            {getInitials(displayName)}
-	                                          </span>
-	                                        )}
-	                                      </div>
-	                                      <div className="min-w-0 flex-1 flex flex-col items-center justify-center text-center">
-	                                        <div className="flex items-center gap-2 min-w-0 max-w-full">
-		                                          {rolePill && (
-		                                            <span
-			                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
-		                                              style={rolePill.style}
-		                                            >
-		                                              {rolePill.label}
-		                                            </span>
-		                                          )}
-	                                          <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
-	                                            {displayName}
-	                                          </span>
-	                                        </div>
-	                                        <span className="min-w-0 max-w-full truncate text-xs text-slate-600">
-	                                          {entry.email || "—"}
-	                                        </span>
-	                                      </div>
-	                                    </div>
-	                                  </button>
+		                                            {getInitials(displayName)}
+		                                          </span>
+		                                        )}
+		                                      </div>
+		                                      <div className="min-w-0 flex-1 overflow-x-auto">
+		                                        <div className="min-w-max flex flex-col">
+		                                          <div className="flex items-center gap-2 whitespace-nowrap">
+			                                          {rolePill && (
+			                                            <span
+				                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
+			                                              style={rolePill.style}
+			                                            >
+			                                              {rolePill.label}
+			                                            </span>
+			                                          )}
+		                                          <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+		                                            {displayName}
+		                                          </span>
+		                                          </div>
+		                                          <span className="text-xs text-slate-600 whitespace-nowrap">
+		                                            {entry.email || "—"}
+		                                          </span>
+		                                        </div>
+		                                      </div>
+		                                    </div>
+		                                  </button>
 
-                                  <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
-                                    <span
-		                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-		                                        !isOnline
-		                                          ? "bg-slate-100 text-slate-600"
+	                                  <div className="ml-auto grid w-[150px] sm:w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
+	                                    <span
+			                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
+			                                        !isOnline
+			                                          ? "bg-slate-100 text-slate-600"
 		                                          : showIdle
                                             ? "bg-slate-100 text-slate-600"
                                             : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
@@ -14183,15 +14214,15 @@ export default function App() {
                         <span className="sales-rep-action-meta-label block">
                           Last downloaded
                         </span>
-                        <span className="sales-rep-action-meta-value block">
-                          {salesRepSalesCsvDownloadedAt
-                            ? new Date(
-                                salesRepSalesCsvDownloadedAt,
-                              ).toLocaleString()
-                            : "—"}
-                        </span>
-                      </span>
-                    </div>
+	                      <span className="sales-rep-action-meta-value block">
+	                          {salesRepSalesCsvDownloadedAt
+	                            ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+	                                timeZone: "America/Los_Angeles",
+	                              })
+	                            : "—"}
+	                        </span>
+	                      </span>
+	                    </div>
                     <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
                       <Button
                         type="button"
@@ -14211,21 +14242,25 @@ export default function App() {
                         />
                         {salesRepSalesSummaryLoading ? "Refreshing..." : "Refresh"}
                       </Button>
-                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-                        <span className="sales-rep-action-meta-label block">
-                          Last fetched
-                        </span>
-                        <span className="sales-rep-action-meta-value block">
-                          {(() => {
-                            const ts =
-                              salesRepSalesSummaryLastFetchedAt ??
-                              salesTrackingLastUpdated ??
-                              null;
-                            return ts ? new Date(ts).toLocaleTimeString() : "—";
-                          })()}
-                        </span>
-                      </span>
-                    </div>
+	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sales-rep-action-meta-label block">
+	                          Last refreshed
+	                        </span>
+	                        <span className="sales-rep-action-meta-value block">
+	                          {(() => {
+	                            const ts =
+	                              salesRepSalesSummaryLastFetchedAt ??
+	                              salesTrackingLastUpdated ??
+	                              null;
+	                            return ts
+	                              ? new Date(ts).toLocaleString(undefined, {
+	                                  timeZone: "America/Los_Angeles",
+	                                })
+	                              : "—";
+	                          })()}
+	                        </span>
+	                      </span>
+	                    </div>
                   </div>
                 </div>
 			
@@ -14390,37 +14425,69 @@ export default function App() {
 	                      </div>
 	                    </form>
 	                  </div>
-                  <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => void refreshAdminTaxesByState()}
-                      disabled={adminTaxesByStateLoading}
-                      aria-busy={adminTaxesByStateLoading}
-                    >
-                      <RefreshCw
-                        className={`h-4 w-4 ${adminTaxesByStateLoading ? "animate-spin" : ""}`}
-                        aria-hidden="true"
-                      />
-                      {adminTaxesByStateLoading ? "Refreshing..." : "Refresh"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => void downloadAdminTaxesByStateCsv()}
-                      disabled={adminTaxesByStateRows.length === 0}
-                      title="Download CSV"
-                    >
-                      <Download className="h-4 w-4" aria-hidden="true" />
-                      Download CSV
-                    </Button>
-                  </div>
-                </div>
-              </div>
+	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        className="gap-2"
+	                        onClick={() => void downloadAdminTaxesByStateCsv()}
+	                        disabled={adminTaxesByStateRows.length === 0}
+	                        title="Download CSV"
+	                      >
+	                        <Download className="h-4 w-4" aria-hidden="true" />
+	                        Download CSV
+	                      </Button>
+	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sales-rep-action-meta-label block">
+	                          Last downloaded
+	                        </span>
+	                        <span className="sales-rep-action-meta-value block">
+	                          {adminTaxesByStateCsvDownloadedAt
+	                            ? new Date(adminTaxesByStateCsvDownloadedAt).toLocaleString(
+	                                undefined,
+	                                { timeZone: "America/Los_Angeles" },
+	                              )
+	                            : "—"}
+	                        </span>
+	                      </span>
+	                    </div>
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        className="gap-2"
+	                        onClick={() => void refreshAdminTaxesByState()}
+	                        disabled={adminTaxesByStateLoading}
+	                        aria-busy={adminTaxesByStateLoading}
+	                      >
+	                        <RefreshCw
+	                          className={`h-4 w-4 ${
+	                            adminTaxesByStateLoading ? "animate-spin" : ""
+	                          }`}
+	                          aria-hidden="true"
+	                        />
+	                        {adminTaxesByStateLoading ? "Refreshing..." : "Refresh"}
+	                      </Button>
+	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sales-rep-action-meta-label block">
+	                          Last refreshed
+	                        </span>
+	                        <span className="sales-rep-action-meta-value block">
+	                          {adminTaxesByStateLastFetchedAt
+	                            ? new Date(adminTaxesByStateLastFetchedAt).toLocaleString(
+	                                undefined,
+	                                { timeZone: "America/Los_Angeles" },
+	                              )
+	                            : "—"}
+	                        </span>
+	                      </span>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
 
               {adminTaxesByStateError ? (
                 <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
@@ -14471,10 +14538,20 @@ export default function App() {
 	                  </div>
 
 		                  {adminTaxesByStateOrders.length > 0 && (
-		                    <details className="overflow-hidden rounded-xl bg-white/60 border border-slate-200/70">
+		                    <details
+                          className="overflow-hidden rounded-xl bg-white/60 border border-slate-200/70"
+                          open={adminTaxesByStateBreakdownOpen}
+                          onToggle={(event) => {
+                            setAdminTaxesByStateBreakdownOpen(
+                              (event.currentTarget as HTMLDetailsElement).open,
+                            );
+                          }}
+                        >
 		                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
 		                        <span>Order Tax Breakdown</span>
-		                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Expand</span>
+		                        <span className="rounded-full border border-slate-200/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                              {adminTaxesByStateBreakdownOpen ? "Collapse" : "Expand"}
+                            </span>
 		                      </summary>
 		                      <div
 		                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
@@ -14575,37 +14652,76 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => void refreshAdminProductsCommission()}
-                      disabled={adminProductsCommissionLoading}
-                      aria-busy={adminProductsCommissionLoading}
-                    >
-                      <RefreshCw
-                        className={`h-4 w-4 ${adminProductsCommissionLoading ? "animate-spin" : ""}`}
-                        aria-hidden="true"
-                      />
-                      {adminProductsCommissionLoading ? "Refreshing..." : "Refresh"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => void downloadAdminProductsCommissionCsv()}
-                      disabled={adminProductSalesRows.length === 0 && adminCommissionRows.length === 0}
-                      title="Download CSV"
-                    >
-                      <Download className="h-4 w-4" aria-hidden="true" />
-                      Download CSV
-                    </Button>
-                  </div>
-                </div>
-              </div>
+	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        className="gap-2"
+	                        onClick={() => void downloadAdminProductsCommissionCsv()}
+	                        disabled={
+	                          adminProductSalesRows.length === 0 &&
+	                          adminCommissionRows.length === 0
+	                        }
+	                        title="Download CSV"
+	                      >
+	                        <Download className="h-4 w-4" aria-hidden="true" />
+	                        Download CSV
+	                      </Button>
+	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sales-rep-action-meta-label block">
+	                          Last downloaded
+	                        </span>
+	                        <span className="sales-rep-action-meta-value block">
+	                          {adminProductsCommissionCsvDownloadedAt
+	                            ? new Date(
+	                                adminProductsCommissionCsvDownloadedAt,
+	                              ).toLocaleString(undefined, {
+	                                timeZone: "America/Los_Angeles",
+	                              })
+	                            : "—"}
+	                        </span>
+	                      </span>
+	                    </div>
+	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        className="gap-2"
+	                        onClick={() => void refreshAdminProductsCommission()}
+	                        disabled={adminProductsCommissionLoading}
+	                        aria-busy={adminProductsCommissionLoading}
+	                      >
+	                        <RefreshCw
+	                          className={`h-4 w-4 ${
+	                            adminProductsCommissionLoading
+	                              ? "animate-spin"
+	                              : ""
+	                          }`}
+	                          aria-hidden="true"
+	                        />
+	                        {adminProductsCommissionLoading ? "Refreshing..." : "Refresh"}
+	                      </Button>
+	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sales-rep-action-meta-label block">
+	                          Last refreshed
+	                        </span>
+	                        <span className="sales-rep-action-meta-value block">
+	                          {adminProductsCommissionLastFetchedAt
+	                            ? new Date(
+	                                adminProductsCommissionLastFetchedAt,
+	                              ).toLocaleString(undefined, {
+	                                timeZone: "America/Los_Angeles",
+	                              })
+	                            : "—"}
+	                        </span>
+	                      </span>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
 
               {adminProductsCommissionError ? (
                 <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
@@ -14616,66 +14732,95 @@ export default function App() {
               ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
                 <div className="px-4 py-3 text-sm mb-3 text-slate-500">No data for this period.</div>
               ) : (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-	                  <div className="overflow-hidden rounded-xl">
-	                    <div className="flex items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b-4 border-slate-200/70">
-	                      <span>Products</span>
-	                    </div>
-	                    <div className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]">
-	                      <div>Product</div>
-	                      <div className="text-right">Qty</div>
-	                    </div>
-	                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
-	                      {adminProductSalesRows.map((row) => (
-	                        <li key={row.key} className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2">
-	                          <div className="min-w-0">
-	                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-	                              {row.name}
-	                            </div>
-                            <div className="text-xs text-slate-600 truncate">
-                              {row.sku ? `SKU: ${row.sku}` : row.productId != null ? `Product ID: ${row.productId}` : "—"}
-                            </div>
-                          </div>
-                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-                            {Number(row.quantity || 0)}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+	                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+		                  <div className="overflow-hidden rounded-xl">
+		                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                      <span>Products Sold</span>
+		                    </div>
+		                    <div className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
+                          style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
+                        >
+		                      <div>Product</div>
+		                      <div className="text-right">Qty</div>
+		                    </div>
+		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
+		                      {adminProductSalesRows.map((row) => (
+		                        <li
+                              key={row.key}
+                              className="grid items-center gap-3 px-4 py-1.5"
+                              style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
+                            >
+		                          <div className="min-w-0 flex items-baseline gap-2">
+		                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+		                              {row.name}
+		                            </div>
+                                <div className="text-[11px] leading-tight text-slate-600 truncate">
+                                  {row.sku ? `SKU: ${row.sku}` : row.productId != null ? `Product ID: ${row.productId}` : "—"}
+                                </div>
+		                          </div>
+		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+		                            {Number(row.quantity || 0)}
+		                          </div>
+		                        </li>
+		                      ))}
+		                    </ul>
+		                  </div>
 
-	                  <div className="overflow-hidden rounded-xl">
-	                    <div className="flex items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b-4 border-slate-200/70">
-	                      <span>Commission</span>
-	                    </div>
-	                    <div className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]">
-	                      <div>Recipient</div>
-	                      <div className="text-right">Amount</div>
-	                    </div>
+		                  <div className="overflow-hidden rounded-xl">
+		                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                      <span>Commission</span>
+		                    </div>
+		                    <div
+                          className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
+                          style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
+                        >
+		                      <div>Recipient</div>
+		                      <div className="text-right">Amount</div>
+		                    </div>
 		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
 		                      {adminCommissionRows.map((row) => (
-		                        <li key={row.id} className="grid grid-cols-[1fr_140px] items-center gap-3 px-4 py-2">
+		                        <li
+                              key={row.id}
+                              className="grid items-center gap-3 px-4 py-1.5"
+                              style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
+                            >
 		                          <div className="min-w-0">
 		                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
 		                              {row.name}
 		                            </div>
-		                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
-		                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-snug text-slate-500">
-		                              <span className="whitespace-nowrap">
-		                                Retail: {Number(row.retailOrders || 0)} · {formatCurrency(Number(row.retailBase || 0))}×0.2
-		                              </span>
-		                              <span className="text-slate-300">|</span>
-		                              <span className="whitespace-nowrap">
-		                                Wholesale: {Number(row.wholesaleOrders || 0)} · {formatCurrency(Number(row.wholesaleBase || 0))}×0.1
-		                              </span>
-		                              {Number(row.specialAdminBonus || 0) > 0 && (
-		                                <>
-		                                  <span className="text-slate-300">|</span>
-		                                  <span className="whitespace-nowrap">
-		                                    Bonus: {formatCurrency(Number(row.specialAdminBonus || 0))}
-		                                  </span>
-		                                </>
-		                              )}
+		                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600">
+                                {(() => {
+                                  const retailOrders = Number(row.retailOrders || 0);
+                                  const wholesaleOrders = Number(row.wholesaleOrders || 0);
+                                  const retailBase = Number(row.retailBase || 0);
+                                  const wholesaleBase = Number(row.wholesaleBase || 0);
+                                  const bonus = Number(row.specialAdminBonus || 0);
+                                  const retailEarned = retailBase * 0.2;
+                                  const wholesaleEarned = wholesaleBase * 0.1;
+                                  return (
+                                    <>
+                                      <span className="whitespace-nowrap">
+                                        Role: {row.role || "—"}
+                                      </span>
+                                      <span className="text-slate-300">|</span>
+                                      <span className="whitespace-nowrap tabular-nums">
+                                        Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2={formatCurrency(retailEarned)}
+                                      </span>
+                                      <span className="text-slate-300">|</span>
+                                      <span className="whitespace-nowrap tabular-nums">
+                                        Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1={formatCurrency(wholesaleEarned)}
+                                      </span>
+                                      {bonus > 0 && (
+                                        <>
+                                          <span className="text-slate-300">|</span>
+                                          <span className="whitespace-nowrap tabular-nums">
+                                            Bonus: {formatCurrency(bonus)}
+                                          </span>
+                                        </>
+                                      )}
+                                    </>
+                                  );
+                                })()}
 		                            </div>
 		                          </div>
 		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">

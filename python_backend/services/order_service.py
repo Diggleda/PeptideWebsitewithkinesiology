@@ -2371,6 +2371,24 @@ def get_sales_by_rep(
             if email:
                 doctors_by_email[email] = u
 
+        # Any order placed by an email present in the MySQL `contact_forms` table should be
+        # treated as a house/contact-form order and split across admins.
+        contact_form_emails: set[str] = set()
+        try:
+            from . import get_config  # type: ignore
+            from ..database import mysql_client  # type: ignore
+
+            if bool(get_config().mysql.get("enabled")):
+                rows = mysql_client.fetch_all("SELECT DISTINCT email FROM contact_forms", {})
+                for row in rows or []:
+                    if not isinstance(row, dict):
+                        continue
+                    form_email = _norm_email(row.get("email"))
+                    if form_email:
+                        contact_form_emails.add(form_email)
+        except Exception:
+            contact_form_emails = set()
+
         valid_rep_ids = {alias_to_rep_id[str(rep.get("id"))] for rep in reps if rep.get("id")}
         for rep in rep_records_list:
             rep_id = rep.get("id")
@@ -2442,6 +2460,7 @@ def get_sales_by_rep(
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
 
                 if not rep_id:
                     # If a sales rep placed the order, it should never be counted as "house".
@@ -3105,12 +3124,35 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if email:
                 doctors_by_email[email] = u
 
+        # Any order placed by an email present in the MySQL `contact_forms` table should be
+        # treated as a house/contact-form order and split across admins.
+        contact_form_emails: set[str] = set()
+        try:
+            from . import get_config  # type: ignore
+            from ..database import mysql_client  # type: ignore
+
+            if bool(get_config().mysql.get("enabled")):
+                rows = mysql_client.fetch_all("SELECT DISTINCT email FROM contact_forms", {})
+                for row in rows or []:
+                    if not isinstance(row, dict):
+                        continue
+                    form_email = _norm_email(row.get("email"))
+                    if form_email:
+                        contact_form_emails.add(form_email)
+        except Exception:
+            contact_form_emails = set()
+
         recipient_rows: Dict[str, Dict[str, object]] = {}
         for rep in reps:
             rep_id = rep.get("id")
             if not rep_id:
                 continue
-            recipient_rows[str(rep_id)] = {"id": str(rep_id), "name": rep.get("name") or "Sales Rep", "role": "sales_rep", "amount": 0.0}
+            recipient_rows[str(rep_id)] = {
+                "id": str(rep_id),
+                "name": rep.get("name") or "Sales Rep",
+                "role": "sales_rep",
+                "amount": 0.0,
+            }
         for rep in rep_records_list:
             rep_id = rep.get("id")
             if not rep_id:
@@ -3191,11 +3233,15 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     continue
 
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
 
                 rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
                 if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                if force_house_contact_form:
+                    rep_id = ""
 
                 if not rep_id:
                     rep_id = user_rep_id_by_email.get(billing_email, "")
@@ -3220,8 +3266,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": f"User {recipient_id}", "role": "unknown", "amount": 0.0}
 
                 if not recipient_id:
-                    # House orders only for contact-form sourced doctors.
-                    is_house_contact_form = False
+                    # House orders for contact-form sourced doctors (including any email present in
+                    # the MySQL contact_forms table).
+                    is_house_contact_form = force_house_contact_form
                     if billing_email:
                         doctor = doctors_by_email.get(billing_email)
                         if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
