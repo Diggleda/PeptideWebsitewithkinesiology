@@ -4,10 +4,11 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import re
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from ..repositories import (
     order_repository,
@@ -47,6 +48,177 @@ _sales_rep_orders_cache: Dict[str, Dict[str, object]] = {}
 
 _WOO_ORDER_RECONCILE_MAX_LOOKUPS = int(os.environ.get("WOO_ORDER_RECONCILE_MAX_LOOKUPS", "10").strip() or 10)
 _WOO_ORDER_RECONCILE_MAX_LOOKUPS = max(0, min(_WOO_ORDER_RECONCILE_MAX_LOOKUPS, 25))
+
+_ADMIN_TAXES_BY_STATE_TTL_SECONDS = int(os.environ.get("ADMIN_TAXES_BY_STATE_TTL_SECONDS", "25").strip() or 25)
+_ADMIN_TAXES_BY_STATE_TTL_SECONDS = max(5, min(_ADMIN_TAXES_BY_STATE_TTL_SECONDS, 300))
+_admin_taxes_by_state_lock = threading.Lock()
+_admin_taxes_by_state_inflight: Optional[threading.Event] = None
+_admin_taxes_by_state_cache: Dict[str, object] = {"data": None, "key": None, "expiresAtMs": 0}
+
+_ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS = int(os.environ.get("ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS", "25").strip() or 25)
+_ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS = max(5, min(_ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS, 300))
+_admin_products_commission_lock = threading.Lock()
+_admin_products_commission_inflight: Optional[threading.Event] = None
+_admin_products_commission_cache: Dict[str, object] = {"data": None, "key": None, "expiresAtMs": 0}
+
+
+def _get_report_timezone() -> timezone:
+    name = (os.environ.get("REPORT_TIMEZONE") or "America/Los_Angeles").strip() or "America/Los_Angeles"
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        # Fallback: keep historical behavior (UTC) if tz database isn't available.
+        return timezone.utc
+
+
+def _resolve_report_period_bounds(
+    period_start: Optional[str],
+    period_end: Optional[str],
+) -> tuple[datetime, datetime, Dict[str, str]]:
+    """
+    Interpret date-only inputs as PST/PDT day bounds:
+      - start: 12:00:00am local
+      - end:   11:59:59.999999pm local
+
+    Returns (start_utc, end_utc, period_meta) where period_meta values are the local (PST/PDT) ISO strings.
+    """
+
+    tz = _get_report_timezone()
+
+    def _is_date_only(text: str) -> bool:
+        return len(text) == 10 and text[4] == "-" and text[7] == "-"
+
+    def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except Exception:
+            return None
+
+    def _default_period_dates(now_local: datetime) -> tuple[date, date]:
+        year = now_local.year
+        month = now_local.month
+        day_of_month = now_local.day
+        # JS: new Date(year, month + 1, 0).getDate()
+        if month == 12:
+            first_next = date(year + 1, 1, 1)
+        else:
+            first_next = date(year, month + 1, 1)
+        days_in_month = (first_next - timedelta(days=1)).day
+        midpoint_day = int((days_in_month + 1) / 2)  # ceil(days/2)
+        start_day = 1 if day_of_month <= midpoint_day else midpoint_day
+        return date(year, month, start_day), now_local.date()
+
+    now_local = datetime.now(tz)
+    default_start_date, default_end_date = _default_period_dates(now_local)
+
+    start_text = str(period_start or "").strip()
+    end_text = str(period_end or "").strip()
+
+    start_local: Optional[datetime] = None
+    end_local: Optional[datetime] = None
+
+    if start_text and _is_date_only(start_text):
+        try:
+            d = date.fromisoformat(start_text)
+            start_local = datetime(d.year, d.month, d.day, 0, 0, 0, 0, tzinfo=tz)
+        except Exception:
+            start_local = None
+    elif start_text:
+        parsed = _parse_iso_datetime(start_text)
+        if parsed is not None:
+            start_local = parsed.astimezone(tz)
+
+    if end_text and _is_date_only(end_text):
+        try:
+            d = date.fromisoformat(end_text)
+            end_local = datetime(d.year, d.month, d.day, 23, 59, 59, 999999, tzinfo=tz)
+        except Exception:
+            end_local = None
+    elif end_text:
+        parsed = _parse_iso_datetime(end_text)
+        if parsed is not None:
+            end_local = parsed.astimezone(tz)
+
+    if start_local is None:
+        start_local = datetime(
+            default_start_date.year,
+            default_start_date.month,
+            default_start_date.day,
+            0,
+            0,
+            0,
+            0,
+            tzinfo=tz,
+        )
+    if end_local is None:
+        end_local = datetime(
+            default_end_date.year,
+            default_end_date.month,
+            default_end_date.day,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=tz,
+        )
+    if end_local < start_local:
+        start_local = datetime(
+            default_start_date.year,
+            default_start_date.month,
+            default_start_date.day,
+            0,
+            0,
+            0,
+            0,
+            tzinfo=tz,
+        )
+        end_local = datetime(
+            default_end_date.year,
+            default_end_date.month,
+            default_end_date.day,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=tz,
+        )
+
+    period_meta = {"periodStart": start_local.isoformat(), "periodEnd": end_local.isoformat()}
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc), period_meta
+
+
+def _parse_datetime_utc(value: object) -> Optional[datetime]:
+    """
+    Best-effort ISO datetime parser that returns an aware UTC datetime.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    # Woo sometimes returns ISO-8601 with Z.
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    # Some sources may return a space separator.
+    if " " in text and "T" not in text:
+        text = text.replace(" ", "T", 1)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _normalize_email(value: Optional[str]) -> str:
@@ -2113,64 +2285,7 @@ def get_sales_by_rep(
 ):
     global _sales_by_rep_summary_inflight
 
-    from datetime import timedelta, timezone
-
-    def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
-        if not value:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        try:
-            # Accept date-only values (YYYY-MM-DD).
-            if len(text) == 10 and text[4] == "-" and text[7] == "-":
-                text = f"{text}T00:00:00+00:00"
-            if text.endswith("Z"):
-                text = text[:-1] + "+00:00"
-            parsed = datetime.fromisoformat(text)
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            return parsed.astimezone(timezone.utc)
-        except Exception:
-            return None
-
-    def _period_bounds(now: datetime) -> tuple[datetime, datetime]:
-        # Bi-weekly windows anchored to the 1st of the month:
-        # - Days 1-14
-        # - Days 15-28
-        # - Day 29 -> end of month (short final window)
-        first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        # Compute start offset by 14-day buckets (0-based).
-        bucket = int((now.day - 1) / 14)
-        start = first + timedelta(days=bucket * 14)
-        # Next boundary is either next bucket or month end.
-        next_bucket_days = (bucket + 1) * 14
-        # Month end boundary is the 1st of next month.
-        if first.month == 12:
-            next_month = first.replace(year=first.year + 1, month=1)
-        else:
-            next_month = first.replace(month=first.month + 1)
-        month_days = int((next_month - first).days)
-        end = first + timedelta(days=min(next_bucket_days, month_days))
-        return start, end
-
-    now_utc = datetime.now(timezone.utc)
-    parsed_start = _parse_iso_datetime(period_start)
-    parsed_end = _parse_iso_datetime(period_end)
-    if parsed_start is None or parsed_end is None:
-        computed_start, computed_end = _period_bounds(now_utc)
-        start_dt = parsed_start or computed_start
-        end_dt = parsed_end or computed_end
-    else:
-        start_dt = parsed_start
-        end_dt = parsed_end
-    if end_dt <= start_dt:
-        # Safety fallback to computed window.
-        start_dt, end_dt = _period_bounds(now_utc)
-    period_meta = {
-        "periodStart": start_dt.isoformat(),
-        "periodEnd": end_dt.isoformat(),
-    }
+    start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
     period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
 
     def _meta_value(meta: object, key: str):
@@ -2310,12 +2425,12 @@ def get_sales_by_rep(
                     or woo_order.get("date")
                     or None
                 )
-                created_at = _parse_iso_datetime(str(created_raw)) if created_raw else None
+                created_at = _parse_datetime_utc(created_raw)
                 if not created_at:
                     # If unknown, skip rather than misattribute outside period.
                     skipped_outside_period += 1
                     continue
-                if created_at < start_dt or created_at >= end_dt:
+                if created_at < start_dt or created_at > end_dt:
                     skipped_outside_period += 1
                     continue
 
@@ -2672,6 +2787,585 @@ def get_sales_by_rep(
                 except Exception:
                     pass
             _sales_by_rep_summary_inflight = None
+
+
+def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_end: Optional[str] = None) -> Dict:
+    """
+    Aggregate taxes by destination state for the given period.
+
+    Period parsing/bounds intentionally mirror `get_sales_by_rep()` so the admin dashboard can reuse
+    the same start/end date inputs.
+    """
+    start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
+
+    def _meta_value(meta: object, key: str):
+        if not isinstance(meta, list):
+            return None
+        for entry in meta:
+            if isinstance(entry, dict) and entry.get("key") == key:
+                return entry.get("value")
+        return None
+
+    def _is_truthy(value: object) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        if isinstance(value, (int, float)):
+            try:
+                return float(value) != 0
+            except Exception:
+                return False
+        text = str(value).strip().lower()
+        return text in ("1", "true", "yes", "y", "on")
+
+    def _safe_float(value: object) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except Exception:
+            try:
+                return float(str(value).strip() or 0)
+            except Exception:
+                return 0.0
+
+    period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
+
+    now_ms = int(time.time() * 1000)
+    with _admin_taxes_by_state_lock:
+        cached = _admin_taxes_by_state_cache.get("data")
+        expires_at = int(_admin_taxes_by_state_cache.get("expiresAtMs") or 0)
+        cache_key = _admin_taxes_by_state_cache.get("key")
+        if isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
+            return cached
+        inflight = _admin_taxes_by_state_inflight
+        if inflight is None:
+            inflight = threading.Event()
+            _admin_taxes_by_state_inflight = inflight
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader and inflight is not None:
+        inflight.wait(timeout=35)
+        with _admin_taxes_by_state_lock:
+            cached = _admin_taxes_by_state_cache.get("data")
+            cache_key = _admin_taxes_by_state_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
+                return {**cached, "stale": True}
+        return {"rows": [], "totals": {"orderCount": 0, "taxTotal": 0.0}, **period_meta, "stale": True}
+
+    try:
+        per_page = 100
+        max_pages = 25
+        bucket: Dict[str, Dict[str, float]] = {}
+        order_count = 0
+        tax_total_all = 0.0
+
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            if not orders:
+                break
+
+            reached_start = False
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
+                    continue
+                status = str(woo_order.get("status") or "").strip().lower()
+                if status not in ("processing", "completed"):
+                    continue
+                meta_data = woo_order.get("meta_data") or []
+                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
+                    continue
+
+                created_raw = (
+                    woo_order.get("date_created_gmt")
+                    or woo_order.get("date_created")
+                    or woo_order.get("date")
+                    or None
+                )
+                created_at = _parse_datetime_utc(created_raw)
+                if not created_at:
+                    continue
+                if created_at > end_dt:
+                    continue
+                if created_at < start_dt:
+                    reached_start = True
+                    continue
+
+                shipping = woo_order.get("shipping") or {}
+                billing = woo_order.get("billing") or {}
+                state = (
+                    str((shipping or {}).get("state") or "").strip().upper()
+                    or str((billing or {}).get("state") or "").strip().upper()
+                    or "UNKNOWN"
+                )
+
+                tax_total = _safe_float(_meta_value(meta_data, "peppro_tax_total")) or _safe_float(woo_order.get("total_tax"))
+                if tax_total <= 0:
+                    for fee in woo_order.get("fee_lines") or []:
+                        try:
+                            name = str((fee or {}).get("name") or "").strip().lower()
+                        except Exception:
+                            name = ""
+                        if name and "tax" in name:
+                            tax_total = _safe_float((fee or {}).get("total"))
+                            break
+
+                order_count += 1
+                tax_total_all += tax_total
+                current = bucket.get(state) or {"taxTotal": 0.0, "orderCount": 0.0}
+                current["taxTotal"] = float(current.get("taxTotal") or 0.0) + float(tax_total or 0.0)
+                current["orderCount"] = float(current.get("orderCount") or 0.0) + 1.0
+                bucket[state] = current
+
+            if len(orders) < per_page or reached_start:
+                break
+
+        rows = [
+            {
+                "state": state,
+                "taxTotal": round(float(values.get("taxTotal") or 0.0), 2),
+                "orderCount": int(values.get("orderCount") or 0),
+            }
+            for state, values in bucket.items()
+        ]
+        rows.sort(key=lambda r: float(r.get("taxTotal") or 0.0), reverse=True)
+        result = {"rows": rows, "totals": {"orderCount": order_count, "taxTotal": round(tax_total_all, 2)}, **period_meta}
+
+        now_ms = int(time.time() * 1000)
+        with _admin_taxes_by_state_lock:
+            _admin_taxes_by_state_cache["data"] = result
+            _admin_taxes_by_state_cache["key"] = period_cache_key
+            _admin_taxes_by_state_cache["expiresAtMs"] = now_ms + (_ADMIN_TAXES_BY_STATE_TTL_SECONDS * 1000)
+        return result
+    finally:
+        with _admin_taxes_by_state_lock:
+            if _admin_taxes_by_state_inflight is not None:
+                try:
+                    _admin_taxes_by_state_inflight.set()
+                except Exception:
+                    pass
+            _admin_taxes_by_state_inflight = None
+
+
+def get_products_and_commission_for_admin(*, period_start: Optional[str] = None, period_end: Optional[str] = None) -> Dict:
+    """
+    For the given period:
+      - Count quantity sold per product/sku
+      - Compute commissions:
+          wholesale: 10% of (order_total - tax - shipping)
+          retail: 20% of (order_total - tax - shipping)
+        House/contact-form orders split commission equally across admins.
+      - Include supplier "share" as (base - commission).
+    """
+    start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
+
+    def _meta_value(meta: object, key: str):
+        if not isinstance(meta, list):
+            return None
+        for entry in meta:
+            if isinstance(entry, dict) and entry.get("key") == key:
+                return entry.get("value")
+        return None
+
+    def _is_truthy(value: object) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        if isinstance(value, (int, float)):
+            try:
+                return float(value) != 0
+            except Exception:
+                return False
+        text = str(value).strip().lower()
+        return text in ("1", "true", "yes", "y", "on")
+
+    def _safe_float(value: object) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except Exception:
+            try:
+                return float(str(value).strip() or 0)
+            except Exception:
+                return 0.0
+
+    period_cache_key = f"{period_meta['periodStart']}::{period_meta['periodEnd']}"
+
+    now_ms = int(time.time() * 1000)
+    with _admin_products_commission_lock:
+        cached = _admin_products_commission_cache.get("data")
+        expires_at = int(_admin_products_commission_cache.get("expiresAtMs") or 0)
+        cache_key = _admin_products_commission_cache.get("key")
+        if isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
+            return cached
+        inflight = _admin_products_commission_inflight
+        if inflight is None:
+            inflight = threading.Event()
+            _admin_products_commission_inflight = inflight
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader and inflight is not None:
+        inflight.wait(timeout=35)
+        with _admin_products_commission_lock:
+            cached = _admin_products_commission_cache.get("data")
+            cache_key = _admin_products_commission_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
+                return {**cached, "stale": True}
+        return {"products": [], "commissions": [], "totals": {}, **period_meta, "stale": True}
+
+    try:
+        users = user_repository.get_all()
+        admins = [u for u in users if (u.get("role") or "").lower() == "admin"]
+        reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+        rep_records_list = sales_rep_repository.get_all()
+
+        def _norm_email(value: object) -> str:
+            return str(value or "").strip().lower()
+
+        user_rep_id_by_email: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            email = _norm_email(rep.get("email"))
+            if rep_id and email:
+                user_rep_id_by_email[email] = str(rep_id)
+
+        alias_to_rep_id: Dict[str, str] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            if rep_id:
+                rep_id_str = str(rep_id)
+                alias_to_rep_id[rep_id_str] = rep_id_str
+
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            rep_id_str = str(rep_id)
+            rep_email = _norm_email(rep.get("email"))
+            canonical = user_rep_id_by_email.get(rep_email) or rep_id_str
+            alias_to_rep_id[rep_id_str] = canonical
+            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            if legacy_id:
+                alias_to_rep_id[str(legacy_id)] = canonical
+
+        doctors_by_email = {}
+        for u in users:
+            if (u.get("role") or "").lower() not in ("doctor", "test_doctor"):
+                continue
+            email = (u.get("email") or "").strip().lower()
+            if email:
+                doctors_by_email[email] = u
+
+        recipient_rows: Dict[str, Dict[str, object]] = {}
+        for rep in reps:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            recipient_rows[str(rep_id)] = {"id": str(rep_id), "name": rep.get("name") or "Sales Rep", "role": "sales_rep", "amount": 0.0}
+        for rep in rep_records_list:
+            rep_id = rep.get("id")
+            if not rep_id:
+                continue
+            canonical = alias_to_rep_id.get(str(rep_id), str(rep_id))
+            if canonical in recipient_rows:
+                continue
+            recipient_rows[canonical] = {"id": canonical, "name": rep.get("name") or "Sales Rep", "role": "sales_rep", "amount": 0.0}
+        for admin in admins:
+            admin_id = admin.get("id")
+            if not admin_id:
+                continue
+            recipient_rows[str(admin_id)] = {"id": str(admin_id), "name": admin.get("name") or "Admin", "role": "admin", "amount": 0.0}
+
+        supplier_name = str(os.environ.get("COMMISSION_SUPPLIER_NAME") or "Supplier").strip() or "Supplier"
+        supplier_row_id = "__supplier__"
+        recipient_rows[supplier_row_id] = {"id": supplier_row_id, "name": supplier_name, "role": "supplier", "amount": 0.0}
+
+        admin_ids = [str(a.get("id")) for a in admins if a.get("id")]
+
+        per_page = 100
+        max_pages = 25
+        orders_seen = 0
+        product_totals: Dict[str, Dict[str, object]] = {}
+        attributed_orders: List[Dict[str, object]] = []
+        skipped_status = 0
+        skipped_refunded = 0
+        skipped_outside_period = 0
+
+        for page in range(1, max_pages + 1):
+            payload, _meta = woo_commerce.fetch_catalog_proxy(
+                "orders",
+                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
+            )
+            orders = payload if isinstance(payload, list) else []
+            if not orders:
+                break
+
+            reached_start = False
+            for woo_order in orders:
+                if not isinstance(woo_order, dict):
+                    continue
+                status = str(woo_order.get("status") or "").strip().lower()
+                if status not in ("processing", "completed"):
+                    skipped_status += 1
+                    continue
+                meta_data = woo_order.get("meta_data") or []
+                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
+                    skipped_refunded += 1
+                    continue
+
+                created_raw = (
+                    woo_order.get("date_created_gmt")
+                    or woo_order.get("date_created")
+                    or woo_order.get("date")
+                    or None
+                )
+                created_at = _parse_datetime_utc(created_raw)
+                if not created_at:
+                    skipped_outside_period += 1
+                    continue
+                if created_at > end_dt:
+                    skipped_outside_period += 1
+                    continue
+                if created_at < start_dt:
+                    reached_start = True
+                    skipped_outside_period += 1
+                    continue
+
+                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+
+                rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
+                rep_id = str(rep_id).strip() if rep_id is not None else ""
+                if rep_id:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                if not rep_id:
+                    rep_id = user_rep_id_by_email.get(billing_email, "")
+
+                if not rep_id:
+                    doctor = doctors_by_email.get(billing_email)
+                    rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                    if rep_id:
+                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
+                recipient_id = rep_id
+                if recipient_id and recipient_id not in recipient_rows:
+                    # If an admin id shows up as attribution, include it.
+                    admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
+                    if admin:
+                        recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": admin.get("name") or "Admin", "role": "admin", "amount": 0.0}
+                    else:
+                        recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": f"User {recipient_id}", "role": "unknown", "amount": 0.0}
+
+                if not recipient_id:
+                    # House orders only for contact-form sourced doctors.
+                    is_house_contact_form = False
+                    if billing_email:
+                        doctor = doctors_by_email.get(billing_email)
+                        if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
+                            is_house_contact_form = True
+                        else:
+                            try:
+                                prospect = sales_prospect_repository.find_by_contact_email(billing_email)
+                                if prospect and str(prospect.get("salesRepId") or "") == "house":
+                                    is_house_contact_form = True
+                            except Exception:
+                                is_house_contact_form = False
+                    if is_house_contact_form:
+                        recipient_id = "__house__"
+
+                # Product quantities
+                for item in woo_order.get("line_items") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    qty = int(_safe_float(item.get("quantity")))
+                    if qty <= 0:
+                        continue
+                    sku = str(item.get("sku") or "").strip()
+                    product_id = item.get("product_id")
+                    variation_id = item.get("variation_id")
+                    key = sku or f"id:{product_id}:{variation_id}"
+                    entry = product_totals.get(key) or {
+                        "key": key,
+                        "sku": sku or None,
+                        "productId": product_id,
+                        "variationId": variation_id,
+                        "name": item.get("name") or sku or str(product_id or ""),
+                        "quantity": 0,
+                    }
+                    entry["quantity"] = int(entry.get("quantity") or 0) + qty
+                    product_totals[key] = entry
+
+                # Commission base + pricing mode hint
+                total = _safe_float(woo_order.get("total"))
+                shipping_total = _safe_float(woo_order.get("shipping_total"))
+                tax_total = _safe_float(_meta_value(meta_data, "peppro_tax_total")) or _safe_float(woo_order.get("total_tax"))
+                pricing_mode_hint = (
+                    _meta_value(meta_data, "peppro_pricing_mode")
+                    or _meta_value(meta_data, "peppro_pricingMode")
+                    or _meta_value(meta_data, "pricing_mode")
+                    or _meta_value(meta_data, "pricingMode")
+                )
+                attributed_orders.append(
+                    {
+                        "recipientId": recipient_id or "",
+                        "total": total,
+                        "shippingTotal": shipping_total,
+                        "taxTotal": tax_total,
+                        "wooId": woo_order.get("id"),
+                        "wooNumber": woo_order.get("number"),
+                        "pricingModeHint": pricing_mode_hint,
+                    }
+                )
+                orders_seen += 1
+
+            if len(orders) < per_page or reached_start:
+                break
+
+        def _normalize_token(value: object) -> str:
+            if value is None:
+                return ""
+            text = str(value).strip()
+            if not text:
+                return ""
+            return text[1:] if text.startswith("#") else text
+
+        woo_ids = []
+        woo_numbers = []
+        for entry in attributed_orders:
+            woo_id = _normalize_token(entry.get("wooId"))
+            if woo_id:
+                woo_ids.append(woo_id)
+            woo_num = _normalize_token(entry.get("wooNumber"))
+            if woo_num:
+                woo_numbers.append(woo_num)
+
+        pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
+
+        def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
+            hint = str(entry.get("pricingModeHint") or "").strip().lower()
+            if hint in ("retail", "wholesale"):
+                return hint
+            woo_id = _normalize_token(entry.get("wooId"))
+            if woo_id and woo_id in pricing_mode_lookup:
+                return pricing_mode_lookup[woo_id]
+            woo_number = _normalize_token(entry.get("wooNumber"))
+            if woo_number and woo_number in pricing_mode_lookup:
+                return pricing_mode_lookup[woo_number]
+            return "wholesale"
+
+        def _add_commission(recipient_id: str, amount: float) -> None:
+            row = recipient_rows.get(recipient_id)
+            if not row:
+                recipient_rows[recipient_id] = {"id": recipient_id, "name": recipient_id, "role": "unknown", "amount": 0.0}
+                row = recipient_rows[recipient_id]
+            row["amount"] = float(row.get("amount") or 0.0) + float(amount or 0.0)
+
+        def _split_amount(amount: float, targets: List[str]) -> Dict[str, float]:
+            ids = [str(t) for t in (targets or []) if str(t).strip()]
+            if not ids:
+                return {}
+            cents = int(round(float(amount or 0.0) * 100))
+            each = int(cents // len(ids))
+            remainder = int(cents - (each * len(ids)))
+            allocations: Dict[str, float] = {}
+            for idx, target_id in enumerate(ids):
+                portion = each + (1 if idx < remainder else 0)
+                allocations[target_id] = portion / 100.0
+            return allocations
+
+        totals = {
+            "ordersCounted": 0,
+            "commissionableBase": 0.0,
+            "commissionTotal": 0.0,
+            "supplierShare": 0.0,
+            "wholesaleBase": 0.0,
+            "retailBase": 0.0,
+        }
+
+        for entry in attributed_orders:
+            recipient_id = str(entry.get("recipientId") or "").strip()
+            base = max(0.0, float(entry.get("total") or 0.0) - float(entry.get("shippingTotal") or 0.0) - float(entry.get("taxTotal") or 0.0))
+            if base <= 0:
+                continue
+            pricing_mode = _resolve_pricing_mode(entry)
+            rate = 0.2 if pricing_mode == "retail" else 0.1
+            commission = round(base * rate, 2)
+            supplier_share = round(base - commission, 2)
+
+            totals["ordersCounted"] += 1
+            totals["commissionableBase"] = round(float(totals["commissionableBase"]) + base, 2)
+            totals["commissionTotal"] = round(float(totals["commissionTotal"]) + commission, 2)
+            totals["supplierShare"] = round(float(totals["supplierShare"]) + supplier_share, 2)
+            if pricing_mode == "retail":
+                totals["retailBase"] = round(float(totals["retailBase"]) + base, 2)
+            else:
+                totals["wholesaleBase"] = round(float(totals["wholesaleBase"]) + base, 2)
+
+            if recipient_id == "__house__":
+                allocations = _split_amount(commission, admin_ids)
+                if not allocations:
+                    # If no admins are configured, keep the commission on the supplier line.
+                    _add_commission(supplier_row_id, commission)
+                else:
+                    for target_id, amount in allocations.items():
+                        _add_commission(target_id, amount)
+            elif recipient_id:
+                _add_commission(recipient_id, commission)
+
+            _add_commission(supplier_row_id, supplier_share)
+
+        products = list(product_totals.values())
+        products.sort(key=lambda p: int(p.get("quantity") or 0), reverse=True)
+
+        commissions = list(recipient_rows.values())
+        commissions.sort(key=lambda r: float(r.get("amount") or 0.0), reverse=True)
+
+        result = {
+            "products": products,
+            "commissions": [
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "role": row.get("role"),
+                    "amount": round(float(row.get("amount") or 0.0), 2),
+                }
+                for row in commissions
+            ],
+            "totals": totals,
+            "debug": {
+                "ordersSeen": orders_seen,
+                "skippedStatus": skipped_status,
+                "skippedRefunded": skipped_refunded,
+                "skippedOutsidePeriod": skipped_outside_period,
+            },
+            **period_meta,
+        }
+
+        now_ms = int(time.time() * 1000)
+        with _admin_products_commission_lock:
+            _admin_products_commission_cache["data"] = result
+            _admin_products_commission_cache["key"] = period_cache_key
+            _admin_products_commission_cache["expiresAtMs"] = now_ms + (_ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS * 1000)
+        return result
+    finally:
+        with _admin_products_commission_lock:
+            if _admin_products_commission_inflight is not None:
+                try:
+                    _admin_products_commission_inflight.set()
+                except Exception:
+                    pass
+            _admin_products_commission_inflight = None
 
 
 def _service_error(message: str, status: int) -> Exception:

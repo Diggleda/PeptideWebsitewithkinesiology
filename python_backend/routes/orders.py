@@ -222,6 +222,38 @@ def admin_sales_by_rep():
     return handle_action(action)
 
 
+@blueprint.get("/admin/taxes-by-state")
+@require_auth
+def admin_taxes_by_state():
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        period_start = request.args.get("periodStart") or request.args.get("start") or None
+        period_end = request.args.get("periodEnd") or request.args.get("end") or None
+        return order_service.get_taxes_by_state_for_admin(period_start=period_start, period_end=period_end)
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/product-sales-commission")
+@require_auth
+def admin_products_commission():
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+        period_start = request.args.get("periodStart") or request.args.get("start") or None
+        period_end = request.args.get("periodEnd") or request.args.get("end") or None
+        return order_service.get_products_and_commission_for_admin(period_start=period_start, period_end=period_end)
+
+    return handle_action(action)
+
+
 @blueprint.get("/admin/users/<user_id>")
 @require_auth
 def admin_orders_for_user(user_id: str):

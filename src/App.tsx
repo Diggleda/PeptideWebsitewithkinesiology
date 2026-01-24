@@ -5866,6 +5866,39 @@ export default function App() {
   const [salesRepSalesSummaryError, setSalesRepSalesSummaryError] = useState<
     string | null
   >(null);
+  const [adminTaxesByStateRows, setAdminTaxesByStateRows] = useState<
+    { state: string; taxTotal: number; orderCount: number }[]
+  >([]);
+  const [adminTaxesByStateMeta, setAdminTaxesByStateMeta] = useState<{
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    totals?: { orderCount: number; taxTotal: number } | null;
+  } | null>(null);
+  const [adminTaxesByStateLoading, setAdminTaxesByStateLoading] = useState(false);
+  const [adminTaxesByStateError, setAdminTaxesByStateError] = useState<string | null>(null);
+
+  const [adminProductSalesRows, setAdminProductSalesRows] = useState<
+    {
+      key: string;
+      sku?: string | null;
+      productId?: number | null;
+      variationId?: number | null;
+      name: string;
+      quantity: number;
+    }[]
+  >([]);
+  const [adminCommissionRows, setAdminCommissionRows] = useState<
+    { id: string; name: string; role: string; amount: number }[]
+  >([]);
+  const [adminProductsCommissionMeta, setAdminProductsCommissionMeta] = useState<{
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    totals?: Record<string, any> | null;
+  } | null>(null);
+  const [adminProductsCommissionLoading, setAdminProductsCommissionLoading] =
+    useState(false);
+  const [adminProductsCommissionError, setAdminProductsCommissionError] =
+    useState<string | null>(null);
   const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
     () => getDefaultSalesBySalesRepPeriod().start,
   );
@@ -6000,6 +6033,220 @@ export default function App() {
     user?.role,
   ]);
 
+  const refreshAdminTaxesByState = useCallback(async () => {
+    if (!user || !isAdmin(user.role)) return;
+    setAdminTaxesByStateLoading(true);
+    setAdminTaxesByStateError(null);
+    try {
+      const defaults = getDefaultSalesBySalesRepPeriod();
+      const periodStart = salesRepPeriodStart || defaults.start;
+      const periodEnd = salesRepPeriodEnd || defaults.end;
+      const response = await ordersAPI.getTaxesByStateForAdmin({
+        periodStart: periodStart || undefined,
+        periodEnd: periodEnd || undefined,
+      });
+      const rows = Array.isArray((response as any)?.rows)
+        ? ((response as any).rows as any[])
+        : Array.isArray(response)
+          ? (response as any[])
+          : [];
+      setAdminTaxesByStateRows(
+        rows.map((row) => ({
+          state: String((row as any)?.state || "UNKNOWN"),
+          taxTotal: Number((row as any)?.taxTotal || 0),
+          orderCount: Number((row as any)?.orderCount || 0),
+        })),
+      );
+      setAdminTaxesByStateMeta({
+        periodStart: (response as any)?.periodStart ?? null,
+        periodEnd: (response as any)?.periodEnd ?? null,
+        totals: (response as any)?.totals ?? null,
+      });
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string"
+          ? error.message
+          : "Unable to load taxes by state.";
+      setAdminTaxesByStateError(message);
+      setAdminTaxesByStateRows([]);
+      setAdminTaxesByStateMeta(null);
+    } finally {
+      setAdminTaxesByStateLoading(false);
+    }
+  }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
+
+  const downloadAdminTaxesByStateCsv = useCallback(async () => {
+    try {
+      const exportedAt = new Date();
+      const exportedAtIso = exportedAt.toISOString();
+      const escapeCsv = (value: unknown) => {
+        if (value === null || value === undefined) return "";
+        const text = String(value);
+        if (/[",\n\r]/.test(text)) {
+          return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+      };
+      const periodStart = adminTaxesByStateMeta?.periodStart
+        ? String(adminTaxesByStateMeta.periodStart).slice(0, 10)
+        : null;
+      const periodEnd = adminTaxesByStateMeta?.periodEnd
+        ? String(adminTaxesByStateMeta.periodEnd).slice(0, 10)
+        : null;
+      const periodLabel =
+        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+
+      const rows = [
+        ["State", "Orders", "Tax Total"].join(","),
+        ...adminTaxesByStateRows.map((row) =>
+          [
+            escapeCsv(row.state),
+            escapeCsv(Number(row.orderCount || 0)),
+            escapeCsv(Number(row.taxTotal || 0).toFixed(2)),
+          ].join(","),
+        ),
+      ];
+      const csv = rows.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `taxes-by-state${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("[Taxes by State] CSV export failed", error);
+      toast.error("Unable to download report right now.");
+    }
+  }, [adminTaxesByStateMeta?.periodEnd, adminTaxesByStateMeta?.periodStart, adminTaxesByStateRows]);
+
+  const refreshAdminProductsCommission = useCallback(async () => {
+    if (!user || !isAdmin(user.role)) return;
+    setAdminProductsCommissionLoading(true);
+    setAdminProductsCommissionError(null);
+    try {
+      const defaults = getDefaultSalesBySalesRepPeriod();
+      const periodStart = salesRepPeriodStart || defaults.start;
+      const periodEnd = salesRepPeriodEnd || defaults.end;
+      const response = await ordersAPI.getProductSalesCommissionForAdmin({
+        periodStart: periodStart || undefined,
+        periodEnd: periodEnd || undefined,
+      });
+      const products = Array.isArray((response as any)?.products)
+        ? ((response as any).products as any[])
+        : [];
+      const commissions = Array.isArray((response as any)?.commissions)
+        ? ((response as any).commissions as any[])
+        : [];
+      setAdminProductSalesRows(
+        products.map((row) => ({
+          key: String((row as any)?.key || (row as any)?.sku || ""),
+          sku: (row as any)?.sku ?? null,
+          productId: (row as any)?.productId ?? null,
+          variationId: (row as any)?.variationId ?? null,
+          name: String((row as any)?.name || ""),
+          quantity: Number((row as any)?.quantity || 0),
+        })),
+      );
+      setAdminCommissionRows(
+        commissions.map((row) => ({
+          id: String((row as any)?.id || ""),
+          name: String((row as any)?.name || ""),
+          role: String((row as any)?.role || ""),
+          amount: Number((row as any)?.amount || 0),
+        })),
+      );
+      setAdminProductsCommissionMeta({
+        periodStart: (response as any)?.periodStart ?? null,
+        periodEnd: (response as any)?.periodEnd ?? null,
+        totals: (response as any)?.totals ?? null,
+      });
+    } catch (error: any) {
+      const message =
+        typeof error?.message === "string"
+          ? error.message
+          : "Unable to load product/commission report.";
+      setAdminProductsCommissionError(message);
+      setAdminProductSalesRows([]);
+      setAdminCommissionRows([]);
+      setAdminProductsCommissionMeta(null);
+    } finally {
+      setAdminProductsCommissionLoading(false);
+    }
+  }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
+
+  const downloadAdminProductsCommissionCsv = useCallback(async () => {
+    try {
+      const exportedAt = new Date();
+      const exportedAtIso = exportedAt.toISOString();
+      const escapeCsv = (value: unknown) => {
+        if (value === null || value === undefined) return "";
+        const text = String(value);
+        if (/[",\n\r]/.test(text)) {
+          return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+      };
+      const periodStart = adminProductsCommissionMeta?.periodStart
+        ? String(adminProductsCommissionMeta.periodStart).slice(0, 10)
+        : null;
+      const periodEnd = adminProductsCommissionMeta?.periodEnd
+        ? String(adminProductsCommissionMeta.periodEnd).slice(0, 10)
+        : null;
+      const periodLabel =
+        periodStart && periodEnd ? `_${periodStart}_to_${periodEnd}` : "";
+      const stamp = exportedAtIso.replace(/[:.]/g, "-");
+
+      const rows: string[] = [];
+      rows.push(["Report", "Products sold"].join(","));
+      rows.push(["Product", "SKU", "ProductId", "Quantity"].join(","));
+      adminProductSalesRows.forEach((product) => {
+        rows.push(
+          [
+            escapeCsv(product.name),
+            escapeCsv(product.sku || ""),
+            escapeCsv(product.productId ?? ""),
+            escapeCsv(Number(product.quantity || 0)),
+          ].join(","),
+        );
+      });
+      rows.push("");
+      rows.push(["Report", "Commissions"].join(","));
+      rows.push(["Recipient", "Role", "Amount"].join(","));
+      adminCommissionRows.forEach((row) => {
+        rows.push(
+          [
+            escapeCsv(row.name),
+            escapeCsv(row.role),
+            escapeCsv(Number(row.amount || 0).toFixed(2)),
+          ].join(","),
+        );
+      });
+
+      const csv = rows.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `products-and-commission${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("[Products/Commission] CSV export failed", error);
+      toast.error("Unable to download report right now.");
+    }
+  }, [
+    adminCommissionRows,
+    adminProductSalesRows,
+    adminProductsCommissionMeta?.periodEnd,
+    adminProductsCommissionMeta?.periodStart,
+  ]);
+
   const refreshSalesBySalesRepSummary = useCallback(async () => {
     if (!user || !isAdmin(user.role)) return;
     setSalesRepSalesSummaryLoading(true);
@@ -6060,7 +6307,15 @@ export default function App() {
     }
     salesByRepAutoLoadedRef.current = true;
     void refreshSalesBySalesRepSummary();
-  }, [refreshSalesBySalesRepSummary, user?.id, user?.role]);
+    void refreshAdminTaxesByState();
+    void refreshAdminProductsCommission();
+  }, [
+    refreshAdminProductsCommission,
+    refreshAdminTaxesByState,
+    refreshSalesBySalesRepSummary,
+    user?.id,
+    user?.role,
+  ]);
 
   useEffect(() => {
     if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
@@ -13786,13 +14041,15 @@ export default function App() {
                     <p className="text-sm text-slate-600">
                       Orders placed by doctors assigned to each rep.
                     </p>
-	                    <form
-	                      className="sales-rep-period-form mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
-	                      onSubmit={(event) => {
-	                        event.preventDefault();
-	                        void refreshSalesBySalesRepSummary();
-	                      }}
-	                    >
+		                    <form
+		                      className="sales-rep-period-form mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
+		                      onSubmit={(event) => {
+		                        event.preventDefault();
+		                        void refreshSalesBySalesRepSummary();
+                            void refreshAdminTaxesByState();
+                            void refreshAdminProductsCommission();
+		                      }}
+		                    >
 	                      {["Start", "End"].map((labelText, index) => {
 	                        const value =
 	                          index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
@@ -13828,21 +14085,23 @@ export default function App() {
                           Apply
                         </Button>
                         <Button
-                          type="button"
-                          size="sm"
-                              variant="outline"
-                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-                              onClick={() => {
-                                const defaults = getDefaultSalesBySalesRepPeriod();
-                                setSalesRepPeriodStart(defaults.start);
-                                setSalesRepPeriodEnd(defaults.end);
-                                void refreshSalesBySalesRepSummary();
-                              }}
-                            >
-                              Clear
-                            </Button>
-                      </div>
-                    </form>
+	                          type="button"
+	                          size="sm"
+	                              variant="outline"
+	                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
+	                              onClick={() => {
+	                                const defaults = getDefaultSalesBySalesRepPeriod();
+	                                setSalesRepPeriodStart(defaults.start);
+	                                setSalesRepPeriodEnd(defaults.end);
+	                                void refreshSalesBySalesRepSummary();
+                                  void refreshAdminTaxesByState();
+                                  void refreshAdminProductsCommission();
+	                              }}
+	                            >
+	                              Clear
+	                            </Button>
+	                      </div>
+	                    </form>
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
                     <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
@@ -14014,6 +14273,212 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {isAdmin(user?.role) && (
+            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-slate-900">Taxes by State</h3>
+                    <p className="text-sm text-slate-600">
+                      Cumulative tax totals by destination state for the selected period.
+                    </p>
+                    {adminTaxesByStateMeta?.totals && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
+                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => void refreshAdminTaxesByState()}
+                      disabled={adminTaxesByStateLoading}
+                      aria-busy={adminTaxesByStateLoading}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${adminTaxesByStateLoading ? "animate-spin" : ""}`}
+                        aria-hidden="true"
+                      />
+                      {adminTaxesByStateLoading ? "Refreshing..." : "Refresh"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => void downloadAdminTaxesByStateCsv()}
+                      disabled={adminTaxesByStateRows.length === 0}
+                      title="Download CSV"
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      Download CSV
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {adminTaxesByStateError ? (
+                <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+                  {adminTaxesByStateError}
+                </div>
+              ) : adminTaxesByStateLoading ? (
+                <div className="px-4 py-3 text-sm mb-3 text-slate-500">Loading taxes…</div>
+              ) : adminTaxesByStateRows.length === 0 ? (
+                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No tax data for this period.</div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
+                  <div className="grid grid-cols-3 gap-3 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                    <div>State</div>
+                    <div className="text-right">Orders</div>
+                    <div className="text-right">Tax</div>
+                  </div>
+                  <ul className="divide-y divide-slate-200/70">
+                    {adminTaxesByStateRows.map((row) => (
+                      <li key={row.state} className="grid grid-cols-3 gap-3 px-4 py-3">
+                        <div className="text-sm font-semibold text-slate-900">{row.state}</div>
+                        <div className="text-sm text-right text-slate-800 tabular-nums">
+                          {Number(row.orderCount || 0)}
+                        </div>
+                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+                          {formatCurrency(Number(row.taxTotal || 0))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isAdmin(user?.role) && (
+            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
+                    <p className="text-sm text-slate-600">
+                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split across admins).
+                    </p>
+                    {adminProductsCommissionMeta?.totals && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+                        <span>
+                          Base:{" "}
+                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.commissionableBase || 0))}
+                        </span>
+                        <span>
+                          Commission:{" "}
+                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.commissionTotal || 0))}
+                        </span>
+                        <span>
+                          Supplier:{" "}
+                          {formatCurrency(Number((adminProductsCommissionMeta.totals as any)?.supplierShare || 0))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => void refreshAdminProductsCommission()}
+                      disabled={adminProductsCommissionLoading}
+                      aria-busy={adminProductsCommissionLoading}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${adminProductsCommissionLoading ? "animate-spin" : ""}`}
+                        aria-hidden="true"
+                      />
+                      {adminProductsCommissionLoading ? "Refreshing..." : "Refresh"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => void downloadAdminProductsCommissionCsv()}
+                      disabled={adminProductSalesRows.length === 0 && adminCommissionRows.length === 0}
+                      title="Download CSV"
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      Download CSV
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {adminProductsCommissionError ? (
+                <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+                  {adminProductsCommissionError}
+                </div>
+              ) : adminProductsCommissionLoading ? (
+                <div className="px-4 py-3 text-sm mb-3 text-slate-500">Loading report…</div>
+              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
+                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No data for this period.</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
+                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
+                      Products
+                    </div>
+                    <div className="grid grid-cols-[1fr_140px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
+                      <div>Product</div>
+                      <div className="text-right">Qty</div>
+                    </div>
+                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
+                      {adminProductSalesRows.map((row) => (
+                        <li key={row.key} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+                              {row.name}
+                            </div>
+                            <div className="text-xs text-slate-600 truncate">
+                              {row.sku ? `SKU: ${row.sku}` : row.productId != null ? `Product ID: ${row.productId}` : "—"}
+                            </div>
+                          </div>
+                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+                            {Number(row.quantity || 0)}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white/60">
+                    <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 bg-[rgba(95,179,249,0.08)]">
+                      Commission
+                    </div>
+                    <div className="grid grid-cols-[1fr_140px] gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-t border-slate-200/70">
+                      <div>Recipient</div>
+                      <div className="text-right">Amount</div>
+                    </div>
+                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
+                      {adminCommissionRows.map((row) => (
+                        <li key={row.id} className="grid grid-cols-[1fr_140px] gap-3 px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+                              {row.name}
+                            </div>
+                            <div className="text-xs text-slate-600 truncate">{row.role || "—"}</div>
+                          </div>
+                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+                            {formatCurrency(Number(row.amount || 0))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
 	          {hasChartData && (
 	            <div className="sales-rep-combined-chart">
 	              <div className="sales-rep-chart-header">

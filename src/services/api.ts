@@ -1330,6 +1330,28 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  getTaxesByStateForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.periodStart) params.set('periodStart', options.periodStart);
+    if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/orders/admin/taxes-by-state?${query}`
+      : `${API_BASE_URL}/orders/admin/taxes-by-state`;
+    return fetchWithAuth(url);
+  },
+
+  getProductSalesCommissionForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.periodStart) params.set('periodStart', options.periodStart);
+    if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/orders/admin/product-sales-commission?${query}`
+      : `${API_BASE_URL}/orders/admin/product-sales-commission`;
+    return fetchWithAuth(url);
+  },
+
   getAdminOrdersForUser: async (userId: string | number) => {
     if (!userId) {
       throw new Error('userId is required');
