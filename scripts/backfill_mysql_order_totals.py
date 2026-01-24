@@ -44,6 +44,17 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Write updates to MySQL.")
     parser.add_argument("--limit", type=int, default=5000, help="Max rows to scan.")
     parser.add_argument("--only-mismatched", action="store_true", help="Only update when the computed total differs.")
+    parser.add_argument(
+        "--force-mysql",
+        action="store_true",
+        help="Force MySQL enabled even if MYSQL_ENABLED is not set (uses MYSQL_* env vars).",
+    )
+    parser.add_argument(
+        "--table",
+        choices=("orders", "peppro_orders"),
+        default="orders",
+        help="Which table to backfill (python backend uses `orders`; node backend uses `peppro_orders`).",
+    )
     args = parser.parse_args()
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +69,8 @@ def main() -> int:
     from python_backend.storage import init_storage  # noqa: WPS433
 
     config = load_config()
+    if args.force_mysql and not bool(config.mysql.get("enabled")):
+        config.mysql["enabled"] = True
     configure_services(config)
     init_database(config)
     # Some repositories expect storage to be initialised even if MySQL is enabled.
@@ -67,14 +80,21 @@ def main() -> int:
         pass
 
     if not bool(get_config().mysql.get("enabled")):
+        # Most installs gate MySQL on MYSQL_ENABLED=true.
+        has_creds = bool((config.mysql.get("user") or "").strip()) and bool((config.mysql.get("database") or "").strip())
+        hint = "Set MYSQL_ENABLED=true (or pass --force-mysql) and ensure MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE are set."
+        if has_creds:
+            hint = f"{hint} (Credentials appear present; MYSQL_ENABLED may just be unset.)"
         print("MySQL is not enabled in config; nothing to backfill.", file=sys.stderr)
+        print(hint, file=sys.stderr)
         return 2
 
     limit = max(1, min(int(args.limit or 5000), 200000))
+    table = args.table
     rows = mysql_client.fetch_all(
-        """
+        f"""
         SELECT id, total, payload
-        FROM orders
+        FROM {table}
         ORDER BY created_at DESC
         LIMIT %(limit)s
         """,
@@ -91,11 +111,13 @@ def main() -> int:
         if not order_id or not payload_raw:
             continue
         try:
-            payload = json.loads(payload_raw) if isinstance(payload_raw, str) else {}
+            payload_obj = json.loads(payload_raw) if isinstance(payload_raw, str) else {}
         except Exception:
-            payload = {}
-        if not isinstance(payload, dict) or not payload:
+            payload_obj = {}
+        if not isinstance(payload_obj, dict) or not payload_obj:
             continue
+        # peppro_orders stores { order, integrations }; orders stores the order dict.
+        payload = payload_obj.get("order") if isinstance(payload_obj.get("order"), dict) else payload_obj
 
         computed = _compute_grand_total(payload, row_total)
         if args.only_mismatched and abs(computed - row_total) < 0.005:
@@ -107,7 +129,7 @@ def main() -> int:
             continue
 
         mysql_client.execute(
-            "UPDATE orders SET total = %(total)s, updated_at = NOW() WHERE id = %(id)s",
+            f"UPDATE {table} SET total = %(total)s, updated_at = NOW() WHERE id = %(id)s",
             {"id": order_id, "total": computed},
         )
         updated += 1

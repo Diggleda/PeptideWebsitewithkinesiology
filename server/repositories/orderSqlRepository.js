@@ -9,6 +9,45 @@ const sanitizeString = (value) => {
   return str.length > 0 ? str : null;
 };
 
+const toNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
+
+const computeGrandTotal = (order) => {
+  if (!order || typeof order !== 'object') {
+    return 0;
+  }
+
+  const grandTotal = toNumber(order.grandTotal, NaN);
+  if (Number.isFinite(grandTotal)) {
+    return roundCurrency(grandTotal);
+  }
+
+  const itemsSubtotal = toNumber(
+    order.itemsSubtotal ?? order.items_subtotal ?? order.itemsTotal ?? order.items_total,
+    NaN,
+  );
+  const shippingTotal = toNumber(order.shippingTotal ?? order.shipping_total, 0);
+  const taxTotal = toNumber(order.taxTotal ?? order.totalTax ?? order.total_tax, 0);
+  const discountTotal = toNumber(
+    order.appliedReferralCredit ?? order.discountTotal ?? order.discount_total ?? order.totalDiscount,
+    0,
+  );
+
+  if (Number.isFinite(itemsSubtotal)) {
+    return roundCurrency(itemsSubtotal - discountTotal + shippingTotal + taxTotal);
+  }
+
+  // If we don't have a reliable subtotal, fall back to whatever the upstream total is.
+  return roundCurrency(order.total ?? order.total_ex_tax ?? 0);
+};
+
 const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   if (!mysqlClient.isEnabled()) {
     return {
@@ -29,15 +68,19 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     pricingMode: normalizePricingMode(order.pricingMode),
     wooOrderId: wooOrderId || null,
     shipStationOrderId: shipStationOrderId || null,
-    total: Number(order.total) || 0,
-    shippingTotal: Number(order.shippingTotal) || 0,
+    total: computeGrandTotal(order),
+    shippingTotal: toNumber(order.shippingTotal ?? order.shipping_total, 0),
     shippingCarrier: order.shippingEstimate?.carrierId || order.shippingEstimate?.serviceCode || null,
     shippingService: order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || null,
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
     status: order.status || 'pending',
     paymentDetails: sanitizeString(order.paymentDetails || order.paymentMethod || null),
     payload: JSON.stringify({
-      order,
+      order: {
+        ...(order && typeof order === 'object' ? order : {}),
+        total: computeGrandTotal(order),
+        grandTotal: computeGrandTotal(order),
+      },
       integrations: order.integrationDetails,
     }),
     createdAt: order.createdAt || new Date().toISOString(),
@@ -147,8 +190,21 @@ const mapRowToOrder = (row) => {
       row.woo_order_id,
     )),
     shipStationOrderId: sanitizeString(coalesce(payloadOrder.shipStationOrderId, row.shipstation_order_id)),
-    total: Number(coalesce(payloadOrder.total, row.total)) || 0,
-    shippingTotal: Number(coalesce(payloadOrder.shippingTotal, row.shipping_total)) || 0,
+    total: (() => {
+      const rowTotal = toNumber(row.total, NaN);
+      if (Number.isFinite(rowTotal) && rowTotal > 0) {
+        return roundCurrency(rowTotal);
+      }
+      const payloadGrand = computeGrandTotal(payloadOrder);
+      return payloadGrand > 0 ? payloadGrand : roundCurrency(payloadOrder.total ?? 0);
+    })(),
+    shippingTotal: (() => {
+      const rowShipping = toNumber(row.shipping_total, NaN);
+      if (Number.isFinite(rowShipping) && rowShipping > 0) {
+        return roundCurrency(rowShipping);
+      }
+      return roundCurrency(payloadOrder.shippingTotal ?? payloadOrder.shipping_total ?? 0);
+    })(),
     shippingCarrier: sanitizeString(coalesce(payloadOrder.shippingCarrier, row.shipping_carrier)),
     shippingService: sanitizeString(coalesce(payloadOrder.shippingService, row.shipping_service)),
     physicianCertificationAccepted: typeof payloadOrder.physicianCertificationAccepted === 'boolean'
