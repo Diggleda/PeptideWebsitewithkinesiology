@@ -52,9 +52,17 @@ type AuthTabEvent = {
 const AUTH_TAB_ID_KEY = 'peppro_tab_id_v1';
 const AUTH_SESSION_ID_KEY = 'peppro_session_id_v1';
 const AUTH_USER_ID_KEY = 'peppro_user_id_v1';
+const AUTH_EMAIL_KEY = 'peppro_auth_email_v1';
 const AUTH_SESSION_STARTED_AT_KEY = 'peppro_session_started_at_v1';
 const AUTH_EVENT_STORAGE_KEY = 'peppro_auth_event_v1';
 const AUTH_EVENT_NAME = 'peppro:force-logout';
+
+const MULTI_SESSION_EXEMPT_EMAIL = 'test@doctor.com';
+
+const isMultiSessionExemptEmail = (email?: string | null) =>
+  String(email || '')
+    .trim()
+    .toLowerCase() === MULTI_SESSION_EXEMPT_EMAIL;
 
 const _randomId = () => {
   try {
@@ -142,6 +150,28 @@ const setAuthUserId = (userId: string | null | undefined) => {
   }
 };
 
+const getAuthEmail = () => {
+  try {
+    const value = sessionStorage.getItem(AUTH_EMAIL_KEY);
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const setAuthEmail = (email: string | null | undefined) => {
+  try {
+    const normalized = typeof email === 'string' ? email.trim() : '';
+    if (!normalized) {
+      sessionStorage.removeItem(AUTH_EMAIL_KEY);
+      return;
+    }
+    sessionStorage.setItem(AUTH_EMAIL_KEY, normalized);
+  } catch {
+    // ignore
+  }
+};
+
 const emitAuthEvent = (payload: AuthTabEvent) => {
   if (typeof window === 'undefined') return;
   try {
@@ -185,6 +215,7 @@ const dispatchForceLogout = (reason: string, meta?: { authCode?: string }) => {
 
 const handleIncomingAuthEvent = (payload: AuthTabEvent | null) => {
   if (!payload || payload.type !== 'LOGIN') return;
+  if (isMultiSessionExemptEmail(getAuthEmail())) return;
   const tabId = getOrCreateTabId();
   if (payload.tabId === tabId) return;
 
@@ -282,6 +313,14 @@ const persistAuthToken = (token: string) => {
   // Prefer scoping to account id so other accounts can remain signed in in other tabs.
   // Callers should set `peppro_user_id_v1` (via `setAuthUserId`) before persisting the token.
 
+  if (isMultiSessionExemptEmail(getAuthEmail())) {
+    if (!getSessionId()) {
+      setSessionId(_randomId());
+    }
+    setSessionStartedAt(Date.now());
+    return;
+  }
+
   const sessionId = _randomId();
   setSessionId(sessionId);
   setSessionStartedAt(Date.now());
@@ -307,6 +346,11 @@ const clearAuthToken = () => {
   }
   try {
     sessionStorage.removeItem(AUTH_USER_ID_KEY);
+  } catch {
+    // ignore
+  }
+  try {
+    sessionStorage.removeItem(AUTH_EMAIL_KEY);
   } catch {
     // ignore
   }
@@ -768,6 +812,8 @@ export const authAPI = {
       }),
     });
 
+    setAuthUserId(data?.user?.id);
+    setAuthEmail(data?.user?.email ?? input.email);
     persistAuthToken(data.token);
     return data.user;
   },
@@ -786,6 +832,7 @@ export const authAPI = {
     });
 
     setAuthUserId(data?.user?.id);
+    setAuthEmail(data?.user?.email ?? email);
     persistAuthToken(data.token);
     return data.user;
   },
@@ -839,6 +886,7 @@ export const authAPI = {
     try {
       const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`);
       setAuthUserId((user as any)?.id);
+      setAuthEmail((user as any)?.email);
       return user;
     } catch (error) {
       const maybeAny = error as any;
@@ -851,6 +899,7 @@ export const authAPI = {
       if (isAuthFailure) {
         // Token already cleared by fetchWithAuth(); caller can treat null as "logged out".
         setAuthUserId(null);
+        setAuthEmail(null);
         return null;
       }
       throw error;
@@ -917,6 +966,7 @@ export const authAPI = {
       }
       const data = await response.json();
       setAuthUserId(data?.user?.id);
+      setAuthEmail(data?.user?.email);
       persistAuthToken(data.token);
       return data.user;
     },

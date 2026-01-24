@@ -6078,25 +6078,29 @@ export default function App() {
         : Array.isArray(response)
           ? (response as any[])
           : [];
-      setAdminTaxesByStateRows(
-        rows.map((row) => ({
-          state: String((row as any)?.state || "UNKNOWN"),
-          taxTotal: Number((row as any)?.taxTotal || 0),
-          orderCount: Number((row as any)?.orderCount || 0),
-        })),
-      );
+	      setAdminTaxesByStateRows(
+	        rows
+	          .map((row) => ({
+	            state: String((row as any)?.state || "UNKNOWN"),
+	            taxTotal: Number((row as any)?.taxTotal || 0),
+	            orderCount: Number((row as any)?.orderCount || 0),
+	          }))
+	          .filter((row) => row.orderCount > 0 || row.taxTotal > 0),
+	      );
       const orderTaxesRaw = Array.isArray((response as any)?.orderTaxes)
         ? ((response as any).orderTaxes as any[])
         : [];
-      setAdminTaxesByStateOrders(
-        orderTaxesRaw
-          .map((line) => ({
-            orderNumber: String((line as any)?.orderNumber || ""),
-            state: String((line as any)?.state || "UNKNOWN"),
-            taxTotal: Number((line as any)?.taxTotal || 0),
-          }))
-          .filter((line) => line.orderNumber.trim().length > 0),
-      );
+	      setAdminTaxesByStateOrders(
+	        orderTaxesRaw
+	          .map((line) => ({
+	            orderNumber: String((line as any)?.orderNumber || ""),
+	            state: String((line as any)?.state || "UNKNOWN"),
+	            taxTotal: Number((line as any)?.taxTotal || 0),
+	          }))
+	          .filter(
+	            (line) => line.orderNumber.trim().length > 0 && line.taxTotal > 0,
+	          ),
+	      );
       setAdminTaxesByStateBreakdownOpen(false);
       setAdminTaxesByStateMeta({
         periodStart: (response as any)?.periodStart ?? null,
@@ -6198,27 +6202,40 @@ export default function App() {
         return true;
       });
       setAdminProductSalesRows(
-        products.map((row) => ({
-          key: String((row as any)?.key || (row as any)?.sku || ""),
-          sku: (row as any)?.sku ?? null,
-          productId: (row as any)?.productId ?? null,
-          variationId: (row as any)?.variationId ?? null,
-          name: String((row as any)?.name || ""),
-          quantity: Number((row as any)?.quantity || 0),
-        })),
+        products
+          .map((row) => ({
+            key: String((row as any)?.key || (row as any)?.sku || ""),
+            sku: (row as any)?.sku ?? null,
+            productId: (row as any)?.productId ?? null,
+            variationId: (row as any)?.variationId ?? null,
+            name: String((row as any)?.name || ""),
+            quantity: Number((row as any)?.quantity || 0),
+          }))
+          .filter((row) => row.quantity > 0),
       );
       setAdminCommissionRows(
-        filteredCommissions.map((row) => ({
-          id: String((row as any)?.id || ""),
-          name: String((row as any)?.name || ""),
-          role: String((row as any)?.role || ""),
-          amount: Number((row as any)?.amount || 0),
-          retailOrders: Number((row as any)?.retailOrders || 0),
-          wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
-          retailBase: Number((row as any)?.retailBase || 0),
-          wholesaleBase: Number((row as any)?.wholesaleBase || 0),
-          specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
-        })),
+        filteredCommissions
+          .map((row) => ({
+            id: String((row as any)?.id || ""),
+            name: String((row as any)?.name || ""),
+            role: String((row as any)?.role || ""),
+            amount: Number((row as any)?.amount || 0),
+            retailOrders: Number((row as any)?.retailOrders || 0),
+            wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
+            retailBase: Number((row as any)?.retailBase || 0),
+            wholesaleBase: Number((row as any)?.wholesaleBase || 0),
+            specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
+          }))
+          .filter((row) => {
+            return (
+              Number(row.amount || 0) > 0 ||
+              Number(row.retailOrders || 0) > 0 ||
+              Number(row.wholesaleOrders || 0) > 0 ||
+              Number(row.retailBase || 0) > 0 ||
+              Number(row.wholesaleBase || 0) > 0 ||
+              Number(row.specialAdminBonus || 0) > 0
+            );
+          }),
       );
       setAdminProductsCommissionMeta({
         periodStart: (response as any)?.periodStart ?? null,
@@ -6281,18 +6298,18 @@ export default function App() {
       });
 	      rows.push("");
 	      rows.push(["Report", "Commissions"].join(","));
-	      rows.push(
-	        [
-	          "Recipient",
-	          "Role",
-	          "RetailOrders",
-	          "WholesaleOrders",
-	          "RetailBase",
-	          "WholesaleBase",
-	          "SpecialAdminBonus",
-	          "Amount",
-	        ].join(","),
-	      );
+		      rows.push(
+		        [
+		          "Recipient",
+		          "Role",
+		          "RetailOrders",
+		          "WholesaleOrders",
+		          "RetailBase",
+		          "WholesaleBase",
+		          "Administrative",
+		          "Amount",
+		        ].join(","),
+		      );
 	      adminCommissionRows.forEach((row) => {
 	        rows.push(
 	          [
@@ -6353,20 +6370,31 @@ export default function App() {
         : Array.isArray((salesSummaryResponse as any)?.orders)
           ? (salesSummaryResponse as any).orders
           : [];
-      const meta =
-        salesSummaryResponse && typeof salesSummaryResponse === "object"
-          ? {
-              periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
-              periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
-              totals: (salesSummaryResponse as any)?.totals ?? null,
-            }
-          : null;
-      const filteredSummary = summaryArray.filter(
-        (rep: any) => rep.salesRepId !== user.id,
-      );
-      setSalesRepSalesSummary(filteredSummary as any);
-      setSalesRepSalesSummaryMeta(meta);
-      setSalesRepSalesSummaryLastFetchedAt(Date.now());
+	      const meta =
+	        salesSummaryResponse && typeof salesSummaryResponse === "object"
+	          ? {
+	              periodStart: (salesSummaryResponse as any)?.periodStart ?? null,
+	              periodEnd: (salesSummaryResponse as any)?.periodEnd ?? null,
+	              totals: (salesSummaryResponse as any)?.totals ?? null,
+	            }
+	          : null;
+	      const filteredSummary = summaryArray
+	        .filter((rep: any) => rep.salesRepId !== user.id)
+	        .filter((rep: any) => {
+	          const totalOrders = Number(rep?.totalOrders || 0);
+	          const totalRevenue = Number(rep?.totalRevenue || 0);
+	          const wholesaleRevenue = Number(rep?.wholesaleRevenue || 0);
+	          const retailRevenue = Number(rep?.retailRevenue || 0);
+	          return (
+	            totalOrders > 0 ||
+	            totalRevenue > 0 ||
+	            wholesaleRevenue > 0 ||
+	            retailRevenue > 0
+	          );
+	        });
+	      setSalesRepSalesSummary(filteredSummary as any);
+	      setSalesRepSalesSummaryMeta(meta);
+	      setSalesRepSalesSummaryLastFetchedAt(Date.now());
     } catch (adminError: any) {
       const message =
         typeof adminError?.message === "string"
@@ -12238,10 +12266,10 @@ export default function App() {
                     clipRule="evenodd"
                   />
                 </svg>
-                <span>{referralDataError}</span>
-              </div>
-            </div>
-          )}
+	                <span>{referralDataError}</span>
+		                  </div>
+			                  </div>
+	          )}
 
           <div className="glass squircle-lg p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-6">
             <form
@@ -13954,11 +13982,11 @@ export default function App() {
 
                         <div className="sales-rep-table-wrapper live-users-scroll">
                           <div className="flex w-full min-w-[900px] flex-col gap-2">
-                            {liveUsers.length === 0 ? (
-                              <div className="px-4 py-3 text-sm text-slate-500">
-                                No users found.
-                              </div>
-                            ) : (
+	                            {liveUsers.length === 0 ? (
+	                              <div className="p-6 text-sm text-slate-500">
+	                                No users found.
+	                              </div>
+	                            ) : (
 		                            liveUsers.map((entry) => {
                               const role = String(entry?.role || "").toLowerCase().trim();
 		                              const rolePill = (() => {
@@ -14266,7 +14294,7 @@ export default function App() {
 			
                 {/* Totals shown inline above list below */}
 			              </div>
-	              <div className="sales-rep-table-wrapper" role="region" aria-label="Sales by sales rep list">
+		              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
                   <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
@@ -14279,16 +14307,15 @@ export default function App() {
                   <div className="px-4 py-3 text-sm mb-3 text-slate-500">
                     Click Refresh to load sales.
                   </div>
-                ) : salesRepSalesSummary.length === 0 ? (
-                  <div className="px-4 py-3 text-sm mb-3 text-slate-500">
-                    No sales recorded yet.
-                  </div>
-                ) : (
-		                  <div className="w-full" style={{ minWidth: 920 }}>
-	                    <div className="overflow-hidden rounded-xl">
-	                        {(() => {
-	                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
-	                          const totals = metaTotals
+	                ) : salesRepSalesSummary.length === 0 ? (
+	                  <div className="p-6 text-sm text-slate-500">
+	                    No sales recorded yet.
+	                  </div>
+		                ) : (
+			                  <div className="w-full" style={{ minWidth: 920 }}>
+		                        {(() => {
+		                          const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+		                          const totals = metaTotals
 	                            ? metaTotals
 	                            : {
 	                                totalOrders: salesRepSalesSummary.reduce(
@@ -14308,20 +14335,20 @@ export default function App() {
 	                                  0,
 	                                ),
 	                              };
-	                          const hasTotals =
-	                            typeof totals.totalOrders === "number" &&
-	                            typeof totals.totalRevenue === "number";
-	                          if (!hasTotals) return null;
-	                          return (
-		                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-	                              <span>Total Orders: {totals.totalOrders}</span>
-	                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
-	                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>
-	                            </div>
-	                          );
-	                        })()}
-		                      <div
-		                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                          const hasTotals =
+		                            typeof totals.totalOrders === "number" &&
+		                            typeof totals.totalRevenue === "number";
+		                          if (!hasTotals) return null;
+		                          return (
+			                            <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                              <span>Total Orders: {totals.totalOrders}</span>
+		                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
+		                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>
+		                            </div>
+		                          );
+		                        })()}
+			                      <div
+			                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 		                        style={{
 		                          gridTemplateColumns:
 		                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
@@ -14330,12 +14357,12 @@ export default function App() {
 		                        <div className="whitespace-nowrap">Sales Rep</div>
 		                        <div className="whitespace-nowrap">Email</div>
 		                        <div className="whitespace-nowrap text-right">Orders</div>
-		                        <div className="whitespace-nowrap text-right">Wholesale</div>
-		                        <div className="whitespace-nowrap text-right">Retail</div>
-		                      </div>
-			                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
-			                        {salesRepSalesSummary.map((rep) => (
-		                          <li
+			                        <div className="whitespace-nowrap text-right">Wholesale</div>
+			                        <div className="whitespace-nowrap text-right">Retail</div>
+			                      </div>
+				                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+				                        {salesRepSalesSummary.map((rep) => (
+			                          <li
 		                            key={rep.salesRepId}
 		                            className="grid items-center gap-3 px-4 py-2"
 		                            style={{
@@ -14358,15 +14385,14 @@ export default function App() {
 	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
 	                              {formatCurrency(rep.wholesaleRevenue || 0)}
 	                            </div>
-	                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-	                              {formatCurrency(rep.retailRevenue || 0)}
-	                            </div>
-	                          </li>
-	                        ))}
-	                      </ul>
-	                    </div>
-	                  </div>
-                )}
+		                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                              {formatCurrency(rep.retailRevenue || 0)}
+		                            </div>
+		                          </li>
+		                        ))}
+		                      </ul>
+		                  </div>
+	                )}
               </div>
             </div>
           )}
@@ -14489,25 +14515,31 @@ export default function App() {
 	                </div>
 	              </div>
 
-              {adminTaxesByStateError ? (
-                <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-                  {adminTaxesByStateError}
-                </div>
-              ) : adminTaxesByStateLoading ? (
-                <div className="px-4 py-3 text-sm mb-3 text-slate-500">Loading taxes…</div>
-	              ) : adminTaxesByStateRows.length === 0 ? (
-	                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No tax data for this period.</div>
-	              ) : (
-	                <div className="grid grid-cols-1 gap-4">
-		                  <div className="overflow-hidden rounded-xl">
-		                    {adminTaxesByStateMeta?.totals && (
-		                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-		                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
-		                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
-		                      </div>
-		                    )}
+		              {adminTaxesByStateError ? (
+		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
+		                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
+		                    {adminTaxesByStateError}
+		                  </div>
+		                </div>
+		              ) : adminTaxesByStateLoading ? (
+		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
+		                  <div className="p-6 text-sm text-slate-500">Loading taxes…</div>
+		                </div>
+		              ) : adminTaxesByStateRows.length === 0 ? (
+		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
+		                  <div className="p-6 text-sm text-slate-500">No tax data for this period.</div>
+		                </div>
+		              ) : (
+				              <div className="grid grid-cols-1 gap-4">
+					              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
+			                    {adminTaxesByStateMeta?.totals && (
+			                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+			                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
+			                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
+			                      </div>
+			                    )}
 		                    <div
-		                      className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                      className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 		                      style={{
 		                        gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
 		                      }}
@@ -14516,7 +14548,7 @@ export default function App() {
 	                      <div className="text-right">Orders</div>
 	                      <div className="text-right">Tax</div>
 	                    </div>
-		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[320px] overflow-y-auto">
+		                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto">
 		                      {adminTaxesByStateRows.map((row) => (
 		                        <li
 		                          key={row.state}
@@ -14535,32 +14567,32 @@ export default function App() {
 	                        </li>
 	                      ))}
 	                    </ul>
-	                  </div>
+					              </div>
 
-		                  {adminTaxesByStateOrders.length > 0 && (
-		                    <details
-                          className="overflow-hidden rounded-xl bg-white/60 border border-slate-200/70"
-                          open={adminTaxesByStateBreakdownOpen}
-                          onToggle={(event) => {
-                            setAdminTaxesByStateBreakdownOpen(
-                              (event.currentTarget as HTMLDetailsElement).open,
-                            );
-                          }}
+				                  {adminTaxesByStateOrders.length > 0 && (
+				                    <details
+				                          className="sales-rep-table-wrapper p-0 overflow-hidden bg-white/60 border border-slate-200/70"
+	                          open={adminTaxesByStateBreakdownOpen}
+	                          onToggle={(event) => {
+	                            setAdminTaxesByStateBreakdownOpen(
+	                              (event.currentTarget as HTMLDetailsElement).open,
+	                            );
+	                          }}
                         >
-		                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
-		                        <span>Order Tax Breakdown</span>
+			                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
+			                        <span>Order Tax Breakdown</span>
 		                        <span className="rounded-full border border-slate-200/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
                               {adminTaxesByStateBreakdownOpen ? "Collapse" : "Expand"}
                             </span>
 		                      </summary>
 		                      <div
-		                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                        className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
 		                        style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(120px,160px)" }}
 		                      >
 		                        <div>Order</div>
 		                        <div className="text-right">Tax</div>
 		                      </div>
-		                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[260px] overflow-y-auto">
+		                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto">
 		                        {adminTaxesByStateOrders.map((line) => (
 		                          <li
 		                            key={`${line.orderNumber}-${line.state}`}
@@ -14580,9 +14612,9 @@ export default function App() {
 		                        ))}
 		                      </ul>
 		                    </details>
-		                  )}
-		                </div>
-		              )}
+			                  )}
+			              </div>
+			              )}
             </div>
           )}
 
@@ -14593,7 +14625,7 @@ export default function App() {
 	                  <div className="min-w-0">
 	                    <h3 className="text-lg font-semibold text-slate-900">Products Sold & Commission</h3>
 	                    <p className="text-sm text-slate-600">
-	                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split across admins).
+	                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split and administrative).
 	                    </p>
 	                    <form
 	                      className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
@@ -14723,31 +14755,37 @@ export default function App() {
 	                </div>
 	              </div>
 
-              {adminProductsCommissionError ? (
-                <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-                  {adminProductsCommissionError}
-                </div>
-              ) : adminProductsCommissionLoading ? (
-                <div className="px-4 py-3 text-sm mb-3 text-slate-500">Loading report…</div>
-              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
-                <div className="px-4 py-3 text-sm mb-3 text-slate-500">No data for this period.</div>
-              ) : (
-	                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-		                  <div className="overflow-hidden rounded-xl">
-		                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-		                      <span>Products Sold</span>
-		                    </div>
-		                    <div className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
-                          style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
-                        >
-		                      <div>Product</div>
-		                      <div className="text-right">Qty</div>
-		                    </div>
-		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
-		                      {adminProductSalesRows.map((row) => (
-		                        <li
-                              key={row.key}
-                              className="grid items-center gap-3 px-4 py-1.5"
+	              {adminProductsCommissionError ? (
+	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
+	                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
+	                    {adminProductsCommissionError}
+	                  </div>
+	                </div>
+	              ) : adminProductsCommissionLoading ? (
+	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
+	                  <div className="p-6 text-sm text-slate-500">Loading report…</div>
+	                </div>
+	              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
+	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
+	                  <div className="p-6 text-sm text-slate-500">No data for this period.</div>
+	                </div>
+			              ) : (
+				              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+					              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold list">
+				                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+				                      <span>Products Sold</span>
+				                    </div>
+			                    <div className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
+			                          style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
+			                        >
+			                      <div>Product</div>
+			                      <div className="text-right">Qty</div>
+			                    </div>
+			                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
+			                      {adminProductSalesRows.map((row) => (
+			                        <li
+			                          key={row.key}
+			                          className="grid items-center gap-3 px-4 py-1.5"
                               style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
                             >
 		                          <div className="min-w-0 flex items-baseline gap-2">
@@ -14762,78 +14800,109 @@ export default function App() {
 		                            {Number(row.quantity || 0)}
 		                          </div>
 		                        </li>
-		                      ))}
-		                    </ul>
-		                  </div>
+			                      ))}
+			                    </ul>
+					              </div>
 
-		                  <div className="overflow-hidden rounded-xl">
-		                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-		                      <span>Commission</span>
-		                    </div>
-		                    <div
-                          className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
-                          style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
-                        >
-		                      <div>Recipient</div>
-		                      <div className="text-right">Amount</div>
-		                    </div>
-		                    <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 rounded-b-xl max-h-[420px] overflow-y-auto">
-		                      {adminCommissionRows.map((row) => (
-		                        <li
-                              key={row.id}
-                              className="grid items-center gap-3 px-4 py-1.5"
+				                  <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Commission list">
+					                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+				                      <span>Commission</span>
+				                    </div>
+			                    <div
+			                      className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
+			                      style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
+			                    >
+			                      <div>Recipient</div>
+			                      <div className="text-right">Amount</div>
+			                    </div>
+			                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
+			                      {adminCommissionRows.map((row) => (
+			                        <li
+			                          key={row.id}
+			                          className="grid items-center gap-3 px-4 py-1.5"
                               style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
                             >
 		                          <div className="min-w-0">
-		                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-		                              {row.name}
-		                            </div>
-		                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600">
-                                {(() => {
-                                  const retailOrders = Number(row.retailOrders || 0);
-                                  const wholesaleOrders = Number(row.wholesaleOrders || 0);
-                                  const retailBase = Number(row.retailBase || 0);
-                                  const wholesaleBase = Number(row.wholesaleBase || 0);
-                                  const bonus = Number(row.specialAdminBonus || 0);
-                                  const retailEarned = retailBase * 0.2;
-                                  const wholesaleEarned = wholesaleBase * 0.1;
-                                  return (
-                                    <>
-                                      <span className="whitespace-nowrap">
-                                        Role: {row.role || "—"}
-                                      </span>
-                                      <span className="text-slate-300">|</span>
-                                      <span className="whitespace-nowrap tabular-nums">
-                                        Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2={formatCurrency(retailEarned)}
-                                      </span>
-                                      <span className="text-slate-300">|</span>
-                                      <span className="whitespace-nowrap tabular-nums">
-                                        Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1={formatCurrency(wholesaleEarned)}
-                                      </span>
-                                      {bonus > 0 && (
-                                        <>
-                                          <span className="text-slate-300">|</span>
-                                          <span className="whitespace-nowrap tabular-nums">
-                                            Bonus: {formatCurrency(bonus)}
-                                          </span>
-                                        </>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-		                            </div>
-		                          </div>
+			                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
+			                              {row.name}
+			                            </div>
+			                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600">
+			                              {(() => {
+			                                const retailOrders = Number(row.retailOrders || 0);
+			                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
+			                                const retailBase = Number(row.retailBase || 0);
+			                                const wholesaleBase = Number(row.wholesaleBase || 0);
+			                                const bonus = Number(row.specialAdminBonus || 0);
+			                                const retailEarned = retailBase * 0.2;
+			                                const wholesaleEarned = wholesaleBase * 0.1;
+			                                const segments: React.ReactNode[] = [];
+			                                segments.push(
+			                                  <span key="role" className="whitespace-nowrap">
+			                                    Role: {row.role || "—"}
+			                                  </span>,
+			                                );
+			                                if (retailOrders > 0 || retailBase > 0) {
+			                                  segments.push(
+			                                    <span
+			                                      key="retail"
+			                                      className="whitespace-nowrap tabular-nums"
+			                                    >
+			                                      Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
+			                                      {formatCurrency(retailEarned)}
+			                                    </span>,
+			                                  );
+			                                }
+			                                if (wholesaleOrders > 0 || wholesaleBase > 0) {
+			                                  segments.push(
+			                                    <span
+			                                      key="wholesale"
+			                                      className="whitespace-nowrap tabular-nums"
+			                                    >
+			                                      Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
+			                                      {formatCurrency(wholesaleEarned)}
+			                                    </span>,
+			                                  );
+			                                }
+			                                if (bonus > 0) {
+			                                  segments.push(
+			                                    <span
+			                                      key="bonus"
+			                                      className="whitespace-nowrap tabular-nums"
+			                                    >
+			                                      Bonus: {formatCurrency(bonus)}
+			                                    </span>,
+			                                  );
+			                                }
+			                                return (
+			                                  <>
+			                                    {segments.map((segment, index) => (
+			                                      <React.Fragment
+			                                        key={(segment as any)?.key ?? index}
+			                                      >
+			                                        {index > 0 && (
+			                                          <span className="text-slate-300">
+			                                            |
+			                                          </span>
+			                                        )}
+			                                        {segment}
+			                                      </React.Fragment>
+			                                    ))}
+			                                  </>
+			                                );
+			                              })()}
+			                            </div>
+			                          </div>
 		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
 		                            {formatCurrency(Number(row.amount || 0))}
 		                          </div>
 	                        </li>
 	                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+	                    </ul>
+	                  </div>
+		            </div>
+		              )}
+	            </div>
+	          )}
 
 	          {hasChartData && (
 	            <div className="sales-rep-combined-chart">
