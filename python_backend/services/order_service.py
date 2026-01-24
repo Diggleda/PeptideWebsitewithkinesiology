@@ -3278,11 +3278,13 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                                 prospect = sales_prospect_repository.find_by_contact_email(billing_email)
                                 if prospect:
                                     prospect_rep = str(prospect.get("salesRepId") or "").strip().lower()
-                                    prospect_source = str(prospect.get("source") or "").strip().lower()
-                                    prospect_status = str(prospect.get("status") or "").strip().lower()
-                                    if prospect_rep == "house":
+                                    prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
+                                    prospect_identifier = str(prospect.get("id") or "")
+                                    if prospect_rep == "house" or prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
                                         is_house_contact_form = True
-                                    elif "contact" in prospect_source or prospect_status == "contact_form":
+                                if not is_house_contact_form and doctor and doctor.get("id"):
+                                    doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
+                                    if doctor_prospect:
                                         is_house_contact_form = True
                             except Exception:
                                 is_house_contact_form = False

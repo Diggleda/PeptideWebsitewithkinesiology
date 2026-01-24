@@ -6,6 +6,7 @@ import {
   useCallback,
   FormEvent,
   ReactNode,
+  Fragment,
   forwardRef,
 } from "react";
 import { computeUnitPrice, type PricingMode } from "./lib/pricing";
@@ -14835,7 +14836,7 @@ export default function App() {
 			                                const bonus = Number(row.specialAdminBonus || 0);
 			                                const retailEarned = retailBase * 0.2;
 			                                const wholesaleEarned = wholesaleBase * 0.1;
-			                                const segments: React.ReactNode[] = [];
+				                                const segments: ReactNode[] = [];
 			                                segments.push(
 			                                  <span key="role" className="whitespace-nowrap">
 			                                    Role: {row.role || "—"}
@@ -14876,16 +14877,16 @@ export default function App() {
 			                                return (
 			                                  <>
 			                                    {segments.map((segment, index) => (
-			                                      <React.Fragment
-			                                        key={(segment as any)?.key ?? index}
-			                                      >
+				                                      <Fragment
+				                                        key={(segment as any)?.key ?? index}
+				                                      >
 			                                        {index > 0 && (
 			                                          <span className="text-slate-300">
 			                                            |
 			                                          </span>
 			                                        )}
 			                                        {segment}
-			                                      </React.Fragment>
+				                                      </Fragment>
 			                                    ))}
 			                                  </>
 			                                );
