@@ -2796,6 +2796,8 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
     Period parsing/bounds intentionally mirror `get_sales_by_rep()` so the admin dashboard can reuse
     the same start/end date inputs.
     """
+    global _admin_taxes_by_state_inflight
+
     start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
 
     def _meta_value(meta: object, key: str):
@@ -2964,6 +2966,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         House/contact-form orders split commission equally across admins.
       - Include supplier "share" as (base - commission).
     """
+    global _admin_products_commission_inflight
+
     start_dt, end_dt, period_meta = _resolve_report_period_bounds(period_start, period_end)
 
     def _meta_value(meta: object, key: str):
