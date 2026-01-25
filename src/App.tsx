@@ -5977,6 +5977,8 @@ export default function App() {
   useEffect(() => {
     if (!user || !isAdmin(user.role)) {
       setSalesRepSalesCsvDownloadedAt(null);
+      setAdminTaxesByStateCsvDownloadedAt(null);
+      setAdminProductsCommissionCsvDownloadedAt(null);
       return;
     }
     let cancelled = false;
@@ -5987,8 +5989,18 @@ export default function App() {
           typeof (reportSettings as any)?.salesBySalesRepCsvDownloadedAt === "string"
             ? String((reportSettings as any).salesBySalesRepCsvDownloadedAt)
             : null;
+        const taxesDownloadedAt =
+          typeof (reportSettings as any)?.taxesByStateCsvDownloadedAt === "string"
+            ? String((reportSettings as any).taxesByStateCsvDownloadedAt)
+            : null;
+        const productsDownloadedAt =
+          typeof (reportSettings as any)?.productsCommissionCsvDownloadedAt === "string"
+            ? String((reportSettings as any).productsCommissionCsvDownloadedAt)
+            : null;
         if (!cancelled) {
           setSalesRepSalesCsvDownloadedAt(downloadedAt);
+          setAdminTaxesByStateCsvDownloadedAt(taxesDownloadedAt);
+          setAdminProductsCommissionCsvDownloadedAt(productsDownloadedAt);
         }
       } catch (error) {
         console.debug("[Sales by Sales Rep] Failed to load report settings", error);
@@ -6134,7 +6146,7 @@ export default function App() {
     }
   }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
-		  const downloadAdminTaxesByStateCsv = useCallback(async () => {
+	  const downloadAdminTaxesByStateCsv = useCallback(async () => {
 		    try {
 		      const exportedAt = new Date();
 		      const exportedAtIso = exportedAt.toISOString();
@@ -6177,15 +6189,31 @@ export default function App() {
       link.href = url;
       link.download = `taxes-by-state${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
       document.body.appendChild(link);
-	      link.click();
-	      link.remove();
-	      URL.revokeObjectURL(url);
-	      setAdminTaxesByStateCsvDownloadedAt(exportedAtIso);
-	    } catch (error) {
-	      console.error("[Taxes by State] CSV export failed", error);
-	      toast.error("Unable to download report right now.");
-	    }
-	  }, [adminTaxesByStateMeta?.periodEnd, adminTaxesByStateMeta?.periodStart, adminTaxesByStateRows]);
+		      link.click();
+		      link.remove();
+		      URL.revokeObjectURL(url);
+		      setAdminTaxesByStateCsvDownloadedAt(exportedAtIso);
+		      if (user && isAdmin(user.role)) {
+		        try {
+		          await settingsAPI.setTaxesByStateCsvDownloadedAt(exportedAtIso);
+		        } catch (error) {
+		          console.debug(
+		            "[Taxes by State] Failed to persist CSV download timestamp",
+		            error,
+		          );
+		        }
+		      }
+		    } catch (error) {
+		      console.error("[Taxes by State] CSV export failed", error);
+		      toast.error("Unable to download report right now.");
+		    }
+		  }, [
+		    adminTaxesByStateMeta?.periodEnd,
+		    adminTaxesByStateMeta?.periodStart,
+		    adminTaxesByStateRows,
+		    user,
+		    user?.role,
+		  ]);
 
   const refreshAdminProductsCommission = useCallback(async () => {
     if (!user || !isAdmin(user.role)) return;
@@ -6371,20 +6399,32 @@ export default function App() {
       link.href = url;
       link.download = `products-and-commission${periodLabel}_${FRONTEND_BUILD_ID}_${stamp}.csv`;
       document.body.appendChild(link);
-	      link.click();
-	      link.remove();
-	      URL.revokeObjectURL(url);
-	      setAdminProductsCommissionCsvDownloadedAt(exportedAtIso);
-	    } catch (error) {
-	      console.error("[Products/Commission] CSV export failed", error);
-	      toast.error("Unable to download report right now.");
-	    }
-  }, [
-    adminCommissionRows,
-    adminProductSalesRows,
-    adminProductsCommissionMeta?.periodEnd,
-    adminProductsCommissionMeta?.periodStart,
-  ]);
+		      link.click();
+		      link.remove();
+		      URL.revokeObjectURL(url);
+		      setAdminProductsCommissionCsvDownloadedAt(exportedAtIso);
+		      if (user && isAdmin(user.role)) {
+		        try {
+		          await settingsAPI.setProductsCommissionCsvDownloadedAt(exportedAtIso);
+		        } catch (error) {
+		          console.debug(
+		            "[Products/Commission] Failed to persist CSV download timestamp",
+		            error,
+		          );
+		        }
+		      }
+		    } catch (error) {
+		      console.error("[Products/Commission] CSV export failed", error);
+		      toast.error("Unable to download report right now.");
+		    }
+	  }, [
+	    adminCommissionRows,
+	    adminProductSalesRows,
+	    adminProductsCommissionMeta?.periodEnd,
+	    adminProductsCommissionMeta?.periodStart,
+	    user,
+	    user?.role,
+	  ]);
 
   const refreshSalesBySalesRepSummary = useCallback(async () => {
     if (!user || !isAdmin(user.role)) return;
@@ -14894,44 +14934,46 @@ export default function App() {
 				                                    Role: {row.role || "— "}
 				                                  </span>,
 				                                );
-				                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
-				                                  const computed = houseRetailBase * 0.2;
-				                                  segments.push(
-				                                    <span key="house-retail" className="whitespace-nowrap tabular-nums">
-				                                      House Retail: {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2=
-				                                      {formatCurrency(houseRetailCommission || computed)}
-				                                    </span>,
-				                                  );
-				                                } else if (retailOrders > 0 || retailBase > 0) {
-				                                  segments.push(
-				                                    <span
-				                                      key="retail"
-				                                      className="whitespace-nowrap tabular-nums"
-				                                    >
-				                                       Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
-				                                      {formatCurrency(retailEarned)}
-				                                    </span>,
-				                                  );
-				                                }
-				                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
-				                                  const computed = houseWholesaleBase * 0.1;
-				                                  segments.push(
-				                                    <span key="house-wholesale" className="whitespace-nowrap tabular-nums">
-				                                      House Wholesale: {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1=
-				                                      {formatCurrency(houseWholesaleCommission || computed)}
-				                                    </span>,
-				                                  );
-				                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
-				                                  segments.push(
-				                                    <span
-				                                      key="wholesale"
-				                                      className="whitespace-nowrap tabular-nums"
-				                                    >
-				                                       Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
-				                                      {formatCurrency(wholesaleEarned)}
-				                                    </span>,
-				                                  );
-				                                }
+					                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
+					                                  const computed = houseRetailBase * 0.2;
+					                                  const value = houseRetailCommission || computed;
+					                                  segments.push(
+					                                    <span key="house-retail" className="whitespace-nowrap tabular-nums">
+					                                      House Retail: {formatCurrency(value)} (
+					                                      {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2)
+					                                    </span>,
+					                                  );
+					                                } else if (retailOrders > 0 || retailBase > 0) {
+					                                  const value = retailEarned;
+					                                  segments.push(
+					                                    <span
+					                                      key="retail"
+					                                      className="whitespace-nowrap tabular-nums"
+					                                    >
+					                                       Retail: {formatCurrency(value)} ({retailOrders} · {formatCurrency(retailBase)}×0.2)
+					                                    </span>,
+					                                  );
+					                                }
+					                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
+					                                  const computed = houseWholesaleBase * 0.1;
+					                                  const value = houseWholesaleCommission || computed;
+					                                  segments.push(
+					                                    <span key="house-wholesale" className="whitespace-nowrap tabular-nums">
+					                                      House Wholesale: {formatCurrency(value)} (
+					                                      {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1)
+					                                    </span>,
+					                                  );
+					                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
+					                                  const value = wholesaleEarned;
+					                                  segments.push(
+					                                    <span
+					                                      key="wholesale"
+					                                      className="whitespace-nowrap tabular-nums"
+					                                    >
+					                                       Wholesale: {formatCurrency(value)} ({wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1)
+					                                    </span>,
+					                                  );
+					                                }
 					                                if (bonus > 0) {
 					                                  const monthKeys = Array.from(
 					                                    new Set([
@@ -14967,15 +15009,13 @@ export default function App() {
 					                                      : "";
 					                                  const bonusMath =
 					                                    bonusRate > 0 && baseTotal > 0
-					                                      ? ` · ${formatCurrency(baseTotal)}×${bonusRate}=${formatCurrency(
-					                                          capApplied ? bonus : computedPaid,
-					                                        )}${capSuffix}`
+					                                      ? ` (${formatCurrency(baseTotal)}×${bonusRate}${capSuffix})`
 					                                      : bonusRate > 0
-					                                        ? ` · rate ${bonusRate}${
+					                                        ? ` (rate ${bonusRate}${
 					                                            bonusMonthlyCap > 0
-					                                              ? ` (cap ${formatCurrency(bonusMonthlyCap)}/mo)`
+					                                              ? `, cap ${formatCurrency(bonusMonthlyCap)}/mo`
 					                                              : ""
-					                                          }`
+					                                          })`
 					                                        : "";
 					                                  segments.push(
 				                                    <span
@@ -14989,18 +15029,16 @@ export default function App() {
 				                                }
 			                                return (
 			                                  <>
-			                                    {segments.map((segment, index) => (
-				                                      <Fragment
-				                                        key={(segment as any)?.key ?? index}
-				                                      >
-			                                        {index > 0 && (
-			                                          <span className="text-slate-300">
-			                                            |
-			                                          </span>
-			                                        )}
-			                                        {segment}
-				                                      </Fragment>
-			                                    ))}
+				                                    {segments.map((segment, index) => (
+					                                      <Fragment
+					                                        key={(segment as any)?.key ?? index}
+					                                      >
+					                                        {index > 0 && (
+					                                          <span className="text-slate-300">{" | "}</span>
+					                                        )}
+					                                        {segment}
+					                                      </Fragment>
+				                                    ))}
 			                                  </>
 			                                );
 			                              })()}

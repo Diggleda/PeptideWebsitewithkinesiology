@@ -862,8 +862,12 @@ def get_reports():
         _require_admin()
         settings = settings_service.get_settings()
         downloaded_at = settings.get("salesBySalesRepCsvDownloadedAt")
+        taxes_downloaded_at = settings.get("taxesByStateCsvDownloadedAt")
+        products_downloaded_at = settings.get("productsCommissionCsvDownloadedAt")
         return {
-            "salesBySalesRepCsvDownloadedAt": downloaded_at if isinstance(downloaded_at, str) else None
+            "salesBySalesRepCsvDownloadedAt": downloaded_at if isinstance(downloaded_at, str) else None,
+            "taxesByStateCsvDownloadedAt": taxes_downloaded_at if isinstance(taxes_downloaded_at, str) else None,
+            "productsCommissionCsvDownloadedAt": products_downloaded_at if isinstance(products_downloaded_at, str) else None,
         }
 
     return handle_action(action)
@@ -875,15 +879,46 @@ def update_reports():
     def action():
         _require_admin()
         payload = request.get_json(silent=True) or {}
-        raw = payload.get("salesBySalesRepCsvDownloadedAt") or payload.get("downloadedAt")
-        parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
-        stamp = (
-            parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-            if parsed
-            else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        )
-        updated = settings_service.update_settings({"salesBySalesRepCsvDownloadedAt": stamp})
-        return {"salesBySalesRepCsvDownloadedAt": updated.get("salesBySalesRepCsvDownloadedAt")}
+        patch = {}
+        if "salesBySalesRepCsvDownloadedAt" in payload or "downloadedAt" in payload:
+            raw = payload.get("salesBySalesRepCsvDownloadedAt") or payload.get("downloadedAt")
+            parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+            stamp = (
+                parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if parsed
+                else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+            patch["salesBySalesRepCsvDownloadedAt"] = stamp
+
+        if "taxesByStateCsvDownloadedAt" in payload:
+            raw = payload.get("taxesByStateCsvDownloadedAt")
+            parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+            stamp = (
+                parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if parsed
+                else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+            patch["taxesByStateCsvDownloadedAt"] = stamp
+
+        if "productsCommissionCsvDownloadedAt" in payload:
+            raw = payload.get("productsCommissionCsvDownloadedAt")
+            parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+            stamp = (
+                parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if parsed
+                else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+            patch["productsCommissionCsvDownloadedAt"] = stamp
+
+        if patch:
+            updated = settings_service.update_settings(patch)
+        else:
+            updated = settings_service.get_settings()
+        return {
+            "salesBySalesRepCsvDownloadedAt": updated.get("salesBySalesRepCsvDownloadedAt"),
+            "taxesByStateCsvDownloadedAt": updated.get("taxesByStateCsvDownloadedAt"),
+            "productsCommissionCsvDownloadedAt": updated.get("productsCommissionCsvDownloadedAt"),
+        }
 
     return handle_action(action)
 

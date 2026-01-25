@@ -9,6 +9,8 @@ const DEFAULT_SETTINGS = {
   researchDashboardEnabled: false,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
+  taxesByStateCsvDownloadedAt: null, // ISO timestamp (admin report)
+  productsCommissionCsvDownloadedAt: null, // ISO timestamp (admin report)
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
@@ -44,6 +46,10 @@ const normalizeSettings = (settings = {}) => {
   merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
   merged.salesBySalesRepCsvDownloadedAt =
     normalizeIsoTimestamp(raw.salesBySalesRepCsvDownloadedAt) ?? DEFAULT_SETTINGS.salesBySalesRepCsvDownloadedAt;
+  merged.taxesByStateCsvDownloadedAt =
+    normalizeIsoTimestamp(raw.taxesByStateCsvDownloadedAt) ?? DEFAULT_SETTINGS.taxesByStateCsvDownloadedAt;
+  merged.productsCommissionCsvDownloadedAt =
+    normalizeIsoTimestamp(raw.productsCommissionCsvDownloadedAt) ?? DEFAULT_SETTINGS.productsCommissionCsvDownloadedAt;
   return merged;
 };
 
@@ -247,6 +253,50 @@ const setSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
   return next.salesBySalesRepCsvDownloadedAt || null;
 };
 
+const getTaxesByStateCsvDownloadedAt = async () => {
+  const settings = await getSettings();
+  return settings.taxesByStateCsvDownloadedAt || null;
+};
+
+const setTaxesByStateCsvDownloadedAt = async (downloadedAt) => {
+  const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    taxesByStateCsvDownloadedAt: normalized,
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return confirmed.taxesByStateCsvDownloadedAt || null;
+  }
+  persistToStore(next);
+  return next.taxesByStateCsvDownloadedAt || null;
+};
+
+const getProductsCommissionCsvDownloadedAt = async () => {
+  const settings = await getSettings();
+  return settings.productsCommissionCsvDownloadedAt || null;
+};
+
+const setProductsCommissionCsvDownloadedAt = async (downloadedAt) => {
+  const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    productsCommissionCsvDownloadedAt: normalized,
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return confirmed.productsCommissionCsvDownloadedAt || null;
+  }
+  persistToStore(next);
+  return next.productsCommissionCsvDownloadedAt || null;
+};
+
 module.exports = {
   getSettings,
   getShopEnabled,
@@ -260,6 +310,10 @@ module.exports = {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getTaxesByStateCsvDownloadedAt,
+  setTaxesByStateCsvDownloadedAt,
+  getProductsCommissionCsvDownloadedAt,
+  setProductsCommissionCsvDownloadedAt,
   SETTINGS_KEYS,
   DEFAULT_SETTINGS,
 };

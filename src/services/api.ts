@@ -1156,6 +1156,18 @@ export const settingsAPI = {
       body: JSON.stringify({ salesBySalesRepCsvDownloadedAt: downloadedAt }),
     });
   },
+  setTaxesByStateCsvDownloadedAt: async (downloadedAt: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
+      method: 'PUT',
+      body: JSON.stringify({ taxesByStateCsvDownloadedAt: downloadedAt }),
+    });
+  },
+  setProductsCommissionCsvDownloadedAt: async (downloadedAt: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
+      method: 'PUT',
+      body: JSON.stringify({ productsCommissionCsvDownloadedAt: downloadedAt }),
+    });
+  },
 };
 
 type CheckoutIdempotencyRecord = {

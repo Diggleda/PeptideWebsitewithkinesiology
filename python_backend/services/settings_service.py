@@ -21,6 +21,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "testPaymentsOverrideEnabled": False,
     # ISO timestamp (admin report)
     "salesBySalesRepCsvDownloadedAt": None,
+    # ISO timestamp (admin report)
+    "taxesByStateCsvDownloadedAt": None,
+    # ISO timestamp (admin report)
+    "productsCommissionCsvDownloadedAt": None,
 }
 
 _STRIPE_SECRET_PREFIXES = {
@@ -104,6 +108,12 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged["testPaymentsOverrideEnabled"] = _to_bool(merged.get("testPaymentsOverrideEnabled", False))
     merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("salesBySalesRepCsvDownloadedAt")
+    )
+    merged["taxesByStateCsvDownloadedAt"] = _normalize_iso_timestamp(
+        merged.get("taxesByStateCsvDownloadedAt")
+    )
+    merged["productsCommissionCsvDownloadedAt"] = _normalize_iso_timestamp(
+        merged.get("productsCommissionCsvDownloadedAt")
     )
     return merged
 

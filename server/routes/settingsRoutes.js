@@ -11,6 +11,10 @@ const {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getTaxesByStateCsvDownloadedAt,
+  setTaxesByStateCsvDownloadedAt,
+  getProductsCommissionCsvDownloadedAt,
+  setProductsCommissionCsvDownloadedAt,
 } = require('../services/settingsService');
 const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
@@ -149,13 +153,35 @@ router.get('/stripe', async (_req, res) => {
 
 router.get('/reports', authenticate, requireAdmin, async (_req, res) => {
   const downloadedAt = await getSalesBySalesRepCsvDownloadedAt();
-  res.json({ salesBySalesRepCsvDownloadedAt: downloadedAt });
+  const taxesDownloadedAt = await getTaxesByStateCsvDownloadedAt();
+  const productsDownloadedAt = await getProductsCommissionCsvDownloadedAt();
+  res.json({
+    salesBySalesRepCsvDownloadedAt: downloadedAt,
+    taxesByStateCsvDownloadedAt: taxesDownloadedAt,
+    productsCommissionCsvDownloadedAt: productsDownloadedAt,
+  });
 });
 
 router.put('/reports', authenticate, requireAdmin, async (req, res) => {
-  const downloadedAt = req.body?.salesBySalesRepCsvDownloadedAt || req.body?.downloadedAt;
-  const updated = await setSalesBySalesRepCsvDownloadedAt(downloadedAt);
-  res.json({ salesBySalesRepCsvDownloadedAt: updated });
+  const salesDownloadedAt = req.body?.salesBySalesRepCsvDownloadedAt;
+  const taxesDownloadedAt = req.body?.taxesByStateCsvDownloadedAt;
+  const productsDownloadedAt = req.body?.productsCommissionCsvDownloadedAt;
+
+  if (salesDownloadedAt !== undefined) {
+    await setSalesBySalesRepCsvDownloadedAt(salesDownloadedAt);
+  }
+  if (taxesDownloadedAt !== undefined) {
+    await setTaxesByStateCsvDownloadedAt(taxesDownloadedAt);
+  }
+  if (productsDownloadedAt !== undefined) {
+    await setProductsCommissionCsvDownloadedAt(productsDownloadedAt);
+  }
+
+  res.json({
+    salesBySalesRepCsvDownloadedAt: await getSalesBySalesRepCsvDownloadedAt(),
+    taxesByStateCsvDownloadedAt: await getTaxesByStateCsvDownloadedAt(),
+    productsCommissionCsvDownloadedAt: await getProductsCommissionCsvDownloadedAt(),
+  });
 });
 
 router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
