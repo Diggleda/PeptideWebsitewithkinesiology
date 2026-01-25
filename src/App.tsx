@@ -14939,27 +14939,37 @@ export default function App() {
 					                                      ...Object.keys(bonusBaseByMonth || {}),
 					                                    ]),
 					                                  ).sort();
+					                                  const baseTotal = monthKeys.reduce((sum, monthKey) => {
+					                                    return (
+					                                      sum +
+					                                      Number((bonusBaseByMonth || {})[monthKey] || 0)
+					                                    );
+					                                  }, 0);
+					                                  const rawTotal = monthKeys.reduce((sum, monthKey) => {
+					                                    const monthBase = Number(
+					                                      (bonusBaseByMonth || {})[monthKey] || 0,
+					                                    );
+					                                    return sum + Math.round(monthBase * bonusRate * 100) / 100;
+					                                  }, 0);
+					                                  const paidTotal = monthKeys.reduce((sum, monthKey) => {
+					                                    const paid = Number((bonusByMonth || {})[monthKey] || 0);
+					                                    if (paid > 0) return sum + paid;
+					                                    const monthBase = Number(
+					                                      (bonusBaseByMonth || {})[monthKey] || 0,
+					                                    );
+					                                    return sum + Math.round(monthBase * bonusRate * 100) / 100;
+					                                  }, 0);
+					                                  const computedPaid = paidTotal > 0 ? paidTotal : rawTotal;
+					                                  const capApplied = bonus > 0 && Math.abs(bonus - rawTotal) > 0.009;
+					                                  const capSuffix =
+					                                    bonusMonthlyCap > 0 && capApplied
+					                                      ? ` (cap ${formatCurrency(bonusMonthlyCap)}/mo)`
+					                                      : "";
 					                                  const bonusMath =
-					                                    bonusRate > 0 && monthKeys.length > 0
-					                                      ? ` · ${monthKeys
-					                                          .map((monthKey) => {
-					                                            const monthBase = Number(
-					                                              (bonusBaseByMonth || {})[monthKey] || 0,
-					                                            );
-					                                            const raw = monthBase * bonusRate;
-					                                            const capped =
-					                                              Number((bonusByMonth || {})[monthKey]) || raw;
-					                                            const capSuffix =
-					                                              bonusMonthlyCap > 0 && capped < raw
-					                                                ? ` (cap ${formatCurrency(bonusMonthlyCap)}/mo)`
-					                                                : "";
-					                                            return `${monthKey}: ${formatCurrency(
-					                                              monthBase,
-					                                            )}×${bonusRate}=${formatCurrency(
-					                                              capped,
-					                                            )}${capSuffix}`;
-					                                          })
-					                                          .join(", ")}`
+					                                    bonusRate > 0 && baseTotal > 0
+					                                      ? ` · ${formatCurrency(baseTotal)}×${bonusRate}=${formatCurrency(
+					                                          capApplied ? bonus : computedPaid,
+					                                        )}${capSuffix}`
 					                                      : bonusRate > 0
 					                                        ? ` · rate ${bonusRate}${
 					                                            bonusMonthlyCap > 0
@@ -14972,7 +14982,7 @@ export default function App() {
 				                                      key="bonus"
 				                                      className="whitespace-nowrap tabular-nums"
 				                                    >
-				                                      Bonus: {formatCurrency(bonus)}
+				                                      Web: {formatCurrency(bonus)}
 				                                      {bonusMath}
 				                                    </span>,
 				                                  );

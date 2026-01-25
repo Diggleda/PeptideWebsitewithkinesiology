@@ -3511,8 +3511,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if created_at:
                 local_dt = created_at.astimezone(report_tz)
                 month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
-                # Keep the special admin bonus tied to the net base (excluding shipping/tax).
-                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(net_base or 0.0)
+                # Special admin bonus base includes tax + shipping (full order total).
+                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(
+                    max(0.0, total_value)
+                )
 
             if recipient_id == "__house__":
                 allocations = (
