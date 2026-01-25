@@ -287,6 +287,36 @@ const fetchByUserIds = async (userIds = []) => {
   return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
 };
 
+const fetchByBillingEmails = async (emails = []) => {
+  if (!mysqlClient.isEnabled()) return [];
+  if (!Array.isArray(emails) || emails.length === 0) return [];
+  const normalized = Array.from(
+    new Set(
+      emails
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  if (normalized.length === 0) return [];
+  const placeholders = normalized.map((_, idx) => `:email${idx}`).join(', ');
+  const params = normalized.reduce((acc, email, idx) => ({ ...acc, [`email${idx}`]: email }), {});
+  const rows = await mysqlClient.fetchAll(
+    `
+      SELECT *
+      FROM peppro_orders
+      WHERE JSON_VALID(payload)
+        AND LOWER(
+          JSON_UNQUOTE(
+            JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing.email')
+          )
+        ) IN (${placeholders})
+    `,
+    params,
+  );
+  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+};
+
 const fetchByUserId = async (userId) => {
   if (!mysqlClient.isEnabled() || !userId) return [];
   const rows = await mysqlClient.fetchAll(
@@ -301,6 +331,7 @@ module.exports = {
   fetchAll,
   fetchByUserId,
   fetchByUserIds,
+  fetchByBillingEmails,
   fetchById,
   fetchByShipStationOrderId,
 };

@@ -4858,12 +4858,14 @@ export default function App() {
     name: string;
     email?: string | null;
     avatar?: string | null;
-    revenue: number;
-    personalRevenue?: number | null;
-    salesRevenue?: number | null;
-    orderQuantity?: number | null;
-    totalOrderValue?: number | null;
-    orders: AccountOrderSummary[];
+	    revenue: number;
+	    personalRevenue?: number | null;
+	    salesRevenue?: number | null;
+	    salesWholesaleRevenue?: number | null;
+	    salesRetailRevenue?: number | null;
+	    orderQuantity?: number | null;
+	    totalOrderValue?: number | null;
+	    orders: AccountOrderSummary[];
     phone?: string | null;
     address?: string | null;
     lastOrderDate?: string | null;
@@ -5397,11 +5399,13 @@ export default function App() {
 	        doctorAddress?: string | null;
 	        orders: AccountOrderSummary[];
 	        total: number;
-          personalRevenue?: number | null;
-          salesRevenue?: number | null;
-          orderQuantity?: number | null;
-          totalOrderValue?: number | null;
-          ownerSalesRepId?: string | null;
+	          personalRevenue?: number | null;
+	          salesRevenue?: number | null;
+	          salesWholesaleRevenue?: number | null;
+	          salesRetailRevenue?: number | null;
+	          orderQuantity?: number | null;
+	          totalOrderValue?: number | null;
+	          ownerSalesRepId?: string | null;
 	      },
 	      sourceRole?: string,
 	    ) => {
@@ -5453,12 +5457,14 @@ export default function App() {
         name: bucket.doctorName,
         email: bucket.doctorEmail,
         avatar: bucket.doctorAvatar ?? null,
-        revenue: bucket.total,
-        personalRevenue: bucket.personalRevenue ?? null,
-        salesRevenue: bucket.salesRevenue ?? null,
-        orderQuantity: bucket.orderQuantity ?? null,
-        totalOrderValue: bucket.totalOrderValue ?? null,
-        orders: bucket.orders,
+	        revenue: bucket.total,
+	        personalRevenue: bucket.personalRevenue ?? null,
+	        salesRevenue: bucket.salesRevenue ?? null,
+	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
+	        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
+	        orderQuantity: bucket.orderQuantity ?? null,
+	        totalOrderValue: bucket.totalOrderValue ?? null,
+	        orders: bucket.orders,
         phone:
           bucket.doctorPhone ||
           (addressSource as any)?.phone ||
@@ -5475,13 +5481,29 @@ export default function App() {
   );
 
   const openLiveUserDetail = useCallback(
-    (entry: any) => {
+    (
+      entry: any,
+      options?: {
+        salesRepWholesaleRevenue?: number | null;
+        salesRepRetailRevenue?: number | null;
+      },
+    ) => {
       const id = String(entry?.id || "").trim();
       if (!id) return;
 
       const avatarUrl = entry?.profileImageUrl || null;
       const displayName = entry?.name || entry?.email || "User";
       const entryRole = normalizeRole(entry?.role);
+      const salesWholesaleRevenue =
+        typeof options?.salesRepWholesaleRevenue === "number" &&
+        Number.isFinite(options.salesRepWholesaleRevenue)
+          ? options.salesRepWholesaleRevenue
+          : null;
+      const salesRetailRevenue =
+        typeof options?.salesRepRetailRevenue === "number" &&
+        Number.isFinite(options.salesRepRetailRevenue)
+          ? options.salesRepRetailRevenue
+          : null;
 
       setSalesDoctorDetailLoading(true);
       openSalesDoctorDetail(
@@ -5495,6 +5517,8 @@ export default function App() {
           doctorAddress: null,
           orders: [],
           total: 0,
+          salesWholesaleRevenue,
+          salesRetailRevenue,
         },
         entryRole || "doctor",
       );
@@ -5579,6 +5603,8 @@ export default function App() {
               total: totalOrderValue,
               personalRevenue,
               salesRevenue,
+              salesWholesaleRevenue,
+              salesRetailRevenue,
               orderQuantity,
               totalOrderValue,
             },
@@ -13055,7 +13081,7 @@ export default function App() {
     const hasChartData = salesRepChartData.some((item) => item.count > 0);
 
 	    return (
-	      <section className="glass-card squircle-xl p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
+	      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-6">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
@@ -13111,7 +13137,7 @@ export default function App() {
 		          </div>
 
 	          {isRep(user?.role) && (
-	            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+	            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 	              <div className="flex flex-col gap-2">
 	                <div>
 	                  <h4 className="text-base font-semibold text-slate-900">Clients</h4>
@@ -13209,39 +13235,50 @@ export default function App() {
 	                                  key={entry.id}
 	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
 	                                >
-	                                  <button
-	                                    type="button"
-	                                    onClick={() => openLiveUserDetail(entry)}
-	                                    aria-label={`Open ${displayName} profile`}
-	                                    className="min-w-0 flex-1 overflow-hidden"
-	                                    style={{ background: "transparent", border: "none", padding: 0 }}
-	                                  >
-	                                    <div className="flex w-full items-center gap-3 min-w-0">
-	                                      <div
-	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-	                                        style={{ width: 42.5, height: 42.5, minWidth: 42.5 }}
-	                                      >
-	                                  {avatarUrl ? (
-	                                    <img
-	                                      src={avatarUrl}
-	                                      alt={displayName}
-	                                      className="h-full w-full object-cover"
+		                                  <button
+		                                    type="button"
+		                                    onClick={() => openLiveUserDetail(entry)}
+		                                    aria-label={`Open ${displayName} profile`}
+		                                    className="min-w-0 flex-1"
+		                                    style={{ background: "transparent", border: "none", padding: 0 }}
+		                                  >
+		                                    <div className="flex w-full items-center gap-3 min-w-0">
+				                                      <div
+				                                        className="rounded-full shrink-0"
+				                                        style={{
+				                                          width: 42.5,
+				                                          height: 42.5,
+				                                          minWidth: 42.5,
+				                                          boxShadow: !isOnlineNow
+				                                            ? undefined
+				                                            : showIdle
+				                                              ? "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(148,163,184,0.95)"
+				                                              : "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(95,179,249,0.95)",
+				                                        }}
+				                                      >
+				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
+			                                  {avatarUrl ? (
+			                                    <img
+		                                      src={avatarUrl}
+		                                      alt={displayName}
+		                                      className="h-full w-full object-cover"
 	                                      loading="lazy"
 	                                      decoding="async"
 	                                    />
 	                                  ) : (
-	                                    <span className="text-[11px] font-semibold text-slate-600">
-	                                      {getInitials(displayName)}
-	                                    </span>
-	                                  )}
-	                                </div>
-	                                <div className="min-w-0 flex-1 text-left">
-	                                  <div className="text-sm font-semibold text-slate-800 truncate">
-	                                    {displayName}
-	                                  </div>
-	                                  <div className="text-xs text-slate-500 truncate">
-	                                    {entry.email || "—"}
-	                                  </div>
+		                                    <span className="text-[11px] font-semibold text-slate-600">
+		                                      {getInitials(displayName)}
+		                                    </span>
+		                                  )}
+		                                </div>
+		                              </div>
+		                                <div className="min-w-0 flex-1 text-left overflow-hidden">
+		                                  <div className="text-sm font-semibold text-slate-800 truncate">
+		                                    {displayName}
+		                                  </div>
+		                                  <div className="text-xs text-slate-500 truncate">
+		                                    {entry.email || "—"}
+		                                  </div>
 	                                </div>
 	                              </div>
 	                            </button>
@@ -13282,7 +13319,7 @@ export default function App() {
 	          )}
 
 	          {isAdmin(user?.role) && (
-	          <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+	            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
                 <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -14137,14 +14174,29 @@ export default function App() {
 		                                onlineReported ||
 		                                (minutesSinceLastSeen != null &&
 		                                  minutesSinceLastSeen < OFFLINE_AFTER_MINUTES);
-		                              const showIdle =
-		                                isOnline &&
-		                                (idleReported ||
-		                                  (minutesSinceLastSeen != null &&
-		                                    minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
-		                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
+			                              const showIdle =
+			                                isOnline &&
+			                                (idleReported ||
+			                                  (minutesSinceLastSeen != null &&
+			                                    minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
+			                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
+			                              const formatOfflineFor = (value?: string | null) => {
+			                                const raw = formatRelativeMinutes(value);
+			                                if (raw === "a few moments ago") return "a few moments";
+			                                return raw.replace(/\s+ago$/, "");
+			                              };
+			                              const statusLabel = !isOnline
+			                                ? "Offline"
+			                                : showIdle
+			                                  ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
+			                                  : "Online";
+			                              const detailLabel = isOnline
+			                                ? formatOnlineDuration(entry.lastLoginAt)
+			                                : entry.lastSeenAt
+			                                  ? `Offline for ${formatOfflineFor(entry.lastSeenAt)}`
+			                                  : "Offline";
 
-		                              return (
+			                              return (
 		                                <div
 		                                  key={entry.id}
                                   className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
@@ -14156,31 +14208,42 @@ export default function App() {
 	                                    className="min-w-0 flex-1"
 	                                    style={{ background: "transparent", border: "none", padding: 0 }}
 	                                  >
-	                                    <div className="flex items-center gap-3 min-w-0">
-	                                      <div
-	                                        className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm shrink-0 transition hover:shadow-md hover:border-slate-300"
-		                                        style={{ width: 41.4, height: 41.4, minWidth: 41.4 }}
-	                                      >
-	                                        {avatarUrl ? (
-	                                          <img
-                                            src={avatarUrl}
-                                            alt={displayName}
+			                                    <div className="flex items-center gap-3 min-w-0">
+				                                        <div
+				                                          className="rounded-full shrink-0"
+				                                          style={{
+				                                            width: 41.4,
+				                                            height: 41.4,
+				                                            minWidth: 41.4,
+				                                            boxShadow: !isOnline
+				                                              ? undefined
+				                                              : showIdle
+				                                                ? "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(148,163,184,0.95)"
+				                                                : "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(95,179,249,0.95)",
+				                                          }}
+				                                        >
+				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
+			                                        {avatarUrl ? (
+			                                          <img
+	                                            src={avatarUrl}
+	                                            alt={displayName}
                                             className="h-full w-full object-cover"
                                             loading="lazy"
                                             decoding="async"
                                           />
                                         ) : (
-                                          <span className="text-[11px] font-semibold text-slate-600">
-		                                            {getInitials(displayName)}
-		                                          </span>
-		                                        )}
-		                                      </div>
-		                                      <div className="min-w-0 flex-1 overflow-x-auto">
-		                                        <div className="min-w-max flex flex-col">
-		                                          <div className="flex items-center gap-2 whitespace-nowrap">
-			                                          {rolePill && (
-			                                            <span
-				                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
+	                                          <span className="text-[11px] font-semibold text-slate-600">
+			                                            {getInitials(displayName)}
+			                                          </span>
+			                                        )}
+			                                      </div>
+			                                    </div>
+			                                      <div className="min-w-0 flex-1 overflow-hidden">
+			                                        <div className="flex flex-col">
+			                                          <div className="flex items-center gap-2 whitespace-nowrap">
+				                                          {rolePill && (
+				                                            <span
+					                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
 			                                              style={rolePill.style}
 			                                            >
 			                                              {rolePill.label}
@@ -14190,41 +14253,20 @@ export default function App() {
 		                                            {displayName}
 		                                          </span>
 		                                          </div>
-		                                          <span className="text-xs text-slate-600 whitespace-nowrap">
-		                                            {entry.email || "—"}
-		                                          </span>
-		                                        </div>
-		                                      </div>
-		                                    </div>
-		                                  </button>
+				                                          <span className="text-sm text-slate-600 whitespace-nowrap">
+				                                            {entry.email || "—"}
+				                                          </span>
+				                                          <span className="text-sm text-slate-600 whitespace-nowrap">
+				                                            {statusLabel} — {detailLabel}
+				                                          </span>
+				                                        </div>
+				                                      </div>
+				                                    </div>
+				                                  </button>
 
-	                                  <div className="ml-auto grid w-[150px] sm:w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
-	                                    <span
-			                                      className={`inline-flex justify-end squircle-xs px-3 py-[2px] text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-			                                        !isOnline
-			                                          ? "bg-slate-100 text-slate-600"
-		                                          : showIdle
-                                            ? "bg-slate-100 text-slate-600"
-                                            : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-                                      }`}
-                                    >
-                                      {!isOnline
-                                        ? "Offline"
-                                        : showIdle
-                                          ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
-                                          : "Online"}
-                                    </span>
-		                                    <div className="text-xs text-slate-600 whitespace-nowrap">
-		                                      {isOnline
-		                                        ? formatOnlineDuration(entry.lastLoginAt)
-		                                        : entry.lastSeenAt
-                                          ? `Last seen ${formatRelativeMinutes(entry.lastSeenAt)}`
-                                          : "Offline"}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-	                            })
+	                                </div>
+	                              );
+		                            })
                             )}
                           </div>
                         </div>
@@ -14449,9 +14491,33 @@ export default function App() {
 		                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
 		                            }}
 		                          >
-	                            <div className="text-sm font-semibold text-slate-900">
-	                              {rep.salesRepName}
-	                            </div>
+		                            <div className="text-sm font-semibold text-slate-900 min-w-0">
+		                              <button
+		                                type="button"
+		                                className="min-w-0 text-left hover:underline"
+		                                onClick={() =>
+		                                  openLiveUserDetail(
+		                                    {
+		                                      id: rep.salesRepId,
+		                                      name: rep.salesRepName,
+		                                      email: rep.salesRepEmail,
+		                                      role: "sales_rep",
+		                                    },
+		                                    {
+		                                      salesRepWholesaleRevenue: Number(
+		                                        rep.wholesaleRevenue || 0,
+		                                      ),
+		                                      salesRepRetailRevenue: Number(
+		                                        rep.retailRevenue || 0,
+		                                      ),
+		                                    },
+		                                  )
+		                                }
+		                                title="Open sales rep details"
+		                              >
+		                                {rep.salesRepName}
+		                              </button>
+		                            </div>
                             <div
                               className="text-sm text-slate-700 truncate"
                               title={rep.salesRepEmail || ""}
@@ -14595,48 +14661,56 @@ export default function App() {
 	              </div>
 
 		              {adminTaxesByStateError ? (
-		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
-		                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
-		                    {adminTaxesByStateError}
-		                  </div>
-		                </div>
-		              ) : adminTaxesByStateLoading ? (
-		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
-		                  <div className="p-6 text-sm text-slate-500">Loading taxes…</div>
-		                </div>
-		              ) : adminTaxesByStateRows.length === 0 ? (
-		                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
-		                  <div className="p-6 text-sm text-slate-500">No tax data for this period.</div>
-		                </div>
-		              ) : (
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
+			                    {adminTaxesByStateError}
+			                  </div>
+			                </div>
+			              ) : adminTaxesByStateLoading ? (
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                  <div className="p-6 text-sm text-slate-500">Loading taxes…</div>
+			                </div>
+			              ) : adminTaxesByStateRows.length === 0 ? (
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                  <div className="p-6 text-sm text-slate-500">No tax data for this period.</div>
+			                </div>
+			              ) : (
 				              <div className="grid grid-cols-1 gap-4">
-					              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Taxes by state list">
+						              <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
 			                    {adminTaxesByStateMeta?.totals && (
 			                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 			                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
 			                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
 			                      </div>
 			                    )}
-		                    <div
-		                      className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-		                      style={{
-		                        gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
-		                      }}
-		                    >
-		                      <div>State</div>
-	                      <div className="text-right">Orders</div>
-	                      <div className="text-right">Tax</div>
-	                    </div>
-		                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto">
-		                      {adminTaxesByStateRows.map((row) => (
-		                        <li
-		                          key={row.state}
-		                          className="grid items-center gap-3 px-4 py-2"
-		                          style={{
-		                            gridTemplateColumns: "minmax(120px,1fr) minmax(90px,120px) minmax(120px,160px)",
-		                          }}
-		                        >
-	                          <div className="text-sm font-semibold text-slate-900">{row.state}</div>
+						                    <div
+							                      className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 min-w-[920px]"
+							                      style={{
+							                        gridTemplateColumns: "minmax(0,1fr) 110px 180px",
+							                      }}
+							                    >
+				                      <div className="sticky left-0 z-20 bg-[rgba(95,179,249,0.08)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
+				                        State
+				                      </div>
+			                      <div className="text-right">Orders</div>
+			                      <div className="text-right">Tax</div>
+			                    </div>
+					                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto min-w-[920px]">
+					                      {adminTaxesByStateRows.map((row) => (
+					                        <li
+					                          key={row.state}
+					                          className="grid items-center gap-3 px-4 py-2 min-w-[920px]"
+					                          style={{
+					                            gridTemplateColumns: "minmax(0,1fr) 110px 180px",
+					                          }}
+					                        >
+				                          <div className="min-w-0 overflow-hidden sticky left-0 z-10 bg-[rgba(255,255,255,0.94)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
+				                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
+				                              <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+				                                {row.state}
+				                              </div>
+				                            </div>
+				                          </div>
 	                          <div className="text-sm text-right text-slate-800 tabular-nums">
 	                            {Number(row.orderCount || 0)}
 	                          </div>
@@ -14649,14 +14723,14 @@ export default function App() {
 					              </div>
 
 				                  {adminTaxesByStateOrders.length > 0 && (
-				                    <details
-				                          className="sales-rep-table-wrapper p-0 overflow-hidden bg-white/60 border border-slate-200/70"
-	                          open={adminTaxesByStateBreakdownOpen}
-	                          onToggle={(event) => {
-	                            setAdminTaxesByStateBreakdownOpen(
-	                              (event.currentTarget as HTMLDetailsElement).open,
-	                            );
-	                          }}
+					                    <details
+					                          className="sales-rep-table-wrapper p-0 bg-white/60 border border-slate-200/70"
+		                          open={adminTaxesByStateBreakdownOpen}
+		                          onToggle={(event) => {
+		                            setAdminTaxesByStateBreakdownOpen(
+		                              (event.currentTarget as HTMLDetailsElement).open,
+		                            );
+		                          }}
                         >
 			                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
 			                        <span>Order Tax Breakdown</span>
@@ -14664,26 +14738,32 @@ export default function App() {
                               {adminTaxesByStateBreakdownOpen ? "Collapse" : "Expand"}
                             </span>
 		                      </summary>
-		                      <div
-		                        className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-		                        style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(120px,160px)" }}
-		                      >
-		                        <div>Order</div>
-		                        <div className="text-right">Tax</div>
-		                      </div>
-		                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto">
-		                        {adminTaxesByStateOrders.map((line) => (
-		                          <li
-		                            key={`${line.orderNumber}-${line.state}`}
-		                            className="grid items-center gap-3 px-4 py-2"
-		                            style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(120px,160px)" }}
-		                          >
-		                            <div className="min-w-0">
-		                              <div className="text-sm font-semibold text-slate-900 truncate">
-		                                {line.orderNumber}
-		                              </div>
-		                              <div className="text-xs text-slate-600 truncate">State: {line.state}</div>
-		                            </div>
+					                      <div
+					                        className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 min-w-[920px]"
+					                        style={{ gridTemplateColumns: "minmax(0,1fr) 180px" }}
+					                      >
+				                        <div className="sticky left-0 z-20 bg-[rgba(95,179,249,0.08)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
+				                          Order
+				                        </div>
+				                        <div className="text-right">Tax</div>
+				                      </div>
+				                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto min-w-[920px]">
+				                        {adminTaxesByStateOrders.map((line) => (
+				                          <li
+				                            key={`${line.orderNumber}-${line.state}`}
+				                            className="grid items-center gap-3 px-4 py-2 min-w-[920px]"
+				                            style={{ gridTemplateColumns: "minmax(0,1fr) 180px" }}
+				                          >
+					                            <div className="min-w-0 overflow-hidden sticky left-0 z-10 bg-[rgba(255,255,255,0.94)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
+					                              <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
+					                                <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+					                                  {line.orderNumber}
+					                                </div>
+				                                <div className="text-xs text-slate-600 whitespace-nowrap">
+				                                  State: {line.state}
+				                                </div>
+				                              </div>
+				                            </div>
 		                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
 		                              {formatCurrency(Number(line.taxTotal || 0))}
 		                            </div>
@@ -14835,81 +14915,99 @@ export default function App() {
 	              </div>
 
 	              {adminProductsCommissionError ? (
-	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
-	                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
-	                    {adminProductsCommissionError}
-	                  </div>
-	                </div>
-	              ) : adminProductsCommissionLoading ? (
-	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
-	                  <div className="p-6 text-sm text-slate-500">Loading report…</div>
-	                </div>
-	              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
-	                <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold and commission lists">
-	                  <div className="p-6 text-sm text-slate-500">No data for this period.</div>
-	                </div>
-			              ) : (
-				              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-					              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Products sold list">
-				                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-				                      <span>Products Sold</span>
-				                    </div>
-			                    <div className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
-			                          style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
-			                        >
-			                      <div>Product</div>
-			                      <div className="text-right">Qty</div>
-			                    </div>
-			                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
-			                      {adminProductSalesRows.map((row) => (
-			                        <li
-			                          key={row.key}
-			                          className="grid items-center gap-3 px-4 py-1.5"
-                              style={{ gridTemplateColumns: "minmax(0,1fr) 72px" }}
-                            >
-		                          <div className="min-w-0 flex items-baseline gap-2">
-		                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-		                              {row.name}
-		                            </div>
-                                <div className="text-[11px] leading-tight text-slate-600 truncate">
-                                  {row.sku ? `SKU: ${row.sku}` : row.productId != null ? `Product ID: ${row.productId}` : "—"}
-                                </div>
-		                          </div>
-		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-		                            {Number(row.quantity || 0)}
-		                          </div>
-		                        </li>
-			                      ))}
-			                    </ul>
-					              </div>
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                  <div className="p-4 sm:p-6 text-sm text-amber-700 bg-amber-50">
+			                    {adminProductsCommissionError}
+			                  </div>
+			                </div>
+			              ) : adminProductsCommissionLoading ? (
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                  <div className="p-4 sm:p-6 text-sm text-slate-500">Loading report…</div>
+			                </div>
+			              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
+			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                  <div className="p-4 sm:p-6 text-sm text-slate-500">No data for this period.</div>
+			                </div>
+				              ) : (
+					              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+						              <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold list">
+					                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+					                      <span>Products Sold</span>
+					                    </div>
+						                    <div
+						                      className="grid items-center gap-3 px-3 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] min-w-[920px]"
+						                      style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
+						                    >
+					                      <div>Product</div>
+					                      <div className="text-right">Qty</div>
+					                    </div>
+						                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto min-w-[920px]">
+						                      {adminProductSalesRows.map((row) => (
+						                        <li
+						                          key={row.key}
+						                          className="grid items-center gap-3 px-3 sm:px-4 py-1.5 min-w-[920px]"
+			                            style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
+			                          >
+							                          <div className="min-w-0 overflow-hidden">
+							                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
+							                              <div className="inline-flex items-baseline gap-2 whitespace-nowrap">
+							                                <div
+							                                  className="text-sm font-semibold text-slate-900 whitespace-nowrap"
+							                                  title={row.name}
+							                                >
+							                                  {row.name}
+							                                </div>
+							                                <div className="text-[11px] leading-tight text-slate-600 whitespace-nowrap">
+							                                  {row.sku
+							                                    ? `SKU: ${row.sku}`
+							                                    : row.productId != null
+							                                      ? `Product ID: ${row.productId}`
+							                                      : "—"}
+							                                </div>
+							                              </div>
+							                            </div>
+							                          </div>
+				                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
+				                            {Number(row.quantity || 0)}
+			                          </div>
+			                        </li>
+				                      ))}
+				                    </ul>
+						              </div>
 
-				                  <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Commission list">
-					                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-				                      <span>Commission</span>
-				                    </div>
-			                    <div
-			                      className="grid items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)]"
-			                      style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
-			                    >
-			                      <div>Recipient</div>
-			                      <div className="text-right">Amount</div>
-			                    </div>
-			                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto">
-			                      {adminCommissionRows.map((row) => (
-			                        <li
-			                          key={row.id}
-			                          className="grid items-center gap-3 px-4 py-1.5"
-                              style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
-                            >
-		                          <div className="min-w-0">
-			                            <div className="text-sm font-semibold text-slate-900 truncate" title={row.name}>
-			                              {row.name}
-			                            </div>
-			                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600">
-				                              {(() => {
-				                                const retailOrders = Number(row.retailOrders || 0);
-				                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
-				                                const retailBase = Number(row.retailBase || 0);
+					                  <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Commission list">
+						                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+					                      <span>Commission</span>
+					                    </div>
+						                    <div
+						                      className="grid items-center gap-3 px-3 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] min-w-[920px]"
+						                      style={{ gridTemplateColumns: "minmax(0,1fr) 140px" }}
+						                    >
+					                      <div>Recipient</div>
+					                      <div className="text-right">Amount</div>
+					                    </div>
+						                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto min-w-[920px]">
+						                      {adminCommissionRows.map((row) => (
+						                        <li
+						                          key={row.id}
+						                          className="grid items-center gap-3 px-3 sm:px-4 py-1.5 min-w-[920px]"
+			                            style={{ gridTemplateColumns: "minmax(0,1fr) 140px" }}
+			                          >
+						                          <div className="min-w-0 overflow-hidden">
+							                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
+							                              <div
+							                                className="text-sm font-semibold text-slate-900 whitespace-nowrap"
+							                                title={row.name}
+							                              >
+							                                {row.name}
+							                              </div>
+							                            </div>
+							                            <div className="mt-0.5 w-full min-w-0 overflow-x-auto no-scrollbar">
+							                              <div className="inline-flex flex-nowrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600 whitespace-nowrap">
+								                              {(() => {
+					                                const retailOrders = Number(row.retailOrders || 0);
+					                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
+					                                const retailBase = Number(row.retailBase || 0);
 				                                const wholesaleBase = Number(row.wholesaleBase || 0);
 				                                const houseRetailOrders = Number((row as any).houseRetailOrders || 0);
 				                                const houseWholesaleOrders = Number((row as any).houseWholesaleOrders || 0);
@@ -14928,52 +15026,55 @@ export default function App() {
 					                                  | undefined;
 					                                const retailEarned = retailBase * 0.2;
 					                                const wholesaleEarned = wholesaleBase * 0.1;
-					                                const segments: ReactNode[] = [];
-				                                segments.push(
-				                                  <span key="role" className="whitespace-nowrap">
-				                                    Role: {row.role || "— "}
-				                                  </span>,
-				                                );
-					                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
-					                                  const computed = houseRetailBase * 0.2;
-					                                  const value = houseRetailCommission || computed;
-					                                  segments.push(
-					                                    <span key="house-retail" className="whitespace-nowrap tabular-nums">
-					                                      House Retail: {formatCurrency(value)} (
-					                                      {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2)
-					                                    </span>,
-					                                  );
-					                                } else if (retailOrders > 0 || retailBase > 0) {
-					                                  const value = retailEarned;
-					                                  segments.push(
-					                                    <span
-					                                      key="retail"
-					                                      className="whitespace-nowrap tabular-nums"
-					                                    >
-					                                       Retail: {formatCurrency(value)} ({retailOrders} · {formatCurrency(retailBase)}×0.2)
-					                                    </span>,
-					                                  );
-					                                }
-					                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
-					                                  const computed = houseWholesaleBase * 0.1;
-					                                  const value = houseWholesaleCommission || computed;
-					                                  segments.push(
-					                                    <span key="house-wholesale" className="whitespace-nowrap tabular-nums">
-					                                      House Wholesale: {formatCurrency(value)} (
-					                                      {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1)
-					                                    </span>,
-					                                  );
-					                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
-					                                  const value = wholesaleEarned;
-					                                  segments.push(
-					                                    <span
-					                                      key="wholesale"
-					                                      className="whitespace-nowrap tabular-nums"
-					                                    >
-					                                       Wholesale: {formatCurrency(value)} ({wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1)
-					                                    </span>,
-					                                  );
-					                                }
+						                                const segments: ReactNode[] = [];
+						                                segments.push(
+						                                  <span
+						                                    key="role"
+						                                    className="whitespace-nowrap"
+						                                  >
+						                                    Role: {row.role || "— "}
+						                                  </span>,
+						                                );
+						                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
+						                                  const computed = houseRetailBase * 0.2;
+						                                  const value = houseRetailCommission || computed;
+						                                  segments.push(
+						                                    <span className="whitespace-nowrap tabular-nums" key="house-retail">
+						                                      House Retail: {formatCurrency(value)} (
+						                                      {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2)
+						                                    </span>,
+						                                  );
+						                                } else if (retailOrders > 0 || retailBase > 0) {
+						                                  const value = retailEarned;
+						                                  segments.push(
+						                                    <span
+						                                      key="retail"
+						                                      className="whitespace-nowrap tabular-nums"
+						                                    >
+						                                       Retail: {formatCurrency(value)} ({retailOrders} · {formatCurrency(retailBase)}×0.2)
+						                                    </span>,
+						                                  );
+						                                }
+						                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
+						                                  const computed = houseWholesaleBase * 0.1;
+						                                  const value = houseWholesaleCommission || computed;
+						                                  segments.push(
+						                                    <span className="whitespace-nowrap tabular-nums" key="house-wholesale">
+						                                      House Wholesale: {formatCurrency(value)} (
+						                                      {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1)
+						                                    </span>,
+						                                  );
+						                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
+						                                  const value = wholesaleEarned;
+						                                  segments.push(
+						                                    <span
+						                                      key="wholesale"
+						                                      className="whitespace-nowrap tabular-nums"
+						                                    >
+						                                       Wholesale: {formatCurrency(value)} ({wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1)
+						                                    </span>,
+						                                  );
+						                                }
 					                                if (bonus > 0) {
 					                                  const monthKeys = Array.from(
 					                                    new Set([
@@ -15017,7 +15118,7 @@ export default function App() {
 					                                              : ""
 					                                          })`
 					                                        : "";
-					                                  segments.push(
+						                                  segments.push(
 				                                    <span
 				                                      key="bonus"
 				                                      className="whitespace-nowrap tabular-nums"
@@ -15033,17 +15134,20 @@ export default function App() {
 					                                      <Fragment
 					                                        key={(segment as any)?.key ?? index}
 					                                      >
-					                                        {index > 0 && (
-					                                          <span className="text-slate-300">{" | "}</span>
-					                                        )}
-					                                        {segment}
+				                                        {index > 0 && (
+						                                          <span className="text-slate-300">
+						                                            {"\u00A0|\u00A0"}
+						                                          </span>
+				                                        )}
+				                                        {segment}
 					                                      </Fragment>
 				                                    ))}
 			                                  </>
 			                                );
-			                              })()}
-			                            </div>
-			                          </div>
+								                              })()}
+							                              </div>
+							                            </div>
+						                          </div>
 		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
 		                            {formatCurrency(Number(row.amount || 0))}
 		                          </div>
@@ -18703,12 +18807,38 @@ export default function App() {
 	                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
 	                          )}
 	                        </p>
-	                        <p className="text-sm text-slate-600">
-	                          Sales Revenue:{" "}
-	                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
-	                        </p>
-	                      </>
-                    ) : isDoctorRole(salesDoctorDetail.role) ? (
+		                        <p className="text-sm text-slate-600">
+		                          Sales Revenue:{" "}
+		                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
+		                        </p>
+		                        {(() => {
+		                          const repRow = salesRepSalesSummary.find(
+		                            (row) =>
+		                              String(row?.salesRepId || "") ===
+		                              String(salesDoctorDetail.doctorId || ""),
+		                          );
+		                          const wholesale = Number(
+		                            repRow?.wholesaleRevenue ??
+		                              salesDoctorDetail.salesWholesaleRevenue ??
+		                              0,
+		                          );
+		                          const retail = Number(
+		                            repRow?.retailRevenue ??
+		                              salesDoctorDetail.salesRetailRevenue ??
+		                              0,
+		                          );
+		                          if (!Number.isFinite(wholesale) && !Number.isFinite(retail)) {
+		                            return null;
+		                          }
+		                          const totalCommission = wholesale * 0.1 + retail * 0.2;
+		                          return (
+		                            <p className="text-sm text-slate-600">
+		                              Total Commission: {formatCurrency(totalCommission)}
+		                            </p>
+		                          );
+		                        })()}
+		                      </>
+	                    ) : isDoctorRole(salesDoctorDetail.role) ? (
                       <>
                         <p className="text-sm text-slate-600">
                           Order Quantity:{" "}

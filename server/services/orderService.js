@@ -1740,6 +1740,64 @@ const getOrdersForSalesRep = async (
     }),
   );
 
+  const contactLeadByEmail = new Map();
+  if (mysqlClient.isEnabled()) {
+    try {
+      const prospects = await salesProspectRepository.getAll();
+      const list = Array.isArray(prospects) ? prospects : [];
+      list.forEach((prospect) => {
+        const contactFormId = normalizeId(prospect?.contactFormId);
+        const email = normalizeEmail(prospect?.contactEmail);
+        if (!contactFormId || !email) return;
+
+        const prospectSalesRepId = normalizeId(prospect?.salesRepId);
+        const matchesRep =
+          prospectSalesRepId && allowedRepIds.has(normalizeId(prospectSalesRepId));
+
+        if (includeAllDoctors) {
+          if (allowedRepIds.size > 0 && !matchesRep) return;
+        } else if (!matchesRep) {
+          return;
+        }
+
+        const leadDoctorId =
+          normalizeId(prospect?.doctorId) || `contact_form:${contactFormId}`;
+        if (!leadDoctorId) return;
+
+        const leadRecord = {
+          id: leadDoctorId,
+          name: prospect?.contactName || email,
+          email,
+          profileImageUrl: null,
+          phone: prospect?.contactPhone || null,
+          leadType: 'contact_form',
+          leadTypeSource: 'contact_form',
+          leadTypeLockedAt: prospect?.updatedAt || prospect?.createdAt || null,
+        };
+
+        if (!contactLeadByEmail.has(email)) {
+          contactLeadByEmail.set(email, leadRecord);
+        }
+
+        const existing = doctorLookup.get(leadDoctorId);
+        if (existing) {
+          doctorLookup.set(leadDoctorId, {
+            ...leadRecord,
+            ...existing,
+            id: leadDoctorId,
+            name: existing.name || leadRecord.name,
+            email: existing.email || leadRecord.email,
+            profileImageUrl: existing.profileImageUrl || leadRecord.profileImageUrl,
+          });
+        } else {
+          doctorLookup.set(leadDoctorId, leadRecord);
+        }
+      });
+    } catch (error) {
+      logger.warn({ err: error }, 'Sales rep order fetch: unable to load contact form prospects');
+    }
+  }
+
   if (includeSelfOrders && normalizedSalesRepId && !doctorLookup.has(normalizedSalesRepId)) {
     const selfUser = userRepository.findById ? userRepository.findById(normalizedSalesRepId) : null;
     doctorLookup.set(normalizedSalesRepId, {
@@ -1758,6 +1816,7 @@ const getOrdersForSalesRep = async (
   const summaries = [];
   const seenKeys = new Set();
   const doctorIds = doctors.map((d) => normalizeId(d.id)).filter(Boolean);
+  const contactLeadEmails = Array.from(contactLeadByEmail.keys());
 
   // Only use MySQL/WooCommerce-backed orders for sales rep reporting
   if (mysqlClient.isEnabled()) {
@@ -1786,6 +1845,38 @@ const getOrdersForSalesRep = async (
         doctorProfileImageUrl: doctorLookup.get(normalizeId(order.userId))?.profileImageUrl || null,
         source: 'mysql',
       });
+    }
+
+    if (
+      typeof orderSqlRepository.fetchByBillingEmails === 'function'
+      && contactLeadEmails.length > 0
+    ) {
+      const emailOrders = await orderSqlRepository.fetchByBillingEmails(contactLeadEmails);
+      // eslint-disable-next-line no-restricted-syntax
+      for (const rawOrder of emailOrders) {
+        // eslint-disable-next-line no-await-in-loop
+        const order = await enrichOrderWithShipStation(rawOrder);
+        const key = `sql:${order.id}`;
+        if (seenKeys.has(key)) continue;
+        const billingEmail = normalizeEmail(
+          order?.billingAddress?.email
+            || order?.billingAddress?.emailAddress
+            || order?.payload?.order?.billing?.email
+            || order?.payload?.order?.billing_email
+            || null,
+        );
+        const lead = billingEmail ? contactLeadByEmail.get(billingEmail) : null;
+        if (!lead) continue;
+        seenKeys.add(key);
+        summaries.push({
+          ...buildLocalOrderSummary(order),
+          doctorId: lead.id,
+          doctorName: lead.name || 'House / Contact Form',
+          doctorEmail: lead.email || null,
+          doctorProfileImageUrl: lead.profileImageUrl || null,
+          source: 'mysql',
+        });
+      }
     }
   } else if (wooCommerceClient?.isConfigured?.()) {
     for (const doctor of doctors) {
