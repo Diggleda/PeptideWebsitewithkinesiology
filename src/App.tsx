@@ -5907,7 +5907,17 @@ export default function App() {
       wholesaleOrders?: number;
       retailBase?: number;
       wholesaleBase?: number;
+      houseRetailOrders?: number;
+      houseWholesaleOrders?: number;
+      houseRetailBase?: number;
+      houseWholesaleBase?: number;
+      houseRetailCommission?: number;
+      houseWholesaleCommission?: number;
       specialAdminBonus?: number;
+      specialAdminBonusRate?: number;
+      specialAdminBonusMonthlyCap?: number;
+      specialAdminBonusByMonth?: Record<string, number>;
+      specialAdminBonusBaseByMonth?: Record<string, number>;
     }[]
   >([]);
   const [adminProductsCommissionMeta, setAdminProductsCommissionMeta] = useState<{
@@ -6225,7 +6235,17 @@ export default function App() {
             wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
             retailBase: Number((row as any)?.retailBase || 0),
             wholesaleBase: Number((row as any)?.wholesaleBase || 0),
+            houseRetailOrders: Number((row as any)?.houseRetailOrders || 0),
+            houseWholesaleOrders: Number((row as any)?.houseWholesaleOrders || 0),
+            houseRetailBase: Number((row as any)?.houseRetailBase || 0),
+            houseWholesaleBase: Number((row as any)?.houseWholesaleBase || 0),
+            houseRetailCommission: Number((row as any)?.houseRetailCommission || 0),
+            houseWholesaleCommission: Number((row as any)?.houseWholesaleCommission || 0),
             specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
+            specialAdminBonusRate: Number((row as any)?.specialAdminBonusRate || 0),
+            specialAdminBonusMonthlyCap: Number((row as any)?.specialAdminBonusMonthlyCap || 0),
+            specialAdminBonusByMonth: ((row as any)?.specialAdminBonusByMonth ?? undefined) as any,
+            specialAdminBonusBaseByMonth: ((row as any)?.specialAdminBonusBaseByMonth ?? undefined) as any,
           }))
           .filter((row) => {
             return (
@@ -6234,6 +6254,12 @@ export default function App() {
               Number(row.wholesaleOrders || 0) > 0 ||
               Number(row.retailBase || 0) > 0 ||
               Number(row.wholesaleBase || 0) > 0 ||
+              Number(row.houseRetailOrders || 0) > 0 ||
+              Number(row.houseWholesaleOrders || 0) > 0 ||
+              Number(row.houseRetailBase || 0) > 0 ||
+              Number(row.houseWholesaleBase || 0) > 0 ||
+              Number(row.houseRetailCommission || 0) > 0 ||
+              Number(row.houseWholesaleCommission || 0) > 0 ||
               Number(row.specialAdminBonus || 0) > 0
             );
           }),
@@ -6299,32 +6325,44 @@ export default function App() {
       });
 	      rows.push("");
 	      rows.push(["Report", "Commissions"].join(","));
-		      rows.push(
-		        [
-		          "Recipient",
-		          "Role",
-		          "RetailOrders",
-		          "WholesaleOrders",
-		          "RetailBase",
-		          "WholesaleBase",
-		          "Administrative",
-		          "Amount",
-		        ].join(","),
-		      );
+              rows.push(
+                [
+                  "Recipient",
+                  "Role",
+                  "RetailOrders",
+                  "WholesaleOrders",
+                  "RetailBase",
+                  "WholesaleBase",
+                  "HouseRetailOrders",
+                  "HouseWholesaleOrders",
+                  "HouseRetailBase",
+                  "HouseWholesaleBase",
+                  "HouseRetailCommission",
+                  "HouseWholesaleCommission",
+                  "Administrative",
+                  "Amount",
+                ].join(","),
+              );
 	      adminCommissionRows.forEach((row) => {
-	        rows.push(
-	          [
-	            escapeCsv(row.name),
-	            escapeCsv(row.role),
-	            escapeCsv(Number(row.retailOrders || 0)),
-	            escapeCsv(Number(row.wholesaleOrders || 0)),
-	            escapeCsv(Number(row.retailBase || 0).toFixed(2)),
-	            escapeCsv(Number(row.wholesaleBase || 0).toFixed(2)),
-	            escapeCsv(Number(row.specialAdminBonus || 0).toFixed(2)),
-	            escapeCsv(Number(row.amount || 0).toFixed(2)),
-	          ].join(","),
-	        );
-	      });
+                rows.push(
+                  [
+                    escapeCsv(row.name),
+                    escapeCsv(row.role),
+                    escapeCsv(Number(row.retailOrders || 0)),
+                    escapeCsv(Number(row.wholesaleOrders || 0)),
+                    escapeCsv(Number(row.retailBase || 0).toFixed(2)),
+                    escapeCsv(Number(row.wholesaleBase || 0).toFixed(2)),
+                    escapeCsv(Number(row.houseRetailOrders || 0)),
+                    escapeCsv(Number(row.houseWholesaleOrders || 0)),
+                    escapeCsv(Number(row.houseRetailBase || 0).toFixed(2)),
+                    escapeCsv(Number(row.houseWholesaleBase || 0).toFixed(2)),
+                    escapeCsv(Number(row.houseRetailCommission || 0).toFixed(2)),
+                    escapeCsv(Number(row.houseWholesaleCommission || 0).toFixed(2)),
+                    escapeCsv(Number(row.specialAdminBonus || 0).toFixed(2)),
+                    escapeCsv(Number(row.amount || 0).toFixed(2)),
+                  ].join(","),
+                );
+              });
 
 	      const csv = rows.join("\n");
 	      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -14835,13 +14873,21 @@ export default function App() {
 				                                const wholesaleBase = Number(row.wholesaleBase || 0);
 				                                const houseRetailOrders = Number((row as any).houseRetailOrders || 0);
 				                                const houseWholesaleOrders = Number((row as any).houseWholesaleOrders || 0);
-				                                const houseRetailBase = Number((row as any).houseRetailBase || 0);
-				                                const houseWholesaleBase = Number((row as any).houseWholesaleBase || 0);
-				                                const houseRetailCommission = Number((row as any).houseRetailCommission || 0);
-				                                const houseWholesaleCommission = Number((row as any).houseWholesaleCommission || 0);
-				                                const bonus = Number(row.specialAdminBonus || 0);
-				                                const retailEarned = retailBase * 0.2;
-				                                const wholesaleEarned = wholesaleBase * 0.1;
+					                                const houseRetailBase = Number((row as any).houseRetailBase || 0);
+					                                const houseWholesaleBase = Number((row as any).houseWholesaleBase || 0);
+					                                const houseRetailCommission = Number((row as any).houseRetailCommission || 0);
+					                                const houseWholesaleCommission = Number((row as any).houseWholesaleCommission || 0);
+					                                const bonus = Number(row.specialAdminBonus || 0);
+					                                const bonusRate = Number((row as any).specialAdminBonusRate || 0);
+					                                const bonusMonthlyCap = Number((row as any).specialAdminBonusMonthlyCap || 0);
+					                                const bonusByMonth = (row as any).specialAdminBonusByMonth as
+					                                  | Record<string, number>
+					                                  | undefined;
+					                                const bonusBaseByMonth = (row as any).specialAdminBonusBaseByMonth as
+					                                  | Record<string, number>
+					                                  | undefined;
+					                                const retailEarned = retailBase * 0.2;
+					                                const wholesaleEarned = wholesaleBase * 0.1;
 					                                const segments: ReactNode[] = [];
 				                                segments.push(
 				                                  <span key="role" className="whitespace-nowrap">
@@ -14886,16 +14932,51 @@ export default function App() {
 				                                    </span>,
 				                                  );
 				                                }
-				                                if (bonus > 0) {
-				                                  segments.push(
-			                                    <span
-			                                      key="bonus"
-			                                      className="whitespace-nowrap tabular-nums"
-			                                    >
-			                                      Bonus: {formatCurrency(bonus)}
-			                                    </span>,
-			                                  );
-			                                }
+					                                if (bonus > 0) {
+					                                  const monthKeys = Array.from(
+					                                    new Set([
+					                                      ...Object.keys(bonusByMonth || {}),
+					                                      ...Object.keys(bonusBaseByMonth || {}),
+					                                    ]),
+					                                  ).sort();
+					                                  const bonusMath =
+					                                    bonusRate > 0 && monthKeys.length > 0
+					                                      ? ` · ${monthKeys
+					                                          .map((monthKey) => {
+					                                            const monthBase = Number(
+					                                              (bonusBaseByMonth || {})[monthKey] || 0,
+					                                            );
+					                                            const raw = monthBase * bonusRate;
+					                                            const capped =
+					                                              Number((bonusByMonth || {})[monthKey]) || raw;
+					                                            const capSuffix =
+					                                              bonusMonthlyCap > 0 && capped < raw
+					                                                ? ` (cap ${formatCurrency(bonusMonthlyCap)}/mo)`
+					                                                : "";
+					                                            return `${monthKey}: ${formatCurrency(
+					                                              monthBase,
+					                                            )}×${bonusRate}=${formatCurrency(
+					                                              capped,
+					                                            )}${capSuffix}`;
+					                                          })
+					                                          .join(", ")}`
+					                                      : bonusRate > 0
+					                                        ? ` · rate ${bonusRate}${
+					                                            bonusMonthlyCap > 0
+					                                              ? ` (cap ${formatCurrency(bonusMonthlyCap)}/mo)`
+					                                              : ""
+					                                          }`
+					                                        : "";
+					                                  segments.push(
+				                                    <span
+				                                      key="bonus"
+				                                      className="whitespace-nowrap tabular-nums"
+				                                    >
+				                                      Bonus: {formatCurrency(bonus)}
+				                                      {bonusMath}
+				                                    </span>,
+				                                  );
+				                                }
 			                                return (
 			                                  <>
 			                                    {segments.map((segment, index) => (

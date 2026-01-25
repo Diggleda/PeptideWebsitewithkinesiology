@@ -3574,6 +3574,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 stats["specialAdminBonusRate"] = special_admin_rate
                 stats["specialAdminBonusMonthlyCap"] = special_admin_monthly_cap
                 stats["specialAdminBonusByMonth"] = bonus_by_month
+                stats["specialAdminBonusBaseByMonth"] = {
+                    month_key: round(float(month_base or 0.0), 2)
+                    for month_key, month_base in special_admin_month_base.items()
+                }
 
         products = list(product_totals.values())
         products.sort(key=lambda p: int(p.get("quantity") or 0), reverse=True)
@@ -3600,6 +3604,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     "houseRetailCommission": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseRetailCommission") or 0.0), 2),
                     "houseWholesaleCommission": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseWholesaleCommission") or 0.0), 2),
                     "specialAdminBonus": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonus") or 0.0), 2),
+                    "specialAdminBonusRate": float(per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonusRate") or 0.0),
+                    "specialAdminBonusMonthlyCap": float(per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonusMonthlyCap") or 0.0),
+                    "specialAdminBonusByMonth": per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonusByMonth") or {},
+                    "specialAdminBonusBaseByMonth": per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonusBaseByMonth") or {},
                 }
                 for row in commissions
             ],
