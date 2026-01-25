@@ -2371,6 +2371,17 @@ def get_sales_by_rep(
             if email:
                 doctors_by_email[email] = u
 
+        # Ensure doctors have a stable lead type stored for commission tracking.
+        try:
+            doctors_list = referral_service.backfill_lead_types_for_doctors(list(doctors_by_email.values()))
+            doctors_by_email = {
+                str(d.get("email") or "").strip().lower(): d
+                for d in doctors_list
+                if str(d.get("email") or "").strip()
+            }
+        except Exception:
+            pass
+
         # Any order placed by an email present in the MySQL `contact_forms` table should be
         # treated as a house/contact-form order and split across admins.
         contact_form_emails: set[str] = set()
@@ -3236,6 +3247,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 doctor = doctors_by_email.get(billing_email) if billing_email else None
                 force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
                 contact_form_origin = force_house_contact_form
+                if doctor and not contact_form_origin:
+                    lead_type = str(doctor.get("leadType") or "").strip().lower()
+                    if lead_type and ("contact" in lead_type or lead_type == "house"):
+                        contact_form_origin = True
                 if billing_email and not contact_form_origin:
                     try:
                         prospect = sales_prospect_repository.find_by_contact_email(billing_email)
@@ -3462,13 +3477,26 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         for entry in attributed_orders:
             recipient_id = str(entry.get("recipientId") or "").strip()
-            base = max(0.0, float(entry.get("total") or 0.0) - float(entry.get("shippingTotal") or 0.0) - float(entry.get("taxTotal") or 0.0))
+            total_value = float(entry.get("total") or 0.0)
+            shipping_value = float(entry.get("shippingTotal") or 0.0)
+            tax_value = float(entry.get("taxTotal") or 0.0)
+            net_base = max(0.0, total_value - shipping_value - tax_value)
+            # House/contact-form commission is based on full order total (as requested).
+            base = max(0.0, total_value) if recipient_id == "__house__" else net_base
             if base <= 0:
                 continue
+
             pricing_mode = _resolve_pricing_mode(entry)
             rate = 0.2 if pricing_mode == "retail" else 0.1
-            commission = round(base * rate, 2)
-            supplier_share = round(base - commission, 2)
+            # For house/contact-form orders, split commission equally across admins and round
+            # per-admin to cents (so each admin sees the same amount).
+            if recipient_id == "__house__" and admin_ids:
+                per_admin_commission = round((base * rate) / len(admin_ids), 2)
+                commission = round(per_admin_commission * len(admin_ids), 2)
+                supplier_share = round(base - commission, 2)
+            else:
+                commission = round(base * rate, 2)
+                supplier_share = round(base - commission, 2)
             created_at = _parse_datetime_utc(entry.get("createdAt")) if entry.get("createdAt") else None
 
             totals["ordersCounted"] += 1
@@ -3483,20 +3511,22 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if created_at:
                 local_dt = created_at.astimezone(report_tz)
                 month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
-                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(base or 0.0)
+                # Keep the special admin bonus tied to the net base (excluding shipping/tax).
+                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(net_base or 0.0)
 
             if recipient_id == "__house__":
-                allocations = _split_amount(commission, admin_ids)
+                allocations = (
+                    {admin_id: per_admin_commission for admin_id in admin_ids}
+                    if admin_ids
+                    else {}
+                )
                 if not allocations:
-                    # If no admins are configured, keep the commission on the supplier line.
                     _add_commission(supplier_row_id, commission)
                 else:
                     for target_id, amount in allocations.items():
                         _add_commission(target_id, amount)
-                        # Attribute a proportional slice of the base for math display.
                         if commission > 0:
                             base_share = base * (amount / commission)
-                            _accumulate_stats(target_id, pricing_mode=pricing_mode, base=base_share)
                             stats = _ensure_stats(target_id)
                             if pricing_mode == "retail":
                                 stats["houseRetailOrders"] = int(stats.get("houseRetailOrders") or 0) + 1
