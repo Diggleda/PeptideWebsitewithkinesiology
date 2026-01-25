@@ -14828,44 +14828,66 @@ export default function App() {
 			                              {row.name}
 			                            </div>
 			                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600">
-			                              {(() => {
-			                                const retailOrders = Number(row.retailOrders || 0);
-			                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
-			                                const retailBase = Number(row.retailBase || 0);
-			                                const wholesaleBase = Number(row.wholesaleBase || 0);
-			                                const bonus = Number(row.specialAdminBonus || 0);
-			                                const retailEarned = retailBase * 0.2;
-			                                const wholesaleEarned = wholesaleBase * 0.1;
-				                                const segments: ReactNode[] = [];
-			                                segments.push(
-			                                  <span key="role" className="whitespace-nowrap">
-			                                    Role: {row.role || "— "}
-			                                  </span>,
-			                                );
-			                                if (retailOrders > 0 || retailBase > 0) {
-			                                  segments.push(
-			                                    <span
-			                                      key="retail"
-			                                      className="whitespace-nowrap tabular-nums"
-			                                    >
-			                                       Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
-			                                      {formatCurrency(retailEarned)}
-			                                    </span>,
-			                                  );
-			                                }
-			                                if (wholesaleOrders > 0 || wholesaleBase > 0) {
-			                                  segments.push(
-			                                    <span
-			                                      key="wholesale"
-			                                      className="whitespace-nowrap tabular-nums"
-			                                    >
-			                                       Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
-			                                      {formatCurrency(wholesaleEarned)}
-			                                    </span>,
-			                                  );
-			                                }
-			                                if (bonus > 0) {
-			                                  segments.push(
+				                              {(() => {
+				                                const retailOrders = Number(row.retailOrders || 0);
+				                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
+				                                const retailBase = Number(row.retailBase || 0);
+				                                const wholesaleBase = Number(row.wholesaleBase || 0);
+				                                const houseRetailOrders = Number((row as any).houseRetailOrders || 0);
+				                                const houseWholesaleOrders = Number((row as any).houseWholesaleOrders || 0);
+				                                const houseRetailBase = Number((row as any).houseRetailBase || 0);
+				                                const houseWholesaleBase = Number((row as any).houseWholesaleBase || 0);
+				                                const houseRetailCommission = Number((row as any).houseRetailCommission || 0);
+				                                const houseWholesaleCommission = Number((row as any).houseWholesaleCommission || 0);
+				                                const bonus = Number(row.specialAdminBonus || 0);
+				                                const retailEarned = retailBase * 0.2;
+				                                const wholesaleEarned = wholesaleBase * 0.1;
+					                                const segments: ReactNode[] = [];
+				                                segments.push(
+				                                  <span key="role" className="whitespace-nowrap">
+				                                    Role: {row.role || "— "}
+				                                  </span>,
+				                                );
+				                                if (houseRetailOrders > 0 || houseRetailBase > 0 || houseRetailCommission > 0) {
+				                                  const computed = houseRetailBase * 0.2;
+				                                  segments.push(
+				                                    <span key="house-retail" className="whitespace-nowrap tabular-nums">
+				                                      House Retail: {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2=
+				                                      {formatCurrency(houseRetailCommission || computed)}
+				                                    </span>,
+				                                  );
+				                                } else if (retailOrders > 0 || retailBase > 0) {
+				                                  segments.push(
+				                                    <span
+				                                      key="retail"
+				                                      className="whitespace-nowrap tabular-nums"
+				                                    >
+				                                       Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
+				                                      {formatCurrency(retailEarned)}
+				                                    </span>,
+				                                  );
+				                                }
+				                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
+				                                  const computed = houseWholesaleBase * 0.1;
+				                                  segments.push(
+				                                    <span key="house-wholesale" className="whitespace-nowrap tabular-nums">
+				                                      House Wholesale: {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1=
+				                                      {formatCurrency(houseWholesaleCommission || computed)}
+				                                    </span>,
+				                                  );
+				                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
+				                                  segments.push(
+				                                    <span
+				                                      key="wholesale"
+				                                      className="whitespace-nowrap tabular-nums"
+				                                    >
+				                                       Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
+				                                      {formatCurrency(wholesaleEarned)}
+				                                    </span>,
+				                                  );
+				                                }
+				                                if (bonus > 0) {
+				                                  segments.push(
 			                                    <span
 			                                      key="bonus"
 			                                      className="whitespace-nowrap tabular-nums"

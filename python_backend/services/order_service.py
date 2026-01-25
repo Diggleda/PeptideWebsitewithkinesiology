@@ -3438,6 +3438,13 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     "wholesaleOrders": 0,
                     "retailBase": 0.0,
                     "wholesaleBase": 0.0,
+                    # House/contact-form split stats (per-recipient share).
+                    "houseRetailOrders": 0,
+                    "houseWholesaleOrders": 0,
+                    "houseRetailBase": 0.0,
+                    "houseWholesaleBase": 0.0,
+                    "houseRetailCommission": 0.0,
+                    "houseWholesaleCommission": 0.0,
                 }
                 per_recipient_stats[recipient_id] = row
             return row
@@ -3488,7 +3495,17 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         _add_commission(target_id, amount)
                         # Attribute a proportional slice of the base for math display.
                         if commission > 0:
-                            _accumulate_stats(target_id, pricing_mode=pricing_mode, base=(base * (amount / commission)))
+                            base_share = base * (amount / commission)
+                            _accumulate_stats(target_id, pricing_mode=pricing_mode, base=base_share)
+                            stats = _ensure_stats(target_id)
+                            if pricing_mode == "retail":
+                                stats["houseRetailOrders"] = int(stats.get("houseRetailOrders") or 0) + 1
+                                stats["houseRetailBase"] = round(float(stats.get("houseRetailBase") or 0.0) + float(base_share or 0.0), 2)
+                                stats["houseRetailCommission"] = round(float(stats.get("houseRetailCommission") or 0.0) + float(amount or 0.0), 2)
+                            else:
+                                stats["houseWholesaleOrders"] = int(stats.get("houseWholesaleOrders") or 0) + 1
+                                stats["houseWholesaleBase"] = round(float(stats.get("houseWholesaleBase") or 0.0) + float(base_share or 0.0), 2)
+                                stats["houseWholesaleCommission"] = round(float(stats.get("houseWholesaleCommission") or 0.0) + float(amount or 0.0), 2)
             elif recipient_id:
                 _add_commission(recipient_id, commission)
                 _accumulate_stats(recipient_id, pricing_mode=pricing_mode, base=base)
@@ -3546,6 +3563,12 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     "wholesaleOrders": int(per_recipient_stats.get(str(row.get("id")), {}).get("wholesaleOrders") or 0),
                     "retailBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("retailBase") or 0.0), 2),
                     "wholesaleBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("wholesaleBase") or 0.0), 2),
+                    "houseRetailOrders": int(per_recipient_stats.get(str(row.get("id")), {}).get("houseRetailOrders") or 0),
+                    "houseWholesaleOrders": int(per_recipient_stats.get(str(row.get("id")), {}).get("houseWholesaleOrders") or 0),
+                    "houseRetailBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseRetailBase") or 0.0), 2),
+                    "houseWholesaleBase": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseWholesaleBase") or 0.0), 2),
+                    "houseRetailCommission": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseRetailCommission") or 0.0), 2),
+                    "houseWholesaleCommission": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("houseWholesaleCommission") or 0.0), 2),
                     "specialAdminBonus": round(float(per_recipient_stats.get(str(row.get("id")), {}).get("specialAdminBonus") or 0.0), 2),
                 }
                 for row in commissions
