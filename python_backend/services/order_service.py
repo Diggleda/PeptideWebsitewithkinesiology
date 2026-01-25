@@ -3233,44 +3233,66 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     continue
 
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
+                doctor = doctors_by_email.get(billing_email) if billing_email else None
                 force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
+                contact_form_origin = force_house_contact_form
+                if billing_email and not contact_form_origin:
+                    try:
+                        prospect = sales_prospect_repository.find_by_contact_email(billing_email)
+                        if prospect:
+                            prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
+                            prospect_identifier = str(prospect.get("id") or "")
+                            if prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
+                                contact_form_origin = True
+                    except Exception:
+                        contact_form_origin = False
+                if billing_email and not contact_form_origin and doctor and doctor.get("id"):
+                    try:
+                        doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
+                        if doctor_prospect:
+                            contact_form_origin = True
+                    except Exception:
+                        contact_form_origin = False
 
                 rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
                 if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
-                if force_house_contact_form:
+                recipient_id = ""
+                if contact_form_origin:
+                    # Contact-form leads should always be treated as house sales for commission reporting,
+                    # even if the doctor later gets attributed to a rep.
                     rep_id = ""
+                    recipient_id = "__house__"
 
-                if not rep_id:
-                    rep_id = user_rep_id_by_email.get(billing_email, "")
+                if not recipient_id:
+                    if not rep_id:
+                        rep_id = user_rep_id_by_email.get(billing_email, "")
 
-                if not rep_id:
-                    doctor = doctors_by_email.get(billing_email)
-                    rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
-                    if rep_id:
-                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                    if not rep_id:
+                        rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                        if rep_id:
+                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
-                recipient_id = rep_id
-                # "house" is a sentinel salesRepId for contact-form sourced doctors and should be
-                # handled as a house sale (split across admins), not a real rep id.
-                if str(recipient_id or "").strip().lower() == "house":
-                    recipient_id = ""
-                if recipient_id and recipient_id not in recipient_rows:
-                    # If an admin id shows up as attribution, include it.
-                    admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
-                    if admin:
-                        recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": admin.get("name") or "Admin", "role": "admin", "amount": 0.0}
-                    else:
-                        recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": f"User {recipient_id}", "role": "unknown", "amount": 0.0}
+                    recipient_id = rep_id
+                    # "house" is a sentinel salesRepId for contact-form sourced doctors and should be
+                    # handled as a house sale (split across admins), not a real rep id.
+                    if str(recipient_id or "").strip().lower() == "house":
+                        recipient_id = ""
+                    if recipient_id and recipient_id not in recipient_rows:
+                        # If an admin id shows up as attribution, include it.
+                        admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
+                        if admin:
+                            recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": admin.get("name") or "Admin", "role": "admin", "amount": 0.0}
+                        else:
+                            recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": f"User {recipient_id}", "role": "unknown", "amount": 0.0}
 
                 if not recipient_id:
                     # House orders for contact-form sourced doctors (including any email present in
                     # the MySQL contact_forms table).
-                    is_house_contact_form = force_house_contact_form
+                    is_house_contact_form = force_house_contact_form or contact_form_origin
                     if billing_email:
-                        doctor = doctors_by_email.get(billing_email)
                         if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
                             is_house_contact_form = True
                         else:
@@ -3281,10 +3303,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                                     prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
                                     prospect_identifier = str(prospect.get("id") or "")
                                     if prospect_rep == "house" or prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
-                                        is_house_contact_form = True
-                                if not is_house_contact_form and doctor and doctor.get("id"):
-                                    doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
-                                    if doctor_prospect:
                                         is_house_contact_form = True
                             except Exception:
                                 is_house_contact_form = False

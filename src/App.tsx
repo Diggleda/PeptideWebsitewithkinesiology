@@ -14839,7 +14839,7 @@ export default function App() {
 				                                const segments: ReactNode[] = [];
 			                                segments.push(
 			                                  <span key="role" className="whitespace-nowrap">
-			                                    Role: {row.role || "—"}
+			                                    Role: {row.role || "— "}
 			                                  </span>,
 			                                );
 			                                if (retailOrders > 0 || retailBase > 0) {
@@ -14848,7 +14848,7 @@ export default function App() {
 			                                      key="retail"
 			                                      className="whitespace-nowrap tabular-nums"
 			                                    >
-			                                      Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
+			                                       Retail: {retailOrders} · {formatCurrency(retailBase)}×0.2=
 			                                      {formatCurrency(retailEarned)}
 			                                    </span>,
 			                                  );
@@ -14859,7 +14859,7 @@ export default function App() {
 			                                      key="wholesale"
 			                                      className="whitespace-nowrap tabular-nums"
 			                                    >
-			                                      Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
+			                                       Wholesale: {wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1=
 			                                      {formatCurrency(wholesaleEarned)}
 			                                    </span>,
 			                                  );
