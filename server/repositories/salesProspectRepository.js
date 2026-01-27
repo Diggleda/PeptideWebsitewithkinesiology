@@ -302,6 +302,31 @@ const remove = async (id) => {
   return next.length !== records.length;
 };
 
+const removeByReferralId = async (referralId) => {
+  const target = normalizeId(referralId);
+  if (!target) return false;
+  if (mysqlClient.isEnabled()) {
+    try {
+      const result = await mysqlClient.execute(
+        'DELETE FROM sales_prospects WHERE referral_id = :referralId OR id = :referralId',
+        { referralId: target },
+      );
+      return Boolean(result && typeof result.affectedRows === 'number' ? result.affectedRows > 0 : true);
+    } catch (error) {
+      logger.error({ err: error, referralId: target }, 'Failed to delete sales prospect by referralId');
+      return false;
+    }
+  }
+  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
+  const next = records.filter((item) => {
+    const id = normalizeId(item?.id);
+    const refId = normalizeId(item?.referralId || item?.referral_id);
+    return id !== target && refId !== target;
+  });
+  salesProspectStore.write(next);
+  return next.length !== records.length;
+};
+
 module.exports = {
   getAll,
   findById,
@@ -310,4 +335,5 @@ module.exports = {
   findBySalesRepAndContactFormId,
   upsert,
   remove,
+  removeByReferralId,
 };

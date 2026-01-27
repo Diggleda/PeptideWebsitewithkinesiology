@@ -271,13 +271,13 @@ const deleteDoctorReferral = (req, res, next) => {
         error.status = 409;
         throw error;
       }
-      const removed = referralRepository.remove(referralId);
-      if (!removed) {
-        return res.json({ deleted: true });
-      }
-      await salesProspectRepository.remove(referralId).catch(() => null);
-      return res.json({ deleted: true });
-    };
+	      const removed = referralRepository.remove(referralId);
+	      if (!removed) {
+	        return res.json({ deleted: true });
+	      }
+	      await salesProspectRepository.removeByReferralId(referralId).catch(() => null);
+	      return res.json({ deleted: true });
+	    };
 
     checkDeletion().catch(next);
   } catch (error) {
