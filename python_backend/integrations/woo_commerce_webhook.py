@@ -18,13 +18,17 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
     if not order_id or not order_status:
         raise ServiceError("Missing required order data", 400)
 
+    local_sync: Dict[str, Any] | None = None
+    # Mirror status locally (best-effort) so PepPro reflects Woo changes promptly,
+    # including refunded orders (source of truth is WooCommerce).
+    try:
+        local_sync = order_service.sync_order_status_from_woo_webhook(order_data)
+    except Exception:
+        logger.warning("Failed to sync local order from Woo webhook", exc_info=True)
+        local_sync = {"status": "skipped", "reason": "local_sync_failed"}
+
     if order_status != "refunded":
-        # Mirror status locally (best-effort) so PepPro reflects Woo changes promptly.
-        try:
-            return order_service.sync_order_status_from_woo_webhook(order_data)
-        except Exception:
-            logger.warning("Failed to sync local order from Woo webhook", exc_info=True)
-            return {"status": "skipped", "reason": "local_sync_failed"}
+        return local_sync or {"status": "skipped", "reason": "local_sync_failed"}
 
     if not customer_email:
         raise ServiceError("Missing required order data", 400)
@@ -62,7 +66,11 @@ def handle_order_updated(order_data: Dict[str, Any]) -> Dict[str, Any]:
         f"Added {refund_amount} to credit balance for user {updated_user['id']}"
     )
 
-    return {"status": "processed", "ledger_entry_id": ledger_entry["id"]}
+    return {
+        "status": "processed",
+        "ledger_entry_id": ledger_entry["id"],
+        "local_sync": local_sync,
+    }
 
 
 def handle_event(event: Dict[str, Any]) -> Dict[str, Any]:

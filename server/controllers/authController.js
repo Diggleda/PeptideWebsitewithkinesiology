@@ -1,6 +1,9 @@
 const authService = require('../services/authService');
 const { verifyDoctorNpi } = require('../services/npiService');
 const { logger } = require('../config/logger');
+const jwt = require('jsonwebtoken');
+const { env } = require('../config/env');
+const userRepository = require('../repositories/userRepository');
 
 const register = async (req, res, next) => {
   try {
@@ -99,6 +102,57 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+const logout = async (req, res, next) => {
+  try {
+    const header = req.headers?.authorization || '';
+    if (!header) {
+      return res.json({ ok: true });
+    }
+    const parts = header.split(' ');
+    const token = (parts.length === 2 ? parts[1] : parts[0]).trim();
+    if (!token) {
+      return res.json({ ok: true });
+    }
+
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, env.jwtSecret);
+    } catch (error) {
+      if (error && error.name === 'TokenExpiredError') {
+        try {
+          decoded = jwt.verify(token, env.jwtSecret, { ignoreExpiration: true });
+        } catch {
+          decoded = null;
+        }
+      } else {
+        decoded = null;
+      }
+    }
+
+    const userId = decoded?.id ? String(decoded.id) : '';
+    if (!userId) {
+      return res.json({ ok: true });
+    }
+
+    const user = userRepository.findById(userId);
+    if (user) {
+      // Force offline immediately by pushing lastSeenAt outside the online window.
+      // Presence endpoints derive online from timestamps, so setting lastSeenAt to epoch ensures offline.
+      const epochIso = new Date(0).toISOString();
+      userRepository.update({
+        ...user,
+        isOnline: false,
+        isIdle: false,
+        lastSeenAt: epochIso,
+      });
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -106,6 +160,7 @@ module.exports = {
   getProfile,
   verifyNpi,
   updateProfile,
+  logout,
   requestPasswordReset,
   resetPassword,
 };

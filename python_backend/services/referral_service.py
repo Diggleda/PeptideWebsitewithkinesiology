@@ -1874,14 +1874,84 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
     }
 
     if referral_record:
+        credited_at = _now()
         referral_repository.update(
             {
                 **referral_record,
-                "creditIssuedAt": _now(),
+                "creditIssuedAt": credited_at,
                 "creditIssuedAmount": delta,
                 "creditIssuedBy": created_by,
+                # Move credited referrals out of "converted" and into nurturing.
+                # The sales-prospect pipeline status is authoritative, but we also
+                # update the legacy referral status for consistency.
+                "status": "nuture",
             }
         )
+        # Status is tracked in sales_prospects; ensure the linked prospect also moves to nurturing.
+        try:
+            referral_key = str(referral_record.get("id") or referral_id or "").strip()
+            if referral_key:
+                prospects = sales_prospect_repository.find_all_by_referral_id(referral_key)
+            else:
+                prospects = []
+        except Exception:
+            prospects = []
+
+        updated_any = False
+        for prospect in prospects or []:
+            if not isinstance(prospect, dict):
+                continue
+            prospect_id = str(prospect.get("id") or referral_id or "").strip()
+            sales_rep_id = prospect.get("salesRepId") or referral_record.get("salesRepId")
+            if not prospect_id or not sales_rep_id:
+                continue
+            try:
+                sales_prospect_repository.upsert(
+                    {
+                        "id": prospect_id,
+                        "salesRepId": str(sales_rep_id),
+                        "doctorId": prospect.get("doctorId") or None,
+                        "referralId": str(prospect.get("referralId") or referral_key or ""),
+                        "status": "nuture",
+                        "isManual": bool(prospect.get("isManual")) if "isManual" in prospect else False,
+                        "contactName": prospect.get("contactName") or referral_record.get("referredContactName"),
+                        "contactEmail": prospect.get("contactEmail") or referral_record.get("referredContactEmail"),
+                        "contactPhone": prospect.get("contactPhone") or referral_record.get("referredContactPhone"),
+                        "notes": prospect.get("notes") or None,
+                        "resellerPermitExempt": prospect.get("resellerPermitExempt") if "resellerPermitExempt" in prospect else None,
+                        "resellerPermitFilePath": prospect.get("resellerPermitFilePath") if "resellerPermitFilePath" in prospect else None,
+                        "resellerPermitFileName": prospect.get("resellerPermitFileName") if "resellerPermitFileName" in prospect else None,
+                        "resellerPermitUploadedAt": prospect.get("resellerPermitUploadedAt") if "resellerPermitUploadedAt" in prospect else None,
+                        "createdAt": prospect.get("createdAt") or referral_record.get("createdAt"),
+                        "updatedAt": credited_at,
+                    }
+                )
+                updated_any = True
+            except Exception:
+                continue
+
+        if not updated_any:
+            # Fallback: best-effort upsert by referral id (common schema uses id==referralId).
+            try:
+                referral_key = str(referral_record.get("id") or referral_id or "").strip()
+                sales_rep_id = referral_record.get("salesRepId")
+                if referral_key and sales_rep_id:
+                    sales_prospect_repository.upsert(
+                        {
+                            "id": referral_key,
+                            "salesRepId": str(sales_rep_id),
+                            "referralId": referral_key,
+                            "status": "nuture",
+                            "isManual": False,
+                            "contactName": referral_record.get("referredContactName"),
+                            "contactEmail": referral_record.get("referredContactEmail"),
+                            "contactPhone": referral_record.get("referredContactPhone"),
+                            "updatedAt": credited_at,
+                            "createdAt": referral_record.get("createdAt") or credited_at,
+                        }
+                    )
+            except Exception:
+                pass
 
     return {"ledgerEntry": ledger_entry, "doctor": updated_doctor}
 

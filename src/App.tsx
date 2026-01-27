@@ -3488,7 +3488,7 @@ export default function App() {
 	        toast.success(
 	          manualRefundReviewRequired
 	            ? "Order canceled. If payment was already received, we’ll refund you manually."
-	            : "Order canceled. A refund is on the way.",
+	            : "Order canceled. A refund is pending.",
 	        );
 	        await loadAccountOrders();
 	      } catch (error: any) {
@@ -9817,7 +9817,7 @@ export default function App() {
         });
         toast.success(`Credited ${doctorName} $50`);
         await tracedRefreshReferralData("manual-credit", {
-          showLoading: false,
+          showLoading: true,
         });
       } catch (error: any) {
         console.error("[Referral] Manual credit failed", error);
@@ -12179,6 +12179,9 @@ export default function App() {
           referrals: updatedReferrals,
           statuses,
         };
+      });
+      await tracedRefreshReferralData("referral-status-update", {
+        showLoading: true,
       });
     } catch (error: any) {
       console.warn("[Referral] Update referral status failed", error);
