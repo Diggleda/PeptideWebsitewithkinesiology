@@ -18,6 +18,7 @@ def create_app() -> "Flask":
     from .repositories import sales_prospect_repository
     from .routes import register_blueprints
     from .services import configure_services
+    from .services.presence_sweep_service import start_presence_sweep
     from .services.product_document_sync_service import start_product_document_sync
     from .services.shipstation_status_sync_service import start_shipstation_status_sync
     from .storage import init_storage
@@ -42,6 +43,7 @@ def create_app() -> "Flask":
         pass
     start_product_document_sync()
     start_shipstation_status_sync()
+    start_presence_sweep()
 
     # Ensure JSON storage files exist before serving requests.
     init_storage(config)

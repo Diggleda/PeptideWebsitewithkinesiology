@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -16,7 +17,7 @@ from ..repositories import password_reset_token_repository, sales_rep_repository
 from ..repositories import sales_prospect_repository
 from ..repositories import referral_repository
 from ..utils import http_client
-from . import email_service, get_config, npi_service, referral_service
+from . import email_service, get_config, npi_service, referral_service, presence_service
 
 
 def _sanitize_name(value: str) -> str:
@@ -682,6 +683,46 @@ def _sanitize_user(user: Dict) -> Dict:
                 sanitized["referralCode"] = sales_code
     else:
         sanitized["salesRep"] = None
+
+    # Presence: derive `isOnline` from recent heartbeats/lastSeenAt so it doesn't stick forever.
+    # Keep the persisted `users.is_online` as a gate so explicit logout still forces offline.
+    try:
+        user_id = str(sanitized.get("id") or "").strip()
+        if user_id:
+            online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
+            online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+            now_epoch = time.time()
+
+            presence_entry = None
+            try:
+                presence_entry = presence_service.snapshot().get(user_id)
+            except Exception:
+                presence_entry = None
+
+            last_seen_epoch = None
+            if isinstance(presence_entry, dict):
+                raw_seen = presence_entry.get("lastHeartbeatAt")
+                if isinstance(raw_seen, (int, float)) and float(raw_seen) > 0:
+                    last_seen_epoch = float(raw_seen)
+                presence_public = presence_service.to_public_fields(presence_entry)
+                if presence_public.get("lastSeenAt"):
+                    sanitized["lastSeenAt"] = presence_public.get("lastSeenAt")
+                if presence_public.get("lastInteractionAt"):
+                    sanitized["lastInteractionAt"] = presence_public.get("lastInteractionAt")
+            if last_seen_epoch is None:
+                last_seen_epoch = _parse_utc_epoch(sanitized.get("lastSeenAt") or user.get("lastSeenAt"))
+
+            stored_is_online = bool(user.get("isOnline"))
+            sanitized["isOnline"] = bool(
+                stored_is_online
+                and presence_service.is_recent_epoch(
+                    last_seen_epoch,
+                    now_epoch=now_epoch,
+                    threshold_s=online_threshold_s,
+                )
+            )
+    except Exception:
+        pass
     return sanitized
 
 
@@ -695,6 +736,41 @@ def _sanitize_sales_rep(rep: Dict) -> Dict:
     if sanitized.get("salesCode") and not sanitized.get("referralCode"):
         sanitized["referralCode"] = sanitized.get("salesCode")
     return sanitized
+
+
+def _parse_utc_epoch(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            seconds = float(value)
+        except Exception:
+            return None
+        if seconds > 10_000_000_000:
+            seconds = seconds / 1000.0
+        return seconds if seconds > 0 else None
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return float(dt.astimezone(timezone.utc).timestamp())
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        normalized = text.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return float(parsed.astimezone(timezone.utc).timestamp())
+        except Exception:
+            # Support MySQL DATETIME ("YYYY-MM-DD HH:MM:SS") and other common variants.
+            try:
+                candidate = text.replace("T", " ").replace("Z", "")
+                parsed = datetime.strptime(candidate[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                return float(parsed.timestamp())
+            except Exception:
+                return None
+    return None
 
 
 def _dispatch_woo_password_reset(email: str) -> bool:

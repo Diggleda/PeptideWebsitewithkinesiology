@@ -195,7 +195,11 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
     if last_seen_epoch is None and last_seen_dt:
         last_seen_epoch = float(last_seen_dt.timestamp())
 
-    derived_online = bool(last_seen_epoch and (now_epoch - float(last_seen_epoch)) <= online_threshold_s)
+    derived_online = presence_service.is_recent_epoch(
+        last_seen_epoch,
+        now_epoch=now_epoch,
+        threshold_s=online_threshold_s,
+    )
     if derived_online and not bool(user.get("isOnline")):
         derived_online = False
 
@@ -747,7 +751,25 @@ def get_user_profile(user_id: str):
             err = RuntimeError("User not found")
             setattr(err, "status", 404)
             raise err
-        return {"user": _public_user_profile(user)}
+        profile = _public_user_profile(user)
+        try:
+            now_epoch = time.time()
+            online_threshold_s = float(os.environ.get("USER_PRESENCE_ONLINE_SECONDS") or 300)
+            online_threshold_s = max(15.0, min(online_threshold_s, 60 * 60))
+            idle_threshold_s = float(os.environ.get("USER_PRESENCE_IDLE_SECONDS") or (10 * 60))
+            idle_threshold_s = max(60.0, min(idle_threshold_s, 6 * 60 * 60))
+            presence = presence_service.snapshot()
+            snapshot = _compute_presence_snapshot(
+                user,
+                now_epoch=now_epoch,
+                online_threshold_s=online_threshold_s,
+                idle_threshold_s=idle_threshold_s,
+                presence=presence,
+            )
+            profile["isOnline"] = bool(snapshot.get("isOnline"))
+        except Exception:
+            pass
+        return {"user": profile}
 
     return handle_action(action)
 
@@ -1178,9 +1200,11 @@ def _compute_user_activity(window_key: str, *, raw_window: str | None = None, in
         is_online_db = bool(user.get("isOnline"))
         derived_online = bool(
             is_online_db
-            and isinstance(last_seen_epoch, (int, float))
-            and float(last_seen_epoch) > 0
-            and (now_epoch - float(last_seen_epoch)) <= online_threshold_s
+            and presence_service.is_recent_epoch(
+                last_seen_epoch,
+                now_epoch=now_epoch,
+                threshold_s=online_threshold_s,
+            )
         )
 
         session_start_epoch = float(persisted_login_dt.timestamp()) if persisted_login_dt else None
