@@ -53,7 +53,8 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
-  const MODAL_FADE_MS = 350;
+  // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
+  const MODAL_FADE_MS = 80;
 
   useEffect(() => {
     const body = document.body;

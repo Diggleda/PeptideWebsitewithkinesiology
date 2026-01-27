@@ -6770,6 +6770,8 @@ export default function App() {
 	  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
 	  const liveClientsEtagRef = useRef<string | null>(null);
 	  const liveClientsLongPollDisabledRef = useRef(false);
+	  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
+	  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
 	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
@@ -13200,7 +13202,7 @@ export default function App() {
 	            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 	              <div className="flex flex-col gap-2">
 	                <div>
-	                  <h4 className="text-base font-semibold text-slate-900">Clients</h4>
+	                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
 	                  <p className="text-sm text-slate-600">
 	                    Your doctors (online, idle, and offline).
 	                  </p>
@@ -13216,14 +13218,95 @@ export default function App() {
 	                  <div className="px-4 py-3 text-sm text-slate-500">
 	                    Loading live clients…
 	                  </div>
-	                ) : liveClients.length === 0 ? (
-	                  <div className="px-4 py-3 text-sm text-slate-500">
-	                    No clients found.
-	                  </div>
-	                ) : (
-	                  <div className="sales-rep-table-wrapper live-users-scroll">
-	                    <div className="flex w-full min-w-[720px] flex-col gap-2">
-		                      {liveClients.map((entry: any) => {
+	                ) : (() => {
+	                  const normalizedQuery = liveClientsSearch.trim().toLowerCase();
+	                  const filtered = (liveClients || []).filter((entry: any) => {
+	                    const simulated = (entry as any)?.isSimulated === true;
+	                    const id = String((entry as any)?.id || "");
+	                    if (simulated || id.startsWith("pseudo-live-")) {
+	                      return false;
+	                    }
+	                    if (!liveClientsShowOffline && !Boolean(entry?.isOnline)) {
+	                      return false;
+	                    }
+	                    if (!normalizedQuery) {
+	                      return true;
+	                    }
+	                    const haystack = [entry?.name, entry?.email, entry?.id]
+	                      .filter(Boolean)
+	                      .join(" ")
+	                      .toLowerCase();
+	                    return haystack.includes(normalizedQuery);
+	                  });
+
+	                  const getLastSeenMs = (entry: any) => {
+	                    if (!entry) return 0;
+	                    const isOnlineNow = Boolean(entry?.isOnline);
+	                    const idleReported = Boolean(entry?.isIdle);
+	                    if (isOnlineNow && !idleReported) {
+	                      return Date.now();
+	                    }
+	                    const raw =
+	                      entry?.lastInteractionAt ||
+	                      entry?.lastSeenAt ||
+	                      entry?.lastActivityAt ||
+	                      entry?.lastActiveAt ||
+	                      entry?.lastLoginAt ||
+	                      null;
+	                    if (!raw) return 0;
+	                    const parsed = new Date(raw).getTime();
+	                    return Number.isFinite(parsed) ? parsed : 0;
+	                  };
+
+	                  const liveUsers = [...filtered].sort((a: any, b: any) => {
+	                    const aLast = getLastSeenMs(a);
+	                    const bLast = getLastSeenMs(b);
+	                    if (aLast !== bLast) return bLast - aLast;
+	                    const aName = String(a?.name || a?.email || a?.id || "").toLowerCase();
+	                    const bName = String(b?.name || b?.email || b?.id || "").toLowerCase();
+	                    return aName.localeCompare(bName);
+	                  });
+
+	                  const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
+
+	                  return (
+	                    <div className="space-y-3">
+	                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+	                        <div className="flex flex-wrap items-center gap-3">
+	                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+	                            <input
+	                              type="checkbox"
+	                              className="brand-checkbox"
+	                              checked={liveClientsShowOffline}
+	                              onChange={(e) => setLiveClientsShowOffline(e.target.checked)}
+	                            />
+	                            Show offline
+	                          </label>
+	                          <span className="text-xs text-slate-500">
+	                            {onlineCount} online
+	                          </span>
+	                        </div>
+	                        <input
+	                          value={liveClientsSearch}
+	                          onChange={(e) => setLiveClientsSearch(e.target.value)}
+	                          onKeyDown={(e) => {
+	                            if (e.key === "Enter") {
+	                              e.preventDefault();
+	                            }
+	                          }}
+	                          placeholder="Search clients…"
+	                          className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+	                        />
+	                      </div>
+
+	                      <div className="sales-rep-table-wrapper live-users-scroll">
+	                        <div className="flex w-full min-w-[900px] flex-col gap-2">
+	                          {liveUsers.length === 0 ? (
+	                            <div className="p-6 text-sm text-slate-500">
+	                              No clients found.
+	                            </div>
+	                          ) : (
+		                          liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
 		                        const displayName = entry.name || entry.email || "Doctor";
 		                        const resolveLastSeenMs = () => {
@@ -13302,14 +13385,14 @@ export default function App() {
 				                                      <div
 				                                        className="rounded-full shrink-0"
 				                                        style={{
-				                                          width: 42.5,
-				                                          height: 42.5,
-				                                          minWidth: 42.5,
+				                                          width: 41.4,
+				                                          height: 41.4,
+				                                          minWidth: 41.4,
 				                                          boxShadow: !isOnlineNow
 				                                            ? undefined
 				                                            : showIdle
-				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 3px rgba(148,163,184,1)"
-				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 3px rgba(95,179,249,1)",
+				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(148,163,184,1)"
+				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(95,179,249,1)",
 				                                        }}
 				                                      >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -13360,10 +13443,13 @@ export default function App() {
 		                            </div>
 		                          </div>
 		                        );
-		                      })}
+		                          })
+	                          )}
 	                    </div>
 	                  </div>
-	                )}
+	                </div>
+	                  );
+	                })()}
 	              </div>
 	            </div>
 	          )}

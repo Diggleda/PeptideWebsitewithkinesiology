@@ -27,6 +27,11 @@ const documents = [
     docx: 'src/content/legal/Privacy-policy.docx',
     html: 'src/content/legal/privacy.html',
   },
+  // Updated privacy policy source file (previous name left in place by history/backups).
+  {
+    docx: 'src/content/legal/Privacy-policy-3.docx',
+    html: 'src/content/legal/privacy.html',
+  },
   {
     docx: 'src/content/legal/Shipping-Handling.docx',
     html: 'src/content/legal/shipping.html',
