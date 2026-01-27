@@ -136,9 +136,13 @@ def delete_doctor_referral(referral_id: str):
         if not referral:
             return {"deleted": True}
 
+        # Only allow deletion while the referral is still pending.
+        referral_status = (referral.get("status") or "").strip().lower() or "pending"
+
         # Status is tracked in sales_prospects; block delete if any prospect has progressed.
         prospects = sales_prospect_repository.find_all_by_referral_id(referral_id)
-        progressed = any((p.get("status") or "").lower() not in ("", "pending") for p in prospects)
+        prospect_statuses = [((p.get("status") or "").strip().lower() or "pending") for p in prospects]
+        progressed = any(status not in ("", "pending") for status in [referral_status, *prospect_statuses])
         if progressed:
             raise _error("REFERRAL_DELETE_NOT_ALLOWED", 409)
 

@@ -230,14 +230,19 @@ def find_all_by_referral_id(referral_id: str) -> List[Dict]:
         return []
     if _using_mysql():
         rows = mysql_client.fetch_all(
-            "SELECT * FROM sales_prospects WHERE referral_id = %(referral_id)s",
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE referral_id = %(referral_id)s
+               OR id = %(referral_id)s
+            """,
             {"referral_id": str(referral_id)},
         )
         return [_row_to_record(row) for row in rows]
     return [
         _ensure_defaults(item)
         for item in _get_store().read()
-        if str(item.get("referralId") or "") == str(referral_id)
+        if str(item.get("referralId") or "") == str(referral_id) or str(item.get("id") or "") == str(referral_id)
     ]
 
 

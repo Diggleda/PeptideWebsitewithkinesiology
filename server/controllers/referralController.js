@@ -254,30 +254,31 @@ const deleteDoctorReferral = (req, res, next) => {
     }
 
     const checkDeletion = async () => {
-      const ownerId = referral.salesRepId || req.user.salesRepId || null;
-      let status = (referral.status || '').toLowerCase();
-      if (ownerId) {
-        try {
-          const prospect = await salesProspectRepository.findBySalesRepAndReferralId(ownerId, referralId);
-          if (prospect?.status) {
-            status = String(prospect.status).toLowerCase();
-          }
-        } catch (error) {
-          logger.warn({ err: error, referralId }, 'Failed to load sales prospect while deleting referral');
-        }
+      const referralStatus = String(referral.status || '').toLowerCase().trim() || 'pending';
+      let prospectStatuses = [];
+      try {
+        const prospects = await salesProspectRepository.findAllByReferralId(referralId);
+        prospectStatuses = (Array.isArray(prospects) ? prospects : [])
+          .map((p) => String(p?.status || '').toLowerCase().trim() || 'pending');
+      } catch (error) {
+        logger.warn({ err: error, referralId }, 'Failed to load sales prospects while deleting referral');
       }
-      if (status !== 'pending') {
+
+      const progressed = [referralStatus, ...prospectStatuses].some(
+        (status) => status && status !== 'pending',
+      );
+      if (progressed) {
         const error = new Error('Referral can only be deleted while pending');
         error.status = 409;
         throw error;
       }
-	      const removed = referralRepository.remove(referralId);
-	      if (!removed) {
-	        return res.json({ deleted: true });
-	      }
-	      await salesProspectRepository.removeByReferralId(referralId).catch(() => null);
-	      return res.json({ deleted: true });
-	    };
+      const removed = referralRepository.remove(referralId);
+      if (!removed) {
+        return res.json({ deleted: true });
+      }
+      await salesProspectRepository.removeByReferralId(referralId).catch(() => null);
+      return res.json({ deleted: true });
+    };
 
     checkDeletion().catch(next);
   } catch (error) {

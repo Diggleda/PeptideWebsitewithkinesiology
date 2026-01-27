@@ -167,6 +167,26 @@ const findBySalesRepAndContactFormId = async (salesRepId, contactFormId) => {
     .find((item) => item.salesRepId === rep && item.contactFormId === form) || null;
 };
 
+const findAllByReferralId = async (referralId) => {
+  const target = normalizeId(referralId);
+  if (!target) return [];
+  if (mysqlClient.isEnabled()) {
+    const rows = await mysqlClient.fetchAll(
+      `
+        SELECT * FROM sales_prospects
+        WHERE referral_id = :referralId
+           OR id = :referralId
+      `,
+      { referralId: target },
+    );
+    return Array.isArray(rows) ? rows.map(rowToRecord).filter(Boolean) : [];
+  }
+  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
+  return records
+    .map(ensureDefaults)
+    .filter((item) => item.id === target || item.referralId === target);
+};
+
 const upsert = async (prospect) => {
   const incoming = prospect && typeof prospect === 'object' ? prospect : {};
   const id = normalizeId(incoming.id);
@@ -333,6 +353,7 @@ module.exports = {
   findBySalesRepAndDoctorId,
   findBySalesRepAndReferralId,
   findBySalesRepAndContactFormId,
+  findAllByReferralId,
   upsert,
   remove,
   removeByReferralId,

@@ -16136,13 +16136,15 @@ export default function App() {
 		                                  creditEligible && (
 		                                    <Button
 	                                      type="button"
+                                        variant="outline"
+                                        size="sm"
 	                                      disabled={isCrediting}
 	                                      onClick={() =>
 	                                        handleReferralCredit(
 	                                          record as ReferralRecord,
 	                                        )
 	                                      }
-	                                      className="mt-2 w-full squircle-sm glass-brand btn-hover-lighter justify-center"
+	                                      className="mt-2 w-full header-home-button squircle-sm justify-center"
 	                                    >
 	                                      {isCrediting
 	                                        ? "Crediting…"
@@ -16550,11 +16552,13 @@ export default function App() {
 	                                        referralEligibleForCredit && (
 	                                          <Button
                                             type="button"
+                                            variant="outline"
+                                            size="sm"
                                             disabled={isCrediting}
                                             onClick={() =>
                                               handleReferralCredit(referral)
                                             }
-                                            className="w-full squircle-sm glass-brand btn-hover-lighter justify-center"
+                                            className="w-full header-home-button squircle-sm justify-center"
                                           >
                                             {isCrediting
                                               ? "Crediting…"
@@ -18622,7 +18626,9 @@ export default function App() {
           }
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          style={{ maxWidth: "min(960px, calc(100vw - 3rem))" }}
+        >
           <DialogHeader>
             <DialogTitle>Enter Prospect</DialogTitle>
             <DialogDescription>
@@ -18728,7 +18734,11 @@ export default function App() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={manualProspectSubmitting}>
+              <Button
+                type="submit"
+                disabled={manualProspectSubmitting}
+                className="squircle-sm glass-brand"
+              >
                 {manualProspectSubmitting ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
