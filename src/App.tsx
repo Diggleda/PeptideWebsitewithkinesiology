@@ -4745,14 +4745,22 @@ export default function App() {
 	  );
 		  const shouldRemoveFromActiveProspects = useCallback(
 		    (lead: any) => {
-		      const status = sanitizeReferralStatus(lead?.status);
-		      if (status === "nuture") {
+		      if (lead?.creditIssuedAt) {
 		        return true;
 		      }
-		      return hasLeadPlacedOrder(lead);
-		    },
-		    [hasLeadPlacedOrder],
-		  );
+			      const status = sanitizeReferralStatus(lead?.status);
+			      if (status === "nuture") {
+			        return true;
+			      }
+			      // Converted prospects stay active until the rep explicitly clicks "Credit",
+			      // even if the doctor has already placed an order.
+			      if (status === "converted") {
+			        return false;
+			      }
+			      return hasLeadPlacedOrder(lead);
+			    },
+			    [hasLeadPlacedOrder],
+			  );
 
 	  const normalizeNotesValue = useCallback((value: unknown): string | null => {
 	    if (typeof value !== "string") {
@@ -6545,6 +6553,29 @@ export default function App() {
     refreshAdminTaxesByState,
     refreshSalesBySalesRepSummary,
     user?.id,
+    user?.role,
+  ]);
+
+  useEffect(() => {
+    if (!user || !isAdmin(user.role)) return;
+    if (!salesDoctorDetail?.doctorId) return;
+    const role = normalizeRole(salesDoctorDetail.role || "");
+    if (role !== "admin") return;
+    const targetId = String(salesDoctorDetail.doctorId || "");
+    if (!targetId) return;
+    const hasCommissionRow = adminCommissionRows.some(
+      (row) => String(row.id || "") === targetId,
+    );
+    if (hasCommissionRow) return;
+    if (adminProductsCommissionLoading) return;
+    void refreshAdminProductsCommission();
+  }, [
+    adminCommissionRows,
+    adminProductsCommissionLoading,
+    refreshAdminProductsCommission,
+    salesDoctorDetail?.doctorId,
+    salesDoctorDetail?.role,
+    user,
     user?.role,
   ]);
 
@@ -8353,20 +8384,9 @@ export default function App() {
 		      ...accountProspectEntries,
 		    ];
 
-			    const normalizedCombined = combined.map((entry) => {
-			      const normalizedStatus = sanitizeReferralStatus(entry.record?.status);
-			      if (normalizedStatus === "converted" && hasLeadPlacedOrder(entry.record)) {
-			        return {
-			          ...entry,
-			          record: { ...(entry.record ?? {}), status: "nuture" },
-			        };
-			      }
-			      return entry;
-			    });
-
-			    const filtered = normalizedCombined.filter(
-			      (entry) => !shouldRemoveFromActiveProspects(entry.record),
-			    );
+				    const filtered = combined.filter(
+				      (entry) => !shouldRemoveFromActiveProspects(entry.record),
+				    );
 
 		    const dedup = new Map<string, { kind: "referral" | "contact_form"; record: any }>();
 		    filtered.forEach((entry, index) => {
@@ -13252,8 +13272,8 @@ export default function App() {
 				                                          boxShadow: !isOnlineNow
 				                                            ? undefined
 				                                            : showIdle
-				                                              ? "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(148,163,184,0.95)"
-				                                              : "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(95,179,249,0.95)",
+				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 3px rgba(148,163,184,1)"
+				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 3px rgba(95,179,249,1)",
 				                                        }}
 				                                      >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -14218,8 +14238,8 @@ export default function App() {
 				                                            boxShadow: !isOnline
 				                                              ? undefined
 				                                              : showIdle
-				                                                ? "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(148,163,184,0.95)"
-				                                                : "0 0 0 1px rgba(255,255,255,0.95), 0 0 0 4px rgba(95,179,249,0.95)",
+				                                                ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(148,163,184,1)"
+				                                                : "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(95,179,249,1)",
 				                                          }}
 				                                        >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -14238,21 +14258,19 @@ export default function App() {
 			                                        )}
 			                                      </div>
 			                                    </div>
-			                                      <div className="min-w-0 flex-1 overflow-hidden">
-			                                        <div className="flex flex-col">
-			                                          <div className="flex items-center gap-2 whitespace-nowrap">
+				                                      <div className="min-w-0 flex-1 overflow-hidden">
+				                                        <div className="flex flex-col items-start gap-0.5 text-left">
 				                                          {rolePill && (
 				                                            <span
-					                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0"
-			                                              style={rolePill.style}
-			                                            >
-			                                              {rolePill.label}
-			                                            </span>
-			                                          )}
-		                                          <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
-		                                            {displayName}
-		                                          </span>
-		                                          </div>
+				                                              className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0 self-start whitespace-nowrap"
+				                                              style={rolePill.style}
+				                                            >
+				                                              {rolePill.label}
+				                                            </span>
+				                                          )}
+				                                          <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+				                                            {displayName}
+				                                          </span>
 				                                          <span className="text-sm text-slate-600 whitespace-nowrap">
 				                                            {entry.email || "—"}
 				                                          </span>
@@ -18797,21 +18815,38 @@ export default function App() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-	                    {(isRep(salesDoctorDetail.role) ||
-                        typeof salesDoctorDetail.personalRevenue === "number" ||
-                        typeof salesDoctorDetail.salesRevenue === "number") ? (
-	                      <>
-	                        <p className="text-sm text-slate-600">
-	                          Personal Revenue:{" "}
-	                          {formatCurrency(
-	                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
-	                          )}
-	                        </p>
+		                    {(isRep(salesDoctorDetail.role) ||
+	                        typeof salesDoctorDetail.personalRevenue === "number" ||
+	                        typeof salesDoctorDetail.salesRevenue === "number") ? (
+		                      <>
+		                        <p className="text-sm text-slate-600">
+		                          Personal Revenue:{" "}
+		                          {formatCurrency(
+		                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
+		                          )}
+		                        </p>
 		                        <p className="text-sm text-slate-600">
 		                          Sales Revenue:{" "}
 		                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
 		                        </p>
 		                        {(() => {
+		                          const role = normalizeRole(salesDoctorDetail.role || "");
+		                          if (role === "admin") {
+		                            const adminRow = adminCommissionRows.find(
+		                              (row) =>
+		                                String(row?.id || "") ===
+		                                String(salesDoctorDetail.doctorId || ""),
+		                            );
+		                            return (
+		                              <p className="text-sm text-slate-600">
+		                                Total Commission:{" "}
+		                                {adminRow
+		                                  ? formatCurrency(Number(adminRow.amount || 0))
+		                                  : "—"}
+		                              </p>
+		                            );
+		                          }
+
 		                          const repRow = salesRepSalesSummary.find(
 		                            (row) =>
 		                              String(row?.salesRepId || "") ===
@@ -18836,6 +18871,10 @@ export default function App() {
 		                              Total Commission: {formatCurrency(totalCommission)}
 		                            </p>
 		                          );
+		                        })()}
+		                        {(() => {
+		                          // (Total Commission line is rendered above)
+		                          return null;
 		                        })()}
 		                      </>
 	                    ) : isDoctorRole(salesDoctorDetail.role) ? (

@@ -1740,6 +1740,35 @@ const getOrdersForSalesRep = async (
     }),
   );
 
+  // Ensure prospects (e.g., referred doctors) show up in sales rep orders even if the doctor
+  // user record hasn't been assigned a `salesRepId` yet. This removes the "delay" where orders
+  // exist but the doctor doesn't show in "Your Sales" until a separate assignment sync happens.
+  if (allowedRepIds.size > 0) {
+    try {
+      const prospects = await salesProspectRepository.getAll();
+      const list = Array.isArray(prospects) ? prospects : [];
+      const extraDoctorIds = new Set(
+        list
+          .filter((prospect) => allowedRepIds.has(normalizeId(prospect?.salesRepId)))
+          .map((prospect) => normalizeId(prospect?.doctorId))
+          .filter(Boolean),
+      );
+      extraDoctorIds.forEach((doctorId) => {
+        if (doctorLookup.has(doctorId)) {
+          return;
+        }
+        const user = userRepository.findById ? userRepository.findById(doctorId) : null;
+        const name = user?.name || user?.email || 'Doctor';
+        const email = user?.email || null;
+        const profileImageUrl = user?.profileImageUrl || null;
+        doctorLookup.set(doctorId, { id: doctorId, name, email, profileImageUrl });
+        doctors.push({ id: doctorId, name, email, profileImageUrl });
+      });
+    } catch (error) {
+      logger.warn({ err: error }, 'Sales rep order fetch: unable to load sales prospects');
+    }
+  }
+
   const contactLeadByEmail = new Map();
   if (mysqlClient.isEnabled()) {
     try {
