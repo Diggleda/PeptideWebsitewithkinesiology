@@ -5493,6 +5493,27 @@ html {
   z-index: 5;
 }
 
+.app-header-blur {
+  /* Default: slightly translucent so blur can be perceived even on light pages */
+  background-color: rgba(255, 255, 255, 0.78);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-header-blur {
+    background-color: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+    backdrop-filter: blur(18px) saturate(1.35);
+  }
+}
+
+.app-header-blur {
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+  isolation: isolate;
+}
+
 .header-account-avatar.header-avatar-fallback {
   /* Match details tab avatar tone but stay fully opaque for stacking */
   background: linear-gradient(135deg, #e2f1fd, #bbdffc);

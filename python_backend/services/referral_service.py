@@ -1781,14 +1781,50 @@ def award_first_order_credit(purchasing_doctor_id: str, order_id: str, order_tot
     )
 
     if referral_record:
+        credited_at = _now()
         referral_repository.update(
             {
                 **referral_record,
-                "status": "converted",
+                # Once the referrer has been credited, the pipeline should move from
+                # "converted" into nurturing ("nuture") for ongoing follow-up.
+                "status": "nuture",
                 "convertedDoctorId": purchasing_doctor["id"],
                 "convertedAt": _now(),
+                "creditIssuedAt": credited_at,
+                "creditIssuedAmount": amount,
+                "creditIssuedBy": "system",
             }
         )
+        # Keep the sales-prospect pipeline in sync (status is authoritative there).
+        try:
+            referral_key = str(referral_record.get("id") or "").strip()
+            prospects = sales_prospect_repository.find_all_by_referral_id(referral_key) if referral_key else []
+        except Exception:
+            prospects = []
+        for prospect in prospects or []:
+            if not isinstance(prospect, dict):
+                continue
+            prospect_id = str(prospect.get("id") or "").strip()
+            sales_rep_id = prospect.get("salesRepId") or purchasing_doctor.get("salesRepId")
+            if not prospect_id or not sales_rep_id:
+                continue
+            try:
+                sales_prospect_repository.upsert(
+                    {
+                        "id": prospect_id,
+                        "salesRepId": str(sales_rep_id),
+                        "doctorId": prospect.get("doctorId") or purchasing_doctor.get("id") or None,
+                        "referralId": str(prospect.get("referralId") or referral_key or ""),
+                        "status": "nuture",
+                        "isManual": bool(prospect.get("isManual")) if "isManual" in prospect else False,
+                        "contactName": prospect.get("contactName") or referral_record.get("referredContactName"),
+                        "contactEmail": prospect.get("contactEmail") or referral_record.get("referredContactEmail"),
+                        "contactPhone": prospect.get("contactPhone") or referral_record.get("referredContactPhone"),
+                        "notes": prospect.get("notes") or None,
+                    }
+                )
+            except Exception:
+                pass
 
     return {
         "referrerId": updated_referrer["id"],

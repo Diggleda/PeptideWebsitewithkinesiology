@@ -65,64 +65,67 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, style, hideCloseButton = false, overlayClassName, overlayStyle, containerClassName, containerStyle, ...props }, ref) => (
-  <DialogPortal data-slot="dialog-portal">
-    <div
-      className={
-        containerClassName ??
-        "fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
-      }
-      style={
-        containerClassName
-          ? containerStyle
-          : {
-              top: 'var(--modal-header-offset, 6rem)',
-              left: 0,
-              right: 0,
-              ...containerStyle,
-            }
-      }
-    >
-      <DialogOverlay className={overlayClassName} style={overlayStyle} />
-      <DialogPrimitive.Content
-        ref={ref}
-        data-slot="dialog-content"
-        className={cn(
-          "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
-          className,
-        )}
-        style={{
-          backgroundColor: 'rgba(245, 251, 255, 0.94)',
-          borderColor: 'rgba(95, 179, 249, 0.65)',
-          backdropFilter: 'blur(16px) saturate(1.45)',
-          WebkitBackdropFilter: 'blur(16px) saturate(1.45)',
-          // Leave room for the sticky header when positioning + sizing the modal
-          maxHeight: 'calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))',
-          margin: 'clamp(0.5rem, 3vh, 2rem) auto 1.5rem',
-          willChange: 'opacity, transform',
-          ...style,
-        }}
-        {...props}
+>(({ className, children, style, hideCloseButton = false, overlayClassName, overlayStyle, containerClassName, containerStyle, ...props }, ref) => {
+  return (
+    <DialogPortal data-slot="dialog-portal">
+      <div
+        className={
+          containerClassName ??
+          "fixed inset-x-0 bottom-0 z-[10000] flex items-center justify-center px-3 py-6 sm:px-4 sm:py-8"
+        }
+        style={
+          containerClassName
+            ? containerStyle
+            : {
+                top: "var(--modal-header-offset, 6rem)",
+                left: 0,
+                right: 0,
+                ...containerStyle,
+              }
+        }
       >
-	        {children}
-	        {!hideCloseButton && (
-	          <DialogPrimitive.Close
-	            className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 z-[10050] disabled:pointer-events-none"
-	            style={{
-	              backgroundColor: 'rgb(95, 179, 249)',
-	              width: '38px',
-	              height: '38px',
-	              borderRadius: '50%',
-            }}
-          >
-            <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </div>
-  </DialogPortal>
-));
+        <DialogOverlay className={overlayClassName} style={overlayStyle} />
+        <DialogPrimitive.Content
+          ref={ref}
+          data-slot="dialog-content"
+          className={cn(
+            "relative z-[1001] flex w-full max-w-[min(740px,calc(100vw-2rem))] flex-col overflow-y-auto squircle-xl glass-card border-[3px] p-6 text-slate-900 shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] focus:outline-none data-[state=closed]:pointer-events-none duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 sm:max-w-[min(800px,calc(100vw-2.5rem))] lg:max-w-[min(50vw,48rem)]",
+            className,
+          )}
+          style={{
+            backgroundColor: "rgba(245, 251, 255, 0.94)",
+            borderColor: "rgba(95, 179, 249, 0.65)",
+            backdropFilter: "blur(16px) saturate(1.45)",
+            WebkitBackdropFilter: "blur(16px) saturate(1.45)",
+            // Leave room for the sticky header when positioning + sizing the modal
+            maxHeight:
+              "calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) - clamp(1.5rem, 6vh, 3rem))",
+            margin: "clamp(0.5rem, 3vh, 2rem) auto 1.5rem",
+            willChange: "opacity, transform",
+            ...style,
+          }}
+          {...props}
+        >
+          {children}
+          {!hideCloseButton && (
+            <DialogPrimitive.Close
+              className="dialog-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150 absolute top-4 right-4 z-[10050] disabled:pointer-events-none"
+              style={{
+                backgroundColor: "rgb(95, 179, 249)",
+                width: "38px",
+                height: "38px",
+                borderRadius: "50%",
+              }}
+            >
+              <XIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </div>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {

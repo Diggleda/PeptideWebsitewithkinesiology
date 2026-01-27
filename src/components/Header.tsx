@@ -2809,7 +2809,7 @@ export function Header({
   const renderSearchField = (inputClassName = '') => (
     <div className="relative">
       <Search
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-600"
+        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-500"
       />
       <Input
         type="text"
@@ -2819,7 +2819,7 @@ export function Header({
         value={searchQuery}
         onChange={(e) => handleSearchChange(e.target.value)}
         ref={searchInputRef}
-        className={`glass squircle-sm pl-10 pr-12 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
+        className={`glass squircle-sm pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
         style={{ borderColor: translucentSecondary, minWidth: '100%' }}
       />
 	      {searchQuery.trim().length > 0 && (
@@ -4565,13 +4565,20 @@ export function Header({
     ? { maxWidth: '160px', maxHeight: '160px' }
     : { maxWidth: 'min(190px, 56vw)', maxHeight: '78px' };
 
-  return (
-    <header
-      ref={headerRef}
-      data-app-header
-      className="w-full glass-strong border-b border-white/20 bg-white/70 supports-[backdrop-filter]:bg-white/40 backdrop-blur shadow-sm"
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9500 }}
-    >
+			  return (
+			    <header
+			      ref={headerRef}
+			      data-app-header
+			      className="w-full app-header-blur border-b border-slate-200 shadow-sm"
+			      style={{
+			        position: 'fixed',
+			        top: 0,
+			        left: 0,
+			        right: 0,
+			        zIndex: 9500,
+			        opacity: 1,
+			      }}
+			    >
       <div className="w-full px-6 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
           <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">

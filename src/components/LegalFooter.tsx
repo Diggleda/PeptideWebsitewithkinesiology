@@ -61,7 +61,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     const originalOverflow = body.style.overflow;
     const originalPaddingRight = body.style.paddingRight;
 
-    if (activeDocument && !isClosing) {
+    if ((activeDocument || contactOpen) && !isClosing) {
       const scrollbarWidth = window.innerWidth - docEl.clientWidth;
       if (!originalPaddingRight && scrollbarWidth > 0) {
         body.style.paddingRight = `${scrollbarWidth}px`;
@@ -76,7 +76,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     body.style.overflow = originalOverflow;
     body.style.paddingRight = originalPaddingRight;
     return undefined;
-  }, [activeDocument, isClosing]);
+  }, [activeDocument, contactOpen, isClosing]);
 
   const legalLinks = useMemo(
     () => [

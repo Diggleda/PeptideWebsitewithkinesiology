@@ -11366,44 +11366,63 @@ export default function App() {
     };
 	  }, [user?.id, handleLogout]);
 
-	  useEffect(() => {
-	    if (typeof window === "undefined") return;
-	    if (!user?.id || postLoginHold) {
-	      lastPresenceHeartbeatPingAtRef.current = 0;
-	      lastPresenceInteractionPingAtRef.current = 0;
-	      return;
-	    }
+		  useEffect(() => {
+		    if (typeof window === "undefined") return;
+		    if (!user?.id || postLoginHold) {
+		      lastPresenceHeartbeatPingAtRef.current = 0;
+		      lastPresenceInteractionPingAtRef.current = 0;
+		      return;
+		    }
 
-	    let cancelled = false;
-	    const heartbeatMs = 30_000;
+		    let cancelled = false;
+		    const heartbeatMs = 30_000;
 
-	    const sendHeartbeat = () => {
-	      if (cancelled) return;
-	      if (!isOnline() || !isPageVisible()) return;
-	      const now = Date.now();
-	      const throttleMs = Math.max(10_000, Math.floor(heartbeatMs * 0.75));
-	      if (now - lastPresenceHeartbeatPingAtRef.current < throttleMs) return;
-	      lastPresenceHeartbeatPingAtRef.current = now;
-	      try {
-	        void settingsAPI
-	          .pingPresence({
-	            kind: "heartbeat",
-	            isIdle: isIdleRef.current,
-	          })
-	          .catch(() => undefined);
-	      } catch {
-	        // ignore
-	      }
-	    };
+		    const sendHeartbeat = () => {
+		      if (cancelled) return;
+		      if (!isOnline() || !isPageVisible()) return;
+		      const now = Date.now();
+		      const throttleMs = Math.max(10_000, Math.floor(heartbeatMs * 0.75));
+		      if (now - lastPresenceHeartbeatPingAtRef.current < throttleMs) return;
+		      lastPresenceHeartbeatPingAtRef.current = now;
+		      try {
+		        void settingsAPI
+		          .pingPresence({
+		            kind: "heartbeat",
+		            isIdle: isIdleRef.current,
+		          })
+		          .catch(() => undefined);
+		      } catch {
+		        // ignore
+		      }
+		    };
 
-	    sendHeartbeat();
-	    const id = window.setInterval(sendHeartbeat, heartbeatMs);
+		    // Ping immediately, then keep-alive. Also ping on visibility/connection changes
+		    // to reduce false-offline blips when a tab resumes after being backgrounded.
+		    sendHeartbeat();
+		    const jitterMs = Math.floor(Math.random() * 1500);
+		    const id = window.setInterval(sendHeartbeat, heartbeatMs);
+		    const warmupId = window.setTimeout(sendHeartbeat, 1000 + jitterMs);
+		    const onlineId = window.setTimeout(sendHeartbeat, 2500 + jitterMs);
 
-	    return () => {
-	      cancelled = true;
-	      window.clearInterval(id);
-	    };
-	  }, [user?.id, postLoginHold]);
+		    const handleVisibility = () => {
+		      if (!isPageVisible()) return;
+		      sendHeartbeat();
+		    };
+		    const handleOnline = () => sendHeartbeat();
+		    document.addEventListener("visibilitychange", handleVisibility);
+		    window.addEventListener("online", handleOnline);
+		    window.addEventListener("focus", handleOnline);
+
+		    return () => {
+		      cancelled = true;
+		      window.clearInterval(id);
+		      window.clearTimeout(warmupId);
+		      window.clearTimeout(onlineId);
+		      document.removeEventListener("visibilitychange", handleVisibility);
+		      window.removeEventListener("online", handleOnline);
+		      window.removeEventListener("focus", handleOnline);
+		    };
+		  }, [user?.id, postLoginHold]);
 
 	  useEffect(() => {
 	    if (typeof window === "undefined") return;
@@ -13224,18 +13243,14 @@ export default function App() {
 		                          lastSeenMs != null
 		                            ? Math.max(0, (Date.now() - lastSeenMs) / 60000)
 		                            : null;
-		                        const OFFLINE_AFTER_MINUTES = 60;
-		                        const IDLE_AFTER_MINUTES = 2;
-		                        const onlineReported = Boolean(entry.isOnline);
-		                        const idleReported = Boolean(entry.isIdle);
-		                        const isOnlineNow =
-		                          onlineReported ||
-		                          (minutesSinceLastSeen != null &&
-		                            minutesSinceLastSeen < OFFLINE_AFTER_MINUTES);
-		                        const showIdle =
-		                          isOnlineNow &&
-		                          (idleReported ||
-		                            (minutesSinceLastSeen != null &&
+			                        const IDLE_AFTER_MINUTES = 2;
+			                        const onlineReported = Boolean(entry.isOnline);
+			                        const idleReported = Boolean(entry.isIdle);
+			                        const isOnlineNow = onlineReported;
+			                        const showIdle =
+			                          isOnlineNow &&
+			                          (idleReported ||
+			                            (minutesSinceLastSeen != null &&
 		                              minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
 		                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
 		                        const offlineLabel = !isOnlineNow
@@ -13471,13 +13486,13 @@ export default function App() {
                         const seconds = uptime?.serviceSeconds;
                         if (typeof seconds === "number" && Number.isFinite(seconds)) {
                           const mins = Math.floor(seconds / 60);
-                          if (mins < 60) return `Uptime: ${mins}m`;
+                          if (mins < 60) return `Backend uptime: ${mins}m`;
                           const hours = Math.floor(mins / 60);
                           const remMins = mins % 60;
-                          if (hours < 24) return `Uptime: ${hours}h ${remMins}m`;
+                          if (hours < 24) return `Backend uptime: ${hours}h ${remMins}m`;
                           const days = Math.floor(hours / 24);
                           const remHours = hours % 24;
-                          return `Uptime: ${days}d ${remHours}h`;
+                          return `Backend uptime: ${days}d ${remHours}h`;
                         }
                         return null;
                       })();
@@ -14001,31 +14016,13 @@ export default function App() {
 	                    const normalizedQuery = adminLiveUsersSearch.trim().toLowerCase();
 	                    const filtered = visibleUsers.filter((entry: any) => {
 	                      if (!adminLiveUsersShowOffline) {
-	                        const onlineReported = Boolean(entry?.isOnline);
-	                        if (!onlineReported) {
-	                          const raw =
-	                            entry?.lastInteractionAt ||
-	                            entry?.lastSeenAt ||
-	                            entry?.lastActivityAt ||
-	                            entry?.lastActiveAt ||
-	                            entry?.lastLoginAt ||
-	                            null;
-	                          const parsed = raw ? new Date(raw).getTime() : NaN;
-	                          const minutesSince =
-	                            Number.isFinite(parsed)
-	                              ? Math.max(0, (Date.now() - parsed) / 60000)
-	                              : null;
-	                          const OFFLINE_AFTER_MINUTES = 60;
-	                          const isEffectivelyOnline =
-	                            isEntryCurrentUser(entry) ||
-	                            (minutesSince != null && minutesSince < OFFLINE_AFTER_MINUTES);
-	                          if (!isEffectivelyOnline) {
-	                            return false;
-	                          }
-	                        }
-	                      }
-	                      const role = String(entry?.role || "").toLowerCase().trim();
-	                      if (adminLiveUsersRoleFilter !== "all") {
+		                        const onlineReported = Boolean(entry?.isOnline);
+		                        if (!onlineReported && !isEntryCurrentUser(entry)) {
+		                          return false;
+		                        }
+		                      }
+		                      const role = String(entry?.role || "").toLowerCase().trim();
+		                      if (adminLiveUsersRoleFilter !== "all") {
 	                        if (adminLiveUsersRoleFilter === "sales_rep") {
 	                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
                             return false;
@@ -14207,35 +14204,30 @@ export default function App() {
 		                                lastSeenMs != null
 		                                  ? Math.max(0, (Date.now() - lastSeenMs) / 60000)
 		                                  : null;
-		                              const OFFLINE_AFTER_MINUTES = 60;
-		                              const IDLE_AFTER_MINUTES = 2;
-		                              const onlineReported = Boolean(entry?.isOnline);
-		                              const idleReported = Boolean(getEntryIdle(entry));
-		                              const isOnline =
-		                                onlineReported ||
-		                                (minutesSinceLastSeen != null &&
-		                                  minutesSinceLastSeen < OFFLINE_AFTER_MINUTES);
-			                              const showIdle =
-			                                isOnline &&
-			                                (idleReported ||
-			                                  (minutesSinceLastSeen != null &&
+			                              const IDLE_AFTER_MINUTES = 2;
+			                              const onlineReported = Boolean(entry?.isOnline);
+			                              const idleReported = Boolean(getEntryIdle(entry));
+			                              const isOnline = onlineReported;
+				                              const showIdle =
+				                                isOnline &&
+				                                (idleReported ||
+				                                  (minutesSinceLastSeen != null &&
 			                                    minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
-			                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
-			                              const formatOfflineFor = (value?: string | null) => {
-			                                const raw = formatRelativeMinutes(value);
-			                                if (raw === "a few moments ago") return "a few moments";
-			                                return raw.replace(/\s+ago$/, "");
-			                              };
-			                              const statusLabel = !isOnline
-			                                ? "Offline"
-			                                : showIdle
-			                                  ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""}`
-			                                  : "Online";
-			                              const detailLabel = isOnline
-			                                ? formatOnlineDuration(entry.lastLoginAt)
-			                                : entry.lastSeenAt
-			                                  ? `Offline for ${formatOfflineFor(entry.lastSeenAt)}`
-			                                  : "Offline";
+				                              const idleMinutesLabel = showIdle ? getIdleMinutesLabel(entry) : null;
+				                              const formatOfflineFor = (value?: string | null) => {
+				                                const raw = formatRelativeMinutes(value);
+				                                if (raw === "a few moments ago") return "a few moments";
+				                                return raw.replace(/\s+ago$/, "");
+				                              };
+				                              const offlineAnchor =
+				                                entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
+				                              const statusLine = isOnline
+				                                ? showIdle
+				                                  ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
+				                                  : formatOnlineDuration(entry.lastLoginAt)
+				                                : offlineAnchor
+				                                  ? `Offline for ${formatOfflineFor(offlineAnchor)}`
+				                                  : "Offline";
 
 			                              return (
 		                                <div
@@ -14295,9 +14287,9 @@ export default function App() {
 				                                          <span className="text-sm text-slate-600 whitespace-nowrap">
 				                                            {entry.email || "—"}
 				                                          </span>
-				                                          <span className="text-sm text-slate-600 whitespace-nowrap">
-				                                            {statusLabel} — {detailLabel}
-				                                          </span>
+					                                          <span className="text-sm text-slate-600 whitespace-nowrap">
+					                                            {statusLine}
+					                                          </span>
 				                                        </div>
 				                                      </div>
 				                                    </div>
