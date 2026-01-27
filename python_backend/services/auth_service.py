@@ -458,12 +458,18 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
         if _is_multi_session_exempt(user.get("email")):
             # Do not rotate session id or mark offline for the shared demo account;
             # one user's logout should not boot other demos.
+            try:
+                # Still mark offline for UI presence; another active session will
+                # immediately flip it back via `/settings/presence` heartbeats.
+                user_repository.update({**user, "isOnline": False, "isIdle": False})
+            except Exception:
+                pass
             _audit(
                 "LOGOUT",
                 {
                     "userId": user_id,
                     "role": normalized_role or (user.get("role") if isinstance(user, dict) else None),
-                    "updatedUser": False,
+                    "updatedUser": True,
                     "skippedReason": "MULTI_SESSION_EXEMPT",
                     "at": now_iso,
                 },
