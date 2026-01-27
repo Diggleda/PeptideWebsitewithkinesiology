@@ -157,6 +157,10 @@ class AwardFirstOrderCreditTests(unittest.TestCase):
                 calls["prospect_upserts"].append(dict(record))
                 return dict(record)
 
+            def mark_doctor_as_nurturing_after_credit(self, doctor_id):
+                calls["mark_doctor_after_credit"] = str(doctor_id)
+                return 1
+
         # Patch dependencies in-module.
         original = {
             "user_repository": referral_service.user_repository,
@@ -189,6 +193,7 @@ class AwardFirstOrderCreditTests(unittest.TestCase):
             self.assertEqual(upsert.get("status"), "nuture")
             self.assertEqual(upsert.get("doctorId"), "p1")
             self.assertEqual(upsert.get("referralId"), "ref1")
+            self.assertEqual(calls.get("mark_doctor_after_credit"), "p1")
         finally:
             for key, value in original.items():
                 setattr(referral_service, key, value)

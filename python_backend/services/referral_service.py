@@ -1825,6 +1825,11 @@ def award_first_order_credit(purchasing_doctor_id: str, order_id: str, order_tot
                 )
             except Exception:
                 pass
+        # Also update any doctor-linked prospects that don't carry the referralId.
+        try:
+            sales_prospect_repository.mark_doctor_as_nurturing_after_credit(purchasing_doctor["id"])
+        except Exception:
+            pass
 
     return {
         "referrerId": updated_referrer["id"],
@@ -1988,6 +1993,12 @@ def manually_add_credit(doctor_id: str, amount: float, reason: str, created_by: 
                     )
             except Exception:
                 pass
+        # Also update any doctor-linked prospects that don't carry the referralId.
+        try:
+            if contact_account and contact_account.get("id"):
+                sales_prospect_repository.mark_doctor_as_nurturing_after_credit(str(contact_account.get("id")))
+        except Exception:
+            pass
 
     return {"ledgerEntry": ledger_entry, "doctor": updated_doctor}
 
