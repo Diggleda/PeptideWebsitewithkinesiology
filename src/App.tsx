@@ -7955,16 +7955,28 @@ export default function App() {
     );
   }, [contactFormEntries, hasLeadPlacedOrder, isLeadStatus]);
 
-  const contactFormPipeline = useMemo(() => {
-    return contactFormEntries.filter(
-      (entry) =>
-        isLeadStatus(entry.status) &&
-        !hasLeadPlacedOrder(entry) &&
-        !isCurrentUserLead(entry) &&
-        !(entry.referredContactEligibleForCredit === true) &&
-        !(sanitizeReferralStatus(entry.status) === "converted" && hasLeadPlacedOrder(entry)),
-    );
-  }, [contactFormEntries, hasLeadPlacedOrder, isCurrentUserLead, isLeadStatus]);
+	  const contactFormPipeline = useMemo(() => {
+	    return contactFormEntries.filter((entry) => {
+	      if (entry?.creditIssuedAt) {
+	        return false;
+	      }
+	      if (!isLeadStatus(entry.status)) {
+	        return false;
+	      }
+	      if (isCurrentUserLead(entry)) {
+	        return false;
+	      }
+	      if (entry.referredContactEligibleForCredit === true) {
+	        return false;
+	      }
+	      const status = sanitizeReferralStatus(entry.status);
+	      const hasOrders = hasLeadPlacedOrder(entry);
+	      if (hasOrders && status !== "converted") {
+	        return false;
+	      }
+	      return true;
+	    });
+	  }, [contactFormEntries, hasLeadPlacedOrder, isCurrentUserLead, isLeadStatus]);
 
   const creditedDoctorLedgerEntries = useMemo(() => {
     const ledger = doctorSummary?.ledger ?? [];
@@ -7977,14 +7989,15 @@ export default function App() {
     return map;
   }, [doctorSummary]);
 
-  const referralRecords = useMemo(() => {
-    return normalizedReferrals.filter(
-      (referral) =>
-        !isContactFormEntry(referral) &&
-        !isManualEntry(referral) &&
-        !hasLeadPlacedOrder(referral),
-    );
-  }, [hasLeadPlacedOrder, isContactFormEntry, isManualEntry, normalizedReferrals]);
+	  const referralRecords = useMemo(() => {
+	    return normalizedReferrals.filter(
+	      (referral) =>
+	        !isContactFormEntry(referral) &&
+	        !isManualEntry(referral) &&
+	        (!hasLeadPlacedOrder(referral) ||
+	          sanitizeReferralStatus(referral.status) === "converted"),
+	    );
+	  }, [hasLeadPlacedOrder, isContactFormEntry, isManualEntry, normalizedReferrals]);
 
   const manualProspectEntries = useMemo(() => {
     return normalizedReferrals.filter((referral) => isManualEntry(referral));
@@ -7994,27 +8007,25 @@ export default function App() {
     return referralRecords.filter((referral) => isLeadStatus(referral.status));
   }, [referralRecords, isLeadStatus]);
 
-  const activeReferralEntries = useMemo(() => {
-    return referralLeadEntries.filter((referral) => {
-      const status = sanitizeReferralStatus(referral.status);
-      const hasOrders = hasLeadPlacedOrder(referral);
-      if (hasOrders) {
-        return false;
-      }
-      if (isCurrentUserLead(referral)) {
-        return false;
-      }
-      return !referral.creditIssuedAt;
-    });
-  }, [hasLeadPlacedOrder, isCurrentUserLead, referralLeadEntries]);
+	  const activeReferralEntries = useMemo(() => {
+	    return referralLeadEntries.filter((referral) => {
+	      const status = sanitizeReferralStatus(referral.status);
+	      const hasOrders = hasLeadPlacedOrder(referral);
+	      if (hasOrders && status !== "converted") {
+	        return false;
+	      }
+	      if (isCurrentUserLead(referral)) {
+	        return false;
+	      }
+	      return !referral.creditIssuedAt;
+	    });
+	  }, [hasLeadPlacedOrder, isCurrentUserLead, referralLeadEntries]);
 
-  const historicReferralEntries = useMemo(() => {
-    return referralLeadEntries.filter((referral) => {
-      const status = sanitizeReferralStatus(referral.status);
-      const hasOrders = hasLeadPlacedOrder(referral);
-      return Boolean(referral.creditIssuedAt) || (status === "converted" && hasOrders);
-    });
-  }, [hasLeadPlacedOrder, referralLeadEntries]);
+	  const historicReferralEntries = useMemo(() => {
+	    return referralLeadEntries.filter((referral) => {
+	      return Boolean(referral.creditIssuedAt);
+	    });
+	  }, [referralLeadEntries]);
 
   const referralQueue = useMemo(() => {
     return referralRecords.filter((referral) => !isLeadStatus(referral.status));
@@ -8522,14 +8533,16 @@ export default function App() {
 			    };
 
 			    const bestByIdentity = new Map<string, { status: string; name: string }>();
-			    normalizedReferrals.forEach((referral, index) => {
-			      const status = hasLeadPlacedOrder(referral)
-			        ? "nuture"
-			        : sanitizeReferralStatus(referral.status);
-			      const key = identityKeyForReferral(referral, index);
-			      const name = pipelineNameForReferral(referral);
-			      const existing = bestByIdentity.get(key);
-			      if (!existing) {
+				    normalizedReferrals.forEach((referral, index) => {
+				      const normalizedStatus = sanitizeReferralStatus(referral.status);
+				      const status =
+				        hasLeadPlacedOrder(referral) && normalizedStatus !== "converted"
+				          ? "nuture"
+				          : normalizedStatus;
+				      const key = identityKeyForReferral(referral, index);
+				      const name = pipelineNameForReferral(referral);
+				      const existing = bestByIdentity.get(key);
+				      if (!existing) {
 			        bestByIdentity.set(key, { status, name });
 			        return;
 			      }

@@ -144,6 +144,10 @@ def delete_doctor_referral(referral_id: str):
 
         # Allow deletion even if ownership metadata is missing/mismatched (legacy data)
         referral_repository.delete(referral_id)
+        try:
+            sales_prospect_repository.delete_by_referral_id(referral_id)
+        except Exception:
+            pass
         return {"deleted": True}
 
     return handle_action(action)

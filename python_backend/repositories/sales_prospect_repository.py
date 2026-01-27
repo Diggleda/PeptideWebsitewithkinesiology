@@ -258,6 +258,31 @@ def delete(prospect_id: str) -> bool:
     return True
 
 
+def delete_by_referral_id(referral_id: str) -> bool:
+    if not referral_id:
+        return False
+    target = str(referral_id)
+    if _using_mysql():
+        result = mysql_client.execute(
+            """
+            DELETE FROM sales_prospects
+            WHERE referral_id = %(referral_id)s OR id = %(referral_id)s
+            """,
+            {"referral_id": target},
+        )
+        return result > 0
+    records = list(_get_store().read())
+    filtered = [
+        record
+        for record in records
+        if str(record.get("id") or "") != target and str(record.get("referralId") or "") != target
+    ]
+    if len(filtered) == len(records):
+        return False
+    _get_store().write(filtered)
+    return True
+
+
 def upsert(record: Dict) -> Dict:
     incoming = dict(record or {})
 
