@@ -122,6 +122,17 @@ def logout():
             stored_session_id = user.get("sessionId") if user else None
 
         if not stored_session_id or str(stored_session_id) != str(token_session_id):
+            # Best-effort: mark the user offline even if the session id doesn't match.
+            # This avoids "stuck online" when a client logs out after a session rotation.
+            try:
+                if user and isinstance(user, dict):
+                    user_repository.update({**user, "isOnline": False, "isIdle": False})
+            except Exception:
+                pass
+            try:
+                presence_service.clear_user(str(user_id))
+            except Exception:
+                pass
             _audit(
                 "LOGOUT_REQUEST_IGNORED",
                 {

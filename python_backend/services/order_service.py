@@ -3019,6 +3019,25 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
             _admin_taxes_by_state_cache["key"] = period_cache_key
             _admin_taxes_by_state_cache["expiresAtMs"] = now_ms + (_ADMIN_TAXES_BY_STATE_TTL_SECONDS * 1000)
         return result
+    except Exception as exc:
+        # Serve stale cached data if available; otherwise return a stable payload instead of a 503.
+        with _admin_taxes_by_state_lock:
+            cached = _admin_taxes_by_state_cache.get("data")
+            cache_key = _admin_taxes_by_state_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
+                logger.warning(
+                    "[AdminTaxesByState] Using cached report after failure",
+                    exc_info=True,
+                    extra={"error": str(exc)},
+                )
+                return {**cached, "stale": True, "error": "Taxes-by-state report is temporarily unavailable."}
+        return {
+            "rows": [],
+            "totals": {"orderCount": 0, "taxTotal": 0.0},
+            **period_meta,
+            "stale": True,
+            "error": "Taxes-by-state report is temporarily unavailable.",
+        }
     finally:
         with _admin_taxes_by_state_lock:
             if _admin_taxes_by_state_inflight is not None:
@@ -3642,6 +3661,29 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             _admin_products_commission_cache["key"] = period_cache_key
             _admin_products_commission_cache["expiresAtMs"] = now_ms + (_ADMIN_PRODUCTS_COMMISSION_TTL_SECONDS * 1000)
         return result
+    except Exception as exc:
+        with _admin_products_commission_lock:
+            cached = _admin_products_commission_cache.get("data")
+            cache_key = _admin_products_commission_cache.get("key")
+            if isinstance(cached, dict) and cache_key == period_cache_key:
+                logger.warning(
+                    "[AdminProductsCommission] Using cached report after failure",
+                    exc_info=True,
+                    extra={"error": str(exc)},
+                )
+                return {
+                    **cached,
+                    "stale": True,
+                    "error": "Product sales commission report is temporarily unavailable.",
+                }
+        return {
+            "products": [],
+            "commissions": [],
+            "totals": {},
+            **period_meta,
+            "stale": True,
+            "error": "Product sales commission report is temporarily unavailable.",
+        }
     finally:
         with _admin_products_commission_lock:
             if _admin_products_commission_inflight is not None:

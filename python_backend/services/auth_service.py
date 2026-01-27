@@ -438,6 +438,8 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 {
                     **user,
                     "isOnline": False,
+                    "isIdle": False,
+                    "lastSeenAt": now_iso,
                     "sessionId": new_session_id,
                 }
             )
@@ -462,7 +464,7 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
             try:
                 # Still mark offline for UI presence; another active session will
                 # immediately flip it back via `/settings/presence` heartbeats.
-                user_repository.update({**user, "isOnline": False, "isIdle": False})
+                user_repository.update({**user, "isOnline": False, "isIdle": False, "lastSeenAt": now_iso})
             except Exception:
                 pass
             _audit(
@@ -480,6 +482,8 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
             {
                 **user,
                 "isOnline": False,
+                "isIdle": False,
+                "lastSeenAt": now_iso,
                 "sessionId": new_session_id,
             }
         )
