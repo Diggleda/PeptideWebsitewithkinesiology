@@ -8491,6 +8491,11 @@ export default function App() {
 		      stage.statuses.forEach((statusKey) => statusRank.set(statusKey, index));
 		    });
 
+        const chartReferrals: any[] = [
+          ...normalizedReferrals,
+          ...accountProspectEntries.map((entry) => entry.record),
+        ];
+
 			    const identityKeyForReferral = (referral: any, index: number): string => {
 		      const accountId =
 		        referral?.referredContactAccountId ||
@@ -8533,7 +8538,7 @@ export default function App() {
 			    };
 
 			    const bestByIdentity = new Map<string, { status: string; name: string }>();
-				    normalizedReferrals.forEach((referral, index) => {
+				    chartReferrals.forEach((referral, index) => {
 				      const normalizedStatus = sanitizeReferralStatus(referral.status);
 				      const status =
 				        hasLeadPlacedOrder(referral) && normalizedStatus !== "converted"
@@ -8582,7 +8587,7 @@ export default function App() {
 		        return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
 		      })(),
 	    }));
-		  }, [hasLeadPlacedOrder, normalizedReferrals]);
+		  }, [accountProspectEntries, hasLeadPlacedOrder, normalizedReferrals]);
 
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));

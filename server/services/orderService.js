@@ -1285,6 +1285,14 @@ const cancelWooOrderForUser = async ({ userId, wooOrderId, reason }) => {
     });
   }
 
+  const wooStatus = String(wooOrder?.status || '').trim().toLowerCase().replace(/_/g, '-');
+  const cancellableWooStatuses = new Set(['pending', 'on-hold']);
+  if (wooStatus && !cancellableWooStatuses.has(wooStatus)) {
+    const error = new Error('This order can no longer be cancelled');
+    error.status = 400;
+    throw error;
+  }
+
   const wooEmail = (wooOrder?.billing?.email || wooOrder?.billing?.email_address || wooOrder?.email || '')
     .toLowerCase()
     .trim();
@@ -1440,9 +1448,26 @@ const cancelOrder = async ({ userId, orderId, reason }) => {
     error.status = 403;
     throw error;
   }
-  const normalizedStatus = (order.status || '').toLowerCase();
+  const normalizedStatus = String(order.status || '').trim().toLowerCase().replace(/_/g, '-');
   const wooOrderNumber = getWooOrderNumberFromOrder(order);
-  const cancellableStatuses = new Set(['pending', 'processing', 'paid', 'on-hold', 'failed', 'payment_failed']);
+  const cancellableStatuses = new Set(['pending', 'on-hold']);
+
+  // If local record says cancellable, confirm against Woo (source of truth) when possible.
+  if (cancellableStatuses.has(normalizedStatus) && order.wooOrderId && wooCommerceClient.isConfigured()) {
+    try {
+      const wooOrder = await wooCommerceClient.fetchOrderById(order.wooOrderId);
+      const wooStatus = String(wooOrder?.status || '').trim().toLowerCase().replace(/_/g, '-');
+      if (wooStatus && !cancellableStatuses.has(wooStatus)) {
+        const error = new Error('This order can no longer be cancelled');
+        error.status = 400;
+        throw error;
+      }
+    } catch (error) {
+      // If Woo lookup fails, fall back to local status gate.
+      logger.warn({ err: error, orderId: order.id, wooOrderId: order.wooOrderId }, 'Woo status fetch failed during cancellation; falling back to local status');
+    }
+  }
+
   if (!cancellableStatuses.has(normalizedStatus)) {
     const error = new Error('This order can no longer be cancelled');
     error.status = 400;

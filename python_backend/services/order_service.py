@@ -995,6 +995,18 @@ def cancel_order(user_id: str, order_id: str, reason: Optional[str] = None) -> D
     if not woo_order_id:
         woo_order_id = order_id
 
+    # Enforce strict cancellation rules: only pending or on-hold.
+    # Prefer WooCommerce status (source of truth); fall back to local overlay status when Woo is unavailable.
+    def _normalize_status(value: object) -> str:
+        return str(value or "").strip().lower().replace("_", "-")
+
+    cancellable_statuses = {"pending", "on-hold"}
+    woo_status = _normalize_status(woo_order.get("status") if isinstance(woo_order, dict) else None)
+    local_status = _normalize_status(local_order.get("status") if isinstance(local_order, dict) else None)
+    effective_status = woo_status or local_status
+    if effective_status and effective_status not in cancellable_statuses:
+        raise _service_error("This order can no longer be cancelled", 400)
+
     # Attempt Stripe refund first if we have a PaymentIntent.
     payment_intent_id = None
     total_amount = None

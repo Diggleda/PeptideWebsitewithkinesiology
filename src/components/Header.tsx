@@ -444,7 +444,7 @@ const formatShippingMethod = (estimate?: AccountShippingEstimate | null) => {
   return titleCase(estimate.serviceType || estimate.serviceCode) || null;
 };
 
-const CANCELLABLE_ORDER_STATUSES = new Set(['pending', 'on-hold', 'failed', 'payment_failed', 'processing']);
+const CANCELLABLE_ORDER_STATUSES = new Set(['pending', 'on-hold', 'on_hold']);
 
 const parseAddress = (address: any): AccountOrderAddress | null => {
   if (!address) return null;
@@ -779,7 +779,7 @@ const describeOrderStatus = (order: AccountOrderSummary | null | undefined): str
     return 'Shipped';
   }
   if (normalized === 'processing') {
-    return 'Order Received';
+    return 'Processing';
   }
   if (normalized === 'completed' || normalized === 'complete') {
     return 'Completed';
@@ -3196,10 +3196,15 @@ export function Header({
 	        const status = describeOrderStatus(order);
 	        const trackingNumber = resolveTrackingNumber(order);
 	        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
-            const statusNormalized = (order.status || '').toLowerCase();
+            const statusNormalized = String(order.status || '').trim().toLowerCase();
+            const statusNormalizedKey = statusNormalized.replace(/_/g, '-');
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized.includes('refund') || statusNormalized === 'trash';
             const isProcessing = statusNormalized.includes('processing');
-            const canCancel = !repView && Boolean(onCancelOrder) && CANCELLABLE_ORDER_STATUSES.has(statusNormalized) && !isCanceled;
+            const canCancel =
+              !repView &&
+              Boolean(onCancelOrder) &&
+              (CANCELLABLE_ORDER_STATUSES.has(statusNormalized) || CANCELLABLE_ORDER_STATUSES.has(statusNormalizedKey)) &&
+              !isCanceled;
             const cancellationKey =
               order.cancellationId ||
               order.wooOrderId ||
