@@ -345,22 +345,22 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                 WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none',
               }}
             >
-              <div className="flex items-center justify-between gap-4 px-6 sm:px-8 py-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+              <div className="legal-modal-header flex items-center justify-between gap-4 px-4 sm:px-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
                 <h2 id="legal-dialog-title" className="flex-1 text-xl sm:text-2xl font-semibold text-[rgb(95,179,249)] pr-2">
                   {selectedDocument.title}
                 </h2>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleClose();
-                  }}
-                  className="legal-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-                  style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%', marginTop: '6px', marginBottom: '6px' }}
-                >
-                  <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-                  <span className="sr-only">Close</span>
-                </button>
+	                <button
+	                  type="button"
+	                  onClick={(e) => {
+	                    e.stopPropagation();
+	                    handleClose();
+	                  }}
+	                  className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+	                  style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+	                >
+	                  <X className="h-4 w-4" aria-hidden="true" />
+	                  <span className="sr-only">Close</span>
+	                </button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-8">
                 <div
@@ -412,17 +412,17 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-4 px-6 sm:px-7 py-4 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
               <h2 className="flex-1 text-lg font-semibold text-[rgb(95,179,249)]">Contact Form</h2>
-              <button
-                type="button"
-                onClick={handleContactClose}
-                className="legal-modal-close-btn inline-flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
-                style={{ backgroundColor: 'rgb(95, 179, 249)', width: '38px', height: '38px', borderRadius: '50%' }}
-              >
-                <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-                <span className="sr-only">Close</span>
-              </button>
+		              <button
+	                type="button"
+	                onClick={handleContactClose}
+	                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+	                style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+	              >
+	                <X className="h-4 w-4" aria-hidden="true" />
+	                <span className="sr-only">Close</span>
+	              </button>
             </div>
             <form className="px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleContactSubmit}>
               <div className="space-y-1">

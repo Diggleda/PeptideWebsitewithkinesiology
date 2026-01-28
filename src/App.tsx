@@ -158,6 +158,15 @@ const PASSKEY_AUTOREGISTER =
 
 const normalizeRole = (role?: string | null) => (role || "").toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === "admin";
+const isSalesLead = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return (
+    normalized !== "admin" &&
+    (normalized === "sales_lead" ||
+      normalized === "saleslead" ||
+      normalized === "sales-lead")
+  );
+};
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
@@ -4880,6 +4889,12 @@ export default function App() {
     avgOrderValue?: number | null;
     role: string;
     ownerSalesRepId?: string | null;
+    isOnline?: boolean | null;
+    isIdle?: boolean | null;
+    idleMinutes?: number | null;
+    lastSeenAt?: string | null;
+    lastInteractionAt?: string | null;
+    lastLoginAt?: string | null;
   } | null>(null);
   const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
   const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
@@ -5112,6 +5127,8 @@ export default function App() {
   const salesTrackingInFlightRef = useRef<boolean>(false);
   const salesTrackingOrderSignatureRef = useRef<Map<string, string>>(new Map());
   const salesOrderDetailFetchedAtRef = useRef<Map<string, number>>(new Map());
+  const liveClientsRef = useRef<any[]>([]);
+  const adminLiveUsersRef = useRef<any[]>([]);
   const [salesOrderRefreshingIds, setSalesOrderRefreshingIds] = useState<
     Set<string>
   >(new Set());
@@ -5397,26 +5414,41 @@ export default function App() {
 
   const openSalesDoctorDetail = useCallback(
 	    (
-	      bucket: {
-	        doctorId: string;
-	        referralId?: string | null;
-	        doctorName: string;
-	        doctorEmail?: string | null;
-	        doctorAvatar?: string | null;
-	        doctorPhone?: string | null;
-	        doctorAddress?: string | null;
-	        orders: AccountOrderSummary[];
-	        total: number;
-	          personalRevenue?: number | null;
-	          salesRevenue?: number | null;
-	          salesWholesaleRevenue?: number | null;
-	          salesRetailRevenue?: number | null;
-	          orderQuantity?: number | null;
-	          totalOrderValue?: number | null;
-	          ownerSalesRepId?: string | null;
-	      },
-	      sourceRole?: string,
-	    ) => {
+      bucket: any,
+      sourceRole?: string,
+    ) => {
+      const resolvePresence = () => {
+        const doctorId = String(bucket?.doctorId || "").trim();
+        const email =
+          typeof bucket?.doctorEmail === "string" ? bucket.doctorEmail.trim().toLowerCase() : "";
+        const candidates: any[] = [
+          ...(Array.isArray(liveClientsRef.current) ? liveClientsRef.current : []),
+          ...(Array.isArray(adminLiveUsersRef.current) ? adminLiveUsersRef.current : []),
+        ];
+        const match = candidates.find((entry) => {
+          const entryId = String(entry?.id || "").trim();
+          if (doctorId && entryId && doctorId === entryId) return true;
+          const entryEmail =
+            typeof entry?.email === "string" ? entry.email.trim().toLowerCase() : "";
+          return Boolean(email && entryEmail && email === entryEmail);
+        });
+        if (!match) return null;
+        const idleMinutes =
+          typeof match?.idleMinutes === "number" && Number.isFinite(match.idleMinutes)
+            ? match.idleMinutes
+            : typeof match?.idleForMinutes === "number" && Number.isFinite(match.idleForMinutes)
+              ? match.idleForMinutes
+              : null;
+        return {
+          isOnline: typeof match?.isOnline === "boolean" ? match.isOnline : null,
+          isIdle: typeof match?.isIdle === "boolean" ? match.isIdle : null,
+          idleMinutes,
+          lastSeenAt: match?.lastSeenAt || match?.last_seen_at || null,
+          lastInteractionAt: match?.lastInteractionAt || match?.last_interaction_at || null,
+          lastLoginAt: match?.lastLoginAt || match?.last_login_at || null,
+        };
+      };
+
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -5458,6 +5490,37 @@ export default function App() {
           ? bucket.total / relevantOrders.length
           : null;
       const normalizedRole = normalizeRole(sourceRole || "doctor") || "doctor";
+      const presence =
+        typeof bucket?.isOnline === "boolean" || typeof bucket?.isIdle === "boolean"
+          ? {
+              isOnline: typeof bucket?.isOnline === "boolean" ? bucket.isOnline : null,
+              isIdle: typeof bucket?.isIdle === "boolean" ? bucket.isIdle : null,
+              idleMinutes:
+                typeof bucket?.idleMinutes === "number" && Number.isFinite(bucket.idleMinutes)
+                  ? bucket.idleMinutes
+                  : typeof bucket?.idleForMinutes === "number" && Number.isFinite(bucket.idleForMinutes)
+                    ? bucket.idleForMinutes
+                    : null,
+              lastSeenAt:
+                typeof bucket?.lastSeenAt === "string"
+                  ? bucket.lastSeenAt
+                  : typeof bucket?.last_seen_at === "string"
+                    ? bucket.last_seen_at
+                    : null,
+              lastInteractionAt:
+                typeof bucket?.lastInteractionAt === "string"
+                  ? bucket.lastInteractionAt
+                  : typeof bucket?.last_interaction_at === "string"
+                    ? bucket.last_interaction_at
+                    : null,
+              lastLoginAt:
+                typeof bucket?.lastLoginAt === "string"
+                  ? bucket.lastLoginAt
+                  : typeof bucket?.last_login_at === "string"
+                    ? bucket.last_login_at
+                    : null,
+            }
+          : resolvePresence();
 
       setSalesDoctorDetail({
         doctorId: bucket.doctorId,
@@ -5483,6 +5546,12 @@ export default function App() {
         avgOrderValue,
         role: normalizedRole,
         ownerSalesRepId: bucket.ownerSalesRepId ?? null,
+        isOnline: presence?.isOnline ?? null,
+        isIdle: presence?.isIdle ?? null,
+        idleMinutes: presence?.idleMinutes ?? null,
+        lastSeenAt: presence?.lastSeenAt ?? null,
+        lastInteractionAt: presence?.lastInteractionAt ?? null,
+        lastLoginAt: presence?.lastLoginAt ?? null,
       });
     },
     [],
@@ -5523,6 +5592,17 @@ export default function App() {
           doctorAvatar: avatarUrl,
           doctorPhone: null,
           doctorAddress: null,
+          isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
+          isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
+          idleMinutes:
+            typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+              ? entry.idleMinutes
+              : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+                ? entry.idleForMinutes
+                : null,
+          lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
+          lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
+          lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
           orders: [],
           total: 0,
           salesWholesaleRevenue,
@@ -5531,13 +5611,122 @@ export default function App() {
         entryRole || "doctor",
       );
 
-      if (!isAdmin(user?.role)) {
-        setSalesDoctorDetailLoading(false);
-        return;
-      }
+	      if (!isAdmin(user?.role) && !isSalesLead(user?.role)) {
+	        (async () => {
+	          try {
+	            const role = user?.role || null;
+	            if (!role || !isRep(role)) {
+	              return;
+	            }
 
-      (async () => {
-        try {
+            const salesRepId = user?.salesRepId || user?.id || null;
+            const response = await ordersAPI.getForSalesRep({
+              salesRepId: salesRepId ? String(salesRepId) : undefined,
+              scope: "mine",
+            });
+
+            const respObj = response && typeof response === "object" ? (response as any) : null;
+            const rawOrders = Array.isArray(respObj?.orders) ? respObj.orders : Array.isArray(response) ? response : [];
+            const doctors = Array.isArray(respObj?.doctors)
+              ? respObj.doctors
+              : Array.isArray(respObj?.users)
+                ? respObj.users
+                : [];
+
+            const normalizedOrders = normalizeAccountOrdersResponse(
+              { local: rawOrders },
+              { includeCanceled: true },
+            );
+
+            const entryEmail =
+              typeof entry?.email === "string" ? entry.email.trim().toLowerCase() : "";
+
+            const matchesDoctor = (order: any) => {
+              const docId = resolveOrderDoctorId(order as any) || (order as any)?.userId || (order as any)?.doctorId || null;
+              if (docId && String(docId) === id) {
+                return true;
+              }
+              const orderEmailRaw =
+                (order as any)?.doctorEmail ||
+                (order as any)?.doctor_email ||
+                (order as any)?.billing?.email ||
+                (order as any)?.billing_email ||
+                null;
+              const orderEmail =
+                typeof orderEmailRaw === "string" ? orderEmailRaw.trim().toLowerCase() : "";
+              return Boolean(entryEmail && orderEmail && entryEmail === orderEmail);
+            };
+
+            const doctorOrders = normalizedOrders.filter(matchesDoctor);
+
+            const totalOrderValue = doctorOrders.reduce((sum, order) => {
+              if (!shouldCountRevenueForStatus(order.status)) {
+                return sum;
+              }
+              return sum + (coerceNumber(order.total) || 0);
+            }, 0);
+            const orderQuantity = doctorOrders.filter((order) =>
+              shouldCountRevenueForStatus(order.status),
+            ).length;
+
+            const doctorFromList = (() => {
+              const byId = doctors.find((doc: any) => String(doc?.id || doc?.doctorId || doc?.userId || "") === id);
+              if (byId) return byId;
+              if (entryEmail) {
+                return doctors.find(
+                  (doc: any) =>
+                    typeof doc?.email === "string" &&
+                    doc.email.trim().toLowerCase() === entryEmail,
+                );
+              }
+              return null;
+            })();
+
+            const doctorName =
+              doctorFromList?.name ||
+              [doctorFromList?.firstName, doctorFromList?.lastName].filter(Boolean).join(" ").trim() ||
+              displayName;
+
+            openSalesDoctorDetail(
+              {
+                doctorId: id,
+                referralId: null,
+                doctorName,
+                doctorEmail: doctorFromList?.email || entry?.email || null,
+                doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
+                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
+                doctorAddress: null,
+                isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
+                isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
+                idleMinutes:
+                  typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+                    ? entry.idleMinutes
+                    : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+                      ? entry.idleForMinutes
+                      : null,
+                lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
+                lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
+                lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
+                orders: doctorOrders,
+                total: totalOrderValue,
+                orderQuantity,
+                totalOrderValue,
+                salesWholesaleRevenue,
+                salesRetailRevenue,
+              },
+              "doctor",
+            );
+          } catch (error) {
+            console.warn("[Sales Rep] Failed to hydrate live client detail", error);
+          } finally {
+            setSalesDoctorDetailLoading(false);
+          }
+	        })();
+	        return;
+	      }
+
+	      (async () => {
+	        try {
           const [profileResp, ordersResp] = await Promise.all([
             settingsAPI.getAdminUserProfile(id) as any,
             ordersAPI.getAdminOrdersForUser(id) as any,
@@ -5568,8 +5757,13 @@ export default function App() {
           ].filter((part) => typeof part === "string" && part.trim().length > 0);
           const address = addressParts.length > 0 ? addressParts.join("\n") : null;
 
-	          const isSalesProfile =
-	            roleFromProfile === "sales_rep" || roleFromProfile === "rep" || roleFromProfile === "admin";
+		          const isSalesProfile =
+		            roleFromProfile === "sales_rep" ||
+		            roleFromProfile === "rep" ||
+		            roleFromProfile === "sales_lead" ||
+		            roleFromProfile === "saleslead" ||
+		            roleFromProfile === "sales-lead" ||
+		            roleFromProfile === "admin";
 	          let salesRevenue: number | null = null;
 	          let personalRevenue: number | null = null;
 
@@ -5607,6 +5801,17 @@ export default function App() {
               doctorAvatar: profile?.profileImageUrl || avatarUrl,
               doctorPhone: profile?.phone || null,
               doctorAddress: address,
+              isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
+              isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
+              idleMinutes:
+                typeof entry?.idleMinutes === "number" && Number.isFinite(entry.idleMinutes)
+                  ? entry.idleMinutes
+                  : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
+                    ? entry.idleForMinutes
+                    : null,
+              lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
+              lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
+              lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
               orders: normalizedOrders,
               total: totalOrderValue,
               personalRevenue,
@@ -6757,13 +6962,13 @@ export default function App() {
 	    isIdleRef.current = isIdle;
 	  }, [isIdle]);
 
-  useEffect(() => {
-	    if (!isAdmin(user?.role) && !isRep(user?.role)) return;
-	    const id = window.setInterval(() => {
-	      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
-	    }, 30000);
-	    return () => window.clearInterval(id);
-	  }, [user?.role]);
+	  useEffect(() => {
+		    if (!isAdmin(user?.role) && !isRep(user?.role) && !isSalesLead(user?.role)) return;
+		    const id = window.setInterval(() => {
+		      setUserActivityNowTick((tick) => (tick + 1) % Number.MAX_SAFE_INTEGER);
+		    }, 30000);
+		    return () => window.clearInterval(id);
+		  }, [user?.role]);
 
 	  const [liveClients, setLiveClients] = useState<any[]>([]);
 	  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
@@ -6783,32 +6988,58 @@ export default function App() {
 	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
 
 	  useEffect(() => {
-	    if (!isRep(user?.role)) {
-	      setLiveClients([]);
-	      setLiveClientsLoading(false);
-	      setLiveClientsError(null);
-	      liveClientsEtagRef.current = null;
-	      liveClientsLongPollDisabledRef.current = false;
-	      return;
-	    }
+	    liveClientsRef.current = liveClients;
+	  }, [liveClients]);
+
+	  useEffect(() => {
+	    adminLiveUsersRef.current = adminLiveUsers;
+	  }, [adminLiveUsers]);
+
+		  useEffect(() => {
+		    const userRole = user?.role || null;
+		    const isSalesLeadRole = isSalesLead(userRole);
+		    const isSalesRepRole = isRep(userRole);
+		    if (!isSalesLeadRole && !isSalesRepRole) {
+		      setLiveClients([]);
+		      setLiveClientsLoading(false);
+		      setLiveClientsError(null);
+		      liveClientsEtagRef.current = null;
+		      liveClientsLongPollDisabledRef.current = false;
+		      return;
+		    }
 
 	    let cancelled = false;
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
 
-	    const fetchOnce = async () => {
-	      try {
-	        setLiveClientsLoading(true);
-	        setLiveClientsError(null);
-	        const payload = (await settingsAPI.getLiveClients()) as any;
-	        if (cancelled) return;
-	        liveClientsEtagRef.current =
-	          typeof payload?.etag === "string" ? payload.etag : null;
-	        const clients = Array.isArray(payload?.clients) ? payload.clients : [];
-	        setLiveClients(clients);
-	      } catch (error: any) {
-	        if (cancelled) return;
-	        setLiveClients([]);
-	        setLiveClientsError(
+		    const fetchOnce = async () => {
+		      try {
+		        setLiveClientsLoading(true);
+		        setLiveClientsError(null);
+		        const payload = (await (isSalesLeadRole
+		          ? settingsAPI.getLiveUsers()
+		          : settingsAPI.getLiveClients())) as any;
+		        if (cancelled) return;
+		        liveClientsEtagRef.current =
+		          typeof payload?.etag === "string" ? payload.etag : null;
+		        const raw = isSalesLeadRole
+		          ? Array.isArray(payload?.users)
+		            ? payload.users
+		            : []
+		          : Array.isArray(payload?.clients)
+		            ? payload.clients
+		            : [];
+		        const clients = isSalesLeadRole
+		          ? raw.filter((entry: any) => {
+		              const role = normalizeRole(entry?.role || "");
+		              if (role === "admin") return false;
+		              return isDoctorRole(role) || isRep(role);
+		            })
+		          : raw;
+		        setLiveClients(clients);
+		      } catch (error: any) {
+		        if (cancelled) return;
+		        setLiveClients([]);
+		        setLiveClientsError(
 	          typeof error?.message === "string"
 	            ? error.message
 	            : "Unable to load clients.",
@@ -6830,33 +7061,52 @@ export default function App() {
 	    };
 
 	    const controller = new AbortController();
-	    const runLongPoll = async () => {
-	      if (liveClientsLongPollDisabledRef.current) {
-	        startIntervalFallback();
-	        return;
-	      }
-	      while (!cancelled) {
+		    const runLongPoll = async () => {
+		      if (liveClientsLongPollDisabledRef.current) {
+		        startIntervalFallback();
+		        return;
+		      }
+		      while (!cancelled) {
 	        if (!isPageVisible() || !isOnline()) {
 	          // eslint-disable-next-line no-await-in-loop
 	          await sleep(800);
 	          continue;
-	        }
-	        try {
-	          const payload = (await settingsAPI.getLiveClientsLongPoll(
-	            null,
-	            liveClientsEtagRef.current,
-	            25000,
-	            controller.signal,
-	          )) as any;
-	          if (cancelled) break;
-	          liveClientsEtagRef.current =
-	            typeof payload?.etag === "string" ? payload.etag : null;
-	          const clients = Array.isArray(payload?.clients) ? payload.clients : [];
-	          setLiveClients(clients);
-	        } catch (error: any) {
-	          if (cancelled) break;
-	          if (typeof error?.status === "number" && error.status === 404) {
-	            liveClientsLongPollDisabledRef.current = true;
+		        }
+		        try {
+		          const payload = (await (isSalesLeadRole
+		            ? settingsAPI.getLiveUsersLongPoll(
+		                liveClientsEtagRef.current,
+		                25000,
+		                controller.signal,
+		              )
+		            : settingsAPI.getLiveClientsLongPoll(
+		                null,
+		                liveClientsEtagRef.current,
+		                25000,
+		                controller.signal,
+		              ))) as any;
+		          if (cancelled) break;
+		          liveClientsEtagRef.current =
+		            typeof payload?.etag === "string" ? payload.etag : null;
+		          const raw = isSalesLeadRole
+		            ? Array.isArray(payload?.users)
+		              ? payload.users
+		              : []
+		            : Array.isArray(payload?.clients)
+		              ? payload.clients
+		              : [];
+		          const clients = isSalesLeadRole
+		            ? raw.filter((entry: any) => {
+		                const role = normalizeRole(entry?.role || "");
+		                if (role === "admin") return false;
+		                return isDoctorRole(role) || isRep(role);
+		              })
+		            : raw;
+		          setLiveClients(clients);
+		        } catch (error: any) {
+		          if (cancelled) break;
+		          if (typeof error?.status === "number" && error.status === 404) {
+		            liveClientsLongPollDisabledRef.current = true;
 	            startIntervalFallback();
 	            return;
 	          }
@@ -12353,13 +12603,13 @@ export default function App() {
               ? "Collapse Referral Rewards Hub"
               : "Expand Referral Rewards Hub"
           }
-          style={{
-            borderWidth: "2px",
-            borderColor: "var(--brand-glass-border-2)",
-            paddingLeft: "1rem",
-            borderRadius: "24px",
-          }}
-        >
+	          style={{
+	            borderWidth: "2px",
+	            borderColor: "var(--brand-glass-border-2)",
+	            paddingLeft: "1rem",
+	            borderRadius: "var(--squircle-xl)",
+	          }}
+	        >
           <div className="flex items-center gap-6 flex-shrink-0 pl-4 ml-2">
 	            <div
 	              className={`flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-all duration-300 group-hover:bg-slate-200 ${
@@ -12954,8 +13204,8 @@ export default function App() {
               ? "pb-8 shadow-[0_30px_80px_-65px_rgba(95,179,249,0.8)]"
               : "shadow-[0_18px_48px_-28px_rgba(95,179,249,0.8)] hover:shadow-[0_20px_52px_-24px_rgba(95,179,249,0.85)]"
           }`}
-          style={{ borderRadius: "24px" }}
-        >
+	          style={{ borderRadius: "var(--squircle-xl)" }}
+	        >
           {renderReferralHubTrigger(isReferralSectionExpanded)}
           {renderExpandedContent()}
         </div>
@@ -13125,10 +13375,10 @@ export default function App() {
     );
   };
 
-	  const renderSalesRepDashboard = () => {
-	    if (!user || (!isRep(user.role) && !isAdmin(user.role))) {
-	      return null;
-	    }
+		  const renderSalesRepDashboard = () => {
+		    if (!user || (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))) {
+		      return null;
+		    }
 
     const referrals = normalizedReferrals;
 
@@ -13147,11 +13397,13 @@ export default function App() {
 		        <div className="flex flex-col gap-6">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
-	              <h2 className="text-xl font-semibold text-slate-900">
-	                {isAdmin(user?.role)
-	                  ? "Admin Dashboard"
-	                  : "Sales Rep Dashboard"}
-	              </h2>
+		              <h2 className="text-xl font-semibold text-slate-900">
+		                {isAdmin(user?.role)
+		                  ? "Admin Dashboard"
+		                  : isSalesLead(user?.role)
+		                    ? "Sales Lead Dashboard"
+		                    : "Sales Rep Dashboard"}
+		              </h2>
               <p className="text-sm text-slate-600">
                 {isAdmin(user?.role)
                   ? "Monitor PepPro business activities, sales reps, and keep track of your sales."
@@ -13198,15 +13450,17 @@ export default function App() {
 		            )}
 		          </div>
 
-	          {isRep(user?.role) && (
-	            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
-	              <div className="flex flex-col gap-2">
-	                <div>
-	                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
-	                  <p className="text-sm text-slate-600">
-	                    Your doctors (online, idle, and offline).
-	                  </p>
-	                </div>
+		          {(isRep(user?.role) || isSalesLead(user?.role)) && (
+		            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		              <div className="flex flex-col gap-2">
+		                <div>
+		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
+		                  <p className="text-sm text-slate-600">
+		                    {isSalesLead(user?.role)
+		                      ? "All doctors and sales reps (online, idle, and offline)."
+		                      : "Your doctors (online, idle, and offline)."}
+		                  </p>
+		                </div>
 	
 	                {liveClientsError && (
 	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
@@ -13294,17 +13548,17 @@ export default function App() {
 	                              e.preventDefault();
 	                            }
 	                          }}
-	                          placeholder="Search clients…"
-	                          className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-	                        />
+		                          placeholder={isSalesLead(user?.role) ? "Search users…" : "Search clients…"}
+		                          className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                        />
 	                      </div>
 
 	                      <div className="sales-rep-table-wrapper live-users-scroll">
 	                        <div className="flex w-full min-w-[900px] flex-col gap-2">
-	                          {liveUsers.length === 0 ? (
-	                            <div className="p-6 text-sm text-slate-500">
-	                              No clients found.
-	                            </div>
+		                          {liveUsers.length === 0 ? (
+		                            <div className="p-6 text-sm text-slate-500">
+		                              {isSalesLead(user?.role) ? "No users found." : "No clients found."}
+		                            </div>
 	                          ) : (
 		                          liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
@@ -13391,8 +13645,8 @@ export default function App() {
 				                                          boxShadow: !isOnlineNow
 				                                            ? undefined
 				                                            : showIdle
-				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(148,163,184,1)"
-				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(95,179,249,1)",
+				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
+				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
 				                                        }}
 				                                      >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -13415,10 +13669,24 @@ export default function App() {
 		                                  <div className="text-sm font-semibold text-slate-800 truncate">
 		                                    {displayName}
 		                                  </div>
-		                                  <div className="text-xs text-slate-500 truncate">
-		                                    {entry.email || "—"}
+		                                  <div className="flex items-center gap-2 min-w-0">
+		                                    <div className="text-xs text-slate-500 truncate">
+		                                      {entry.email || "—"}
+		                                    </div>
+		                                    {isSalesLead(user?.role) &&
+		                                      (() => {
+		                                        const role = normalizeRole(entry?.role || "");
+		                                        if (isRep(role)) {
+		                                          return (
+		                                            <span className="inline-flex items-center px-2 py-[1px] text-[10px] font-semibold rounded-full bg-[rgba(129,221,228,0.25)] text-[rgb(12,74,110)] shrink-0">
+		                                              Sales Rep
+		                                            </span>
+		                                          );
+		                                        }
+		                                        return null;
+		                                      })()}
 		                                  </div>
-	                                </div>
+		                                </div>
 	                              </div>
 	                            </button>
 		                              <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
@@ -14109,15 +14377,19 @@ export default function App() {
 		                      }
 		                      const role = String(entry?.role || "").toLowerCase().trim();
 		                      if (adminLiveUsersRoleFilter !== "all") {
-	                        if (adminLiveUsersRoleFilter === "sales_rep") {
-	                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
-                            return false;
-                          }
-                        } else if (adminLiveUsersRoleFilter === "doctor") {
-                          if (role !== "doctor") {
-                            return false;
-                          }
-                        } else if (adminLiveUsersRoleFilter === "test_doctor") {
+		                        if (adminLiveUsersRoleFilter === "sales_rep") {
+		                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
+	                            return false;
+	                          }
+	                        } else if (adminLiveUsersRoleFilter === "sales_lead") {
+	                          if (!["sales_lead", "saleslead", "sales-lead"].includes(role)) {
+	                            return false;
+	                          }
+	                        } else if (adminLiveUsersRoleFilter === "doctor") {
+	                          if (role !== "doctor") {
+	                            return false;
+	                          }
+	                        } else if (adminLiveUsersRoleFilter === "test_doctor") {
                           if (role !== "test_doctor") {
                             return false;
                           }
@@ -14202,6 +14474,7 @@ export default function App() {
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
 	                              <option value="sales_rep">Sales Rep</option>
+	                              <option value="sales_lead">Sales Lead</option>
 	                              <option value="doctor">Doctors</option>
 	                              <option value="test_doctor">Test doctors</option>
                             </select>
@@ -14239,20 +14512,29 @@ export default function App() {
 		                                    } as React.CSSProperties,
 		                                  };
 		                                }
-			                                if (role === "sales_rep" || role === "salesrep") {
-			                                  return {
-			                                    label: "Sales Rep",
-			                                    style: {
-			                                      backgroundColor: "rgb(129,221,228)",
-			                                      color: "#ffffff",
-			                                    } as React.CSSProperties,
-			                                  };
-			                                }
-			                                if (role === "doctor") {
-			                                  return {
-			                                    label: "Doctor",
-			                                    style: {
-			                                      backgroundColor: "rgb(95,179,249)",
+				                                if (role === "sales_rep" || role === "salesrep") {
+				                                  return {
+				                                    label: "Sales Rep",
+				                                    style: {
+				                                      backgroundColor: "rgb(129,221,228)",
+				                                      color: "#ffffff",
+				                                    } as React.CSSProperties,
+				                                  };
+				                                }
+				                                if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
+				                                  return {
+				                                    label: "Sales Lead",
+				                                    style: {
+				                                      backgroundColor: "rgb(2,132,199)",
+				                                      color: "#ffffff",
+				                                    } as React.CSSProperties,
+				                                  };
+				                                }
+				                                if (role === "doctor") {
+				                                  return {
+				                                    label: "Doctor",
+				                                    style: {
+				                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
 			                                    } as React.CSSProperties,
 			                                  };
@@ -14337,8 +14619,8 @@ export default function App() {
 				                                            boxShadow: !isOnline
 				                                              ? undefined
 				                                              : showIdle
-				                                                ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(148,163,184,1)"
-				                                                : "0 0 0 1px rgba(255,255,255,1), 0 0 0 2px rgba(95,179,249,1)",
+				                                                ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
+				                                                : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
 				                                          }}
 				                                        >
 				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
@@ -15334,12 +15616,12 @@ export default function App() {
                       cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
                       content={PipelineTooltip}
                     />
-                    <Bar
-                      dataKey="count"
-                      radius={[10, 10, 6, 6]}
-                      fill="url(#statusBar)"
-                      barSize={32}
-                    >
+	                    <Bar
+	                      dataKey="count"
+	                      radius={[4, 4, 2.5, 2.5]}
+	                      fill="url(#statusBar)"
+	                      barSize={32}
+	                    >
                       <LabelList
                         dataKey="count"
                         position="insideTop"
@@ -15649,14 +15931,18 @@ export default function App() {
                             const placedLabel = placedDate
                               ? `Order placed ${formatDateTime(placedDate as string)}`
                               : "Order placed Unknown date";
-                            const arrivalLabel = arrivalDate
-                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
-                              : "Expected delivery unavailable";
-                            const statusLabel = describeSalesOrderStatus(order as any);
-                            return (
-                              <li
-                                key={order.id}
-                                className="lead-list-item sales-order-card cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
+	                            const arrivalLabel = arrivalDate
+	                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
+	                              : "Expected delivery unavailable";
+	                            const statusLabel = describeSalesOrderStatus(order as any);
+	                            const orderNotes =
+	                              typeof (order as any)?.notes === "string"
+	                                ? String((order as any).notes).trim()
+	                                : "";
+	                            return (
+	                              <li
+	                                key={order.id}
+	                                className="lead-list-item sales-order-card cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
                                 onClick={() => openSalesOrderDetails(order)}
                                 aria-busy={showShimmer}
                               >
@@ -15686,19 +15972,29 @@ export default function App() {
                                       <div className="news-loading-line news-loading-shimmer w-full" />
                                       <div className="news-loading-line news-loading-shimmer w-full" />
                                     </div>
-                                  ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                                      <div className="lead-list-detail">
-                                        {placedLabel}
-                                      </div>
-                                      <div className="lead-list-detail">
-                                        {arrivalLabel}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </li>
-                            );
+	                                  ) : (
+	                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+	                                      <div className="lead-list-detail">
+	                                        {placedLabel}
+	                                      </div>
+	                                      <div className="lead-list-detail">
+	                                        {arrivalLabel}
+	                                      </div>
+	                                      {orderNotes ? (
+	                                        <div className="lead-list-detail sm:col-span-2">
+	                                          <span className="text-xs font-semibold text-slate-500 mr-1">
+	                                            Notes:
+	                                          </span>
+	                                          <span className="line-clamp-2">
+	                                            {orderNotes}
+	                                          </span>
+	                                        </div>
+	                                      ) : null}
+	                                    </div>
+	                                  )}
+	                                </div>
+	                              </li>
+	                            );
                           })}
                           </ul>
                         )}
@@ -18858,21 +19154,21 @@ export default function App() {
             ) : (
               salesDoctorDetail && (
 	            <div className="space-y-4">
-		              <DialogHeader>
-		                <DialogTitle className="space-y-0.5">
-		                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
-		                  <div className="text-sm font-normal text-slate-600">
-		                    {salesDoctorDetail.email ? (
-		                      <a href={`mailto:${salesDoctorDetail.email}`} className="hover:underline">
-		                        {salesDoctorDetail.email}
-		                      </a>
-		                    ) : (
-		                      "—"
-		                    )}
-		                  </div>
-		                </DialogTitle>
-		                <DialogDescription>Account details</DialogDescription>
-		              </DialogHeader>
+			              <DialogHeader>
+			                <DialogTitle className="space-y-0.5">
+			                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
+				                  <div className="text-sm font-normal text-slate-600">
+				                    {salesDoctorDetail.email ? (
+				                      <a href={`mailto:${salesDoctorDetail.email}`} className="hover:underline">
+				                        {salesDoctorDetail.email}
+				                      </a>
+				                    ) : (
+				                      "—"
+				                    )}
+				                  </div>
+				                </DialogTitle>
+				                <DialogDescription>Account details</DialogDescription>
+				              </DialogHeader>
 		              {salesDoctorDetail && isDoctorRole(salesDoctorDetail.role) && (
 		                <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 space-y-2 min-h-[240px]">
 		                  <p className="text-sm font-semibold justify-center text-slate-800">
@@ -18909,8 +19205,42 @@ export default function App() {
 		              <div className="flex items-center gap-4">
 		                <div
 		                  className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm"
-		                  style={{ width: 72, height: 72, minWidth: 72 }}
-		                >
+			                  style={{
+			                    width: 72,
+			                    height: 72,
+			                    minWidth: 72,
+			                    boxShadow: (() => {
+			                      const isOnlineNow = salesDoctorDetail?.isOnline === true;
+			                      const idleFlag = salesDoctorDetail?.isIdle === true;
+			                      const idleMinutes =
+			                        typeof salesDoctorDetail?.idleMinutes === "number" &&
+			                        Number.isFinite(salesDoctorDetail.idleMinutes)
+			                          ? salesDoctorDetail.idleMinutes
+			                          : null;
+			                      if (!isOnlineNow) {
+			                        return undefined;
+			                      }
+			                      const minutesSinceLastSeen = (() => {
+			                        const raw =
+			                          salesDoctorDetail?.lastInteractionAt ||
+			                          salesDoctorDetail?.lastSeenAt ||
+			                          salesDoctorDetail?.lastLoginAt ||
+			                          null;
+			                        if (!raw) return null;
+			                        const ts = new Date(raw).getTime();
+			                        if (!Number.isFinite(ts)) return null;
+			                        return Math.max(0, (Date.now() - ts) / 60000);
+			                      })();
+			                      const showIdle =
+			                        idleFlag ||
+			                        (idleMinutes != null && idleMinutes >= 2) ||
+			                        (minutesSinceLastSeen != null && minutesSinceLastSeen >= 2);
+			                      return showIdle
+			                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
+			                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)";
+			                    })(),
+			                  }}
+			                >
                   {salesDoctorDetail.avatar ? (
                     <img
                       src={salesDoctorDetail.avatar}
@@ -18940,11 +19270,23 @@ export default function App() {
 		                        </p>
 		                        {(() => {
 		                          const role = normalizeRole(salesDoctorDetail.role || "");
+		                          const formatPeriodLabel = (
+		                            periodStart?: string | null,
+		                            periodEnd?: string | null,
+		                          ) => {
+		                            const start = periodStart ? String(periodStart).slice(0, 10) : null;
+		                            const end = periodEnd ? String(periodEnd).slice(0, 10) : null;
+		                            return start && end ? `${start} to ${end}` : "All time";
+		                          };
 		                          if (role === "admin") {
 		                            const adminRow = adminCommissionRows.find(
 		                              (row) =>
 		                                String(row?.id || "") ===
 		                                String(salesDoctorDetail.doctorId || ""),
+		                            );
+		                            const periodLabel = formatPeriodLabel(
+		                              adminProductsCommissionMeta?.periodStart ?? null,
+		                              adminProductsCommissionMeta?.periodEnd ?? null,
 		                            );
 		                            return (
 		                              <p className="text-sm text-slate-600">
@@ -18952,6 +19294,8 @@ export default function App() {
 		                                {adminRow
 		                                  ? formatCurrency(Number(adminRow.amount || 0))
 		                                  : "—"}
+		                                {" "}
+		                                <span className="text-slate-500">({periodLabel})</span>
 		                              </p>
 		                            );
 		                          }
@@ -18975,9 +19319,15 @@ export default function App() {
 		                            return null;
 		                          }
 		                          const totalCommission = wholesale * 0.1 + retail * 0.2;
+		                          const periodLabel = formatPeriodLabel(
+		                            salesRepSalesSummaryMeta?.periodStart ?? null,
+		                            salesRepSalesSummaryMeta?.periodEnd ?? null,
+		                          );
 		                          return (
 		                            <p className="text-sm text-slate-600">
 		                              Total Commission: {formatCurrency(totalCommission)}
+		                              {" "}
+		                              <span className="text-slate-500">({periodLabel})</span>
 		                            </p>
 		                          );
 		                        })()}
@@ -19163,13 +19513,23 @@ export default function App() {
                     <p className="text-xs text-slate-500">
                       No orders available.
                     </p>
-                  )}
-                </div>
-              </div>
-            </div>
-            )
-          )}
-        </DialogContent>
+	                  )}
+	                </div>
+	              </div>
+
+	              <div className="mt-2 text-center text-[11px] font-normal text-slate-400">
+	                {(() => {
+	                  const rawId = String(salesDoctorDetail.doctorId ?? "").trim();
+	                  const displayId = rawId.includes(":")
+	                    ? rawId.split(":").slice(-1)[0].trim()
+	                    : rawId;
+	                  return `ID: ${displayId || "—"}`;
+	                })()}
+	              </div>
+	            </div>
+	            )
+	          )}
+	        </DialogContent>
       </Dialog>
       <Dialog
         open={Boolean(salesOrderDetail)}

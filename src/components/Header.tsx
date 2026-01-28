@@ -14,6 +14,10 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
+const isSalesLead = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  return normalized !== 'admin' && (normalized === 'sales_lead' || normalized === 'saleslead' || normalized === 'sales-lead');
+};
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep');
@@ -1546,7 +1550,7 @@ export function Header({
   }, [welcomeOpen]);
   const accountRole = localUser?.role ?? user.role;
   const accountIsAdmin = isAdmin(accountRole);
-  const accountIsSalesRep = isRep(accountRole);
+  const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
   const headerDisplayName = localUser
     ? accountIsAdmin
       ? `Admin: ${localUser.name}`
@@ -3380,16 +3384,16 @@ export function Header({
 		                            </span>
 		                          )}
 		                        </p>
-                          {repView && (order.doctorName || order.doctorEmail) && (
-                            <p className="text-sm text-slate-700 break-words">
-                              <span className="font-semibold">
-                                {order.doctorName || "Doctor"}
-                              </span>
-                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
-                            </p>
-                          )}
-		                      </div>
-	                    </div>
+	                          {repView && (order.doctorName || order.doctorEmail) && (
+	                            <p className="text-sm text-slate-700 break-words">
+	                              <span className="font-semibold">
+	                                {order.doctorName || "Doctor"}
+	                              </span>
+	                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
+	                            </p>
+	                          )}
+			                      </div>
+		                    </div>
 
 	                    {order.lineItems && order.lineItems.length > 0 && (
 	                      <div className="space-y-3">
@@ -3437,7 +3441,17 @@ export function Header({
                       </div>
                     )}
                   </div>
-                  <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full pb-2 md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
+	                  <div className="order-card-actions flex flex-col gap-2 items-stretch text-center justify-start w-full pb-2 md:items-end md:gap-6 md:w-auto md:min-w-[12rem] md:text-right md:self-stretch md:ml-auto">
+	                    {typeof order.notes === 'string' && order.notes.trim().length > 0 && (
+	                      <div className="w-full text-left md:text-left rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+	                        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+	                          Notes
+	                        </div>
+	                        <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap max-h-24 overflow-auto">
+	                          {order.notes.trim()}
+	                        </div>
+	                      </div>
+	                    )}
 	                    <Button
 	                      type="button"
 	                      size="sm"

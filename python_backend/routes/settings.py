@@ -44,9 +44,19 @@ def _is_admin() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
     return role == "admin"
 
+def _is_sales_lead() -> bool:
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    return role in ("sales_lead", "saleslead", "sales-lead")
+
 
 def _require_admin():
     if not _is_admin():
+        err = RuntimeError("Admin access required")
+        setattr(err, "status", 403)
+        raise err
+
+def _require_admin_or_sales_lead():
+    if not (_is_admin() or _is_sales_lead()):
         err = RuntimeError("Admin access required")
         setattr(err, "status", 403)
         raise err
@@ -92,6 +102,10 @@ def _is_admin_role(role: str) -> bool:
 def _is_sales_rep_role(role: str) -> bool:
     normalized = _normalize_role(role)
     return normalized in ("sales_rep", "rep")
+
+def _is_sales_lead_role(role: str) -> bool:
+    normalized = _normalize_role(role)
+    return normalized in ("sales_lead", "saleslead", "sales-lead")
 
 def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
     """
@@ -171,7 +185,7 @@ def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
             if not email or email not in rep_email_candidates:
                 continue
             role = (user.get("role") or "").lower()
-            if role in ("sales_rep", "rep", "admin"):
+            if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
                 allowed.add(str(user.get("id")))
 
     return {value for value in allowed if str(value or "").strip()}
@@ -687,7 +701,7 @@ def longpoll_live_clients():
 @require_auth
 def get_live_users():
     def action():
-        _require_admin()
+        _require_admin_or_sales_lead()
         return _compute_live_users_cached()
 
     return handle_action(action)
@@ -697,7 +711,7 @@ def get_live_users():
 @require_auth
 def longpoll_live_users():
     def action():
-        _require_admin()
+        _require_admin_or_sales_lead()
 
         client_etag = str(request.args.get("etag") or "").strip() or None
         try:
@@ -740,7 +754,7 @@ def longpoll_live_users():
 @require_auth
 def get_user_profile(user_id: str):
     def action():
-        _require_admin()
+        _require_admin_or_sales_lead()
         target_id = (user_id or "").strip()
         if not target_id:
             err = RuntimeError("user_id is required")

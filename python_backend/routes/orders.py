@@ -161,7 +161,7 @@ def list_orders():
 def list_orders_for_sales_rep():
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "admin"):
+        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -182,7 +182,7 @@ def list_orders_for_sales_rep():
 def get_sales_rep_order_detail(order_id: str):
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role not in ("sales_rep", "rep", "admin"):
+        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
@@ -259,7 +259,7 @@ def admin_products_commission():
 def admin_orders_for_user(user_id: str):
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role != "admin":
+        if role not in ("admin", "sales_lead", "saleslead", "sales-lead"):
             err = ValueError("Admin access required")
             setattr(err, "status", 403)
             raise err
