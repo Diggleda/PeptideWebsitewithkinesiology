@@ -6171,3 +6171,26 @@ a[href^="mailto:"]:hover {
     font-size: 16px !important;
   }
 }
+
+.rdp {
+  --rdp-accent-color: rgb(95, 179, 249);
+  --rdp-background-color: rgba(95, 179, 249, 0.18);
+  --rdp-outline: 2px solid rgba(95, 179, 249, 0.35);
+  --rdp-cell-size: 36px;
+  --rdp-caption-font-size: 14px;
+  --rdp-accent-color-dark: rgb(95, 179, 249);
+  --rdp-background-color-dark: rgba(95, 179, 249, 0.18);
+}
+
+.rdp .rdp-button {
+  border-radius: var(--squircle-sm);
+}
+
+.rdp .rdp-day_range_middle .rdp-button {
+  border-radius: 0;
+}
+
+.rdp .rdp-day_range_start .rdp-button,
+.rdp .rdp-day_range_end .rdp-button {
+  border-radius: var(--squircle-sm);
+}

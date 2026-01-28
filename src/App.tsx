@@ -41,6 +41,7 @@ import {
 		  ArrowUpDown,
 		  Fingerprint,
 		  ExternalLink,
+		  CalendarDays,
 			  Loader2,
 			  Plus,
 				  Package,
@@ -50,6 +51,8 @@ import {
 			  CheckSquare,
 			  Trash2,
 			} from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
+import { DayPicker, type DateRange } from "react-day-picker";
 import {
   ResponsiveContainer,
   BarChart,
@@ -4873,11 +4876,11 @@ export default function App() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-    doctorId: string;
-    referralId?: string | null;
-    name: string;
-    email?: string | null;
+	  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+	    doctorId: string;
+	    referralId?: string | null;
+	    name: string;
+	    email?: string | null;
     avatar?: string | null;
 	    revenue: number;
 	    personalRevenue?: number | null;
@@ -4899,12 +4902,22 @@ export default function App() {
     lastSeenAt?: string | null;
     lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
-  } | null>(null);
-  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
-  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
-  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
-  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
-  const triggerSalesDoctorNotesSaved = useCallback(() => {
+	  } | null>(null);
+	  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
+	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
+	    DateRange | undefined
+	  >(undefined);
+	  const [salesDoctorCommissionPickerOpen, setSalesDoctorCommissionPickerOpen] =
+	    useState(false);
+
+	  useEffect(() => {
+	    setSalesDoctorCommissionRange(undefined);
+	    setSalesDoctorCommissionPickerOpen(false);
+	  }, [salesDoctorDetail?.doctorId]);
+	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
+	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
+	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
+	  const triggerSalesDoctorNotesSaved = useCallback(() => {
     setSalesDoctorNotesSaved(true);
     if (salesDoctorNotesSavedTimeoutRef.current) {
       window.clearTimeout(salesDoctorNotesSavedTimeoutRef.current);
@@ -5768,36 +5781,98 @@ export default function App() {
 		            roleFromProfile === "saleslead" ||
 		            roleFromProfile === "sales-lead" ||
 		            roleFromProfile === "admin";
-	          let salesRevenue: number | null = null;
-	          let personalRevenue: number | null = null;
+		          let salesRevenue: number | null = null;
+		          let personalRevenue: number | null = null;
+		          let salesWholesaleRevenueValue: number | null = salesWholesaleRevenue;
+		          let salesRetailRevenueValue: number | null = salesRetailRevenue;
+		          let ordersForModal = normalizedOrders;
+		          let orderQuantityForModal = orderQuantity;
 
-	          if (isSalesProfile) {
-	            personalRevenue = totalOrderValue;
-	            try {
-	              const repOrdersResp = await ordersAPI.getForSalesRep({
-	                salesRepId: id,
-	                scope: "all",
-	              });
-	              const repOrders = (repOrdersResp as any)?.orders;
-	              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
-	              salesRevenue = repOrdersList.reduce((sum: number, order: any) => {
-	                if (!shouldCountRevenueForStatus(order?.status)) {
-	                  return sum;
-	                }
-	                const rawDoctorId =
-	                  order?.doctorId || order?.doctor_id || order?.userId || order?.user_id || null;
-	                if (rawDoctorId && String(rawDoctorId) === id) {
-	                  return sum;
-	                }
-	                return sum + (coerceNumber(order?.total) || 0);
-	              }, 0);
-	            } catch (error) {
-	              console.warn("[Admin] Failed to load sales rep revenue", error);
-	            }
-	          }
+		          if (isSalesProfile) {
+		            personalRevenue = totalOrderValue;
+		            try {
+		              const repOrdersResp = await ordersAPI.getForSalesRep({
+		                salesRepId: id,
+		                scope: "all",
+		              });
+		              const repOrders = (repOrdersResp as any)?.orders;
+		              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
 
-          openSalesDoctorDetail(
-            {
+		              const repOrdersNormalized = normalizeAccountOrdersResponse(
+		                { local: repOrdersList },
+		                { includeCanceled: true },
+		              );
+
+		              const entryEmail =
+		                typeof profile?.email === "string"
+		                  ? profile.email.trim().toLowerCase()
+		                  : typeof entry?.email === "string"
+		                    ? entry.email.trim().toLowerCase()
+		                    : "";
+
+		              const repDoctorOrders = repOrdersNormalized.filter((order: any) => {
+		                if (!shouldCountRevenueForStatus(order?.status)) {
+		                  return false;
+		                }
+		                const rawDoctorId =
+		                  order?.doctorId ||
+		                  order?.doctor_id ||
+		                  order?.userId ||
+		                  order?.user_id ||
+		                  null;
+		                if (rawDoctorId && String(rawDoctorId) === id) {
+		                  return false;
+		                }
+		                const orderEmailRaw =
+		                  (order as any)?.doctorEmail ||
+		                  (order as any)?.doctor_email ||
+		                  (order as any)?.billing?.email ||
+		                  (order as any)?.billing_email ||
+		                  null;
+		                const orderEmail =
+		                  typeof orderEmailRaw === "string" ? orderEmailRaw.trim().toLowerCase() : "";
+		                if (entryEmail && orderEmail && entryEmail === orderEmail) {
+		                  return false;
+		                }
+		                return true;
+		              });
+
+		              ordersForModal = repDoctorOrders;
+		              orderQuantityForModal = repDoctorOrders.length;
+
+		              const totals = repDoctorOrders.reduce(
+		                (acc: { total: number; wholesale: number; retail: number }, order: any) => {
+		                  const amount = coerceNumber(order?.total) || 0;
+		                  const pricingModeRaw =
+		                    order?.pricingMode ||
+		                    (order as any)?.pricing_mode ||
+		                    (order as any)?.pricing ||
+		                    (order as any)?.priceType ||
+		                    null;
+		                  const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
+		                  acc.total += amount;
+		                  if (pricingMode === "wholesale") {
+		                    acc.wholesale += amount;
+		                  } else if (pricingMode === "retail") {
+		                    acc.retail += amount;
+		                  } else {
+		                    acc.retail += amount;
+		                  }
+		                  return acc;
+		                },
+		                { total: 0, wholesale: 0, retail: 0 },
+		              );
+
+		              salesRevenue = totals.total;
+		              salesWholesaleRevenueValue = totals.wholesale;
+		              salesRetailRevenueValue = totals.retail;
+		            } catch (error) {
+		              console.warn("[Admin] Failed to load sales rep revenue", error);
+		            }
+		          }
+
+	          openSalesDoctorDetail(
+	            {
               doctorId: id,
               referralId: null,
               doctorName: profile?.name || displayName,
@@ -5813,20 +5888,20 @@ export default function App() {
                   : typeof entry?.idleForMinutes === "number" && Number.isFinite(entry.idleForMinutes)
                     ? entry.idleForMinutes
                     : null,
-              lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
-              lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
-              lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
-              orders: normalizedOrders,
-              total: totalOrderValue,
-              personalRevenue,
-              salesRevenue,
-              salesWholesaleRevenue,
-              salesRetailRevenue,
-              orderQuantity,
-              totalOrderValue,
-            },
-            roleFromProfile || "doctor",
-          );
+	              lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
+	              lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
+	              lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
+	              orders: ordersForModal,
+	              total: totalOrderValue,
+	              personalRevenue,
+	              salesRevenue,
+	              salesWholesaleRevenue: salesWholesaleRevenueValue,
+	              salesRetailRevenue: salesRetailRevenueValue,
+	              orderQuantity: orderQuantityForModal,
+	              totalOrderValue,
+	            },
+	            roleFromProfile || "doctor",
+	          );
         } catch (error) {
           console.warn("[Admin] Failed to hydrate live user detail", error);
         } finally {
@@ -6974,13 +7049,14 @@ export default function App() {
 		    return () => window.clearInterval(id);
 		  }, [user?.role]);
 
-	  const [liveClients, setLiveClients] = useState<any[]>([]);
-	  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
-	  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
-	  const liveClientsEtagRef = useRef<string | null>(null);
-	  const liveClientsLongPollDisabledRef = useRef(false);
-	  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
-	  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
+		  const [liveClients, setLiveClients] = useState<any[]>([]);
+		  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
+		  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
+		  const liveClientsEtagRef = useRef<string | null>(null);
+		  const liveClientsLongPollDisabledRef = useRef(false);
+		  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
+		  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
+		  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
 	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
@@ -13477,18 +13553,45 @@ export default function App() {
 	                    Loading live clients…
 	                  </div>
 	                ) : (() => {
-	                  const normalizedQuery = liveClientsSearch.trim().toLowerCase();
-	                  const filtered = (liveClients || []).filter((entry: any) => {
-	                    const simulated = (entry as any)?.isSimulated === true;
-	                    const id = String((entry as any)?.id || "");
-	                    if (simulated || id.startsWith("pseudo-live-")) {
-	                      return false;
-	                    }
-	                    if (!liveClientsShowOffline && !Boolean(entry?.isOnline)) {
-	                      return false;
-	                    }
-	                    if (!normalizedQuery) {
-	                      return true;
+		                  const normalizedQuery = liveClientsSearch.trim().toLowerCase();
+		                  const filtered = (liveClients || []).filter((entry: any) => {
+		                    const simulated = (entry as any)?.isSimulated === true;
+		                    const id = String((entry as any)?.id || "");
+		                    if (simulated || id.startsWith("pseudo-live-")) {
+		                      return false;
+		                    }
+		                    if (isSalesLead(user?.role) && salesLeadLiveUsersRoleFilter !== "all") {
+		                      const role = String(entry?.role || "").toLowerCase().trim();
+		                      if (salesLeadLiveUsersRoleFilter === "sales_rep") {
+		                        if (
+		                          ![
+		                            "sales_rep",
+		                            "salesrep",
+		                            "rep",
+		                            "sales_lead",
+		                            "saleslead",
+		                            "sales-lead",
+		                          ].includes(role)
+		                        ) {
+		                          return false;
+		                        }
+		                      } else if (salesLeadLiveUsersRoleFilter === "doctor") {
+		                        if (role !== "doctor") {
+		                          return false;
+		                        }
+		                      } else if (salesLeadLiveUsersRoleFilter === "test_doctor") {
+		                        if (role !== "test_doctor") {
+		                          return false;
+		                        }
+		                      } else if (role !== salesLeadLiveUsersRoleFilter) {
+		                        return false;
+		                      }
+		                    }
+		                    if (!liveClientsShowOffline && !Boolean(entry?.isOnline)) {
+		                      return false;
+		                    }
+		                    if (!normalizedQuery) {
+		                      return true;
 	                    }
 	                    const haystack = [entry?.name, entry?.email, entry?.id]
 	                      .filter(Boolean)
@@ -13529,25 +13632,42 @@ export default function App() {
 
 	                  return (
 	                    <div className="space-y-3">
-	                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
-	                        <div className="flex flex-wrap items-center gap-3">
-	                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-	                            <input
-	                              type="checkbox"
-	                              className="brand-checkbox"
-	                              checked={liveClientsShowOffline}
-	                              onChange={(e) => setLiveClientsShowOffline(e.target.checked)}
-	                            />
-	                            Show offline
-	                          </label>
-	                          <span className="text-xs text-slate-500">
-	                            {onlineCount} online
-	                          </span>
-	                        </div>
-	                        <input
-	                          value={liveClientsSearch}
-	                          onChange={(e) => setLiveClientsSearch(e.target.value)}
-	                          onKeyDown={(e) => {
+		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+		                        <div className="flex flex-wrap items-center gap-3">
+		                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+		                            <input
+		                              type="checkbox"
+		                              className="brand-checkbox"
+		                              checked={liveClientsShowOffline}
+		                              onChange={(e) => setLiveClientsShowOffline(e.target.checked)}
+		                            />
+		                            Show offline
+		                          </label>
+		                          <span className="text-xs text-slate-500">
+		                            {onlineCount} online
+		                          </span>
+		                          {isSalesLead(user?.role) && (
+		                            <label className="flex items-center gap-2 text-xs text-slate-600">
+		                              <span className="uppercase tracking-wide text-[11px] text-slate-500">
+		                                Type
+		                              </span>
+		                              <select
+		                                value={salesLeadLiveUsersRoleFilter}
+		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
+		                                className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                              >
+		                                <option value="all">All</option>
+		                                <option value="sales_rep">Sales Rep</option>
+		                                <option value="doctor">Doctors</option>
+		                                <option value="test_doctor">Test doctors</option>
+		                              </select>
+		                            </label>
+		                          )}
+		                        </div>
+		                        <input
+		                          value={liveClientsSearch}
+		                          onChange={(e) => setLiveClientsSearch(e.target.value)}
+		                          onKeyDown={(e) => {
 	                            if (e.key === "Enter") {
 	                              e.preventDefault();
 	                            }
@@ -13593,131 +13713,142 @@ export default function App() {
 			                          (idleReported ||
 			                            (minutesSinceLastSeen != null &&
 		                              minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
-		                        const idleLabel = showIdle ? formatIdleMinutes(entry) : null;
-		                        const offlineLabel = !isOnlineNow
-		                          ? (() => {
-		                              const raw =
-		                                entry?.lastSeenAt ||
-		                                entry?.lastInteractionAt ||
-		                                entry?.lastLoginAt ||
-		                                null;
-		                              if (!raw) return null;
-		                              const parsed = new Date(raw).getTime();
-		                              if (!Number.isFinite(parsed)) return null;
-		                              const diffMs = Math.max(0, Date.now() - parsed);
-		                              const totalSeconds = Math.floor(diffMs / 1000);
-		                              if (totalSeconds < 60) return "<1m";
-		                              const units = [
-		                                { label: "y", seconds: 365 * 24 * 60 * 60 },
-		                                { label: "mo", seconds: 30 * 24 * 60 * 60 },
-		                                { label: "d", seconds: 24 * 60 * 60 },
-		                                { label: "h", seconds: 60 * 60 },
-		                                { label: "m", seconds: 60 },
-		                              ];
-		                              let remaining = totalSeconds;
-		                              const parts: string[] = [];
-		                              for (const unit of units) {
-		                                const qty = Math.floor(remaining / unit.seconds);
-		                                if (qty > 0) {
-		                                  parts.push(`${qty}${unit.label}`);
-		                                  remaining -= qty * unit.seconds;
-		                                }
-		                                if (parts.length >= 2) break;
-		                              }
-		                              return parts.length ? parts.join(" ") : "<1m";
-		                            })()
-		                          : null;
-		                              return (
-	                                <div
-	                                  key={entry.id}
-	                                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
-	                                >
-		                                  <button
-		                                    type="button"
-		                                    onClick={() => openLiveUserDetail(entry)}
-		                                    aria-label={`Open ${displayName} profile`}
-		                                    className="min-w-0 flex-1"
-		                                    style={{ background: "transparent", border: "none", padding: 0 }}
-		                                  >
-		                                    <div className="flex w-full items-center gap-3 min-w-0">
-				                                      <div
-				                                        className="rounded-full shrink-0"
-				                                        style={{
-				                                          width: 41.4,
-				                                          height: 41.4,
-				                                          minWidth: 41.4,
-				                                          boxShadow: !isOnlineNow
-				                                            ? undefined
-				                                            : showIdle
-				                                              ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
-				                                              : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
-				                                        }}
-				                                      >
-				                                        <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
-			                                  {avatarUrl ? (
-			                                    <img
-		                                      src={avatarUrl}
-		                                      alt={displayName}
-		                                      className="h-full w-full object-cover"
-	                                      loading="lazy"
-	                                      decoding="async"
-	                                    />
-	                                  ) : (
-		                                    <span className="text-[11px] font-semibold text-slate-600">
-		                                      {getInitials(displayName)}
-		                                    </span>
-		                                  )}
-		                                </div>
-		                              </div>
-		                                <div className="min-w-0 flex-1 text-left overflow-hidden">
-		                                  <div className="text-sm font-semibold text-slate-800 truncate">
-		                                    {displayName}
-		                                  </div>
-		                                  <div className="flex items-center gap-2 min-w-0">
-		                                    <div className="text-xs text-slate-500 truncate">
-		                                      {entry.email || "—"}
-		                                    </div>
-		                                    {isSalesLead(user?.role) &&
-		                                      (() => {
-		                                        const role = normalizeRole(entry?.role || "");
-		                                        if (isRep(role)) {
-		                                          return (
-		                                            <span className="inline-flex items-center px-2 py-[1px] text-[10px] font-semibold rounded-full bg-[rgba(129,221,228,0.25)] text-[rgb(12,74,110)] shrink-0">
-		                                              Sales Rep
-		                                            </span>
-		                                          );
-		                                        }
-		                                        return null;
-		                                      })()}
-		                                  </div>
-		                                </div>
-	                              </div>
-	                            </button>
-		                              <div className="ml-auto grid w-[180px] flex-shrink-0 justify-items-end gap-1 whitespace-nowrap text-right">
-		                              <span
-		                                className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0 text-right justify-self-end ${
-		                                  !isOnlineNow
-		                                    ? "bg-slate-50 text-slate-500"
-		                                    : showIdle
-		                                      ? "bg-slate-100 text-slate-600"
-		                                      : "bg-[rgba(95,179,249,0.16)] text-[rgb(95,179,249)]"
-		                                }`}
-		                              >
-		                                {!isOnlineNow
-		                                  ? `Offline${offlineLabel ? ` (${offlineLabel})` : ""}`
-		                                  : showIdle
-	                                    ? `Idle${idleLabel ? ` (${idleLabel})` : ""}`
-	                                    : "Online"}
-		                              </span>
-		                              <div className="text-xs text-slate-600 whitespace-nowrap">
-		                                {isOnlineNow ? formatOnlineDuration(entry.lastLoginAt) : "—"}
-		                              </div>
-		                            </div>
+			                        const role = String(entry?.role || "").toLowerCase().trim();
+			                        const rolePill = (() => {
+			                          if (role === "admin") {
+			                            return {
+			                              label: "Admin",
+			                              style: {
+			                                backgroundColor: "rgb(61,43,233)",
+			                                color: "#ffffff",
+			                              } as React.CSSProperties,
+			                            };
+			                          }
+			                          if (role === "sales_rep" || role === "salesrep" || role === "rep") {
+			                            return {
+			                              label: "Sales Rep",
+			                              style: {
+			                                backgroundColor: "rgb(129,221,228)",
+			                                color: "#ffffff",
+			                              } as React.CSSProperties,
+			                            };
+			                          }
+			                          if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
+			                            return {
+			                              label: "Sales Lead",
+			                              style: {
+			                                backgroundColor: "rgb(2,132,199)",
+			                                color: "#ffffff",
+			                              } as React.CSSProperties,
+			                            };
+			                          }
+			                          if (role === "doctor") {
+			                            return {
+			                              label: "Doctor",
+			                              style: {
+			                                backgroundColor: "rgb(95,179,249)",
+			                                color: "#ffffff",
+			                              } as React.CSSProperties,
+			                            };
+			                          }
+			                          if (role === "test_doctor") {
+			                            return {
+			                              label: "Test Doctor",
+			                              style: {
+			                                backgroundColor: "rgb(95,179,249)",
+			                                color: "#ffffff",
+			                              } as React.CSSProperties,
+			                            };
+			                          }
+			                          return null;
+			                        })();
+
+			                        const idleMinutesLabel = showIdle ? formatIdleMinutes(entry) : null;
+			                        const formatOfflineFor = (value?: string | null) => {
+			                          const raw = formatRelativeMinutes(value);
+			                          if (raw === "a few moments ago") return "a few moments";
+			                          return raw.replace(/\s+ago$/, "");
+			                        };
+			                        const offlineAnchor =
+			                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
+			                        const statusLine = isOnlineNow
+			                          ? showIdle
+			                            ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
+			                            : formatOnlineDuration(entry.lastLoginAt)
+			                          : offlineAnchor
+			                            ? `Offline for ${formatOfflineFor(offlineAnchor)}`
+			                            : "Offline";
+
+			                        return (
+		                          <div
+		                            key={entry.id}
+		                            className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
+		                          >
+			                            <button
+			                              type="button"
+			                              onClick={() => openLiveUserDetail(entry)}
+			                              aria-label={`Open ${displayName} profile`}
+			                              className="min-w-0 flex-1"
+			                              style={{ background: "transparent", border: "none", padding: 0 }}
+			                            >
+			                              <div className="flex items-center gap-3 min-w-0">
+			                                <div
+			                                  className="rounded-full shrink-0"
+			                                  style={{
+			                                    width: 41.4,
+			                                    height: 41.4,
+			                                    minWidth: 41.4,
+			                                    boxShadow: !isOnlineNow
+			                                      ? undefined
+			                                      : showIdle
+			                                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
+			                                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
+			                                  }}
+			                                >
+			                                  <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
+			                                    {avatarUrl ? (
+			                                      <img
+			                                        src={avatarUrl}
+			                                        alt={displayName}
+			                                        className="h-full w-full object-cover"
+			                                        loading="lazy"
+			                                        decoding="async"
+			                                      />
+			                                    ) : (
+			                                      <span className="text-[11px] font-semibold text-slate-600">
+			                                        {getInitials(displayName)}
+			                                      </span>
+			                                    )}
+			                                  </div>
+			                                </div>
+			                                <div className="min-w-0 flex-1 overflow-hidden">
+			                                  <div className="flex flex-col items-start gap-0.5 text-left">
+			                                    {rolePill && (
+			                                      <span
+			                                        className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0 self-start whitespace-nowrap"
+			                                        style={rolePill.style}
+			                                      >
+			                                        {rolePill.label}
+			                                      </span>
+			                                    )}
+			                                    <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+			                                      {displayName}
+			                                    </span>
+			                                    <span className="text-sm text-slate-600 whitespace-nowrap">
+			                                      {entry.email || "—"}
+			                                    </span>
+			                                    <span className="text-sm text-slate-600 whitespace-nowrap">
+			                                      {statusLine}
+			                                    </span>
+			                                  </div>
+			                                </div>
+			                              </div>
+			                            </button>
 		                          </div>
 		                        );
-		                          })
-	                          )}
-	                    </div>
+			                          })
+		                          )}
+		                    </div>
 	                  </div>
 	                </div>
 	                  );
@@ -19272,20 +19403,66 @@ export default function App() {
 		                          Sales Revenue:{" "}
 		                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
 		                        </p>
-		                        {(() => {
-		                          const role = normalizeRole(salesDoctorDetail.role || "");
-		                          const formatPeriodLabel = (
-		                            periodStart?: string | null,
-		                            periodEnd?: string | null,
-		                          ) => {
-		                            const start = periodStart ? String(periodStart).slice(0, 10) : null;
-		                            const end = periodEnd ? String(periodEnd).slice(0, 10) : null;
-		                            return start && end ? `${start} to ${end}` : "All time";
-		                          };
-		                          if (role === "admin") {
-		                            const adminRow = adminCommissionRows.find(
-		                              (row) =>
-		                                String(row?.id || "") ===
+			                        {(() => {
+			                          const role = normalizeRole(salesDoctorDetail.role || "");
+			                          const formatPeriodLabel = (
+			                            periodStart?: string | null,
+			                            periodEnd?: string | null,
+			                          ) => {
+			                            const start = periodStart ? formatDate(String(periodStart)) : null;
+			                            const end = periodEnd ? formatDate(String(periodEnd)) : null;
+			                            return start && end && start !== "—" && end !== "—"
+			                              ? `${start} - ${end}`
+			                              : "All time";
+			                          };
+			                          const formatDateObject = (date?: Date | null) => {
+			                            if (!date) return null;
+			                            if (Number.isNaN(date.getTime())) return null;
+			                            return date.toLocaleDateString(undefined, {
+			                              month: "short",
+			                              day: "numeric",
+			                              year: "numeric",
+			                            });
+			                          };
+			                          const hasCustomRange =
+			                            Boolean(salesDoctorCommissionRange?.from) &&
+			                            Boolean(salesDoctorCommissionRange?.to);
+			                          const customRangeLabel = hasCustomRange
+			                            ? (() => {
+			                                const start = formatDateObject(salesDoctorCommissionRange?.from || null);
+			                                const end = formatDateObject(salesDoctorCommissionRange?.to || null);
+			                                return start && end ? `${start} - ${end}` : null;
+			                              })()
+			                            : null;
+			                          const filterOrdersForRange = (
+			                            orders: any[],
+			                            range?: DateRange,
+			                          ) => {
+			                            if (!Array.isArray(orders) || orders.length === 0) return [];
+			                            const from = range?.from ? new Date(range.from) : null;
+			                            const to = range?.to ? new Date(range.to) : null;
+			                            if (!from || !to) return orders;
+			                            from.setHours(0, 0, 0, 0);
+			                            to.setHours(23, 59, 59, 999);
+			                            const fromMs = from.getTime();
+			                            const toMs = to.getTime();
+			                            return orders.filter((order) => {
+			                              const raw =
+			                                order?.createdAt ||
+			                                (order as any)?.created_at ||
+			                                (order as any)?.dateCreated ||
+			                                (order as any)?.date_created ||
+			                                null;
+			                              if (!raw) return false;
+			                              const ts = new Date(raw).getTime();
+			                              if (!Number.isFinite(ts)) return false;
+			                              return ts >= fromMs && ts <= toMs;
+			                            });
+			                          };
+			                          if (role === "admin") {
+			                            const adminRow = adminCommissionRows.find(
+			                              (row) =>
+			                                String(row?.id || "") ===
 		                                String(salesDoctorDetail.doctorId || ""),
 		                            );
 		                            const periodLabel = formatPeriodLabel(
@@ -19300,41 +19477,139 @@ export default function App() {
 		                                  : "—"}
 		                                {" "}
 		                                <span className="text-slate-500">({periodLabel})</span>
-		                              </p>
-		                            );
-		                          }
-
-		                          const repRow = salesRepSalesSummary.find(
-		                            (row) =>
+			                              </p>
+			                            );
+			                          }
+	
+			                          const repRow = salesRepSalesSummary.find(
+			                            (row) =>
 		                              String(row?.salesRepId || "") ===
 		                              String(salesDoctorDetail.doctorId || ""),
 		                          );
-		                          const wholesale = Number(
-		                            repRow?.wholesaleRevenue ??
-		                              salesDoctorDetail.salesWholesaleRevenue ??
-		                              0,
-		                          );
-		                          const retail = Number(
-		                            repRow?.retailRevenue ??
-		                              salesDoctorDetail.salesRetailRevenue ??
-		                              0,
-		                          );
-		                          if (!Number.isFinite(wholesale) && !Number.isFinite(retail)) {
-		                            return null;
-		                          }
-		                          const totalCommission = wholesale * 0.1 + retail * 0.2;
-		                          const periodLabel = formatPeriodLabel(
-		                            salesRepSalesSummaryMeta?.periodStart ?? null,
-		                            salesRepSalesSummaryMeta?.periodEnd ?? null,
-		                          );
-		                          return (
-		                            <p className="text-sm text-slate-600">
-		                              Total Commission: {formatCurrency(totalCommission)}
-		                              {" "}
-		                              <span className="text-slate-500">({periodLabel})</span>
-		                            </p>
-		                          );
-		                        })()}
+			                          const dateFilteredOrders = filterOrdersForRange(
+			                            salesDoctorDetail.orders as any[],
+			                            salesDoctorCommissionRange,
+			                          );
+			                          const commissionOrders = dateFilteredOrders.filter((order) =>
+			                            shouldCountRevenueForStatus(order?.status),
+			                          );
+			                          const totalsFromOrders =
+			                            hasCustomRange || commissionOrders.length > 0
+			                              ? commissionOrders.reduce(
+			                                  (
+			                                    acc: { wholesale: number; retail: number },
+			                                    order: any,
+			                                  ) => {
+			                                    const amount = coerceNumber(order?.total) || 0;
+			                                    const pricingModeRaw =
+			                                      order?.pricingMode ||
+			                                      (order as any)?.pricing_mode ||
+			                                      (order as any)?.pricing ||
+			                                      (order as any)?.priceType ||
+			                                      null;
+			                                    const pricingMode = String(pricingModeRaw || "")
+			                                      .toLowerCase()
+			                                      .trim();
+			                                    if (pricingMode === "wholesale") {
+			                                      acc.wholesale += amount;
+			                                    } else if (pricingMode === "retail") {
+			                                      acc.retail += amount;
+			                                    } else {
+			                                      acc.retail += amount;
+			                                    }
+			                                    return acc;
+			                                  },
+			                                  { wholesale: 0, retail: 0 },
+			                                )
+			                              : null;
+			                          const wholesale = Number(
+			                            totalsFromOrders?.wholesale ??
+			                              repRow?.wholesaleRevenue ??
+			                              salesDoctorDetail.salesWholesaleRevenue ??
+			                              0,
+			                          );
+			                          const retail = Number(
+			                            totalsFromOrders?.retail ??
+			                              repRow?.retailRevenue ??
+			                              salesDoctorDetail.salesRetailRevenue ??
+			                              0,
+			                          );
+			                          if (!Number.isFinite(wholesale) && !Number.isFinite(retail)) {
+			                            return null;
+			                          }
+			                          const totalCommission = wholesale * 0.1 + retail * 0.2;
+			                          const periodLabel = formatPeriodLabel(
+			                            salesRepSalesSummaryMeta?.periodStart ?? null,
+			                            salesRepSalesSummaryMeta?.periodEnd ?? null,
+			                          );
+			                          return (
+			                            <div className="flex items-center gap-2">
+			                              <p className="text-sm text-slate-600">
+			                                Total Commission: {formatCurrency(totalCommission)}{" "}
+			                                <span className="text-slate-500">
+			                                  ({customRangeLabel || periodLabel})
+			                                </span>
+			                              </p>
+			                              <Popover.Root
+			                                open={salesDoctorCommissionPickerOpen}
+			                                onOpenChange={setSalesDoctorCommissionPickerOpen}
+			                              >
+			                                <Popover.Trigger asChild>
+			                                  <Button
+			                                    type="button"
+			                                    variant="outline"
+			                                    size="icon"
+			                                    className="h-8 w-8 border-slate-200/80 text-slate-700 hover:text-slate-900"
+			                                    aria-label="Select commission date range"
+			                                  >
+			                                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
+			                                  </Button>
+			                                </Popover.Trigger>
+			                                <Popover.Portal>
+			                                  <Popover.Content
+			                                    side="bottom"
+			                                    align="start"
+			                                    sideOffset={8}
+			                                    className="z-[10000] w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+			                                  >
+			                                    <div className="text-sm font-semibold text-slate-800">
+			                                      Commission timeframe
+			                                    </div>
+			                                    <div className="mt-2">
+			                                      <DayPicker
+			                                        mode="range"
+			                                        numberOfMonths={1}
+			                                        selected={salesDoctorCommissionRange}
+			                                        onSelect={setSalesDoctorCommissionRange}
+			                                        defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+			                                      />
+			                                    </div>
+			                                    <div className="mt-3 flex items-center justify-between">
+			                                      <Button
+			                                        type="button"
+			                                        variant="ghost"
+			                                        size="sm"
+			                                        className="text-slate-700"
+			                                        onClick={() => setSalesDoctorCommissionRange(undefined)}
+			                                      >
+			                                        All time
+			                                      </Button>
+			                                      <Button
+			                                        type="button"
+			                                        variant="outline"
+			                                        size="sm"
+			                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
+			                                      >
+			                                        Done
+			                                      </Button>
+			                                    </div>
+			                                    <Popover.Arrow className="fill-white" />
+			                                  </Popover.Content>
+			                                </Popover.Portal>
+			                              </Popover.Root>
+			                            </div>
+			                          );
+			                        })()}
 		                        {(() => {
 		                          // (Total Commission line is rendered above)
 		                          return null;

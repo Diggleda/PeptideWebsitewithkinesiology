@@ -166,9 +166,9 @@ def list_orders_for_sales_rep():
             setattr(err, "status", 403)
             raise err
         sales_rep_id = g.current_user.get("id")
-        # Optional override: allow explicit salesRepId query param for admins
+        # Optional override: allow explicit salesRepId query param for admins and sales leads
         override = request.args.get("salesRepId") or None
-        if override and role == "admin":
+        if override and role in ("admin", "sales_lead", "saleslead", "sales-lead"):
             sales_rep_id = override
         force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
         include_doctors = (request.args.get("includeDoctors") or "").strip().lower() not in ("0", "false", "no")

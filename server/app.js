@@ -96,12 +96,25 @@ const defaultCodeForStatus = (status) => {
 };
 
 const resolveFrontendRoot = () => {
-  const candidates = [
-    path.join(process.cwd(), 'build'),
-    path.join(process.cwd(), 'public_html'),
-    path.join(process.cwd(), 'public'),
-  ];
-  return candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+  const baseCandidates = [
+    process.cwd(),
+    path.join(__dirname, '..'),
+  ].map((value) => path.resolve(value));
+  const bases = Array.from(new Set(baseCandidates));
+
+  for (const base of bases) {
+    const candidates = [
+      path.join(base, 'build'),
+      path.join(base, 'public_html'),
+      path.join(base, 'public'),
+    ];
+    const resolved = candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+    if (resolved) {
+      return { root: resolved, base };
+    }
+  }
+
+  return null;
 };
 
 const buildCorsOptions = () => {
@@ -249,9 +262,12 @@ const createApp = () => {
   });
 
   // Serve the built frontend for local/test usage when present.
-  const frontendRoot = resolveFrontendRoot();
+  const frontendResolved = resolveFrontendRoot();
+  const frontendRoot = frontendResolved?.root || null;
+  const frontendBase = frontendResolved?.base || process.cwd();
   if (frontendRoot) {
-    const contentRoot = path.join(process.cwd(), 'src', 'content');
+    logger.info({ frontendRoot, frontendBase }, 'Serving bundled frontend');
+    const contentRoot = path.join(frontendBase, 'src', 'content');
     if (fs.existsSync(contentRoot)) {
       app.use('/content', express.static(contentRoot));
     }

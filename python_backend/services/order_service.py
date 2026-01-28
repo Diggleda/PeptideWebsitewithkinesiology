@@ -2228,7 +2228,13 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
     billing_email = (woo_order.get("billing") or {}).get("email") or mapped.get("billingEmail")
     doctor = user_repository.find_by_email(billing_email) if billing_email else None
     if doctor:
-        is_admin_request = (token_role or "").strip().lower() == "admin"
+        normalized_token_role = (token_role or "").strip().lower()
+        is_admin_request = normalized_token_role in (
+            "admin",
+            "sales_lead",
+            "saleslead",
+            "sales-lead",
+        )
         if not is_admin_request:
             users = user_repository.get_all()
             rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
