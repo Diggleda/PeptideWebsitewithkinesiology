@@ -101,7 +101,7 @@ def _is_admin_role(role: str) -> bool:
 
 def _is_sales_rep_role(role: str) -> bool:
     normalized = _normalize_role(role)
-    return normalized in ("sales_rep", "rep")
+    return normalized in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead")
 
 def _is_sales_lead_role(role: str) -> bool:
     normalized = _normalize_role(role)

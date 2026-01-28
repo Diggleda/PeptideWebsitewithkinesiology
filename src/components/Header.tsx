@@ -20,7 +20,7 @@ const isSalesLead = (role?: string | null) => {
 };
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
-  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep');
+  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead' || normalized === 'sales-lead');
 };
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -1554,6 +1554,8 @@ export function Header({
   const headerDisplayName = localUser
     ? accountIsAdmin
       ? `Admin: ${localUser.name}`
+      : isSalesLead(accountRole)
+        ? `Lead: ${localUser.name}`
       : accountIsSalesRep
         ? `Rep: ${localUser.name}`
         : localUser.name

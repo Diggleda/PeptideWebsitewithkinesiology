@@ -171,7 +171,11 @@ const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
     normalized !== "admin" &&
-    (normalized === "sales_rep" || normalized === "rep")
+    (normalized === "sales_rep" ||
+      normalized === "rep" ||
+      normalized === "sales_lead" ||
+      normalized === "saleslead" ||
+      normalized === "sales-lead")
   );
 };
 const isTestDoctor = (role?: string | null) =>
