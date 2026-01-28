@@ -4874,6 +4874,8 @@ html {
 .sales-rep-table-wrapper {
   margin-top: 0.5rem;
   overflow-x: auto;
+  min-width: 0;
+  width: 100%;
   /* Match dashboard "squircle-xl" radius */
   shape-outside: inset(0 round var(--squircle-xl, 1.75rem));
   border-radius: var(--squircle-xl, 1.75rem);
@@ -6195,6 +6197,7 @@ a[href^="mailto:"]:hover {
   --rdp-caption-font-size: 14px;
   --rdp-accent-color-dark: rgb(95, 179, 249);
   --rdp-background-color-dark: rgba(95, 179, 249, 0.18);
+  --rdp-selected-color: #ffffff;
 }
 
 .rdp .rdp-button {
@@ -6210,22 +6213,79 @@ a[href^="mailto:"]:hover {
   border-radius: var(--squircle-sm);
 }
 
+.rdp .rdp-day_range_start:not(.rdp-day_range_end) {
+  border-radius: 6px 0 0 6px;
+  overflow: hidden;
+}
+
+.rdp .rdp-day_range_end:not(.rdp-day_range_start) {
+  border-radius: 0 6px 6px 0;
+  overflow: hidden;
+}
+
+.rdp .rdp-day_range_start.rdp-day_range_end {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rdp .rdp-day_range_start:not(.rdp-day_range_end) .rdp-button {
+  border-radius: 6px 0 0 6px !important;
+}
+
+.rdp .rdp-day_range_end:not(.rdp-day_range_start) .rdp-button {
+  border-radius: 0 6px 6px 0 !important;
+}
+
+.rdp .rdp-day_range_start.rdp-day_range_end .rdp-button {
+  border-radius: 6px !important;
+}
+
+.rdp,
+.rdp .rdp-caption_label,
+.rdp .rdp-nav_button,
+.rdp .rdp-head_cell,
+.rdp .rdp-day,
+.rdp .rdp-weekday,
+.rdp .rdp-button {
+  color: #000000 !important;
+}
+
+.rdp .rdp-nav_button svg {
+  stroke: #000000 !important;
+}
+
 .rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button,
 .rdp .rdp-day_range_start:not(.rdp-day_disabled) .rdp-button,
-.rdp .rdp-day_range_end:not(.rdp-day_disabled) .rdp-button {
+.rdp .rdp-day_range_end:not(.rdp-day_disabled) .rdp-button,
+.rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button:active,
+.rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button:focus-visible,
+.rdp .rdp-day[aria-selected="true"] .rdp-button {
   background: rgb(95, 179, 249) !important;
   color: #ffffff !important;
   font-weight: 700;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.rdp .rdp-day_range_start:not(.rdp-day_disabled),
+.rdp .rdp-day_range_end:not(.rdp-day_disabled) {
+  background: rgb(95, 179, 249) !important;
 }
 
 .rdp .rdp-day_range_middle:not(.rdp-day_disabled) {
-  background: rgba(95, 179, 249, 0.18) !important;
+  background: rgba(95, 179, 249, 0.22) !important;
+  transition: background-color 180ms ease;
 }
 
 .rdp .rdp-day_range_middle:not(.rdp-day_disabled) .rdp-button {
   background: transparent !important;
-  color: rgb(15, 23, 42) !important;
+  color: #000000 !important;
   font-weight: 600;
+  border-radius: 0 !important;
+  transition: color 180ms ease;
+}
+
+.rdp .rdp-day_range_middle:not(.rdp-day_disabled) {
+  border-radius: 0 !important;
 }
 
 .rdp .rdp-day_today:not(.rdp-day_selected):not(.rdp-day_range_start):not(.rdp-day_range_end) .rdp-button {
@@ -6233,12 +6293,87 @@ a[href^="mailto:"]:hover {
   outline-offset: -2px;
 }
 
+.rdp .rdp-day:hover:not(.rdp-day_disabled) .rdp-button,
+.rdp .rdp-day:focus-visible:not(.rdp-day_disabled) .rdp-button {
+  background: rgba(95, 179, 249, 0.18) !important;
+  color: #000000 !important;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
 .calendar-popover {
+  margin: 12px;
+}
+
+.calendar-popover {
+  position: relative;
+  overflow: hidden;
   will-change: transform, opacity;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
-  contain: paint;
+  contain: layout style;
   --calendar-popover-from: translate3d(0, 8px, 0);
+  -webkit-backdrop-filter: blur(42px) saturate(2.1);
+  backdrop-filter: blur(42px) saturate(2.1);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(245, 252, 255, 0.86) 45%,
+    rgba(232, 246, 255, 0.8) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 26px 64px -52px rgba(15, 23, 42, 0.85),
+    0 18px 46px -36px rgba(15, 23, 42, 0.55),
+    0 10px 22px -18px rgba(15, 23, 42, 0.35),
+    inset 0 1px rgba(255, 255, 255, 0.92),
+    inset 0 -1px rgba(148, 163, 184, 0.18);
+}
+
+.calendar-popover::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      1200px 520px at 15% -10%,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.45) 35%,
+      rgba(255, 255, 255, 0) 70%
+    ),
+    radial-gradient(
+      900px 460px at 105% 110%,
+      rgba(95, 179, 249, 0.22) 0%,
+      rgba(95, 179, 249, 0.08) 35%,
+      rgba(95, 179, 249, 0) 70%
+    );
+  opacity: 0.95;
+}
+
+.calendar-popover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.65) 0%,
+      rgba(255, 255, 255, 0.15) 35%,
+      rgba(255, 255, 255, 0) 75%
+    );
+  mix-blend-mode: soft-light;
+  opacity: 0.65;
+}
+
+.calendar-popover > * {
+  position: relative;
+  z-index: 1;
+}
+
+.calendar-popover-arrow {
+  fill: rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.14));
 }
 
 .calendar-popover[data-side="top"] {
@@ -6259,6 +6394,16 @@ a[href^="mailto:"]:hover {
 
 .calendar-popover[data-state="closed"] {
   animation: calendar-popover-out 130ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.calendar-done-button {
+  color: rgb(95, 179, 249) !important;
+  border-color: rgba(95, 179, 249, 0.45) !important;
+}
+
+.calendar-done-button:hover {
+  color: rgb(95, 179, 249) !important;
+  border-color: rgba(95, 179, 249, 0.7) !important;
 }
 
 @keyframes calendar-popover-in {

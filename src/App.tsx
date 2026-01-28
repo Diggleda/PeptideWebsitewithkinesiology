@@ -13775,7 +13775,7 @@ export default function App() {
 			                            return {
 			                              label: "Sales Lead",
 			                              style: {
-			                                backgroundColor: "rgb(2,132,199)",
+			                                backgroundColor: "rgb(129,221,228)",
 			                                color: "#ffffff",
 			                              } as React.CSSProperties,
 			                            };
@@ -14698,7 +14698,7 @@ export default function App() {
 				                                  return {
 				                                    label: "Sales Lead",
 				                                    style: {
-				                                      backgroundColor: "rgb(2,132,199)",
+				                                      backgroundColor: "rgb(129,221,228)",
 				                                      color: "#ffffff",
 				                                    } as React.CSSProperties,
 				                                  };
@@ -14852,17 +14852,18 @@ export default function App() {
 	          )}
 
 			          {isAdmin(user?.role) && (
-			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-			              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-			                <div className="min-w-0">
-			                  <h3 className="text-lg font-semibold text-slate-900">
-			                    Admin Reports
-			                  </h3>
-			                  <p className="text-sm text-slate-600">
-			                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
-			                  </p>
-			                </div>
-				                <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+				            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+				              <div className="flex flex-col gap-3">
+				                <div className="min-w-0">
+				                  <h3 className="text-lg font-semibold text-slate-900">
+				                    Admin Reports
+				                  </h3>
+				                  <p className="text-sm text-slate-600">
+				                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
+				                  </p>
+				                </div>
+					                <div className="w-full mt-3 mb-4 flex flex-col gap-3 min-w-0">
+					                  <div className="flex flex-wrap items-center gap-2 justify-start w-full min-w-0">
 				                  <Popover.Root
 				                    open={adminDashboardPeriodPickerOpen}
 				                    onOpenChange={setAdminDashboardPeriodPickerOpen}
@@ -14911,27 +14912,30 @@ export default function App() {
 			                          >
 			                            Default
 			                          </Button>
-			                          <Button
-			                            type="button"
-			                            variant="outline"
-			                            size="sm"
-			                            onClick={() => setAdminDashboardPeriodPickerOpen(false)}
-			                          >
-			                            Done
-			                          </Button>
+				                          <Button
+				                            type="button"
+				                            variant="outline"
+				                            size="sm"
+				                            className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+				                            onClick={() => setAdminDashboardPeriodPickerOpen(false)}
+				                          >
+				                            Done
+				                          </Button>
 			                        </div>
-			                        <Popover.Arrow className="fill-white" />
+			                        <Popover.Arrow className="calendar-popover-arrow" />
 			                      </Popover.Content>
 			                    </Popover.Portal>
 			                  </Popover.Root>
-			                  <span className="text-sm font-semibold text-slate-900 whitespace-nowrap">
-			                    ({adminDashboardPeriodLabel})
-			                  </span>
+				                  <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight">
+				                    ({adminDashboardPeriodLabel})
+				                  </span>
+					                  </div>
+					                  <div className="flex w-full min-w-0">
 				                  <Button
 				                    type="button"
 				                    variant="outline"
 				                    size="sm"
-				                    className="gap-2 w-full sm:w-auto justify-center"
+				                    className="gap-2 w-full sm:w-auto sm:ml-auto max-w-full justify-center px-3"
 				                    onClick={applyAdminDashboardPeriod}
 				                    disabled={adminDashboardRefreshing}
 				                    aria-busy={adminDashboardRefreshing}
@@ -14942,6 +14946,7 @@ export default function App() {
 			                    />
 			                    {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
 			                  </Button>
+					                  </div>
 			                </div>
 			              </div>
 			
@@ -14990,7 +14995,7 @@ export default function App() {
 			
                 {/* Totals shown inline above list below */}
 			              </div>
-		              <div className="sales-rep-table-wrapper p-0 overflow-hidden" role="region" aria-label="Sales by sales rep list">
+			              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
                   <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
@@ -15159,22 +15164,22 @@ export default function App() {
 	              </div>
 
 		              {adminTaxesByStateError ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
 			                    {adminTaxesByStateError}
 			                  </div>
 			                </div>
 			              ) : adminTaxesByStateLoading ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="p-6 text-sm text-slate-500">Loading taxes…</div>
 			                </div>
 			              ) : adminTaxesByStateRows.length === 0 ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="p-6 text-sm text-slate-500">No tax data for this period.</div>
 			                </div>
 			              ) : (
 				              <div className="grid grid-cols-1 gap-4">
-						              <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Taxes by state list">
+						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                    {adminTaxesByStateMeta?.totals && (
 			                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 			                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
@@ -15221,8 +15226,8 @@ export default function App() {
 					              </div>
 
 				                  {adminTaxesByStateOrders.length > 0 && (
-					                    <details
-					                          className="sales-rep-table-wrapper p-0 bg-white/60 border border-slate-200/70"
+						                    <details
+						                          className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar bg-white/60 border border-slate-200/70"
 		                          open={adminTaxesByStateBreakdownOpen}
 		                          onToggle={(event) => {
 		                            setAdminTaxesByStateBreakdownOpen(
@@ -15333,22 +15338,22 @@ export default function App() {
 	              </div>
 
 	              {adminProductsCommissionError ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="p-4 sm:p-6 text-sm text-amber-700 bg-amber-50">
 			                    {adminProductsCommissionError}
 			                  </div>
 			                </div>
 			              ) : adminProductsCommissionLoading ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="p-4 sm:p-6 text-sm text-slate-500">Loading report…</div>
 			                </div>
 			              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
-			                <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="p-4 sm:p-6 text-sm text-slate-500">No data for this period.</div>
 			                </div>
 				              ) : (
 					              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-						              <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Products sold list">
+						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold list">
 					                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Products Sold</span>
 					                    </div>
@@ -15393,7 +15398,7 @@ export default function App() {
 				                    </ul>
 						              </div>
 
-					                  <div className="sales-rep-table-wrapper p-0" role="region" aria-label="Commission list">
+						                  <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
 						                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Commission</span>
 					                    </div>
@@ -19420,16 +19425,17 @@ export default function App() {
 			                                        >
 			                                          Default
 			                                        </Button>
-			                                        <Button
-			                                          type="button"
-			                                          variant="outline"
-			                                          size="sm"
-			                                          onClick={() => setSalesDoctorCommissionPickerOpen(false)}
-			                                        >
-			                                          Done
-			                                        </Button>
+				                                      <Button
+				                                        type="button"
+				                                        variant="outline"
+				                                        size="sm"
+				                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+				                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
+				                                      >
+				                                        Done
+				                                      </Button>
 			                                      </div>
-			                                      <Popover.Arrow className="fill-white" />
+			                                      <Popover.Arrow className="calendar-popover-arrow" />
 			                                    </Popover.Content>
 			                                  </Popover.Portal>
 			                                </Popover.Root>
@@ -19550,16 +19556,17 @@ export default function App() {
 			                                      >
 			                                        All time
 			                                      </Button>
-			                                      <Button
-			                                        type="button"
-			                                        variant="outline"
-			                                        size="sm"
-			                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
-			                                      >
-			                                        Done
-			                                      </Button>
+				                                      <Button
+				                                        type="button"
+				                                        variant="outline"
+				                                        size="sm"
+				                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+				                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
+				                                      >
+				                                        Done
+				                                      </Button>
 			                                    </div>
-			                                    <Popover.Arrow className="fill-white" />
+			                                    <Popover.Arrow className="calendar-popover-arrow" />
 			                                  </Popover.Content>
 			                                </Popover.Portal>
 			                              </Popover.Root>
