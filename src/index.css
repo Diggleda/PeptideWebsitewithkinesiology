@@ -2682,6 +2682,21 @@ body {
               inset 0 1px rgba(255, 255, 255, 0.5);
 }
 
+.glass-liquid {
+  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+  backdrop-filter: blur(34px) saturate(1.9);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 26px -18px rgba(15, 23, 42, 0.55),
+              0 6px 14px -10px rgba(15, 23, 42, 0.35),
+              inset 0 1px rgba(255, 255, 255, 0.85);
+}
+
+.glass-liquid:hover {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(255, 255, 255, 0.92);
+}
+
 .glass-strong {
   -webkit-backdrop-filter: blur(48px) saturate(1.8);
   backdrop-filter: blur(48px) saturate(1.8);
@@ -6193,4 +6208,77 @@ a[href^="mailto:"]:hover {
 .rdp .rdp-day_range_start .rdp-button,
 .rdp .rdp-day_range_end .rdp-button {
   border-radius: var(--squircle-sm);
+}
+
+.rdp .rdp-day_selected:not(.rdp-day_disabled) .rdp-button,
+.rdp .rdp-day_range_start:not(.rdp-day_disabled) .rdp-button,
+.rdp .rdp-day_range_end:not(.rdp-day_disabled) .rdp-button {
+  background: rgb(95, 179, 249) !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.rdp .rdp-day_range_middle:not(.rdp-day_disabled) {
+  background: rgba(95, 179, 249, 0.18) !important;
+}
+
+.rdp .rdp-day_range_middle:not(.rdp-day_disabled) .rdp-button {
+  background: transparent !important;
+  color: rgb(15, 23, 42) !important;
+  font-weight: 600;
+}
+
+.rdp .rdp-day_today:not(.rdp-day_selected):not(.rdp-day_range_start):not(.rdp-day_range_end) .rdp-button {
+  outline: 2px solid rgba(95, 179, 249, 0.35);
+  outline-offset: -2px;
+}
+
+.calendar-popover {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  contain: paint;
+  --calendar-popover-from: translate3d(0, 8px, 0);
+}
+
+.calendar-popover[data-side="top"] {
+  --calendar-popover-from: translate3d(0, -8px, 0);
+}
+
+.calendar-popover[data-side="left"] {
+  --calendar-popover-from: translate3d(-8px, 0, 0);
+}
+
+.calendar-popover[data-side="right"] {
+  --calendar-popover-from: translate3d(8px, 0, 0);
+}
+
+.calendar-popover[data-state="open"] {
+  animation: calendar-popover-in 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.calendar-popover[data-state="closed"] {
+  animation: calendar-popover-out 130ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+@keyframes calendar-popover-in {
+  from {
+    opacity: 0;
+    transform: var(--calendar-popover-from);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes calendar-popover-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: var(--calendar-popover-from);
+  }
 }

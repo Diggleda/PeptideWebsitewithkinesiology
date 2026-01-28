@@ -6257,6 +6257,26 @@ export default function App() {
   const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
     () => getDefaultSalesBySalesRepPeriod().end,
   );
+  const [adminDashboardPeriodRange, setAdminDashboardPeriodRange] = useState<
+    DateRange | undefined
+  >(undefined);
+  const [adminDashboardPeriodPickerOpen, setAdminDashboardPeriodPickerOpen] =
+    useState(false);
+
+  useEffect(() => {
+    if (adminDashboardPeriodPickerOpen) return;
+    const parse = (value: string) => {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    const from = salesRepPeriodStart ? parse(salesRepPeriodStart) : null;
+    const to = salesRepPeriodEnd ? parse(salesRepPeriodEnd) : null;
+    if (from && to) {
+      setAdminDashboardPeriodRange({ from, to });
+    } else {
+      setAdminDashboardPeriodRange(undefined);
+    }
+  }, [adminDashboardPeriodPickerOpen, salesRepPeriodEnd, salesRepPeriodStart]);
   const [userReferralCodes, setUserReferralCodes] = useState<string[]>([]);
   const normalizeReferralCodeValue = useCallback((value: unknown): string => {
     if (typeof value === "string") {
@@ -13464,16 +13484,34 @@ export default function App() {
 
     const totalReferrals = referrals.length;
     const activeStatuses = new Set(["pending", "contacted", "nuture"]);
-    const activeReferrals = referrals.filter((ref) =>
-      activeStatuses.has((ref.status || "").toLowerCase()),
-    ).length;
-    const convertedReferrals = referrals.filter(
-      (ref) => (ref.status || "").toLowerCase() === "converted",
-    ).length;
-    const hasChartData = salesRepChartData.some((item) => item.count > 0);
-
-	    return (
-	      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
+	    const activeReferrals = referrals.filter((ref) =>
+	      activeStatuses.has((ref.status || "").toLowerCase()),
+	    ).length;
+	    const convertedReferrals = referrals.filter(
+	      (ref) => (ref.status || "").toLowerCase() === "converted",
+	    ).length;
+	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
+	    const adminDashboardPeriodLabel = (() => {
+	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
+	      const end = salesRepPeriodEnd ? formatDate(salesRepPeriodEnd) : null;
+	      return start && end && start !== "—" && end !== "—"
+	        ? `${start} to ${end}`
+	        : "All time";
+	    })();
+	    const handleAdminDashboardPeriodSelect = (range?: DateRange) => {
+	      setAdminDashboardPeriodRange(range);
+	      if (range?.from && range?.to) {
+	        setSalesRepPeriodStart(formatDateInputValue(range.from));
+	        setSalesRepPeriodEnd(formatDateInputValue(range.to));
+	      }
+	    };
+	    const adminDashboardRefreshing =
+	      salesRepSalesSummaryLoading ||
+	      adminTaxesByStateLoading ||
+	      adminProductsCommissionLoading;
+	
+		    return (
+		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-6">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 		            <div>
@@ -14815,7 +14853,101 @@ export default function App() {
 
 			          {isAdmin(user?.role) && (
 			            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
-			              <div className="flex flex-col gap-3 mb-4">
+			              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+			                <div className="min-w-0">
+			                  <h3 className="text-lg font-semibold text-slate-900">
+			                    Admin Reports
+			                  </h3>
+			                  <p className="text-sm text-slate-600">
+			                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
+			                  </p>
+			                </div>
+				                <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+				                  <Popover.Root
+				                    open={adminDashboardPeriodPickerOpen}
+				                    onOpenChange={setAdminDashboardPeriodPickerOpen}
+				                  >
+			                    <Popover.Trigger asChild>
+			                      <Button
+			                        type="button"
+			                        variant="ghost"
+			                        size="icon"
+			                        className="h-10 w-10 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
+			                        aria-label="Select date range"
+			                      >
+			                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
+			                      </Button>
+			                    </Popover.Trigger>
+			                    <Popover.Portal>
+				                      <Popover.Content
+				                        side="bottom"
+				                        align="end"
+				                        sideOffset={8}
+				                        className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+				                      >
+			                        <div className="text-sm font-semibold text-slate-800">
+			                          Dashboard timeframe
+			                        </div>
+			                        <div className="mt-2">
+			                          <DayPicker
+			                            mode="range"
+			                            numberOfMonths={1}
+			                            selected={adminDashboardPeriodRange}
+			                            onSelect={handleAdminDashboardPeriodSelect}
+			                            defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+			                          />
+			                        </div>
+			                        <div className="mt-3 flex items-center justify-between">
+			                          <Button
+			                            type="button"
+			                            variant="ghost"
+			                            size="sm"
+			                            className="text-slate-700"
+			                            onClick={() => {
+			                              const defaults = getDefaultSalesBySalesRepPeriod();
+			                              setSalesRepPeriodStart(defaults.start);
+			                              setSalesRepPeriodEnd(defaults.end);
+			                            }}
+			                          >
+			                            Default
+			                          </Button>
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            onClick={() => setAdminDashboardPeriodPickerOpen(false)}
+			                          >
+			                            Done
+			                          </Button>
+			                        </div>
+			                        <Popover.Arrow className="fill-white" />
+			                      </Popover.Content>
+			                    </Popover.Portal>
+			                  </Popover.Root>
+			                  <span className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+			                    ({adminDashboardPeriodLabel})
+			                  </span>
+				                  <Button
+				                    type="button"
+				                    variant="outline"
+				                    size="sm"
+				                    className="gap-2 w-full sm:w-auto justify-center"
+				                    onClick={applyAdminDashboardPeriod}
+				                    disabled={adminDashboardRefreshing}
+				                    aria-busy={adminDashboardRefreshing}
+				                  >
+			                    <RefreshCw
+			                      className={`h-4 w-4 ${adminDashboardRefreshing ? "animate-spin" : ""}`}
+			                      aria-hidden="true"
+			                    />
+			                    {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
+			                  </Button>
+			                </div>
+			              </div>
+			
+				              <div className="mt-8 space-y-6">
+			                <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+			                  <div className="flex flex-col gap-3 mb-4">
                 <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-slate-900">
@@ -14824,60 +14956,7 @@ export default function App() {
                     <p className="text-sm text-slate-600">
                       Orders placed by doctors assigned to each rep.
                     </p>
-		                    <form
-		                      className="sales-rep-period-form mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
-		                      onSubmit={(event) => {
-		                        event.preventDefault();
-		                        void refreshSalesBySalesRepSummary();
-                            void refreshAdminTaxesByState();
-                            void refreshAdminProductsCommission();
-		                      }}
-		                    >
-	                      {["Start", "End"].map((labelText, index) => {
-	                        const value =
-	                          index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
-	                        const setter =
-	                          index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
-	                        return (
-	                          <label
-	                            key={labelText}
-	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
-	                          >
-	                            <span className="text-sm font-semibold text-slate-900">
-	                              {labelText}
-	                            </span>
-	                            <Input
-                              type="date"
-                              value={value}
-                              onChange={(event) => setter(event.target.value)}
-                              placeholder="YYYY-MM-DD"
-                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
-                              style={{ colorScheme: "light" }}
-                            />
-	                          </label>
-	                        );
-	                      })}
-	                      <div className="sales-rep-period-actions flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-	                        <Button
-	                          type="submit"
-	                          size="sm"
-	                          variant="outline"
-                          disabled={salesRepSalesSummaryLoading}
-                          className="whitespace-nowrap"
-                        >
-                          Apply
-                        </Button>
-	                        <Button
-		                          type="button"
-		                          size="sm"
-		                              variant="outline"
-		                              className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-		                              onClick={clearAdminDashboardPeriod}
-		                            >
-		                              Clear
-		                            </Button>
-	                      </div>
-	                    </form>
+				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
                     <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
@@ -14903,44 +14982,6 @@ export default function App() {
 	                                timeZone: "America/Los_Angeles",
 	                              })
 	                            : "—"}
-	                        </span>
-	                      </span>
-	                    </div>
-                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="sales-rep-refresh-button gap-2"
-                        onClick={() => void refreshSalesBySalesRepSummary()}
-                        disabled={salesRepSalesSummaryLoading}
-                        aria-busy={salesRepSalesSummaryLoading}
-                        title="Refresh sales summary"
-                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${
-                            salesRepSalesSummaryLoading ? "animate-spin" : ""
-                          }`}
-                          aria-hidden="true"
-                        />
-                        {salesRepSalesSummaryLoading ? "Refreshing..." : "Refresh"}
-                      </Button>
-	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-	                        <span className="sales-rep-action-meta-label block">
-	                          Last refreshed
-	                        </span>
-	                        <span className="sales-rep-action-meta-value block">
-	                          {(() => {
-	                            const ts =
-	                              salesRepSalesSummaryLastFetchedAt ??
-	                              salesTrackingLastUpdated ??
-	                              null;
-	                            return ts
-	                              ? new Date(ts).toLocaleString(undefined, {
-	                                  timeZone: "America/Los_Angeles",
-	                                })
-	                              : "—";
-	                          })()}
 	                        </span>
 	                      </span>
 	                    </div>
@@ -15074,9 +15115,7 @@ export default function App() {
 	                )}
               </div>
             </div>
-          )}
 
-          {isAdmin(user?.role) && (
             <div className="glass-card squircle-xl p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -15085,50 +15124,7 @@ export default function App() {
 	                    <p className="text-sm text-slate-600">
 	                      Cumulative tax totals by destination state for the selected period.
 	                    </p>
-	                    <form
-	                      className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
-	                      onSubmit={(event) => {
-	                        event.preventDefault();
-	                        applyAdminDashboardPeriod();
-	                      }}
-	                    >
-	                      {["Start", "End"].map((labelText, index) => {
-	                        const value = index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
-	                        const setter = index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
-	                        return (
-	                          <label
-	                            key={labelText}
-	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
-	                          >
-	                            <span className="text-sm font-semibold text-slate-900">
-	                              {labelText}
-	                            </span>
-	                            <Input
-	                              type="date"
-	                              value={value}
-	                              onChange={(event) => setter(event.target.value)}
-	                              placeholder="YYYY-MM-DD"
-	                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
-	                              style={{ colorScheme: "light" }}
-	                            />
-	                          </label>
-	                        );
-	                      })}
-	                      <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-	                        <Button type="submit" size="sm" variant="outline" className="whitespace-nowrap">
-	                          Apply
-	                        </Button>
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="outline"
-	                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-	                          onClick={clearAdminDashboardPeriod}
-	                        >
-	                          Clear
-	                        </Button>
-	                      </div>
-	                    </form>
+			                    {/* Period controls moved to the parent Admin Reports header. */}
 	                  </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
 	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
@@ -15151,38 +15147,6 @@ export default function App() {
 	                        <span className="sales-rep-action-meta-value block">
 	                          {adminTaxesByStateCsvDownloadedAt
 	                            ? new Date(adminTaxesByStateCsvDownloadedAt).toLocaleString(
-	                                undefined,
-	                                { timeZone: "America/Los_Angeles" },
-	                              )
-	                            : "—"}
-	                        </span>
-	                      </span>
-	                    </div>
-	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        className="gap-2"
-	                        onClick={() => void refreshAdminTaxesByState()}
-	                        disabled={adminTaxesByStateLoading}
-	                        aria-busy={adminTaxesByStateLoading}
-	                      >
-	                        <RefreshCw
-	                          className={`h-4 w-4 ${
-	                            adminTaxesByStateLoading ? "animate-spin" : ""
-	                          }`}
-	                          aria-hidden="true"
-	                        />
-	                        {adminTaxesByStateLoading ? "Refreshing..." : "Refresh"}
-	                      </Button>
-	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-	                        <span className="sales-rep-action-meta-label block">
-	                          Last refreshed
-	                        </span>
-	                        <span className="sales-rep-action-meta-value block">
-	                          {adminTaxesByStateLastFetchedAt
-	                            ? new Date(adminTaxesByStateLastFetchedAt).toLocaleString(
 	                                undefined,
 	                                { timeZone: "America/Los_Angeles" },
 	                              )
@@ -15309,9 +15273,7 @@ export default function App() {
 			              </div>
 			              )}
             </div>
-          )}
 
-          {isAdmin(user?.role) && (
             <div className="glass-card squircle-xl p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -15320,50 +15282,7 @@ export default function App() {
 	                    <p className="text-sm text-slate-600">
 	                      Product quantities sold plus commission totals (wholesale 10%, retail 20%; house/contact-form split and administrative).
 	                    </p>
-	                    <form
-	                      className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] sm:items-end"
-	                      onSubmit={(event) => {
-	                        event.preventDefault();
-	                        applyAdminDashboardPeriod();
-	                      }}
-	                    >
-	                      {["Start", "End"].map((labelText, index) => {
-	                        const value = index === 0 ? salesRepPeriodStart : salesRepPeriodEnd;
-	                        const setter = index === 0 ? setSalesRepPeriodStart : setSalesRepPeriodEnd;
-	                        return (
-	                          <label
-	                            key={labelText}
-	                            className="flex flex-col gap-2 text-xs font-semibold text-slate-700"
-	                          >
-	                            <span className="text-sm font-semibold text-slate-900">
-	                              {labelText}
-	                            </span>
-	                            <Input
-	                              type="date"
-	                              value={value}
-	                              onChange={(event) => setter(event.target.value)}
-	                              placeholder="YYYY-MM-DD"
-	                              className="date-input block w-full rounded-2xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm font-medium text-slate-900 shadow-[0_10px_30px_-28px_rgba(15,23,42,0.9)] transition duration-150 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
-	                              style={{ colorScheme: "light" }}
-	                            />
-	                          </label>
-	                        );
-	                      })}
-	                      <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-	                        <Button type="submit" size="sm" variant="outline" className="whitespace-nowrap">
-	                          Apply
-	                        </Button>
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="outline"
-	                          className="whitespace-nowrap border border-slate-200/80 text-slate-900 hover:border-slate-300"
-	                          onClick={clearAdminDashboardPeriod}
-	                        >
-	                          Clear
-	                        </Button>
-	                      </div>
-	                    </form>
+	                    {/* Period controls moved to the parent Admin Reports header. */}
 	                    {adminProductsCommissionMeta?.totals && (
 	                      <div className="mt-2 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
 	                        <span>
@@ -15402,41 +15321,6 @@ export default function App() {
 	                          {adminProductsCommissionCsvDownloadedAt
 	                            ? new Date(
 	                                adminProductsCommissionCsvDownloadedAt,
-	                              ).toLocaleString(undefined, {
-	                                timeZone: "America/Los_Angeles",
-	                              })
-	                            : "—"}
-	                        </span>
-	                      </span>
-	                    </div>
-	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        className="gap-2"
-	                        onClick={() => void refreshAdminProductsCommission()}
-	                        disabled={adminProductsCommissionLoading}
-	                        aria-busy={adminProductsCommissionLoading}
-	                      >
-	                        <RefreshCw
-	                          className={`h-4 w-4 ${
-	                            adminProductsCommissionLoading
-	                              ? "animate-spin"
-	                              : ""
-	                          }`}
-	                          aria-hidden="true"
-	                        />
-	                        {adminProductsCommissionLoading ? "Refreshing..." : "Refresh"}
-	                      </Button>
-	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-	                        <span className="sales-rep-action-meta-label block">
-	                          Last refreshed
-	                        </span>
-	                        <span className="sales-rep-action-meta-value block">
-	                          {adminProductsCommissionLastFetchedAt
-	                            ? new Date(
-	                                adminProductsCommissionLastFetchedAt,
 	                              ).toLocaleString(undefined, {
 	                                timeZone: "America/Los_Angeles",
 	                              })
@@ -15691,10 +15575,12 @@ export default function App() {
 	                  </div>
 		            </div>
 		              )}
-	            </div>
-	          )}
-
-	          {hasChartData && (
+		            </div>
+			              </div>
+			            </div>
+			          )}
+	
+		          {hasChartData && (
 	            <div className="sales-rep-combined-chart">
 	              <div className="sales-rep-chart-header">
 	                <div>
@@ -19412,7 +19298,7 @@ export default function App() {
 			                            const start = periodStart ? formatDate(String(periodStart)) : null;
 			                            const end = periodEnd ? formatDate(String(periodEnd)) : null;
 			                            return start && end && start !== "—" && end !== "—"
-			                              ? `${start} - ${end}`
+			                              ? `${start} to ${end}`
 			                              : "All time";
 			                          };
 			                          const formatDateObject = (date?: Date | null) => {
@@ -19431,7 +19317,7 @@ export default function App() {
 			                            ? (() => {
 			                                const start = formatDateObject(salesDoctorCommissionRange?.from || null);
 			                                const end = formatDateObject(salesDoctorCommissionRange?.to || null);
-			                                return start && end ? `${start} - ${end}` : null;
+			                                return start && end ? `${start} to ${end}` : null;
 			                              })()
 			                            : null;
 			                          const filterOrdersForRange = (
@@ -19463,21 +19349,94 @@ export default function App() {
 			                            const adminRow = adminCommissionRows.find(
 			                              (row) =>
 			                                String(row?.id || "") ===
-		                                String(salesDoctorDetail.doctorId || ""),
-		                            );
-		                            const periodLabel = formatPeriodLabel(
-		                              adminProductsCommissionMeta?.periodStart ?? null,
-		                              adminProductsCommissionMeta?.periodEnd ?? null,
-		                            );
-		                            return (
-		                              <p className="text-sm text-slate-600">
-		                                Total Commission:{" "}
-		                                {adminRow
-		                                  ? formatCurrency(Number(adminRow.amount || 0))
-		                                  : "—"}
-		                                {" "}
-		                                <span className="text-slate-500">({periodLabel})</span>
-			                              </p>
+			                                String(salesDoctorDetail.doctorId || ""),
+			                            );
+			                            const periodLabel = formatPeriodLabel(
+			                              adminProductsCommissionMeta?.periodStart ?? null,
+			                              adminProductsCommissionMeta?.periodEnd ?? null,
+			                            );
+			                            return (
+			                              <div className="flex items-center gap-2 flex-wrap">
+			                                <p className="text-sm text-slate-600">
+			                                  Total Commission:{" "}
+			                                  {adminRow
+			                                    ? formatCurrency(Number(adminRow.amount || 0))
+			                                    : "—"}
+			                                </p>
+			                                <Popover.Root
+			                                  open={salesDoctorCommissionPickerOpen}
+			                                  onOpenChange={setSalesDoctorCommissionPickerOpen}
+			                                >
+			                                  <Popover.Trigger asChild>
+			                                    <Button
+			                                      type="button"
+			                                      variant="ghost"
+			                                      size="icon"
+				                                      className="h-8 w-8 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
+				                                      aria-label="Select commission date range"
+				                                    >
+			                                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+			                                    </Button>
+			                                  </Popover.Trigger>
+			                                  <Popover.Portal>
+			                                    <Popover.Content
+			                                      side="bottom"
+			                                      align="start"
+			                                      sideOffset={8}
+				                                      className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+				                                    >
+			                                      <div className="text-sm font-semibold text-slate-800">
+			                                        Commission timeframe
+			                                      </div>
+			                                      <div className="mt-2">
+			                                        <DayPicker
+			                                          mode="range"
+			                                          numberOfMonths={1}
+			                                          selected={salesDoctorCommissionRange}
+			                                          onSelect={(range) => {
+			                                            setSalesDoctorCommissionRange(range);
+			                                            if (range?.from && range?.to) {
+			                                              setSalesRepPeriodStart(formatDateInputValue(range.from));
+			                                              setSalesRepPeriodEnd(formatDateInputValue(range.to));
+			                                              applyAdminDashboardPeriod();
+			                                            }
+			                                          }}
+			                                          defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+			                                        />
+			                                      </div>
+			                                      <div className="mt-3 flex items-center justify-between">
+			                                        <Button
+			                                          type="button"
+			                                          variant="ghost"
+			                                          size="sm"
+			                                          className="text-slate-700"
+			                                          onClick={() => {
+			                                            const defaults = getDefaultSalesBySalesRepPeriod();
+			                                            setSalesDoctorCommissionRange(undefined);
+			                                            setSalesRepPeriodStart(defaults.start);
+			                                            setSalesRepPeriodEnd(defaults.end);
+			                                            applyAdminDashboardPeriod();
+			                                          }}
+			                                        >
+			                                          Default
+			                                        </Button>
+			                                        <Button
+			                                          type="button"
+			                                          variant="outline"
+			                                          size="sm"
+			                                          onClick={() => setSalesDoctorCommissionPickerOpen(false)}
+			                                        >
+			                                          Done
+			                                        </Button>
+			                                      </div>
+			                                      <Popover.Arrow className="fill-white" />
+			                                    </Popover.Content>
+			                                  </Popover.Portal>
+			                                </Popover.Root>
+			                                <span className="text-sm text-slate-500">
+			                                  ({customRangeLabel || periodLabel})
+			                                </span>
+			                              </div>
 			                            );
 			                          }
 	
@@ -19543,12 +19502,9 @@ export default function App() {
 			                            salesRepSalesSummaryMeta?.periodEnd ?? null,
 			                          );
 			                          return (
-			                            <div className="flex items-center gap-2">
+			                            <div className="flex items-center gap-2 flex-wrap">
 			                              <p className="text-sm text-slate-600">
-			                                Total Commission: {formatCurrency(totalCommission)}{" "}
-			                                <span className="text-slate-500">
-			                                  ({customRangeLabel || periodLabel})
-			                                </span>
+			                                Total Commission: {formatCurrency(totalCommission)}
 			                              </p>
 			                              <Popover.Root
 			                                open={salesDoctorCommissionPickerOpen}
@@ -19557,11 +19513,11 @@ export default function App() {
 			                                <Popover.Trigger asChild>
 			                                  <Button
 			                                    type="button"
-			                                    variant="outline"
+                                    variant="ghost"
 			                                    size="icon"
-			                                    className="h-8 w-8 border-slate-200/80 text-slate-700 hover:text-slate-900"
-			                                    aria-label="Select commission date range"
-			                                  >
+				                                    className="h-8 w-8 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
+				                                    aria-label="Select commission date range"
+				                                  >
 			                                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
 			                                  </Button>
 			                                </Popover.Trigger>
@@ -19570,8 +19526,8 @@ export default function App() {
 			                                    side="bottom"
 			                                    align="start"
 			                                    sideOffset={8}
-			                                    className="z-[10000] w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
-			                                  >
+				                                    className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+				                                  >
 			                                    <div className="text-sm font-semibold text-slate-800">
 			                                      Commission timeframe
 			                                    </div>
@@ -19607,6 +19563,9 @@ export default function App() {
 			                                  </Popover.Content>
 			                                </Popover.Portal>
 			                              </Popover.Root>
+			                              <span className="text-sm text-slate-500">
+			                                ({customRangeLabel || periodLabel})
+			                              </span>
 			                            </div>
 			                          );
 			                        })()}
