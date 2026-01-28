@@ -1,6 +1,14 @@
 const { Router } = require('express');
 const orderController = require('../controllers/orderController');
 const { authenticate } = require('../middleware/authenticate');
+const { env } = require('../config/env');
+
+const shouldServeFakeAdminReports = () => {
+  if (env?.nodeEnv === 'production') return false;
+  const flag = (process.env.PEPPRO_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
+  return true;
+};
 
 const router = Router();
 
@@ -11,6 +19,11 @@ router.get('/:orderId/invoice', authenticate, orderController.downloadInvoice);
 router.get('/sales-rep', authenticate, orderController.getOrdersForSalesRep);
 router.get('/sales-rep/:orderId', authenticate, orderController.getSalesRepOrderDetail);
 router.get('/admin/sales-rep-summary', authenticate, orderController.getSalesByRepForAdmin);
+router.get(
+  '/admin/product-sales-commission',
+  shouldServeFakeAdminReports() ? orderController.getProductSalesCommissionForAdmin : authenticate,
+  orderController.getProductSalesCommissionForAdmin,
+);
 router.post('/admin/sync-shipstation', authenticate, orderController.syncShipStationToWoo);
 router.post('/admin/sync-shipstation-statuses', authenticate, orderController.runShipStationStatusSyncNow);
 router.get('/admin/shipstation-sync-status', authenticate, orderController.getShipStationStatusSyncInfo);

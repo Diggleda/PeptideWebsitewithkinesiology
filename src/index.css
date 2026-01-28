@@ -497,7 +497,7 @@ body {
   min-width: 1.15rem;
   min-height: 1.15rem;
   aspect-ratio: 1 / 1;
-  border-radius: var(--squircle-xxs, 0.4rem);
+  border-radius: calc(var(--squircle-xxs, 5px) * 1.4);
   border: 2px solid rgba(148, 163, 184, 0.7);
   background: #fff;
   display: inline-flex;
@@ -6316,9 +6316,9 @@ a[href^="mailto:"]:hover {
   backdrop-filter: blur(42px) saturate(2.1);
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.96) 0%,
-    rgba(245, 252, 255, 0.86) 45%,
-    rgba(232, 246, 255, 0.8) 100%
+    rgba(255, 255, 255, 0.915) 0%,
+    rgba(250, 254, 255, 0.865) 45%,
+    rgba(244, 251, 255, 0.835) 100%
   );
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow:
@@ -6347,7 +6347,7 @@ a[href^="mailto:"]:hover {
       rgba(95, 179, 249, 0.08) 35%,
       rgba(95, 179, 249, 0) 70%
     );
-  opacity: 0.95;
+  opacity: 0.475;
 }
 
 .calendar-popover::after {
@@ -6363,7 +6363,7 @@ a[href^="mailto:"]:hover {
       rgba(255, 255, 255, 0) 75%
     );
   mix-blend-mode: soft-light;
-  opacity: 0.65;
+  opacity: 0.325;
 }
 
 .calendar-popover > * {

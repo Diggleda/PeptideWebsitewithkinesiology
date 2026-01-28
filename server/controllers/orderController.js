@@ -14,6 +14,130 @@ const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 const normalizeOrderToken = (value) => String(value || '').trim().replace(/^#/, '');
 
+const shouldServeFakeAdminReports = () => {
+  if (env?.nodeEnv === 'production') return false;
+  const flag = (process.env.PEPPRO_FAKE_ADMIN_REPORTS || '').trim().toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
+  return true;
+};
+
+const buildFakeProductsCommissionReport = ({ periodStart, periodEnd }) => {
+  const safeDate = (value) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    // Accept YYYY-MM-DD and ISO-ish; reject invalid.
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  };
+
+  const from = safeDate(periodStart);
+  const to = safeDate(periodEnd);
+
+  const productsCatalog = [
+    { name: 'BPC-157 / TB-500 N — 10mg', sku: 'BPC157-TB500-10', productId: 211, basePrice: 126.82 },
+    { name: 'Semaglutide — 5mg', sku: 'SEMA-5', productId: 310, basePrice: 149.0 },
+    { name: 'Tirzepatide — 10mg', sku: 'TIRZ-10', productId: 318, basePrice: 229.0 },
+    { name: 'NAD+ — 500mg', sku: 'NAD-500', productId: 402, basePrice: 189.0 },
+    { name: 'CJC-1295 DAC — 2mg', sku: 'CJC-DAC-2', productId: 512, basePrice: 89.0 },
+    { name: 'Ipamorelin — 5mg', sku: 'IPA-5', productId: 517, basePrice: 79.0 },
+    { name: 'Testosterone Cypionate — 200mg/mL', sku: 'TEST-C-200', productId: 601, basePrice: 59.0 },
+    { name: 'HCG — 5000 IU', sku: 'HCG-5000', productId: 707, basePrice: 79.0 },
+    { name: 'Glutathione — 200mg', sku: 'GLUT-200', productId: 808, basePrice: 69.0 },
+    { name: 'L-Carnitine — 500mg/mL', sku: 'LCAR-500', productId: 901, basePrice: 49.0 },
+  ];
+
+  const seedSource = `${from || 'all'}|${to || 'all'}`;
+  let seed = 0;
+  for (let i = 0; i < seedSource.length; i += 1) {
+    seed = (seed * 31 + seedSource.charCodeAt(i)) >>> 0;
+  }
+  const rand = () => {
+    // LCG: deterministic but "random enough" for UI testing.
+    seed = (1664525 * seed + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+
+  const products = productsCatalog.map((product, idx) => {
+    const quantity = 2 + Math.floor(rand() * 22) + (idx % 3);
+    return {
+      key: product.sku,
+      sku: product.sku,
+      productId: product.productId,
+      variationId: null,
+      name: product.name,
+      quantity,
+    };
+  });
+
+  const makePerson = (id, name, role) => ({
+    id: String(id),
+    name,
+    role,
+  });
+
+  const recipients = [
+    makePerson('1001', 'Lead: Alexis Harper', 'sales_lead'),
+    makePerson('1002', 'Rep: Jordan Kim', 'sales_rep'),
+    makePerson('1003', 'Rep: Taylor Reed', 'sales_rep'),
+    makePerson('admin', 'Admin', 'admin'),
+  ];
+
+  const wholesaleBase = products.reduce((sum, p, idx) => {
+    const price = Number(productsCatalog[idx]?.basePrice || 0);
+    return sum + price * p.quantity * 0.55;
+  }, 0);
+  const retailBase = products.reduce((sum, p, idx) => {
+    const price = Number(productsCatalog[idx]?.basePrice || 0);
+    return sum + price * p.quantity * 0.85;
+  }, 0);
+
+  const commissionRows = recipients.map((recipient, idx) => {
+    const retailShare = 0.12 + idx * 0.03;
+    const wholesaleShare = 0.09 + idx * 0.02;
+    const retailBasePart = retailBase * retailShare;
+    const wholesaleBasePart = wholesaleBase * wholesaleShare;
+    const retailOrders = Math.max(0, Math.round(6 + rand() * 10 - idx));
+    const wholesaleOrders = Math.max(0, Math.round(4 + rand() * 8 - idx));
+    const amount = retailBasePart * 0.2 + wholesaleBasePart * 0.1;
+    return {
+      id: recipient.id,
+      name: recipient.name,
+      role: recipient.role,
+      amount: Math.round(amount * 100) / 100,
+      retailOrders,
+      wholesaleOrders,
+      retailBase: Math.round(retailBasePart * 100) / 100,
+      wholesaleBase: Math.round(wholesaleBasePart * 100) / 100,
+      houseRetailOrders: 0,
+      houseWholesaleOrders: 0,
+      houseRetailBase: 0,
+      houseWholesaleBase: 0,
+      houseRetailCommission: 0,
+      houseWholesaleCommission: 0,
+      specialAdminBonus: recipient.role === 'admin' ? 125 : 0,
+      specialAdminBonusRate: recipient.role === 'admin' ? 0.02 : 0,
+      specialAdminBonusMonthlyCap: recipient.role === 'admin' ? 150 : 0,
+      specialAdminBonusByMonth: recipient.role === 'admin' ? { '2026-01': 125 } : undefined,
+      specialAdminBonusBaseByMonth: recipient.role === 'admin' ? { '2026-01': Math.round(retailBase * 0.02 * 100) / 100 } : undefined,
+    };
+  });
+
+  const commissionTotal = commissionRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const commissionableBase = wholesaleBase + retailBase;
+
+  return {
+    periodStart: from,
+    periodEnd: to,
+    products,
+    commissions: commissionRows,
+    totals: {
+      commissionableBase: Math.round(commissionableBase * 100) / 100,
+      commissionTotal: Math.round(commissionTotal * 100) / 100,
+    },
+    fake: true,
+  };
+};
+
 const extractWpoAccessKey = (wooOrder) => {
   const metaData = Array.isArray(wooOrder?.meta_data) ? wooOrder.meta_data : [];
   if (metaData.length === 0) {
@@ -304,6 +428,20 @@ const getSalesByRepForAdmin = async (req, res, next) => {
   }
 };
 
+const getProductSalesCommissionForAdmin = async (req, res, next) => {
+  try {
+    if (!shouldServeFakeAdminReports()) {
+      return res.status(501).json({ error: 'Report not available on this backend' });
+    }
+    const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
+    const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
+    const payload = buildFakeProductsCommissionReport({ periodStart, periodEnd });
+    return res.json(payload);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const downloadInvoice = async (req, res, next) => {
   try {
     const { orderId } = req.params;
@@ -431,6 +569,7 @@ module.exports = {
   getOrdersForSalesRep,
   getSalesRepOrderDetail,
   getSalesByRepForAdmin,
+  getProductSalesCommissionForAdmin,
   cancelOrder,
   syncShipStationToWoo,
   runShipStationStatusSyncNow,

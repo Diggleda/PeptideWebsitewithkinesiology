@@ -13716,13 +13716,14 @@ export default function App() {
 	                      </div>
 
 	                      <div className="sales-rep-table-wrapper live-users-scroll">
-	                        <div className="flex w-full min-w-[900px] flex-col gap-2">
+	                        <div className="flex w-full min-w-0 flex-col gap-2">
 		                          {liveUsers.length === 0 ? (
-		                            <div className="p-6 text-sm text-slate-500">
+		                            <div className="px-1 py-1.5 text-sm text-slate-500">
 		                              {isSalesLead(user?.role) ? "No users found." : "No clients found."}
 		                            </div>
 	                          ) : (
-		                          liveUsers.map((entry: any) => {
+	                            <div className="flex w-full min-w-[900px] flex-col gap-2">
+		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
 		                        const displayName = entry.name || entry.email || "Doctor";
 		                        const resolveLastSeenMs = () => {
@@ -13884,7 +13885,8 @@ export default function App() {
 			                            </button>
 		                          </div>
 		                        );
-			                          })
+			                          })}
+	                            </div>
 		                          )}
 		                    </div>
 	                  </div>
@@ -14667,13 +14669,14 @@ export default function App() {
                         </div>
 
                         <div className="sales-rep-table-wrapper live-users-scroll">
-                          <div className="flex w-full min-w-[900px] flex-col gap-2">
+                          <div className="flex w-full min-w-0 flex-col gap-2">
 	                            {liveUsers.length === 0 ? (
-	                              <div className="p-6 text-sm text-slate-500">
+	                              <div className="px-1 py-1.5 text-sm text-slate-500">
 	                                No users found.
 	                              </div>
 	                            ) : (
-		                            liveUsers.map((entry) => {
+	                              <div className="flex w-full min-w-[900px] flex-col gap-2">
+		                            {liveUsers.map((entry) => {
                               const role = String(entry?.role || "").toLowerCase().trim();
 		                              const rolePill = (() => {
 		                                if (role === "admin") {
@@ -14838,7 +14841,8 @@ export default function App() {
 
 	                                </div>
 	                              );
-		                            })
+		                            })}
+	                              </div>
                             )}
                           </div>
                         </div>
@@ -15009,7 +15013,7 @@ export default function App() {
                     Click Refresh to load sales.
                   </div>
 	                ) : salesRepSalesSummary.length === 0 ? (
-	                  <div className="p-6 text-sm text-slate-500">
+	                  <div className="px-4 py-3 text-sm text-slate-500">
 	                    No sales recorded yet.
 	                  </div>
 		                ) : (
@@ -15040,37 +15044,38 @@ export default function App() {
 		                            typeof totals.totalOrders === "number" &&
 		                            typeof totals.totalRevenue === "number";
 		                          if (!hasTotals) return null;
-		                          return (
-			                            <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+                          return (
+                            <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 		                              <span>Total Orders: {totals.totalOrders}</span>
 		                              <span>Wholesale: {formatCurrency(Number(totals.wholesaleRevenue) || 0)}</span>
 		                              <span>Retail: {formatCurrency(Number(totals.retailRevenue) || 0)}</span>
 		                            </div>
 		                          );
 		                        })()}
-			                      <div
-			                        className="grid items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-		                        style={{
-		                          gridTemplateColumns:
-		                            "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
-		                        }}
-		                      >
-		                        <div className="whitespace-nowrap">Sales Rep</div>
-		                        <div className="whitespace-nowrap">Email</div>
-		                        <div className="whitespace-nowrap text-right">Orders</div>
-			                        <div className="whitespace-nowrap text-right">Wholesale</div>
-			                        <div className="whitespace-nowrap text-right">Retail</div>
-			                      </div>
-				                      <ul className="divide-y divide-slate-200/70 border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-				                        {salesRepSalesSummary.map((rep) => (
-			                          <li
-		                            key={rep.salesRepId}
-		                            className="grid items-center gap-3 px-4 py-2"
-		                            style={{
-		                              gridTemplateColumns:
-		                                "minmax(200px,1.3fr) minmax(260px,1.8fr) minmax(90px,0.6fr) minmax(120px,0.6fr) minmax(120px,0.6fr)",
-		                            }}
-		                          >
+			                      <div className="w-max">
+			                        <div
+			                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          style={{
+			                            gridTemplateColumns:
+			                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+			                          }}
+			                        >
+			                          <div className="whitespace-nowrap">Sales Rep</div>
+			                          <div className="whitespace-nowrap">Email</div>
+			                          <div className="whitespace-nowrap text-right">Orders</div>
+			                          <div className="whitespace-nowrap text-right">Wholesale</div>
+			                          <div className="whitespace-nowrap text-right">Retail</div>
+			                        </div>
+			                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+			                          {salesRepSalesSummary.map((rep) => (
+			                            <li
+			                              key={rep.salesRepId}
+			                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+			                              style={{
+			                                gridTemplateColumns:
+			                                  "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+			                              }}
+			                            >
 		                            <div className="text-sm font-semibold text-slate-900 min-w-0">
 		                              <button
 		                                type="button"
@@ -15113,9 +15118,10 @@ export default function App() {
 		                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
 		                              {formatCurrency(rep.retailRevenue || 0)}
 		                            </div>
-		                          </li>
-		                        ))}
-		                      </ul>
+			                            </li>
+			                          ))}
+			                        </ul>
+			                      </div>
 		                  </div>
 	                )}
               </div>
@@ -15165,64 +15171,70 @@ export default function App() {
 
 		              {adminTaxesByStateError ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                  <div className="p-6 text-sm text-amber-700 bg-amber-50">
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-amber-700 bg-amber-50">
 			                    {adminTaxesByStateError}
 			                  </div>
 			                </div>
 			              ) : adminTaxesByStateLoading ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                  <div className="p-6 text-sm text-slate-500">Loading taxes…</div>
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">Loading taxes…</div>
 			                </div>
 			              ) : adminTaxesByStateRows.length === 0 ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                  <div className="p-6 text-sm text-slate-500">No tax data for this period.</div>
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">No tax data for this period.</div>
 			                </div>
 			              ) : (
 				              <div className="grid grid-cols-1 gap-4">
 						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
-			                    {adminTaxesByStateMeta?.totals && (
-			                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-			                        <span>Orders: {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}</span>
-			                        <span>Tax: {formatCurrency(Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0))}</span>
+			                    <div className="w-full" style={{ minWidth: 920 }}>
+			                      {adminTaxesByStateMeta?.totals && (
+                        <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+			                          <span>
+			                            Orders:{" "}
+			                            {Number((adminTaxesByStateMeta.totals as any)?.orderCount || 0)}
+			                          </span>
+			                          <span>
+			                            Tax:{" "}
+			                            {formatCurrency(
+			                              Number((adminTaxesByStateMeta.totals as any)?.taxTotal || 0),
+			                            )}
+			                          </span>
+			                        </div>
+			                      )}
+			                      <div className="w-max">
+			                        <div
+			                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          style={{
+			                            gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
+			                          }}
+			                        >
+			                          <div className="whitespace-nowrap">State</div>
+			                          <div className="whitespace-nowrap text-right">Orders</div>
+			                          <div className="whitespace-nowrap text-right">Tax</div>
+			                        </div>
+			                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+			                          {adminTaxesByStateRows.map((row) => (
+			                            <li
+			                              key={row.state}
+			                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+			                              style={{
+			                                gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
+			                              }}
+			                            >
+			                            <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
+			                              {row.state}
+			                            </div>
+			                            <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+			                              {Number(row.orderCount || 0)}
+			                            </div>
+			                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+			                              {formatCurrency(Number(row.taxTotal || 0))}
+			                            </div>
+			                            </li>
+			                          ))}
+			                        </ul>
 			                      </div>
-			                    )}
-						                    <div
-							                      className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 min-w-[920px]"
-							                      style={{
-							                        gridTemplateColumns: "minmax(0,1fr) 110px 180px",
-							                      }}
-							                    >
-				                      <div className="sticky left-0 z-20 bg-[rgba(95,179,249,0.08)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
-				                        State
-				                      </div>
-			                      <div className="text-right">Orders</div>
-			                      <div className="text-right">Tax</div>
 			                    </div>
-					                    <ul className="divide-y divide-slate-200/70 max-h-[320px] overflow-y-auto min-w-[920px]">
-					                      {adminTaxesByStateRows.map((row) => (
-					                        <li
-					                          key={row.state}
-					                          className="grid items-center gap-3 px-4 py-2 min-w-[920px]"
-					                          style={{
-					                            gridTemplateColumns: "minmax(0,1fr) 110px 180px",
-					                          }}
-					                        >
-				                          <div className="min-w-0 overflow-hidden sticky left-0 z-10 bg-[rgba(255,255,255,0.94)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
-				                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
-				                              <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
-				                                {row.state}
-				                              </div>
-				                            </div>
-				                          </div>
-	                          <div className="text-sm text-right text-slate-800 tabular-nums">
-	                            {Number(row.orderCount || 0)}
-	                          </div>
-	                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-	                            {formatCurrency(Number(row.taxTotal || 0))}
-	                          </div>
-	                        </li>
-	                      ))}
-	                    </ul>
 					              </div>
 
 				                  {adminTaxesByStateOrders.length > 0 && (
@@ -15235,44 +15247,50 @@ export default function App() {
 		                            );
 		                          }}
                         >
-			                      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
+			                      <summary className="cursor-pointer select-none flex items-center justify-between gap-1 px-2 py-1 text-sm font-semibold text-slate-900 bg-white/70 border-b-4 border-slate-200/70">
 			                        <span>Order Tax Breakdown</span>
 		                        <span className="rounded-full border border-slate-200/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
                               {adminTaxesByStateBreakdownOpen ? "Collapse" : "Expand"}
                             </span>
 		                      </summary>
+					                      <div className="w-full" style={{ minWidth: 920 }}>
 					                      <div
-					                        className="grid items-center gap-3 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 min-w-[920px]"
-					                        style={{ gridTemplateColumns: "minmax(0,1fr) 180px" }}
+					                        className="grid items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                        style={{
+					                          gridTemplateColumns: "minmax(0,1fr) max-content",
+					                          width: "fit-content",
+					                          minWidth: "240px",
+					                        }}
 					                      >
-				                        <div className="sticky left-0 z-20 bg-[rgba(95,179,249,0.08)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
-				                          Order
-				                        </div>
-				                        <div className="text-right">Tax</div>
-				                      </div>
-				                      <ul className="divide-y divide-slate-200/70 max-h-[260px] overflow-y-auto min-w-[920px]">
-				                        {adminTaxesByStateOrders.map((line) => (
-				                          <li
-				                            key={`${line.orderNumber}-${line.state}`}
-				                            className="grid items-center gap-3 px-4 py-2 min-w-[920px]"
-				                            style={{ gridTemplateColumns: "minmax(0,1fr) 180px" }}
-				                          >
-					                            <div className="min-w-0 overflow-hidden sticky left-0 z-10 bg-[rgba(255,255,255,0.94)] shadow-[10px_0_14px_-14px_rgba(15,23,42,0.65)]">
-					                              <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
-					                                <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+					                          <div className="whitespace-nowrap">Order</div>
+					                          <div className="whitespace-nowrap text-right">Tax</div>
+					                        </div>
+					                        <ul className="w-max border-x border-b border-slate-200/70 max-h-[320px] overflow-y-auto">
+					                          {adminTaxesByStateOrders.map((line) => (
+					                            <li
+					                              key={`${line.orderNumber}-${line.state}`}
+					                              className="grid items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+					                              style={{
+					                                gridTemplateColumns: "minmax(0,1fr) max-content",
+					                                width: "fit-content",
+					                                minWidth: "220px",
+					                              }}
+					                            >
+					                              <div className="min-w-0">
+					                                <div className="text-sm font-semibold text-slate-900 truncate">
 					                                  {line.orderNumber}
 					                                </div>
-				                                <div className="text-xs text-slate-600 whitespace-nowrap">
-				                                  State: {line.state}
-				                                </div>
-				                              </div>
-				                            </div>
-		                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-		                              {formatCurrency(Number(line.taxTotal || 0))}
-		                            </div>
-		                          </li>
-		                        ))}
-		                      </ul>
+					                                <div className="text-xs text-slate-600 truncate">
+					                                  State: {line.state}
+					                                </div>
+					                              </div>
+					                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+					                                {formatCurrency(Number(line.taxTotal || 0))}
+					                              </div>
+					                            </li>
+					                          ))}
+					                        </ul>
+					                      </div>
 		                    </details>
 			                  )}
 			              </div>
@@ -15339,94 +15357,99 @@ export default function App() {
 
 	              {adminProductsCommissionError ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
-			                  <div className="p-4 sm:p-6 text-sm text-amber-700 bg-amber-50">
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-amber-700 bg-amber-50">
 			                    {adminProductsCommissionError}
 			                  </div>
 			                </div>
 			              ) : adminProductsCommissionLoading ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
-			                  <div className="p-4 sm:p-6 text-sm text-slate-500">Loading report…</div>
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">Loading report…</div>
 			                </div>
 			              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
 			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
-			                  <div className="p-4 sm:p-6 text-sm text-slate-500">No data for this period.</div>
+			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">No data for this period.</div>
 			                </div>
 				              ) : (
 					              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold list">
-					                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+					                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Products Sold</span>
 					                    </div>
-						                    <div
-						                      className="grid items-center gap-3 px-3 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] min-w-[920px]"
-						                      style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
-						                    >
-					                      <div>Product</div>
-					                      <div className="text-right">Qty</div>
+					                    <div className="w-full" style={{ minWidth: 920 }}>
+					                      <div className="w-max">
+					                        <div
+					                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                          style={{ gridTemplateColumns: "minmax(0,1fr) max-content" }}
+					                        >
+					                          <div className="whitespace-nowrap">Product</div>
+					                          <div className="whitespace-nowrap text-right">Qty</div>
+					                        </div>
+					                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+					                          {adminProductSalesRows.map((row) => (
+					                            <li
+					                              key={row.key}
+					                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+					                              style={{
+					                                gridTemplateColumns: "minmax(0,1fr) max-content",
+					                              }}
+					                            >
+					                            <div className="min-w-0">
+					                              <div
+					                                className="text-sm font-semibold text-slate-900 truncate"
+					                                title={row.name}
+					                              >
+					                                {row.name}
+					                              </div>
+					                              <div className="text-[11px] leading-tight text-slate-600 truncate">
+					                                {row.sku
+					                                  ? `SKU: ${row.sku}`
+					                                  : row.productId != null
+					                                    ? `Product ID: ${row.productId}`
+					                                    : "—"}
+					                              </div>
+					                            </div>
+					                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+					                              {Number(row.quantity || 0)}
+					                            </div>
+					                            </li>
+					                          ))}
+					                        </ul>
+					                      </div>
 					                    </div>
-						                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto min-w-[920px]">
-						                      {adminProductSalesRows.map((row) => (
-						                        <li
-						                          key={row.key}
-						                          className="grid items-center gap-3 px-3 sm:px-4 py-1.5 min-w-[920px]"
-			                            style={{ gridTemplateColumns: "minmax(0,1fr) 96px" }}
-			                          >
-							                          <div className="min-w-0 overflow-hidden">
-							                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
-							                              <div className="inline-flex items-baseline gap-2 whitespace-nowrap">
-							                                <div
-							                                  className="text-sm font-semibold text-slate-900 whitespace-nowrap"
-							                                  title={row.name}
-							                                >
-							                                  {row.name}
-							                                </div>
-							                                <div className="text-[11px] leading-tight text-slate-600 whitespace-nowrap">
-							                                  {row.sku
-							                                    ? `SKU: ${row.sku}`
-							                                    : row.productId != null
-							                                      ? `Product ID: ${row.productId}`
-							                                      : "—"}
-							                                </div>
-							                              </div>
-							                            </div>
-							                          </div>
-				                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-				                            {Number(row.quantity || 0)}
-			                          </div>
-			                        </li>
-				                      ))}
-				                    </ul>
 						              </div>
 
 						                  <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
-						                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 sm:px-4 py-2 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+						                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Commission</span>
 					                    </div>
-						                    <div
-						                      className="grid items-center gap-3 px-3 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 border-b border-slate-200/70 bg-[rgba(95,179,249,0.08)] min-w-[920px]"
-						                      style={{ gridTemplateColumns: "minmax(0,1fr) 140px" }}
-						                    >
-					                      <div>Recipient</div>
-					                      <div className="text-right">Amount</div>
-					                    </div>
-						                    <ul className="divide-y divide-slate-200/70 max-h-[420px] overflow-y-auto min-w-[920px]">
-						                      {adminCommissionRows.map((row) => (
-						                        <li
-						                          key={row.id}
-						                          className="grid items-center gap-3 px-3 sm:px-4 py-1.5 min-w-[920px]"
-			                            style={{ gridTemplateColumns: "minmax(0,1fr) 140px" }}
-			                          >
-						                          <div className="min-w-0 overflow-hidden">
-							                            <div className="w-full min-w-0 overflow-x-auto no-scrollbar">
-							                              <div
-							                                className="text-sm font-semibold text-slate-900 whitespace-nowrap"
-							                                title={row.name}
-							                              >
-							                                {row.name}
-							                              </div>
-							                            </div>
-							                            <div className="mt-0.5 w-full min-w-0 overflow-x-auto no-scrollbar">
-							                              <div className="inline-flex flex-nowrap items-center gap-x-2 gap-y-0 text-[11px] leading-tight text-slate-600 whitespace-nowrap">
+						                    <div className="w-full" style={{ minWidth: 920 }}>
+						                      <div className="w-max">
+						                        <div
+						                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+						                          style={{
+						                            gridTemplateColumns: "minmax(0,1fr) max-content",
+						                          }}
+						                        >
+						                          <div className="whitespace-nowrap">Recipient</div>
+						                          <div className="whitespace-nowrap text-right">Amount</div>
+						                        </div>
+						                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+						                          {adminCommissionRows.map((row) => (
+						                            <li
+						                              key={row.id}
+						                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+						                              style={{
+						                                gridTemplateColumns: "minmax(0,1fr) max-content",
+						                              }}
+						                            >
+						                            <div className="min-w-0">
+						                              <div
+						                                className="text-sm font-semibold text-slate-900 truncate"
+						                                title={row.name}
+						                              >
+						                                {row.name}
+						                              </div>
+						                              <div className="mt-0.5 text-[11px] leading-tight text-slate-600 whitespace-nowrap overflow-x-auto no-scrollbar">
 								                              {(() => {
 					                                const retailOrders = Number(row.retailOrders || 0);
 					                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
@@ -15568,15 +15591,16 @@ export default function App() {
 			                                  </>
 			                                );
 								                              })()}
-							                              </div>
-							                            </div>
-						                          </div>
-		                          <div className="text-sm text-right font-semibold text-slate-900 tabular-nums">
-		                            {formatCurrency(Number(row.amount || 0))}
-		                          </div>
-	                        </li>
-	                      ))}
-	                    </ul>
+						                              </div>
+						                            </div>
+						                            <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+						                              {formatCurrency(Number(row.amount || 0))}
+						                            </div>
+						                            </li>
+						                          ))}
+						                        </ul>
+						                      </div>
+						                    </div>
 	                  </div>
 		            </div>
 		              )}
