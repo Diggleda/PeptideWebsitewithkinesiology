@@ -61,6 +61,33 @@ const isRep = (role) => {
     normalized === 'sales-lead'
   );
 };
+
+const isSalesLead = (role) => {
+  const normalized = normalizeRole(role);
+  return (
+    normalized === 'sales_lead' ||
+    normalized === 'saleslead' ||
+    normalized === 'sales-lead'
+  );
+};
+
+const ensureSalesLeadOrAdmin = (user, context = 'unknown') => {
+  const role = normalizeRole(user?.role);
+  if (user && (role === 'admin' || isSalesLead(role))) {
+    return;
+  }
+  logger.warn(
+    {
+      context,
+      userId: user?.id || null,
+      role: user?.role || null,
+    },
+    'Sales lead or admin access required but not satisfied',
+  );
+  const error = new Error('Sales lead or admin access required');
+  error.status = 403;
+  throw error;
+};
 const ensureDoctor = (user, context = 'unknown') => {
   const role = normalizeRole(user?.role);
   if (!user || (role !== 'doctor' && role !== 'test_doctor' && role !== 'admin')) {
@@ -665,6 +692,47 @@ const getSalesRepDashboard = async (req, res, next) => {
       codes,
       users: usersWithOrders,
       statuses: REFERRAL_STATUSES,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getSalesRepById = (req, res, next) => {
+  try {
+    ensureSalesLeadOrAdmin(req.user, 'getSalesRepById');
+    const salesRepId = String(req.params?.salesRepId || '').trim();
+    if (!salesRepId) {
+      return res.status(400).json({ error: 'salesRepId is required' });
+    }
+
+    const rep = salesRepRepository.findById(salesRepId);
+    if (!rep) {
+      return res.status(404).json({ error: 'Sales rep not found' });
+    }
+
+    const users = userRepository.getAll();
+    const normalizedRepId = String(rep.id || rep.salesRepId || salesRepId);
+    const byRepId =
+      users.find(
+        (candidate) =>
+          String(candidate?.salesRepId || '') === normalizedRepId ||
+          String(candidate?.sales_rep_id || '') === normalizedRepId,
+      ) || null;
+
+    const legacyUserId = rep?.legacyUserId != null ? String(rep.legacyUserId).trim() : '';
+    const byLegacy = legacyUserId ? userRepository.findById(legacyUserId) : null;
+    const byEmail = rep?.email ? userRepository.findByEmail(rep.email) : null;
+    const resolvedUserId = (byRepId?.id || byLegacy?.id || byEmail?.id || null);
+
+    return res.status(200).json({
+      salesRep: {
+        id: normalizedRepId,
+        name: rep?.name || null,
+        email: rep?.email || null,
+        role: rep?.role || null,
+        userId: resolvedUserId,
+      },
     });
   } catch (error) {
     next(error);
@@ -1454,6 +1522,7 @@ module.exports = {
   getDoctorSummary,
   getDoctorLedger,
   getSalesRepDashboard,
+  getSalesRepById,
   createReferralCode,
   createManualProspect,
   deleteManualProspect,

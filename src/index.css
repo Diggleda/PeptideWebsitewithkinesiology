@@ -5983,6 +5983,15 @@ body.account-modal-open .info-focus-overlay {
   transition-timing-function: ease !important;
 }
 
+.logout-thanks-modal,
+.logout-thanks-overlay {
+  transition-property: opacity !important;
+  transition-duration: var(--logout-thanks-ms, 350ms) !important;
+  transition-timing-function: ease !important;
+  animation: none !important;
+  transform: none !important;
+}
+
 [data-radix-dialog-overlay][data-state="open"],
 [data-radix-dialog-content][data-state="open"],
 [data-slot="dialog-overlay"][data-state="open"],

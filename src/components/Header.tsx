@@ -901,6 +901,7 @@ export function Header({
   const logoutThanksRafRef = useRef<number | null>(null);
   const logoutThanksLogoutTriggeredRef = useRef(false);
   const logoutThanksPendingFadeOutRef = useRef(false);
+  const logoutThanksLogoutPromiseRef = useRef<Promise<void> | null>(null);
   const [trackingForm, setTrackingForm] = useState({ orderId: '', email: '' });
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
@@ -2089,17 +2090,18 @@ export function Header({
     }
   }, []);
 
-  const triggerLogout = useCallback(
-    (options?: { closeModal?: boolean }) => {
-      if (logoutThanksLogoutTriggeredRef.current) return;
-      logoutThanksLogoutTriggeredRef.current = true;
-      if (options?.closeModal !== false) {
-        setLogoutThanksOpen(false);
-      }
-      Promise.resolve(onLogout());
-    },
-    [onLogout],
-  );
+  const triggerLogoutOnce = useCallback(() => {
+    if (logoutThanksLogoutPromiseRef.current) {
+      return logoutThanksLogoutPromiseRef.current;
+    }
+    logoutThanksLogoutTriggeredRef.current = true;
+    const promise = Promise.resolve(onLogout()).finally(() => {
+      // Keep the promise ref cleared so future logouts can run if needed.
+      logoutThanksLogoutPromiseRef.current = null;
+    });
+    logoutThanksLogoutPromiseRef.current = promise;
+    return promise;
+  }, [onLogout]);
 
   const finishLogoutModalClose = useCallback(() => {
     setLogoutThanksOpen(false);
@@ -2108,22 +2110,30 @@ export function Header({
 
   const beginLogoutFadeOut = useCallback(
     (sequence: number, durationMs: number) => {
-      if (logoutThanksLogoutTriggeredRef.current) return;
+      if (logoutThanksPendingFadeOutRef.current) return;
       logoutThanksPendingFadeOutRef.current = true;
       setLogoutThanksTransitionMs(durationMs);
-      setLogoutThanksOpacity(0);
-      triggerLogout({ closeModal: false });
-      logoutThanksTimeoutsRef.current.push(
-        window.setTimeout(() => {
+
+      // Keep the modal visible while logout runs. Fade out only once logout completes.
+      void triggerLogoutOnce()
+        .catch(() => undefined)
+        .finally(() => {
           if (logoutThanksSequenceRef.current !== sequence) return;
-          finishLogoutModalClose();
-        }, durationMs),
-      );
+          setLogoutThanksOpacity(0);
+          logoutThanksTimeoutsRef.current.push(
+            window.setTimeout(() => {
+              if (logoutThanksSequenceRef.current !== sequence) return;
+              finishLogoutModalClose();
+            }, durationMs),
+          );
+        });
     },
-    [finishLogoutModalClose, triggerLogout],
+    [finishLogoutModalClose, triggerLogoutOnce],
   );
 
   const handleLogoutClick = useCallback(() => {
+    const fadeInMs = 350;
+    const fadeOutMs = 350;
     clearLogoutThanksTimers();
     logoutThanksLogoutTriggeredRef.current = false;
     logoutThanksPendingFadeOutRef.current = false;
@@ -2131,7 +2141,7 @@ export function Header({
     const sequence = logoutThanksSequenceRef.current;
     setWelcomeOpen(false);
     setLoginOpen(false);
-    setLogoutThanksTransitionMs(350);
+    setLogoutThanksTransitionMs(fadeInMs);
     setLogoutThanksOpacity(0);
     setLogoutThanksOpen(true);
     logoutThanksRafRef.current = window.requestAnimationFrame(() => {
@@ -2141,7 +2151,7 @@ export function Header({
     logoutThanksTimeoutsRef.current.push(
       window.setTimeout(() => {
         if (logoutThanksSequenceRef.current !== sequence) return;
-        beginLogoutFadeOut(sequence, 350);
+        beginLogoutFadeOut(sequence, fadeOutMs);
       }, 5000),
     );
   }, [beginLogoutFadeOut, clearLogoutThanksTimers]);
@@ -2158,10 +2168,26 @@ export function Header({
       logoutThanksSequenceRef.current += 1;
       const sequence = logoutThanksSequenceRef.current;
       setLogoutThanksOpen(true);
-      beginLogoutFadeOut(sequence, 1000);
+      beginLogoutFadeOut(sequence, 350);
     },
     [beginLogoutFadeOut, clearLogoutThanksTimers],
   );
+
+  useEffect(() => {
+    const handleLogoutWithThanks = () => {
+      handleLogoutClick();
+    };
+    window.addEventListener(
+      "peppro:logout-with-thanks",
+      handleLogoutWithThanks as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "peppro:logout-with-thanks",
+        handleLogoutWithThanks as EventListener,
+      );
+    };
+  }, [handleLogoutClick]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -4194,7 +4220,8 @@ export function Header({
       <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
         <DialogContent
           hideCloseButton
-          className="duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+          className="logout-thanks-modal duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+          overlayClassName="logout-thanks-overlay"
           onTransitionEnd={(event) => {
             if (event.propertyName !== 'opacity') return;
             if (!logoutThanksPendingFadeOutRef.current) return;
@@ -4205,7 +4232,8 @@ export function Header({
 	            margin: 'auto',
 	            maxWidth: 'min(32rem, calc(100vw - 2rem))',
 	            opacity: logoutThanksOpacity,
-	            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
+              // Use a CSS var so we can override global `!important` transition rules.
+              ["--logout-thanks-ms" as any]: `${logoutThanksTransitionMs}ms`,
 	            transform: 'none',
 	          }}
 	          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10"
@@ -4214,7 +4242,7 @@ export function Header({
             backdropFilter: 'blur(22px) saturate(1.35)',
             WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
             opacity: logoutThanksOpacity,
-            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
+            ["--logout-thanks-ms" as any]: `${logoutThanksTransitionMs}ms`,
           }}
         >
           <VisuallyHidden>

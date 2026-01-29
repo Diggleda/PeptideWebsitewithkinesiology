@@ -1651,6 +1651,16 @@ export const referralAPI = {
     return fetchWithAuth(url);
   },
 
+  getSalesRepById: async (salesRepId: string) => {
+    if (!salesRepId) {
+      throw new Error('salesRepId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/admin/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      { method: 'GET' },
+    );
+  },
+
   createReferralCode: async (referralId: string) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/referrals/code`, {
       method: 'POST',

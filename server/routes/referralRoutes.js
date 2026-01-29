@@ -10,6 +10,7 @@ router.get('/doctor/summary', authenticate, referralController.getDoctorSummary)
 router.get('/doctor/ledger', authenticate, referralController.getDoctorLedger);
 
 router.get('/admin/dashboard', authenticate, referralController.getSalesRepDashboard);
+router.get('/admin/sales-reps/:salesRepId', authenticate, referralController.getSalesRepById);
 router.post('/admin/referrals/code', authenticate, referralController.createReferralCode);
 router.post('/admin/manual', authenticate, referralController.createManualProspect);
 router.delete('/admin/manual/:referralId', authenticate, referralController.deleteManualProspect);

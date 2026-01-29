@@ -4909,10 +4909,19 @@ export default function App() {
 	  >(undefined);
 	  const [salesDoctorCommissionPickerOpen, setSalesDoctorCommissionPickerOpen] =
 	    useState(false);
-	  const [salesDoctorOwnerRepProfiles, setSalesDoctorOwnerRepProfiles] = useState<
-	    Record<string, { id: string; name: string; email: string | null; role: string | null }>
-	  >({});
-	  const salesDoctorOwnerRepFetchInFlightRef = useRef<Set<string>>(new Set());
+		  const [salesDoctorOwnerRepProfiles, setSalesDoctorOwnerRepProfiles] = useState<
+		    Record<
+		      string,
+		      {
+		        id: string;
+		        name: string;
+		        email: string | null;
+		        role: string | null;
+		        userId?: string | null;
+		      }
+		    >
+		  >({});
+		  const salesDoctorOwnerRepFetchInFlightRef = useRef<Set<string>>(new Set());
 	  const [salesDoctorCommissionFromReport, setSalesDoctorCommissionFromReport] =
 	    useState<number | null>(null);
 	  const [salesDoctorCommissionFromReportLoading, setSalesDoctorCommissionFromReportLoading] =
@@ -4938,25 +4947,30 @@ export default function App() {
 	    if (salesDoctorOwnerRepProfiles[ownerId]) return;
 	    if (salesDoctorOwnerRepFetchInFlightRef.current.has(ownerId)) return;
 
-	    salesDoctorOwnerRepFetchInFlightRef.current.add(ownerId);
-	    (async () => {
-	      try {
-	        const resp = (await settingsAPI.getAdminUserProfile(ownerId)) as any;
-	        const profile = resp?.user || null;
-	        const name =
-	          profile?.name ||
-	          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim() ||
-	          profile?.email ||
-	          `User ${ownerId}`;
-	        const email = typeof profile?.email === "string" ? profile.email : null;
-	        const role = typeof profile?.role === "string" ? profile.role : null;
-	        setSalesDoctorOwnerRepProfiles((current) => ({
-	          ...current,
-	          [ownerId]: { id: ownerId, name, email, role },
-	        }));
-	      } catch {
-	        // Leave missing; UI will show ID fallback.
-	      } finally {
+		    salesDoctorOwnerRepFetchInFlightRef.current.add(ownerId);
+		    (async () => {
+		      try {
+		        const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
+		        const profile = resp?.salesRep || resp?.sales_rep || null;
+		        const name =
+		          profile?.name ||
+		          profile?.email ||
+		          `Sales Rep ${ownerId}`;
+		        const email = typeof profile?.email === "string" ? profile.email : null;
+		        const role = typeof profile?.role === "string" ? profile.role : null;
+		        const userId =
+		          typeof profile?.userId === "string"
+		            ? profile.userId
+		            : profile?.userId != null
+		              ? String(profile.userId)
+		              : null;
+		        setSalesDoctorOwnerRepProfiles((current) => ({
+		          ...current,
+		          [ownerId]: { id: ownerId, name, email, role, userId },
+		        }));
+		      } catch {
+		        // Leave missing; UI will show ID fallback.
+		      } finally {
 	        salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
 	      }
 	    })();
@@ -18092,7 +18106,15 @@ export default function App() {
                           <Button
                             type="button"
                             size="lg"
-                            onClick={handleLogout}
+                            onClick={() => {
+                              if (typeof window !== "undefined") {
+                                window.dispatchEvent(
+                                  new CustomEvent("peppro:logout-with-thanks"),
+                                );
+                              } else {
+                                handleLogout();
+                              }
+                            }}
                             className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                             style={{ backgroundColor: "rgb(95, 179, 249)" }}
                           >
@@ -19504,37 +19526,48 @@ export default function App() {
 				                          if (!ownerId) {
 				                            return "Sales Rep: Unassigned";
 				                          }
-				                          const ownerProfile =
-				                            salesDoctorOwnerRepProfiles[ownerId] || null;
-				                          const name = ownerProfile?.name || null;
-				                          const email = ownerProfile?.email || null;
-				                          const role = normalizeRole(
-				                            ownerProfile?.role || "sales_rep",
-				                          );
-				                          const content = name || ownerId;
-				                          const resolved = Boolean(name);
-				                          return (
-				                            <span>
-				                              <span className="text-slate-500">Sales Rep: </span>
-				                              <button
-				                                type="button"
-				                                onClick={() =>
-				                                  openLiveUserDetail({
-				                                    id: ownerId,
-				                                    name: name || undefined,
-				                                    email: email || undefined,
-				                                    role: role || "sales_rep",
-				                                  })
-				                                }
-				                                className={`${resolved ? "text-slate-700" : "text-slate-500"} hover:underline`}
-				                                title="Open sales rep"
-				                              >
-				                                {content}
-				                              </button>
-				                            </span>
-				                          );
-				                        })()}
-				                      </div>
+					                          const ownerProfile =
+					                            salesDoctorOwnerRepProfiles[ownerId] || null;
+					                          const name = ownerProfile?.name || null;
+					                          const email = ownerProfile?.email || null;
+					                          const userId = ownerProfile?.userId || null;
+					                          const role = normalizeRole(
+					                            ownerProfile?.role || "sales_rep",
+					                          );
+					                          const content = name || ownerId;
+					                          const resolved = Boolean(name);
+					                          const canOpen = Boolean(userId);
+					                          return (
+					                            <span>
+					                              <span className="text-slate-500">Sales Rep: </span>
+					                              {canOpen ? (
+					                                <button
+					                                  type="button"
+					                                  onClick={() =>
+					                                    openLiveUserDetail({
+					                                      id: userId,
+					                                      name: name || undefined,
+					                                      email: email || undefined,
+					                                      role: role || "sales_rep",
+					                                    })
+					                                  }
+					                                  className={`${resolved ? "text-slate-700" : "text-slate-500"} hover:underline`}
+					                                  title="Open sales rep"
+					                                >
+					                                  {content}
+					                                </button>
+					                              ) : (
+					                                <span
+					                                  className={`${resolved ? "text-slate-700" : "text-slate-500"}`}
+					                                  title="Sales rep user profile unavailable"
+					                                >
+					                                  {content}
+					                                </span>
+					                              )}
+					                            </span>
+					                          );
+					                        })()}
+					                      </div>
 				                    )}
 				                </DialogTitle>
 				                <DialogDescription>Account details</DialogDescription>
