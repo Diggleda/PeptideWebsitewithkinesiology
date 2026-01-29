@@ -204,6 +204,51 @@ def admin_dashboard():
     return handle_action(action)
 
 
+@blueprint.get("/admin/sales-reps/<sales_rep_id>")
+@require_auth
+def admin_sales_rep_by_id(sales_rep_id: str):
+
+    def action():
+        user = _ensure_user()
+        token_role = (g.current_user.get("role") or "").lower()
+        role = (user.get("role") or "").lower()
+        is_admin_like = token_role == "admin" or role == "admin"
+        is_sales_lead = token_role in ("sales_lead", "saleslead", "sales-lead")
+        if not (is_admin_like or is_sales_lead):
+            raise _error("ADMIN_ACCESS_REQUIRED", 403)
+
+        rep_id = (sales_rep_id or "").strip()
+        if not rep_id:
+            raise _error("SALES_REP_ID_REQUIRED", 400)
+
+        rep = sales_rep_repository.find_by_id(rep_id)
+        if not rep:
+            raise _error("SALES_REP_NOT_FOUND", 404)
+
+        resolved_user_id = None
+        legacy_user_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+        if legacy_user_id:
+            candidate = user_repository.find_by_id(str(legacy_user_id))
+            if candidate:
+                resolved_user_id = candidate.get("id")
+        if not resolved_user_id and rep.get("email"):
+            candidate = user_repository.find_by_email(str(rep.get("email")))
+            if candidate:
+                resolved_user_id = candidate.get("id")
+
+        return {
+            "salesRep": {
+                "id": rep.get("id"),
+                "name": rep.get("name"),
+                "email": rep.get("email"),
+                "role": rep.get("role"),
+                "userId": resolved_user_id,
+            }
+        }
+
+    return handle_action(action)
+
+
 @blueprint.get("/admin/referrals")
 @require_auth
 def admin_referrals():

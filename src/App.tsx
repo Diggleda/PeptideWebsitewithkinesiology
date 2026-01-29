@@ -4958,19 +4958,60 @@ export default function App() {
 		      typeof salesDoctorDetail?.ownerSalesRepEmail === "string"
 		        ? salesDoctorDetail.ownerSalesRepEmail.trim()
 		        : "";
-		    if (localName || localEmail) {
-		      setSalesDoctorOwnerRepProfiles((current) => ({
-		        ...current,
-		        [ownerId]: {
-		          id: ownerId,
-		          name: localName || null,
-		          email: localEmail || null,
-		          role: "sales_rep",
-		          userId: null,
-		        },
-		      }));
-		    }
-		    salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
+		    (async () => {
+		      try {
+		        if (localName || localEmail) {
+		          setSalesDoctorOwnerRepProfiles((current) => ({
+		            ...current,
+		            [ownerId]: {
+		              id: ownerId,
+		              name: localName || null,
+		              email: localEmail || null,
+		              role: "sales_rep",
+		              userId: null,
+		            },
+		          }));
+		          return;
+		        }
+
+		        const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
+		        const profile = resp?.salesRep || resp?.sales_rep || null;
+		        if (!profile) return;
+		        const nameCandidate =
+		          profile?.name ||
+		          [profile?.firstName, profile?.lastName]
+		            .filter(Boolean)
+		            .join(" ")
+		            .trim() ||
+		          "";
+		        const resolvedName = nameCandidate.trim() ? nameCandidate.trim() : null;
+		        const resolvedEmail =
+		          typeof profile?.email === "string" ? profile.email : null;
+		        const role =
+		          typeof profile?.role === "string" ? profile.role : "sales_rep";
+		        const resolvedUserId =
+		          typeof profile?.userId === "string"
+		            ? profile.userId
+		            : profile?.userId != null
+		              ? String(profile.userId)
+		              : null;
+		        if (!resolvedName && !resolvedEmail) return;
+		        setSalesDoctorOwnerRepProfiles((current) => ({
+		          ...current,
+		          [ownerId]: {
+		            id: ownerId,
+		            name: resolvedName,
+		            email: resolvedEmail,
+		            role,
+		            userId: resolvedUserId,
+		          },
+		        }));
+		      } catch {
+		        // ignore; UI will show ID fallback
+		      } finally {
+		        salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
+		      }
+		    })();
 		  }, [
 		    salesDoctorDetail?.doctorId,
 		    salesDoctorDetail?.ownerSalesRepId,
@@ -9281,17 +9322,20 @@ export default function App() {
         salesRepId: salesRepId || null,
       });
       let orders: AccountOrderSummary[] = [];
-      const doctorLookup = new Map<
-        string,
-        {
-          name: string;
-          email?: string | null;
-          profileImageUrl?: string | null;
-          phone?: string | null;
-          leadType?: string | null;
-          leadTypeSource?: string | null;
-          leadTypeLockedAt?: string | null;
-          address1?: string | null;
+	      const doctorLookup = new Map<
+	        string,
+	        {
+	          name: string;
+	          email?: string | null;
+	          profileImageUrl?: string | null;
+	          phone?: string | null;
+	          salesRepId?: string | null;
+	          salesRepName?: string | null;
+	          salesRepEmail?: string | null;
+	          leadType?: string | null;
+	          leadTypeSource?: string | null;
+	          leadTypeLockedAt?: string | null;
+	          address1?: string | null;
           address2?: string | null;
           city?: string | null;
           state?: string | null;
@@ -9318,28 +9362,46 @@ export default function App() {
           : Array.isArray(respObj.users)
             ? respObj.users
             : [];
-        doctors.forEach((doc: any) => {
-          const id = doc.id || doc.doctorId || doc.userId || doc.accountId || doc.account_id;
-          if (!id) return;
-          doctorLookup.set(String(id), {
-            name:
-              doc.name ||
-              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
-              doc.email ||
-              "Doctor",
-            email: doc.email || doc.doctorEmail || doc.userEmail || null,
-            profileImageUrl:
-              doc.profileImageUrl || doc.profile_image_url || null,
-            phone:
-              doc.phone ||
-              doc.phoneNumber ||
-              doc.phone_number ||
-              doc.contactPhone ||
-              null,
-            leadType: doc.leadType || doc.lead_type || null,
-            leadTypeSource: doc.leadTypeSource || doc.lead_type_source || null,
-            leadTypeLockedAt: doc.leadTypeLockedAt || doc.lead_type_locked_at || null,
-            address1: doc.address1 || doc.address_1 || null,
+	        doctors.forEach((doc: any) => {
+	          const id = doc.id || doc.doctorId || doc.userId || doc.accountId || doc.account_id;
+	          if (!id) return;
+	          doctorLookup.set(String(id), {
+	            name:
+	              doc.name ||
+	              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
+	              doc.email ||
+	              "Doctor",
+	            email: doc.email || doc.doctorEmail || doc.userEmail || null,
+	            profileImageUrl:
+	              doc.profileImageUrl || doc.profile_image_url || null,
+	            phone:
+	              doc.phone ||
+	              doc.phoneNumber ||
+	              doc.phone_number ||
+	              doc.contactPhone ||
+	              null,
+	            salesRepId:
+	              doc.salesRepId ||
+	              doc.sales_rep_id ||
+	              doc.doctorSalesRepId ||
+	              doc.doctor_sales_rep_id ||
+	              null,
+	            salesRepName:
+	              doc.salesRepName ||
+	              doc.sales_rep_name ||
+	              doc.doctorSalesRepName ||
+	              doc.doctor_sales_rep_name ||
+	              null,
+	            salesRepEmail:
+	              doc.salesRepEmail ||
+	              doc.sales_rep_email ||
+	              doc.doctorSalesRepEmail ||
+	              doc.doctor_sales_rep_email ||
+	              null,
+	            leadType: doc.leadType || doc.lead_type || null,
+	            leadTypeSource: doc.leadTypeSource || doc.lead_type_source || null,
+	            leadTypeLockedAt: doc.leadTypeLockedAt || doc.lead_type_locked_at || null,
+	            address1: doc.address1 || doc.address_1 || null,
             address2: doc.address2 || doc.address_2 || null,
             city: doc.city || null,
             state: doc.state || null,
@@ -9831,7 +9893,7 @@ export default function App() {
         ].filter((p) => typeof p === "string" && p.trim().length > 0);
         return parts.length > 0 ? parts.join("\n") : null;
       })();
-      const doctorPhone = doctorInfo?.phone || null;
+	      const doctorPhone = doctorInfo?.phone || null;
       const doctorNameFromOrder =
         doctorName ||
         [order?.billing?.firstName, order?.billing?.lastName]
@@ -9846,6 +9908,7 @@ export default function App() {
 	        (order as any)?.billing_email ||
 	        null;
 	      const ownerSalesRepId =
+	        doctorInfo?.salesRepId ||
 	        (order as any)?.doctorSalesRepId ||
 	        (order as any)?.doctor_sales_rep_id ||
 	        (order as any)?.salesRepId ||
@@ -9853,6 +9916,7 @@ export default function App() {
 	        (order as any)?.salesRep?.id ||
 	        null;
 	      const ownerSalesRepName =
+	        doctorInfo?.salesRepName ||
 	        (order as any)?.doctorSalesRepName ||
 	        (order as any)?.doctor_sales_rep_name ||
 	        (order as any)?.salesRepName ||
@@ -9860,6 +9924,7 @@ export default function App() {
 	        (order as any)?.salesRep?.name ||
 	        null;
 	      const ownerSalesRepEmail =
+	        doctorInfo?.salesRepEmail ||
 	        (order as any)?.doctorSalesRepEmail ||
 	        (order as any)?.doctor_sales_rep_email ||
 	        (order as any)?.salesRepEmail ||
@@ -19590,11 +19655,89 @@ export default function App() {
 					                                  {content}
 					                                </button>
 					                              ) : (
-					                                <span
-					                                  className={`${resolved ? "text-slate-700" : "text-slate-500"}`}
-					                                  title="Sales rep user profile unavailable"
-					                                >
-					                                  {content}
+					                                <span className="inline-flex items-center gap-2">
+					                                  <span
+					                                    className={`${resolved ? "text-slate-700" : "text-slate-500"}`}
+					                                    title="Sales rep user profile unavailable"
+					                                  >
+					                                    {content}
+					                                  </span>
+					                                  {!resolved && (
+					                                    <button
+					                                      type="button"
+					                                      onClick={async () => {
+					                                        try {
+					                                          const doctorId = String(
+					                                            salesDoctorDetail?.doctorId || "",
+					                                          );
+					                                          const doctorMeta =
+					                                            (doctorId &&
+					                                              salesTrackingDoctors?.get?.(doctorId)) ||
+					                                            null;
+					                                          const firstOrder =
+					                                            Array.isArray(salesDoctorDetail?.orders) &&
+					                                            salesDoctorDetail.orders.length > 0
+					                                              ? (salesDoctorDetail.orders[0] as any)
+					                                              : null;
+					                                          const payload = {
+					                                            ownerId,
+					                                            doctorId,
+					                                            doctorMeta: doctorMeta
+					                                              ? {
+					                                                  salesRepId:
+					                                                    (doctorMeta as any)?.salesRepId || null,
+					                                                  salesRepName:
+					                                                    (doctorMeta as any)?.salesRepName || null,
+					                                                  salesRepEmail:
+					                                                    (doctorMeta as any)?.salesRepEmail || null,
+					                                                }
+					                                              : null,
+					                                            firstOrder: firstOrder
+					                                              ? {
+					                                                  id: firstOrder?.id || null,
+					                                                  number: firstOrder?.number || null,
+					                                                  userId: firstOrder?.userId || null,
+					                                                  doctorSalesRepId:
+					                                                    firstOrder?.doctorSalesRepId ||
+					                                                    firstOrder?.doctor_sales_rep_id ||
+					                                                    null,
+					                                                  doctorSalesRepName:
+					                                                    firstOrder?.doctorSalesRepName ||
+					                                                    firstOrder?.doctor_sales_rep_name ||
+					                                                    null,
+					                                                  salesRepId:
+					                                                    firstOrder?.salesRepId ||
+					                                                    firstOrder?.sales_rep_id ||
+					                                                    null,
+					                                                  salesRepName:
+					                                                    firstOrder?.salesRepName ||
+					                                                    firstOrder?.sales_rep_name ||
+					                                                    null,
+					                                                  salesRep:
+					                                                    firstOrder?.salesRep ||
+					                                                    firstOrder?.sales_rep ||
+					                                                    null,
+					                                                }
+					                                              : null,
+					                                          };
+					                                          await navigator.clipboard.writeText(
+					                                            JSON.stringify(payload, null, 2),
+					                                          );
+					                                          toast.success("Copied sales rep debug.");
+					                                        } catch (error) {
+					                                          toast.error("Could not copy debug.");
+					                                          console.warn(
+					                                            "[Sales Rep] Copy debug failed",
+					                                            error,
+					                                          );
+					                                        }
+					                                      }}
+					                                      className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+					                                      title="Copy debug info"
+					                                    >
+					                                      Copy debug
+					                                    </button>
+					                                  )}
 					                                </span>
 					                              )}
 					                            </span>
