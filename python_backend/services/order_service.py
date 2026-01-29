@@ -1640,6 +1640,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             "email": doc.get("email"),
             "phone": doc.get("phone"),
             "profileImageUrl": doc.get("profileImageUrl"),
+            "salesRepId": str(doc.get("salesRepId") or doc.get("sales_rep_id") or "").strip() or None,
             "leadType": doc.get("leadType"),
             "leadTypeSource": doc.get("leadTypeSource"),
             "leadTypeLockedAt": doc.get("leadTypeLockedAt"),
@@ -1653,6 +1654,13 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
         for doc in doctors
         if doc.get("id") is not None
     }
+
+    # Overlay sales rep details from `sales_rep` / `sales_reps` table for UI display.
+    for doctor_meta in doctor_lookup.values():
+        rep_id = str(doctor_meta.get("salesRepId") or "").strip()
+        rep = rep_records.get(rep_id) if rep_id else None
+        doctor_meta["salesRepName"] = rep.get("name") if isinstance(rep, dict) else None
+        doctor_meta["salesRepEmail"] = rep.get("email") if isinstance(rep, dict) else None
 
     def _normalize_rep_id(value: object) -> str:
         if value is None:
@@ -1857,11 +1865,20 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                         continue
                     seen_keys.add(key)
                     mapped = woo_commerce._map_woo_order_summary(woo_order)
+                    doctor_rep_id = _normalize_rep_id(
+                        doctor_meta.get("salesRepId") or rep_id or None
+                    )
+                    rep_rec = rep_records.get(doctor_rep_id) if doctor_rep_id else None
                     summary = {
                         **mapped,
                         "doctorId": doctor_meta.get("id"),
                         "doctorName": doctor_meta.get("name"),
                         "doctorEmail": doctor_meta.get("email"),
+                        "doctorSalesRepId": doctor_rep_id or None,
+                        "doctorSalesRepName": (rep_rec.get("name") if isinstance(rep_rec, dict) else None)
+                        or doctor_meta.get("salesRepName"),
+                        "doctorSalesRepEmail": (rep_rec.get("email") if isinstance(rep_rec, dict) else None)
+                        or doctor_meta.get("salesRepEmail"),
                         "userId": doctor_meta.get("id"),
                         "source": "woocommerce",
                     }
@@ -1889,6 +1906,14 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            local_rep_id = _normalize_rep_id(
+                local.get("doctorSalesRepId")
+                or local.get("salesRepId")
+                or local.get("sales_rep_id")
+                or local.get("doctor_sales_rep_id")
+                or doctor_meta.get("salesRepId")
+            )
+            local_rep = rep_records.get(local_rep_id) if local_rep_id else None
             summary = {
                 "id": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
                 "wooOrderId": local.get("wooOrderId") or None,
@@ -1911,6 +1936,11 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                 "doctorId": doctor_meta.get("id") or local_user_id or None,
                 "doctorName": doctor_meta.get("name") or doctor_meta.get("email") or "Doctor",
                 "doctorEmail": doctor_meta.get("email") or None,
+                "doctorSalesRepId": local_rep_id or None,
+                "doctorSalesRepName": (local_rep.get("name") if isinstance(local_rep, dict) else None)
+                or doctor_meta.get("salesRepName"),
+                "doctorSalesRepEmail": (local_rep.get("email") if isinstance(local_rep, dict) else None)
+                or doctor_meta.get("salesRepEmail"),
                 "userId": doctor_meta.get("id") or local_user_id or None,
                 "source": "peppro",
             }
