@@ -711,7 +711,7 @@ const getSalesRepById = async (req, res, next) => {
       try {
         rep = await mysqlClient.fetchOne(
           `
-            SELECT id, name, email, role, sales_code AS salesCode, initials
+            SELECT id, name, email, sales_code AS salesCode, initials
             FROM sales_reps
             WHERE id = :salesRepId
             LIMIT 1
@@ -726,7 +726,7 @@ const getSalesRepById = async (req, res, next) => {
         try {
           rep = await mysqlClient.fetchOne(
             `
-              SELECT id, name, email, role, sales_code AS salesCode, initials
+              SELECT id, name, email, sales_code AS salesCode, initials
               FROM sales_rep
               WHERE id = :salesRepId
               LIMIT 1

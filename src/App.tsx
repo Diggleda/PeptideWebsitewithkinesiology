@@ -4950,10 +4950,35 @@ export default function App() {
 		    salesDoctorOwnerRepFetchInFlightRef.current.add(ownerId);
 		    (async () => {
 		      try {
-		        const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
-		        const profile = resp?.salesRep || resp?.sales_rep || null;
+		        let profile: any = null;
+		        try {
+		          const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
+		          profile = resp?.salesRep || resp?.sales_rep || null;
+		        } catch (error) {
+		          // Fallback: some deployments store reps in the users table instead of sales_reps.
+		          try {
+		            const resp = (await settingsAPI.getAdminUserProfile(ownerId)) as any;
+		            profile = resp?.user || null;
+		          } catch (fallbackError) {
+		            if (typeof console !== "undefined" && console.warn) {
+		              console.warn("[Sales Rep] Failed to resolve sales rep name", {
+		                ownerId,
+		                error:
+		                  typeof (error as any)?.message === "string"
+		                    ? (error as any).message
+		                    : String(error),
+		                fallbackError:
+		                  typeof (fallbackError as any)?.message === "string"
+		                    ? (fallbackError as any).message
+		                    : String(fallbackError),
+		              });
+		            }
+		          }
+		        }
+
 		        const name =
 		          profile?.name ||
+		          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim() ||
 		          profile?.email ||
 		          `Sales Rep ${ownerId}`;
 		        const email = typeof profile?.email === "string" ? profile.email : null;
@@ -4963,7 +4988,11 @@ export default function App() {
 		            ? profile.userId
 		            : profile?.userId != null
 		              ? String(profile.userId)
-		              : null;
+		              : typeof profile?.id === "string"
+		                ? profile.id
+		                : profile?.id != null
+		                  ? String(profile.id)
+		                  : null;
 		        setSalesDoctorOwnerRepProfiles((current) => ({
 		          ...current,
 		          [ownerId]: { id: ownerId, name, email, role, userId },
