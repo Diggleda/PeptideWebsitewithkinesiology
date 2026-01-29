@@ -698,7 +698,7 @@ const getSalesRepDashboard = async (req, res, next) => {
   }
 };
 
-const getSalesRepById = (req, res, next) => {
+const getSalesRepById = async (req, res, next) => {
   try {
     ensureSalesLeadOrAdmin(req.user, 'getSalesRepById');
     const salesRepId = String(req.params?.salesRepId || '').trim();
@@ -706,7 +706,44 @@ const getSalesRepById = (req, res, next) => {
       return res.status(400).json({ error: 'salesRepId is required' });
     }
 
-    const rep = salesRepRepository.findById(salesRepId);
+    let rep = null;
+    if (mysqlClient.isEnabled()) {
+      try {
+        rep = await mysqlClient.fetchOne(
+          `
+            SELECT id, name, email, role, sales_code AS salesCode, initials
+            FROM sales_reps
+            WHERE id = :salesRepId
+            LIMIT 1
+          `,
+          { salesRepId },
+        );
+      } catch (error) {
+        logger.warn({ err: error, salesRepId }, 'Failed to query MySQL sales_reps table');
+      }
+
+      if (!rep) {
+        try {
+          rep = await mysqlClient.fetchOne(
+            `
+              SELECT id, name, email, role, sales_code AS salesCode, initials
+              FROM sales_rep
+              WHERE id = :salesRepId
+              LIMIT 1
+            `,
+            { salesRepId },
+          );
+        } catch (error) {
+          // Optional compatibility: some deployments may have a singular table name.
+          logger.debug({ err: error, salesRepId }, 'MySQL sales_rep table lookup skipped');
+        }
+      }
+    }
+
+    if (!rep) {
+      rep = salesRepRepository.findById(salesRepId);
+    }
+
     if (!rep) {
       return res.status(404).json({ error: 'Sales rep not found' });
     }
