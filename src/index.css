@@ -5589,6 +5589,13 @@ body.account-modal-open .header-account-avatar-shell {
   pointer-events: none;
 }
 
+body.account-modal-open .info-highlight-card,
+body.account-modal-open .info-focus-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .header-account-avatar.header-avatar-fallback {
   /* Match details tab avatar tone but stay fully opaque for stacking */
   background: linear-gradient(135deg, #e2f1fd, #bbdffc);
@@ -5639,6 +5646,13 @@ body.account-modal-open .header-account-avatar-shell {
   border: 2px solid rgb(95, 179, 249);
   box-shadow: 0 6px 16px -12px rgba(15, 23, 42, 0.55);
   object-fit: cover;
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+  max-width: none;
+}
+
+.header-avatar-image {
+  display: block;
 }
 
 .avatar-inline-edge {

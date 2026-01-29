@@ -4024,7 +4024,7 @@ export function Header({
           >
             <span className="hidden sm:inline text-white">{headerDisplayName}</span>
             <span className="header-account-avatar-shell">
-              {renderAvatar(48, 'header-account-avatar')}
+              {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
             </span>
           </Button>
 			        </DialogTrigger>
@@ -4190,10 +4190,10 @@ export function Header({
 	          </div>
 	        </DialogContent>
 	      </Dialog>
-	      <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
-	        <DialogContent
-	          hideCloseButton
-	          className="duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+      <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
+        <DialogContent
+          hideCloseButton
+          className="duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
           onTransitionEnd={(event) => {
             if (event.propertyName !== 'opacity') return;
             if (!logoutThanksPendingFadeOutRef.current) return;
@@ -4208,18 +4208,22 @@ export function Header({
 	            transform: 'none',
 	          }}
 	          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10"
-	          overlayStyle={{
-	            backgroundColor: 'rgba(4, 14, 21, 0.45)',
-	            backdropFilter: 'blur(22px) saturate(1.35)',
-	            WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
-	            opacity: logoutThanksOpacity,
-	            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
-	          }}
-	        >
-	          <div className="px-8 py-14 text-center sm:px-10 sm:py-16">
-	            <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
-	              Thank you for being a partner of ours and a joy to those around you. We at PepPro wish you a great rest
-	              of your day and will be here when you need us!
+          overlayStyle={{
+            backgroundColor: 'rgba(4, 14, 21, 0.45)',
+            backdropFilter: 'blur(22px) saturate(1.35)',
+            WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
+            opacity: logoutThanksOpacity,
+            transition: `opacity ${logoutThanksTransitionMs}ms ease`,
+          }}
+        >
+          <VisuallyHidden>
+            <DialogTitle>Logged out</DialogTitle>
+            <DialogDescription>Thank you message after logging out.</DialogDescription>
+          </VisuallyHidden>
+          <div className="px-8 py-14 text-center sm:px-10 sm:py-16">
+            <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
+              Thank you for being a partner of ours and a joy to those around you. We at PepPro wish you a great rest
+              of your day and will be here when you need us!
 	            </p>
 	          </div>
 	        </DialogContent>

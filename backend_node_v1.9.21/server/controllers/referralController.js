@@ -53,7 +53,13 @@ const randomSuffix = () => {
 
 const isRep = (role) => {
   const normalized = normalizeRole(role);
-  return normalized === 'sales_rep' || normalized === 'rep';
+  return (
+    normalized === 'sales_rep' ||
+    normalized === 'rep' ||
+    normalized === 'sales_lead' ||
+    normalized === 'saleslead' ||
+    normalized === 'sales-lead'
+  );
 };
 const ensureDoctor = (user, context = 'unknown') => {
   const role = normalizeRole(user?.role);

@@ -17652,6 +17652,7 @@ export default function App() {
 		    totalCartItems > 0 && !isCheckoutButtonVisible;
 		  const newsLoadingPlaceholders = Array.from({ length: 5 });
 		  const forumLoadingPlaceholders = Array.from({ length: 1 });
+		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
 		  const landingAccountButton = user ? (
 		    <Button
 		      type="button"
@@ -17668,12 +17669,12 @@ export default function App() {
 		            src={user.profileImageUrl}
 	            alt={user.name}
 	            className="header-account-avatar header-avatar-image"
-	            style={{ width: 48, height: 48 }}
+	            style={{ width: landingAvatarSize, height: landingAvatarSize }}
 	          />
 	        ) : (
 	          <span
 	            className="header-account-avatar header-avatar-fallback"
-	            style={{ width: 48, height: 48 }}
+	            style={{ width: landingAvatarSize, height: landingAvatarSize }}
 	            aria-hidden="true"
 	          >
 	            {getInitials(user.name)}
@@ -17778,8 +17779,8 @@ export default function App() {
                               display: "block",
                               width: "auto",
                               height: "auto",
-                              maxWidth: "min(320px, 35vw)",
-                              maxHeight: "min(280px, 25vh)",
+                              maxWidth: "min(330px, 35vw)",
+                              maxHeight: "min(290px, 25vh)",
                               objectFit: "contain",
                             }}
 	                          />
@@ -17819,8 +17820,10 @@ export default function App() {
                               display: "block",
                               width: "auto",
                               height: "auto",
-                              maxWidth: "min(320px, 35vw)",
-                              maxHeight: "min(280px, 25vh)",
+                              minWidth: "180px",
+                              minHeight: "54px",
+                              maxWidth: "min(330px, 35vw)",
+                              maxHeight: "min(290px, 25vh)",
                               objectFit: "contain",
                             }}
                           />
@@ -19468,10 +19471,11 @@ export default function App() {
         }}
 	      >
 	        <DialogContent className="max-w-2xl">
-	          {salesDoctorDetailLoading ? (
+          {salesDoctorDetailLoading ? (
               <>
                 <VisuallyHidden>
                   <DialogTitle>Loading account details</DialogTitle>
+                  <DialogDescription>Fetching account details.</DialogDescription>
                 </VisuallyHidden>
                 {renderSalesDoctorDetailSkeleton()}
               </>
@@ -20153,6 +20157,7 @@ export default function App() {
             <>
               <VisuallyHidden>
                 <DialogTitle>Loading order details</DialogTitle>
+                <DialogDescription>Fetching order details.</DialogDescription>
               </VisuallyHidden>
               {renderSalesOrderSkeleton()}
             </>
