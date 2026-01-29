@@ -80,12 +80,90 @@ const buildReferralMessageFromOrder = (order) => {
 
 const normalizeId = (value) => {
   if (value === null || value === undefined) return null;
-  return String(value);
+  const text = String(value).trim();
+  return text.length ? text : null;
 };
 
 const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
 
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
+
+const fetchSalesRepDirectory = async (repIds) => {
+  const ids = Array.from(new Set((repIds || []).map(normalizeId).filter(Boolean)));
+  const lookup = new Map();
+  if (ids.length === 0) {
+    return lookup;
+  }
+
+  if (mysqlClient.isEnabled()) {
+    const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
+    const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+    const query = `
+      SELECT id, name, email
+      FROM sales_reps
+      WHERE id IN (${placeholders})
+    `;
+    try {
+      const rows = await mysqlClient.fetchAll(query, params);
+      (rows || []).forEach((row) => {
+        const id = normalizeId(row?.id);
+        if (!id) return;
+        lookup.set(id, {
+          id,
+          name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
+          email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
+        });
+      });
+    } catch (error) {
+      logger.warn({ err: error, ids: ids.length }, 'Failed to query MySQL sales_reps directory');
+      try {
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT id, name, email
+            FROM sales_rep
+            WHERE id IN (${placeholders})
+          `,
+          params,
+        );
+        (rows || []).forEach((row) => {
+          const id = normalizeId(row?.id);
+          if (!id) return;
+          lookup.set(id, {
+            id,
+            name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
+            email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
+          });
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Overlay local store + users table as fallback.
+  ids.forEach((id) => {
+    if (lookup.has(id)) return;
+    const stored = salesRepRepository.findById(id);
+    if (stored) {
+      lookup.set(id, {
+        id,
+        name: stored?.name || stored?.email || null,
+        email: stored?.email || null,
+      });
+      return;
+    }
+    const user = userRepository.findById ? userRepository.findById(id) : null;
+    if (user && normalizeRole(user.role) === 'sales_rep') {
+      lookup.set(id, {
+        id,
+        name: user?.name || user?.email || null,
+        email: user?.email || null,
+      });
+    }
+  });
+
+  return lookup;
+};
 
 const isDoctorRole = (role) => {
   const normalized = normalizeRole(role);
@@ -1750,9 +1828,16 @@ const getOrdersForSalesRep = async (
     return allowedRepIds.size === 0 ? false : allowedRepIds.has(repId);
   });
 
+  const repDirectory = await fetchSalesRepDirectory([
+    ...doctors.map((doctor) => doctor?.salesRepId),
+    ...Array.from(allowedRepIds),
+  ]);
+
   const doctorLookup = new Map(
     doctors.map((doctor) => {
       const id = normalizeId(doctor.id);
+      const repId = normalizeId(doctor.salesRepId);
+      const rep = repId ? repDirectory.get(repId) : null;
       return [
         id,
         {
@@ -1760,6 +1845,9 @@ const getOrdersForSalesRep = async (
           name: doctor.name || doctor.email || 'Doctor',
           email: doctor.email || null,
           profileImageUrl: doctor.profileImageUrl || null,
+          salesRepId: repId || null,
+          salesRepName: rep?.name || null,
+          salesRepEmail: rep?.email || null,
         },
       ];
     }),
@@ -1772,13 +1860,17 @@ const getOrdersForSalesRep = async (
     try {
       const prospects = await salesProspectRepository.getAll();
       const list = Array.isArray(prospects) ? prospects : [];
-      const extraDoctorIds = new Set(
-        list
-          .filter((prospect) => allowedRepIds.has(normalizeId(prospect?.salesRepId)))
-          .map((prospect) => normalizeId(prospect?.doctorId))
-          .filter(Boolean),
-      );
-      extraDoctorIds.forEach((doctorId) => {
+      const extraDoctors = new Map();
+      list.forEach((prospect) => {
+        const salesRepId = normalizeId(prospect?.salesRepId);
+        if (!salesRepId || !allowedRepIds.has(salesRepId)) return;
+        const doctorId = normalizeId(prospect?.doctorId);
+        if (!doctorId) return;
+        if (!extraDoctors.has(doctorId)) {
+          extraDoctors.set(doctorId, salesRepId);
+        }
+      });
+      extraDoctors.forEach((salesRepId, doctorId) => {
         if (doctorLookup.has(doctorId)) {
           return;
         }
@@ -1786,8 +1878,23 @@ const getOrdersForSalesRep = async (
         const name = user?.name || user?.email || 'Doctor';
         const email = user?.email || null;
         const profileImageUrl = user?.profileImageUrl || null;
-        doctorLookup.set(doctorId, { id: doctorId, name, email, profileImageUrl });
-        doctors.push({ id: doctorId, name, email, profileImageUrl });
+        const rep = salesRepId ? repDirectory.get(salesRepId) : null;
+        doctorLookup.set(doctorId, {
+          id: doctorId,
+          name,
+          email,
+          profileImageUrl,
+          salesRepId: salesRepId || null,
+          salesRepName: rep?.name || null,
+          salesRepEmail: rep?.email || null,
+        });
+        doctors.push({
+          id: doctorId,
+          name,
+          email,
+          profileImageUrl,
+          salesRepId: salesRepId || null,
+        });
       });
     } catch (error) {
       logger.warn({ err: error }, 'Sales rep order fetch: unable to load sales prospects');
@@ -1818,6 +1925,7 @@ const getOrdersForSalesRep = async (
           normalizeId(prospect?.doctorId) || `contact_form:${contactFormId}`;
         if (!leadDoctorId) return;
 
+        const rep = prospectSalesRepId ? repDirectory.get(prospectSalesRepId) : null;
         const leadRecord = {
           id: leadDoctorId,
           name: prospect?.contactName || email,
@@ -1827,6 +1935,9 @@ const getOrdersForSalesRep = async (
           leadType: 'contact_form',
           leadTypeSource: 'contact_form',
           leadTypeLockedAt: prospect?.updatedAt || prospect?.createdAt || null,
+          salesRepId: prospectSalesRepId || null,
+          salesRepName: rep?.name || null,
+          salesRepEmail: rep?.email || null,
         };
 
         if (!contactLeadByEmail.has(email)) {
@@ -1891,12 +2002,16 @@ const getOrdersForSalesRep = async (
       const key = `sql:${order.id}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
+      const doctorMeta = doctorLookup.get(normalizeId(order.userId)) || null;
       summaries.push({
         ...buildLocalOrderSummary(order),
         doctorId: order.userId,
-        doctorName: doctorLookup.get(normalizeId(order.userId))?.name || 'Doctor',
-        doctorEmail: doctorLookup.get(normalizeId(order.userId))?.email || null,
-        doctorProfileImageUrl: doctorLookup.get(normalizeId(order.userId))?.profileImageUrl || null,
+        doctorName: doctorMeta?.name || 'Doctor',
+        doctorEmail: doctorMeta?.email || null,
+        doctorProfileImageUrl: doctorMeta?.profileImageUrl || null,
+        doctorSalesRepId: doctorMeta?.salesRepId || null,
+        doctorSalesRepName: doctorMeta?.salesRepName || null,
+        doctorSalesRepEmail: doctorMeta?.salesRepEmail || null,
         source: 'mysql',
       });
     }
@@ -1928,6 +2043,9 @@ const getOrdersForSalesRep = async (
           doctorName: lead.name || 'House / Contact Form',
           doctorEmail: lead.email || null,
           doctorProfileImageUrl: lead.profileImageUrl || null,
+          doctorSalesRepId: lead.salesRepId || null,
+          doctorSalesRepName: lead.salesRepName || null,
+          doctorSalesRepEmail: lead.salesRepEmail || null,
           source: 'mysql',
         });
       }
@@ -1953,18 +2071,22 @@ const getOrdersForSalesRep = async (
           if (!baseSummary) continue;
           // eslint-disable-next-line no-await-in-loop
           const summary = await enrichOrderWithShipStation(baseSummary);
-          const key = `woo:${summary.id || summary.number}`;
-          if (seenKeys.has(key)) continue;
-          seenKeys.add(key);
-          summaries.push({
-            ...summary,
-            doctorId: doctor.id,
-            doctorName: doctorLookup.get(doctor.id)?.name || doctor.name || 'Doctor',
-            doctorEmail: doctorLookup.get(doctor.id)?.email || doctor.email || null,
-            doctorProfileImageUrl: doctorLookup.get(doctor.id)?.profileImageUrl || doctor.profileImageUrl || null,
-            source: 'woo',
-          });
-        }
+	          const key = `woo:${summary.id || summary.number}`;
+	          if (seenKeys.has(key)) continue;
+	          seenKeys.add(key);
+	          const doctorMeta = doctorLookup.get(doctor.id) || null;
+	          summaries.push({
+	            ...summary,
+	            doctorId: doctor.id,
+	            doctorName: doctorMeta?.name || doctor.name || 'Doctor',
+	            doctorEmail: doctorMeta?.email || doctor.email || null,
+	            doctorProfileImageUrl: doctorMeta?.profileImageUrl || doctor.profileImageUrl || null,
+	            doctorSalesRepId: doctorMeta?.salesRepId || null,
+	            doctorSalesRepName: doctorMeta?.salesRepName || null,
+	            doctorSalesRepEmail: doctorMeta?.salesRepEmail || null,
+	            source: 'woo',
+	          });
+	        }
       } catch (error) {
         logger.error({ err: error, doctorEmail }, 'Failed to fetch WooCommerce orders for doctor');
       }
@@ -1992,12 +2114,16 @@ const getOrdersForSalesRep = async (
       const key = `local:${summary.id}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
+      const doctorMeta = doctorLookup.get(normalizeId(rawOrder.userId)) || null;
       summaries.push({
         ...summary,
         doctorId: rawOrder.userId,
-        doctorName: doctorLookup.get(normalizeId(rawOrder.userId))?.name || 'Doctor',
-        doctorEmail: doctorLookup.get(normalizeId(rawOrder.userId))?.email || null,
-        doctorProfileImageUrl: doctorLookup.get(normalizeId(rawOrder.userId))?.profileImageUrl || null,
+        doctorName: doctorMeta?.name || 'Doctor',
+        doctorEmail: doctorMeta?.email || null,
+        doctorProfileImageUrl: doctorMeta?.profileImageUrl || null,
+        doctorSalesRepId: doctorMeta?.salesRepId || null,
+        doctorSalesRepName: doctorMeta?.salesRepName || null,
+        doctorSalesRepEmail: doctorMeta?.salesRepEmail || null,
         source: 'local',
       });
     }

@@ -4876,31 +4876,33 @@ export default function App() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-	  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-	    doctorId: string;
-	    referralId?: string | null;
-	    name: string;
-	    email?: string | null;
-    avatar?: string | null;
-	    revenue: number;
-	    personalRevenue?: number | null;
-	    salesRevenue?: number | null;
-	    salesWholesaleRevenue?: number | null;
-	    salesRetailRevenue?: number | null;
-	    orderQuantity?: number | null;
-	    totalOrderValue?: number | null;
-	    orders: AccountOrderSummary[];
-    phone?: string | null;
-    address?: string | null;
-    lastOrderDate?: string | null;
-    avgOrderValue?: number | null;
-    role: string;
-    ownerSalesRepId?: string | null;
-    isOnline?: boolean | null;
-    isIdle?: boolean | null;
-    idleMinutes?: number | null;
-    lastSeenAt?: string | null;
-    lastInteractionAt?: string | null;
+		  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+		    doctorId: string;
+		    referralId?: string | null;
+		    name: string;
+		    email?: string | null;
+	    avatar?: string | null;
+		    revenue: number;
+		    personalRevenue?: number | null;
+		    salesRevenue?: number | null;
+		    salesWholesaleRevenue?: number | null;
+		    salesRetailRevenue?: number | null;
+		    orderQuantity?: number | null;
+		    totalOrderValue?: number | null;
+		    orders: AccountOrderSummary[];
+	    phone?: string | null;
+	    address?: string | null;
+	    lastOrderDate?: string | null;
+	    avgOrderValue?: number | null;
+	    role: string;
+	    ownerSalesRepId?: string | null;
+	    ownerSalesRepName?: string | null;
+	    ownerSalesRepEmail?: string | null;
+	    isOnline?: boolean | null;
+	    isIdle?: boolean | null;
+	    idleMinutes?: number | null;
+	    lastSeenAt?: string | null;
+	    lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
 	  } | null>(null);
 	  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
@@ -4914,7 +4916,7 @@ export default function App() {
 		      string,
 		      {
 		        id: string;
-		        name: string;
+		        name: string | null;
 		        email: string | null;
 		        role: string | null;
 		        userId?: string | null;
@@ -4936,80 +4938,48 @@ export default function App() {
 	    salesDoctorCommissionFromReportKeyRef.current = "";
 	  }, [salesDoctorDetail?.doctorId]);
 
-	  useEffect(() => {
-	    const canSeeOwner =
-	      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
-	    if (!canSeeOwner) return;
-	    if (!salesDoctorDetail?.doctorId) return;
-	    if (!isDoctorRole(salesDoctorDetail.role)) return;
-	    const ownerId = String(salesDoctorDetail.ownerSalesRepId || "").trim();
-	    if (!ownerId) return;
-	    if (salesDoctorOwnerRepProfiles[ownerId]) return;
-	    if (salesDoctorOwnerRepFetchInFlightRef.current.has(ownerId)) return;
+		  useEffect(() => {
+		    const canSeeOwner =
+		      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+		    if (!canSeeOwner) return;
+		    if (!salesDoctorDetail?.doctorId) return;
+		    if (!isDoctorRole(salesDoctorDetail.role)) return;
+		    const ownerId = String(salesDoctorDetail.ownerSalesRepId || "").trim();
+		    if (!ownerId) return;
+		    if (salesDoctorOwnerRepProfiles[ownerId]) return;
+		    if (salesDoctorOwnerRepFetchInFlightRef.current.has(ownerId)) return;
 
 		    salesDoctorOwnerRepFetchInFlightRef.current.add(ownerId);
-		    (async () => {
-		      try {
-		        let profile: any = null;
-		        try {
-		          const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
-		          profile = resp?.salesRep || resp?.sales_rep || null;
-		        } catch (error) {
-		          // Fallback: some deployments store reps in the users table instead of sales_reps.
-		          try {
-		            const resp = (await settingsAPI.getAdminUserProfile(ownerId)) as any;
-		            profile = resp?.user || null;
-		          } catch (fallbackError) {
-		            if (typeof console !== "undefined" && console.warn) {
-		              console.warn("[Sales Rep] Failed to resolve sales rep name", {
-		                ownerId,
-		                error:
-		                  typeof (error as any)?.message === "string"
-		                    ? (error as any).message
-		                    : String(error),
-		                fallbackError:
-		                  typeof (fallbackError as any)?.message === "string"
-		                    ? (fallbackError as any).message
-		                    : String(fallbackError),
-		              });
-		            }
-		          }
-		        }
-
-		        const name =
-		          profile?.name ||
-		          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim() ||
-		          profile?.email ||
-		          `Sales Rep ${ownerId}`;
-		        const email = typeof profile?.email === "string" ? profile.email : null;
-		        const role = typeof profile?.role === "string" ? profile.role : null;
-		        const userId =
-		          typeof profile?.userId === "string"
-		            ? profile.userId
-		            : profile?.userId != null
-		              ? String(profile.userId)
-		              : typeof profile?.id === "string"
-		                ? profile.id
-		                : profile?.id != null
-		                  ? String(profile.id)
-		                  : null;
-		        setSalesDoctorOwnerRepProfiles((current) => ({
-		          ...current,
-		          [ownerId]: { id: ownerId, name, email, role, userId },
-		        }));
-		      } catch {
-		        // Leave missing; UI will show ID fallback.
-		      } finally {
-	        salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
-	      }
-	    })();
-	  }, [
-	    salesDoctorDetail?.doctorId,
-	    salesDoctorDetail?.ownerSalesRepId,
-	    salesDoctorDetail?.role,
-	    salesDoctorOwnerRepProfiles,
-	    user?.role,
-	  ]);
+		    const localName =
+		      typeof salesDoctorDetail?.ownerSalesRepName === "string"
+		        ? salesDoctorDetail.ownerSalesRepName.trim()
+		        : "";
+		    const localEmail =
+		      typeof salesDoctorDetail?.ownerSalesRepEmail === "string"
+		        ? salesDoctorDetail.ownerSalesRepEmail.trim()
+		        : "";
+		    if (localName || localEmail) {
+		      setSalesDoctorOwnerRepProfiles((current) => ({
+		        ...current,
+		        [ownerId]: {
+		          id: ownerId,
+		          name: localName || null,
+		          email: localEmail || null,
+		          role: "sales_rep",
+		          userId: null,
+		        },
+		      }));
+		    }
+		    salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
+		  }, [
+		    salesDoctorDetail?.doctorId,
+		    salesDoctorDetail?.ownerSalesRepId,
+		    salesDoctorDetail?.ownerSalesRepName,
+		    salesDoctorDetail?.ownerSalesRepEmail,
+		    salesDoctorDetail?.role,
+		    salesDoctorOwnerRepProfiles,
+		    user?.role,
+		  ]);
 	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
 	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
 	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
@@ -5635,13 +5605,13 @@ export default function App() {
             }
           : resolvePresence();
 
-      setSalesDoctorDetail({
-        doctorId: bucket.doctorId,
-        referralId: bucket.referralId ?? null,
-        name: bucket.doctorName,
-        email: bucket.doctorEmail,
-        avatar: bucket.doctorAvatar ?? null,
-	        revenue: bucket.total,
+	      setSalesDoctorDetail({
+	        doctorId: bucket.doctorId,
+	        referralId: bucket.referralId ?? null,
+	        name: bucket.doctorName,
+	        email: bucket.doctorEmail,
+	        avatar: bucket.doctorAvatar ?? null,
+		        revenue: bucket.total,
 	        personalRevenue: bucket.personalRevenue ?? null,
 	        salesRevenue: bucket.salesRevenue ?? null,
 	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
@@ -5656,13 +5626,15 @@ export default function App() {
           null,
         address,
         lastOrderDate,
-        avgOrderValue,
-        role: normalizedRole,
-        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
-        isOnline: presence?.isOnline ?? null,
-        isIdle: presence?.isIdle ?? null,
-        idleMinutes: presence?.idleMinutes ?? null,
-        lastSeenAt: presence?.lastSeenAt ?? null,
+	        avgOrderValue,
+	        role: normalizedRole,
+	        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
+	        ownerSalesRepName: (bucket as any).ownerSalesRepName ?? null,
+	        ownerSalesRepEmail: (bucket as any).ownerSalesRepEmail ?? null,
+	        isOnline: presence?.isOnline ?? null,
+	        isIdle: presence?.isIdle ?? null,
+	        idleMinutes: presence?.idleMinutes ?? null,
+	        lastSeenAt: presence?.lastSeenAt ?? null,
         lastInteractionAt: presence?.lastInteractionAt ?? null,
         lastLoginAt: presence?.lastLoginAt ?? null,
       });
@@ -9811,21 +9783,23 @@ export default function App() {
 	    [referralIdLookupForDoctorNotes],
 	  );
 
-  const salesTrackingOrdersByDoctor = useMemo(() => {
-    const buckets = new Map<
-      string,
-      {
-        doctorId: string;
-        doctorName: string;
-        doctorEmail?: string | null;
-        doctorAvatar?: string | null;
-        doctorPhone?: string | null;
-        ownerSalesRepId?: string | null;
-        leadType?: string | null;
-        leadTypeSource?: string | null;
-        leadTypeLockedAt?: string | null;
-        doctorAddress?: string | null;
-        orders: AccountOrderSummary[];
+	  const salesTrackingOrdersByDoctor = useMemo(() => {
+	    const buckets = new Map<
+	      string,
+	      {
+	        doctorId: string;
+	        doctorName: string;
+	        doctorEmail?: string | null;
+	        doctorAvatar?: string | null;
+	        doctorPhone?: string | null;
+	        ownerSalesRepId?: string | null;
+	        ownerSalesRepName?: string | null;
+	        ownerSalesRepEmail?: string | null;
+	        leadType?: string | null;
+	        leadTypeSource?: string | null;
+	        leadTypeLockedAt?: string | null;
+	        doctorAddress?: string | null;
+	        orders: AccountOrderSummary[];
         total: number;
       }
     >();
@@ -9866,43 +9840,73 @@ export default function App() {
           .trim() ||
         (order as any)?.billing_name ||
         "Doctor";
-      const doctorEmailFromOrder =
-        doctorEmail ||
-        (order as any)?.billing?.email ||
-        (order as any)?.billing_email ||
-        null;
-      const ownerSalesRepId =
-        (order as any)?.salesRepId ||
-        (order as any)?.sales_rep_id ||
-        (order as any)?.salesRep?.id ||
-        null;
-      const bucket =
-        buckets.get(doctorId) ||
-        (() => {
-          const created = {
-            doctorId,
+	      const doctorEmailFromOrder =
+	        doctorEmail ||
+	        (order as any)?.billing?.email ||
+	        (order as any)?.billing_email ||
+	        null;
+	      const ownerSalesRepId =
+	        (order as any)?.doctorSalesRepId ||
+	        (order as any)?.doctor_sales_rep_id ||
+	        (order as any)?.salesRepId ||
+	        (order as any)?.sales_rep_id ||
+	        (order as any)?.salesRep?.id ||
+	        null;
+	      const ownerSalesRepName =
+	        (order as any)?.doctorSalesRepName ||
+	        (order as any)?.doctor_sales_rep_name ||
+	        (order as any)?.salesRepName ||
+	        (order as any)?.sales_rep_name ||
+	        (order as any)?.salesRep?.name ||
+	        null;
+	      const ownerSalesRepEmail =
+	        (order as any)?.doctorSalesRepEmail ||
+	        (order as any)?.doctor_sales_rep_email ||
+	        (order as any)?.salesRepEmail ||
+	        (order as any)?.sales_rep_email ||
+	        (order as any)?.salesRep?.email ||
+	        null;
+	      const bucket =
+	        buckets.get(doctorId) ||
+	        (() => {
+	          const created = {
+	            doctorId,
             doctorName: doctorNameFromOrder,
             doctorEmail: doctorEmailFromOrder,
             doctorAvatar,
-            doctorPhone,
-            ownerSalesRepId: ownerSalesRepId
-              ? String(ownerSalesRepId)
-              : null,
-            leadType,
-            leadTypeSource,
-            leadTypeLockedAt,
-            doctorAddress,
+	            doctorPhone,
+	            ownerSalesRepId: ownerSalesRepId
+	              ? String(ownerSalesRepId)
+	              : null,
+	            ownerSalesRepName:
+	              typeof ownerSalesRepName === "string" && ownerSalesRepName.trim().length > 0
+	                ? ownerSalesRepName.trim()
+	                : null,
+	            ownerSalesRepEmail:
+	              typeof ownerSalesRepEmail === "string" && ownerSalesRepEmail.trim().length > 0
+	                ? ownerSalesRepEmail.trim()
+	                : null,
+	            leadType,
+	            leadTypeSource,
+	            leadTypeLockedAt,
+	            doctorAddress,
             orders: [] as AccountOrderSummary[],
             total: 0,
           };
           buckets.set(doctorId, created);
           return created;
         })();
-      if (ownerSalesRepId && !bucket.ownerSalesRepId) {
-        bucket.ownerSalesRepId = String(ownerSalesRepId);
-      }
-      bucket.orders.push(order);
-      const status = order.status;
+	      if (ownerSalesRepId && !bucket.ownerSalesRepId) {
+	        bucket.ownerSalesRepId = String(ownerSalesRepId);
+	      }
+	      if (ownerSalesRepName && !bucket.ownerSalesRepName) {
+	        bucket.ownerSalesRepName = String(ownerSalesRepName);
+	      }
+	      if (ownerSalesRepEmail && !bucket.ownerSalesRepEmail) {
+	        bucket.ownerSalesRepEmail = String(ownerSalesRepEmail);
+	      }
+	      bucket.orders.push(order);
+	      const status = order.status;
       if (shouldCountRevenueForStatus(status)) {
         bucket.total += coerceNumber(order.total) ?? 0;
       }

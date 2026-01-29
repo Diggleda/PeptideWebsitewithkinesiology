@@ -79,7 +79,11 @@ def _ensure_defaults(rep: Dict) -> Dict:
 
 def _load() -> List[Dict]:
     if _using_mysql():
-        rows = mysql_client.fetch_all("SELECT * FROM sales_reps")
+        try:
+            rows = mysql_client.fetch_all("SELECT * FROM sales_reps")
+        except Exception:
+            # Some deployments use a singular table name.
+            rows = mysql_client.fetch_all("SELECT * FROM sales_rep")
         return [_row_to_rep(row) for row in rows]
     return [_ensure_defaults(rep) for rep in _get_store().read()]
 
@@ -96,7 +100,10 @@ def get_all() -> List[Dict]:
 
 def find_by_id(rep_id: str) -> Optional[Dict]:
     if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE id = %(id)s", {"id": rep_id})
+        try:
+            row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE id = %(id)s", {"id": rep_id})
+        except Exception:
+            row = mysql_client.fetch_one("SELECT * FROM sales_rep WHERE id = %(id)s", {"id": rep_id})
         return _row_to_rep(row)
     return next((rep for rep in _load() if rep.get("id") == rep_id), None)
 
@@ -104,7 +111,10 @@ def find_by_id(rep_id: str) -> Optional[Dict]:
 def find_by_email(email: str) -> Optional[Dict]:
     email = (email or "").strip().lower()
     if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE email = %(email)s", {"email": email})
+        try:
+            row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE email = %(email)s", {"email": email})
+        except Exception:
+            row = mysql_client.fetch_one("SELECT * FROM sales_rep WHERE email = %(email)s", {"email": email})
         return _row_to_rep(row)
     return next((rep for rep in _load() if (rep.get("email") or "") == email), None)
 
@@ -112,7 +122,10 @@ def find_by_email(email: str) -> Optional[Dict]:
 def find_by_initials(initials: str) -> Optional[Dict]:
     candidate = _normalize_initials(initials)
     if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE initials = %(initials)s", {"initials": candidate})
+        try:
+            row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE initials = %(initials)s", {"initials": candidate})
+        except Exception:
+            row = mysql_client.fetch_one("SELECT * FROM sales_rep WHERE initials = %(initials)s", {"initials": candidate})
         return _row_to_rep(row)
     return next((rep for rep in _load() if rep.get("initials") == candidate), None)
 
@@ -122,7 +135,16 @@ def find_by_sales_code(code: str) -> Optional[Dict]:
     if not candidate:
         return None
     if _using_mysql():
-        row = mysql_client.fetch_one("SELECT * FROM sales_reps WHERE sales_code = %(sales_code)s", {"sales_code": candidate})
+        try:
+            row = mysql_client.fetch_one(
+                "SELECT * FROM sales_reps WHERE sales_code = %(sales_code)s",
+                {"sales_code": candidate},
+            )
+        except Exception:
+            row = mysql_client.fetch_one(
+                "SELECT * FROM sales_rep WHERE sales_code = %(sales_code)s",
+                {"sales_code": candidate},
+            )
         return _row_to_rep(row)
     return next(
         (
