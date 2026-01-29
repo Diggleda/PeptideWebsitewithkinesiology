@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode, CSSProperties } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -233,6 +233,8 @@ interface HeaderProps {
   ordersLastSyncedAt?: string | null;
   onRefreshOrders?: (options?: { force?: boolean }) => Promise<unknown> | void;
   accountModalRequest?: { tab: 'details' | 'orders'; open?: boolean; token: number; order?: AccountOrderSummary } | null;
+  onAccountModalRequestHandled?: (token: number) => void;
+  suppressAccountHomeButton?: boolean;
   showCanceledOrders?: boolean;
   onToggleShowCanceled?: () => void;
   onBuyOrderAgain?: (order: AccountOrderSummary) => void;
@@ -846,6 +848,8 @@ export function Header({
   ordersLastSyncedAt,
   onRefreshOrders,
   accountModalRequest = null,
+  onAccountModalRequestHandled,
+  suppressAccountHomeButton = false,
   showCanceledOrders = false,
   onToggleShowCanceled,
   onBuyOrderAgain,
@@ -994,6 +998,15 @@ export function Header({
   }, [welcomeOpen, collapseResearchOverlay]);
 
   useEffect(() => () => clearResearchOverlayTimeout(), [clearResearchOverlayTimeout]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const className = "account-modal-open";
+    document.body.classList.toggle(className, welcomeOpen);
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, [welcomeOpen]);
   const loginEmailRef = useRef<HTMLInputElement | null>(null);
   const loginPasswordRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1520,7 +1533,8 @@ export function Header({
     if (accountModalRequest.token && accountModalRequest.token === accountModalRequestTokenRef.current) {
       return;
     }
-    accountModalRequestTokenRef.current = accountModalRequest.token ?? Date.now();
+    const token = accountModalRequest.token ?? Date.now();
+    accountModalRequestTokenRef.current = token;
     console.debug('[Header] Processing account modal request', accountModalRequest);
     if (accountModalRequest.order) {
       mergeOrderIntoCache(accountModalRequest.order);
@@ -1532,7 +1546,8 @@ export function Header({
     if (accountModalRequest.open || accountModalRequest.order) {
       setWelcomeOpen(true);
     }
-  }, [accountModalRequest, mergeOrderIntoCache]);
+    onAccountModalRequestHandled?.(token);
+  }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled]);
   useEffect(() => { setLocalUser(user); }, [user]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {
@@ -4013,10 +4028,22 @@ export function Header({
             </span>
           </Button>
 			        </DialogTrigger>
-			        <DialogContent
-			          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-              style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
-			          >
+					        <DialogContent
+					          className="checkout-modal account-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+                    overlayClassName="bg-slate-950/40"
+                    containerClassName="fixed inset-0 z-[10000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
+                    containerStyle={
+                      {
+                        paddingTop: "calc(var(--safe-area-top) + 0.75rem)",
+                        ["--modal-header-offset" as any]: "0px",
+                      } as CSSProperties
+                    }
+	              style={{
+                  backdropFilter: "blur(38px) saturate(1.6)",
+                  backgroundColor: "rgba(245, 251, 255, 1)",
+                  ["--modal-header-offset" as any]: "0px",
+                }}
+					          >
 				          <div
 				            ref={accountModalShellRef}
 				            className="relative w-full flex flex-col overflow-hidden transition-all duration-300 ease-in-out"
@@ -4038,26 +4065,33 @@ export function Header({
                 <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
                   {user.name}
                 </DialogTitle>
-                <span aria-hidden="true" className="text-slate-300">
-                  |
-                </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="header-home-button squircle-sm text-slate-900 gap-2"
-                    onClick={() => {
-                      setWelcomeOpen(false);
-                      setTimeout(() => {
-                        if (onShowInfo) {
-                          onShowInfo();
-                        }
-                      }, 100);
-                    }}
-                  >
-                  <Home className="h-5 w-5 text-[rgb(95,179,249)]" aria-hidden="true" />
-                  Home
-                </Button>
+                {!suppressAccountHomeButton && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      |
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="header-home-button squircle-sm text-slate-900 gap-2"
+                      onClick={() => {
+                        setWelcomeOpen(false);
+                        setTimeout(() => {
+                          if (onShowInfo) {
+                            onShowInfo();
+                          }
+                        }, 100);
+                      }}
+                    >
+                      <Home
+                        className="h-5 w-5 text-[rgb(95,179,249)]"
+                        aria-hidden="true"
+                      />
+                      Home
+                    </Button>
+                  </>
+                )}
               </div>
               <DialogDescription className="account-header-description">
                 {(user.visits ?? 1) > 1
@@ -4585,14 +4619,18 @@ export function Header({
 			    <header
 			      ref={headerRef}
 			      data-app-header
-			      className="w-full app-header-blur border-b border-slate-200 shadow-sm"
+			      className={clsx(
+			        "w-full app-header-blur border-b border-slate-200 shadow-sm",
+			        welcomeOpen && "app-header-hidden",
+			      )}
 			      style={{
 			        position: 'fixed',
 			        top: 0,
 			        left: 0,
 			        right: 0,
-			        zIndex: 9500,
-			        opacity: 1,
+			        zIndex: welcomeOpen ? 1 : 9500,
+			        opacity: welcomeOpen ? 0 : 1,
+			        pointerEvents: welcomeOpen ? 'none' : 'auto',
 			      }}
 			    >
       <div className="w-full px-6 sm:px-6 py-4">

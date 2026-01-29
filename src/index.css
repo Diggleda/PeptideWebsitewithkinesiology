@@ -2682,6 +2682,20 @@ body {
               inset 0 1px rgba(255, 255, 255, 0.5);
 }
 
+.account-modal[data-slot="dialog-content"] {
+  /* Prevent underlying header/logo from bleeding through the account modal */
+  background: rgba(245, 251, 255, 1) !important;
+}
+
+.account-modal[data-slot="dialog-content"] {
+  /* Keep modal content above fixed header (z-index ~9500) */
+  z-index: 10001 !important;
+}
+
+[data-slot="dialog-overlay"] {
+  z-index: 10000;
+}
+
 .glass-liquid {
   -webkit-backdrop-filter: blur(34px) saturate(1.9);
   backdrop-filter: blur(34px) saturate(1.9);
@@ -5561,6 +5575,18 @@ html {
   backface-visibility: hidden;
   will-change: transform;
   isolation: isolate;
+}
+
+.app-header-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.account-modal-open .brand-logo--landing,
+body.account-modal-open .header-account-button,
+body.account-modal-open .header-account-avatar-shell {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .header-account-avatar.header-avatar-fallback {

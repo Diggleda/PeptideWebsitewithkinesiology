@@ -1333,7 +1333,7 @@ const CATALOG_DEBUG =
   "true";
 const FRONTEND_BUILD_ID =
   String((import.meta as any).env?.VITE_FRONTEND_BUILD_ID || "").trim() ||
-  "v1.9.69";
+  "v2.1.10";
 const CATALOG_PAGE_CONCURRENCY = (() => {
   const raw = String(
     (import.meta as any).env?.VITE_CATALOG_PAGE_CONCURRENCY || "",
@@ -1342,7 +1342,7 @@ const CATALOG_PAGE_CONCURRENCY = (() => {
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.min(Math.max(parsed, 1), 4);
   }
-  return 2;
+  return 3;
 })();
 
 if (typeof window !== "undefined") {
@@ -4909,11 +4909,64 @@ export default function App() {
 	  >(undefined);
 	  const [salesDoctorCommissionPickerOpen, setSalesDoctorCommissionPickerOpen] =
 	    useState(false);
+	  const [salesDoctorOwnerRepProfiles, setSalesDoctorOwnerRepProfiles] = useState<
+	    Record<string, { id: string; name: string; email: string | null; role: string | null }>
+	  >({});
+	  const salesDoctorOwnerRepFetchInFlightRef = useRef<Set<string>>(new Set());
+	  const [salesDoctorCommissionFromReport, setSalesDoctorCommissionFromReport] =
+	    useState<number | null>(null);
+	  const [salesDoctorCommissionFromReportLoading, setSalesDoctorCommissionFromReportLoading] =
+	    useState(false);
+	  const salesDoctorCommissionFromReportKeyRef = useRef<string>("");
 
 	  useEffect(() => {
 	    setSalesDoctorCommissionRange(undefined);
 	    setSalesDoctorCommissionPickerOpen(false);
+	    setSalesDoctorCommissionFromReport(null);
+	    setSalesDoctorCommissionFromReportLoading(false);
+	    salesDoctorCommissionFromReportKeyRef.current = "";
 	  }, [salesDoctorDetail?.doctorId]);
+
+	  useEffect(() => {
+	    const canSeeOwner =
+	      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+	    if (!canSeeOwner) return;
+	    if (!salesDoctorDetail?.doctorId) return;
+	    if (!isDoctorRole(salesDoctorDetail.role)) return;
+	    const ownerId = String(salesDoctorDetail.ownerSalesRepId || "").trim();
+	    if (!ownerId) return;
+	    if (salesDoctorOwnerRepProfiles[ownerId]) return;
+	    if (salesDoctorOwnerRepFetchInFlightRef.current.has(ownerId)) return;
+
+	    salesDoctorOwnerRepFetchInFlightRef.current.add(ownerId);
+	    (async () => {
+	      try {
+	        const resp = (await settingsAPI.getAdminUserProfile(ownerId)) as any;
+	        const profile = resp?.user || null;
+	        const name =
+	          profile?.name ||
+	          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim() ||
+	          profile?.email ||
+	          `User ${ownerId}`;
+	        const email = typeof profile?.email === "string" ? profile.email : null;
+	        const role = typeof profile?.role === "string" ? profile.role : null;
+	        setSalesDoctorOwnerRepProfiles((current) => ({
+	          ...current,
+	          [ownerId]: { id: ownerId, name, email, role },
+	        }));
+	      } catch {
+	        // Leave missing; UI will show ID fallback.
+	      } finally {
+	        salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
+	      }
+	    })();
+	  }, [
+	    salesDoctorDetail?.doctorId,
+	    salesDoctorDetail?.ownerSalesRepId,
+	    salesDoctorDetail?.role,
+	    salesDoctorOwnerRepProfiles,
+	    user?.role,
+	  ]);
 	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
 	  const [salesDoctorNotesSaved, setSalesDoctorNotesSaved] = useState(false);
 	  const salesDoctorNotesSavedTimeoutRef = useRef<number | null>(null);
@@ -5609,6 +5662,14 @@ export default function App() {
           doctorAvatar: avatarUrl,
           doctorPhone: null,
           doctorAddress: null,
+          ownerSalesRepId:
+            entry?.ownerSalesRepId ||
+            entry?.owner_sales_rep_id ||
+            entry?.salesRepId ||
+            entry?.sales_rep_id ||
+            entry?.assignedSalesRepId ||
+            entry?.assigned_sales_rep_id ||
+            null,
           isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
           isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
           idleMinutes:
@@ -5713,6 +5774,12 @@ export default function App() {
                 doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
                 doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
                 doctorAddress: null,
+                ownerSalesRepId:
+                  doctorFromList?.ownerSalesRepId ||
+                  doctorFromList?.owner_sales_rep_id ||
+                  doctorFromList?.salesRepId ||
+                  doctorFromList?.sales_rep_id ||
+                  null,
                 isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
                 isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
                 idleMinutes:
@@ -5880,6 +5947,14 @@ export default function App() {
               doctorAvatar: profile?.profileImageUrl || avatarUrl,
               doctorPhone: profile?.phone || null,
               doctorAddress: address,
+              ownerSalesRepId:
+                profile?.salesRepId ||
+                profile?.sales_rep_id ||
+                profile?.ownerSalesRepId ||
+                profile?.owner_sales_rep_id ||
+                entry?.ownerSalesRepId ||
+                entry?.owner_sales_rep_id ||
+                null,
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
               idleMinutes:
@@ -6918,6 +6993,95 @@ export default function App() {
       cancelled = true;
     };
   }, [user?.id, user?.role, normalizeReferralCodeValue]);
+
+  useEffect(() => {
+    if (!user || !(isAdmin(user.role) || isSalesLead(user.role))) {
+      setSalesDoctorCommissionFromReport(null);
+      setSalesDoctorCommissionFromReportLoading(false);
+      salesDoctorCommissionFromReportKeyRef.current = "";
+      return;
+    }
+    if (!salesDoctorDetail?.doctorId) {
+      setSalesDoctorCommissionFromReport(null);
+      setSalesDoctorCommissionFromReportLoading(false);
+      salesDoctorCommissionFromReportKeyRef.current = "";
+      return;
+    }
+
+    const resolvePeriod = () => {
+      const rangeFrom = salesDoctorCommissionRange?.from ?? null;
+      const rangeTo = salesDoctorCommissionRange?.to ?? null;
+      if (rangeFrom && rangeTo) {
+        const from = new Date(rangeFrom);
+        const to = new Date(rangeTo);
+        if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) {
+          return {
+            periodStart: from.toISOString().slice(0, 10),
+            periodEnd: to.toISOString().slice(0, 10),
+          };
+        }
+      }
+      const periodStart = salesRepSalesSummaryMeta?.periodStart
+        ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
+        : null;
+      const periodEnd = salesRepSalesSummaryMeta?.periodEnd
+        ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
+        : null;
+      return { periodStart, periodEnd };
+    };
+
+    const { periodStart, periodEnd } = resolvePeriod();
+    const key = `${salesDoctorDetail.doctorId}|${periodStart || "all"}|${periodEnd || "all"}`;
+    if (salesDoctorCommissionFromReportKeyRef.current === key) {
+      return;
+    }
+
+    salesDoctorCommissionFromReportKeyRef.current = key;
+    setSalesDoctorCommissionFromReportLoading(true);
+    setSalesDoctorCommissionFromReport(null);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await ordersAPI.getProductSalesCommissionForAdmin({
+          periodStart: periodStart || undefined,
+          periodEnd: periodEnd || undefined,
+        });
+        const commissions = Array.isArray((response as any)?.commissions)
+          ? ((response as any).commissions as any[])
+          : [];
+        const match = commissions.find(
+          (row) => String((row as any)?.id || "") === String(salesDoctorDetail.doctorId || ""),
+        );
+        const amount = match != null ? Number((match as any)?.amount || 0) : null;
+        if (!cancelled) {
+          setSalesDoctorCommissionFromReport(
+            typeof amount === "number" && Number.isFinite(amount) ? amount : null,
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setSalesDoctorCommissionFromReport(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setSalesDoctorCommissionFromReportLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    salesDoctorCommissionRange?.from,
+    salesDoctorCommissionRange?.to,
+    salesDoctorDetail?.doctorId,
+    salesRepSalesSummaryMeta?.periodEnd,
+    salesRepSalesSummaryMeta?.periodStart,
+    user,
+    user?.role,
+  ]);
   const [referralForm, setReferralForm] = useState({
     contactName: "",
     contactEmail: "",
@@ -7094,6 +7258,48 @@ export default function App() {
 	  useEffect(() => {
 	    adminLiveUsersRef.current = adminLiveUsers;
 	  }, [adminLiveUsers]);
+
+	  useEffect(() => {
+	    const canSeeOwner =
+	      Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+	    if (!canSeeOwner) return;
+	    if (!salesDoctorDetail?.doctorId) return;
+	    if (!isDoctorRole(salesDoctorDetail.role)) return;
+	    const ownerId = String(salesDoctorDetail.ownerSalesRepId || "").trim();
+	    if (!ownerId) return;
+	    if (salesDoctorOwnerRepProfiles[ownerId]) return;
+
+	    const findCandidate = () => {
+	      const sources = [
+	        ...(Array.isArray(liveClientsRef.current) ? liveClientsRef.current : []),
+	        ...(Array.isArray(adminLiveUsersRef.current) ? adminLiveUsersRef.current : []),
+	      ];
+	      return sources.find((entry: any) => String(entry?.id || "").trim() === ownerId) || null;
+	    };
+
+	    const candidate = findCandidate();
+	    if (!candidate) return;
+
+	    const name =
+	      candidate?.name ||
+	      [candidate?.firstName, candidate?.lastName].filter(Boolean).join(" ").trim() ||
+	      candidate?.email ||
+	      `User ${ownerId}`;
+	    const email = typeof candidate?.email === "string" ? candidate.email : null;
+	    const role = typeof candidate?.role === "string" ? candidate.role : null;
+	    setSalesDoctorOwnerRepProfiles((current) => ({
+	      ...current,
+	      [ownerId]: { id: ownerId, name, email, role },
+	    }));
+	  }, [
+	    adminLiveUsers,
+	    liveClients,
+	    salesDoctorDetail?.doctorId,
+	    salesDoctorDetail?.ownerSalesRepId,
+	    salesDoctorDetail?.role,
+	    salesDoctorOwnerRepProfiles,
+	    user?.role,
+	  ]);
 
 		  useEffect(() => {
 		    const userRole = user?.role || null;
@@ -11561,15 +11767,16 @@ export default function App() {
     }
   };
 
-  const handleLogout = useCallback(() => {
-    console.debug("[Auth] Logout");
-    authAPI.logout();
-    setUser(null);
-    setLoginContext(null);
-    setPostLoginHold(false);
-    setIsReturningUser(false);
-    setCheckoutOpen(false);
-    setShouldReopenCheckout(false);
+	  const handleLogout = useCallback(() => {
+	    console.debug("[Auth] Logout");
+	    authAPI.logout();
+	    setUser(null);
+	    setAccountModalRequest(null);
+	    setLoginContext(null);
+	    setPostLoginHold(false);
+	    setIsReturningUser(false);
+	    setCheckoutOpen(false);
+	    setShouldReopenCheckout(false);
     setShouldAnimateInfoFocus(false);
     setDoctorSummary(null);
     setDoctorReferrals([]);
@@ -11704,16 +11911,21 @@ export default function App() {
       "mousemove",
       "mousedown",
       "keydown",
-      "scroll",
+      "wheel",
       "touchstart",
+      "touchmove",
       "focus",
     ];
     events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
+    // `scroll` doesn't bubble, and many scroll containers won't trigger `window` scroll events.
+    // Capture scroll events on the document so scrolling anywhere counts as activity.
+    document.addEventListener("scroll", markActivity, { passive: true, capture: true });
     const interval = window.setInterval(checkIdle, 1_000);
     window.setTimeout(checkIdle, 200);
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, markActivity));
+      document.removeEventListener("scroll", markActivity, true);
       window.clearInterval(interval);
     };
 	  }, [user?.id, handleLogout]);
@@ -13715,10 +13927,12 @@ export default function App() {
 		                        />
 	                      </div>
 
-	                      <div className="sales-rep-table-wrapper live-users-scroll">
+	                      <div
+	                        className={`sales-rep-table-wrapper ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}
+	                      >
 	                        <div className="flex w-full min-w-0 flex-col gap-2">
 		                          {liveUsers.length === 0 ? (
-		                            <div className="px-1 py-1.5 text-sm text-slate-500">
+		                            <div className="px-3 py-3 text-sm text-slate-500">
 		                              {isSalesLead(user?.role) ? "No users found." : "No clients found."}
 		                            </div>
 	                          ) : (
@@ -13940,7 +14154,7 @@ export default function App() {
                     </div>
                   )}
 
-	                  <div className="sales-rep-table-wrapper">
+	                  <div className="sales-rep-table-wrapper admin-dashboard-list">
 	                    <div className="flex w-max flex-nowrap gap-2 text-xs sm:w-full sm:flex-wrap">
                       {(() => {
 	                      const usage = serverHealthPayload?.usage || null;
@@ -14668,10 +14882,10 @@ export default function App() {
                           />
                         </div>
 
-                        <div className="sales-rep-table-wrapper live-users-scroll">
+                        <div className={`sales-rep-table-wrapper admin-dashboard-list ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
                           <div className="flex w-full min-w-0 flex-col gap-2">
 	                            {liveUsers.length === 0 ? (
-	                              <div className="px-1 py-1.5 text-sm text-slate-500">
+	                              <div className="px-3 py-3 text-sm text-slate-500">
 	                                No users found.
 	                              </div>
 	                            ) : (
@@ -14856,7 +15070,7 @@ export default function App() {
 	          )}
 
 			          {isAdmin(user?.role) && (
-				            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+				            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 				              <div className="flex flex-col gap-3">
 				                <div className="min-w-0">
 				                  <h3 className="text-lg font-semibold text-slate-900">
@@ -14866,96 +15080,94 @@ export default function App() {
 				                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
 				                  </p>
 				                </div>
-					                <div className="w-full mt-3 mb-4 flex flex-col gap-3 min-w-0">
-					                  <div className="flex flex-wrap items-center gap-2 justify-start w-full min-w-0">
-				                  <Popover.Root
-				                    open={adminDashboardPeriodPickerOpen}
-				                    onOpenChange={setAdminDashboardPeriodPickerOpen}
-				                  >
-			                    <Popover.Trigger asChild>
-			                      <Button
-			                        type="button"
-			                        variant="ghost"
-			                        size="icon"
-			                        className="h-10 w-10 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
-			                        aria-label="Select date range"
-			                      >
-			                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
-			                      </Button>
-			                    </Popover.Trigger>
-			                    <Popover.Portal>
-				                      <Popover.Content
-				                        side="bottom"
-				                        align="end"
-				                        sideOffset={8}
-				                        className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-				                      >
-			                        <div className="text-sm font-semibold text-slate-800">
-			                          Dashboard timeframe
-			                        </div>
-			                        <div className="mt-2">
-			                          <DayPicker
-			                            mode="range"
-			                            numberOfMonths={1}
-			                            selected={adminDashboardPeriodRange}
-			                            onSelect={handleAdminDashboardPeriodSelect}
-			                            defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-			                          />
-			                        </div>
-			                        <div className="mt-3 flex items-center justify-between">
-			                          <Button
-			                            type="button"
-			                            variant="ghost"
-			                            size="sm"
-			                            className="text-slate-700"
-			                            onClick={() => {
-			                              const defaults = getDefaultSalesBySalesRepPeriod();
-			                              setSalesRepPeriodStart(defaults.start);
-			                              setSalesRepPeriodEnd(defaults.end);
-			                            }}
-			                          >
-			                            Default
-			                          </Button>
-				                          <Button
-				                            type="button"
-				                            variant="outline"
-				                            size="sm"
-				                            className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-				                            onClick={() => setAdminDashboardPeriodPickerOpen(false)}
-				                          >
-				                            Done
-				                          </Button>
-			                        </div>
-			                        <Popover.Arrow className="calendar-popover-arrow" />
-			                      </Popover.Content>
-			                    </Popover.Portal>
-			                  </Popover.Root>
-				                  <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight">
-				                    ({adminDashboardPeriodLabel})
-				                  </span>
+					                <div className="w-full mt-3 mb-4 flex flex-wrap items-center gap-2 min-w-0">
+					                  <div className="flex items-center gap-2 min-w-0 flex-1">
+					                    <Popover.Root
+					                      open={adminDashboardPeriodPickerOpen}
+					                      onOpenChange={setAdminDashboardPeriodPickerOpen}
+					                    >
+					                      <Popover.Trigger asChild>
+					                        <Button
+					                          type="button"
+					                          variant="ghost"
+					                          size="icon"
+					                          className="group h-10 w-10 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors shrink-0"
+					                          aria-label="Select date range"
+					                        >
+					                          <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
+					                        </Button>
+					                      </Popover.Trigger>
+					                      <Popover.Portal>
+					                        <Popover.Content
+					                          side="bottom"
+					                          align="end"
+					                          sideOffset={8}
+					                          className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+					                        >
+					                          <div className="text-sm font-semibold text-slate-800">
+					                            Dashboard timeframe
+					                          </div>
+					                          <div className="mt-2">
+					                            <DayPicker
+					                              mode="range"
+					                              numberOfMonths={1}
+					                              selected={adminDashboardPeriodRange}
+					                              onSelect={handleAdminDashboardPeriodSelect}
+					                              defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+					                            />
+					                          </div>
+					                          <div className="mt-3 flex items-center justify-between">
+					                            <Button
+					                              type="button"
+					                              variant="ghost"
+					                              size="sm"
+					                              className="text-slate-700"
+					                              onClick={() => {
+					                                const defaults = getDefaultSalesBySalesRepPeriod();
+					                                setSalesRepPeriodStart(defaults.start);
+					                                setSalesRepPeriodEnd(defaults.end);
+					                              }}
+					                            >
+					                              Default
+					                            </Button>
+					                            <Button
+					                              type="button"
+					                              variant="outline"
+					                              size="sm"
+					                              className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+					                              onClick={() => setAdminDashboardPeriodPickerOpen(false)}
+					                            >
+					                              Done
+					                            </Button>
+					                          </div>
+					                          <Popover.Arrow className="calendar-popover-arrow" />
+					                        </Popover.Content>
+					                      </Popover.Portal>
+					                    </Popover.Root>
+					                    <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+					                      ({adminDashboardPeriodLabel})
+					                    </span>
 					                  </div>
-					                  <div className="flex w-full min-w-0">
-				                  <Button
-				                    type="button"
-				                    variant="outline"
-				                    size="sm"
-				                    className="gap-2 w-full sm:w-auto sm:ml-auto max-w-full justify-center px-3"
-				                    onClick={applyAdminDashboardPeriod}
-				                    disabled={adminDashboardRefreshing}
-				                    aria-busy={adminDashboardRefreshing}
-				                  >
-			                    <RefreshCw
-			                      className={`h-4 w-4 ${adminDashboardRefreshing ? "animate-spin" : ""}`}
-			                      aria-hidden="true"
-			                    />
-			                    {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
-			                  </Button>
-					                  </div>
-			                </div>
+					                  <Button
+					                    type="button"
+					                    variant="outline"
+					                    size="sm"
+					                    className="gap-2 justify-center px-3 flex-[0_1_220px] max-w-[220px] ml-auto"
+					                    onClick={applyAdminDashboardPeriod}
+					                    disabled={adminDashboardRefreshing}
+					                    aria-busy={adminDashboardRefreshing}
+					                  >
+					                    <RefreshCw
+					                      className={`h-4 w-4 ${adminDashboardRefreshing ? "animate-spin" : ""}`}
+					                      aria-hidden="true"
+					                    />
+					                    {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
+					                  </Button>
+					                </div>
 			              </div>
 			
 				              <div className="mt-8 space-y-6">
-			                <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+			                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 			                  <div className="flex flex-col gap-3 mb-4">
                 <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
@@ -14968,12 +15180,12 @@ export default function App() {
 				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2"
+                        className="gap-2 order-2 sm:order-1"
                         onClick={downloadSalesBySalesRepCsv}
                         disabled={salesRepSalesSummary.length === 0}
                         title="Download CSV"
@@ -14981,25 +15193,35 @@ export default function App() {
                         <Download className="h-4 w-4" aria-hidden="true" />
                         Download CSV
                       </Button>
-                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-                        <span className="sales-rep-action-meta-label block">
-                          Last downloaded
+                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+                        <span className="sm:hidden block min-w-0 truncate">
+                          Last downloaded:{" "}
+                          {salesRepSalesCsvDownloadedAt
+                            ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+                                timeZone: "America/Los_Angeles",
+                              })
+                            : "—"}
                         </span>
-	                      <span className="sales-rep-action-meta-value block">
-	                          {salesRepSalesCsvDownloadedAt
-	                            ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
-	                                timeZone: "America/Los_Angeles",
-	                              })
-	                            : "—"}
-	                        </span>
-	                      </span>
-	                    </div>
+                        <span className="hidden sm:block">
+                          <span className="sales-rep-action-meta-label block">
+                            Last downloaded
+                          </span>
+                          <span className="sales-rep-action-meta-value block">
+                            {salesRepSalesCsvDownloadedAt
+                              ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+                                  timeZone: "America/Los_Angeles",
+                                })
+                              : "—"}
+                          </span>
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
 			
                 {/* Totals shown inline above list below */}
 			              </div>
-			              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Sales by sales rep list">
+			              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Sales by sales rep list">
                 {salesRepSalesSummaryError ? (
                   <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
                     {salesRepSalesSummaryError}
@@ -15054,7 +15276,7 @@ export default function App() {
 		                        })()}
 			                      <div className="w-max">
 			                        <div
-			                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
 			                            gridTemplateColumns:
 			                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
@@ -15070,7 +15292,7 @@ export default function App() {
 			                          {salesRepSalesSummary.map((rep) => (
 			                            <li
 			                              key={rep.salesRepId}
-			                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+			                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 			                              style={{
 			                                gridTemplateColumns:
 			                                  "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
@@ -15127,7 +15349,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 	                  <div className="min-w-0">
@@ -15138,12 +15360,12 @@ export default function App() {
 			                    {/* Period controls moved to the parent Admin Reports header. */}
 	                  </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
 	                      <Button
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2"
+	                        className="gap-2 order-2 sm:order-1"
 	                        onClick={() => void downloadAdminTaxesByStateCsv()}
 	                        disabled={adminTaxesByStateRows.length === 0}
 	                        title="Download CSV"
@@ -15151,17 +15373,28 @@ export default function App() {
 	                        <Download className="h-4 w-4" aria-hidden="true" />
 	                        Download CSV
 	                      </Button>
-	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-	                        <span className="sales-rep-action-meta-label block">
-	                          Last downloaded
-	                        </span>
-	                        <span className="sales-rep-action-meta-value block">
+	                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sm:hidden block min-w-0 truncate">
+	                          Last downloaded:{" "}
 	                          {adminTaxesByStateCsvDownloadedAt
 	                            ? new Date(adminTaxesByStateCsvDownloadedAt).toLocaleString(
 	                                undefined,
 	                                { timeZone: "America/Los_Angeles" },
 	                              )
 	                            : "—"}
+	                        </span>
+	                        <span className="hidden sm:block">
+	                          <span className="sales-rep-action-meta-label block">
+	                            Last downloaded
+	                          </span>
+	                          <span className="sales-rep-action-meta-value block">
+	                            {adminTaxesByStateCsvDownloadedAt
+	                              ? new Date(adminTaxesByStateCsvDownloadedAt).toLocaleString(
+	                                  undefined,
+	                                  { timeZone: "America/Los_Angeles" },
+	                                )
+	                              : "—"}
+	                          </span>
 	                        </span>
 	                      </span>
 	                    </div>
@@ -15170,22 +15403,22 @@ export default function App() {
 	              </div>
 
 		              {adminTaxesByStateError ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-amber-700 bg-amber-50">
 			                    {adminTaxesByStateError}
 			                  </div>
 			                </div>
 			              ) : adminTaxesByStateLoading ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">Loading taxes…</div>
 			                </div>
 			              ) : adminTaxesByStateRows.length === 0 ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">No tax data for this period.</div>
 			                </div>
 			              ) : (
-				              <div className="grid grid-cols-1 gap-4">
-						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
+				              <div className="grid grid-cols-1 gap-2">
+						              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Taxes by state list">
 			                    <div className="w-full" style={{ minWidth: 920 }}>
 			                      {adminTaxesByStateMeta?.totals && (
                         <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
@@ -15203,7 +15436,7 @@ export default function App() {
 			                      )}
 			                      <div className="w-max">
 			                        <div
-			                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+			                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 			                          style={{
 			                            gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
 			                          }}
@@ -15216,7 +15449,7 @@ export default function App() {
 			                          {adminTaxesByStateRows.map((row) => (
 			                            <li
 			                              key={row.state}
-			                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+			                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 			                              style={{
 			                                gridTemplateColumns: "minmax(120px,1fr) max-content max-content",
 			                              }}
@@ -15239,7 +15472,7 @@ export default function App() {
 
 				                  {adminTaxesByStateOrders.length > 0 && (
 						                    <details
-						                          className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar bg-white/60 border border-slate-200/70"
+						                          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar bg-white/60 border border-slate-200/70"
 		                          open={adminTaxesByStateBreakdownOpen}
 		                          onToggle={(event) => {
 		                            setAdminTaxesByStateBreakdownOpen(
@@ -15254,26 +15487,23 @@ export default function App() {
                             </span>
 		                      </summary>
 					                      <div className="w-full" style={{ minWidth: 920 }}>
-					                      <div
-					                        className="grid items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
-					                        style={{
-					                          gridTemplateColumns: "minmax(0,1fr) max-content",
-					                          width: "fit-content",
-					                          minWidth: "240px",
-					                        }}
-					                      >
+					                      <div className="w-max">
+					                        <div
+					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                          style={{
+					                            gridTemplateColumns: "minmax(120px,1fr) max-content",
+					                          }}
+					                        >
 					                          <div className="whitespace-nowrap">Order</div>
 					                          <div className="whitespace-nowrap text-right">Tax</div>
 					                        </div>
-					                        <ul className="w-max border-x border-b border-slate-200/70 max-h-[320px] overflow-y-auto">
+					                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[320px] overflow-y-auto">
 					                          {adminTaxesByStateOrders.map((line) => (
 					                            <li
 					                              key={`${line.orderNumber}-${line.state}`}
-					                              className="grid items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+					                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 					                              style={{
-					                                gridTemplateColumns: "minmax(0,1fr) max-content",
-					                                width: "fit-content",
-					                                minWidth: "220px",
+					                                gridTemplateColumns: "minmax(120px,1fr) max-content",
 					                              }}
 					                            >
 					                              <div className="min-w-0">
@@ -15291,13 +15521,14 @@ export default function App() {
 					                          ))}
 					                        </ul>
 					                      </div>
+					                      </div>
 		                    </details>
 			                  )}
 			              </div>
 			              )}
             </div>
 
-            <div className="glass-card squircle-xl p-6 border border-slate-200/70">
+            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 	                  <div className="min-w-0">
@@ -15320,12 +15551,12 @@ export default function App() {
                     )}
                   </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-	                    <div className="sales-rep-action flex min-w-0 flex-col items-end gap-1">
+	                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
 	                      <Button
 	                        type="button"
 	                        variant="outline"
 	                        size="sm"
-	                        className="gap-2"
+	                        className="gap-2 order-2 sm:order-1"
 	                        onClick={() => void downloadAdminProductsCommissionCsv()}
 	                        disabled={
 	                          adminProductSalesRows.length === 0 &&
@@ -15336,11 +15567,9 @@ export default function App() {
 	                        <Download className="h-4 w-4" aria-hidden="true" />
 	                        Download CSV
 	                      </Button>
-	                      <span className="sales-rep-action-meta block text-[11px] text-slate-500 leading-tight text-right">
-	                        <span className="sales-rep-action-meta-label block">
-	                          Last downloaded
-	                        </span>
-	                        <span className="sales-rep-action-meta-value block">
+	                      <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+	                        <span className="sm:hidden block min-w-0 truncate">
+	                          Last downloaded:{" "}
 	                          {adminProductsCommissionCsvDownloadedAt
 	                            ? new Date(
 	                                adminProductsCommissionCsvDownloadedAt,
@@ -15349,36 +15578,50 @@ export default function App() {
 	                              })
 	                            : "—"}
 	                        </span>
+	                        <span className="hidden sm:block">
+	                          <span className="sales-rep-action-meta-label block">
+	                            Last downloaded
+	                          </span>
+	                          <span className="sales-rep-action-meta-value block">
+	                            {adminProductsCommissionCsvDownloadedAt
+	                              ? new Date(
+	                                  adminProductsCommissionCsvDownloadedAt,
+	                                ).toLocaleString(undefined, {
+	                                  timeZone: "America/Los_Angeles",
+	                                })
+	                              : "—"}
+	                          </span>
+	                        </span>
 	                      </span>
 	                    </div>
 	                  </div>
-	                </div>
-	              </div>
+                </div>
+              </div>
 
 	              {adminProductsCommissionError ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-amber-700 bg-amber-50">
 			                    {adminProductsCommissionError}
 			                  </div>
 			                </div>
 			              ) : adminProductsCommissionLoading ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">Loading report…</div>
 			                </div>
 			              ) : adminProductSalesRows.length === 0 && adminCommissionRows.length === 0 ? (
-			                <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
+			                <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold and commission lists">
 			                  <div className="px-4 py-3 sm:px-5 sm:py-4 text-sm text-slate-500">No data for this period.</div>
 			                </div>
 				              ) : (
 					              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-						              <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold list">
+						              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold list">
 					                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Products Sold</span>
 					                    </div>
 					                    <div className="w-full" style={{ minWidth: 920 }}>
 					                      <div className="w-max">
 					                        <div
-					                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+					                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 					                          style={{ gridTemplateColumns: "minmax(0,1fr) max-content" }}
 					                        >
 					                          <div className="whitespace-nowrap">Product</div>
@@ -15388,7 +15631,7 @@ export default function App() {
 					                          {adminProductSalesRows.map((row) => (
 					                            <li
 					                              key={row.key}
-					                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+					                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 					                              style={{
 					                                gridTemplateColumns: "minmax(0,1fr) max-content",
 					                              }}
@@ -15418,14 +15661,14 @@ export default function App() {
 					                    </div>
 						              </div>
 
-						                  <div className="sales-rep-table-wrapper p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
+						                  <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
 						                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Commission</span>
 					                    </div>
 						                    <div className="w-full" style={{ minWidth: 920 }}>
 						                      <div className="w-max">
 						                        <div
-						                          className="grid w-full items-center gap-1 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+						                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 						                          style={{
 						                            gridTemplateColumns: "minmax(0,1fr) max-content",
 						                          }}
@@ -15437,7 +15680,7 @@ export default function App() {
 						                          {adminCommissionRows.map((row) => (
 						                            <li
 						                              key={row.id}
-						                              className="grid w-full items-center gap-1 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+						                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
 						                              style={{
 						                                gridTemplateColumns: "minmax(0,1fr) max-content",
 						                              }}
@@ -17034,7 +17277,7 @@ export default function App() {
 	                        </p>
 	                      </div>
 	                    </div>
-                    <div className="sales-rep-table-wrapper">
+                    <div className="sales-rep-table-wrapper admin-dashboard-list">
                       <table className="min-w-[720px] divide-y mb-2 divide-slate-200/70">
                         <thead className="bg-slate-50/70">
                           <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
@@ -17200,8 +17443,7 @@ export default function App() {
           </div>
         </div>
         <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
-          Send dashboard recommendations and ideas that will improve your
-          productivity to{" "}
+          Send dashboard recommendations and ideas to{" "}
           <a
             className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
             href="mailto:petergibbons7@icloud.com?subject=Dashboard%20Recommendation%20(PepPro)"
@@ -17406,14 +17648,44 @@ export default function App() {
     (sum, item) => sum + item.quantity,
     0,
   );
-	  const shouldShowHeaderCartIcon =
-	    totalCartItems > 0 && !isCheckoutButtonVisible;
-	  const newsLoadingPlaceholders = Array.from({ length: 5 });
-	  const forumLoadingPlaceholders = Array.from({ length: 1 });
+		  const shouldShowHeaderCartIcon =
+		    totalCartItems > 0 && !isCheckoutButtonVisible;
+		  const newsLoadingPlaceholders = Array.from({ length: 5 });
+		  const forumLoadingPlaceholders = Array.from({ length: 1 });
+		  const landingAccountButton = user ? (
+		    <Button
+		      type="button"
+		      variant="default"
+		      size="sm"
+		      onClick={openAccountDetailsTab}
+		      className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+		      aria-label="Open account"
+		    >
+		      <span className="hidden sm:inline text-white">{user.name}</span>
+		      <span className="header-account-avatar-shell">
+		        {user.profileImageUrl ? (
+		          <img
+		            src={user.profileImageUrl}
+	            alt={user.name}
+	            className="header-account-avatar header-avatar-image"
+	            style={{ width: 48, height: 48 }}
+	          />
+	        ) : (
+	          <span
+	            className="header-account-avatar header-avatar-fallback"
+	            style={{ width: 48, height: 48 }}
+	            aria-hidden="true"
+	          >
+	            {getInitials(user.name)}
+	          </span>
+	        )}
+	      </span>
+	    </Button>
+	  ) : null;
 
-  return (
-    <div
-      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
+	  return (
+	    <div
+	      className="min-h-screen bg-slate-50 flex flex-col safe-area-vertical"
       style={{
         position: "static",
       }}
@@ -17442,42 +17714,51 @@ export default function App() {
       {infoFocusActive && postLoginHold && user && (
         <div className="info-focus-overlay" aria-hidden="true" />
       )}
-      <div className="relative z-10 flex flex-1 flex-col">
-        {/* Header - Only show when logged in */}
-	        {user && !postLoginHold && (
-		          <Header
-		            user={user}
-		            researchDashboardEnabled={researchDashboardEnabled}
-		            onLogin={handleLogin}
-		            onLogout={handleLogout}
-		            cartItems={totalCartItems}
-		            onSearch={handleSearch}
-		            onCreateAccount={handleCreateAccount}
-	            onCartClick={() => setCheckoutOpen(true)}
-	            loginPromptToken={loginPromptToken}
-	            loginContext={loginContext}
-	            showCartIconFallback={shouldShowHeaderCartIcon}
-	            onShowInfo={() => {
-	              console.log(
-	                "[App] onShowInfo called, setting postLoginHold to true",
-	              );
-	              setPostLoginHold(true);
-	            }}
-	            onUserUpdated={(next) => setUser(next as User)}
-	            accountOrders={accountOrders}
-		            accountOrdersLoading={accountOrdersLoading}
-		            accountOrdersError={accountOrdersError}
-		            ordersLastSyncedAt={accountOrdersSyncedAt}
-		            onRefreshOrders={loadAccountOrders}
-		            showCanceledOrders={showCanceledOrders}
-		            onToggleShowCanceled={toggleShowCanceledOrders}
-		            accountModalRequest={accountModalRequest}
-		            onBuyOrderAgain={handleBuyOrderAgain}
-	            onCancelOrder={handleCancelOrder}
-	            referralCodes={referralCodesForHeader}
-	            catalogLoading={catalogLoading}
-	          />
-	        )}
+		      <div className="relative z-10 flex flex-1 flex-col">
+		        {/* Header - Only show when logged in */}
+			        {user && (
+			          <div style={{ display: postLoginHold ? "none" : undefined }}>
+		                  <Header
+				              user={user}
+				              researchDashboardEnabled={researchDashboardEnabled}
+				              onLogin={handleLogin}
+				              onLogout={handleLogout}
+				              cartItems={totalCartItems}
+		              onSearch={handleSearch}
+		              onCreateAccount={handleCreateAccount}
+		              onCartClick={() => setCheckoutOpen(true)}
+		              loginPromptToken={loginPromptToken}
+		              loginContext={loginContext}
+		              showCartIconFallback={shouldShowHeaderCartIcon}
+		              onShowInfo={() => {
+		                console.log(
+		                  "[App] onShowInfo called, setting postLoginHold to true",
+		                );
+		                setPostLoginHold(true);
+		              }}
+		              onUserUpdated={(next) => setUser(next as User)}
+		              accountOrders={accountOrders}
+		              accountOrdersLoading={accountOrdersLoading}
+		              accountOrdersError={accountOrdersError}
+		              ordersLastSyncedAt={accountOrdersSyncedAt}
+		              onRefreshOrders={loadAccountOrders}
+			              showCanceledOrders={showCanceledOrders}
+			              onToggleShowCanceled={toggleShowCanceledOrders}
+			              accountModalRequest={accountModalRequest}
+                    onAccountModalRequestHandled={(token) => {
+                      setAccountModalRequest((prev) => {
+                        if (!prev) return prev;
+                        return prev.token === token ? null : prev;
+                      });
+	                    }}
+	                    suppressAccountHomeButton={postLoginHold}
+				              onBuyOrderAgain={handleBuyOrderAgain}
+				              onCancelOrder={handleCancelOrder}
+				              referralCodes={referralCodesForHeader}
+				              catalogLoading={catalogLoading}
+				            />
+			          </div>
+			        )}
 
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
@@ -17485,41 +17766,14 @@ export default function App() {
             <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
               {/* Logo with Welcome and Quote Containers */}
               {postLoginHold && user ? (
-                <div className="w-full max-w-7xl mb-6 px-4">
-                  {isDesktopLandingLayout ? (
-                    <div className="flex flex-row items-stretch justify-between gap-4 lg:gap-6 mb-8">
-                      <div
-                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex items-center justify-center flex-1 info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
-                          showWelcome
-                            ? "opacity-100 translate-y-0"
-                            : "opacity-0 -translate-y-4"
-                        }`}
-                        style={{
-                          backdropFilter: "blur(20px) saturate(1.4)",
-                          minHeight: "min(140px, 12.5vh)",
-                        }}
-                      >
-                        <p
-                          className={`font-semibold text-[rgb(95,179,249)] text-center shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
-                          style={{
-                            color: "rgb(95,179,249)",
-                            fontSize: infoFocusActive
-                              ? "clamp(1.1rem, 2vw, 2rem)"
-                              : "clamp(1rem, 1.6vw, 1.75rem)",
-                            lineHeight: 1.15,
-                            transition: "font-size 800ms ease",
-                          }}
-                        >
-                          Welcome{user.visits && user.visits > 1 ? " back" : ""}
-                          , {user.name}!
-                        </p>
-                      </div>
-
-                      <div className="flex-shrink-0 px-6 lg:px-8">
-                        <div className="brand-logo brand-logo--landing">
-                          <img
-                            src="/Peppro_fulllogo.png"
-                            alt="PepPro"
+	                <div className="w-full max-w-7xl mb-6 px-4">
+		                  {isDesktopLandingLayout ? (
+			                    <div className="flex items-center justify-between gap-6 lg:gap-8 mb-8 w-full">
+		                      <div className="flex-shrink-0">
+		                        <div className="brand-logo brand-logo--landing">
+		                          <img
+		                            src="/Peppro_fulllogo.png"
+		                            alt="PepPro"
                             style={{
                               display: "block",
                               width: "auto",
@@ -17528,51 +17782,36 @@ export default function App() {
                               maxHeight: "min(280px, 25vh)",
                               objectFit: "contain",
                             }}
-                          />
-                        </div>
-                      </div>
+	                          />
+		                        </div>
+		                      </div>
 
-                      <div
-                        className={`glass-card ${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} squircle-lg border border-[var(--brand-glass-border-2)] px-8 py-6 lg:px-10 lg:py-8 shadow-lg transition-all duration-500 flex flex-col justify-center flex-1 ${
-                          showWelcome
-                            ? "opacity-100 translate-y-0"
-                            : "opacity-0 translate-y-4 pointer-events-none"
-                        }`}
-                        style={{
-                          backdropFilter: "blur(20px) saturate(1.4)",
-                          minHeight: "min(140px, 12.5vh)",
-                        }}
-                        aria-live="polite"
-                      >
-                        {quoteLoading && !quoteReady && (
-                          <div className="flex w-full flex-1 items-center justify-center">
-                            <p className="text-sm font-semibold text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
-                              Loading today&apos;s quote…
-                            </p>
-                          </div>
-	                        )}
-                        {quoteReady && quoteOfTheDay && (
-                          <p
-                            className="px-4 sm:px-6 italic text-[rgb(95,179,249)] text-center leading-snug break-words"
-                            style={{
-                              color: "rgb(95,179,249)",
-                              fontSize: quoteFontSize,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              display: "-webkit-box",
-                              WebkitLineClamp: quoteLineClamp,
-                              WebkitBoxOrient: "vertical",
-                            }}
-                          >
-                            "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
+		                      <div
+		                        className={`flex items-center justify-end gap-4 transition-all duration-500 flex-shrink-0 ${
+		                          showWelcome
+		                            ? "opacity-100 translate-y-0"
+		                            : "opacity-0 translate-y-4 pointer-events-none"
+		                        }`}
+		                      >
+		                        <p
+		                          className={`font-semibold text-[rgb(95,179,249)] text-right leading-none shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
+			                          style={{
+			                            color: "rgb(95,179,249)",
+			                            fontSize: infoFocusActive
+			                              ? "clamp(1.6rem, 2.9vw, 3rem)"
+			                              : "clamp(1.35rem, 2.6vw, 2.2rem)",
+			                            transition: "font-size 800ms ease",
+			                          }}
+		                        >
+		                          Welcome{user.visits && user.visits > 1 ? " back!" : "!"}
+	                        </p>
+	                        {landingAccountButton}
+	                      </div>
+	                    </div>
+	                  ) : (
                     <div className="flex flex-col items-center gap-6 mb-8">
-                      <div className="flex justify-center px-4">
-                        <div className="brand-logo brand-logo--landing">
+                      <div className="flex w-full items-center justify-between gap-4 px-4">
+                        <div className="brand-logo brand-logo--landing flex-shrink-0">
                           <img
                             src="/Peppro_fulllogo.png"
                             alt="PepPro"
@@ -17586,6 +17825,7 @@ export default function App() {
                             }}
                           />
                         </div>
+                        {landingAccountButton}
                       </div>
                       <div
                         className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
@@ -17618,7 +17858,7 @@ export default function App() {
                               "font-size 600ms ease, transform 600ms ease",
                           }}
                         >
-                          Welcome{user.visits && user.visits > 1 ? " back" : ""}
+                          Welcome{user.visits && user.visits > 1 ? " back!" : "!"}
                           , {user.name}!
                         </p>
                         <div
@@ -17880,17 +18120,51 @@ export default function App() {
                               aria-hidden="true"
                             />
                           </Button>
-                          {(isRep(user?.role) || isAdmin(user?.role)) && (
-                            <span className="text-[11px] text-slate-600 italic">
-                              Shop for physicians:{" "}
-                              {shopEnabled ? "Enabled" : "Disabled"}
-                            </span>
+	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
+	                            <span className="text-[11px] text-slate-600 italic">
+	                              Shop for physicians:{" "}
+	                              {shopEnabled ? "Enabled" : "Disabled"}
+	                            </span>
+	                          )}
+	                        </div>
+                          {isDesktopLandingLayout && (
+                            <div
+                              className={`glass-card ${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} squircle-md border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 flex flex-col justify-center w-full`}
+                              style={{ backdropFilter: "blur(20px) saturate(1.4)" }}
+                              aria-live="polite"
+                            >
+                              {!quoteReady && (
+                                <div className="flex w-full items-center justify-center">
+                                  <p
+                                    className="text-sm font-semibold text-center shimmer-text is-shimmering"
+                                    style={{ color: "rgb(95,179,249)" }}
+                                  >
+                                    Loading today&apos;s quote…
+                                  </p>
+                                </div>
+                              )}
+                              {quoteReady && quoteOfTheDay && (
+                                <p
+                                  className="px-4 sm:px-6 italic text-[rgb(95,179,249)] text-center leading-snug break-words"
+                                  style={{
+                                    color: "rgb(95,179,249)",
+                                    fontSize: quoteFontSize,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: quoteLineClamp,
+                                    WebkitBoxOrient: "vertical",
+                                  }}
+                                >
+                                  "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
+                                </p>
+                              )}
+                            </div>
                           )}
-                        </div>
-	                        {shouldShowPeptideForumCard && (
-	                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
-	                          <div className="flex items-start justify-between gap-3">
-	                            <div className="space-y-1">
+		                        {shouldShowPeptideForumCard && (
+		                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
+		                          <div className="flex items-start justify-between gap-3">
+		                            <div className="space-y-1">
 	                              <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
 	                                The Peptide Forum
 	                              </h2>
@@ -18049,7 +18323,7 @@ export default function App() {
                         {!(isRep(user.role) || isAdmin(user.role)) && (
                           <div className="glass-card squircle-md p-4 space-y-2 border border-[var(--brand-glass-border-2)]">
                             <p className="text-sm font-medium text-slate-700">
-                              Please contact your Representative
+                              Please contact your representative
                               anytime.
                             </p>
                             <div className="space-y-1 text-sm text-slate-600">
@@ -19216,6 +19490,48 @@ export default function App() {
 				                      "—"
 				                    )}
 				                  </div>
+				                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
+				                    isDoctorRole(salesDoctorDetail.role) && (
+				                      <div className="text-[12px] font-normal text-slate-500">
+				                        {(() => {
+				                          const ownerId = String(
+				                            salesDoctorDetail.ownerSalesRepId || "",
+				                          ).trim();
+				                          if (!ownerId) {
+				                            return "Sales Rep: Unassigned";
+				                          }
+				                          const ownerProfile =
+				                            salesDoctorOwnerRepProfiles[ownerId] || null;
+				                          const name = ownerProfile?.name || null;
+				                          const email = ownerProfile?.email || null;
+				                          const role = normalizeRole(
+				                            ownerProfile?.role || "sales_rep",
+				                          );
+				                          const content = name || ownerId;
+				                          const resolved = Boolean(name);
+				                          return (
+				                            <span>
+				                              <span className="text-slate-500">Sales Rep: </span>
+				                              <button
+				                                type="button"
+				                                onClick={() =>
+				                                  openLiveUserDetail({
+				                                    id: ownerId,
+				                                    name: name || undefined,
+				                                    email: email || undefined,
+				                                    role: role || "sales_rep",
+				                                  })
+				                                }
+				                                className={`${resolved ? "text-slate-700" : "text-slate-500"} hover:underline`}
+				                                title="Open sales rep"
+				                              >
+				                                {content}
+				                              </button>
+				                            </span>
+				                          );
+				                        })()}
+				                      </div>
+				                    )}
 				                </DialogTitle>
 				                <DialogDescription>Account details</DialogDescription>
 				              </DialogHeader>
@@ -19380,6 +19696,18 @@ export default function App() {
 			                                String(row?.id || "") ===
 			                                String(salesDoctorDetail.doctorId || ""),
 			                            );
+			                            const commissionValue = (() => {
+			                              if (
+			                                Boolean(salesDoctorCommissionRange?.from) &&
+			                                Boolean(salesDoctorCommissionRange?.to)
+			                              ) {
+			                                return typeof salesDoctorCommissionFromReport === "number" &&
+			                                  Number.isFinite(salesDoctorCommissionFromReport)
+			                                  ? salesDoctorCommissionFromReport
+			                                  : null;
+			                              }
+			                              return adminRow ? Number(adminRow.amount || 0) : null;
+			                            })();
 			                            const periodLabel = formatPeriodLabel(
 			                              adminProductsCommissionMeta?.periodStart ?? null,
 			                              adminProductsCommissionMeta?.periodEnd ?? null,
@@ -19388,9 +19716,11 @@ export default function App() {
 			                              <div className="flex items-center gap-2 flex-wrap">
 			                                <p className="text-sm text-slate-600">
 			                                  Total Commission:{" "}
-			                                  {adminRow
-			                                    ? formatCurrency(Number(adminRow.amount || 0))
-			                                    : "—"}
+			                                  {salesDoctorCommissionFromReportLoading
+			                                    ? "Loading..."
+			                                    : commissionValue == null
+			                                      ? "—"
+			                                      : formatCurrency(commissionValue)}
 			                                </p>
 			                                <Popover.Root
 			                                  open={salesDoctorCommissionPickerOpen}
@@ -19401,10 +19731,10 @@ export default function App() {
 			                                      type="button"
 			                                      variant="ghost"
 			                                      size="icon"
-				                                      className="h-8 w-8 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
+				                                      className="group h-8 w-8 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors"
 				                                      aria-label="Select commission date range"
 				                                    >
-			                                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+			                                      <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
 			                                    </Button>
 			                                  </Popover.Trigger>
 			                                  <Popover.Portal>
@@ -19526,7 +19856,12 @@ export default function App() {
 			                          if (!Number.isFinite(wholesale) && !Number.isFinite(retail)) {
 			                            return null;
 			                          }
-			                          const totalCommission = wholesale * 0.1 + retail * 0.2;
+			                          const fallbackCommission = wholesale * 0.1 + retail * 0.2;
+			                          const totalCommission =
+			                            typeof salesDoctorCommissionFromReport === "number" &&
+			                            Number.isFinite(salesDoctorCommissionFromReport)
+			                              ? salesDoctorCommissionFromReport
+			                              : fallbackCommission;
 			                          const periodLabel = formatPeriodLabel(
 			                            salesRepSalesSummaryMeta?.periodStart ?? null,
 			                            salesRepSalesSummaryMeta?.periodEnd ?? null,
@@ -19534,7 +19869,10 @@ export default function App() {
 			                          return (
 			                            <div className="flex items-center gap-2 flex-wrap">
 			                              <p className="text-sm text-slate-600">
-			                                Total Commission: {formatCurrency(totalCommission)}
+			                                Total Commission:{" "}
+			                                {salesDoctorCommissionFromReportLoading
+			                                  ? "Loading..."
+			                                  : formatCurrency(totalCommission)}
 			                              </p>
 			                              <Popover.Root
 			                                open={salesDoctorCommissionPickerOpen}
@@ -19545,10 +19883,10 @@ export default function App() {
 			                                    type="button"
                                     variant="ghost"
 			                                    size="icon"
-				                                    className="h-8 w-8 glass-liquid squircle-sm text-slate-900 hover:text-slate-900"
+				                                    className="group h-8 w-8 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors"
 				                                    aria-label="Select commission date range"
 				                                  >
-			                                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
+			                                    <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
 			                                  </Button>
 			                                </Popover.Trigger>
 			                                <Popover.Portal>
@@ -19639,21 +19977,21 @@ export default function App() {
                   <p className="text-sm font-semibold text-slate-700">
                     Contact
                   </p>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
-                    <div>
-                      <span className="font-semibold text-slate-800">Email: </span>
-                      {salesDoctorDetail.email ? (
-                        <a href={`mailto:${salesDoctorDetail.email}`}>
-                          {salesDoctorDetail.email}
-                        </a>
-                      ) : (
-                        <span>Unavailable</span>
-                      )}
-                    </div>
-                    <div>
-                      <span className="font-semibold text-slate-800">Phone: </span>
-                      {(() => {
-                        const canEditPhone =
+	                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 space-y-1">
+	                    <div>
+	                      <span className="font-semibold text-slate-800">Email: </span>
+	                      {salesDoctorDetail.email ? (
+	                        <a href={`mailto:${salesDoctorDetail.email}`}>
+	                          {salesDoctorDetail.email}
+	                        </a>
+	                      ) : (
+	                        <span>Unavailable</span>
+	                      )}
+	                    </div>
+	                    <div>
+	                      <span className="font-semibold text-slate-800">Phone: </span>
+	                      {(() => {
+	                        const canEditPhone =
                           Boolean(
                             salesDoctorDetail &&
                               (isAdmin(user?.role) ||
