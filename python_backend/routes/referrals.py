@@ -36,10 +36,11 @@ def _sanitize_phone(value):
 def _ensure_user():
     user_id = g.current_user.get("id")
     user = user_repository.find_by_id(user_id)
-    if not user and (g.current_user.get("role") == "sales_rep"):
+    token_role = (g.current_user.get("role") or "").lower()
+    if not user and token_role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
         rep = sales_rep_repository.find_by_id(user_id)
         if rep:
-            return {**rep, "id": rep.get("id"), "role": "sales_rep"}
+            return {**rep, "id": rep.get("id"), "role": token_role}
     if not user:
         raise _error("AUTH_USER_NOT_FOUND", 401)
     return user
@@ -54,10 +55,16 @@ def _require_doctor(user):
 def _require_sales_rep(user):
     role = (user.get("role") or "").lower()
     token_role = (g.current_user.get("role") or "").lower()
-    # Allow admins regardless of stored role, and allow explicit sales_rep/rep
+    # Allow admins regardless of stored role, and allow explicit sales_rep/rep/sales_lead
     if token_role == "admin" or role == "admin":
         return
-    if role in ("sales_rep", "rep") or token_role in ("sales_rep", "rep"):
+    if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead") or token_role in (
+        "sales_rep",
+        "rep",
+        "sales_lead",
+        "saleslead",
+        "sales-lead",
+    ):
         return
     raise _error("SALES_REP_ACCESS_REQUIRED", 403)
 
