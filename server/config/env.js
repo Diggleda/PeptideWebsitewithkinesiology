@@ -225,7 +225,8 @@ const env = {
 };
 
 env.mysql = {
-  enabled: process.env.MYSQL_ENABLED === 'true',
+  enabled: process.env.MYSQL_ENABLED === 'true'
+    || (Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE)),
   host: process.env.MYSQL_HOST || '127.0.0.1',
   port: toNumber(process.env.MYSQL_PORT, 3306),
   user: process.env.MYSQL_USER || 'root',

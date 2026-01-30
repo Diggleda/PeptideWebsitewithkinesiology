@@ -324,6 +324,7 @@ interface AccountOrderSummary {
   status?: string | null;
   currency?: string | null;
   total?: number | null;
+  grandTotal?: number | null;
   notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -1135,7 +1136,8 @@ const normalizeAccountOrdersResponse = (
           status:
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
-          total: coerceNumber(order?.total) ?? null,
+          total: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          grandTotal: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
@@ -1197,7 +1199,8 @@ const normalizeAccountOrdersResponse = (
           status:
             order?.status === "trash" ? "canceled" : order?.status || "pending",
           currency: order?.currency || "USD",
-          total: coerceNumber(order?.total) ?? null,
+          total: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          grandTotal: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt:
             order?.createdAt ||
@@ -5969,7 +5972,12 @@ export default function App() {
 
 		              const totals = repDoctorOrders.reduce(
 		                (acc: { total: number; wholesale: number; retail: number }, order: any) => {
-		                  const amount = coerceNumber(order?.total) || 0;
+				                                    const amount =
+				                                      coerceNumber(
+				                                        (order as any)?.grandTotal ??
+				                                          (order as any)?.grand_total ??
+				                                          order?.total,
+				                                      ) || 0;
 		                  const pricingModeRaw =
 		                    order?.pricingMode ||
 		                    (order as any)?.pricing_mode ||
@@ -14242,20 +14250,87 @@ export default function App() {
 		              <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		                <div className="flex flex-col gap-3 mb-4">
 		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
-		                    <div className="min-w-0">
-		                      <h3 className="text-lg font-semibold text-slate-900">
-		                        Sales by Sales Rep
-		                      </h3>
-		                      <p className="text-sm text-slate-600">
-		                        Orders placed by doctors assigned to each rep.
-		                      </p>
-		                      {/* Period controls moved to the parent Admin Reports header. */}
-		                    </div>
-			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-			                      <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
-			                        <Button
-			                          type="button"
-			                          variant="outline"
+			                    <div className="min-w-0">
+			                      <h3 className="text-lg font-semibold text-slate-900">
+			                        Sales by Sales Rep
+			                      </h3>
+			                      <p className="text-sm text-slate-600">
+			                        Orders placed by doctors assigned to each rep.
+			                      </p>
+			                    </div>
+				                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+				                      <div className="flex items-center gap-2 min-w-0">
+				                        <Popover.Root
+				                          open={adminDashboardPeriodPickerOpen}
+				                          onOpenChange={setAdminDashboardPeriodPickerOpen}
+				                        >
+				                          <Popover.Trigger asChild>
+				                            <Button
+				                              type="button"
+				                              variant="outline"
+				                              size="icon"
+				                              className="header-home-button squircle-sm h-9 w-9 shrink-0"
+				                              aria-label="Select sales by rep date range"
+				                              title="Select date range"
+				                            >
+				                              <CalendarDays aria-hidden="true" />
+				                            </Button>
+				                          </Popover.Trigger>
+				                          <Popover.Portal>
+				                            <Popover.Content
+				                              side="bottom"
+				                              align="end"
+				                              sideOffset={8}
+				                              className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+				                            >
+				                              <div className="text-sm font-semibold text-slate-800">
+				                                Sales by Sales Rep timeframe
+				                              </div>
+				                              <div className="mt-2">
+				                                <DayPicker
+				                                  mode="range"
+				                                  numberOfMonths={1}
+				                                  selected={adminDashboardPeriodRange}
+				                                  onSelect={handleAdminDashboardPeriodSelect}
+				                                  defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+				                                />
+				                              </div>
+				                              <div className="mt-3 flex items-center justify-between">
+				                                <Button
+				                                  type="button"
+				                                  variant="ghost"
+				                                  size="sm"
+				                                  className="text-slate-700"
+				                                  onClick={() => {
+				                                    const defaults = getDefaultSalesBySalesRepPeriod();
+				                                    setSalesRepPeriodStart(defaults.start);
+				                                    setSalesRepPeriodEnd(defaults.end);
+				                                  }}
+				                                >
+				                                  Default
+				                                </Button>
+				                                <Button
+				                                  type="button"
+				                                  variant="outline"
+				                                  size="sm"
+				                                  className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+				                                  onClick={() => setAdminDashboardPeriodPickerOpen(false)}
+				                                >
+				                                  Done
+				                                </Button>
+				                              </div>
+				                              <Popover.Arrow className="calendar-popover-arrow" />
+				                            </Popover.Content>
+				                          </Popover.Portal>
+				                        </Popover.Root>
+				                        <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+				                          ({adminDashboardPeriodLabel})
+				                        </span>
+				                      </div>
+				                      <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+				                        <Button
+				                          type="button"
+				                          variant="outline"
 			                          size="sm"
 			                          className="gap-2 order-2 sm:order-1"
 			                          onClick={() => void refreshSalesBySalesRepSummary()}
@@ -20303,7 +20378,8 @@ export default function App() {
 			                                    acc: { wholesale: number; retail: number },
 			                                    order: any,
 			                                  ) => {
-			                                    const amount = coerceNumber(order?.total) || 0;
+                                    const amount =
+                                      coerceNumber(order?.grandTotal ?? order?.total) || 0;
 			                                    const pricingModeRaw =
 			                                      order?.pricingMode ||
 			                                      (order as any)?.pricing_mode ||

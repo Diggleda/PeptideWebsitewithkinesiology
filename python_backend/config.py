@@ -215,7 +215,14 @@ def load_config() -> AppConfig:
             },
         },
         mysql={
-            "enabled": os.environ.get("MYSQL_ENABLED", "").lower() == "true",
+            "enabled": (
+                os.environ.get("MYSQL_ENABLED", "").strip().lower() in ("true", "1", "yes", "on")
+                or bool(
+                    os.environ.get("MYSQL_HOST")
+                    and os.environ.get("MYSQL_USER")
+                    and os.environ.get("MYSQL_DATABASE")
+                )
+            ),
             "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
             "port": _to_int(os.environ.get("MYSQL_PORT"), 3306),
             "user": os.environ.get("MYSQL_USER", ""),
