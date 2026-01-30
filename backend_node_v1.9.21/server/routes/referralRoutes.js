@@ -18,6 +18,12 @@ router.get('/admin/sales-prospects/:identifier', authenticate, referralControlle
 router.patch('/admin/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
 router.post('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
 router.get('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);
+
+// Non-admin aliases for sales reps / sales leads (avoids infra path restrictions on /admin/*).
+router.get('/sales-prospects/:identifier', authenticate, referralController.getSalesProspect);
+router.patch('/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
+router.post('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
+router.get('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);
 router.patch('/admin/codes/:codeId', authenticate, referralController.updateReferralCodeStatus);
 router.get('/admin/codes', authenticate, referralController.listReferralCodes);
 

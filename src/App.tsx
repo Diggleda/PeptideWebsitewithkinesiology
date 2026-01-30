@@ -159,7 +159,11 @@ const PASSKEY_AUTOREGISTER =
     (import.meta as any).env?.VITE_PASSKEY_AUTOREGISTER || "",
   ).toLowerCase() === "true";
 
-const normalizeRole = (role?: string | null) => (role || "").toLowerCase();
+const normalizeRole = (role?: string | null) =>
+  (role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 const isAdmin = (role?: string | null) => normalizeRole(role) === "admin";
 const isSalesLead = (role?: string | null) => {
   const normalized = normalizeRole(role);
@@ -6931,13 +6935,13 @@ export default function App() {
 	              totals: (salesSummaryResponse as any)?.totals ?? null,
 	            }
 	          : null;
-	      const filteredSummary = summaryArray
-	        .filter((rep: any) => rep.salesRepId !== user.id)
-	        .filter((rep: any) => {
-	          const totalOrders = Number(rep?.totalOrders || 0);
-	          const totalRevenue = Number(rep?.totalRevenue || 0);
-	          const wholesaleRevenue = Number(rep?.wholesaleRevenue || 0);
-	          const retailRevenue = Number(rep?.retailRevenue || 0);
+		      const filteredSummary = summaryArray
+		        .filter((rep: any) => !isAdmin(user.role) || rep.salesRepId !== user.id)
+		        .filter((rep: any) => {
+		          const totalOrders = Number(rep?.totalOrders || 0);
+		          const totalRevenue = Number(rep?.totalRevenue || 0);
+		          const wholesaleRevenue = Number(rep?.wholesaleRevenue || 0);
+		          const retailRevenue = Number(rep?.retailRevenue || 0);
 	          return (
 	            totalOrders > 0 ||
 	            totalRevenue > 0 ||

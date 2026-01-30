@@ -202,19 +202,20 @@ def cancel_order(order_id: str):
 
 
 @blueprint.get("/admin/sales-rep-summary")
+@blueprint.get("/sales-rep-summary")
 @require_auth
-def admin_sales_by_rep():
+def sales_by_rep_summary():
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role != "admin":
-            err = ValueError("Admin access required")
+        if role not in ("admin", "sales_lead", "saleslead", "sales-lead"):
+            err = ValueError("Admin or Sales Lead access required")
             setattr(err, "status", 403)
             raise err
-        exclude_id = g.current_user.get("id")
+        exclude_id = g.current_user.get("id") if role == "admin" else None
         period_start = request.args.get("periodStart") or request.args.get("start") or None
         period_end = request.args.get("periodEnd") or request.args.get("end") or None
         return order_service.get_sales_by_rep(
-            exclude_sales_rep_id=exclude_id,
+            exclude_sales_rep_id=exclude_id if exclude_id else None,
             period_start=period_start,
             period_end=period_end,
         )

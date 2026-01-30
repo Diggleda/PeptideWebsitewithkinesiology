@@ -75,8 +75,14 @@ const normalizeOptionalString = (value) => {
 };
 
 const normalizeRole = (role) => {
-  const normalized = (role || '').toLowerCase();
+  const normalized = (role || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
   if (normalized === 'sales_rep') return 'sales_rep';
+  if (normalized === 'rep') return 'rep';
+  if (normalized === 'sales_lead' || normalized === 'saleslead') return 'sales_lead';
   if (normalized === 'admin') return 'admin';
   if (normalized === 'test_doctor') return 'test_doctor';
   if (normalized === 'doctor') return 'doctor';

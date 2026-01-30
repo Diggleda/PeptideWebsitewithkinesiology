@@ -30,7 +30,11 @@ const normalizeReferralStatus = (value) => {
 
 const REFERRAL_CODE_STATUSES = ['available', 'assigned', 'revoked', 'retired'];
 
-const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeRole = (role) => (role || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_');
 const normalizeCode = (value) => {
   if (!value) return null;
   const normalized = String(value).trim().toUpperCase();
@@ -57,8 +61,7 @@ const isRep = (role) => {
     normalized === 'sales_rep' ||
     normalized === 'rep' ||
     normalized === 'sales_lead' ||
-    normalized === 'saleslead' ||
-    normalized === 'sales-lead'
+    normalized === 'saleslead'
   );
 };
 
@@ -66,8 +69,7 @@ const isSalesLead = (role) => {
   const normalized = normalizeRole(role);
   return (
     normalized === 'sales_lead' ||
-    normalized === 'saleslead' ||
-    normalized === 'sales-lead'
+    normalized === 'saleslead'
   );
 };
 

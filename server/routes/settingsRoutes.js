@@ -26,12 +26,19 @@ const salesProspectRepository = require('../repositories/salesProspectRepository
 
 const router = Router();
 
-const normalizeRole = (role) => (role || '').toLowerCase();
+const normalizeRole = (role) => (role || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_');
 const isAdmin = (role) => normalizeRole(role) === 'admin';
-const isSalesLead = (role) => normalizeRole(role) === 'sales_lead';
+const isSalesLead = (role) => {
+  const normalized = normalizeRole(role);
+  return normalized === 'sales_lead' || normalized === 'saleslead';
+};
 const isSalesRep = (role) => {
   const normalized = normalizeRole(role);
-  return normalized === 'sales_rep' || normalized === 'rep';
+  return normalized === 'sales_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
 };
 
 const requireAdmin = (req, res, next) => {

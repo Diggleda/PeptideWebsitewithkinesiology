@@ -1,6 +1,10 @@
 const { logger } = require('../config/logger');
 
-const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeRole = (role) => (role || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_');
 
 const ensureAdmin = (req, res, next) => {
   const role = normalizeRole(req.user?.role);

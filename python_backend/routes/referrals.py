@@ -165,6 +165,7 @@ def delete_doctor_referral(referral_id: str):
 
 
 @blueprint.get("/admin/dashboard")
+@blueprint.get("/dashboard")
 @require_auth
 def admin_dashboard():
 
@@ -210,7 +211,7 @@ def admin_dashboard():
             except Exception:
                 sales_reps = None
         return {
-            "version": f"backend_{build}",
+            "version": "python_backend",
             "referrals": referrals,
             "codes": codes,
             "users": users,
@@ -222,6 +223,7 @@ def admin_dashboard():
 
 
 @blueprint.get("/admin/sales-reps/<sales_rep_id>")
+@blueprint.get("/sales-reps/<sales_rep_id>")
 @require_auth
 def admin_sales_rep_by_id(sales_rep_id: str):
 
@@ -411,6 +413,7 @@ def admin_update_referral(referral_id: str):
 
 
 @blueprint.get("/admin/sales-prospects/<identifier>")
+@blueprint.get("/sales-prospects/<identifier>")
 @require_auth
 def admin_get_sales_prospect(identifier: str):
     def action():
@@ -423,6 +426,7 @@ def admin_get_sales_prospect(identifier: str):
 
 
 @blueprint.patch("/admin/sales-prospects/<identifier>")
+@blueprint.patch("/sales-prospects/<identifier>")
 @require_auth
 def admin_upsert_sales_prospect(identifier: str):
     payload = request.get_json(force=True, silent=True) or {}
@@ -445,6 +449,7 @@ def admin_upsert_sales_prospect(identifier: str):
 
 
 @blueprint.route("/admin/sales-prospects/<identifier>/reseller-permit", methods=["GET", "POST", "DELETE"])
+@blueprint.route("/sales-prospects/<identifier>/reseller-permit", methods=["GET", "POST", "DELETE"])
 @require_auth
 def admin_reseller_permit(identifier: str):
     def action():

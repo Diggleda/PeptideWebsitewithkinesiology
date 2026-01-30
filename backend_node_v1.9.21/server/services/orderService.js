@@ -652,6 +652,19 @@ const normalizeTaxAmount = (value) => {
   return roundCurrency(normalized);
 };
 
+const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
+
+const isCaliforniaDestination = (shippingAddress) => {
+  const state = normalizeStateCode(shippingAddress?.state || shippingAddress?.stateCode);
+  return state === 'ca' || state === 'california';
+};
+
+const calculateCaliforniaTax = ({ itemsSubtotal, shippingTotal }) => {
+  const base = Number(itemsSubtotal || 0) + Number(shippingTotal || 0);
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  return roundCurrency(base * 0.077);
+};
+
 const calculateTaxFromRates = ({ rates, itemsSubtotal, shippingTotal }) => {
   if (!Array.isArray(rates) || rates.length === 0) {
     return 0;
@@ -718,7 +731,11 @@ const createOrderInternal = async ({
     shippingTotal,
   });
   const itemsSubtotal = calculateItemsSubtotal(items);
-  const normalizedTaxTotal = taxExempt ? 0 : normalizeTaxAmount(taxTotal);
+  const normalizedTaxTotal = taxExempt
+    ? 0
+    : isCaliforniaDestination(shippingData.shippingAddress)
+      ? calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingData.shippingTotal })
+      : normalizeTaxAmount(taxTotal);
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
   const normalizedTotal = typeof total === 'number' && !Number.isNaN(total) ? roundCurrency(total) : computedTotal;
   if (normalizedTotal <= 0) {
@@ -1062,21 +1079,9 @@ const estimateOrderTotals = async ({
     city: provisionalOrder.shippingAddress.city || '',
   };
 
-  // Try Stripe Tax first if configured
-  if (stripeClient.isTaxConfigured && stripeClient.isTaxConfigured()) {
-    try {
-      const stripeResult = await stripeClient.calculateStripeTax({
-        items,
-        shippingAddress: provisionalOrder.shippingAddress,
-        shippingTotal: shippingTotalFromPreview,
-      });
-      if (stripeResult && stripeResult.status === 'success') {
-        taxTotal = roundCurrency(stripeResult.taxAmount);
-        taxSource = 'stripe_tax';
-      }
-    } catch (error) {
-      logger.warn({ err: error, userId }, 'Stripe Tax calculation failed, falling back to WooCommerce tax logic');
-    }
+  if (isCaliforniaDestination(provisionalOrder.shippingAddress)) {
+    taxTotal = calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingTotalFromPreview });
+    taxSource = 'ca_flat_7_7';
   }
 
   if (taxSource === 'none' && wooCommerceClient.isConfigured() && typeof wooCommerceClient.calculateOrderTaxes === 'function') {

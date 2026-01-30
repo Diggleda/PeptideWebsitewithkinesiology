@@ -84,7 +84,11 @@ const normalizeId = (value) => {
   return text.length ? text : null;
 };
 
-const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeRole = (role) => (role || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_');
 
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 
@@ -756,6 +760,19 @@ const normalizeTaxAmount = (value) => {
   return roundCurrency(normalized);
 };
 
+const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
+
+const isCaliforniaDestination = (shippingAddress) => {
+  const state = normalizeStateCode(shippingAddress?.state || shippingAddress?.stateCode);
+  return state === 'ca' || state === 'california';
+};
+
+const calculateCaliforniaTax = ({ itemsSubtotal, shippingTotal }) => {
+  const base = Number(itemsSubtotal || 0) + Number(shippingTotal || 0);
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  return roundCurrency(base * 0.077);
+};
+
 const calculateTaxFromRates = ({ rates, itemsSubtotal, shippingTotal }) => {
   if (!Array.isArray(rates) || rates.length === 0) {
     return 0;
@@ -827,7 +844,11 @@ const createOrderInternal = async ({
     shippingTotal,
   });
   const itemsSubtotal = calculateItemsSubtotal(items);
-  const normalizedTaxTotal = taxExempt ? 0 : normalizeTaxAmount(taxTotal);
+  const normalizedTaxTotal = taxExempt
+    ? 0
+    : isCaliforniaDestination(shippingData.shippingAddress)
+      ? calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingData.shippingTotal })
+      : 0;
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
   const normalizedTotal = typeof total === 'number' && !Number.isNaN(total) ? roundCurrency(total) : computedTotal;
   if (normalizedTotal <= 0) {
@@ -1176,85 +1197,14 @@ const estimateOrderTotals = async ({
     city: provisionalOrder.shippingAddress.city || '',
   };
 
-  // Try Stripe Tax first if configured
-  if (stripeClient.isTaxConfigured && stripeClient.isTaxConfigured()) {
-    try {
-      const stripeResult = await stripeClient.calculateStripeTax({
-        items,
-        shippingAddress: provisionalOrder.shippingAddress,
-        shippingTotal: shippingTotalFromPreview,
-      });
-      if (stripeResult && stripeResult.status === 'success') {
-        taxTotal = roundCurrency(stripeResult.taxAmount);
-        taxSource = 'stripe_tax';
-      }
-    } catch (error) {
-      logger.warn({ err: error, userId }, 'Stripe Tax calculation failed, falling back to WooCommerce tax logic');
-    }
+  if (isCaliforniaDestination(provisionalOrder.shippingAddress)) {
+    taxTotal = calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingTotalFromPreview });
+    taxSource = 'ca_flat_7_7';
   }
 
-  if (taxSource === 'none' && wooCommerceClient.isConfigured() && typeof wooCommerceClient.calculateOrderTaxes === 'function') {
-    try {
-      wooTaxResponse = await wooCommerceClient.calculateOrderTaxes({
-        order: provisionalOrder,
-        customer: user,
-      });
-      const taxLines = Array.isArray(wooTaxResponse?.response)
-        ? wooTaxResponse.response
-        : [];
-      const totalTaxFromWoo = taxLines.reduce((sum, line) => {
-        const lineTax = normalizeAmount(line?.total ?? line?.tax_total ?? line?.tax) || 0;
-        const shippingTax = normalizeAmount(line?.shipping_tax ?? line?.shipping ?? 0) || 0;
-        return sum + lineTax + shippingTax;
-      }, 0);
-      taxTotal = roundCurrency(totalTaxFromWoo);
-      taxSource = 'woocommerce';
-    } catch (error) {
-      const isUnsupported = error?.code === 'WOO_TAX_UNSUPPORTED';
-      if (isUnsupported) {
-        if (!wooTaxFallbackWarned) {
-          logger.warn({ err: error, userId }, 'WooCommerce tax preview endpoint unavailable; falling back to rate lookup');
-          wooTaxFallbackWarned = true;
-        }
-      } else {
-        logger.warn({ err: error, userId }, 'WooCommerce tax preview failed, trying rate fallback');
-      }
-      try {
-        const rateResponse = await wooCommerceClient.fetchTaxRates(shippingLocation);
-        if (Array.isArray(rateResponse) && rateResponse.length > 0) {
-          const computedTax = calculateTaxFromRates({
-            rates: rateResponse,
-            itemsSubtotal,
-            shippingTotal: shippingTotalFromPreview,
-          });
-          taxTotal = roundCurrency(computedTax);
-          taxSource = 'rates_lookup';
-          wooTaxResponse = {
-            response: rateResponse,
-            status: 'fallback_rates',
-          };
-        } else {
-          logger.warn({ shippingLocation, userId }, 'WooCommerce tax rate lookup returned no rates');
-        }
-      } catch (lookupError) {
-        logger.warn({ err: lookupError, userId }, 'WooCommerce tax rate lookup failed, using zero tax');
-      }
-    }
-  }
-
-  if (taxSource === 'none' && taxTotal === 0) {
-    if (!allowZeroTaxFallback) {
-      const error = new Error('Tax service unavailable for this address');
-      error.status = 502;
-      error.code = 'TAX_UNAVAILABLE';
-      error.details = { shippingLocation };
-      throw error;
-    }
-    logger.warn(
-      { shippingLocation },
-      'Tax service unavailable; returning zero tax via fallback',
-    );
-    taxSource = 'fallback_zero';
+  if (taxSource === 'none') {
+    taxTotal = 0;
+    taxSource = 'flat_zero';
   }
 
   const grandTotal = roundCurrency(itemsSubtotal + shippingTotalFromPreview + taxTotal);

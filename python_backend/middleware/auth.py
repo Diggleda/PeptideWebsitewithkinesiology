@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable, TypeVar
@@ -88,7 +89,11 @@ def require_auth(func: F) -> F:
         if not user_id:
             return _forbidden("Invalid token", code="TOKEN_INVALID")
 
-        role = (payload.get("role") or "").strip().lower()
+        role_raw = (payload.get("role") or "").strip().lower()
+        # Normalize role strings coming from various sources ("Sales Lead", "sales-lead", etc.)
+        # into a consistent underscore form used throughout the backend.
+        role = re.sub(r"[\s-]+", "_", role_raw)
+        payload["role"] = role
         token_session_id = payload.get("sid") or payload.get("sessionId")
         if not token_session_id or not isinstance(token_session_id, str):
             return _forbidden("Invalid token", code="TOKEN_INVALID")

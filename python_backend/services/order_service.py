@@ -18,7 +18,6 @@ from ..repositories import (
     sales_prospect_repository,
 )
 from ..integrations import ship_station, stripe_payments, woo_commerce
-from ..integrations import stripe_tax
 from .. import storage
 from . import referral_service
 from . import settings_service
@@ -512,24 +511,14 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
-    tax_debug = (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
-    if tax_debug:
-        logger.info(
-            "[TaxEstimate] Request userId=%s items=%s shippingTotal=%s destination=%s",
-            str(user_id or ""),
-            len(normalized_items),
-            shipping_total_value,
-            {"country": country, "state": state, "postal_code": postal, "city": address.get("city")},
-        )
-
-    tax_result = stripe_tax.calculate_tax_amount(
-        items=normalized_items,
-        shipping_address=address,
-        shipping_total=shipping_total_value,
-        currency="usd",
-    )
-    tax_total = float(tax_result.get("tax_total_cents") or 0) / 100.0
-    tax_total = max(0.0, tax_total)
+    normalized_state = state.strip().lower()
+    is_ca = normalized_state in ("ca", "california")
+    tax_total = 0.0
+    source = "flat_zero"
+    if is_ca:
+        base = float(items_total + shipping_total_value)
+        tax_total = round(max(0.0, base * 0.077), 2)
+        source = "ca_flat_7_7"
     grand_total = max(0.0, items_total + shipping_total_value + tax_total)
 
     totals = {
@@ -538,8 +527,7 @@ def estimate_order_totals(
         "taxTotal": round(tax_total, 2),
         "grandTotal": round(grand_total, 2),
         "currency": "USD",
-        "source": "stripe_tax",
-        "stripeTaxCalculationId": tax_result.get("calculation_id"),
+        "source": source,
     }
 
     if test_override:
@@ -558,7 +546,7 @@ def estimate_order_totals(
     else:
         totals["testPaymentOverrideApplied"] = False
 
-    if tax_debug:
+    if (os.environ.get("STRIPE_TAX_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"):
         logger.info("[TaxEstimate] Result %s", totals)
 
     return {"success": True, "totals": totals}
@@ -637,12 +625,13 @@ def create_order(
     except Exception:
         shipping_total_value = 0.0
     shipping_total_value = max(0.0, shipping_total_value)
-    try:
-        tax_total_value = float(tax_total or 0)
-    except Exception:
-        tax_total_value = 0.0
-    tax_total_value = max(0.0, tax_total_value)
+    normalized_state = str((shipping_address or {}).get("state") or "").strip().lower()
+    is_ca = normalized_state in ("ca", "california")
     if tax_exempt:
+        tax_total_value = 0.0
+    elif is_ca:
+        tax_total_value = round(max(0.0, (items_subtotal + shipping_total_value) * 0.077), 2)
+    else:
         tax_total_value = 0.0
 
     settings = settings_service.get_settings()

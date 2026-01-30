@@ -1663,7 +1663,8 @@ export const referralAPI = {
       params.set('scope', options.scope);
     }
     const query = params.toString();
-    const url = query ? `${API_BASE_URL}/referrals/admin/dashboard?${query}` : `${API_BASE_URL}/referrals/admin/dashboard`;
+    // Use non-admin path to avoid infra path-based restrictions; backend supports both.
+    const url = query ? `${API_BASE_URL}/referrals/dashboard?${query}` : `${API_BASE_URL}/referrals/dashboard`;
     return fetchWithAuth(url);
   },
 
@@ -1672,7 +1673,8 @@ export const referralAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/referrals/admin/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      // Use non-admin path to avoid infra path-based restrictions; backend supports both.
+      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },
@@ -1706,14 +1708,16 @@ export const referralAPI = {
   },
 
   getSalesProspect: async (doctorId: string) => {
-    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(doctorId)}`);
+    return fetchWithAuth(
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(doctorId)}`,
+    );
   },
 
   upsertSalesProspect: async (
     doctorId: string,
     payload: { status?: string | null; notes?: string | null; resellerPermitExempt?: boolean | null },
   ) => {
-    return fetchWithAuth(`${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(doctorId)}`, {
+    return fetchWithAuth(`${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(doctorId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -1723,7 +1727,7 @@ export const referralAPI = {
     const formData = new FormData();
     formData.append('file', file);
     return fetchWithAuthForm(
-      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
       {
         method: 'POST',
         body: formData,
@@ -1733,14 +1737,14 @@ export const referralAPI = {
 
   downloadResellerPermit: async (identifier: string) => {
     return fetchWithAuthBlob(
-      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
       { method: 'GET' },
     );
   },
 
   deleteResellerPermit: async (identifier: string) => {
     return fetchWithAuth(
-      `${API_BASE_URL}/referrals/admin/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
+      `${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(identifier)}/reseller-permit`,
       { method: 'DELETE' },
     );
   },

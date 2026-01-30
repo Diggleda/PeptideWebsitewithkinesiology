@@ -10,7 +10,11 @@ const {
   getShipStationStatusSyncState,
 } = require('../services/shipStationSyncService');
 
-const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+const normalizeRole = (role) => (role || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_');
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 const normalizeOrderToken = (value) => String(value || '').trim().replace(/^#/, '');
 
@@ -308,8 +312,8 @@ const getOrdersForSalesRep = async (req, res, next) => {
 
 const getSalesRepOrderDetail = async (req, res, next) => {
   try {
-    const role = (req.user?.role || '').toLowerCase();
-    if (role !== 'sales_rep' && role !== 'rep' && role !== 'admin') {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'sales_rep' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
     const { orderId } = req.params;

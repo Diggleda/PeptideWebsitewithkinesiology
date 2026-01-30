@@ -49,7 +49,13 @@ def init_storage(config) -> None:
     settings_store = _make_store(
         config,
         "settings.json",
-        {"shopEnabled": True, "peptideForumEnabled": True, "stripeMode": None, "salesBySalesRepCsvDownloadedAt": None},
+        {
+            "shopEnabled": True,
+            "peptideForumEnabled": True,
+            "stripeMode": None,
+            "salesBySalesRepCsvDownloadedAt": None,
+            "salesLeadSalesBySalesRepCsvDownloadedAt": None,
+        },
     )
     peptide_forum_store = _make_store(
         config,

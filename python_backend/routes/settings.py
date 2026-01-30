@@ -926,13 +926,23 @@ def update_stripe():
 @require_auth
 def get_reports():
     def action():
-        _require_admin()
+        _require_admin_or_sales_lead()
         settings = settings_service.get_settings()
+        role = str((g.current_user or {}).get("role") or "").strip().lower()
+        is_sales_lead = _is_sales_lead_role(role)
+        is_admin = _is_admin()
+        if is_sales_lead and not is_admin:
+            downloaded_at = settings.get("salesLeadSalesBySalesRepCsvDownloadedAt")
+            return {
+                "salesLeadSalesBySalesRepCsvDownloadedAt": downloaded_at if isinstance(downloaded_at, str) else None,
+            }
         downloaded_at = settings.get("salesBySalesRepCsvDownloadedAt")
+        sales_lead_downloaded_at = settings.get("salesLeadSalesBySalesRepCsvDownloadedAt")
         taxes_downloaded_at = settings.get("taxesByStateCsvDownloadedAt")
         products_downloaded_at = settings.get("productsCommissionCsvDownloadedAt")
         return {
             "salesBySalesRepCsvDownloadedAt": downloaded_at if isinstance(downloaded_at, str) else None,
+            "salesLeadSalesBySalesRepCsvDownloadedAt": sales_lead_downloaded_at if isinstance(sales_lead_downloaded_at, str) else None,
             "taxesByStateCsvDownloadedAt": taxes_downloaded_at if isinstance(taxes_downloaded_at, str) else None,
             "productsCommissionCsvDownloadedAt": products_downloaded_at if isinstance(products_downloaded_at, str) else None,
         }
@@ -944,9 +954,27 @@ def get_reports():
 @require_auth
 def update_reports():
     def action():
-        _require_admin()
+        _require_admin_or_sales_lead()
         payload = request.get_json(silent=True) or {}
+        role = str((g.current_user or {}).get("role") or "").strip().lower()
+        is_sales_lead = _is_sales_lead_role(role)
+        is_admin = _is_admin()
         patch = {}
+        if is_sales_lead and not is_admin:
+            if "salesLeadSalesBySalesRepCsvDownloadedAt" in payload or "downloadedAt" in payload:
+                raw = payload.get("salesLeadSalesBySalesRepCsvDownloadedAt") or payload.get("downloadedAt")
+                parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+                stamp = (
+                    parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    if parsed
+                    else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                )
+                patch["salesLeadSalesBySalesRepCsvDownloadedAt"] = stamp
+            updated = settings_service.update_settings(patch) if patch else settings_service.get_settings()
+            return {
+                "salesLeadSalesBySalesRepCsvDownloadedAt": updated.get("salesLeadSalesBySalesRepCsvDownloadedAt"),
+            }
+
         if "salesBySalesRepCsvDownloadedAt" in payload or "downloadedAt" in payload:
             raw = payload.get("salesBySalesRepCsvDownloadedAt") or payload.get("downloadedAt")
             parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
@@ -956,6 +984,16 @@ def update_reports():
                 else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             )
             patch["salesBySalesRepCsvDownloadedAt"] = stamp
+
+        if "salesLeadSalesBySalesRepCsvDownloadedAt" in payload:
+            raw = payload.get("salesLeadSalesBySalesRepCsvDownloadedAt")
+            parsed = _parse_iso_datetime(raw if isinstance(raw, str) else None)
+            stamp = (
+                parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if parsed
+                else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+            patch["salesLeadSalesBySalesRepCsvDownloadedAt"] = stamp
 
         if "taxesByStateCsvDownloadedAt" in payload:
             raw = payload.get("taxesByStateCsvDownloadedAt")
@@ -983,6 +1021,7 @@ def update_reports():
             updated = settings_service.get_settings()
         return {
             "salesBySalesRepCsvDownloadedAt": updated.get("salesBySalesRepCsvDownloadedAt"),
+            "salesLeadSalesBySalesRepCsvDownloadedAt": updated.get("salesLeadSalesBySalesRepCsvDownloadedAt"),
             "taxesByStateCsvDownloadedAt": updated.get("taxesByStateCsvDownloadedAt"),
             "productsCommissionCsvDownloadedAt": updated.get("productsCommissionCsvDownloadedAt"),
         }

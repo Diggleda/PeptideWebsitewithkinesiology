@@ -21,6 +21,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "testPaymentsOverrideEnabled": False,
     # ISO timestamp (admin report)
     "salesBySalesRepCsvDownloadedAt": None,
+    # ISO timestamp (sales lead report)
+    "salesLeadSalesBySalesRepCsvDownloadedAt": None,
     # ISO timestamp (admin report)
     "taxesByStateCsvDownloadedAt": None,
     # ISO timestamp (admin report)
@@ -108,6 +110,9 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged["testPaymentsOverrideEnabled"] = _to_bool(merged.get("testPaymentsOverrideEnabled", False))
     merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("salesBySalesRepCsvDownloadedAt")
+    )
+    merged["salesLeadSalesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(
+        merged.get("salesLeadSalesBySalesRepCsvDownloadedAt")
     )
     merged["taxesByStateCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("taxesByStateCsvDownloadedAt")
