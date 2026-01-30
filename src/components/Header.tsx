@@ -710,6 +710,30 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
   const orderStatus = orderStatusRaw.trim();
   const orderStatusNormalized = orderStatus.toLowerCase();
 
+  const carrierTracking =
+    (order.integrationDetails as any)?.carrierTracking ||
+    (order.integrationDetails as any)?.carrier_tracking ||
+    null;
+  const carrierTrackingStatusRaw =
+    carrierTracking?.trackingStatusRaw ||
+    carrierTracking?.trackingStatus ||
+    carrierTracking?.tracking_status ||
+    carrierTracking?.status ||
+    carrierTracking?.deliveryStatus ||
+    carrierTracking?.delivery_status ||
+    null;
+  const carrierTrackingStr = carrierTrackingStatusRaw ? String(carrierTrackingStatusRaw).trim() : '';
+  const carrierTrackingNormalized = carrierTrackingStr.toLowerCase();
+  const carrierTrackingMeaningful =
+    carrierTrackingNormalized.includes('in_transit') ||
+    carrierTrackingNormalized.includes('in-transit') ||
+    carrierTrackingNormalized.includes('out_for_delivery') ||
+    carrierTrackingNormalized.includes('out-for-delivery') ||
+    carrierTrackingNormalized.includes('delivered');
+  if (carrierTrackingStr && carrierTrackingMeaningful) {
+    return carrierTrackingStr;
+  }
+
   // Always prefer the authoritative order status for terminal or explicit states.
   // Shipping provider statuses are best used to improve display only when the order
   // isn't already in a definitive state (e.g., Completed).
@@ -728,6 +752,7 @@ const resolveOrderStatusSource = (order: AccountOrderSummary | null | undefined)
 
   const shippingStatus =
     (order.shippingEstimate as any)?.status ||
+    carrierTrackingStatusRaw ||
     (order.integrationDetails as any)?.shipStation?.status;
 
   // Only override when the shipping provider has a meaningful "in-flight" status.
@@ -916,6 +941,7 @@ export function Header({
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
+  const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
   const [cachedAccountOrders, setCachedAccountOrders] = useState<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const cachedAccountOrdersRef = useRef<AccountOrderSummary[]>(Array.isArray(accountOrders) ? accountOrders : []);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
@@ -2809,6 +2835,67 @@ export function Header({
     });
   }, [welcomeOpen, accountTab, selectedOrder, ensureOrderLineImageLoaded, extractWooLineItemsFromOrder]);
 
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'orders' || !selectedOrder) {
+      return;
+    }
+    const trackingNumber = resolveTrackingNumber(selectedOrder);
+    if (!trackingNumber) {
+      return;
+    }
+
+    const cached = trackingStatusCacheRef.current.get(trackingNumber);
+    if (cached) {
+      setSelectedOrder((prev) => {
+        if (!prev) return prev;
+        const integrationDetails = (prev.integrationDetails && typeof prev.integrationDetails === 'object')
+          ? prev.integrationDetails
+          : {};
+        const existing = (integrationDetails as any)?.carrierTracking || (integrationDetails as any)?.carrier_tracking || null;
+        if (existing?.trackingStatus) {
+          return prev;
+        }
+        return {
+          ...prev,
+          integrationDetails: {
+            ...(integrationDetails as any),
+            carrierTracking: cached,
+          },
+        };
+      });
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const api = await import('../services/api');
+        const info = await api.trackingAPI.getStatus(trackingNumber);
+        if (cancelled || !info) return;
+        trackingStatusCacheRef.current.set(trackingNumber, info);
+        setSelectedOrder((prev) => {
+          if (!prev) return prev;
+          const integrationDetails = (prev.integrationDetails && typeof prev.integrationDetails === 'object')
+            ? prev.integrationDetails
+            : {};
+          return {
+            ...prev,
+            integrationDetails: {
+              ...(integrationDetails as any),
+              carrierTracking: info,
+            },
+          };
+        });
+      } catch {
+        // non-fatal
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [welcomeOpen, accountTab, selectedOrder?.id]);
+
   const handleCopyReferralCode = useCallback(async () => {
     if (!primaryReferralCode) return;
     try {
@@ -3772,6 +3859,27 @@ export function Header({
 	                      )}
 	                    </p>
 	                  )}
+	                  {(() => {
+	                    const carrierTracking =
+	                      (selectedOrder.integrationDetails as any)?.carrierTracking ||
+	                      (selectedOrder.integrationDetails as any)?.carrier_tracking ||
+	                      null;
+	                    const label =
+	                      carrierTracking?.trackingStatusRaw ||
+	                      carrierTracking?.trackingStatus ||
+	                      carrierTracking?.tracking_status ||
+	                      carrierTracking?.status ||
+	                      carrierTracking?.deliveryStatus ||
+	                      carrierTracking?.delivery_status ||
+	                      null;
+	                    if (!label) return null;
+	                    return (
+	                      <p>
+	                        <span className="font-semibold">Tracking status:</span>{' '}
+	                        {humanizeOrderStatus(String(label))}
+	                      </p>
+	                    );
+	                  })()}
 	                  {shippingMethod && (
 	                    <p>
 	                      <span className="font-semibold">Service:</span> {shippingMethod}

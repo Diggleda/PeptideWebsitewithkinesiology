@@ -20,6 +20,7 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const peptideForumRoutes = require('./routes/peptideForumRoutes');
 const googleSheetsRoutes = require('./routes/googleSheetsRoutes');
 const shipStationRoutes = require('./routes/shipStationRoutes');
+const trackingRoutes = require('./routes/trackingRoutes');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { requestContext } = require('./config/requestContext');
@@ -255,6 +256,7 @@ const createApp = () => {
   app.use('/api/forum', peptideForumRoutes);
   app.use('/api/integrations/google-sheets', googleSheetsRoutes);
   app.use('/api/integrations/shipstation', shipStationRoutes);
+  app.use('/api/tracking', trackingRoutes);
   app.use('/api', systemRoutes);
 
   app.use('/api', (req, res) => {

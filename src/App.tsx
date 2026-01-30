@@ -66,6 +66,7 @@ import {
 	import {
 	  authAPI,
 	  ordersAPI,
+	  trackingAPI,
 	  referralAPI,
 	  newsAPI,
 	  quotesAPI,
@@ -315,6 +316,15 @@ interface AccountShippingEstimate {
   meta?: Record<string, any> | null;
 }
 
+interface CarrierTrackingInfo {
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  trackingStatus?: string | null;
+  trackingStatusRaw?: string | null;
+  deliveredAt?: string | null;
+  checkedAt?: string | null;
+}
+
 interface AccountOrderSummary {
   id: string;
   number?: string | null;
@@ -483,13 +493,107 @@ const resolveSalesOrderStatusSource = (
     const status = String(order.status || "").trim();
     return status.length > 0 ? status : null;
   }
+  const integrations = parseMaybeJson(order.integrationDetails || order.integrations);
+  const shipStation = parseMaybeJson(integrations?.shipStation || integrations?.shipstation);
+  const carrierTracking = parseMaybeJson(
+    integrations?.carrierTracking ||
+      integrations?.carrier_tracking ||
+      integrations?.trackingDetails ||
+      integrations?.tracking_details,
+  );
+  const shipments =
+    shipStation?.shipments || shipStation?.shipment || shipStation?.data?.shipments || [];
+  const shipStationStatus =
+    shipStation?.status ||
+    (Array.isArray(shipments)
+      ? (() => {
+          const candidate = shipments.find(
+            (entry: any) =>
+              entry &&
+              (entry?.status ||
+                entry?.shipmentStatus ||
+                entry?.shipment_status ||
+                entry?.trackingStatus ||
+                entry?.tracking_status ||
+                entry?.deliveryStatus ||
+                entry?.delivery_status),
+          );
+          return (
+            (candidate as any)?.status ||
+            (candidate as any)?.shipmentStatus ||
+            (candidate as any)?.shipment_status ||
+            (candidate as any)?.trackingStatus ||
+            (candidate as any)?.tracking_status ||
+            (candidate as any)?.deliveryStatus ||
+            (candidate as any)?.delivery_status ||
+            null
+          );
+        })()
+      : null);
+  const carrierTrackingStatus =
+    carrierTracking?.trackingStatus ||
+    carrierTracking?.tracking_status ||
+    carrierTracking?.status ||
+    carrierTracking?.deliveryStatus ||
+    carrierTracking?.delivery_status ||
+    null;
   const shippingStatus =
-    (order.shippingEstimate as any)?.status ||
-    (order.integrationDetails as any)?.shipStation?.status;
+    (order.shippingEstimate as any)?.status || carrierTrackingStatus || shipStationStatus;
   const candidate = shippingStatus || order.status || null;
   if (!candidate) return null;
   const str = String(candidate).trim();
   return str.length > 0 ? str : null;
+};
+
+const resolveSalesOrderShippingStatus = (
+  order?: AccountOrderSummary | null,
+): string | null => {
+  if (!order) return null;
+  const integrations = parseMaybeJson(order.integrationDetails || order.integrations);
+  const shipStation = parseMaybeJson(integrations?.shipStation || integrations?.shipstation);
+  const carrierTracking = parseMaybeJson(
+    integrations?.carrierTracking ||
+      integrations?.carrier_tracking ||
+      integrations?.trackingDetails ||
+      integrations?.tracking_details,
+  );
+  const shipments =
+    shipStation?.shipments || shipStation?.shipment || shipStation?.data?.shipments || [];
+  const carrierTrackingStatus =
+    carrierTracking?.trackingStatus ||
+    carrierTracking?.tracking_status ||
+    carrierTracking?.status ||
+    carrierTracking?.deliveryStatus ||
+    carrierTracking?.delivery_status ||
+    null;
+  const direct =
+    (order.shippingEstimate as any)?.status ||
+    carrierTrackingStatus ||
+    shipStation?.status ||
+    null;
+  if (direct) return String(direct).trim() || null;
+  if (!Array.isArray(shipments)) return null;
+  const candidate = shipments.find(
+    (entry: any) =>
+      entry &&
+      (entry?.status ||
+        entry?.shipmentStatus ||
+        entry?.shipment_status ||
+        entry?.trackingStatus ||
+        entry?.tracking_status ||
+        entry?.deliveryStatus ||
+        entry?.delivery_status),
+  );
+  const value =
+    (candidate as any)?.status ||
+    (candidate as any)?.shipmentStatus ||
+    (candidate as any)?.shipment_status ||
+    (candidate as any)?.trackingStatus ||
+    (candidate as any)?.tracking_status ||
+    (candidate as any)?.deliveryStatus ||
+    (candidate as any)?.delivery_status ||
+    null;
+  return value ? String(value).trim() || null : null;
 };
 
 const describeSalesOrderStatus = (
@@ -498,6 +602,10 @@ const describeSalesOrderStatus = (
   const raw = resolveSalesOrderStatusSource(order);
   const statusRaw = raw ? String(raw) : "";
   const normalized = statusRaw.trim().toLowerCase();
+  const shippingStatusRaw = resolveSalesOrderShippingStatus(order);
+  const shippingNormalized = shippingStatusRaw
+    ? String(shippingStatusRaw).trim().toLowerCase()
+    : "";
   if (
     normalized === "trash" ||
     normalized === "canceled" ||
@@ -509,8 +617,22 @@ const describeSalesOrderStatus = (
     return "Refunded";
   }
 
-  // Match doctor-facing status logic: do not infer tracking from integrations for the status label.
-  // (The sales-rep view can still display tracking elsewhere if needed.)
+  if (
+    shippingNormalized.includes("out_for_delivery") ||
+    shippingNormalized.includes("out-for-delivery")
+  ) {
+    return "Out for Delivery";
+  }
+  if (
+    shippingNormalized.includes("in_transit") ||
+    shippingNormalized.includes("in-transit")
+  ) {
+    return "In Transit";
+  }
+  if (shippingNormalized.includes("delivered")) {
+    return "Delivered";
+  }
+
   const tracking =
     typeof (order as any)?.trackingNumber === "string"
       ? String((order as any).trackingNumber).trim()
@@ -519,7 +641,6 @@ const describeSalesOrderStatus = (
   const hasEta = typeof eta === "string" && eta.trim().length > 0;
 
   if (normalized === "shipped") {
-    if (tracking && !hasEta) return "Processing";
     return tracking ? "Shipped" : "Shipped";
   }
   if (
@@ -538,17 +659,12 @@ const describeSalesOrderStatus = (
     return "Delivered";
   }
 
-  if (tracking && !hasEta) {
-    return "Processing";
-  }
-  if (tracking && hasEta) {
-    return "Shipped";
-  }
+  if (tracking) return "Shipped";
   if (normalized === "processing") {
     return "Order Received";
   }
   if (normalized === "completed" || normalized === "complete") {
-    return "Completed";
+    return "Shipped";
   }
   if (normalized === "awaiting_shipment" || normalized === "awaiting shipment") {
     return "Order Received";
@@ -4869,6 +4985,11 @@ export default function App() {
   const [salesOrderDetail, setSalesOrderDetail] =
     useState<AccountOrderSummary | null>(null);
   const [salesOrderDetailLoading, setSalesOrderDetailLoading] = useState(false);
+  const [trackingStatusByNumber, setTrackingStatusByNumber] = useState<Record<string, CarrierTrackingInfo>>({});
+  const trackingStatusByNumberRef = useRef<Record<string, CarrierTrackingInfo>>({});
+  useEffect(() => {
+    trackingStatusByNumberRef.current = trackingStatusByNumber;
+  }, [trackingStatusByNumber]);
   const [salesOrderNotesDraft, setSalesOrderNotesDraft] = useState<string>("");
   const [salesOrderNotesSaving, setSalesOrderNotesSaving] = useState(false);
   const [salesOrderHydratingIds, setSalesOrderHydratingIds] = useState<
@@ -5353,6 +5474,69 @@ export default function App() {
 	        ? String((salesOrderDetail as any).notes)
 	        : "",
 	    );
+	  }, [salesOrderDetail?.id]);
+
+	  useEffect(() => {
+	    if (!salesOrderDetail) {
+	      return;
+	    }
+	    const trackingNumber = resolveTrackingNumber(salesOrderDetail as any);
+	    if (!trackingNumber) {
+	      return;
+	    }
+
+	    const cached = trackingStatusByNumberRef.current[trackingNumber];
+	    if (cached) {
+	      setSalesOrderDetail((prev) => {
+	        if (!prev) return prev;
+	        const integrations = parseMaybeJson(prev.integrationDetails || prev.integrations) || {};
+	        const existingCarrierTracking = parseMaybeJson(
+	          (integrations as any)?.carrierTracking || (integrations as any)?.carrier_tracking,
+	        );
+	        if (existingCarrierTracking?.trackingStatus) {
+	          return prev;
+	        }
+	        return {
+	          ...prev,
+	          integrationDetails: {
+	            ...integrations,
+	            carrierTracking: cached,
+	          },
+	        };
+	      });
+	      return;
+	    }
+
+	    let cancelled = false;
+	    void (async () => {
+	      try {
+	        const info = (await trackingAPI.getStatus(trackingNumber)) as CarrierTrackingInfo | null;
+	        if (cancelled || !info) {
+	          return;
+	        }
+	        setTrackingStatusByNumber((prev) => ({
+	          ...prev,
+	          [trackingNumber]: info,
+	        }));
+	        setSalesOrderDetail((prev) => {
+	          if (!prev) return prev;
+	          const integrations = parseMaybeJson(prev.integrationDetails || prev.integrations) || {};
+	          return {
+	            ...prev,
+	            integrationDetails: {
+	              ...integrations,
+	              carrierTracking: info,
+	            },
+	          };
+	        });
+	      } catch (_error) {
+	        // non-fatal
+	      }
+	    })();
+
+	    return () => {
+	      cancelled = true;
+	    };
 	  }, [salesOrderDetail?.id]);
 
 	  useEffect(() => {
@@ -20863,6 +21047,17 @@ export default function App() {
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
+                const integrationsParsed = parseMaybeJson(integrations || {});
+                const carrierTracking = parseMaybeJson(
+                  (integrationsParsed as any)?.carrierTracking ||
+                    (integrationsParsed as any)?.carrier_tracking ||
+                    null,
+                );
+                const carrierTrackingLabel =
+                  carrierTracking?.trackingStatusRaw ||
+                  carrierTracking?.trackingStatus ||
+                  carrierTracking?.status ||
+                  null;
                 const showExpectedShipmentWindow = Boolean(
                   expectedShipmentWindow && !(normalizedStatus === "shipped" && Boolean(trackingLabel)),
                 );
@@ -20947,6 +21142,12 @@ export default function App() {
                               trackingLabel || "Provided when shipped"
                             )}
                           </p>
+                          {carrierTrackingLabel && (
+                            <p>
+                              <span className="font-semibold">Tracking status:</span>{" "}
+                              {humanizeAccountOrderStatus(String(carrierTrackingLabel))}
+                            </p>
+                          )}
                           {Number.isFinite(shippingTotal) && (
                             <p>
                               <span className="font-semibold">Shipping:</span>{" "}

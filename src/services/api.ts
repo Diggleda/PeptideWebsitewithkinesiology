@@ -1505,6 +1505,24 @@ export const ordersAPI = {
   },
 };
 
+export const trackingAPI = {
+  getStatus: async (trackingNumber: string, options?: { carrier?: string }) => {
+    const normalized = typeof trackingNumber === 'string' ? trackingNumber.trim() : '';
+    if (!normalized) {
+      throw new Error('trackingNumber is required');
+    }
+    const params = new URLSearchParams();
+    if (options?.carrier) {
+      params.set('carrier', options.carrier);
+    }
+    const query = params.toString();
+    const url = query
+      ? `${API_BASE_URL}/tracking/status/${encodeURIComponent(normalized)}?${query}`
+      : `${API_BASE_URL}/tracking/status/${encodeURIComponent(normalized)}`;
+    return fetchWithAuth(url, { method: 'GET', cache: 'no-store' });
+  },
+};
+
 export const wooAPI = {
   listCertificateProducts: async () => {
     return fetchWithAuth(`${API_BASE_URL}/woo/certificates/products`, {
