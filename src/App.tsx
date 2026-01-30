@@ -6895,12 +6895,12 @@ export default function App() {
 	    user?.role,
 	  ]);
 
-  const refreshSalesBySalesRepSummary = useCallback(async () => {
-    if (!user || !isAdmin(user.role)) return;
-    setSalesRepSalesSummaryLoading(true);
-    setSalesRepSalesSummaryError(null);
-    try {
-      const defaults = getDefaultSalesBySalesRepPeriod();
+	  const refreshSalesBySalesRepSummary = useCallback(async () => {
+	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) return;
+	    setSalesRepSalesSummaryLoading(true);
+	    setSalesRepSalesSummaryError(null);
+	    try {
+	      const defaults = getDefaultSalesBySalesRepPeriod();
       const periodStart = salesRepPeriodStart || defaults.start;
       const periodEnd = salesRepPeriodEnd || defaults.end;
       if (!salesRepPeriodStart) {
@@ -6970,23 +6970,28 @@ export default function App() {
     void refreshAdminProductsCommission();
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
-  const salesByRepAutoLoadedRef = useRef(false);
-  useEffect(() => {
-    if (!user || !isAdmin(user.role)) {
-      salesByRepAutoLoadedRef.current = false;
-      return;
-    }
-    if (salesByRepAutoLoadedRef.current) {
-      return;
-    }
-    salesByRepAutoLoadedRef.current = true;
-    void refreshSalesBySalesRepSummary();
-    void refreshAdminTaxesByState();
-    void refreshAdminProductsCommission();
-  }, [
-    refreshAdminProductsCommission,
-    refreshAdminTaxesByState,
-    refreshSalesBySalesRepSummary,
+	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
+	  useEffect(() => {
+	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) {
+	      salesByRepAutoLoadedKeyRef.current = "";
+	      return;
+	    }
+	    const key = `${user.id}|${user.role}`;
+	    if (salesByRepAutoLoadedKeyRef.current === key) {
+	      return;
+	    }
+	    salesByRepAutoLoadedKeyRef.current = key;
+	    if (isAdmin(user.role)) {
+	      void refreshSalesBySalesRepSummary();
+	      void refreshAdminTaxesByState();
+	      void refreshAdminProductsCommission();
+	    } else {
+	      void refreshSalesBySalesRepSummary();
+	    }
+	  }, [
+	    refreshAdminProductsCommission,
+	    refreshAdminTaxesByState,
+	    refreshSalesBySalesRepSummary,
     user?.id,
     user?.role,
   ]);
@@ -14220,13 +14225,231 @@ export default function App() {
 	                  );
 	                })()}
 	              </div>
-	            </div>
-	          )}
+		            </div>
+		          )}
 
-	          {adminActionState.error && (
-	            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-	              {adminActionState.error}
-	            </p>
+		          {isSalesLead(user?.role) && (
+		            <div className="mt-6">
+		              <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                <div className="flex flex-col gap-3 mb-4">
+		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
+		                    <div className="min-w-0">
+		                      <h3 className="text-lg font-semibold text-slate-900">
+		                        Sales by Sales Rep
+		                      </h3>
+		                      <p className="text-sm text-slate-600">
+		                        Orders placed by doctors assigned to each rep.
+		                      </p>
+		                      {/* Period controls moved to the parent Admin Reports header. */}
+		                    </div>
+			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+			                      <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+			                        <Button
+			                          type="button"
+			                          variant="outline"
+			                          size="sm"
+			                          className="gap-2 order-2 sm:order-1"
+			                          onClick={() => void refreshSalesBySalesRepSummary()}
+			                          disabled={salesRepSalesSummaryLoading}
+			                          aria-busy={salesRepSalesSummaryLoading}
+			                          title="Refresh"
+			                        >
+			                          <RefreshCw
+			                            className={`h-4 w-4 ${salesRepSalesSummaryLoading ? "animate-spin" : ""}`}
+			                            aria-hidden="true"
+			                          />
+			                          Refresh
+			                        </Button>
+			                        <Button
+			                          type="button"
+			                          variant="outline"
+			                          size="sm"
+			                          className="gap-2 order-2 sm:order-1"
+		                          onClick={downloadSalesBySalesRepCsv}
+		                          disabled={salesRepSalesSummary.length === 0}
+		                          title="Download CSV"
+		                        >
+		                          <Download className="h-4 w-4" aria-hidden="true" />
+		                          Download CSV
+		                        </Button>
+		                        <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+		                          <span className="sm:hidden block min-w-0 truncate">
+		                            Last downloaded:{" "}
+		                            {salesRepSalesCsvDownloadedAt
+		                              ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(
+		                                  undefined,
+		                                  {
+		                                    timeZone: "America/Los_Angeles",
+		                                  },
+		                                )
+		                              : "—"}
+		                          </span>
+		                          <span className="hidden sm:block">
+		                            <span className="sales-rep-action-meta-label block">
+		                              Last downloaded
+		                            </span>
+		                            <span className="sales-rep-action-meta-value block">
+		                              {salesRepSalesCsvDownloadedAt
+		                                ? new Date(
+		                                    salesRepSalesCsvDownloadedAt,
+		                                  ).toLocaleString(undefined, {
+		                                    timeZone: "America/Los_Angeles",
+		                                  })
+		                                : "—"}
+		                            </span>
+		                          </span>
+		                        </span>
+		                      </div>
+		                    </div>
+		                  </div>
+
+		                  {/* Totals shown inline above list below */}
+		                </div>
+		                <div
+		                  className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+		                  role="region"
+		                  aria-label="Sales by sales rep list"
+		                >
+		                  {salesRepSalesSummaryError ? (
+		                    <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+		                      {salesRepSalesSummaryError}
+		                    </div>
+		                  ) : salesRepSalesSummaryLoading ? (
+		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
+		                      Checking sales…
+		                    </div>
+		                  ) : salesRepSalesSummaryLastFetchedAt === null ? (
+		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
+		                      Click Refresh to load sales.
+		                    </div>
+		                  ) : salesRepSalesSummary.length === 0 ? (
+		                    <div className="px-4 py-3 text-sm text-slate-500">
+		                      No sales recorded yet.
+		                    </div>
+		                  ) : (
+		                    <div className="w-full" style={{ minWidth: 920 }}>
+		                      {(() => {
+		                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+		                        const totals = metaTotals
+		                          ? metaTotals
+		                          : {
+		                              totalOrders: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.totalOrders) || 0),
+		                                0,
+		                              ),
+		                              totalRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.totalRevenue) || 0),
+		                                0,
+		                              ),
+		                              wholesaleRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) =>
+		                                  sum + (Number(row.wholesaleRevenue) || 0),
+		                                0,
+		                              ),
+		                              retailRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.retailRevenue) || 0),
+		                                0,
+		                              ),
+		                            };
+		                        const hasTotals =
+		                          typeof totals.totalOrders === "number" &&
+		                          typeof totals.totalRevenue === "number";
+		                        if (!hasTotals) return null;
+		                        return (
+		                          <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                            <span>Total Orders: {totals.totalOrders}</span>
+		                            <span>
+		                              Wholesale:{" "}
+		                              {formatCurrency(Number(totals.wholesaleRevenue) || 0)}
+		                            </span>
+		                            <span>
+		                              Retail:{" "}
+		                              {formatCurrency(Number(totals.retailRevenue) || 0)}
+		                            </span>
+		                          </div>
+		                        );
+		                      })()}
+		                      <div className="w-max">
+		                        <div
+		                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                          style={{
+		                            gridTemplateColumns:
+		                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+		                          }}
+		                        >
+		                          <div className="whitespace-nowrap">Sales Rep</div>
+		                          <div className="whitespace-nowrap">Email</div>
+		                          <div className="whitespace-nowrap text-right">Orders</div>
+		                          <div className="whitespace-nowrap text-right">Wholesale</div>
+		                          <div className="whitespace-nowrap text-right">Retail</div>
+		                        </div>
+		                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+		                          {salesRepSalesSummary.map((rep) => (
+		                            <li
+		                              key={rep.salesRepId}
+		                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+		                              style={{
+		                                gridTemplateColumns:
+		                                  "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+		                              }}
+		                            >
+		                              <div className="text-sm font-semibold text-slate-900 min-w-0">
+		                                <button
+		                                  type="button"
+		                                  className="min-w-0 text-left hover:underline"
+		                                  onClick={() =>
+		                                    openLiveUserDetail(
+		                                      {
+		                                        id: rep.salesRepId,
+		                                        name: rep.salesRepName,
+		                                        email: rep.salesRepEmail,
+		                                        role: "sales_rep",
+		                                      },
+		                                      {
+		                                        salesRepWholesaleRevenue: Number(
+		                                          rep.wholesaleRevenue || 0,
+		                                        ),
+		                                        salesRepRetailRevenue: Number(
+		                                          rep.retailRevenue || 0,
+		                                        ),
+		                                      },
+		                                    )
+		                                  }
+		                                  title="Open sales rep details"
+		                                >
+		                                  {rep.salesRepName}
+		                                </button>
+		                              </div>
+		                              <div
+		                                className="text-sm text-slate-700 truncate"
+		                                title={rep.salesRepEmail || ""}
+		                              >
+		                                {rep.salesRepEmail || "—"}
+		                              </div>
+		                              <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+		                                {rep.totalOrders}
+		                              </div>
+		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                                {formatCurrency(rep.wholesaleRevenue || 0)}
+		                              </div>
+		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                                {formatCurrency(rep.retailRevenue || 0)}
+		                              </div>
+		                            </li>
+		                          ))}
+		                        </ul>
+		                      </div>
+		                    </div>
+		                  )}
+		                </div>
+		              </div>
+		            </div>
+		          )}
+
+		          {adminActionState.error && (
+		            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		              {adminActionState.error}
+		            </p>
 	          )}
 
 	          {isAdmin(user?.role) && (
@@ -15199,15 +15422,15 @@ export default function App() {
 					                      onOpenChange={setAdminDashboardPeriodPickerOpen}
 					                    >
 					                      <Popover.Trigger asChild>
-					                        <Button
-					                          type="button"
-					                          variant="ghost"
-					                          size="icon"
-					                          className="group h-10 w-10 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors shrink-0"
-					                          aria-label="Select date range"
-					                        >
-					                          <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
-					                        </Button>
+						                        <Button
+						                          type="button"
+						                          variant="outline"
+						                          size="icon"
+						                          className="header-home-button squircle-sm h-10 w-10 shrink-0"
+						                          aria-label="Select date range"
+						                        >
+						                          <CalendarDays aria-hidden="true" />
+						                        </Button>
 					                      </Popover.Trigger>
 					                      <Popover.Portal>
 					                        <Popover.Content
@@ -19614,13 +19837,13 @@ export default function App() {
 				                      "—"
 				                    )}
 				                  </div>
-				                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
-				                    isDoctorRole(salesDoctorDetail.role) && (
-				                      <div className="text-[12px] font-normal text-slate-500">
-				                        {(() => {
-				                          const ownerId = String(
-				                            salesDoctorDetail.ownerSalesRepId || "",
-				                          ).trim();
+					                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
+					                    isDoctorRole(salesDoctorDetail.role) && (
+					                      <div className="text-sm font-normal text-slate-600">
+					                        {(() => {
+					                          const ownerId = String(
+					                            salesDoctorDetail.ownerSalesRepId || "",
+					                          ).trim();
 				                          if (!ownerId) {
 				                            return "Sales Rep: Unassigned";
 				                          }
@@ -19650,7 +19873,7 @@ export default function App() {
 					                          const canOpen = Boolean(userId);
 					                          return (
 					                            <span>
-					                              <span className="text-slate-500">Sales Rep: </span>
+					                              <span className="text-slate-600">Sales Rep: </span>
 					                              {canOpen ? (
 					                                <button
 					                                  type="button"
@@ -19662,7 +19885,7 @@ export default function App() {
 					                                      role: role || "sales_rep",
 					                                    })
 					                                  }
-					                                  className={`${resolved ? "text-slate-700" : "text-slate-500"} hover:underline`}
+					                                  className="text-slate-600 hover:underline"
 					                                  title="Open sales rep"
 					                                >
 					                                  {content}
@@ -19670,7 +19893,7 @@ export default function App() {
 					                              ) : (
 					                                <span className="inline-flex items-center gap-2">
 					                                  <span
-					                                    className={`${resolved ? "text-slate-700" : "text-slate-500"}`}
+					                                    className="text-slate-600"
 					                                    title="Sales rep user profile unavailable"
 					                                  >
 					                                    {content}
@@ -19979,15 +20202,15 @@ export default function App() {
 			                                  onOpenChange={setSalesDoctorCommissionPickerOpen}
 			                                >
 			                                  <Popover.Trigger asChild>
-			                                    <Button
-			                                      type="button"
-			                                      variant="ghost"
-			                                      size="icon"
-				                                      className="group h-8 w-8 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors"
-				                                      aria-label="Select commission date range"
-				                                    >
-			                                      <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
-			                                    </Button>
+				                                    <Button
+				                                      type="button"
+				                                      variant="outline"
+				                                      size="icon"
+					                                      className="header-home-button squircle-sm h-8 w-8"
+					                                      aria-label="Select commission date range"
+					                                    >
+				                                      <CalendarDays aria-hidden="true" />
+				                                    </Button>
 			                                  </Popover.Trigger>
 			                                  <Popover.Portal>
 			                                    <Popover.Content
@@ -20131,15 +20354,15 @@ export default function App() {
 			                                onOpenChange={setSalesDoctorCommissionPickerOpen}
 			                              >
 			                                <Popover.Trigger asChild>
-			                                  <Button
-			                                    type="button"
-                                    variant="ghost"
-			                                    size="icon"
-				                                    className="group h-8 w-8 glass-liquid squircle-sm !text-[rgb(95,179,249)] hover:!text-[rgb(95,179,249)] hover:!bg-[rgba(95,179,249,0.12)] hover:shadow-md transition-colors"
-				                                    aria-label="Select commission date range"
-				                                  >
-			                                    <CalendarDays className="h-4 w-4 text-[rgb(95,179,249)] group-hover:text-[rgb(95,179,249)]" aria-hidden="true" />
-			                                  </Button>
+				                                  <Button
+				                                    type="button"
+				                                    variant="outline"
+				                                    size="icon"
+					                                    className="header-home-button squircle-sm h-8 w-8"
+					                                    aria-label="Select commission date range"
+					                                  >
+				                                    <CalendarDays aria-hidden="true" />
+				                                  </Button>
 			                                </Popover.Trigger>
 			                                <Popover.Portal>
 			                                  <Popover.Content

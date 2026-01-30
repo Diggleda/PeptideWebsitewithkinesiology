@@ -5489,7 +5489,9 @@ html {
 }
 
 .header-home-button:hover,
-.header-home-button:focus-visible {
+.header-home-button:focus-visible,
+.header-home-button[data-state="open"],
+.header-home-button[aria-expanded="true"] {
   box-shadow: none;
   background-color: rgb(95, 179, 249);
   color: #ffffff;
