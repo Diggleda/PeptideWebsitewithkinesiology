@@ -1,6 +1,8 @@
 const { logger } = require('../config/logger');
 const orderService = require('../services/orderService');
 
+const normalizeRole = (role) => (role || '').toString().trim().toLowerCase();
+
 const createOrder = async (req, res, next) => {
   try {
     const idempotencyKey = typeof req.get === 'function'
@@ -134,13 +136,18 @@ const estimateOrderTotals = async (req, res, next) => {
 
 const getSalesByRepForAdmin = async (req, res, next) => {
   try {
-    const role = (req.user?.role || '').toLowerCase();
-    if (role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin' && role !== 'sales_lead') {
+      return res.status(403).json({ error: 'Admin or Sales Lead access required' });
     }
+    const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
+    const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
     const summary = await orderService.getSalesByRep({
-      excludeSalesRepId: req.user.id,
-      excludeDoctorIds: [String(req.user.id)],
+      excludeSalesRepId: role === 'admin' ? req.user.id : null,
+      excludeDoctorIds: role === 'admin' ? [String(req.user.id)] : [],
+      periodStart,
+      periodEnd,
+      timeZone: 'America/Los_Angeles',
     });
     res.json(summary);
   } catch (error) {
