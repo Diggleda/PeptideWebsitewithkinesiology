@@ -6,6 +6,7 @@ import requests
 from flask import Blueprint, Response, g, make_response, request
 
 from ..middleware.auth import require_auth
+from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository
 from ..services import order_service
@@ -13,6 +14,13 @@ from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action
 
 blueprint = Blueprint("orders", __name__, url_prefix="/api/orders")
+
+def _require_admin_user() -> None:
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    if role != "admin":
+        err = RuntimeError("Admin access required")
+        setattr(err, "status", 403)
+        raise err
 
 def _round_money(value) -> float:
     try:
@@ -286,6 +294,20 @@ def admin_shipstation_sync_status():
         from ..services.shipstation_status_sync_service import get_status
 
         return {"success": True, "state": get_status()}
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/shipstation/order-status/<order_number>")
+@require_auth
+def admin_shipstation_order_status(order_number: str):
+    def action():
+        _require_admin_user()
+        normalized = str(order_number or "").strip()
+        if not normalized:
+            return {"error": "orderNumber is required"}, 400
+        info = ship_station.fetch_order_status(normalized)
+        return info or {"orderNumber": normalized, "status": None, "trackingNumber": None, "trackingStatus": None, "shipments": []}
 
     return handle_action(action)
 

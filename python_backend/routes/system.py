@@ -613,7 +613,7 @@ def help_endpoint():
             "integrations": {
                 "wooCommerce": {"configured": woo_commerce.is_configured()},
                 "shipEngine": {"configured": ship_engine.is_configured()},
-                "shipStation": {"configured": getattr(config, "ship_station", {}).get("api_token") or getattr(config, "ship_station", {}).get("api_key")},
+                "shipStation": {"configured": bool(getattr(config, "ship_station", {}).get("api_token") or getattr(config, "ship_station", {}).get("api_key"))},
             },
             "endpoints": [
                 "/api/auth/login",
