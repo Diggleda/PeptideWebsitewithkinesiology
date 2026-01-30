@@ -42,6 +42,18 @@ def get_tracking_status(tracking_number: str):
             200,
         )
 
-    info = ups_tracking.fetch_tracking_status(normalized) or {}
+    info = ups_tracking.fetch_tracking_status(normalized)
+    if not info:
+        return make_response(
+            {
+                "carrier": "ups",
+                "trackingNumber": normalized,
+                "trackingStatus": None,
+                "trackingStatusRaw": None,
+                "deliveredAt": None,
+                "checkedAt": None,
+                "error": "UPS_LOOKUP_UNAVAILABLE",
+            },
+            200,
+        )
     return make_response(info, 200)
-

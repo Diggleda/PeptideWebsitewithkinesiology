@@ -149,6 +149,7 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
         }
     )
 
+    checked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
         # Prime cookies + XSRF token (UPS Track API can require it).
         http_client.request_with_session(
@@ -180,8 +181,18 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
         )
         resp.raise_for_status()
         payload = resp.json() or {}
-    except Exception:
-        return None
+    except Exception as exc:
+        # Return a structured failure instead of None so callers can debug deployments.
+        return {
+            "carrier": "ups",
+            "trackingNumber": normalized,
+            "trackingStatus": None,
+            "trackingStatusRaw": None,
+            "deliveredAt": None,
+            "checkedAt": checked_at,
+            "error": "UPS_LOOKUP_FAILED",
+            "errorDetail": str(exc)[:240],
+        }
 
     raw_status = _extract_ups_status(payload)
     tracking_status = _map_status_to_peppro(raw_status)
@@ -193,7 +204,7 @@ def fetch_tracking_status(tracking_number: str) -> Optional[Dict[str, Any]]:
         "trackingStatus": tracking_status,
         "trackingStatusRaw": raw_status,
         "deliveredAt": delivered_at,
-        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "checkedAt": checked_at,
     }
     _set_cached(normalized, result)
     return result
