@@ -1165,6 +1165,12 @@ export const settingsAPI = {
       body: JSON.stringify({ salesBySalesRepCsvDownloadedAt: downloadedAt }),
     });
   },
+  setSalesLeadSalesBySalesRepCsvDownloadedAt: async (downloadedAt: string) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
+      method: 'PUT',
+      body: JSON.stringify({ salesLeadSalesBySalesRepCsvDownloadedAt: downloadedAt }),
+    });
+  },
   setTaxesByStateCsvDownloadedAt: async (downloadedAt: string) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/reports`, {
       method: 'PUT',
@@ -1395,9 +1401,10 @@ export const ordersAPI = {
     if (options?.periodStart) params.set('periodStart', options.periodStart);
     if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
     const query = params.toString();
+    // Use non-admin path to avoid infra path-based restrictions; backend supports both.
     const url = query
-      ? `${API_BASE_URL}/orders/admin/sales-rep-summary?${query}`
-      : `${API_BASE_URL}/orders/admin/sales-rep-summary`;
+      ? `${API_BASE_URL}/orders/sales-rep-summary?${query}`
+      : `${API_BASE_URL}/orders/sales-rep-summary`;
     return fetchWithAuth(url);
   },
 

@@ -11,6 +11,8 @@ const {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getSalesLeadSalesBySalesRepCsvDownloadedAt,
+  setSalesLeadSalesBySalesRepCsvDownloadedAt,
   getTaxesByStateCsvDownloadedAt,
   setTaxesByStateCsvDownloadedAt,
   getProductsCommissionCsvDownloadedAt,
@@ -26,6 +28,7 @@ const router = Router();
 
 const normalizeRole = (role) => (role || '').toLowerCase();
 const isAdmin = (role) => normalizeRole(role) === 'admin';
+const isSalesLead = (role) => normalizeRole(role) === 'sales_lead';
 const isSalesRep = (role) => {
   const normalized = normalizeRole(role);
   return normalized === 'sales_rep' || normalized === 'rep';
@@ -40,6 +43,20 @@ const requireAdmin = (req, res, next) => {
   const role = normalizeRole(user?.role);
   if (!isAdmin(role)) {
     return res.status(403).json({ error: 'Admin access required' });
+  }
+  req.currentUser = user;
+  return next();
+};
+
+const requireAdminOrSalesLead = (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const user = userRepository.findById(userId);
+  const role = normalizeRole(user?.role);
+  if (!isAdmin(role) && !isSalesLead(role)) {
+    return res.status(403).json({ error: 'Admin or Sales Lead access required' });
   }
   req.currentUser = user;
   return next();
@@ -151,24 +168,47 @@ router.get('/stripe', async (_req, res) => {
   });
 });
 
-router.get('/reports', authenticate, requireAdmin, async (_req, res) => {
+router.get('/reports', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const role = normalizeRole(req.currentUser?.role);
+  if (isSalesLead(role) && !isAdmin(role)) {
+    const downloadedAt = await getSalesLeadSalesBySalesRepCsvDownloadedAt();
+    return res.json({ salesLeadSalesBySalesRepCsvDownloadedAt: downloadedAt });
+  }
   const downloadedAt = await getSalesBySalesRepCsvDownloadedAt();
+  const salesLeadDownloadedAt = await getSalesLeadSalesBySalesRepCsvDownloadedAt();
   const taxesDownloadedAt = await getTaxesByStateCsvDownloadedAt();
   const productsDownloadedAt = await getProductsCommissionCsvDownloadedAt();
-  res.json({
+  return res.json({
     salesBySalesRepCsvDownloadedAt: downloadedAt,
+    salesLeadSalesBySalesRepCsvDownloadedAt: salesLeadDownloadedAt,
     taxesByStateCsvDownloadedAt: taxesDownloadedAt,
     productsCommissionCsvDownloadedAt: productsDownloadedAt,
   });
 });
 
-router.put('/reports', authenticate, requireAdmin, async (req, res) => {
+router.put('/reports', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const role = normalizeRole(req.currentUser?.role);
+
+  if (isSalesLead(role) && !isAdmin(role)) {
+    const downloadedAt = req.body?.salesLeadSalesBySalesRepCsvDownloadedAt ?? req.body?.downloadedAt;
+    if (downloadedAt !== undefined) {
+      await setSalesLeadSalesBySalesRepCsvDownloadedAt(downloadedAt);
+    }
+    return res.json({
+      salesLeadSalesBySalesRepCsvDownloadedAt: await getSalesLeadSalesBySalesRepCsvDownloadedAt(),
+    });
+  }
+
   const salesDownloadedAt = req.body?.salesBySalesRepCsvDownloadedAt;
+  const salesLeadDownloadedAt = req.body?.salesLeadSalesBySalesRepCsvDownloadedAt;
   const taxesDownloadedAt = req.body?.taxesByStateCsvDownloadedAt;
   const productsDownloadedAt = req.body?.productsCommissionCsvDownloadedAt;
 
   if (salesDownloadedAt !== undefined) {
     await setSalesBySalesRepCsvDownloadedAt(salesDownloadedAt);
+  }
+  if (salesLeadDownloadedAt !== undefined) {
+    await setSalesLeadSalesBySalesRepCsvDownloadedAt(salesLeadDownloadedAt);
   }
   if (taxesDownloadedAt !== undefined) {
     await setTaxesByStateCsvDownloadedAt(taxesDownloadedAt);
@@ -177,8 +217,9 @@ router.put('/reports', authenticate, requireAdmin, async (req, res) => {
     await setProductsCommissionCsvDownloadedAt(productsDownloadedAt);
   }
 
-  res.json({
+  return res.json({
     salesBySalesRepCsvDownloadedAt: await getSalesBySalesRepCsvDownloadedAt(),
+    salesLeadSalesBySalesRepCsvDownloadedAt: await getSalesLeadSalesBySalesRepCsvDownloadedAt(),
     taxesByStateCsvDownloadedAt: await getTaxesByStateCsvDownloadedAt(),
     productsCommissionCsvDownloadedAt: await getProductsCommissionCsvDownloadedAt(),
   });

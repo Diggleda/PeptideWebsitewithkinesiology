@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   researchDashboardEnabled: false,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
+  salesLeadSalesBySalesRepCsvDownloadedAt: null, // ISO timestamp (sales lead report)
   taxesByStateCsvDownloadedAt: null, // ISO timestamp (admin report)
   productsCommissionCsvDownloadedAt: null, // ISO timestamp (admin report)
 };
@@ -46,6 +47,9 @@ const normalizeSettings = (settings = {}) => {
   merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
   merged.salesBySalesRepCsvDownloadedAt =
     normalizeIsoTimestamp(raw.salesBySalesRepCsvDownloadedAt) ?? DEFAULT_SETTINGS.salesBySalesRepCsvDownloadedAt;
+  merged.salesLeadSalesBySalesRepCsvDownloadedAt =
+    normalizeIsoTimestamp(raw.salesLeadSalesBySalesRepCsvDownloadedAt)
+    ?? DEFAULT_SETTINGS.salesLeadSalesBySalesRepCsvDownloadedAt;
   merged.taxesByStateCsvDownloadedAt =
     normalizeIsoTimestamp(raw.taxesByStateCsvDownloadedAt) ?? DEFAULT_SETTINGS.taxesByStateCsvDownloadedAt;
   merged.productsCommissionCsvDownloadedAt =
@@ -253,6 +257,28 @@ const setSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
   return next.salesBySalesRepCsvDownloadedAt || null;
 };
 
+const getSalesLeadSalesBySalesRepCsvDownloadedAt = async () => {
+  const settings = await getSettings();
+  return settings.salesLeadSalesBySalesRepCsvDownloadedAt || null;
+};
+
+const setSalesLeadSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
+  const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    salesLeadSalesBySalesRepCsvDownloadedAt: normalized,
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return confirmed.salesLeadSalesBySalesRepCsvDownloadedAt || null;
+  }
+  persistToStore(next);
+  return next.salesLeadSalesBySalesRepCsvDownloadedAt || null;
+};
+
 const getTaxesByStateCsvDownloadedAt = async () => {
   const settings = await getSettings();
   return settings.taxesByStateCsvDownloadedAt || null;
@@ -310,6 +336,8 @@ module.exports = {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getSalesLeadSalesBySalesRepCsvDownloadedAt,
+  setSalesLeadSalesBySalesRepCsvDownloadedAt,
   getTaxesByStateCsvDownloadedAt,
   setTaxesByStateCsvDownloadedAt,
   getProductsCommissionCsvDownloadedAt,

@@ -7,6 +7,8 @@ const {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getSalesLeadSalesBySalesRepCsvDownloadedAt,
+  setSalesLeadSalesBySalesRepCsvDownloadedAt,
 } = require('../services/settingsService');
 const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
@@ -17,6 +19,7 @@ const router = Router();
 
 const normalizeRole = (role) => (role || '').toLowerCase();
 const isAdmin = (role) => normalizeRole(role) === 'admin';
+const isSalesLead = (role) => normalizeRole(role) === 'sales_lead';
 
 const requireAdmin = (req, res, next) => {
   const userId = req.user?.id;
@@ -27,6 +30,20 @@ const requireAdmin = (req, res, next) => {
   const role = normalizeRole(user?.role);
   if (!isAdmin(role)) {
     return res.status(403).json({ error: 'Admin access required' });
+  }
+  req.currentUser = user;
+  return next();
+};
+
+const requireAdminOrSalesLead = (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const user = userRepository.findById(userId);
+  const role = normalizeRole(user?.role);
+  if (!isAdmin(role) && !isSalesLead(role)) {
+    return res.status(403).json({ error: 'Admin or Sales Lead access required' });
   }
   req.currentUser = user;
   return next();
@@ -67,15 +84,43 @@ router.get('/stripe', async (_req, res) => {
   });
 });
 
-router.get('/reports', authenticate, requireAdmin, async (_req, res) => {
+router.get('/reports', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const role = normalizeRole(req.currentUser?.role);
+  if (isSalesLead(role) && !isAdmin(role)) {
+    const downloadedAt = await getSalesLeadSalesBySalesRepCsvDownloadedAt();
+    return res.json({ salesLeadSalesBySalesRepCsvDownloadedAt: downloadedAt });
+  }
   const downloadedAt = await getSalesBySalesRepCsvDownloadedAt();
-  res.json({ salesBySalesRepCsvDownloadedAt: downloadedAt });
+  const salesLeadDownloadedAt = await getSalesLeadSalesBySalesRepCsvDownloadedAt();
+  return res.json({
+    salesBySalesRepCsvDownloadedAt: downloadedAt,
+    salesLeadSalesBySalesRepCsvDownloadedAt: salesLeadDownloadedAt,
+  });
 });
 
-router.put('/reports', authenticate, requireAdmin, async (req, res) => {
-  const downloadedAt = req.body?.salesBySalesRepCsvDownloadedAt || req.body?.downloadedAt;
-  const updated = await setSalesBySalesRepCsvDownloadedAt(downloadedAt);
-  res.json({ salesBySalesRepCsvDownloadedAt: updated });
+router.put('/reports', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const role = normalizeRole(req.currentUser?.role);
+  if (isSalesLead(role) && !isAdmin(role)) {
+    const downloadedAt = req.body?.salesLeadSalesBySalesRepCsvDownloadedAt ?? req.body?.downloadedAt;
+    if (downloadedAt !== undefined) {
+      await setSalesLeadSalesBySalesRepCsvDownloadedAt(downloadedAt);
+    }
+    return res.json({
+      salesLeadSalesBySalesRepCsvDownloadedAt: await getSalesLeadSalesBySalesRepCsvDownloadedAt(),
+    });
+  }
+  const salesDownloadedAt = req.body?.salesBySalesRepCsvDownloadedAt;
+  const salesLeadDownloadedAt = req.body?.salesLeadSalesBySalesRepCsvDownloadedAt;
+  if (salesDownloadedAt !== undefined) {
+    await setSalesBySalesRepCsvDownloadedAt(salesDownloadedAt);
+  }
+  if (salesLeadDownloadedAt !== undefined) {
+    await setSalesLeadSalesBySalesRepCsvDownloadedAt(salesLeadDownloadedAt);
+  }
+  return res.json({
+    salesBySalesRepCsvDownloadedAt: await getSalesBySalesRepCsvDownloadedAt(),
+    salesLeadSalesBySalesRepCsvDownloadedAt: await getSalesLeadSalesBySalesRepCsvDownloadedAt(),
+  });
 });
 
 router.put('/stripe', authenticate, requireAdmin, async (req, res) => {

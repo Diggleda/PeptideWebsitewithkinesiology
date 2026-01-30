@@ -137,7 +137,8 @@ const estimateOrderTotals = async (req, res, next) => {
 const getSalesByRepForAdmin = async (req, res, next) => {
   try {
     const role = normalizeRole(req.user?.role);
-    if (role !== 'admin' && role !== 'sales_lead') {
+    const isSalesLeadRole = role === 'sales_lead' || role === 'saleslead' || role === 'sales-lead';
+    if (role !== 'admin' && !isSalesLeadRole) {
       return res.status(403).json({ error: 'Admin or Sales Lead access required' });
     }
     const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;

@@ -6443,42 +6443,43 @@ export default function App() {
     );
   }, [normalizedDashboardCodes, userReferralCodes]);
 
-  useEffect(() => {
-    if (!user || !isAdmin(user.role)) {
-      setSalesRepSalesCsvDownloadedAt(null);
-      setAdminTaxesByStateCsvDownloadedAt(null);
-      setAdminProductsCommissionCsvDownloadedAt(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const reportSettings = await settingsAPI.getReportSettings();
-        const downloadedAt =
-          typeof (reportSettings as any)?.salesBySalesRepCsvDownloadedAt === "string"
-            ? String((reportSettings as any).salesBySalesRepCsvDownloadedAt)
-            : null;
-        const taxesDownloadedAt =
-          typeof (reportSettings as any)?.taxesByStateCsvDownloadedAt === "string"
-            ? String((reportSettings as any).taxesByStateCsvDownloadedAt)
-            : null;
-        const productsDownloadedAt =
-          typeof (reportSettings as any)?.productsCommissionCsvDownloadedAt === "string"
-            ? String((reportSettings as any).productsCommissionCsvDownloadedAt)
-            : null;
-        if (!cancelled) {
-          setSalesRepSalesCsvDownloadedAt(downloadedAt);
-          setAdminTaxesByStateCsvDownloadedAt(taxesDownloadedAt);
-          setAdminProductsCommissionCsvDownloadedAt(productsDownloadedAt);
-        }
-      } catch (error) {
-        console.debug("[Sales by Sales Rep] Failed to load report settings", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, user?.role]);
+	  useEffect(() => {
+	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) {
+	      setSalesRepSalesCsvDownloadedAt(null);
+	      setAdminTaxesByStateCsvDownloadedAt(null);
+	      setAdminProductsCommissionCsvDownloadedAt(null);
+	      return;
+	    }
+	    let cancelled = false;
+	    (async () => {
+	      try {
+	        const reportSettings = await settingsAPI.getReportSettings();
+	        const salesDownloadedAtRaw = isSalesLead(user.role)
+	          ? (reportSettings as any)?.salesLeadSalesBySalesRepCsvDownloadedAt
+	          : (reportSettings as any)?.salesBySalesRepCsvDownloadedAt;
+	        const downloadedAt =
+	          typeof salesDownloadedAtRaw === "string" ? String(salesDownloadedAtRaw) : null;
+	        const taxesDownloadedAt =
+	          typeof (reportSettings as any)?.taxesByStateCsvDownloadedAt === "string"
+	            ? String((reportSettings as any).taxesByStateCsvDownloadedAt)
+	            : null;
+	        const productsDownloadedAt =
+	          typeof (reportSettings as any)?.productsCommissionCsvDownloadedAt === "string"
+	            ? String((reportSettings as any).productsCommissionCsvDownloadedAt)
+	            : null;
+	        if (!cancelled) {
+	          setSalesRepSalesCsvDownloadedAt(downloadedAt);
+	          setAdminTaxesByStateCsvDownloadedAt(taxesDownloadedAt);
+	          setAdminProductsCommissionCsvDownloadedAt(productsDownloadedAt);
+	        }
+	      } catch (error) {
+	        console.debug("[Sales by Sales Rep] Failed to load report settings", error);
+	      }
+	    })();
+	    return () => {
+	      cancelled = true;
+	    };
+	  }, [user?.id, user?.role]);
 
 	  const downloadSalesBySalesRepCsv = useCallback(async () => {
 	    try {
@@ -6531,16 +6532,20 @@ export default function App() {
       link.remove();
       URL.revokeObjectURL(url);
       setSalesRepSalesCsvDownloadedAt(exportedAtIso);
-      if (user && isAdmin(user.role)) {
-        try {
-          await settingsAPI.setSalesBySalesRepCsvDownloadedAt(exportedAtIso);
-        } catch (error) {
-          console.debug(
-            "[Sales by Sales Rep] Failed to persist CSV download timestamp",
-            error,
-          );
-        }
-      }
+	      if (user && (isAdmin(user.role) || isSalesLead(user.role))) {
+	        try {
+	          if (isSalesLead(user.role) && !isAdmin(user.role)) {
+	            await settingsAPI.setSalesLeadSalesBySalesRepCsvDownloadedAt(exportedAtIso);
+	          } else {
+	            await settingsAPI.setSalesBySalesRepCsvDownloadedAt(exportedAtIso);
+	          }
+	        } catch (error) {
+	          console.debug(
+	            "[Sales by Sales Rep] Failed to persist CSV download timestamp",
+	            error,
+	          );
+	        }
+	      }
     } catch (error) {
       console.error("[Sales by Sales Rep] CSV export failed", error);
       toast.error("Unable to download report right now.");

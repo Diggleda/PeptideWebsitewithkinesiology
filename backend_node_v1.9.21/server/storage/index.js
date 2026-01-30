@@ -12,6 +12,7 @@ const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
   shopEnabled: true,
   stripeMode: null,
   salesBySalesRepCsvDownloadedAt: null,
+  salesLeadSalesBySalesRepCsvDownloadedAt: null,
 });
 
 const initStorage = () => {

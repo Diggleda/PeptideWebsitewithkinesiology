@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   shopEnabled: true,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
+  salesLeadSalesBySalesRepCsvDownloadedAt: null, // ISO timestamp (sales lead report)
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS);
@@ -35,6 +36,9 @@ const normalizeSettings = (settings = {}) => {
   merged.stripeMode = (stripeMode === 'test' || stripeMode === 'live') ? stripeMode : null;
   merged.salesBySalesRepCsvDownloadedAt = normalizeIsoTimestamp(
     merged.salesBySalesRepCsvDownloadedAt,
+  );
+  merged.salesLeadSalesBySalesRepCsvDownloadedAt = normalizeIsoTimestamp(
+    merged.salesLeadSalesBySalesRepCsvDownloadedAt,
   );
   return merged;
 };
@@ -178,6 +182,22 @@ const setSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
   return next.salesBySalesRepCsvDownloadedAt;
 };
 
+const getSalesLeadSalesBySalesRepCsvDownloadedAt = async () => {
+  const settings = await getSettings();
+  return settings.salesLeadSalesBySalesRepCsvDownloadedAt || null;
+};
+
+const setSalesLeadSalesBySalesRepCsvDownloadedAt = async (downloadedAt) => {
+  const normalized = normalizeIsoTimestamp(downloadedAt) || new Date().toISOString();
+  const next = normalizeSettings({
+    ...loadFromStore(),
+    salesLeadSalesBySalesRepCsvDownloadedAt: normalized,
+  });
+  persistToStore(next);
+  await persistToSql(next);
+  return next.salesLeadSalesBySalesRepCsvDownloadedAt;
+};
+
 module.exports = {
   getSettings,
   getShopEnabled,
@@ -187,6 +207,8 @@ module.exports = {
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
   setSalesBySalesRepCsvDownloadedAt,
+  getSalesLeadSalesBySalesRepCsvDownloadedAt,
+  setSalesLeadSalesBySalesRepCsvDownloadedAt,
   SETTINGS_KEYS,
   DEFAULT_SETTINGS,
 };

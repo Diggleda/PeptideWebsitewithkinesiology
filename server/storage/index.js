@@ -17,6 +17,7 @@ const settingsStore = new JsonStore(env.dataDir, 'settings.json', {
   peptideForumEnabled: true,
   stripeMode: null,
   salesBySalesRepCsvDownloadedAt: null,
+  salesLeadSalesBySalesRepCsvDownloadedAt: null,
 });
 
 const initStorage = () => {
