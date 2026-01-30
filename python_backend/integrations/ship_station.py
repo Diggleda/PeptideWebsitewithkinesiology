@@ -538,32 +538,78 @@ def fetch_order_status(order_number: Optional[str]) -> Optional[Dict]:
 
     tracking = _pick_tracking(shipments) or order.get("trackingNumber")
 
-    # If tracking still missing, query shipments endpoint as a fallback (covers voided labels too).
-    if not tracking:
-        try:
-            shipment_resp = http_client.get(
-                f"{API_BASE_URL}/shipments",
-                params={"orderNumber": normalized, "page": 1, "pageSize": 5},
-                headers=headers,
-                auth=auth,
-                timeout=_shipstation_timeout(),
-            )
-            shipment_resp.raise_for_status()
-            shipment_payload = shipment_resp.json() or {}
-            shipment_list = shipment_payload.get("shipments") if isinstance(shipment_payload, dict) else None
+    def _extract_status_token(entry: dict) -> Optional[str]:
+        if not isinstance(entry, dict):
+            return None
+        candidates = [
+            entry.get("trackingStatus"),
+            entry.get("tracking_status"),
+            entry.get("deliveryStatus"),
+            entry.get("delivery_status"),
+            entry.get("shipmentStatus"),
+            entry.get("shipment_status"),
+            entry.get("status"),
+            entry.get("currentStatus"),
+            entry.get("current_status"),
+        ]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            text = str(candidate).strip()
+            if text:
+                return text
+        return None
+
+    # Always attempt a best-effort shipments endpoint lookup:
+    # - provides tracking numbers when order payload omits them
+    # - sometimes includes tracking/delivery status metadata
+    shipment_list = None
+    try:
+        shipment_resp = http_client.get(
+            f"{API_BASE_URL}/shipments",
+            params={"orderNumber": normalized, "page": 1, "pageSize": 5},
+            headers=headers,
+            auth=auth,
+            timeout=_shipstation_timeout(),
+        )
+        shipment_resp.raise_for_status()
+        shipment_payload = shipment_resp.json() or {}
+        shipment_list = shipment_payload.get("shipments") if isinstance(shipment_payload, dict) else None
+        if not tracking:
             tracking = _pick_tracking(shipment_list)
-        except requests.RequestException:
-            # non-fatal; just leave tracking as None
-            pass
+    except requests.RequestException:
+        # non-fatal; just leave shipment_list as None
+        shipment_list = None
+
+    # Build a minimal shipments payload to persist/display.
+    shipments_out = []
+    if isinstance(shipments, list) and shipments:
+        shipments_out = shipments
+    elif isinstance(shipment_list, list) and shipment_list:
+        shipments_out = shipment_list
+
+    shipment_status = None
+    if isinstance(shipments_out, list):
+        for entry in shipments_out:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("voided") is True:
+                continue
+            status_token = _extract_status_token(entry)
+            if status_token:
+                shipment_status = status_token
+                break
 
     result = {
         "status": order.get("orderStatus"),
+        "trackingStatus": shipment_status,
         "shipDate": order.get("shipDate"),
         "trackingNumber": tracking,
         "carrierCode": order.get("carrierCode"),
         "serviceCode": order.get("serviceCode"),
         "orderNumber": order.get("orderNumber"),
         "orderId": order.get("orderId"),
+        "shipments": shipments_out if isinstance(shipments_out, list) else [],
     }
     with _order_status_cache_lock:
         _order_status_cache[normalized] = {

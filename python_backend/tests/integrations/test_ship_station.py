@@ -60,7 +60,60 @@ class TestShipStation(unittest.TestCase):
         self.assertIsNone(ship_station.fetch_order_status("missing-order"))
         self.assertEqual(mock_get.call_count, 1)
 
+    @patch("python_backend.integrations.ship_station.get_config")
+    @patch("python_backend.integrations.ship_station.http_client.get")
+    @patch("python_backend.integrations.ship_station.time.time", return_value=1000.0)
+    def test_fetch_order_status_includes_shipments_and_tracking_status(
+        self, _mock_time, mock_get, mock_get_config
+    ):
+        mock_get_config.return_value = SimpleNamespace(
+            ship_station={"api_token": "token", "api_key": "", "api_secret": ""}
+        )
+
+        order_response = MagicMock()
+        order_response.raise_for_status.return_value = None
+        order_response.json.return_value = {
+            "orders": [
+                {
+                    "orderStatus": "shipped",
+                    "orderNumber": "1360",
+                    "orderId": 123,
+                    "shipDate": "2026-01-01",
+                    "carrierCode": "ups",
+                    "serviceCode": "ups_ground",
+                    "shipments": [],
+                }
+            ]
+        }
+
+        shipments_response = MagicMock()
+        shipments_response.raise_for_status.return_value = None
+        shipments_response.json.return_value = {
+            "shipments": [
+                {
+                    "trackingNumber": "1ZTEST",
+                    "voided": False,
+                    "trackingStatus": "Delivered",
+                }
+            ]
+        }
+
+        def side_effect(url, *args, **kwargs):
+            if url.endswith("/orders"):
+                return order_response
+            if url.endswith("/shipments"):
+                return shipments_response
+            raise AssertionError(f"Unexpected url: {url}")
+
+        mock_get.side_effect = side_effect
+
+        result = ship_station.fetch_order_status("1360")
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result.get("trackingNumber"), "1ZTEST")
+        self.assertEqual(result.get("trackingStatus"), "Delivered")
+        self.assertIsInstance(result.get("shipments"), list)
+        self.assertEqual(mock_get.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
-

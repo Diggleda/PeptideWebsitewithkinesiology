@@ -436,11 +436,13 @@ def insert(order: Dict) -> Dict:
             """
             INSERT INTO orders (
                 id, user_id, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
+                tracking_number,
                 physician_certified, referral_code, status,
                 referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                 created_at, updated_at
             ) VALUES (
                 %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                %(tracking_number)s,
                 %(physician_certified)s, %(referral_code)s, %(status)s,
                 %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                 %(created_at)s, %(updated_at)s
@@ -453,6 +455,7 @@ def insert(order: Dict) -> Dict:
                 shipping_total = VALUES(shipping_total),
                 shipping_carrier = VALUES(shipping_carrier),
                 shipping_service = VALUES(shipping_service),
+                tracking_number = VALUES(tracking_number),
                 physician_certified = VALUES(physician_certified),
                 referral_code = VALUES(referral_code),
                 status = VALUES(status),
@@ -491,6 +494,7 @@ def update(order: Dict) -> Optional[Dict]:
                 shipping_total = %(shipping_total)s,
                 shipping_carrier = %(shipping_carrier)s,
                 shipping_service = %(shipping_service)s,
+                tracking_number = %(tracking_number)s,
                 referral_code = %(referral_code)s,
                 status = %(status)s,
                 referrer_bonus = %(referrer_bonus)s,
@@ -591,6 +595,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingAddress": parse_json(row.get("shipping_address"), None),
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
+        "trackingNumber": row.get("tracking_number") or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
         "status": row.get("status"),
@@ -635,12 +640,47 @@ def _to_db_params(order: Dict) -> Dict:
         except Exception:
             return fallback
 
+    def _resolve_tracking_number(value: Dict) -> Optional[str]:
+        direct = value.get("trackingNumber") or value.get("tracking_number") or value.get("tracking")
+        if isinstance(direct, (str, int, float)):
+            text = str(direct).strip()
+            return text or None
+        # common locations
+        integrations = value.get("integrationDetails") or value.get("integrations") or {}
+        if isinstance(integrations, str):
+            try:
+                integrations = json.loads(integrations)
+            except Exception:
+                integrations = {}
+        if isinstance(integrations, dict):
+            shipstation = integrations.get("shipStation") or integrations.get("shipstation") or {}
+            if isinstance(shipstation, str):
+                try:
+                    shipstation = json.loads(shipstation)
+                except Exception:
+                    shipstation = {}
+            if isinstance(shipstation, dict):
+                candidate = shipstation.get("trackingNumber") or shipstation.get("tracking_number") or shipstation.get("tracking")
+                if isinstance(candidate, (str, int, float)):
+                    text = str(candidate).strip()
+                    if text:
+                        return text
+        shipping = value.get("shippingEstimate") or value.get("shipping") or {}
+        if isinstance(shipping, dict):
+            candidate = shipping.get("trackingNumber") or shipping.get("tracking_number") or shipping.get("tracking")
+            if isinstance(candidate, (str, int, float)):
+                text = str(candidate).strip()
+                if text:
+                    return text
+        return None
+
     items_subtotal = _num(order.get("itemsSubtotal"), _num(order.get("total"), 0.0))
     shipping_total = _num(order.get("shippingTotal"), 0.0)
     tax_total = _num(order.get("taxTotal"), 0.0)
     discount_total = _num(order.get("appliedReferralCredit"), 0.0)
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
+    tracking_number = _resolve_tracking_number(order)
 
     return {
         "id": order.get("id"),
@@ -658,6 +698,7 @@ def _to_db_params(order: Dict) -> Dict:
         "shipping_service": order.get("shippingService")
         or order.get("shippingEstimate", {}).get("serviceType")
         or order.get("shippingEstimate", {}).get("serviceCode"),
+        "tracking_number": tracking_number,
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),
         "status": order.get("status") or "pending",

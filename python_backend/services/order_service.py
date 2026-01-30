@@ -2115,10 +2115,10 @@ def _enrich_with_shipstation(order: Dict) -> None:
     integrations["shipStation"] = info
     order["integrationDetails"] = integrations
     ship_status = (info.get("status") or "").lower()
-    if ship_status == "shipped":
-        order["status"] = order.get("status") or "shipped"
+    derived_shipping_status = _normalize_shipstation_delivery_status(info)
+    if ship_status == "shipped" or derived_shipping_status:
         estimate = _ensure_dict(order.get("shippingEstimate"))
-        estimate["status"] = "shipped"
+        estimate["status"] = derived_shipping_status or "shipped"
         if info.get("shipDate"):
             estimate["shipDate"] = info["shipDate"]
         order["shippingEstimate"] = estimate
@@ -2136,6 +2136,73 @@ def _enrich_with_shipstation(order: Dict) -> None:
         order.get("trackingNumber"),
         info,
     )
+
+
+def _normalize_shipstation_delivery_status(shipstation_info: Dict) -> Optional[str]:
+    """
+    Best-effort mapping from ShipStation shipment/order status fields to a PepPro-friendly token.
+
+    ShipStation frequently reports orderStatus='shipped' even after delivery; the shipments payload
+    may include additional delivery/tracking status strings. We normalize these into:
+      - delivered
+      - out_for_delivery
+      - in_transit
+      - shipped
+      - awaiting_shipment
+    """
+    if not isinstance(shipstation_info, dict):
+        return None
+
+    def norm(value) -> str:
+        text = str(value or "").strip().lower()
+        text = text.replace("-", "_").replace(" ", "_")
+        while "__" in text:
+            text = text.replace("__", "_")
+        return text
+
+    candidates = [
+        shipstation_info.get("trackingStatus"),
+        shipstation_info.get("tracking_status"),
+        shipstation_info.get("deliveryStatus"),
+        shipstation_info.get("delivery_status"),
+        shipstation_info.get("shipmentStatus"),
+        shipstation_info.get("shipment_status"),
+        shipstation_info.get("status"),
+    ]
+    shipments = shipstation_info.get("shipments") or []
+    if isinstance(shipments, list):
+        for entry in shipments:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("voided") is True:
+                continue
+            candidates.extend(
+                [
+                    entry.get("trackingStatus"),
+                    entry.get("tracking_status"),
+                    entry.get("deliveryStatus"),
+                    entry.get("delivery_status"),
+                    entry.get("shipmentStatus"),
+                    entry.get("shipment_status"),
+                    entry.get("status"),
+                ]
+            )
+
+    for candidate in candidates:
+        token = norm(candidate)
+        if not token:
+            continue
+        if "delivered" in token:
+            return "delivered"
+        if "out_for_delivery" in token or "outfordelivery" in token:
+            return "out_for_delivery"
+        if "in_transit" in token or "intransit" in token:
+            return "in_transit"
+        if "shipped" in token:
+            return "shipped"
+        if "awaiting_shipment" in token or token == "awaiting":
+            return "awaiting_shipment"
+    return None
 
 
 def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Optional[str] = None) -> Optional[Dict]:
@@ -2213,12 +2280,14 @@ def get_sales_rep_order_detail(order_id: str, sales_rep_id: str, token_role: Opt
         mapped.setdefault("integrationDetails", {})
         mapped["integrationDetails"]["shipStation"] = shipstation_info
         ship_status = (shipstation_info.get("status") or "").lower()
+        derived_shipping_status = _normalize_shipstation_delivery_status(shipstation_info)
         carrier_code = shipstation_info.get("carrierCode")
         service_code = shipstation_info.get("serviceCode")
-        if ship_status == "shipped":
-            mapped["status"] = mapped.get("status") or "shipped"
+        if ship_status == "shipped" or derived_shipping_status:
+            if ship_status == "shipped" and not mapped.get("status"):
+                mapped["status"] = "shipped"
             mapped.setdefault("shippingEstimate", {})
-            mapped["shippingEstimate"]["status"] = "shipped"
+            mapped["shippingEstimate"]["status"] = derived_shipping_status or "shipped"
             if shipstation_info.get("shipDate"):
                 mapped["shippingEstimate"]["shipDate"] = shipstation_info["shipDate"]
         mapped.setdefault("shippingEstimate", {})
