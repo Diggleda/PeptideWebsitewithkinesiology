@@ -1136,6 +1136,15 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getSalesRepProfile: async (salesRepId: string | number) => {
+    if (!salesRepId) {
+      throw new Error('salesRepId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      { method: 'GET' },
+    );
+  },
   updateUserProfile: async (userId: string | number, payload: Record<string, any>) => {
     if (!userId) {
       throw new Error('userId is required');

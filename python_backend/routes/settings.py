@@ -787,6 +787,37 @@ def get_user_profile(user_id: str):
 
     return handle_action(action)
 
+
+@blueprint.get("/sales-reps/<sales_rep_id>")
+@require_auth
+def get_sales_rep_profile(sales_rep_id: str):
+    def action():
+        _require_admin_or_sales_lead()
+        rep_id = str(sales_rep_id or "").strip()
+        if not rep_id:
+            err = RuntimeError("Sales rep id is required")
+            setattr(err, "status", 400)
+            raise err
+        rep = sales_rep_repository.find_by_id(rep_id)
+        if not rep:
+            err = RuntimeError("Sales rep not found")
+            setattr(err, "status", 404)
+            raise err
+        return {
+            "salesRep": {
+                "id": rep.get("id"),
+                "name": rep.get("name"),
+                "email": rep.get("email"),
+                "phone": rep.get("phone"),
+                "initials": rep.get("initials"),
+                "salesCode": rep.get("salesCode"),
+                "status": rep.get("status"),
+                "role": rep.get("role"),
+            }
+        }
+
+    return handle_action(action)
+
 @blueprint.patch("/users/<user_id>")
 @require_auth
 def patch_user_profile(user_id: str):

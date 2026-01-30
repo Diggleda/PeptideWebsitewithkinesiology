@@ -193,11 +193,28 @@ def admin_dashboard():
             target_sales_rep_id,
             scope_all=scope_all and (user.get("role") or "").lower() == "admin",
         )
+        token_role = (g.current_user.get("role") or "").lower()
+        can_view_sales_reps = token_role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or (user.get("role") or "").lower() == "admin"
+        sales_reps = None
+        if can_view_sales_reps:
+            try:
+                sales_reps = [
+                    {
+                        "id": rep.get("id"),
+                        "name": rep.get("name"),
+                        "email": rep.get("email"),
+                    }
+                    for rep in sales_rep_repository.get_all()
+                    if rep and rep.get("id")
+                ]
+            except Exception:
+                sales_reps = None
         return {
             "version": f"backend_{build}",
             "referrals": referrals,
             "codes": codes,
             "users": users,
+            "salesReps": sales_reps,
             "statuses": referral_service.get_referral_status_choices(),
         }
 

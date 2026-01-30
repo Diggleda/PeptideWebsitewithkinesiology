@@ -4974,36 +4974,35 @@ export default function App() {
 		          return;
 		        }
 
-		        const resp = (await referralAPI.getSalesRepById(ownerId)) as any;
-		        const profile = resp?.salesRep || resp?.sales_rep || null;
-		        if (!profile) return;
-		        const nameCandidate =
-		          profile?.name ||
-		          [profile?.firstName, profile?.lastName]
-		            .filter(Boolean)
-		            .join(" ")
-		            .trim() ||
-		          "";
-		        const resolvedName = nameCandidate.trim() ? nameCandidate.trim() : null;
-		        const resolvedEmail =
-		          typeof profile?.email === "string" ? profile.email : null;
-		        const role =
-		          typeof profile?.role === "string" ? profile.role : "sales_rep";
-		        const resolvedUserId =
-		          typeof profile?.userId === "string"
-		            ? profile.userId
-		            : profile?.userId != null
-		              ? String(profile.userId)
-		              : null;
-		        if (!resolvedName && !resolvedEmail) return;
+		        // Fetch the doctor record to resolve its `salesRepId` (maps to `users.sales_rep_id`).
+		        const doctorId = String(salesDoctorDetail?.doctorId || "").trim();
+		        if (!doctorId) return;
+		        const userResp = (await settingsAPI.getAdminUserProfile(doctorId)) as any;
+		        const doctorProfile = userResp?.user || null;
+		        const salesRepId = String(
+		          doctorProfile?.salesRepId ||
+		            doctorProfile?.sales_rep_id ||
+		            ownerId,
+		        ).trim();
+		        if (!salesRepId) return;
+
+		        // Fetch the sales rep record to get `name` (maps to `sales_rep.name` / `sales_reps.name`).
+		        const repResp = (await settingsAPI.getSalesRepProfile(salesRepId)) as any;
+		        const repProfile = repResp?.salesRep || repResp?.sales_rep || null;
+		        if (!repProfile) return;
+		        const repName =
+		          typeof repProfile?.name === "string" ? repProfile.name.trim() : "";
+		        const repEmail =
+		          typeof repProfile?.email === "string" ? repProfile.email.trim() : "";
+		        if (!repName && !repEmail) return;
 		        setSalesDoctorOwnerRepProfiles((current) => ({
 		          ...current,
 		          [ownerId]: {
-		            id: ownerId,
-		            name: resolvedName,
-		            email: resolvedEmail,
-		            role,
-		            userId: resolvedUserId,
+		            id: salesRepId,
+		            name: repName || null,
+		            email: repEmail || null,
+		            role: "sales_rep",
+		            userId: null,
 		          },
 		        }));
 		      } catch {
@@ -5019,6 +5018,7 @@ export default function App() {
 		    salesDoctorDetail?.ownerSalesRepEmail,
 		    salesDoctorDetail?.role,
 		    salesDoctorOwnerRepProfiles,
+		    salesRepDashboard,
 		    user?.role,
 		  ]);
 	  const [salesDoctorNotesLoading, setSalesDoctorNotesLoading] = useState(false);
@@ -19626,7 +19626,20 @@ export default function App() {
 				                          }
 					                          const ownerProfile =
 					                            salesDoctorOwnerRepProfiles[ownerId] || null;
-					                          const name = ownerProfile?.name || null;
+					                          const name =
+					                            ownerProfile?.name ||
+					                            (() => {
+					                              const reps = (salesRepDashboard as any)?.salesReps;
+					                              if (!Array.isArray(reps)) return null;
+					                              const hit = reps.find(
+					                                (rep: any) =>
+					                                  String(rep?.id || "") === String(ownerId),
+					                              );
+					                              const repName =
+					                                typeof hit?.name === "string" ? hit.name.trim() : "";
+					                              return repName.length ? repName : null;
+					                            })() ||
+					                            null;
 					                          const email = ownerProfile?.email || null;
 					                          const userId = ownerProfile?.userId || null;
 					                          const role = normalizeRole(
@@ -19674,6 +19687,19 @@ export default function App() {
 					                                            (doctorId &&
 					                                              salesTrackingDoctors?.get?.(doctorId)) ||
 					                                            null;
+					                                          const dashboardReps = (salesRepDashboard as any)
+					                                            ?.salesReps;
+					                                          const dashboardRepsArray = Array.isArray(
+					                                            dashboardReps,
+					                                          )
+					                                            ? dashboardReps
+					                                            : null;
+					                                          const dashboardHit =
+					                                            dashboardRepsArray?.find(
+					                                              (rep: any) =>
+					                                                String(rep?.id || "") ===
+					                                                String(ownerId),
+					                                            ) || null;
 					                                          const firstOrder =
 					                                            Array.isArray(salesDoctorDetail?.orders) &&
 					                                            salesDoctorDetail.orders.length > 0
@@ -19682,6 +19708,19 @@ export default function App() {
 					                                          const payload = {
 					                                            ownerId,
 					                                            doctorId,
+					                                            salesRepDashboard: {
+					                                              hasSalesReps:
+					                                                Boolean(dashboardRepsArray),
+					                                              salesRepsCount:
+					                                                dashboardRepsArray?.length ?? null,
+					                                              match: dashboardHit
+					                                                ? {
+					                                                    id: dashboardHit?.id ?? null,
+					                                                    name: dashboardHit?.name ?? null,
+					                                                    email: dashboardHit?.email ?? null,
+					                                                  }
+					                                                : null,
+					                                            },
 					                                            doctorMeta: doctorMeta
 					                                              ? {
 					                                                  salesRepId:
