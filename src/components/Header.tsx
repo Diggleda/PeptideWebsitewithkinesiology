@@ -3330,7 +3330,7 @@ export function Header({
 	      {visibleOrders.map((order) => {
 	        const status = describeOrderStatus(order);
 	        const trackingNumber = resolveTrackingNumber(order);
-	        const statusDisplay = trackingNumber ? `${status} — ${trackingNumber}` : status;
+	        const statusDisplay = trackingNumber ? `${status} - ${trackingNumber}` : status;
             const statusNormalized = String(order.status || '').trim().toLowerCase();
             const statusNormalizedKey = statusNormalized.replace(/_/g, '-');
             const isCanceled = statusNormalized.includes('cancel') || statusNormalized.includes('refund') || statusNormalized === 'trash';

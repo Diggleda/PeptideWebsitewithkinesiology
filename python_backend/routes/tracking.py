@@ -4,7 +4,7 @@ import re
 
 from flask import Blueprint, make_response, request
 
-from ..integrations import ups_tracking
+from ..integrations import ship_engine, ups_tracking
 from ..middleware.auth import require_auth
 
 blueprint = Blueprint("tracking", __name__, url_prefix="/api/tracking")
@@ -25,12 +25,19 @@ def get_tracking_status(tracking_number: str):
         return make_response({"error": "trackingNumber is required"}, 400)
 
     carrier = (request.args.get("carrier") or "").strip().lower()
-    if carrier and carrier != "ups":
+    if carrier and carrier not in ("ups", "ups_walleted", "shipengine"):
         return make_response({"error": "Unsupported carrier"}, 400)
 
-    # Basic UPS heuristic: UPS tracking numbers commonly start with 1Z.
-    effective_carrier = "ups" if carrier == "ups" or normalized.startswith("1Z") else None
-    if effective_carrier != "ups":
+    def normalize_carrier(value: str | None) -> str | None:
+        raw = (value or "").strip().lower()
+        if raw in ("ups_walleted", "ups-walleted"):
+            return "ups"
+        if raw == "ups":
+            return "ups"
+        return None
+
+    inferred = normalize_carrier(carrier) or ("ups" if normalized.startswith("1Z") else None)
+    if inferred != "ups":
         return make_response(
             {
                 "trackingNumber": normalized,
@@ -42,11 +49,18 @@ def get_tracking_status(tracking_number: str):
             200,
         )
 
-    info = ups_tracking.fetch_tracking_status(normalized)
+    # Prefer ShipEngine tracking if configured (UPS Track API stalls from some server networks).
+    info = None
+    if ship_engine.is_configured():
+        info = ship_engine.fetch_tracking_status("ups", normalized)
+
+    if not info:
+        info = ups_tracking.fetch_tracking_status(normalized)
+
     if not info:
         return make_response(
             {
-                "carrier": "ups",
+                "carrier": inferred,
                 "trackingNumber": normalized,
                 "trackingStatus": None,
                 "trackingStatusRaw": None,
