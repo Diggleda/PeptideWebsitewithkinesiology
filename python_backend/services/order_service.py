@@ -2430,13 +2430,23 @@ def get_sales_by_rep(
 
     def _compute_summary() -> Dict[str, Any]:
         users = user_repository.get_all()
-        reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+        def _norm_role(value: object) -> str:
+            return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+
+        rep_like_roles = {"sales_rep", "admin", "sales_lead"}
+        reps = [u for u in users if _norm_role(u.get("role")) in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
         user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
 
         def _norm_email(value: object) -> str:
             return str(value or "").strip().lower()
+
+        users_by_email: Dict[str, Dict] = {}
+        for u in users:
+            email = _norm_email(u.get("email"))
+            if email:
+                users_by_email[email] = u
 
         # Canonicalize sales rep ids so we don't double-count reps that exist in both
         # `users` and `sales_reps` with different ids. Prefer `users` as the source of truth
@@ -2471,7 +2481,13 @@ def get_sales_by_rep(
         # Used as a fallback when older Woo orders are missing meta.
         doctors_by_email = {}
         for u in users:
-            if (u.get("role") or "").lower() not in ("doctor", "test_doctor"):
+            if (u.get("role") or "").lower() not in (
+                "doctor",
+                "test_doctor",
+                "sales_lead",
+                "saleslead",
+                "sales-lead",
+            ):
                 continue
             email = (u.get("email") or "").strip().lower()
             if email:
@@ -2495,14 +2511,15 @@ def get_sales_by_rep(
             from . import get_config  # type: ignore
             from ..database import mysql_client  # type: ignore
 
+            rows = []
             if bool(get_config().mysql.get("enabled")):
                 rows = mysql_client.fetch_all("SELECT DISTINCT email FROM contact_forms", {})
-                for row in rows or []:
-                    if not isinstance(row, dict):
-                        continue
-                    form_email = _norm_email(row.get("email"))
-                    if form_email:
-                        contact_form_emails.add(form_email)
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                form_email = _norm_email(row.get("email"))
+                if form_email:
+                    contact_form_emails.add(form_email)
         except Exception:
             contact_form_emails = set()
 
@@ -2583,6 +2600,16 @@ def get_sales_by_rep(
                     # If a sales rep placed the order, it should never be counted as "house".
                     rep_id = user_rep_id_by_email.get(billing_email, "")
 
+                if not rep_id and billing_email:
+                    # Fall back to the user's assigned rep (covers all roles, not just doctors).
+                    user_match = users_by_email.get(billing_email)
+                    if user_match:
+                        rep_id = str(user_match.get("salesRepId") or "").strip()
+                        if not rep_id and _norm_role(user_match.get("role")) in rep_like_roles:
+                            rep_id = str(user_match.get("id") or "").strip()
+                        if rep_id:
+                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
+
                 if not rep_id:
                     doctor = doctors_by_email.get(billing_email)
                     rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
@@ -2590,6 +2617,9 @@ def get_sales_by_rep(
                         rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 total = _safe_float(woo_order.get("total"))
+
+                if rep_id == "house":
+                    rep_id = "__house__"
 
                 if rep_id and rep_id in valid_rep_ids:
                     pricing_mode_hint = (
@@ -2609,41 +2639,28 @@ def get_sales_by_rep(
                     )
                     counted_rep += 1
                 else:
-                    # "House" sales are only for doctors acquired via the contact form.
-                    is_house_contact_form = False
-                    if billing_email:
-                        doctor = doctors_by_email.get(billing_email)
-                        if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
-                            is_house_contact_form = True
-                        else:
-                            try:
-                                from ..repositories import sales_prospect_repository
-
-                                prospect = sales_prospect_repository.find_by_contact_email(billing_email)
-                                if prospect and str(prospect.get("salesRepId") or "") == "house":
-                                    is_house_contact_form = True
-                            except Exception:
-                                is_house_contact_form = False
-
-                    if is_house_contact_form:
-                        pricing_mode_hint = (
-                            _meta_value(meta_data, "peppro_pricing_mode")
-                            or _meta_value(meta_data, "peppro_pricingMode")
-                            or _meta_value(meta_data, "pricing_mode")
-                            or _meta_value(meta_data, "pricingMode")
-                        )
-                        attributed_orders.append(
-                            {
-                                "salesRepId": "__house__",
-                                "total": total,
-                                "wooId": woo_order.get("id"),
-                                "wooNumber": woo_order.get("number"),
-                                "pricingModeHint": pricing_mode_hint,
-                            }
-                        )
-                        counted_house += 1
-                    else:
-                        skipped_unattributed += 1
+                    # Any un-attributed order should still be counted (House / Unassigned),
+                    # otherwise the report silently drops revenue.
+                    if not rep_id and force_house_contact_form:
+                        rep_id = "__house__"
+                    if rep_id != "__house__":
+                        rep_id = "__house__"
+                    pricing_mode_hint = (
+                        _meta_value(meta_data, "peppro_pricing_mode")
+                        or _meta_value(meta_data, "peppro_pricingMode")
+                        or _meta_value(meta_data, "pricing_mode")
+                        or _meta_value(meta_data, "pricingMode")
+                    )
+                    attributed_orders.append(
+                        {
+                            "salesRepId": "__house__",
+                            "total": total,
+                            "wooId": woo_order.get("id"),
+                            "wooNumber": woo_order.get("number"),
+                            "pricingModeHint": pricing_mode_hint,
+                        }
+                    )
+                    counted_house += 1
 
                 if len(debug_samples) < 10:
                     debug_samples.append(
@@ -2791,7 +2808,7 @@ def get_sales_by_rep(
             summary.append(
                 {
                     "salesRepId": "__house__",
-                    "salesRepName": "House / Contact Form",
+                    "salesRepName": "House / Unassigned",
                     "salesRepEmail": None,
                     "salesRepPhone": None,
                     "totalOrders": int(house_totals["totalOrders"]),
@@ -3617,21 +3634,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 stats["wholesaleOrders"] = int(stats.get("wholesaleOrders") or 0) + 1
                 stats["wholesaleBase"] = round(float(stats.get("wholesaleBase") or 0.0) + float(base or 0.0), 2)
 
-        total_lookup = order_repository.get_total_lookup_by_woo(woo_ids, woo_numbers)
-
-        def _resolve_order_total(entry: Dict[str, object]) -> float:
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in total_lookup:
-                try:
-                    return float(total_lookup[woo_id])
-                except Exception:
-                    return 0.0
-            woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in total_lookup:
-                try:
-                    return float(total_lookup[woo_number])
-                except Exception:
-                    return 0.0
+        def _resolve_order_subtotal(entry: Dict[str, object]) -> float:
+            """
+            Commission base should be the order subtotal (exclude shipping + tax).
+            For Woo orders, `total` is the items subtotal (after discounts) and excludes shipping/tax.
+            """
             try:
                 return float(entry.get("total") or 0.0)
             except Exception:
@@ -3641,10 +3648,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         for entry in attributed_orders:
             recipient_id = str(entry.get("recipientId") or "").strip()
-            total_value = _resolve_order_total(entry)
-            # Commission is based on the full grand total (not product subtotal).
-            # `entry.total` is resolved from the local MySQL `orders.total` when possible.
-            base = max(0.0, total_value)
+            subtotal_value = _resolve_order_subtotal(entry)
+            base = max(0.0, subtotal_value)
             if base <= 0:
                 continue
 
@@ -3673,10 +3678,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if created_at:
                 local_dt = created_at.astimezone(report_tz)
                 month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
-                # Special admin bonus base includes tax + shipping (full order total).
-                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(
-                    max(0.0, total_value)
-                )
+                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(base)
 
             if recipient_id == "__house__":
                 allocations = (

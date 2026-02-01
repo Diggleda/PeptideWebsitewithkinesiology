@@ -16,11 +16,11 @@ const generateReferralCode = () => {
   throw new Error('Unable to generate unique referral code');
 };
 
-const applyReferralCredit = ({ referralCode, total, purchaserId, orderId }) => {
+const applyReferralCredit = ({ referralCode, subtotal, purchaserId, orderId }) => {
   if (!referralCode) {
     return null;
   }
-  if (!Number.isFinite(total) || total <= 0) {
+  if (!Number.isFinite(subtotal) || subtotal <= 0) {
     return null;
   }
 
@@ -36,7 +36,7 @@ const applyReferralCredit = ({ referralCode, total, purchaserId, orderId }) => {
     return null;
   }
 
-  const commission = Number.parseFloat((total * 0.05).toFixed(2));
+  const commission = Number.parseFloat((subtotal * 0.05).toFixed(2));
   const updated = userRepository.update({
     ...referrer,
     referralCredits: (referrer.referralCredits || 0) + commission,

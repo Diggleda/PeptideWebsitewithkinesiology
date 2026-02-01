@@ -894,7 +894,7 @@ const createOrderInternal = async ({
 
   const referralResult = referralService.applyReferralCredit({
     referralCode,
-    total: computedTotal,
+    subtotal: itemsSubtotal,
     purchaserId: userId,
     orderId: order.id,
   });
@@ -2116,7 +2116,8 @@ const getSalesByRep = async ({
   const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
   const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
-  const repsFromUsers = users.filter((u) => normalizeRole(u.role) === 'sales_rep');
+  const repLikeRoleSet = new Set(['sales_rep', 'admin', 'sales_lead']);
+  const repsFromUsers = users.filter((u) => repLikeRoleSet.has(normalizeRole(u.role)));
   const repsFromStore = Array.isArray(salesRepRepository?.getAll?.())
     ? salesRepRepository.getAll()
     : [];
@@ -2145,20 +2146,28 @@ const getSalesByRep = async ({
       email: rep?.email || null,
     });
   }
-  const doctors = users.filter((u) => {
-    const role = (u.role || '').toLowerCase();
-    return role === 'doctor' || role === 'test_doctor';
-  });
-
-  const doctorToRep = new Map();
-  doctors.forEach((doc) => {
-    const repId = normalizeId(doc.salesRepId);
-    const doctorId = normalizeId(doc.id);
-    if (!repId || !doctorId) return;
-    if (!repLookup.has(repId)) {
-      return;
+  const userToRep = new Map();
+  users.forEach((user) => {
+    const userId = normalizeId(user?.id);
+    if (!userId) return;
+    const role = normalizeRole(user?.role);
+    let repId = normalizeId(user?.salesRepId);
+    if (repId && repId.toLowerCase() === 'house') {
+      repId = '__house__';
     }
-    doctorToRep.set(doctorId, repId);
+    if (repId && !repLookup.has(repId) && repId !== '__house__') {
+      // Allow users to reference reps from the sales_rep store even if not in the lookup yet.
+      repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
+    }
+    if (!repId && repLikeRoleSet.has(role)) {
+      repId = userId;
+      if (!repLookup.has(repId)) {
+        repLookup.set(repId, { id: repId, name: user?.name || user?.email || 'Sales Rep', email: user?.email || null });
+      }
+    }
+    if (repId) {
+      userToRep.set(userId, repId);
+    }
   });
 
   const repTotals = new Map();
@@ -2184,10 +2193,19 @@ const getSalesByRep = async ({
     return Number.isFinite(parsed) ? parsed : null;
   };
 
-  const doctorIds = doctors.map((d) => d.id);
   const sourceOrders = mysqlClient.isEnabled()
-    ? await orderSqlRepository.fetchByUserIds(doctorIds)
+    ? await orderSqlRepository.fetchAll()
     : orderRepository.getAll();
+
+  const houseTotals = repTotals.get('__house__') || {
+    totalOrders: 0,
+    totalRevenue: 0,
+    wholesaleRevenue: 0,
+    retailRevenue: 0,
+  };
+  if (!repTotals.has('__house__') && excludeSalesRepIdNormalized !== '__house__') {
+    repTotals.set('__house__', houseTotals);
+  }
 
   sourceOrders.forEach((order) => {
     if (shouldFilterByWindow) {
@@ -2207,8 +2225,7 @@ const getSalesByRep = async ({
     if (normalizedUserId && excludeDoctorSet.has(normalizedUserId)) {
       return;
     }
-    const repId = doctorToRep.get(normalizedUserId);
-    if (!repId) return;
+    const repId = userToRep.get(normalizedUserId) || '__house__';
     if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
     const current = repTotals.get(repId) || {
       totalOrders: 0,
@@ -2233,6 +2250,17 @@ const getSalesByRep = async ({
   const rows = Array.from(repTotals.entries())
     .map(([repId, totals]) => {
       const rep = repLookup.get(repId) || {};
+      if (repId === '__house__') {
+        return {
+          salesRepId: '__house__',
+          salesRepName: 'House / Unassigned',
+          salesRepEmail: null,
+          totalOrders: totals.totalOrders,
+          totalRevenue: totals.totalRevenue,
+          wholesaleRevenue: totals.wholesaleRevenue || 0,
+          retailRevenue: totals.retailRevenue || 0,
+        };
+      }
       return {
         salesRepId: repId,
         salesRepName: rep.name || rep.email || 'Sales Rep',

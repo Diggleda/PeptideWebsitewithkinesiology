@@ -6,7 +6,7 @@ When someone uses a referral code during checkout, the referrer (code owner) aut
 
 ### Referral Credits System
 
-- **Commission Rate**: 5% of order total
+- **Commission Rate**: 5% of order subtotal
 - **Tracking**: All referrals and earnings are tracked automatically
 - **Storage**: Stored in `server-data/users.json`
 
@@ -41,7 +41,7 @@ Each user has the following referral-related fields:
 
 1. **Order Created**: User places order with referral code
 2. **Referrer Found**: System looks up who owns that referral code
-3. **Credit Applied**: Referrer gets 5% of order total added to their `referralCredits`
+3. **Credit Applied**: Referrer gets 5% of order subtotal added to their `referralCredits`
 4. **Counter Updated**: Referrer's `totalReferrals` count increases by 1
 5. **Response**: System confirms who earned the commission
 

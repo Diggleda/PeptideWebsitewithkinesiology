@@ -5018,6 +5018,8 @@ export default function App() {
 		    orderQuantity?: number | null;
 		    totalOrderValue?: number | null;
 		    orders: AccountOrderSummary[];
+        personalOrders?: AccountOrderSummary[];
+        salesOrders?: AccountOrderSummary[];
 	    phone?: string | null;
 	    address?: string | null;
 	    lastOrderDate?: string | null;
@@ -5851,6 +5853,8 @@ export default function App() {
 	        orderQuantity: bucket.orderQuantity ?? null,
 	        totalOrderValue: bucket.totalOrderValue ?? null,
 	        orders: bucket.orders,
+          personalOrders: Array.isArray(bucket.personalOrders) ? bucket.personalOrders : undefined,
+          salesOrders: Array.isArray(bucket.salesOrders) ? bucket.salesOrders : undefined,
         phone:
           bucket.doctorPhone ||
           (addressSource as any)?.phone ||
@@ -6100,6 +6104,8 @@ export default function App() {
 		          let salesWholesaleRevenueValue: number | null = salesWholesaleRevenue;
 		          let salesRetailRevenueValue: number | null = salesRetailRevenue;
 		          let ordersForModal = normalizedOrders;
+		          let personalOrdersForModal = normalizedOrders;
+		          let salesOrdersForModal: AccountOrderSummary[] = [];
 		          let orderQuantityForModal = orderQuantity;
 
 		          if (isSalesProfile) {
@@ -6152,6 +6158,7 @@ export default function App() {
 		              });
 
 		              ordersForModal = repDoctorOrders;
+                  salesOrdersForModal = repDoctorOrders;
 		              orderQuantityForModal = repDoctorOrders.length;
 
 		              const totals = repDoctorOrders.reduce(
@@ -6219,6 +6226,8 @@ export default function App() {
 	              lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
 	              lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
 	              orders: ordersForModal,
+                personalOrders: personalOrdersForModal,
+                salesOrders: salesOrdersForModal,
 	              total: totalOrderValue,
 	              personalRevenue,
 	              salesRevenue,
@@ -20832,40 +20841,103 @@ export default function App() {
                 <p className="text-sm font-semibold text-slate-700">
                   Recent Orders
                 </p>
-	                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-	                  {salesDoctorDetail.orders.map((order) => (
-	                    <button
-	                      key={order.id}
-	                      type="button"
-	                      onClick={() => openSalesOrderDetails(order)}
-	                      className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
-	                    >
-	                      <div className="min-w-0 text-sm text-slate-700">
-	                        <div className="flex items-center gap-2 min-w-0">
-	                          <span className="font-semibold text-slate-800 truncate">
-	                            {`Order #${order.number ?? order.id}`}
-	                          </span>
-	                          <span className="sales-tracking-row-status shrink-0">
-	                            {describeSalesOrderStatus(order as any)}
-	                          </span>
-	                        </div>
-	                        <div className="text-xs text-slate-500">
-	                          {order.createdAt
-	                            ? formatDateTime(order.createdAt)
-	                            : "Date unavailable"}
-	                        </div>
+	                {(() => {
+	                  const personalOrders = Array.isArray(salesDoctorDetail.personalOrders)
+	                    ? salesDoctorDetail.personalOrders
+	                    : [];
+	                  const salesOrders = Array.isArray(salesDoctorDetail.salesOrders)
+	                    ? salesDoctorDetail.salesOrders
+	                    : salesDoctorDetail.orders;
+	                  const hasSplit =
+	                    (typeof salesDoctorDetail.personalRevenue === "number" ||
+	                      typeof salesDoctorDetail.salesRevenue === "number") &&
+	                    (personalOrders.length > 0 || salesOrders.length > 0);
+
+	                  const renderOrdersList = (orders: AccountOrderSummary[]) => (
+	                    <div className="space-y-2">
+	                      {orders.map((order) => (
+	                        <button
+	                          key={order.id}
+	                          type="button"
+	                          onClick={() => openSalesOrderDetails(order)}
+	                          className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
+	                        >
+	                          <div className="min-w-0 text-sm text-slate-700">
+	                            <div className="flex items-center gap-2 min-w-0">
+	                              <span className="font-semibold text-slate-800 truncate">
+	                                {`Order #${order.number ?? order.id}`}
+	                              </span>
+	                              <span className="sales-tracking-row-status shrink-0">
+	                                {describeSalesOrderStatus(order as any)}
+	                              </span>
+	                            </div>
+	                            <div className="text-xs text-slate-500">
+	                              {order.createdAt ? formatDateTime(order.createdAt) : "Date unavailable"}
+	                            </div>
+	                          </div>
+	                          <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
+	                            {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
+	                          </div>
+	                        </button>
+	                      ))}
+	                    </div>
+	                  );
+
+	                  if (!hasSplit) {
+	                    return (
+	                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+	                        {salesDoctorDetail.orders.length > 0 ? (
+	                          renderOrdersList(salesDoctorDetail.orders)
+	                        ) : (
+	                          <p className="text-xs text-slate-500">No orders available.</p>
+	                        )}
 	                      </div>
-	                      <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
-	                        {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
+	                    );
+	                  }
+
+	                  const personalCount = personalOrders.filter((order) =>
+	                    shouldCountRevenueForStatus(order.status),
+	                  ).length;
+	                  const salesCount = salesOrders.filter((order) =>
+	                    shouldCountRevenueForStatus(order.status),
+	                  ).length;
+
+	                  return (
+	                    <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+	                      <div className="space-y-2">
+	                        <div className="flex items-baseline justify-between gap-3">
+	                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+	                            Personal orders ({personalCount})
+	                          </p>
+	                          <p className="text-xs font-semibold text-slate-700">
+	                            {formatCurrency(salesDoctorDetail.personalRevenue ?? 0)}
+	                          </p>
+	                        </div>
+	                        {personalOrders.length > 0 ? (
+	                          renderOrdersList(personalOrders)
+	                        ) : (
+	                          <p className="text-xs text-slate-500">No personal orders.</p>
+	                        )}
 	                      </div>
-	                    </button>
-	                  ))}
-                  {salesDoctorDetail.orders.length === 0 && (
-                    <p className="text-xs text-slate-500">
-                      No orders available.
-                    </p>
-	                  )}
-	                </div>
+
+	                      <div className="space-y-2">
+	                        <div className="flex items-baseline justify-between gap-3">
+	                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+	                            Sales orders ({salesCount})
+	                          </p>
+	                          <p className="text-xs font-semibold text-slate-700">
+	                            {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
+	                          </p>
+	                        </div>
+	                        {salesOrders.length > 0 ? (
+	                          renderOrdersList(salesOrders)
+	                        ) : (
+	                          <p className="text-xs text-slate-500">No sales orders.</p>
+	                        )}
+	                      </div>
+	                    </div>
+	                  );
+	                })()}
 	              </div>
 
 	              <div className="mt-2 text-center text-[11px] font-normal text-slate-400">
@@ -21047,7 +21119,11 @@ export default function App() {
                 const shippingServiceLabel = formatShippingCode(shipping?.serviceType) || shipping?.serviceType || null;
                 const shippingCarrierLabel = formatShippingCode(shipping?.carrierId) || shipping?.carrierId || null;
                 const trackingLabel = resolveTrackingNumber(salesOrderDetail);
-                const integrationsParsed = parseMaybeJson(integrations || {});
+                const integrationsParsed = parseMaybeJson(
+                  (salesOrderDetail as any).integrationDetails ||
+                    (salesOrderDetail as any).integrations ||
+                    {},
+                );
                 const carrierTracking = parseMaybeJson(
                   (integrationsParsed as any)?.carrierTracking ||
                     (integrationsParsed as any)?.carrier_tracking ||
