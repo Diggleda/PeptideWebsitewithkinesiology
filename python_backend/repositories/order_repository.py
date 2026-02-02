@@ -218,6 +218,66 @@ def list_recent(limit: int = 500) -> List[Dict]:
     return orders[:limit_value]
 
 
+def list_for_commission(start_utc: datetime, end_utc: datetime) -> List[Dict]:
+    """
+    Return orders within the [start_utc, end_utc] window.
+    Uses SQL when available; falls back to in-memory filtering otherwise.
+    """
+    if not start_utc or not end_utc:
+        return []
+
+    def normalize_dt(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    start_value = normalize_dt(start_utc)
+    end_value = normalize_dt(end_utc)
+
+    if _using_mysql():
+        start_naive = start_value.replace(tzinfo=None)
+        end_naive = end_value.replace(tzinfo=None)
+        rows = mysql_client.fetch_all(
+            """
+            SELECT *
+            FROM orders
+            WHERE created_at >= %(start)s AND created_at <= %(end)s
+            ORDER BY created_at DESC
+            """,
+            {"start": start_naive, "end": end_naive},
+        )
+        return [_row_to_order(row) for row in rows or []]
+
+    def parse_dt(value: object) -> Optional[datetime]:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=timezone.utc)
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except Exception:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    results: List[Dict] = []
+    for order in _load():
+        created_at = parse_dt(order.get("createdAt") or order.get("created_at"))
+        if not created_at:
+            continue
+        created_at = created_at.astimezone(timezone.utc)
+        if created_at < start_value or created_at > end_value:
+            continue
+        results.append(order)
+    return results
+
+
 def get_pricing_mode_lookup_by_woo(
     woo_order_ids: List[str] | None = None, woo_order_numbers: List[str] | None = None
 ) -> Dict[str, str]:

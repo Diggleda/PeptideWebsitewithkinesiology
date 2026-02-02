@@ -6228,13 +6228,33 @@ export default function App() {
                     return false;
                   };
 
-                  const personalOrders = repOrdersNormalized.filter(isPersonalOrderForRep);
-                  const salesOrders = repOrdersNormalized.filter((order: any) => !isPersonalOrderForRep(order));
+                  const salesOrders = repOrdersNormalized.filter(
+                    (order: any) => !isPersonalOrderForRep(order),
+                  );
+                  const personalOrders = personalOrdersForModal;
+                  const combinedOrders = (() => {
+                    const byKey = new Map<string, AccountOrderSummary>();
+                    const keyFor = (order: AccountOrderSummary) =>
+                      String(
+                        order.id ||
+                          order.number ||
+                          (order as any).wooOrderId ||
+                          (order as any).wooOrderNumber ||
+                          "",
+                      );
+                    [...personalOrders, ...salesOrders].forEach((order) => {
+                      const key = keyFor(order);
+                      if (!key) return;
+                      if (!byKey.has(key)) {
+                        byKey.set(key, order);
+                      }
+                    });
+                    return Array.from(byKey.values());
+                  })();
 
-                  ordersForModal = repOrdersNormalized;
-                  personalOrdersForModal = personalOrders;
+                  ordersForModal = combinedOrders;
                   salesOrdersForModal = salesOrders;
-                  orderQuantityForModal = repOrdersNormalized.filter((order) =>
+                  orderQuantityForModal = combinedOrders.filter((order) =>
                     shouldCountRevenueForStatus(order?.status),
                   ).length;
 
@@ -6245,7 +6265,7 @@ export default function App() {
                     return sum + resolveOrderSubtotal(order);
                   }, 0);
 
-                  totalOrderValueForModal = repOrdersNormalized.reduce((sum: number, order: any) => {
+                  totalOrderValueForModal = combinedOrders.reduce((sum: number, order: any) => {
                     if (!shouldCountRevenueForStatus(order?.status)) {
                       return sum;
                     }

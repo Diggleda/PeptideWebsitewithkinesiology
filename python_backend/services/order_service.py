@@ -3260,8 +3260,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
     try:
         users = user_repository.get_all()
+        rep_like_roles = {"sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"}
         admins = [u for u in users if (u.get("role") or "").lower() == "admin"]
-        reps = [u for u in users if (u.get("role") or "").lower() == "sales_rep"]
+        reps = [u for u in users if (u.get("role") or "").lower() in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         report_tz = _get_report_timezone()
 
@@ -3269,6 +3270,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             return str(value or "").strip().lower()
 
         user_rep_id_by_email: Dict[str, str] = {}
+        admin_id_by_email: Dict[str, str] = {}
         for rep in reps:
             rep_id = rep.get("id")
             email = _norm_email(rep.get("email"))
@@ -3276,6 +3278,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 user_rep_id_by_email[email] = str(rep_id)
 
         admin_emails = {_norm_email(a.get("email")) for a in admins if _norm_email(a.get("email"))}
+        for admin in admins:
+            admin_email = _norm_email(admin.get("email"))
+            admin_id = admin.get("id")
+            if admin_email and admin_id:
+                admin_id_by_email[admin_email] = str(admin_id)
 
         alias_to_rep_id: Dict[str, str] = {}
         for rep in reps:
@@ -3330,7 +3337,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             recipient_rows[str(rep_id)] = {
                 "id": str(rep_id),
                 "name": rep.get("name") or "Sales Rep",
-                "role": "sales_rep",
+                "role": (rep.get("role") or "sales_rep"),
                 "amount": 0.0,
             }
         for rep in rep_records_list:
@@ -3363,8 +3370,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         special_admin_user = next((a for a in admins if _norm_email(a.get("email")) == special_admin_email), None)
         special_admin_id = str(special_admin_user.get("id")) if isinstance(special_admin_user, dict) and special_admin_user.get("id") else None
 
-        per_page = 100
-        max_pages = 25
         orders_seen = 0
         product_totals: Dict[str, Dict[str, object]] = {}
         attributed_orders: List[Dict[str, object]] = []
@@ -3372,213 +3377,269 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         skipped_refunded = 0
         skipped_outside_period = 0
 
-        for page in range(1, max_pages + 1):
-            payload, _meta = woo_commerce.fetch_catalog_proxy(
-                "orders",
-                {"per_page": per_page, "page": page, "orderby": "date", "order": "desc", "status": "any"},
-            )
-            orders = payload if isinstance(payload, list) else []
-            if not orders:
-                break
+        def _normalize_role(value: object) -> str:
+            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
 
-            reached_start = False
-            for woo_order in orders:
-                if not isinstance(woo_order, dict):
-                    continue
-                status = str(woo_order.get("status") or "").strip().lower()
-                if status not in ("processing", "completed"):
-                    skipped_status += 1
-                    continue
-                meta_data = woo_order.get("meta_data") or []
-                if _is_truthy(_meta_value(meta_data, "peppro_refunded")) or status == "refunded":
-                    skipped_refunded += 1
-                    continue
-
-                created_raw = (
-                    woo_order.get("date_created_gmt")
-                    or woo_order.get("date_created")
-                    or woo_order.get("date")
-                    or None
-                )
-                created_at = _parse_datetime_utc(created_raw)
-                if not created_at:
-                    skipped_outside_period += 1
-                    continue
-                if created_at > end_dt:
-                    skipped_outside_period += 1
-                    continue
-                if created_at < start_dt:
-                    reached_start = True
-                    skipped_outside_period += 1
-                    continue
-
-                billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
-                doctor = doctors_by_email.get(billing_email) if billing_email else None
-                force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
-                contact_form_origin = force_house_contact_form
-                if doctor and not contact_form_origin:
-                    lead_type = str(doctor.get("leadType") or "").strip().lower()
-                    if lead_type and ("contact" in lead_type or lead_type == "house"):
-                        contact_form_origin = True
-                if billing_email and not contact_form_origin:
-                    try:
-                        prospect = sales_prospect_repository.find_by_contact_email(billing_email)
-                        if prospect:
-                            prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
-                            prospect_identifier = str(prospect.get("id") or "")
-                            if prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
-                                contact_form_origin = True
-                    except Exception:
-                        contact_form_origin = False
-                if billing_email and not contact_form_origin and doctor and doctor.get("id"):
-                    try:
-                        doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
-                        if doctor_prospect:
-                            contact_form_origin = True
-                    except Exception:
-                        contact_form_origin = False
-
-                rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
-                rep_id = str(rep_id).strip() if rep_id is not None else ""
-                if rep_id:
-                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
-
-                recipient_id = ""
-                if contact_form_origin:
-                    # Contact-form leads should always be treated as house sales for commission reporting,
-                    # even if the doctor later gets attributed to a rep.
-                    rep_id = ""
-                    recipient_id = "__house__"
-
-                if not recipient_id:
-                    if not rep_id:
-                        rep_id = user_rep_id_by_email.get(billing_email, "")
-
-                    if not rep_id:
-                        rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
-                        if rep_id:
-                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
-
-                    recipient_id = rep_id
-                    # "house" is a sentinel salesRepId for contact-form sourced doctors and should be
-                    # handled as a house sale (split across admins), not a real rep id.
-                    if str(recipient_id or "").strip().lower() == "house":
-                        recipient_id = ""
-                    if recipient_id and recipient_id not in recipient_rows:
-                        # If an admin id shows up as attribution, include it.
-                        admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
-                        if admin:
-                            recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": admin.get("name") or "Admin", "role": "admin", "amount": 0.0}
-                        else:
-                            recipient_rows[str(recipient_id)] = {"id": str(recipient_id), "name": f"User {recipient_id}", "role": "unknown", "amount": 0.0}
-
-                if not recipient_id:
-                    # House orders for contact-form sourced doctors (including any email present in
-                    # the MySQL contact_forms table).
-                    is_house_contact_form = force_house_contact_form or contact_form_origin
-                    if billing_email:
-                        if doctor and str(doctor.get("salesRepId") or "").strip() == "house":
-                            is_house_contact_form = True
-                        else:
-                            try:
-                                prospect = sales_prospect_repository.find_by_contact_email(billing_email)
-                                if prospect:
-                                    prospect_rep = str(prospect.get("salesRepId") or "").strip().lower()
-                                    prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
-                                    prospect_identifier = str(prospect.get("id") or "")
-                                    if prospect_rep == "house" or prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
-                                        is_house_contact_form = True
-                            except Exception:
-                                is_house_contact_form = False
-                    if is_house_contact_form:
-                        recipient_id = "__house__"
-
-                # Product quantities
-                for item in woo_order.get("line_items") or []:
-                    if not isinstance(item, dict):
-                        continue
-                    qty = int(_safe_float(item.get("quantity")))
-                    if qty <= 0:
-                        continue
-                    sku = str(item.get("sku") or "").strip()
-                    product_id = item.get("product_id")
-                    variation_id = item.get("variation_id")
-                    key = sku or f"id:{product_id}:{variation_id}"
-                    entry = product_totals.get(key) or {
-                        "key": key,
-                        "sku": sku or None,
-                        "productId": product_id,
-                        "variationId": variation_id,
-                        "name": item.get("name") or sku or str(product_id or ""),
-                        "quantity": 0,
-                    }
-                    entry["quantity"] = int(entry.get("quantity") or 0) + qty
-                    product_totals[key] = entry
-
-                # Commission base + pricing mode hint
-                total = _safe_float(woo_order.get("total"))
-                shipping_total = _safe_float(woo_order.get("shipping_total"))
-                tax_total = _safe_float(_meta_value(meta_data, "peppro_tax_total")) or _safe_float(woo_order.get("total_tax"))
-                created_at = _parse_datetime_utc(
-                    woo_order.get("date_created_gmt")
-                    or woo_order.get("date_created")
-                    or woo_order.get("date")
-                    or None
-                )
-                pricing_mode_hint = (
-                    _meta_value(meta_data, "peppro_pricing_mode")
-                    or _meta_value(meta_data, "peppro_pricingMode")
-                    or _meta_value(meta_data, "pricing_mode")
-                    or _meta_value(meta_data, "pricingMode")
-                )
-                attributed_orders.append(
-                    {
-                        "recipientId": recipient_id or "",
-                        "total": total,
-                        "shippingTotal": shipping_total,
-                        "taxTotal": tax_total,
-                        "wooId": woo_order.get("id"),
-                        "wooNumber": woo_order.get("number"),
-                        "pricingModeHint": pricing_mode_hint,
-                        "createdAt": created_at.isoformat() if created_at else None,
-                    }
-                )
-                orders_seen += 1
-
-            if len(orders) < per_page or reached_start:
-                break
-
-        def _normalize_token(value: object) -> str:
+        def _normalize_rep_id(value: object) -> str:
             if value is None:
                 return ""
-            text = str(value).strip()
-            if not text:
-                return ""
-            return text[1:] if text.startswith("#") else text
+            return str(value).strip()
 
-        woo_ids = []
-        woo_numbers = []
-        for entry in attributed_orders:
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id:
-                woo_ids.append(woo_id)
-            woo_num = _normalize_token(entry.get("wooNumber"))
-            if woo_num:
-                woo_numbers.append(woo_num)
-
-        pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
+        def _resolve_order_email(order: Dict[str, object]) -> str:
+            for key in (
+                "doctorEmail",
+                "doctor_email",
+                "billingEmail",
+                "billing_email",
+                "customerEmail",
+                "customer_email",
+            ):
+                candidate = order.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip().lower()
+            billing = order.get("billingAddress") or order.get("billing") or order.get("billing_address") or None
+            if isinstance(billing, str):
+                try:
+                    billing = json.loads(billing)
+                except Exception:
+                    billing = None
+            if isinstance(billing, dict):
+                email = billing.get("email")
+                if isinstance(email, str) and email.strip():
+                    return email.strip().lower()
+            shipping = order.get("shippingAddress") or order.get("shipping") or order.get("shipping_address") or None
+            if isinstance(shipping, str):
+                try:
+                    shipping = json.loads(shipping)
+                except Exception:
+                    shipping = None
+            if isinstance(shipping, dict):
+                email = shipping.get("email")
+                if isinstance(email, str) and email.strip():
+                    return email.strip().lower()
+            return ""
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
             hint = str(entry.get("pricingModeHint") or "").strip().lower()
-            if hint in ("retail", "wholesale"):
-                return hint
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in pricing_mode_lookup:
-                return pricing_mode_lookup[woo_id]
-            woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in pricing_mode_lookup:
-                return pricing_mode_lookup[woo_number]
-            return "wholesale"
+            return "retail" if hint == "retail" else "wholesale"
+
+        def _resolve_items_list(order: Dict[str, object]) -> List[Dict[str, object]]:
+            raw = order.get("items")
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = None
+            if isinstance(raw, list):
+                return [item for item in raw if isinstance(item, dict)]
+            line_items = order.get("lineItems") or order.get("line_items")
+            if isinstance(line_items, list):
+                return [item for item in line_items if isinstance(item, dict)]
+            return []
+
+        def _resolve_order_tax(order: Dict[str, object]) -> float:
+            return _safe_float(
+                order.get("taxTotal")
+                or order.get("tax_total")
+                or order.get("totalTax")
+                or order.get("total_tax")
+            )
+
+        def _resolve_items_subtotal(order: Dict[str, object], items: List[Dict[str, object]]) -> float:
+            subtotal = _safe_float(
+                order.get("itemsSubtotal")
+                or order.get("items_subtotal")
+                or order.get("itemsTotal")
+                or order.get("items_total")
+            )
+            if subtotal > 0:
+                return subtotal
+            total_from_items = 0.0
+            for item in items:
+                qty = _safe_float(item.get("quantity") or item.get("qty") or 0)
+                if qty <= 0:
+                    continue
+                line_total = _safe_float(
+                    item.get("subtotal")
+                    or item.get("total")
+                    or item.get("line_total")
+                    or item.get("priceTotal")
+                    or item.get("price_total")
+                )
+                if line_total <= 0:
+                    line_total = _safe_float(item.get("price")) * qty
+                total_from_items += max(0.0, line_total)
+            if total_from_items > 0:
+                return total_from_items
+            total = _safe_float(order.get("total"))
+            shipping_total = _safe_float(order.get("shippingTotal") or order.get("shipping_total"))
+            tax_total = _resolve_order_tax(order)
+            if total > 0:
+                return max(0.0, total - shipping_total - tax_total)
+            return 0.0
+
+        orders = order_repository.list_for_commission(start_dt, end_dt)
+        orders_seen = len(orders)
+
+        for local_order in orders:
+            if not isinstance(local_order, dict):
+                continue
+            status = str(local_order.get("status") or "").strip().lower()
+            if status in ("cancelled", "canceled", "trash", "refunded", "on-hold", "on_hold"):
+                skipped_status += 1
+                if status == "refunded":
+                    skipped_refunded += 1
+                continue
+            created_at = _parse_datetime_utc(local_order.get("createdAt") or local_order.get("created_at"))
+            if not created_at:
+                skipped_outside_period += 1
+                continue
+            if created_at < start_dt or created_at > end_dt:
+                skipped_outside_period += 1
+                continue
+
+            order_user_id = str(local_order.get("userId") or local_order.get("user_id") or "").strip()
+            order_user = next((u for u in users if str(u.get("id") or "") == order_user_id), None)
+            order_role = _normalize_role(order_user.get("role") if isinstance(order_user, dict) else None)
+
+            billing_email = _resolve_order_email(local_order)
+            doctor = None
+            if billing_email:
+                doctor = doctors_by_email.get(billing_email)
+            if doctor is None and isinstance(order_user, dict) and order_role in ("doctor", "test_doctor"):
+                doctor = order_user
+
+            force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
+            contact_form_origin = force_house_contact_form
+            if doctor and not contact_form_origin:
+                lead_type = str(doctor.get("leadType") or "").strip().lower()
+                if lead_type and ("contact" in lead_type or lead_type == "house"):
+                    contact_form_origin = True
+            if billing_email and not contact_form_origin:
+                try:
+                    prospect = sales_prospect_repository.find_by_contact_email(billing_email)
+                    if prospect:
+                        prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
+                        prospect_identifier = str(prospect.get("id") or "")
+                        if prospect_contact_form_id or prospect_identifier.startswith("contact_form:"):
+                            contact_form_origin = True
+                except Exception:
+                    contact_form_origin = False
+            if billing_email and not contact_form_origin and doctor and doctor.get("id"):
+                try:
+                    doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
+                    if doctor_prospect:
+                        contact_form_origin = True
+                except Exception:
+                    contact_form_origin = False
+
+            rep_id = _normalize_rep_id(
+                local_order.get("doctorSalesRepId")
+                or local_order.get("salesRepId")
+                or local_order.get("sales_rep_id")
+                or local_order.get("doctor_sales_rep_id")
+            )
+            integrations = local_order.get("integrations") or local_order.get("integrationDetails") or {}
+            if isinstance(integrations, str):
+                try:
+                    integrations = json.loads(integrations)
+                except Exception:
+                    integrations = {}
+            if not rep_id and isinstance(integrations, dict):
+                rep_id = _normalize_rep_id(
+                    integrations.get("salesRepId")
+                    or integrations.get("sales_rep_id")
+                    or integrations.get("doctorSalesRepId")
+                    or integrations.get("doctor_sales_rep_id")
+                )
+
+            recipient_id = ""
+            if order_user_id and (order_role in rep_like_roles or order_role == "admin"):
+                recipient_id = order_user_id
+            elif billing_email and billing_email in user_rep_id_by_email:
+                recipient_id = user_rep_id_by_email[billing_email]
+            elif billing_email and billing_email in admin_id_by_email:
+                recipient_id = admin_id_by_email[billing_email]
+
+            if not recipient_id and contact_form_origin:
+                recipient_id = "__house__"
+
+            if not recipient_id:
+                if rep_id:
+                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                    if str(rep_id or "").strip().lower() == "house":
+                        recipient_id = "__house__"
+                    else:
+                        recipient_id = rep_id
+                if not recipient_id and doctor:
+                    doctor_rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
+                    if doctor_rep_id:
+                        doctor_rep_id = alias_to_rep_id.get(doctor_rep_id, doctor_rep_id)
+                        if str(doctor_rep_id or "").strip().lower() == "house":
+                            recipient_id = "__house__"
+                        else:
+                            recipient_id = doctor_rep_id
+
+            if recipient_id and recipient_id not in recipient_rows and recipient_id not in ("__house__", supplier_row_id):
+                admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
+                if admin:
+                    recipient_rows[str(recipient_id)] = {
+                        "id": str(recipient_id),
+                        "name": admin.get("name") or "Admin",
+                        "role": "admin",
+                        "amount": 0.0,
+                    }
+                else:
+                    recipient_rows[str(recipient_id)] = {
+                        "id": str(recipient_id),
+                        "name": f"User {recipient_id}",
+                        "role": "unknown",
+                        "amount": 0.0,
+                    }
+
+            items = _resolve_items_list(local_order)
+
+            for item in items:
+                qty = int(_safe_float(item.get("quantity") or item.get("qty") or 0))
+                if qty <= 0:
+                    continue
+                sku = str(item.get("sku") or "").strip()
+                product_id = item.get("productId") or item.get("product_id") or item.get("id")
+                variation_id = item.get("variationId") or item.get("variation_id") or item.get("variantId") or item.get("variation")
+                key = sku or f"id:{product_id}:{variation_id}"
+                entry = product_totals.get(key) or {
+                    "key": key,
+                    "sku": sku or None,
+                    "productId": product_id,
+                    "variationId": variation_id,
+                    "name": item.get("name") or sku or str(product_id or ""),
+                    "quantity": 0,
+                }
+                entry["quantity"] = int(entry.get("quantity") or 0) + qty
+                product_totals[key] = entry
+
+            items_subtotal = _resolve_items_subtotal(local_order, items)
+            total = _safe_float(local_order.get("total"))
+            shipping_total = _safe_float(local_order.get("shippingTotal") or local_order.get("shipping_total"))
+            tax_total = _resolve_order_tax(local_order)
+            pricing_mode_hint = local_order.get("pricingMode") or local_order.get("pricing_mode")
+
+            attributed_orders.append(
+                {
+                    "recipientId": recipient_id or "",
+                    "itemsSubtotal": items_subtotal,
+                    "items": items,
+                    "total": total,
+                    "shippingTotal": shipping_total,
+                    "taxTotal": tax_total,
+                    "pricingModeHint": pricing_mode_hint,
+                    "orderId": local_order.get("id"),
+                    "orderNumber": local_order.get("wooOrderNumber")
+                    or local_order.get("wooOrderId")
+                    or local_order.get("number"),
+                    "createdAt": created_at.isoformat() if created_at else None,
+                }
+            )
 
         def _add_commission(recipient_id: str, amount: float) -> None:
             row = recipient_rows.get(recipient_id)
@@ -3645,33 +3706,38 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         def _resolve_order_subtotal(entry: Dict[str, object]) -> float:
             """
             Commission base should be the order subtotal (exclude shipping + tax).
-            Prefer local MySQL `orders.items_subtotal` / payload.itemsSubtotal when available.
-            Fall back to deriving subtotal from Woo totals as: total - shipping - tax.
+            Prefer local `itemsSubtotal` / item totals when available.
+            Fall back to deriving subtotal from order totals as: total - shipping - tax.
             """
-            woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in subtotal_lookup:
-                try:
-                    return float(subtotal_lookup[woo_id])
-                except Exception:
-                    return 0.0
-            woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in subtotal_lookup:
-                try:
-                    return float(subtotal_lookup[woo_number])
-                except Exception:
-                    return 0.0
-            try:
-                total = float(entry.get("total") or 0.0)
-            except Exception:
+            items_subtotal = _safe_float(entry.get("itemsSubtotal"))
+            if items_subtotal > 0:
+                return items_subtotal
+            items = entry.get("items")
+            total_from_items = 0.0
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    qty = _safe_float(item.get("quantity") or item.get("qty") or 0)
+                    if qty <= 0:
+                        continue
+                    line_total = _safe_float(
+                        item.get("subtotal")
+                        or item.get("total")
+                        or item.get("line_total")
+                        or item.get("priceTotal")
+                        or item.get("price_total")
+                    )
+                    if line_total <= 0:
+                        line_total = _safe_float(item.get("price")) * qty
+                    total_from_items += max(0.0, line_total)
+            if total_from_items > 0:
+                return total_from_items
+            total = _safe_float(entry.get("total"))
+            if total <= 0:
                 return 0.0
-            try:
-                shipping_total = float(entry.get("shippingTotal") or 0.0)
-            except Exception:
-                shipping_total = 0.0
-            try:
-                tax_total = float(entry.get("taxTotal") or 0.0)
-            except Exception:
-                tax_total = 0.0
+            shipping_total = _safe_float(entry.get("shippingTotal"))
+            tax_total = _safe_float(entry.get("taxTotal"))
             return max(0.0, total - shipping_total - tax_total)
 
         order_breakdown: List[Dict[str, object]] = []
@@ -3740,8 +3806,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             order_breakdown.append(
                 {
-                    "orderNumber": entry.get("wooNumber") or entry.get("wooId"),
-                    "wooId": entry.get("wooId"),
+                    "orderNumber": entry.get("orderNumber") or entry.get("orderId"),
+                    "orderId": entry.get("orderId"),
                     "pricingMode": pricing_mode,
                     "recipientId": recipient_id or None,
                     "commissionRate": rate,
