@@ -65,6 +65,10 @@ def _ensure_defaults(user: Dict) -> Dict:
     referral_credits = normalized.get("referralCredits", 0)
     normalized["referralCredits"] = float(referral_credits or 0)
     normalized["totalReferrals"] = int(normalized.get("totalReferrals", 0) or 0)
+    try:
+        normalized["markupPercent"] = float(normalized.get("markupPercent") or 0.0)
+    except Exception:
+        normalized["markupPercent"] = 0.0
     npi_number = _normalize_npi(normalized.get("npiNumber"))
     normalized["npiNumber"] = npi_number or None
     normalized.setdefault("npiLastVerifiedAt", normalized.get("npiLastVerifiedAt") or None)
@@ -312,6 +316,7 @@ def _mysql_insert(user: Dict) -> Dict:
             phone, office_address_line1, office_address_line2, office_city, office_state,
             office_postal_code, office_country, profile_image_url, downloads,
             referral_credits, total_referrals, visits,
+            markup_percent,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
@@ -321,7 +326,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
             %(profile_image_url)s, %(downloads)s, %(referral_credits)s,
-            %(total_referrals)s, %(visits)s, %(created_at)s, %(last_login_at)s,
+            %(total_referrals)s, %(visits)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
         )
@@ -351,6 +356,7 @@ def _mysql_insert(user: Dict) -> Dict:
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
             visits = VALUES(visits),
+            markup_percent = VALUES(markup_percent),
             created_at = VALUES(created_at),
             last_login_at = VALUES(last_login_at),
             must_reset_password = VALUES(must_reset_password),
@@ -402,6 +408,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
             visits = %(visits)s,
+            markup_percent = %(markup_percent)s,
             created_at = %(created_at)s,
             last_login_at = %(last_login_at)s,
             must_reset_password = %(must_reset_password)s,
@@ -473,6 +480,7 @@ def _row_to_user(row: Dict) -> Dict:
             "referralCredits": float(row.get("referral_credits") or 0),
             "totalReferrals": int(row.get("total_referrals") or 0),
             "visits": int(row.get("visits") or 0),
+            "markupPercent": float(row.get("markup_percent") or 0.0),
             "createdAt": fmt_datetime(row.get("created_at")),
             "lastLoginAt": fmt_datetime(row.get("last_login_at")),
             "mustResetPassword": bool(row.get("must_reset_password")),
@@ -526,6 +534,7 @@ def _to_db_params(user: Dict) -> Dict:
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
         "visits": int(user.get("visits") or 0),
+        "markup_percent": float(user.get("markupPercent") or 0.0),
         "created_at": parse_dt(user.get("createdAt")),
         "last_login_at": parse_dt(user.get("lastLoginAt")),
         "must_reset_password": 1 if user.get("mustResetPassword") else 0,

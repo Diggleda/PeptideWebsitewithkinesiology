@@ -4274,8 +4274,8 @@ export function Header({
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Apply a percent markup to all products shown to delegates using your patient link.
         </p>
-        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="flex-1">
+        <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="min-w-0">
             <Label htmlFor="patient-markup" className="text-sm font-semibold text-slate-700">
               Markup percent
             </Label>
@@ -4295,7 +4295,7 @@ export function Header({
             type="button"
             onClick={() => void handleSavePatientMarkup()}
             disabled={!showPatientLinksTab || patientLinksSaving}
-            className="squircle-sm glass-brand btn-hover-lighter px-6 py-2.5 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+            className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
           >
             {patientLinksSaving ? 'Saving…' : 'Save'}
           </Button>
@@ -4307,8 +4307,8 @@ export function Header({
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Create a delegate link and share it however you like (copy/paste).
         </p>
-        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="flex-1">
+        <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="min-w-0">
             <Label htmlFor="patient-link-label" className="text-sm font-semibold text-slate-700">
               Label (optional)
             </Label>
@@ -4324,7 +4324,7 @@ export function Header({
             type="button"
             onClick={() => void handleCreatePatientLink()}
             disabled={!showPatientLinksTab || patientLinksCreating}
-            className="squircle-sm glass-brand btn-hover-lighter px-6 py-2.5 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+            className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
           >
             {patientLinksCreating ? 'Creating…' : 'Create link'}
           </Button>
@@ -4353,12 +4353,15 @@ export function Header({
         )}
 
         {patientLinksLoading ? (
-          <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-1)] bg-white/80">
+          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
             <p className="text-sm text-slate-600">Loading links…</p>
           </div>
         ) : patientLinks.length === 0 ? (
-          <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-1)] bg-white/80">
-            <p className="text-sm text-slate-600">No patient links yet.</p>
+          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-900">No patient links yet.</p>
+              <p className="text-sm text-slate-600">Create one above to get started.</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">

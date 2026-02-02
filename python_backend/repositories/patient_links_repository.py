@@ -54,22 +54,14 @@ def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any
     label_value = str(label).strip() if isinstance(label, str) and str(label).strip() else None
     delete_expired()
 
-    # Default markup is derived from the most-recent active link for this doctor.
+    # Default markup comes from the doctor record (non-volatile across sessions).
     markup_percent = 0.0
     try:
-        row = mysql_client.fetch_one(
-            """
-            SELECT markup_percent
-            FROM patient_links
-            WHERE doctor_id = %(doctor_id)s
-              AND expires_at > UTC_TIMESTAMP()
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            {"doctor_id": doctor_id},
-        )
-        if row and row.get("markup_percent") is not None:
-            markup_percent = float(row.get("markup_percent") or 0.0)
+        from ..repositories import user_repository
+
+        doctor = user_repository.find_by_id(doctor_id) or {}
+        if isinstance(doctor, dict):
+            markup_percent = float(doctor.get("markupPercent") or 0.0)
     except Exception:
         markup_percent = 0.0
 

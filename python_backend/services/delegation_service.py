@@ -111,7 +111,7 @@ def _migrate_legacy_links_to_table() -> None:
         doctor_id = str(doctor_id or "").strip()
         if not doctor_id:
             return
-        # Pull legacy per-doctor markup, but persist it on each link row.
+        # Pull legacy per-doctor markup, but persist it on each link row and the doctor record.
         legacy_markup = 0.0
         try:
             payload = _sql_read_key(_config_key(doctor_id))
@@ -121,6 +121,14 @@ def _migrate_legacy_links_to_table() -> None:
                 legacy_markup = _normalize_markup_percent(payload.get("markupPercent") or payload.get("markup_percent") or 0)
         except Exception:
             legacy_markup = 0.0
+        try:
+            doctor = user_repository.find_by_id(doctor_id) or None
+            if isinstance(doctor, dict) and doctor:
+                current = _normalize_markup_percent(doctor.get("markupPercent"))
+                if abs(current - legacy_markup) > 0.001:
+                    user_repository.update({**doctor, "markupPercent": legacy_markup})
+        except Exception:
+            pass
         for entry in links or []:
             token = str(entry.get("token") or "").strip()
             if not token:
@@ -309,7 +317,12 @@ def get_doctor_config(doctor_id: str) -> Dict[str, Any]:
         return {"markupPercent": 0.0}
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        return {"markupPercent": float(patient_links_repository.get_doctor_markup_percent(doctor_id) or 0.0)}
+        doctor = user_repository.find_by_id(doctor_id) or {}
+        value = doctor.get("markupPercent") if isinstance(doctor, dict) else 0.0
+        try:
+            return {"markupPercent": _normalize_markup_percent(value)}
+        except Exception:
+            return {"markupPercent": 0.0}
     key = _config_key(doctor_id)
     payload = _sql_read_key(key)
     if payload is None:
@@ -328,7 +341,16 @@ def update_doctor_config(doctor_id: str, patch: Dict[str, Any]) -> Dict[str, Any
     markup_percent = _normalize_markup_percent((patch or {}).get("markupPercent"))
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        patient_links_repository.set_doctor_markup_percent(doctor_id, markup_percent)
+        # Persist on the doctor user record (non-volatile across sessions).
+        existing = user_repository.find_by_id(doctor_id) or None
+        if not isinstance(existing, dict) or not existing:
+            raise ValueError("Doctor not found")
+        user_repository.update({**existing, "markupPercent": markup_percent})
+        # Keep active links in sync (used for resolve snapshot / debugging).
+        try:
+            patient_links_repository.set_doctor_markup_percent(doctor_id, markup_percent)
+        except Exception:
+            pass
         return {"markupPercent": markup_percent}
     current = get_doctor_config(doctor_id)
     merged = {**current, "markupPercent": markup_percent}
@@ -468,7 +490,7 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "token": token,
             "doctorId": doctor_id,
             "doctorName": doctor_name,
-            "markupPercent": float(link.get("markupPercent") or 0.0),
+            "markupPercent": _normalize_markup_percent(doctor.get("markupPercent")),
         }
 
     index = _load_index()
