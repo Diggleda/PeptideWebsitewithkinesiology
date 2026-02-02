@@ -831,6 +831,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         return str(value)
 
     payload = parse_json(row.get("payload"), {})
+    payload_order = payload.get("order") if isinstance(payload, dict) and isinstance(payload.get("order"), dict) else None
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
@@ -859,13 +860,20 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     if isinstance(payload, dict) and payload:
-        payload_items = payload.get("items")
-        if (
-            isinstance(payload_items, list)
-            and not order.get("items")
-        ):
+        payload_items = None
+        if isinstance(payload_order, dict):
+            payload_items = payload_order.get("items")
+        if payload_items is None:
+            payload_items = payload.get("items")
+        if isinstance(payload_items, list) and not order.get("items"):
             order["items"] = payload_items
-        payload_subtotal = payload.get("itemsSubtotal") or payload.get("items_subtotal") or payload.get("itemsTotal") or payload.get("items_total")
+        payload_subtotal = (
+            (payload_order.get("itemsSubtotal") if isinstance(payload_order, dict) else None)
+            or payload.get("itemsSubtotal")
+            or payload.get("items_subtotal")
+            or payload.get("itemsTotal")
+            or payload.get("items_total")
+        )
         try:
             payload_subtotal_value = float(payload_subtotal)
         except Exception:

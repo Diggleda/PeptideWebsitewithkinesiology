@@ -6232,29 +6232,55 @@ export default function App() {
                     (order: any) => !isPersonalOrderForRep(order),
                   );
                   const personalOrders = personalOrdersForModal;
-                  const personalOrderKeys = new Set(
-                    personalOrders
-                      .map((order) =>
-                        String(
-                          order.id ||
-                            order.number ||
-                            (order as any).wooOrderId ||
-                            (order as any).wooOrderNumber ||
-                            "",
-                        ),
-                      )
-                      .filter((key) => key.length > 0),
-                  );
-                  const filteredSalesOrders = salesOrders.filter((order) => {
-                    const key = String(
-                      order.id ||
-                        order.number ||
+                  const personalOrderKeys = new Set<string>();
+                  const addPersonalKey = (key: string | null, prefix: string) => {
+                    if (!key) return;
+                    personalOrderKeys.add(`${prefix}:${key}`);
+                  };
+                  personalOrders.forEach((order) => {
+                    addPersonalKey(
+                      normalizeWooOrderId(
                         (order as any).wooOrderId ||
-                        (order as any).wooOrderNumber ||
-                        "",
+                          (order as any).woo_order_id ||
+                          (order as any).wooId ||
+                          order.id,
+                      ),
+                      "woo",
                     );
-                    return key ? !personalOrderKeys.has(key) : true;
+                    addPersonalKey(
+                      normalizeWooOrderNumberKey(
+                        (order as any).wooOrderNumber ||
+                          (order as any).woo_order_number ||
+                          order.number,
+                      ),
+                      "num",
+                    );
+                    const localId = typeof order.id === "string" ? order.id.trim() : "";
+                    if (localId) {
+                      addPersonalKey(localId, "id");
+                    }
                   });
+                  const hasPersonalKey = (order: AccountOrderSummary) => {
+                    const wooId = normalizeWooOrderId(
+                      (order as any).wooOrderId ||
+                        (order as any).woo_order_id ||
+                        (order as any).wooId ||
+                        order.id,
+                    );
+                    if (wooId && personalOrderKeys.has(`woo:${wooId}`)) return true;
+                    const wooNumber = normalizeWooOrderNumberKey(
+                      (order as any).wooOrderNumber ||
+                        (order as any).woo_order_number ||
+                        order.number,
+                    );
+                    if (wooNumber && personalOrderKeys.has(`num:${wooNumber}`)) return true;
+                    const localId = typeof order.id === "string" ? order.id.trim() : "";
+                    if (localId && personalOrderKeys.has(`id:${localId}`)) return true;
+                    return false;
+                  };
+                  const filteredSalesOrders = salesOrders.filter(
+                    (order) => !hasPersonalKey(order),
+                  );
                   const combinedOrders = (() => {
                     const byKey = new Map<string, AccountOrderSummary>();
                     const keyFor = (order: AccountOrderSummary) =>
