@@ -3191,8 +3191,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
     For the given period:
       - Count quantity sold per product/sku
       - Compute commissions:
-          wholesale: 10% of (order_total - tax - shipping)
-          retail: 20% of (order_total - tax - shipping)
+          wholesale: 10% of order item subtotal
+          retail: 20% of order item subtotal
         House/contact-form orders split commission equally across admins.
       - Include supplier "share" as (base - commission).
     """
@@ -3446,6 +3446,27 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             )
 
         def _resolve_items_subtotal(order: Dict[str, object], items: List[Dict[str, object]]) -> float:
+            # IMPORTANT: commission base must be the sum of line items (subtotal), and must never
+            # fall back to the order grand total. Some historical payloads/rows stored
+            # `itemsSubtotal` incorrectly (sometimes equal to the order total), so when we have
+            # items we always compute from items first.
+            total_from_items = 0.0
+            for item in items:
+                qty = _safe_float(item.get("quantity") or item.get("qty") or 0)
+                if qty <= 0:
+                    continue
+                line_total = _safe_float(
+                    item.get("subtotal")
+                    or item.get("line_total")
+                    or item.get("priceTotal")
+                    or item.get("price_total")
+                    or item.get("total")
+                )
+                if line_total <= 0:
+                    line_total = _safe_float(item.get("price")) * qty
+                total_from_items += max(0.0, line_total)
+            if total_from_items > 0:
+                return total_from_items
             subtotal = _safe_float(
                 order.get("itemsSubtotal")
                 or order.get("items_subtotal")
@@ -3454,23 +3475,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             )
             if subtotal > 0:
                 return subtotal
-            total_from_items = 0.0
-            for item in items:
-                qty = _safe_float(item.get("quantity") or item.get("qty") or 0)
-                if qty <= 0:
-                    continue
-                line_total = _safe_float(
-                    item.get("subtotal")
-                    or item.get("total")
-                    or item.get("line_total")
-                    or item.get("priceTotal")
-                    or item.get("price_total")
-                )
-                if line_total <= 0:
-                    line_total = _safe_float(item.get("price")) * qty
-                total_from_items += max(0.0, line_total)
-            if total_from_items > 0:
-                return total_from_items
             return 0.0
 
         orders = order_repository.list_for_commission(start_dt, end_dt)
@@ -3703,9 +3707,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             Commission base should be the order subtotal (exclude shipping + tax).
             Prefer local `itemsSubtotal` / item totals when available.
             """
-            items_subtotal = _safe_float(entry.get("itemsSubtotal"))
-            if items_subtotal > 0:
-                return items_subtotal
             items = entry.get("items")
             total_from_items = 0.0
             if isinstance(items, list):
@@ -3717,16 +3718,19 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         continue
                     line_total = _safe_float(
                         item.get("subtotal")
-                        or item.get("total")
                         or item.get("line_total")
                         or item.get("priceTotal")
                         or item.get("price_total")
+                        or item.get("total")
                     )
                     if line_total <= 0:
                         line_total = _safe_float(item.get("price")) * qty
                     total_from_items += max(0.0, line_total)
             if total_from_items > 0:
                 return total_from_items
+            items_subtotal = _safe_float(entry.get("itemsSubtotal"))
+            if items_subtotal > 0:
+                return items_subtotal
             return 0.0
 
         order_breakdown: List[Dict[str, object]] = []

@@ -922,6 +922,47 @@ const toOrderLineItems = (items: any): AccountOrderLineItem[] => {
     .filter((line) => line.name);
 };
 
+const resolveOrderItemsSubtotal = (order: any): number => {
+  if (!order) return 0;
+  const lineItems = Array.isArray(order?.lineItems)
+    ? order.lineItems
+    : Array.isArray(order?.items)
+      ? toOrderLineItems(order.items)
+      : [];
+
+  const fromLines = Array.isArray(lineItems)
+    ? lineItems.reduce((sum: number, line: any) => {
+        const qty = coerceNumber(line?.quantity) ?? 0;
+        if (qty <= 0) return sum;
+        const lineTotal = coerceNumber(line?.total);
+        if (typeof lineTotal === "number" && Number.isFinite(lineTotal) && lineTotal > 0) {
+          return sum + lineTotal;
+        }
+        const unitPrice = coerceNumber(line?.price);
+        if (typeof unitPrice === "number" && Number.isFinite(unitPrice) && unitPrice > 0) {
+          return sum + unitPrice * qty;
+        }
+        return sum;
+      }, 0)
+    : 0;
+
+  if (fromLines > 0) {
+    return Math.max(0, fromLines);
+  }
+
+  const direct = coerceNumber(
+    order?.itemsSubtotal ??
+      order?.items_subtotal ??
+      order?.itemsTotal ??
+      order?.items_total ??
+      order?.subtotal,
+  );
+  if (typeof direct === "number" && Number.isFinite(direct) && direct > 0) {
+    return Math.max(0, direct);
+  }
+  return 0;
+};
+
 const normalizeStringField = (value: unknown) => {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -6072,22 +6113,7 @@ export default function App() {
             includeCanceled: true,
           });
           const resolveOrderSubtotal = (order: any) => {
-            const direct = coerceNumber(
-              order?.itemsSubtotal ??
-                order?.items_subtotal ??
-                order?.itemsTotal ??
-                order?.items_total,
-            );
-            if (Number.isFinite(direct)) {
-              return Math.max(0, direct);
-            }
-            const total = coerceNumber(order?.grandTotal ?? order?.grand_total ?? order?.total);
-            const shipping = coerceNumber(order?.shippingTotal ?? order?.shipping_total) || 0;
-            const tax = coerceNumber(order?.taxTotal ?? order?.tax_total ?? order?.totalTax) || 0;
-            if (Number.isFinite(total)) {
-              return Math.max(0, total - shipping - tax);
-            }
-            return 0;
+            return resolveOrderItemsSubtotal(order);
           };
 
           const totalOrderValue = normalizedOrders.reduce((sum, order) => {
@@ -14683,15 +14709,18 @@ export default function App() {
 				                                >
 				                                  Default
 				                                </Button>
-				                                <Button
-				                                  type="button"
-				                                  variant="outline"
-				                                  size="sm"
-				                                  className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-				                                  onClick={() => setAdminDashboardPeriodPickerOpen(false)}
-				                                >
-				                                  Done
-				                                </Button>
+					                                <Button
+					                                  type="button"
+					                                  variant="outline"
+					                                  size="sm"
+					                                  className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+					                                  onClick={() => {
+					                                    applyAdminDashboardPeriod();
+					                                    setAdminDashboardPeriodPickerOpen(false);
+					                                  }}
+					                                >
+					                                  Done
+					                                </Button>
 				                              </div>
 				                              <Popover.Arrow className="calendar-popover-arrow" />
 				                            </Popover.Content>
@@ -20715,15 +20744,33 @@ export default function App() {
 			                                        >
 			                                          Default
 			                                        </Button>
-				                                      <Button
-				                                        type="button"
-				                                        variant="outline"
-				                                        size="sm"
-				                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-				                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
-				                                      >
-				                                        Done
-				                                      </Button>
+					                                      <Button
+					                                        type="button"
+					                                        variant="outline"
+					                                        size="sm"
+					                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+					                                        onClick={() => {
+					                                          if (
+					                                            salesDoctorCommissionRange?.from &&
+					                                            salesDoctorCommissionRange?.to
+					                                          ) {
+					                                            setSalesRepPeriodStart(
+					                                              formatDateInputValue(
+					                                                salesDoctorCommissionRange.from,
+					                                              ),
+					                                            );
+					                                            setSalesRepPeriodEnd(
+					                                              formatDateInputValue(
+					                                                salesDoctorCommissionRange.to,
+					                                              ),
+					                                            );
+					                                          }
+					                                          applyAdminDashboardPeriod();
+					                                          setSalesDoctorCommissionPickerOpen(false);
+					                                        }}
+					                                      >
+					                                        Done
+					                                      </Button>
 			                                      </div>
 			                                      <Popover.Arrow className="calendar-popover-arrow" />
 			                                    </Popover.Content>
@@ -20755,8 +20802,7 @@ export default function App() {
 			                                    acc: { wholesale: number; retail: number },
 			                                    order: any,
 			                                  ) => {
-                                    const amount =
-                                      coerceNumber(order?.grandTotal ?? order?.total) || 0;
+                                    const amount = resolveOrderItemsSubtotal(order);
 			                                    const pricingModeRaw =
 			                                      order?.pricingMode ||
 			                                      (order as any)?.pricing_mode ||
@@ -20855,15 +20901,33 @@ export default function App() {
 			                                      >
 			                                        All time
 			                                      </Button>
-				                                      <Button
-				                                        type="button"
-				                                        variant="outline"
-				                                        size="sm"
-				                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-				                                        onClick={() => setSalesDoctorCommissionPickerOpen(false)}
-				                                      >
-				                                        Done
-				                                      </Button>
+					                                      <Button
+					                                        type="button"
+					                                        variant="outline"
+					                                        size="sm"
+					                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+					                                        onClick={() => {
+					                                          if (
+					                                            salesDoctorCommissionRange?.from &&
+					                                            salesDoctorCommissionRange?.to
+					                                          ) {
+					                                            setSalesRepPeriodStart(
+					                                              formatDateInputValue(
+					                                                salesDoctorCommissionRange.from,
+					                                              ),
+					                                            );
+					                                            setSalesRepPeriodEnd(
+					                                              formatDateInputValue(
+					                                                salesDoctorCommissionRange.to,
+					                                              ),
+					                                            );
+					                                          }
+					                                          applyAdminDashboardPeriod();
+					                                          setSalesDoctorCommissionPickerOpen(false);
+					                                        }}
+					                                      >
+					                                        Done
+					                                      </Button>
 			                                    </div>
 			                                    <Popover.Arrow className="calendar-popover-arrow" />
 			                                  </Popover.Content>
