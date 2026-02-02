@@ -2672,6 +2672,7 @@ const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
 interface LazyCatalogProductCardProps {
   product: Product;
   pricingMarkupPercent?: number | null;
+  proposalMode?: boolean;
   onAddToCart: (
     productId: string,
     variationId: string | undefined | null,
@@ -2686,6 +2687,7 @@ interface LazyCatalogProductCardProps {
 const LazyCatalogProductCard = ({
   product,
   pricingMarkupPercent,
+  proposalMode = false,
   onAddToCart,
   onEnsureVariants,
 }: LazyCatalogProductCardProps) => {
@@ -2697,6 +2699,7 @@ const LazyCatalogProductCard = ({
   return (
     <ProductCard
       product={cardProduct}
+      proposalMode={proposalMode}
       onEnsureVariants={
         typeof onEnsureVariants === "function"
           ? (opts) => onEnsureVariants(product, opts)
@@ -14422,19 +14425,19 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-start order-1 lg:order-2 lg:justify-end">
-              {totalCartItems > 0 && (
-                <Button
-                  variant="ghost"
-                  onClick={() => setCheckoutOpen(true)}
-                  ref={checkoutButtonRef}
-                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  Checkout ({totalCartItems})
-                </Button>
-              )}
-            </div>
+	            <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-start order-1 lg:order-2 lg:justify-end">
+	              {totalCartItems > 0 && (
+	                <Button
+	                  variant="ghost"
+	                  onClick={() => setCheckoutOpen(true)}
+	                  ref={checkoutButtonRef}
+	                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
+	                >
+	                  <ShoppingCart className="w-4 h-4 mr-2" />
+	                  {isDelegateMode ? `Proposal (${totalCartItems})` : `Checkout (${totalCartItems})`}
+	                </Button>
+	              )}
+	            </div>
           </div>
 
           {showSkeletonGrid ? (
@@ -14445,17 +14448,18 @@ export default function App() {
             </div>
 	          ) : filteredProducts.length > 0 ? (
 	            <div className="grid gap-6 w-full px-4 sm:px-6 lg:px-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-		              {filteredProducts.map((product) => (
-		                <LazyCatalogProductCard
-		                  key={product.id}
-		                  product={product}
-                      pricingMarkupPercent={delegatePricingMarkupPercent}
-		                  onEnsureVariants={ensureCatalogProductHasVariants}
-		                  onAddToCart={(productId, variationId, qty) =>
-		                    handleAddToCart(productId, qty, undefined, variationId)
-		                  }
-		                />
-		              ))}
+			              {filteredProducts.map((product) => (
+			                <LazyCatalogProductCard
+			                  key={product.id}
+			                  product={product}
+	                      pricingMarkupPercent={delegatePricingMarkupPercent}
+	                      proposalMode={isDelegateMode}
+			                  onEnsureVariants={ensureCatalogProductHasVariants}
+			                  onAddToCart={(productId, variationId, qty) =>
+			                    handleAddToCart(productId, qty, undefined, variationId)
+			                  }
+			                />
+			              ))}
 	            </div>
 	          ) : (
 	            <div className="catalog-loading-state py-12">
@@ -18881,17 +18885,18 @@ export default function App() {
 				            />
 			          </div>
 			        )}
-              {isDelegateMode && (
-                <div style={{ display: postLoginHold ? "none" : undefined }}>
-                  <Header
-                    user={null}
-                    delegateMode
-                    delegateLogoUrl={delegateContext?.doctorLogoUrl ?? null}
-                    researchDashboardEnabled={false}
-                    patientLinksEnabled={false}
-                    cartItems={totalCartItems}
-                    onSearch={handleSearch}
-                    onCartClick={() => setCheckoutOpen(true)}
+	              {isDelegateMode && (
+	                <div style={{ display: postLoginHold ? "none" : undefined }}>
+	                  <Header
+	                    user={null}
+	                    delegateMode
+	                    delegateLogoUrl={delegateContext?.doctorLogoUrl ?? null}
+	                    delegateDoctorName={delegateDoctorNameForShare}
+	                    researchDashboardEnabled={false}
+	                    patientLinksEnabled={false}
+	                    cartItems={totalCartItems}
+	                    onSearch={handleSearch}
+	                    onCartClick={() => setCheckoutOpen(true)}
                     showCartIconFallback={shouldShowHeaderCartIcon}
                     catalogLoading={catalogLoading}
                   />
@@ -20425,59 +20430,16 @@ export default function App() {
             </main>
           )}
 
-          {isDelegateMode && (
-            <main
-              className="w-full pb-12 mobile-safe-area"
-              style={{
-                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
-              }}
-            >
-              <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
-                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-5 shadow-xl bg-white/85 backdrop-blur-xl">
-                  <div className="flex items-start gap-4">
-                    <div className="h-11 w-11 shrink-0 rounded-2xl border border-[rgba(95,179,249,0.35)] bg-white/85 p-2 shadow-sm">
-                      <img
-                        src="/Peppro_IconLogo_Transparent_NoBuffer.png"
-                        alt="PepPro"
-                        className="h-full w-full object-contain"
-                        loading="eager"
-                        decoding="async"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-[rgba(95,179,249,0.08)] px-2.5 py-1 text-xs font-semibold text-[rgb(95,179,249)]">
-                          Delegate
-                        </span>
-                        <p className="text-base font-semibold text-slate-900 leading-snug">
-                          Shopping for{" "}
-                          <span className="text-[rgb(19,115,196)]">
-                            {delegateDoctorNameForShare === "Doctor"
-                              ? "Doctor"
-                              : `Dr. ${delegateDoctorNameForShare}`}
-                          </span>
-                        </p>
-                      </div>
-                    {delegateLoading ? (
-                      <p className="mt-2 text-sm text-slate-600">Loading link details…</p>
-                    ) : delegateError ? (
-                      <p className="mt-2 text-sm text-red-700">{delegateError}</p>
-                    ) : delegatePricingMarkupPercent > 0 ? (
-                      <p className="mt-2 text-sm text-slate-700 leading-relaxed">
-                        Prices include a {delegatePricingMarkupPercent.toFixed(2)}% doctor markup.
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm text-slate-700 leading-relaxed">
-                        Add items to your cart, then share it with the doctor for checkout.
-                      </p>
-                    )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {delegateError ? null : renderProductSection()}
-            </main>
-          )}
+	          {isDelegateMode && (
+	            <main
+	              className="w-full pb-12 mobile-safe-area"
+	              style={{
+	                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
+	              }}
+	            >
+	              {delegateError ? null : renderProductSection()}
+	            </main>
+	          )}
         </div>
 
       {user ? (
@@ -22200,6 +22162,7 @@ export default function App() {
         onClose={handleCloseProductDetail}
         onAddToCart={handleAddToCart}
         pricingMarkupPercent={delegatePricingMarkupPercent}
+        proposalMode={isDelegateMode}
       />
     </div>
   );

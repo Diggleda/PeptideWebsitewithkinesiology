@@ -20,6 +20,7 @@ interface ProductDetailDialogProps {
   onClose: () => void;
   onAddToCart: (productId: string, quantity: number, note?: string, variantId?: string | null) => void;
   pricingMarkupPercent?: number | null;
+  proposalMode?: boolean;
 }
 
 export function ProductDetailDialog({
@@ -28,6 +29,7 @@ export function ProductDetailDialog({
   onClose,
   onAddToCart,
   pricingMarkupPercent,
+  proposalMode = false,
 }: ProductDetailDialogProps) {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
@@ -185,7 +187,11 @@ export function ProductDetailDialog({
               <DialogTitle className="text-2xl font-bold text-slate-900 line-clamp-2">
                 {product ? product.name : 'Product details'}
               </DialogTitle>
-              <DialogDescription className="mt-1">Review the product details and add it to your cart.</DialogDescription>
+	              <DialogDescription className="mt-1">
+	                {proposalMode
+	                  ? 'Review the product details and add it to your proposal.'
+	                  : 'Review the product details and add it to your cart.'}
+	              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
@@ -457,17 +463,17 @@ export function ProductDetailDialog({
                     />
                   </div>
 
-                  {/* Add to Cart Button */}
-                  <Button
-                    onClick={handleAddToCart}
-                    disabled={isVariantSelectionLoading}
-                    className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ShoppingCart className="mr-2 h-5 w-5" />
-                    {isVariantSelectionLoading
-                      ? 'Loading options…'
-                      : 'Add to Cart'}
-                  </Button>
+	                  {/* Add to Cart Button */}
+	                  <Button
+	                    onClick={handleAddToCart}
+	                    disabled={isVariantSelectionLoading}
+	                    className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+	                  >
+	                    <ShoppingCart className="mr-2 h-5 w-5" />
+	                    {isVariantSelectionLoading
+	                      ? 'Loading options…'
+	                      : proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	                  </Button>
                 </div>
               </div>
             </div>

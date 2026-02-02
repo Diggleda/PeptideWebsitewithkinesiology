@@ -416,6 +416,7 @@ export function CheckoutModal({
   }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost, paymentMethod]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
   const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
+  const proposalMode = isDelegateFlow;
   const delegateDoctorDisplayName = isDelegateFlow
     ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
       ? 'Doctor'
@@ -858,7 +859,11 @@ export function CheckoutModal({
     lastQuotedCartRef.current = null;
     setShippingRates(null);
     setSelectedRateIndex(null);
-    setShippingRateError('Cart updated. Please fetch shipping rates again.');
+    setShippingRateError(
+      proposalMode
+        ? 'Proposal updated. Please fetch shipping rates again.'
+        : 'Cart updated. Please fetch shipping rates again.',
+    );
   }, [cartLineItemSignature, shippingRates]);
 
   const requestTaxEstimate = useCallback(async (options?: { force?: boolean }) => {
@@ -998,20 +1003,24 @@ export function CheckoutModal({
       >
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
-                Checkout
-              </DialogTitle>
-              <DialogDescription>Review and place your order.</DialogDescription>
-            </div>
+	            <div className="flex-1 min-w-0">
+	              <DialogTitle className="text-xl font-semibold text-[rgb(95,179,249)]">
+	                {proposalMode ? 'Proposal' : 'Checkout'}
+	              </DialogTitle>
+	              <DialogDescription>
+	                {proposalMode
+	                  ? 'Review your proposal and share it with the doctor.'
+	                  : 'Review and place your order.'}
+	              </DialogDescription>
+	            </div>
             <DialogClose
               className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
               style={{
                 backgroundColor: 'rgb(95, 179, 249)',
                 borderRadius: '50%',
               }}
-              aria-label="Close checkout"
-            >
+	              aria-label={proposalMode ? 'Close proposal' : 'Close checkout'}
+	            >
               <X className="h-4 w-4" />
             </DialogClose>
           </div>

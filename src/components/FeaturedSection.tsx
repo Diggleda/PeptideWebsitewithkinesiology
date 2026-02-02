@@ -9,9 +9,10 @@ import type { CSSProperties } from 'react';
 interface FeaturedSectionProps {
   featuredProducts: Product[];
   onAddToCart: (productId: string) => void;
+  proposalMode?: boolean;
 }
 
-export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSectionProps) {
+export function FeaturedSection({ featuredProducts, onAddToCart, proposalMode = false }: FeaturedSectionProps) {
   const mainFeatured = featuredProducts[0];
   const otherFeatured = featuredProducts.slice(1, 4);
   const mainFeaturedImage = mainFeatured ? (mainFeatured.images[0] ?? mainFeatured.image) : undefined;
@@ -70,14 +71,14 @@ export function FeaturedSection({ featuredProducts, onAddToCart }: FeaturedSecti
                     )}
                   </div>
                   
-                  <Button
-                    variant="outline"
-                    onClick={() => onAddToCart(mainFeatured.id)}
-                    className="glass-brand squircle-sm btn-hover-lighter"
-                  >
-                    Add to Cart
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
+	                  <Button
+	                    variant="outline"
+	                    onClick={() => onAddToCart(mainFeatured.id)}
+	                    className="glass-brand squircle-sm btn-hover-lighter"
+	                  >
+	                    {proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	                    <ArrowRight className="w-4 h-4 ml-2" />
+	                  </Button>
                 </div>
               </div>
             </CardContent>

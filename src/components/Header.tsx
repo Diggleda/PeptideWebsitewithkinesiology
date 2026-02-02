@@ -213,6 +213,7 @@ interface HeaderProps {
   user: HeaderUser | null;
   delegateMode?: boolean;
   delegateLogoUrl?: string | null;
+  delegateDoctorName?: string | null;
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
@@ -862,6 +863,7 @@ export function Header({
   user,
   delegateMode = false,
   delegateLogoUrl = null,
+  delegateDoctorName = null,
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
   onLogin,
@@ -1606,7 +1608,7 @@ export function Header({
       setAccountTab('details');
     }
   }, [welcomeOpen]);
-  const accountRole = localUser?.role ?? user.role;
+  const accountRole = localUser?.role ?? user?.role ?? null;
   const accountIsAdmin = isAdmin(accountRole);
   const accountIsSalesRep = isRep(accountRole) || isSalesLead(accountRole);
   const headerDisplayName = localUser
@@ -1618,8 +1620,8 @@ export function Header({
         ? `Rep: ${localUser.name}`
         : localUser.name
     : '';
-  const profileImageUrl = localUser?.profileImageUrl || user.profileImageUrl || null;
-  const userInitials = getInitials(localUser?.name || user.name || headerDisplayName);
+  const profileImageUrl = localUser?.profileImageUrl || user?.profileImageUrl || null;
+  const userInitials = getInitials(localUser?.name || user?.name || headerDisplayName);
   const normalizedReferralCodes = Array.isArray(referralCodes)
     ? referralCodes
         .map((code) => {
@@ -1649,14 +1651,14 @@ export function Header({
     const numericSize = typeof size === 'number' ? size : null;
     const fallbackFontSize = numericSize ? `${Math.max(12, Math.round(numericSize * 0.45))}px` : undefined;
     if (profileImageUrl) {
-      return (
-        <img
-          src={profileImageUrl}
-          alt={`${headerDisplayName || localUser?.name || user.name} avatar`}
-          className={clsx('header-avatar-image', className)}
-          style={{ width: dimension, height: dimension }}
-          onError={() => {
-            if (onUserUpdated && localUser) {
+	      return (
+	        <img
+	          src={profileImageUrl}
+	          alt={`${headerDisplayName || localUser?.name || user?.name || 'User'} avatar`}
+	          className={clsx('header-avatar-image', className)}
+	          style={{ width: dimension, height: dimension }}
+	          onError={() => {
+	            if (onUserUpdated && localUser) {
               onUserUpdated({ ...localUser, profileImageUrl: null });
             }
           }}
@@ -3187,6 +3189,49 @@ export function Header({
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
 
+  const downscaleImageDataUrl = useCallback(async (dataUrl: string, maxSidePx: number) => {
+    const safeMaxSide = Number.isFinite(maxSidePx) ? Math.max(16, Math.min(512, Math.floor(maxSidePx))) : 96;
+    const img = new Image();
+    img.decoding = 'async';
+    img.loading = 'eager';
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+      img.src = dataUrl;
+    });
+
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (!srcW || !srcH) {
+      throw new Error('IMAGE_DIMENSIONS_INVALID');
+    }
+
+    const scale = Math.min(1, safeMaxSide / Math.max(srcW, srcH));
+    const dstW = Math.max(1, Math.round(srcW * scale));
+    const dstH = Math.max(1, Math.round(srcH * scale));
+
+    if (dstW === srcW && dstH === srcH) {
+      return dataUrl;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = dstW;
+    canvas.height = dstH;
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) {
+      throw new Error('CANVAS_CONTEXT_UNAVAILABLE');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, dstW, dstH);
+    ctx.drawImage(img, 0, 0, dstW, dstH);
+
+    const outputMime = dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+    return canvas.toDataURL(outputMime, outputMime === 'image/jpeg' ? 0.85 : undefined);
+  }, []);
+
   const handleSelectDelegateLogo = useCallback(async (file: File | null) => {
     if (!file || delegateLogoUploading) {
       return;
@@ -3211,7 +3256,9 @@ export function Header({
       if (!dataUrl || !dataUrl.startsWith('data:image/')) {
         throw new Error('INVALID_IMAGE');
       }
-      await saveProfileField('Delegate logo', { delegateLogoUrl: dataUrl });
+      const previewBoxPx = 48;
+      const resized = await downscaleImageDataUrl(dataUrl, previewBoxPx * 2);
+      await saveProfileField('Delegate logo', { delegateLogoUrl: resized });
     } catch (error) {
       // saveProfileField handles toasts
     } finally {
@@ -3220,7 +3267,7 @@ export function Header({
         delegateLogoInputRef.current.value = '';
       }
     }
-  }, [delegateLogoUploading, saveProfileField]);
+  }, [delegateLogoUploading, downscaleImageDataUrl, saveProfileField]);
 
   const handleRemoveDelegateLogo = useCallback(async () => {
     if (delegateLogoUploading) return;
@@ -4348,22 +4395,22 @@ export function Header({
         <p className="mt-2 text-sm leading-relaxed text-slate-700">
           Use “Upload logo” to set your clinic/brand logo. Use “Remove” to revert back to the default PepPro logo.
         </p>
-        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="h-12 w-12 rounded-2xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-2 shadow-sm">
-              <img
-                src={
-                  (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
-                    ? localUser.delegateLogoUrl
-                    : "/Peppro_IconLogo_Transparent_NoBuffer.png"
-                }
-                alt="Delegate logo"
-                className="h-full w-full object-contain"
-              />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate">
-                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
+	        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+	          <div className="flex items-center gap-4 min-w-0">
+	            <div className="h-12 w-12 flex-none overflow-hidden rounded-2xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-2 shadow-sm flex items-center justify-center">
+	              <img
+	                src={
+	                  (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
+	                    ? localUser.delegateLogoUrl
+	                    : "/Peppro_IconLogo_Transparent_NoBuffer.png"
+	                }
+	                alt="Delegate logo"
+	                className="h-full w-full object-contain"
+	              />
+	            </div>
+	            <div className="min-w-0">
+	              <p className="text-sm font-semibold text-slate-900 truncate">
+	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
                   ? 'Custom logo set'
                   : 'Using PepPro logo'}
               </p>
@@ -4476,11 +4523,11 @@ export function Header({
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
-          <Button
-            type="button"
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-3">
+	        <div className="flex items-center justify-between gap-3">
+	          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
+	          <Button
+	            type="button"
             variant="outline"
             size="sm"
             onClick={() => void loadPatientLinks()}
@@ -4500,37 +4547,37 @@ export function Header({
           </div>
         )}
 
-        {patientLinksLoading ? (
-          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
-            <p className="text-sm text-slate-600">Loading links…</p>
-          </div>
-        ) : patientLinks.length === 0 ? (
-          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-900">No patient links yet.</p>
-              <p className="text-sm text-slate-600">Create one above to get started.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {patientLinks.map((link) => {
-              const token = typeof link?.token === 'string' ? link.token : '';
-              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
-              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
+	        {patientLinksLoading ? (
+	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
+	            <p className="text-sm text-slate-600">Loading links…</p>
+	          </div>
+	        ) : patientLinks.length === 0 ? (
+	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
+	            <div className="flex items-center justify-between gap-3">
+	              <p className="text-sm font-semibold text-slate-900">No patient links yet.</p>
+	              <p className="text-sm text-slate-600">Create one above to get started.</p>
+	            </div>
+	          </div>
+	        ) : (
+	          <div className="space-y-3 pt-1">
+	            {patientLinks.map((link) => {
+	              const token = typeof link?.token === 'string' ? link.token : '';
+	              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
+	              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
               const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
               const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
               const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
               const isRevoked = Boolean(revokedAt);
               const isUpdating = patientLinksUpdatingToken === token;
 
-              return (
-                <div
-                  key={token || label}
-                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+	              return (
+	                <div
+	                  key={token || label}
+	                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+	                >
+	                  <div className="min-w-0">
+	                    <div className="flex items-center gap-2">
+	                      <span className="font-semibold text-slate-900 truncate">{label}</span>
                       {isRevoked && (
                         <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
                           Revoked
@@ -4569,9 +4616,9 @@ export function Header({
                 </div>
               );
             })}
-          </div>
-        )}
-      </div>
+	          </div>
+	        )}
+	      </div>
     </div>
   ) : null;
 
@@ -4603,15 +4650,22 @@ export function Header({
           backgroundColor: "#fff",
         };
 
+  const delegateDoctorLabel = (() => {
+    const raw = typeof delegateDoctorName === 'string' ? delegateDoctorName.trim() : '';
+    if (!raw) return 'Doctor';
+    if (raw.toLowerCase() === 'doctor') return 'Doctor';
+    return `Dr. ${raw}`;
+  })();
+
   const authControls = delegateMode ? (
     <div className="flex items-center gap-2">
       <div
-        className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none"
-        aria-label="Delegate session"
-        title="Delegate session"
+        className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none cursor-default"
+        aria-label={`Delegate of ${delegateDoctorLabel}`}
+        title={`Delegate of ${delegateDoctorLabel}`}
       >
         <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-        <span className="hidden sm:inline font-semibold">Delegate</span>
+        <span className="font-semibold truncate max-w-[55vw] sm:max-w-[20rem]">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
     </div>
@@ -4670,10 +4724,10 @@ export function Header({
               style={{ boxShadow: '0 18px 28px -20px rgba(7,18,36,0.3)' }}
             >
             <div className="flex-1 min-w-0 max-w-full space-y-3 account-header-content">
-              <div className="flex items-center gap-3 flex-wrap min-w-0">
-                <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
-                  {user.name}
-                </DialogTitle>
+	            <div className="flex items-center gap-3 flex-wrap min-w-0">
+	              <DialogTitle className="text-xl font-semibold header-user-name min-w-0 truncate">
+	                  {localUser?.name || user?.name || 'Account'}
+	                </DialogTitle>
                 {!suppressAccountHomeButton && (
                   <>
                     <span aria-hidden="true" className="text-slate-300">
@@ -4701,12 +4755,12 @@ export function Header({
                     </Button>
                   </>
                 )}
-              </div>
-              <DialogDescription className="account-header-description">
-                {(user.visits ?? 1) > 1
-                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! You can manage your account details and orders below.`
-                  : `We are thrilled to have you with us—let's make healthcare simpler together!`}
-              </DialogDescription>
+	              </div>
+	              <DialogDescription className="account-header-description">
+	                {((localUser?.visits ?? user?.visits ?? 1) > 1)
+	                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! You can manage your account details and orders below.`
+	                  : `We are thrilled to have you with us—let's make healthcare simpler together!`}
+	              </DialogDescription>
               <div className="relative w-full">
                 <div
                   className="w-full account-tab-scroll-container"
@@ -5251,47 +5305,34 @@ export function Header({
       <div className="w-full px-6 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
           <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
-            {/* Logo */}
-            {!delegateMode ? (
-              <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
-                    <img
-                      src="/Peppro_fulllogo.png"
-                      alt="PepPro logo"
-                      className="relative z-[1] flex-shrink-0"
-                      style={{
-                        display: 'block',
-                        width: 'auto',
-                        height: 'auto',
-                        maxWidth: logoSizing.maxWidth,
-                        maxHeight: logoSizing.maxHeight,
-                        objectFit: 'contain'
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-                <div className="h-9 w-9 rounded-xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-1.5 shadow-sm">
-                  <img
-                    src={
-                      (typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
-                        ? delegateLogoUrl
-                        : "/Peppro_IconLogo_Transparent_NoBuffer.png"
-                    }
-                    alt="Delegate logo"
-                    className="h-full w-full object-contain"
-                    loading="eager"
-                    decoding="async"
-                  />
-                </div>
-                <div className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-white/70 px-3 py-1.5 text-sm font-semibold text-[rgb(95,179,249)]">
-                  Delegate
-                </div>
-              </div>
-            )}
+	            {/* Logo (same header layout for doctor + delegate) */}
+	            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+	              <div className="flex items-center gap-3">
+	                <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
+	                  <img
+	                    src={
+	                      delegateMode
+	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
+	                          ? delegateLogoUrl
+	                          : "/Peppro_fulllogo.png")
+	                        : "/Peppro_fulllogo.png"
+	                    }
+	                    alt={delegateMode ? 'Doctor logo' : 'PepPro logo'}
+	                    className="relative z-[1] flex-shrink-0"
+	                    style={{
+	                      display: 'block',
+	                      width: 'auto',
+	                      height: 'auto',
+	                      maxWidth: logoSizing.maxWidth,
+	                      maxHeight: logoSizing.maxHeight,
+	                      objectFit: 'contain',
+	                    }}
+	                    loading="eager"
+	                    decoding="async"
+	                  />
+	                </div>
+	              </div>
+	            </div>
 
             {/* Search Bar - Desktop (centered) */}
             {isLargeScreen && (

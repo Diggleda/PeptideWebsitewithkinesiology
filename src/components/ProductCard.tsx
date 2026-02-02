@@ -170,6 +170,7 @@ interface ProductCardProps {
   product: Product;
   onAddToCart: (productId: string, variationId: string, quantity: number) => void;
   onEnsureVariants?: (options?: { force?: boolean }) => Promise<unknown> | void;
+  proposalMode?: boolean;
 }
 
 const pickDefaultVariation = (variations: ProductVariation[] | undefined | null) => {
@@ -179,7 +180,7 @@ const pickDefaultVariation = (variations: ProductVariation[] | undefined | null)
   return variations.find((variation) => Boolean(variation?.image)) ?? variations[0];
 };
 
-export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMode = false }: ProductCardProps) {
   const selectableVariations = useMemo(() => {
     const variations = Array.isArray(product.variations) ? product.variations : [];
     return variations.filter((variation) => variation?.id !== PLACEHOLDER_VARIATION_ID);
@@ -681,8 +682,8 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
     <div className="glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">{bulkContent}</div>
   ) : null;
 
-  const addToCartButton = (
-    <Button
+	  const addToCartButton = (
+	    <Button
       onClick={() => {
         onAddToCart(product.id, selectedVariation.id, quantity);
         setQuantity(1);
@@ -690,11 +691,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants }: ProductC
         setBulkOpen(false);
       }}
       className="squircle-sm glass-brand btn-hover-lighter w-full"
-    >
-      <ShoppingCart className="w-4 h-4 mr-2" />
-      Add to Cart
-    </Button>
-  );
+	    >
+	      <ShoppingCart className="w-4 h-4 mr-2" />
+	      {proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	    </Button>
+	  );
 
   const baseImageFrameClass = 'product-image-frame product-image-frame--flush';
 
