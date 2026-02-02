@@ -6071,11 +6071,30 @@ export default function App() {
           const normalizedOrders = normalizeAccountOrdersResponse(ordersResp, {
             includeCanceled: true,
           });
+          const resolveOrderSubtotal = (order: any) => {
+            const direct = coerceNumber(
+              order?.itemsSubtotal ??
+                order?.items_subtotal ??
+                order?.itemsTotal ??
+                order?.items_total,
+            );
+            if (Number.isFinite(direct)) {
+              return Math.max(0, direct);
+            }
+            const total = coerceNumber(order?.grandTotal ?? order?.grand_total ?? order?.total);
+            const shipping = coerceNumber(order?.shippingTotal ?? order?.shipping_total) || 0;
+            const tax = coerceNumber(order?.taxTotal ?? order?.tax_total ?? order?.totalTax) || 0;
+            if (Number.isFinite(total)) {
+              return Math.max(0, total - shipping - tax);
+            }
+            return 0;
+          };
+
           const totalOrderValue = normalizedOrders.reduce((sum, order) => {
             if (!shouldCountRevenueForStatus(order.status)) {
               return sum;
             }
-            return sum + (coerceNumber(order.total) || 0);
+            return sum + resolveOrderSubtotal(order);
           }, 0);
           const orderQuantity = normalizedOrders.filter((order) =>
             shouldCountRevenueForStatus(order.status),
@@ -6163,12 +6182,7 @@ export default function App() {
 
 		              const totals = repDoctorOrders.reduce(
 		                (acc: { total: number; wholesale: number; retail: number }, order: any) => {
-				                                    const amount =
-				                                      coerceNumber(
-				                                        (order as any)?.grandTotal ??
-				                                          (order as any)?.grand_total ??
-				                                          order?.total,
-				                                      ) || 0;
+				                                    const amount = resolveOrderSubtotal(order);
 		                  const pricingModeRaw =
 		                    order?.pricingMode ||
 		                    (order as any)?.pricing_mode ||
@@ -7292,12 +7306,20 @@ export default function App() {
           };
         }
       }
-      const periodStart = salesRepSalesSummaryMeta?.periodStart
-        ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
-        : null;
-      const periodEnd = salesRepSalesSummaryMeta?.periodEnd
-        ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
-        : null;
+      const periodStart = adminProductsCommissionMeta?.periodStart
+        ? String(adminProductsCommissionMeta.periodStart).slice(0, 10)
+        : salesRepPeriodStart
+          ? String(salesRepPeriodStart).slice(0, 10)
+          : salesRepSalesSummaryMeta?.periodStart
+            ? String(salesRepSalesSummaryMeta.periodStart).slice(0, 10)
+            : null;
+      const periodEnd = adminProductsCommissionMeta?.periodEnd
+        ? String(adminProductsCommissionMeta.periodEnd).slice(0, 10)
+        : salesRepPeriodEnd
+          ? String(salesRepPeriodEnd).slice(0, 10)
+          : salesRepSalesSummaryMeta?.periodEnd
+            ? String(salesRepSalesSummaryMeta.periodEnd).slice(0, 10)
+            : null;
       return { periodStart, periodEnd };
     };
 
@@ -7345,9 +7367,13 @@ export default function App() {
       cancelled = true;
     };
   }, [
+    adminProductsCommissionMeta?.periodEnd,
+    adminProductsCommissionMeta?.periodStart,
     salesDoctorCommissionRange?.from,
     salesDoctorCommissionRange?.to,
     salesDoctorDetail?.doctorId,
+    salesRepPeriodEnd,
+    salesRepPeriodStart,
     salesRepSalesSummaryMeta?.periodEnd,
     salesRepSalesSummaryMeta?.periodStart,
     user,

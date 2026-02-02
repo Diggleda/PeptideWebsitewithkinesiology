@@ -372,6 +372,119 @@ def get_total_lookup_by_woo(
     return lookup
 
 
+def get_items_subtotal_lookup_by_woo(
+    woo_order_ids: List[str] | None = None, woo_order_numbers: List[str] | None = None
+) -> Dict[str, float]:
+    """
+    Return a lookup of Woo order id/number -> items subtotal.
+
+    Prefer the dedicated MySQL `orders.items_subtotal` column when available.
+    Fall back to parsing `orders.payload` and extracting `itemsSubtotal`.
+
+    Keys are normalized order tokens with leading '#' removed and whitespace trimmed.
+    When MySQL is disabled or no matches are found, returns an empty dict.
+    """
+
+    if not _using_mysql():
+        return {}
+
+    def normalize_token(value: object) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        return text[1:] if text.startswith("#") else text
+
+    def normalize_amount(value: object) -> float:
+        try:
+            return max(0.0, float(value or 0.0))
+        except Exception:
+            try:
+                return max(0.0, float(str(value).strip() or 0.0))
+            except Exception:
+                return 0.0
+
+    ids = [normalize_token(v) for v in (woo_order_ids or [])]
+    nums = [normalize_token(v) for v in (woo_order_numbers or [])]
+    ids = [v for v in ids if v]
+    nums = [v for v in nums if v]
+
+    if not ids and not nums:
+        return {}
+
+    lookup: Dict[str, float] = {}
+
+    def parse_payload_items_subtotal(value: object) -> float:
+        if not value:
+            return 0.0
+        try:
+            payload = json.loads(value) if isinstance(value, str) else value
+        except Exception:
+            return 0.0
+        if not isinstance(payload, dict):
+            return 0.0
+        # Python backend stores the order dict directly; tolerate nested shapes.
+        order = payload.get("order") if isinstance(payload.get("order"), dict) else payload
+        if not isinstance(order, dict):
+            return 0.0
+        return normalize_amount(
+            order.get("itemsSubtotal")
+            or order.get("items_subtotal")
+            or order.get("itemsTotal")
+            or order.get("items_total")
+            or order.get("total")
+        )
+
+    def _run_in_chunks(values: List[str], column: str) -> None:
+        chunk_size = 500
+        for offset in range(0, len(values), chunk_size):
+            chunk = values[offset : offset + chunk_size]
+            placeholders = ", ".join([f"%({column}_{idx})s" for idx in range(len(chunk))])
+            params = {f"{column}_{idx}": value for idx, value in enumerate(chunk)}
+            try:
+                rows = mysql_client.fetch_all(
+                    f"SELECT {column}, items_subtotal, payload FROM orders WHERE {column} IN ({placeholders})",
+                    params,
+                )
+            except Exception:
+                # Older installs may not have `items_subtotal` yet; fall back to payload-only parsing.
+                rows = mysql_client.fetch_all(
+                    f"SELECT {column}, payload FROM orders WHERE {column} IN ({placeholders})",
+                    params,
+                )
+            for row in rows or []:
+                token = normalize_token(row.get(column))
+                if not token:
+                    continue
+                items_subtotal = normalize_amount(row.get("items_subtotal"))
+                if items_subtotal <= 0:
+                    items_subtotal = parse_payload_items_subtotal(row.get("payload"))
+                if items_subtotal > 0:
+                    lookup[token] = items_subtotal
+
+    def expand_query_values(values: List[str]) -> List[str]:
+        expanded = set()
+        for value in values:
+            token = normalize_token(value)
+            if not token:
+                continue
+            expanded.add(token)
+            expanded.add(f"#{token}")
+        return list(expanded)
+
+    try:
+        if ids:
+            _run_in_chunks(expand_query_values(ids), "woo_order_id")
+        if nums:
+            _run_in_chunks(expand_query_values(nums), "woo_order_number")
+    except Exception:
+        # Older installs may be missing Woo columns; treat as unknown.
+        return {}
+
+    return lookup
+
+
 def count_by_user_id(user_id: str) -> int:
     if _using_mysql():
         row = mysql_client.fetch_one(
@@ -432,46 +545,90 @@ def insert(order: Dict) -> Dict:
     if _using_mysql():
         order.setdefault("id", order.get("id") or _generate_id())
         params = _to_db_params(order)
-        mysql_client.execute(
-            """
-            INSERT INTO orders (
-                id, user_id, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
-                tracking_number,
-                physician_certified, referral_code, status,
-                referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
-                created_at, updated_at
-            ) VALUES (
-                %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
-                %(tracking_number)s,
-                %(physician_certified)s, %(referral_code)s, %(status)s,
-                %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
-                %(created_at)s, %(updated_at)s
+        try:
+            mysql_client.execute(
+                """
+                INSERT INTO orders (
+                    id, user_id, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
+                    tracking_number,
+                    physician_certified, referral_code, status,
+                    referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
+                    created_at, updated_at
+                ) VALUES (
+                    %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(tracking_number)s,
+                    %(physician_certified)s, %(referral_code)s, %(status)s,
+                    %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
+                    %(created_at)s, %(updated_at)s
+                )
+                ON DUPLICATE KEY UPDATE
+                    user_id = VALUES(user_id),
+                    pricing_mode = VALUES(pricing_mode),
+                    items = VALUES(items),
+                    items_subtotal = VALUES(items_subtotal),
+                    total = VALUES(total),
+                    shipping_total = VALUES(shipping_total),
+                    shipping_carrier = VALUES(shipping_carrier),
+                    shipping_service = VALUES(shipping_service),
+                    tracking_number = VALUES(tracking_number),
+                    physician_certified = VALUES(physician_certified),
+                    referral_code = VALUES(referral_code),
+                    status = VALUES(status),
+                    referrer_bonus = VALUES(referrer_bonus),
+                    first_order_bonus = VALUES(first_order_bonus),
+                    integrations = VALUES(integrations),
+                    shipping_rate = VALUES(shipping_rate),
+                    expected_shipment_window = VALUES(expected_shipment_window),
+                    notes = VALUES(notes),
+                    shipping_address = VALUES(shipping_address),
+                    payload = VALUES(payload),
+                    created_at = VALUES(created_at),
+                    updated_at = VALUES(updated_at)
+                """,
+                params,
             )
-            ON DUPLICATE KEY UPDATE
-                user_id = VALUES(user_id),
-                pricing_mode = VALUES(pricing_mode),
-                items = VALUES(items),
-                total = VALUES(total),
-                shipping_total = VALUES(shipping_total),
-                shipping_carrier = VALUES(shipping_carrier),
-                shipping_service = VALUES(shipping_service),
-                tracking_number = VALUES(tracking_number),
-                physician_certified = VALUES(physician_certified),
-                referral_code = VALUES(referral_code),
-                status = VALUES(status),
-                referrer_bonus = VALUES(referrer_bonus),
-                first_order_bonus = VALUES(first_order_bonus),
-                integrations = VALUES(integrations),
-                shipping_rate = VALUES(shipping_rate),
-                expected_shipment_window = VALUES(expected_shipment_window),
-                notes = VALUES(notes),
-                shipping_address = VALUES(shipping_address),
-                payload = VALUES(payload),
-                created_at = VALUES(created_at),
-                updated_at = VALUES(updated_at)
-            """,
-            params,
-        )
+        except Exception:
+            # Backwards compatibility with older schemas.
+            mysql_client.execute(
+                """
+                INSERT INTO orders (
+                    id, user_id, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
+                    tracking_number,
+                    physician_certified, referral_code, status,
+                    referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
+                    created_at, updated_at
+                ) VALUES (
+                    %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(tracking_number)s,
+                    %(physician_certified)s, %(referral_code)s, %(status)s,
+                    %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
+                    %(created_at)s, %(updated_at)s
+                )
+                ON DUPLICATE KEY UPDATE
+                    user_id = VALUES(user_id),
+                    pricing_mode = VALUES(pricing_mode),
+                    items = VALUES(items),
+                    total = VALUES(total),
+                    shipping_total = VALUES(shipping_total),
+                    shipping_carrier = VALUES(shipping_carrier),
+                    shipping_service = VALUES(shipping_service),
+                    tracking_number = VALUES(tracking_number),
+                    physician_certified = VALUES(physician_certified),
+                    referral_code = VALUES(referral_code),
+                    status = VALUES(status),
+                    referrer_bonus = VALUES(referrer_bonus),
+                    first_order_bonus = VALUES(first_order_bonus),
+                    integrations = VALUES(integrations),
+                    shipping_rate = VALUES(shipping_rate),
+                    expected_shipment_window = VALUES(expected_shipment_window),
+                    notes = VALUES(notes),
+                    shipping_address = VALUES(shipping_address),
+                    payload = VALUES(payload),
+                    created_at = VALUES(created_at),
+                    updated_at = VALUES(updated_at)
+                """,
+                params,
+            )
         return find_by_id(order["id"])
 
     orders = _load()
@@ -483,33 +640,63 @@ def insert(order: Dict) -> Dict:
 def update(order: Dict) -> Optional[Dict]:
     if _using_mysql():
         params = _to_db_params(order)
-        mysql_client.execute(
-            """
-            UPDATE orders
-            SET
-                user_id = %(user_id)s,
-                pricing_mode = %(pricing_mode)s,
-                items = %(items)s,
-                total = %(total)s,
-                shipping_total = %(shipping_total)s,
-                shipping_carrier = %(shipping_carrier)s,
-                shipping_service = %(shipping_service)s,
-                tracking_number = %(tracking_number)s,
-                referral_code = %(referral_code)s,
-                status = %(status)s,
-                referrer_bonus = %(referrer_bonus)s,
-                first_order_bonus = %(first_order_bonus)s,
-                integrations = %(integrations)s,
-                shipping_rate = %(shipping_rate)s,
-                expected_shipment_window = %(expected_shipment_window)s,
-                notes = %(notes)s,
-                shipping_address = %(shipping_address)s,
-                payload = %(payload)s,
-                updated_at = %(updated_at)s
-            WHERE id = %(id)s
-            """,
-            params,
-        )
+        try:
+            mysql_client.execute(
+                """
+                UPDATE orders
+                SET
+                    user_id = %(user_id)s,
+                    pricing_mode = %(pricing_mode)s,
+                    items = %(items)s,
+                    items_subtotal = %(items_subtotal)s,
+                    total = %(total)s,
+                    shipping_total = %(shipping_total)s,
+                    shipping_carrier = %(shipping_carrier)s,
+                    shipping_service = %(shipping_service)s,
+                    tracking_number = %(tracking_number)s,
+                    referral_code = %(referral_code)s,
+                    status = %(status)s,
+                    referrer_bonus = %(referrer_bonus)s,
+                    first_order_bonus = %(first_order_bonus)s,
+                    integrations = %(integrations)s,
+                    shipping_rate = %(shipping_rate)s,
+                    expected_shipment_window = %(expected_shipment_window)s,
+                    notes = %(notes)s,
+                    shipping_address = %(shipping_address)s,
+                    payload = %(payload)s,
+                    updated_at = %(updated_at)s
+                WHERE id = %(id)s
+                """,
+                params,
+            )
+        except Exception:
+            mysql_client.execute(
+                """
+                UPDATE orders
+                SET
+                    user_id = %(user_id)s,
+                    pricing_mode = %(pricing_mode)s,
+                    items = %(items)s,
+                    total = %(total)s,
+                    shipping_total = %(shipping_total)s,
+                    shipping_carrier = %(shipping_carrier)s,
+                    shipping_service = %(shipping_service)s,
+                    tracking_number = %(tracking_number)s,
+                    referral_code = %(referral_code)s,
+                    status = %(status)s,
+                    referrer_bonus = %(referrer_bonus)s,
+                    first_order_bonus = %(first_order_bonus)s,
+                    integrations = %(integrations)s,
+                    shipping_rate = %(shipping_rate)s,
+                    expected_shipment_window = %(expected_shipment_window)s,
+                    notes = %(notes)s,
+                    shipping_address = %(shipping_address)s,
+                    payload = %(payload)s,
+                    updated_at = %(updated_at)s
+                WHERE id = %(id)s
+                """,
+                params,
+            )
         return find_by_id(order.get("id"))
 
     orders = _load()
@@ -590,6 +777,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "pricingMode": row.get("pricing_mode") or "wholesale",
         "items": parse_json(row.get("items"), []),
         "total": float(row.get("total") or 0),
+        "itemsSubtotal": float(row.get("items_subtotal") or 0) if row.get("items_subtotal") is not None else None,
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
         "shippingAddress": parse_json(row.get("shipping_address"), None),
@@ -689,6 +877,7 @@ def _to_db_params(order: Dict) -> Dict:
         if str(order.get("pricingMode") or "").strip().lower() in ("wholesale", "retail")
         else "wholesale",
         "items": serialize_json(order.get("items")),
+        "items_subtotal": float(max(0.0, items_subtotal)),
         # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).
         "total": float(grand_total),
         "shipping_total": float(order.get("shippingTotal") or 0),

@@ -19,6 +19,26 @@ const toNumber = (value, fallback = 0) => {
 
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
 
+const computeItemsSubtotal = (order) => {
+  if (!order || typeof order !== 'object') {
+    return 0;
+  }
+  const itemsSubtotal = toNumber(
+    order.itemsSubtotal ?? order.items_subtotal ?? order.itemsTotal ?? order.items_total,
+    NaN,
+  );
+  if (Number.isFinite(itemsSubtotal)) {
+    return roundCurrency(itemsSubtotal);
+  }
+  const total = toNumber(order.total, NaN);
+  const shippingTotal = toNumber(order.shippingTotal ?? order.shipping_total, 0);
+  const taxTotal = toNumber(order.taxTotal ?? order.totalTax ?? order.total_tax, 0);
+  if (Number.isFinite(total)) {
+    return roundCurrency(total - shippingTotal - taxTotal);
+  }
+  return 0;
+};
+
 const computeGrandTotal = (order) => {
   if (!order || typeof order !== 'object') {
     return 0;
@@ -68,6 +88,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     pricingMode: normalizePricingMode(order.pricingMode),
     wooOrderId: wooOrderId || null,
     shipStationOrderId: shipStationOrderId || null,
+    itemsSubtotal: computeItemsSubtotal(order),
     total: computeGrandTotal(order),
     shippingTotal: toNumber(order.shippingTotal ?? order.shipping_total, 0),
     shippingCarrier: order.shippingEstimate?.carrierId || order.shippingEstimate?.serviceCode || null,
@@ -96,6 +117,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           pricing_mode,
           woo_order_id,
           shipstation_order_id,
+          items_subtotal,
           total,
           shipping_total,
           shipping_carrier,
@@ -112,6 +134,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :pricingMode,
           :wooOrderId,
           :shipStationOrderId,
+          :itemsSubtotal,
           :total,
           :shippingTotal,
           :shippingCarrier,
@@ -126,6 +149,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         ON DUPLICATE KEY UPDATE
           woo_order_id = VALUES(woo_order_id),
           shipstation_order_id = VALUES(shipstation_order_id),
+          items_subtotal = VALUES(items_subtotal),
           total = VALUES(total),
           shipping_total = VALUES(shipping_total),
           shipping_carrier = VALUES(shipping_carrier),
@@ -197,6 +221,14 @@ const mapRowToOrder = (row) => {
       }
       const payloadGrand = computeGrandTotal(payloadOrder);
       return payloadGrand > 0 ? payloadGrand : roundCurrency(payloadOrder.total ?? 0);
+    })(),
+    itemsSubtotal: (() => {
+      const rowSubtotal = toNumber(row.items_subtotal, NaN);
+      if (Number.isFinite(rowSubtotal) && rowSubtotal > 0) {
+        return roundCurrency(rowSubtotal);
+      }
+      const payloadSubtotal = computeItemsSubtotal(payloadOrder);
+      return payloadSubtotal > 0 ? payloadSubtotal : null;
     })(),
     shippingTotal: (() => {
       const rowShipping = toNumber(row.shipping_total, NaN);

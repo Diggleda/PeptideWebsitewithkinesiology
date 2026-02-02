@@ -2703,7 +2703,7 @@ def get_sales_by_rep(
                 woo_numbers.append(woo_num)
 
         pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
-        total_lookup = order_repository.get_total_lookup_by_woo(woo_ids, woo_numbers)
+        subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
             hint = str(entry.get("pricingModeHint") or "").strip().lower()
@@ -2717,17 +2717,17 @@ def get_sales_by_rep(
                 return pricing_mode_lookup[woo_number]
             return "wholesale"
 
-        def _resolve_order_total(entry: Dict[str, object]) -> float:
+        def _resolve_order_subtotal(entry: Dict[str, object]) -> float:
             woo_id = _normalize_token(entry.get("wooId"))
-            if woo_id and woo_id in total_lookup:
+            if woo_id and woo_id in subtotal_lookup:
                 try:
-                    return float(total_lookup[woo_id])
+                    return float(subtotal_lookup[woo_id])
                 except Exception:
                     return 0.0
             woo_number = _normalize_token(entry.get("wooNumber"))
-            if woo_number and woo_number in total_lookup:
+            if woo_number and woo_number in subtotal_lookup:
                 try:
-                    return float(total_lookup[woo_number])
+                    return float(subtotal_lookup[woo_number])
                 except Exception:
                     return 0.0
             try:
@@ -2740,7 +2740,7 @@ def get_sales_by_rep(
 
         for entry in attributed_orders:
             rep_id = str(entry.get("salesRepId") or "").strip()
-            total = _resolve_order_total(entry)
+            total = _resolve_order_subtotal(entry)
             pricing_mode = _resolve_pricing_mode(entry)
             if rep_id == "__house__":
                 house_totals["totalOrders"] += 1.0
@@ -3637,12 +3637,34 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         def _resolve_order_subtotal(entry: Dict[str, object]) -> float:
             """
             Commission base should be the order subtotal (exclude shipping + tax).
-            For Woo orders, `total` is the items subtotal (after discounts) and excludes shipping/tax.
+            Prefer local MySQL `orders.items_subtotal` / payload.itemsSubtotal when available.
+            Fall back to deriving subtotal from Woo totals as: total - shipping - tax.
             """
+            woo_id = _normalize_token(entry.get("wooId"))
+            if woo_id and woo_id in subtotal_lookup:
+                try:
+                    return float(subtotal_lookup[woo_id])
+                except Exception:
+                    return 0.0
+            woo_number = _normalize_token(entry.get("wooNumber"))
+            if woo_number and woo_number in subtotal_lookup:
+                try:
+                    return float(subtotal_lookup[woo_number])
+                except Exception:
+                    return 0.0
             try:
-                return float(entry.get("total") or 0.0)
+                total = float(entry.get("total") or 0.0)
             except Exception:
                 return 0.0
+            try:
+                shipping_total = float(entry.get("shippingTotal") or 0.0)
+            except Exception:
+                shipping_total = 0.0
+            try:
+                tax_total = float(entry.get("taxTotal") or 0.0)
+            except Exception:
+                tax_total = 0.0
+            return max(0.0, total - shipping_total - tax_total)
 
         order_breakdown: List[Dict[str, object]] = []
 

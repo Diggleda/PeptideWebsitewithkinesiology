@@ -36,6 +36,7 @@ const STATEMENTS = [
       pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale',
       woo_order_id BIGINT NULL,
       shipstation_order_id VARCHAR(64) NULL,
+      items_subtotal DECIMAL(12,2) NULL,
       total DECIMAL(12,2) NOT NULL DEFAULT 0,
       shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
       shipping_carrier VARCHAR(120) NULL,
@@ -212,6 +213,13 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale' AFTER user_id
+      `,
+    },
+    {
+      name: 'items_subtotal',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN items_subtotal DECIMAL(12,2) NULL AFTER shipstation_order_id
       `,
     },
   ];

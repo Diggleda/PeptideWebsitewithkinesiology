@@ -2234,15 +2234,29 @@ const getSalesByRep = async ({
       retailRevenue: 0,
     };
     current.totalOrders += 1;
-    const orderTotal = Number(order.total) || 0;
-    current.totalRevenue += orderTotal;
+    const orderSubtotal = (() => {
+      const subtotal = Number(order?.itemsSubtotal ?? order?.items_subtotal);
+      if (Number.isFinite(subtotal) && subtotal > 0) return subtotal;
+
+      const total = Number(order?.total);
+      const shipping = Number(order?.shippingTotal ?? order?.shipping_total ?? 0);
+      const tax = Number(order?.taxTotal ?? order?.tax_total ?? order?.totalTax ?? 0);
+      if (Number.isFinite(total) && total > 0) {
+        if (Number.isFinite(shipping) || Number.isFinite(tax)) {
+          return Math.max(0, total - (Number.isFinite(shipping) ? shipping : 0) - (Number.isFinite(tax) ? tax : 0));
+        }
+        return total;
+      }
+      return 0;
+    })();
+    current.totalRevenue += orderSubtotal;
     const pricingMode = String(order.pricingMode || order.pricing_mode || '').trim().toLowerCase() === 'retail'
       ? 'retail'
       : 'wholesale';
     if (pricingMode === 'retail') {
-      current.retailRevenue += orderTotal;
+      current.retailRevenue += orderSubtotal;
     } else {
-      current.wholesaleRevenue += orderTotal;
+      current.wholesaleRevenue += orderSubtotal;
     }
     repTotals.set(repId, current);
   });
