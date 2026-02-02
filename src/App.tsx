@@ -6321,7 +6321,7 @@ export default function App() {
                     return sum + resolveOrderSubtotal(order);
                   }, 0);
 
-		              const totals = salesOrders.reduce(
+		              const totals = filteredSalesOrders.reduce(
 		                (acc: { total: number; wholesale: number; retail: number }, order: any) => {
                           if (!shouldCountRevenueForStatus(order?.status)) {
                             return acc;

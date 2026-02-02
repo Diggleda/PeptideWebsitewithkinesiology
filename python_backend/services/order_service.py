@@ -3471,11 +3471,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 total_from_items += max(0.0, line_total)
             if total_from_items > 0:
                 return total_from_items
-            total = _safe_float(order.get("total"))
-            shipping_total = _safe_float(order.get("shippingTotal") or order.get("shipping_total"))
-            tax_total = _resolve_order_tax(order)
-            if total > 0:
-                return max(0.0, total - shipping_total - tax_total)
             return 0.0
 
         orders = order_repository.list_for_commission(start_dt, end_dt)
@@ -3707,7 +3702,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             """
             Commission base should be the order subtotal (exclude shipping + tax).
             Prefer local `itemsSubtotal` / item totals when available.
-            Fall back to deriving subtotal from order totals as: total - shipping - tax.
             """
             items_subtotal = _safe_float(entry.get("itemsSubtotal"))
             if items_subtotal > 0:
@@ -3733,12 +3727,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     total_from_items += max(0.0, line_total)
             if total_from_items > 0:
                 return total_from_items
-            total = _safe_float(entry.get("total"))
-            if total <= 0:
-                return 0.0
-            shipping_total = _safe_float(entry.get("shippingTotal"))
-            tax_total = _safe_float(entry.get("taxTotal"))
-            return max(0.0, total - shipping_total - tax_total)
+            return 0.0
 
         order_breakdown: List[Dict[str, object]] = []
 

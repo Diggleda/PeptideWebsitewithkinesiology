@@ -490,10 +490,10 @@ def get_items_subtotal_lookup_by_woo(
             return 0.0
         return normalize_amount(
             order.get("itemsSubtotal")
+            or order.get("subtotal")
             or order.get("items_subtotal")
             or order.get("itemsTotal")
             or order.get("items_total")
-            or order.get("total")
         )
 
     def _run_in_chunks(values: List[str], column: str) -> None:
@@ -869,7 +869,12 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             order["items"] = payload_items
         payload_subtotal = (
             (payload_order.get("itemsSubtotal") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("subtotal") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("items_subtotal") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("itemsTotal") if isinstance(payload_order, dict) else None)
+            or (payload_order.get("items_total") if isinstance(payload_order, dict) else None)
             or payload.get("itemsSubtotal")
+            or payload.get("subtotal")
             or payload.get("items_subtotal")
             or payload.get("itemsTotal")
             or payload.get("items_total")
@@ -879,12 +884,15 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         except Exception:
             payload_subtotal_value = None
         current_subtotal = order.get("itemsSubtotal")
-        if (
-            (current_subtotal is None or float(current_subtotal or 0) <= 0)
-            and payload_subtotal_value is not None
-            and payload_subtotal_value > 0
-        ):
-            order["itemsSubtotal"] = payload_subtotal_value
+        current_value = None
+        try:
+            current_value = float(current_subtotal) if current_subtotal is not None else None
+        except Exception:
+            current_value = None
+        if payload_subtotal_value is not None and payload_subtotal_value > 0:
+            # For commission math, payload is the source of truth when it includes an explicit subtotal.
+            if current_value is None or current_value <= 0 or abs(current_value - payload_subtotal_value) > 0.009:
+                order["itemsSubtotal"] = payload_subtotal_value
     if isinstance(payload, dict) and payload:
         for key, value in payload.items():
             if key not in order:
@@ -949,7 +957,8 @@ def _to_db_params(order: Dict) -> Dict:
                     return text
         return None
 
-    items_subtotal = _num(order.get("itemsSubtotal"), _num(order.get("total"), 0.0))
+    # Commission reporting must never derive subtotal from order totals.
+    items_subtotal = _num(order.get("itemsSubtotal"), 0.0)
     shipping_total = _num(order.get("shippingTotal"), 0.0)
     tax_total = _num(order.get("taxTotal"), 0.0)
     discount_total = _num(order.get("appliedReferralCredit"), 0.0)
