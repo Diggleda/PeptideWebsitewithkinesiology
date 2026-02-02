@@ -18833,7 +18833,7 @@ export default function App() {
         <div className="info-focus-overlay" aria-hidden="true" />
       )}
 		      <div className="relative z-10 flex flex-1 flex-col">
-		        {/* Header - Only show when logged in */}
+		        {/* Header */}
 			        {user && !isDelegateMode && (
 			          <div style={{ display: postLoginHold ? "none" : undefined }}>
 		                  <Header
@@ -18878,6 +18878,21 @@ export default function App() {
 				            />
 			          </div>
 			        )}
+              {isDelegateMode && (
+                <div style={{ display: postLoginHold ? "none" : undefined }}>
+                  <Header
+                    user={null}
+                    delegateMode
+                    researchDashboardEnabled={false}
+                    patientLinksEnabled={false}
+                    cartItems={totalCartItems}
+                    onSearch={handleSearch}
+                    onCartClick={() => setCheckoutOpen(true)}
+                    showCartIconFallback={shouldShowHeaderCartIcon}
+                    catalogLoading={catalogLoading}
+                  />
+                </div>
+              )}
 
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
@@ -20410,7 +20425,7 @@ export default function App() {
             <main
               className="w-full pb-12 mobile-safe-area"
               style={{
-                paddingTop: "1.5rem",
+                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
               }}
             >
               <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">

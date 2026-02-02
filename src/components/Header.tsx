@@ -210,10 +210,11 @@ interface AccountOrderSummary {
 
 interface HeaderProps {
   user: HeaderUser | null;
+  delegateMode?: boolean;
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
-  onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
-  onLogout: () => void;
+  onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
+  onLogout?: () => void;
   cartItems: number;
   onSearch: (query: string) => void;
   onCreateAccount?: (details: {
@@ -857,6 +858,7 @@ const formatRelativeMinutes = (value?: string | null) => {
 
 export function Header({
   user,
+  delegateMode = false,
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
   onLogin,
@@ -4453,7 +4455,19 @@ export function Header({
           backgroundColor: "#fff",
         };
 
-  const authControls = user ? (
+  const authControls = delegateMode ? (
+    <div className="flex items-center gap-2">
+      <div
+        className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none"
+        aria-label="Delegate session"
+        title="Delegate session"
+      >
+        <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+        <span className="hidden sm:inline font-semibold">Delegate</span>
+      </div>
+      {renderCartButton()}
+    </div>
+  ) : user ? (
     <>
       <Dialog open={welcomeOpen} onOpenChange={(open) => {
         console.debug('[Header] Welcome dialog open change', { open });
@@ -5090,25 +5104,33 @@ export function Header({
         <div className="flex flex-col gap-3 md:gap-4">
           <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
             {/* Logo */}
-            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
-                  <img
-                    src="/Peppro_fulllogo.png"
-                    alt="PepPro logo"
-                    className="relative z-[1] flex-shrink-0"
-                    style={{
-                      display: 'block',
-                      width: 'auto',
-                      height: 'auto',
-                      maxWidth: logoSizing.maxWidth,
-                      maxHeight: logoSizing.maxHeight,
-                      objectFit: 'contain'
-                    }}
-                  />
+            {!delegateMode ? (
+              <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
+                    <img
+                      src="/Peppro_fulllogo.png"
+                      alt="PepPro logo"
+                      className="relative z-[1] flex-shrink-0"
+                      style={{
+                        display: 'block',
+                        width: 'auto',
+                        height: 'auto',
+                        maxWidth: logoSizing.maxWidth,
+                        maxHeight: logoSizing.maxHeight,
+                        objectFit: 'contain'
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+                <div className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-white/70 px-3 py-1.5 text-sm font-semibold text-[rgb(95,179,249)]">
+                  Delegate
+                </div>
+              </div>
+            )}
 
             {/* Search Bar - Desktop (centered) */}
             {isLargeScreen && (

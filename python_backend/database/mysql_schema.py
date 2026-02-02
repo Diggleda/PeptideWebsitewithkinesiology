@@ -422,3 +422,17 @@ def ensure_schema() -> None:
         mysql_client.execute("ALTER TABLE sales_reps MODIFY COLUMN visits INT NOT NULL DEFAULT 0")
     except Exception:
         pass
+
+    # Ensure delegation markup percent is stored on doctor records.
+    try:
+        if not _column_exists("users", "markup_percent"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    # Ensure patient_links snapshot has markup column (best-effort; table may not exist yet on older installs).
+    try:
+        if not _column_exists("patient_links", "markup_percent"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
