@@ -6238,11 +6238,11 @@ export default function App() {
                     }
                   };
 
-                  const isPersonalOrderForRep = (order: any): boolean => {
-                    const orderUserId = resolveOrderUserId(order);
-                    if (orderUserId && orderUserId === id) {
-                      return true;
-                    }
+	                  const isPersonalOrderForRep = (order: any): boolean => {
+	                    const orderUserId = resolveOrderUserId(order);
+	                    if (orderUserId && orderUserId === id) {
+	                      return true;
+	                    }
                     const orderEmailKey = resolveOrderEmailKey(order);
                     if (entryEmail && orderEmailKey && entryEmail === orderEmailKey) {
                       return true;
@@ -6251,17 +6251,68 @@ export default function App() {
                     if (entryNameKey && orderNameKey && entryNameKey === orderNameKey) {
                       return true;
                     }
-                    return false;
-                  };
+	                    return false;
+	                  };
 
-                  const salesOrders = repOrdersNormalized.filter(
-                    (order: any) => !isPersonalOrderForRep(order),
-                  );
-                  const personalOrders = personalOrdersForModal;
-                  const personalOrderKeys = new Set<string>();
-                  const addPersonalKey = (key: string | null, prefix: string) => {
-                    if (!key) return;
-                    personalOrderKeys.add(`${prefix}:${key}`);
+	                  const getOrderCanonicalKey = (order: any): string => {
+	                    const numberKey = normalizeWooOrderNumberKey(
+	                      (order as any).wooOrderNumber ||
+	                        (order as any).woo_order_number ||
+	                        (order as any).number,
+	                    );
+	                    if (numberKey) return `num:${numberKey}`;
+	                    const wooIdKey = normalizeWooOrderId(
+	                      (order as any).wooOrderId ||
+	                        (order as any).woo_order_id ||
+	                        (order as any).wooId ||
+	                        (order as any).id,
+	                    );
+	                    if (wooIdKey) return `woo:${wooIdKey}`;
+	                    const localId =
+	                      typeof (order as any)?.id === "string"
+	                        ? (order as any).id.trim()
+	                        : (order as any)?.id != null
+	                          ? String((order as any).id).trim()
+	                          : "";
+	                    return localId ? `id:${localId}` : "";
+	                  };
+
+	                  const dedupeOrdersByCanonicalKey = (orders: any[]) => {
+	                    const byKey = new Map<string, any>();
+	                    for (const order of orders || []) {
+	                      const key = getOrderCanonicalKey(order);
+	                      if (!key) continue;
+	                      if (!byKey.has(key)) {
+	                        byKey.set(key, order);
+	                        continue;
+	                      }
+	                      const existing = byKey.get(key);
+	                      const existingItems = Array.isArray(existing?.lineItems)
+	                        ? existing.lineItems.length
+	                        : Array.isArray(existing?.items)
+	                          ? existing.items.length
+	                          : 0;
+	                      const nextItems = Array.isArray(order?.lineItems)
+	                        ? order.lineItems.length
+	                        : Array.isArray(order?.items)
+	                          ? order.items.length
+	                          : 0;
+	                      if (nextItems > existingItems) {
+	                        byKey.set(key, order);
+	                      }
+	                    }
+	                    return Array.from(byKey.values());
+	                  };
+
+	                  const salesOrdersRaw = repOrdersNormalized.filter(
+	                    (order: any) => !isPersonalOrderForRep(order),
+	                  );
+	                  const salesOrders = dedupeOrdersByCanonicalKey(salesOrdersRaw);
+	                  const personalOrders = personalOrdersForModal;
+	                  const personalOrderKeys = new Set<string>();
+	                  const addPersonalKey = (key: string | null, prefix: string) => {
+	                    if (!key) return;
+	                    personalOrderKeys.add(`${prefix}:${key}`);
                   };
                   personalOrders.forEach((order) => {
                     addPersonalKey(
@@ -6304,24 +6355,25 @@ export default function App() {
                     if (localId && personalOrderKeys.has(`id:${localId}`)) return true;
                     return false;
                   };
-                  const filteredSalesOrders = salesOrders.filter(
-                    (order) => !hasPersonalKey(order),
-                  );
-                  const combinedOrders = (() => {
-                    const byKey = new Map<string, AccountOrderSummary>();
-                    const keyFor = (order: AccountOrderSummary) =>
-                      String(
-                        order.id ||
-                          order.number ||
-                          (order as any).wooOrderId ||
-                          (order as any).wooOrderNumber ||
-                          "",
-                      );
-                    [...personalOrders, ...filteredSalesOrders].forEach((order) => {
-                      const key = keyFor(order);
-                      if (!key) return;
-                      if (!byKey.has(key)) {
-                        byKey.set(key, order);
+	                  const filteredSalesOrders = salesOrders.filter(
+	                    (order) => !hasPersonalKey(order),
+	                  );
+	                  const combinedOrders = (() => {
+	                    const byKey = new Map<string, AccountOrderSummary>();
+	                    const keyFor = (order: AccountOrderSummary) =>
+	                      getOrderCanonicalKey(order) ||
+	                      String(
+	                        order.number ||
+	                          (order as any).wooOrderNumber ||
+	                          (order as any).wooOrderId ||
+	                          order.id ||
+	                          "",
+	                      );
+	                    [...personalOrders, ...filteredSalesOrders].forEach((order) => {
+	                      const key = keyFor(order);
+	                      if (!key) return;
+	                      if (!byKey.has(key)) {
+	                        byKey.set(key, order);
                       }
                     });
                     return Array.from(byKey.values());

@@ -252,8 +252,8 @@ def admin_taxes_by_state():
 def admin_products_commission():
     def action():
         role = (g.current_user.get("role") or "").lower()
-        if role != "admin":
-            err = ValueError("Admin access required")
+        if role not in ("admin", "sales_lead", "saleslead", "sales-lead"):
+            err = ValueError("Admin or Sales Lead access required")
             setattr(err, "status", 403)
             raise err
         period_start = request.args.get("periodStart") or request.args.get("start") or None
