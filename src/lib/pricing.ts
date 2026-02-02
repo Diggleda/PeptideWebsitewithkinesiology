@@ -26,9 +26,13 @@ export const computeUnitPrice = (
   product: Product,
   variant: ProductVariant | null | undefined,
   quantity: number,
-  options?: { pricingMode?: PricingMode },
+  options?: { pricingMode?: PricingMode; markupPercent?: number | null },
 ) => {
   const pricingMode: PricingMode = options?.pricingMode ?? 'wholesale';
+  const markupPercentRaw = Number(options?.markupPercent ?? 0);
+  const markupPercent = Number.isFinite(markupPercentRaw)
+    ? Math.max(0, Math.min(500, markupPercentRaw))
+    : 0;
 
   const basePrice = (() => {
     if (pricingMode === 'retail') {
@@ -38,25 +42,26 @@ export const computeUnitPrice = (
     return roundCurrency(variant?.price ?? product.price);
   })();
 
-  if (pricingMode === 'retail') {
-    return basePrice;
+  let unitPrice = basePrice;
+
+  if (pricingMode !== 'retail') {
+    const tiers = product.bulkPricingTiers ?? [];
+
+    if (Array.isArray(tiers) && tiers.length > 0) {
+      const applicable = [...tiers]
+        .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
+        .find((tier) => quantity >= (Number(tier.minQuantity) || 0));
+
+      if (applicable) {
+        const discountPercentage = Number(applicable.discountPercentage) || 0;
+        unitPrice = basePrice * (1 - discountPercentage / 100);
+      }
+    }
   }
 
-  const tiers = product.bulkPricingTiers ?? [];
-
-  if (!Array.isArray(tiers) || tiers.length === 0) {
-    return basePrice;
+  if (markupPercent > 0) {
+    unitPrice *= 1 + markupPercent / 100;
   }
 
-  const applicable = [...tiers]
-    .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
-    .find((tier) => quantity >= (Number(tier.minQuantity) || 0));
-
-  if (!applicable) {
-    return basePrice;
-  }
-
-  const discountPercentage = Number(applicable.discountPercentage) || 0;
-  const discounted = basePrice * (1 - discountPercentage / 100);
-  return roundCurrency(discounted);
+  return roundCurrency(unitPrice);
 };

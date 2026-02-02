@@ -507,6 +507,16 @@ def get_research():
 
     return handle_action(action)
 
+@blueprint.get("/patient-links")
+def get_patient_links():
+    def action():
+        settings = settings_service.get_settings()
+        return {
+            "patientLinksEnabled": bool(settings.get("patientLinksEnabled", False)),
+        }
+
+    return handle_action(action)
+
 
 @blueprint.put("/shop")
 @require_auth
@@ -552,6 +562,20 @@ def update_research():
         return {
             "researchDashboardEnabled": bool(updated.get("researchDashboardEnabled", False)),
             "mysqlEnabled": bool(getattr(config, "mysql", {}).get("enabled")),
+        }
+
+    return handle_action(action)
+
+@blueprint.put("/patient-links")
+@require_auth
+def update_patient_links():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", False))
+        updated = settings_service.update_settings({"patientLinksEnabled": enabled})
+        return {
+            "patientLinksEnabled": bool(updated.get("patientLinksEnabled", False)),
         }
 
     return handle_action(action)

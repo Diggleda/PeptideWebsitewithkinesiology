@@ -9,7 +9,7 @@ import {
   Fragment,
   forwardRef,
 } from "react";
-import { computeUnitPrice, type PricingMode } from "./lib/pricing";
+import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -66,6 +66,7 @@ import {
 	import {
 	  authAPI,
 	  ordersAPI,
+	  delegationAPI,
 	  trackingAPI,
 	  referralAPI,
 	  newsAPI,
@@ -2551,7 +2552,18 @@ const mapWooProductToProduct = (
   };
 };
 
-const toCardProduct = (product: Product): CardProduct => {
+const toCardProduct = (
+  product: Product,
+  options?: { markupPercent?: number | null },
+): CardProduct => {
+  const markupPercentRaw = Number(options?.markupPercent ?? 0);
+  const markupPercent = Number.isFinite(markupPercentRaw)
+    ? Math.max(0, Math.min(500, markupPercentRaw))
+    : 0;
+  const applyMarkup = (value: number) => {
+    if (!markupPercent) return value;
+    return roundCurrency(value * (1 + markupPercent / 100));
+  };
   const needsVariantSelection =
     (product.type ?? "").toLowerCase() === "variable" &&
     (!product.variants || product.variants.length === 0);
@@ -2568,7 +2580,7 @@ const toCardProduct = (product: Product): CardProduct => {
             variant.label ||
             variant.attributes.map((attr) => attr.value).join(" • ") ||
             "Option",
-          basePrice: variant.price,
+          basePrice: applyMarkup(variant.price),
           image: variant.image,
           weightOz: variant.weightOz ?? null,
           stockQuantity: variant.stockQuantity ?? null,
@@ -2578,7 +2590,7 @@ const toCardProduct = (product: Product): CardProduct => {
             {
               id: "__peppro_needs_variant__",
               strength: "Select strength",
-              basePrice: product.price,
+              basePrice: applyMarkup(product.price),
               image: product.image,
               weightOz: product.weightOz ?? null,
               stockQuantity: null,
@@ -2588,7 +2600,7 @@ const toCardProduct = (product: Product): CardProduct => {
             {
               id: product.id,
               strength: product.dosage || "Standard",
-              basePrice: product.price,
+              basePrice: applyMarkup(product.price),
               image: product.image,
               weightOz: product.weightOz ?? null,
               stockQuantity: product.stockQuantity ?? null,
@@ -2658,6 +2670,7 @@ const CatalogTextPreviewCard = ({ product }: { product: Product }) => (
 
 interface LazyCatalogProductCardProps {
   product: Product;
+  pricingMarkupPercent?: number | null;
   onAddToCart: (
     productId: string,
     variationId: string | undefined | null,
@@ -2671,10 +2684,14 @@ interface LazyCatalogProductCardProps {
 
 const LazyCatalogProductCard = ({
   product,
+  pricingMarkupPercent,
   onAddToCart,
   onEnsureVariants,
 }: LazyCatalogProductCardProps) => {
-  const cardProduct = useMemo(() => toCardProduct(product), [product]);
+  const cardProduct = useMemo(
+    () => toCardProduct(product, { markupPercent: pricingMarkupPercent }),
+    [pricingMarkupPercent, product],
+  );
 
   return (
     <ProductCard
@@ -2704,6 +2721,29 @@ export default function App() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
+  const [delegateToken, setDelegateToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const token = new URLSearchParams(window.location.search).get("delegate");
+    return token && token.trim() ? token.trim() : null;
+  });
+  const [delegateContext, setDelegateContext] = useState<{
+    token: string;
+    doctorId: string;
+    doctorName: string;
+    markupPercent: number;
+  } | null>(null);
+  const [delegateLoading, setDelegateLoading] = useState(false);
+  const [delegateError, setDelegateError] = useState<string | null>(null);
+  const isDelegateMode = Boolean(delegateToken);
+  const delegatePricingMarkupPercent = isDelegateMode
+    ? Number(delegateContext?.markupPercent) || 0
+    : 0;
+  const delegateDoctorNameForShare = useMemo(() => {
+    const raw = typeof delegateContext?.doctorName === "string" ? delegateContext.doctorName.trim() : "";
+    if (!raw) return "Doctor";
+    const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
+    return stripped || "Doctor";
+  }, [delegateContext?.doctorName]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
@@ -2725,6 +2765,64 @@ export default function App() {
       setCheckoutPricingMode("wholesale");
     }
   }, [canUseRetailPricing, checkoutPricingMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncDelegateTokenFromUrl = () => {
+      const token = new URLSearchParams(window.location.search).get("delegate");
+      setDelegateToken(token && token.trim() ? token.trim() : null);
+    };
+
+    window.addEventListener("popstate", syncDelegateTokenFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncDelegateTokenFromUrl);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!delegateToken) {
+      setDelegateContext(null);
+      setDelegateError(null);
+      setDelegateLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDelegateLoading(true);
+    setDelegateError(null);
+
+    void (async () => {
+      try {
+        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+        if (cancelled) return;
+        setDelegateContext({
+          token: delegateToken,
+          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
+          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
+          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
+        });
+      } catch (error: any) {
+        if (cancelled) return;
+        const message =
+          typeof error?.message === "string" && error.message.trim()
+            ? error.message
+            : "Invalid or expired delegation link.";
+        setDelegateContext(null);
+        setDelegateError(message);
+      } finally {
+        if (!cancelled) {
+          setDelegateLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [delegateToken]);
 
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
@@ -4031,6 +4129,14 @@ export default function App() {
 	    } catch {
 	      setShopEnabled(true);
 	    }
+      try {
+        const stored = localStorage.getItem("peppro:patient-links-enabled");
+        if (stored !== null) {
+          setPatientLinksEnabled(stored === "true");
+        }
+      } catch {
+        setPatientLinksEnabled(false);
+      }
 	    try {
 	      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
 	      if (stored !== null) {
@@ -4068,8 +4174,9 @@ export default function App() {
 		    let cancelled = false;
 		    const fetchSetting = async () => {
 		      try {
-		        const [shopResult, forumResult, researchResult] = await Promise.allSettled([
+		        const [shopResult, patientLinksResult, forumResult, researchResult] = await Promise.allSettled([
 		          settingsAPI.getShopStatus(),
+              settingsAPI.getPatientLinksStatus(),
 		          settingsAPI.getForumStatus(),
 		          settingsAPI.getResearchStatus(),
 		        ]);
@@ -4084,6 +4191,21 @@ export default function App() {
 	            );
 	          }
 	        }
+
+          if (patientLinksResult.status === "fulfilled") {
+            const info = patientLinksResult.value as any;
+            if (info && typeof info.patientLinksEnabled === "boolean") {
+              setPatientLinksEnabled(info.patientLinksEnabled);
+              try {
+                localStorage.setItem(
+                  "peppro:patient-links-enabled",
+                  info.patientLinksEnabled ? "true" : "false",
+                );
+              } catch {
+                // ignore
+              }
+            }
+          }
 
 	        if (forumResult.status === "fulfilled") {
 	          const classes = forumResult.value as any;
@@ -4263,6 +4385,59 @@ export default function App() {
 	    },
 	    [user?.role],
 	  );
+
+    const handlePatientLinksToggle = useCallback(
+      async (value: boolean) => {
+        if (!isAdmin(user?.role)) {
+          return;
+        }
+        setSettingsSaving((prev) => ({ ...prev, patientLinks: true }));
+        let previousValue = false;
+        setPatientLinksEnabled((prev) => {
+          previousValue = prev;
+          return value;
+        });
+        try {
+          localStorage.setItem(
+            "peppro:patient-links-enabled",
+            value ? "true" : "false",
+          );
+        } catch {
+          // ignore
+        }
+        try {
+          const updated = await settingsAPI.updatePatientLinksStatus(value);
+          const confirmed =
+            updated && typeof (updated as any).patientLinksEnabled === "boolean"
+              ? (updated as any).patientLinksEnabled
+              : value;
+          setPatientLinksEnabled(confirmed);
+          try {
+            localStorage.setItem(
+              "peppro:patient-links-enabled",
+              confirmed ? "true" : "false",
+            );
+          } catch {
+            // ignore
+          }
+        } catch (error) {
+          console.warn("[Settings] Failed to update patient links setting", error);
+          toast.error("Unable to update Patient Links setting right now.");
+          setPatientLinksEnabled(previousValue);
+          try {
+            localStorage.setItem(
+              "peppro:patient-links-enabled",
+              previousValue ? "true" : "false",
+            );
+          } catch {
+            // ignore
+          }
+        } finally {
+          setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
+        }
+      },
+      [user?.role],
+    );
 
 	  const handlePeptideForumToggle = useCallback(
 	    async (value: boolean) => {
@@ -5767,6 +5942,7 @@ export default function App() {
       "on_hold",
       "trash",
       "refunded",
+      "delegation_draft",
     ].includes(normalized);
   };
 
@@ -7652,6 +7828,7 @@ export default function App() {
 	  const [referralDataLoading, setReferralDataLoading] = useState(false);
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
+	  const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
 	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
 	  const [settingsSupport, setSettingsSupport] = useState<{
@@ -7659,10 +7836,11 @@ export default function App() {
 	  }>({ research: true });
 	  const [settingsSaving, setSettingsSaving] = useState<{
 	    shop: boolean;
+	    patientLinks: boolean;
 	    forum: boolean;
 	    research: boolean;
       testPaymentsOverride: boolean;
-	  }>({ shop: false, forum: false, research: false, testPaymentsOverride: false });
+	  }>({ shop: false, patientLinks: false, forum: false, research: false, testPaymentsOverride: false });
 	  type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
@@ -12936,6 +13114,22 @@ export default function App() {
     setSearchQuery(query);
   };
 
+  const estimateTotalsForDelegateCheckout = useCallback(
+    (payload: any, options?: { signal?: AbortSignal }) => {
+      if (!delegateToken) {
+        return Promise.reject(new Error("Delegation link is missing."));
+      }
+      return delegationAPI.estimateDelegateTotals(
+        {
+          delegateToken,
+          ...(payload || {}),
+        },
+        options,
+      );
+    },
+    [delegateToken],
+  );
+
   const handleCheckout = async (options?: {
     shippingAddress: any;
     shippingRate: any;
@@ -12960,6 +13154,7 @@ export default function App() {
       const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
       const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
         pricingMode: checkoutPricingMode,
+        markupPercent: delegatePricingMarkupPercent,
       });
       const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
       const dimensions = variant?.dimensions || product.dimensions || undefined;
@@ -12997,6 +13192,18 @@ export default function App() {
 	    ) / 100;
 
 	    try {
+        if (isDelegateMode && delegateToken) {
+          return await delegationAPI.shareDelegateOrder({
+            delegateToken,
+            items,
+            shippingAddress: options?.shippingAddress,
+            shippingEstimate: options?.shippingRate,
+            shippingTotal: shippingTotal,
+            expectedShipmentWindow: options?.expectedShipmentWindow ?? null,
+            taxTotal,
+            paymentMethod: options?.paymentMethod ?? null,
+          });
+        }
 	      const response = await ordersAPI.create(
 	        items,
 	        total,
@@ -14239,6 +14446,7 @@ export default function App() {
 		                <LazyCatalogProductCard
 		                  key={product.id}
 		                  product={product}
+                      pricingMarkupPercent={delegatePricingMarkupPercent}
 		                  onEnsureVariants={ensureCatalogProductHasVariants}
 		                  onAddToCart={(productId, variationId, qty) =>
 		                    handleAddToCart(productId, qty, undefined, variationId)
@@ -15399,6 +15607,38 @@ export default function App() {
 		                      </span>
 		                    </label>
 		                  </div>
+
+                      <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+                        <label
+                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label="Enable Patient Links tab for doctors"
+                            checked={patientLinksEnabled}
+                            onChange={(e) => handlePatientLinksToggle(e.target.checked)}
+                            className="brand-checkbox mt-0.5"
+                            disabled={!isAdmin(user.role) || settingsSaving.patientLinks}
+                          />
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                              <span>Patient Links tab (doctors)</span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                (Status:{" "}
+                                {settingsSaving.patientLinks
+                                  ? "Saving…"
+                                  : patientLinksEnabled
+                                    ? "Enabled"
+                                    : "Disabled"}
+                                )
+                              </span>
+                            </span>
+                            <span className="block text-xs text-slate-600">
+                              When disabled, only test doctors can access Patient Links.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
 		
 		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
 		                    <label
@@ -18594,11 +18834,12 @@ export default function App() {
       )}
 		      <div className="relative z-10 flex flex-1 flex-col">
 		        {/* Header - Only show when logged in */}
-			        {user && (
+			        {user && !isDelegateMode && (
 			          <div style={{ display: postLoginHold ? "none" : undefined }}>
 		                  <Header
 				              user={user}
 				              researchDashboardEnabled={researchDashboardEnabled}
+                      patientLinksEnabled={patientLinksEnabled}
 				              onLogin={handleLogin}
 				              onLogout={handleLogout}
 				              cartItems={totalCartItems}
@@ -18640,7 +18881,7 @@ export default function App() {
 
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
-          {(!user || postLoginHold) && (
+          {(!user || postLoginHold) && !isDelegateMode && (
             <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
               {/* Logo with Welcome and Quote Containers */}
               {postLoginHold && user ? (
@@ -20151,7 +20392,7 @@ export default function App() {
           )}
 
 	          {/* Main Content */}
-	          {user && !postLoginHold && (
+	          {!isDelegateMode && user && !postLoginHold && (
 	            <main
 	              className="w-full pb-12 mobile-safe-area"
 	              style={{
@@ -20162,6 +20403,39 @@ export default function App() {
 	                ? renderSalesRepDashboard()
 	                : renderDoctorDashboard()}
 	              {renderProductSection()}
+            </main>
+          )}
+
+          {isDelegateMode && (
+            <main
+              className="w-full pb-12 mobile-safe-area"
+              style={{
+                paddingTop: "1.5rem",
+              }}
+            >
+              <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
+                <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-5 py-4 shadow-lg">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Shopping as a delegate for {delegateDoctorNameForShare === "Doctor" ? "Doctor" : `Dr. ${delegateDoctorNameForShare}`}
+                    </p>
+                    {delegateLoading ? (
+                      <p className="text-xs text-slate-600">Loading link details…</p>
+                    ) : delegateError ? (
+                      <p className="text-xs text-red-700">{delegateError}</p>
+                    ) : delegatePricingMarkupPercent > 0 ? (
+                      <p className="text-xs text-slate-600">
+                        Prices include a {delegatePricingMarkupPercent.toFixed(2)}% doctor markup.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-600">
+                        Share your cart with the doctor for checkout.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {delegateError ? null : renderProductSection()}
             </main>
           )}
         </div>
@@ -20180,34 +20454,42 @@ export default function App() {
         cartItems={cartItems}
         onCheckout={handleCheckout}
         onClearCart={() => setCartItems([])}
-        onPaymentSuccess={() => {
-          const requestToken = Date.now();
-          const optimisticOrder = postCheckoutOptimisticOrderRef.current;
-          setAccountModalRequest({
-            tab: "orders",
-            open: true,
-            token: requestToken,
-            order: optimisticOrder ?? undefined,
-          });
-          triggerPostCheckoutOrdersRefresh().catch(() => undefined);
-          setTimeout(() => {
-            setAccountModalRequest((prev) =>
-              prev && prev.token === requestToken ? null : prev,
-            );
-          }, 2500);
-        }}
+        onPaymentSuccess={
+          isDelegateMode
+            ? undefined
+            : () => {
+                const requestToken = Date.now();
+                const optimisticOrder = postCheckoutOptimisticOrderRef.current;
+                setAccountModalRequest({
+                  tab: "orders",
+                  open: true,
+                  token: requestToken,
+                  order: optimisticOrder ?? undefined,
+                });
+                triggerPostCheckoutOrdersRefresh().catch(() => undefined);
+                setTimeout(() => {
+                  setAccountModalRequest((prev) =>
+                    prev && prev.token === requestToken ? null : prev,
+                  );
+                }, 2500);
+              }
+        }
         onUpdateItemQuantity={handleUpdateCartItemQuantity}
         onRemoveItem={handleRemoveCartItem}
         isAuthenticated={Boolean(user)}
         onRequireLogin={handleRequireLogin}
-        physicianName={user?.npiVerification?.name || user?.name || null}
-        customerEmail={user?.email || null}
-        customerName={user?.name || null}
-        defaultShippingAddress={checkoutDefaultShippingAddress}
-        availableCredits={availableReferralCredits}
+        allowUnauthenticatedCheckout={Boolean(isDelegateMode && !delegateError)}
+        delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
+        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
+        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
+        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
+        customerEmail={isDelegateMode ? null : user?.email || null}
+        customerName={isDelegateMode ? null : user?.name || null}
+        defaultShippingAddress={isDelegateMode ? null : checkoutDefaultShippingAddress}
+        availableCredits={isDelegateMode ? 0 : availableReferralCredits}
         pricingMode={checkoutPricingMode}
         onPricingModeChange={setCheckoutPricingMode}
-        showRetailPricingToggle={canUseRetailPricing}
+        showRetailPricingToggle={Boolean(canUseRetailPricing && !isDelegateMode)}
       />
 
       <Dialog
@@ -21877,6 +22159,7 @@ export default function App() {
         isOpen={productDetailOpen}
         onClose={handleCloseProductDetail}
         onAddToCart={handleAddToCart}
+        pricingMarkupPercent={delegatePricingMarkupPercent}
       />
     </div>
   );

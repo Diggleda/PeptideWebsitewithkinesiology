@@ -189,6 +189,24 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS patient_links (
+        token VARCHAR(128) PRIMARY KEY,
+        doctor_id VARCHAR(32) NOT NULL,
+        label VARCHAR(190) NULL,
+        created_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL,
+        last_used_at DATETIME NULL,
+        revoked_at DATETIME NULL,
+        delegate_cart_json LONGTEXT NULL,
+        delegate_shipping_json LONGTEXT NULL,
+        delegate_payment_json LONGTEXT NULL,
+        delegate_shared_at DATETIME NULL,
+        delegate_order_id VARCHAR(32) NULL,
+        KEY idx_patient_links_doctor (doctor_id),
+        KEY idx_patient_links_expires (expires_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS peptide_forum_posts (
         id VARCHAR(64) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,

@@ -19,9 +19,16 @@ interface ProductDetailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onAddToCart: (productId: string, quantity: number, note?: string, variantId?: string | null) => void;
+  pricingMarkupPercent?: number | null;
 }
 
-export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: ProductDetailDialogProps) {
+export function ProductDetailDialog({
+  product,
+  isOpen,
+  onClose,
+  onAddToCart,
+  pricingMarkupPercent,
+}: ProductDetailDialogProps) {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
   const [quantityDescription, setQuantityDescription] = useState('');
@@ -126,8 +133,25 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
     return baseImages;
   }, [product, activeVariant]);
 
-  const displayPrice = activeVariant?.price ?? product?.price ?? 0;
-  const displayOriginalPrice = activeVariant?.originalPrice ?? (!product?.hasVariants ? product?.originalPrice : undefined);
+  const markupPercentRaw = Number(pricingMarkupPercent ?? 0);
+  const markupPercent = Number.isFinite(markupPercentRaw)
+    ? Math.max(0, Math.min(500, markupPercentRaw))
+    : 0;
+  const applyMarkup = (value?: number | null) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return 0;
+    }
+    if (!markupPercent) {
+      return value;
+    }
+    return Math.round((value * (1 + markupPercent / 100) + Number.EPSILON) * 100) / 100;
+  };
+
+  const displayPrice = applyMarkup(activeVariant?.price ?? product?.price ?? 0);
+  const displayOriginalPriceRaw =
+    activeVariant?.originalPrice ?? (!product?.hasVariants ? product?.originalPrice : undefined);
+  const displayOriginalPrice =
+    typeof displayOriginalPriceRaw === 'number' ? applyMarkup(displayOriginalPriceRaw) : undefined;
   const discount = displayOriginalPrice
     ? Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)
     : 0;
@@ -354,6 +378,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                       <div className="grid gap-2 sm:grid-cols-2">
                         {variantOptions.map((variant) => {
                           const isActive = variant.id === activeVariant?.id;
+                          const variantPrice = applyMarkup(variant.price);
                           const attributesSummary = variant.attributes
                             .map((attr) => attr.value || attr.name)
                             .filter(Boolean)
@@ -375,7 +400,7 @@ export function ProductDetailDialog({ product, isOpen, onClose, onAddToCart }: P
                                 )}
                               </span>
                               <span className="font-semibold">
-                                {variant.price > 0 ? `$${variant.price.toFixed(2)}` : '—'}
+                                {variantPrice > 0 ? `$${variantPrice.toFixed(2)}` : '—'}
                               </span>
                             </Button>
                           );

@@ -981,6 +981,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getPatientLinksStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/patient-links`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getForumStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
       method: 'GET',
@@ -1004,6 +1011,12 @@ export const settingsAPI = {
   },
   updateShopStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/shop`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updatePatientLinksStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/patient-links`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });
@@ -1501,6 +1514,80 @@ export const ordersAPI = {
     return fetchWithAuthBlob(`${API_BASE_URL}/orders/${encodeURIComponent(String(orderId))}/invoice`, {
       method: 'GET',
       cache: 'no-store',
+    });
+  },
+};
+
+export const delegationAPI = {
+  resolve: async (token: string) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) {
+      throw new Error('token is required');
+    }
+    const params = new URLSearchParams({ token: normalized });
+    return fetchWithAuth(`${API_BASE_URL}/delegation/resolve?${params.toString()}`, { method: 'GET' });
+  },
+
+  listLinks: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/delegation/links`, { method: 'GET' });
+  },
+
+  createLink: async (payload?: { label?: string | null }) => {
+    return fetchWithAuth(`${API_BASE_URL}/delegation/links`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  updateLink: async (token: string, payload: { label?: string | null; revoke?: boolean | null }) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) {
+      throw new Error('token is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/delegation/links/${encodeURIComponent(normalized)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  updateConfig: async (payload: { markupPercent?: number | null }) => {
+    return fetchWithAuth(`${API_BASE_URL}/delegation/config`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
+  estimateDelegateTotals: async (
+    payload: {
+      delegateToken: string;
+      items: any[];
+      shippingAddress: any;
+      shippingEstimate: any;
+      shippingTotal: number;
+      paymentMethod?: string | null;
+    },
+    options?: { signal?: AbortSignal },
+  ) => {
+    return fetchWithAuth(`${API_BASE_URL}/orders/delegate/estimate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: options?.signal,
+    });
+  },
+
+  shareDelegateOrder: async (payload: {
+    delegateToken: string;
+    items: any[];
+    shippingAddress: any;
+    shippingEstimate: any;
+    shippingTotal: number;
+    expectedShipmentWindow?: string | null;
+    taxTotal?: number | null;
+    paymentMethod?: string | null;
+  }) => {
+    return fetchWithAuth(`${API_BASE_URL}/orders/delegate/share`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

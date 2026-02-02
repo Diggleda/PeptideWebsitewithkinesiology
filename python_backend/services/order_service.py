@@ -3484,7 +3484,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if not isinstance(local_order, dict):
                 continue
             status = str(local_order.get("status") or "").strip().lower()
-            if status in ("cancelled", "canceled", "trash", "refunded", "on-hold", "on_hold"):
+            if status in ("cancelled", "canceled", "trash", "refunded", "on-hold", "on_hold", "delegation_draft"):
                 skipped_status += 1
                 if status == "refunded":
                     skipped_refunded += 1

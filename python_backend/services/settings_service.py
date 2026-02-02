@@ -15,6 +15,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "shopEnabled": True,
     "peptideForumEnabled": True,
     "researchDashboardEnabled": False,
+    # When enabled, show Patient Links tab for all doctors (test doctors always have access).
+    "patientLinksEnabled": False,
     # "test" | "live" | None (None = follow env)
     "stripeMode": None,
     # When enabled, allow $0.01 "test" checkouts for admin/test_doctor.
@@ -106,6 +108,7 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
     merged["peptideForumEnabled"] = _to_bool(merged.get("peptideForumEnabled", True))
     merged["researchDashboardEnabled"] = _to_bool(merged.get("researchDashboardEnabled", False))
+    merged["patientLinksEnabled"] = _to_bool(merged.get("patientLinksEnabled", False))
     merged["stripeMode"] = _normalize_mode(merged.get("stripeMode"))
     merged["testPaymentsOverrideEnabled"] = _to_bool(merged.get("testPaymentsOverrideEnabled", False))
     merged["salesBySalesRepCsvDownloadedAt"] = _normalize_iso_timestamp(

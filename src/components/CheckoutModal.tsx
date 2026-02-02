@@ -165,6 +165,19 @@ interface CheckoutModalProps {
   pricingMode?: PricingMode;
   onPricingModeChange?: (mode: PricingMode) => void;
   showRetailPricingToggle?: boolean;
+  estimateTotals?: (
+    payload: {
+      items: any[];
+      shippingAddress: any;
+      shippingEstimate: any;
+      shippingTotal: number;
+      paymentMethod?: string | null;
+    },
+    options?: { signal?: AbortSignal },
+  ) => Promise<any>;
+  allowUnauthenticatedCheckout?: boolean;
+  delegateDoctorName?: string | null;
+  pricingMarkupPercent?: number | null;
 }
 
 const formatCardNumber = (value: string) =>
@@ -217,6 +230,10 @@ export function CheckoutModal({
   pricingMode,
   onPricingModeChange,
   showRetailPricingToggle = false,
+  estimateTotals,
+  allowUnauthenticatedCheckout = false,
+  delegateDoctorName,
+  pricingMarkupPercent,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
@@ -313,7 +330,10 @@ export function CheckoutModal({
   const checkoutLineItems = useMemo(
     () =>
       cartItems.map(({ id, product, quantity, note, variant }, index) => {
-        const unitPrice = computeUnitPrice(product, variant, quantity, { pricingMode: resolvedPricingMode });
+        const unitPrice = computeUnitPrice(product, variant, quantity, {
+          pricingMode: resolvedPricingMode,
+          markupPercent: pricingMarkupPercent,
+        });
         return {
           cartItemId: id,
           productId: product.id,
@@ -327,7 +347,7 @@ export function CheckoutModal({
           image: variant?.image || product.image || null,
         };
       }),
-    [cartItems, resolvedPricingMode],
+    [cartItems, pricingMarkupPercent, resolvedPricingMode],
   );
   const cartLineItemSignature = useMemo(
     () =>
@@ -373,7 +393,7 @@ export function CheckoutModal({
   const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
-    && isAuthenticated
+    && (isAuthenticated || allowUnauthenticatedCheckout)
     && hasSelectedShippingRate
     && shippingAddressComplete
     && checkoutLineItems.length > 0,
@@ -394,8 +414,16 @@ export function CheckoutModal({
       paymentMethod || 'payment',
     ].join('|');
   }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost, paymentMethod]);
-  const canCheckout = meetsCheckoutRequirements && isAuthenticated;
-  let checkoutButtonLabel = `Place Order (${displayTotal.toFixed(2)})`;
+  const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
+  const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
+  const delegateDoctorDisplayName = isDelegateFlow
+    ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
+      ? 'Doctor'
+      : `Dr. ${delegateDoctorName}`)
+    : null;
+  let checkoutButtonLabel = isDelegateFlow
+    ? `Share with ${delegateDoctorDisplayName}`
+    : `Place Order (${displayTotal.toFixed(2)})`;
   if (checkoutStatus === 'success' && checkoutStatusMessage) {
     checkoutButtonLabel = checkoutStatusMessage;
   } else if (checkoutStatus === 'error' && checkoutStatusMessage) {
@@ -549,6 +577,33 @@ export function CheckoutModal({
 	        taxTotal: taxAmount,
 	        paymentMethod,
 	      });
+	      if (isDelegateFlow) {
+	        const candidateMessage =
+	          result && typeof result === 'object' && 'message' in result && (result as any).message
+	            ? String((result as any).message)
+	            : null;
+	        const successMessage = candidateMessage || `Shared with ${delegateDoctorDisplayName || 'Doctor'}`;
+	        setPlacedOrderNumber(null);
+	        setCheckoutStatus('success');
+	        setCheckoutStatusMessage(successMessage);
+	        toast.success(successMessage);
+	        console.debug('[CheckoutModal] Delegate share success');
+	        if (onClearCart) {
+	          onClearCart();
+	        }
+	        if (onPaymentSuccess) {
+	          onPaymentSuccess();
+	        }
+	        if (checkoutStatusTimer.current) {
+	          clearTimeout(checkoutStatusTimer.current);
+	        }
+	        checkoutStatusTimer.current = setTimeout(() => {
+	          setCheckoutStatus('idle');
+	          setCheckoutStatusMessage(null);
+	          onClose();
+	        }, 8000);
+	        return;
+	      }
 	      const extractWooOrderNumber = (value: CheckoutResult | null | undefined): string | null => {
 	        if (!value) return null;
 	        const response = value.integrations?.wooCommerce?.response || null;
@@ -649,7 +704,7 @@ export function CheckoutModal({
       toast.error('We are calculating taxes for this order. Please try again in a moment.');
       return;
     }
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !allowUnauthenticatedCheckout) {
       onRequireLogin();
       return;
     }
@@ -824,7 +879,8 @@ export function CheckoutModal({
     setTaxEstimatePending(true);
     setTaxEstimateError(null);
     try {
-      const response = await ordersAPI.estimateTotals(
+      const estimate = estimateTotals ?? ordersAPI.estimateTotals;
+      const response = await estimate(
         {
           items: checkoutLineItems.map((item) => ({
             productId: item.productId,
@@ -875,7 +931,7 @@ export function CheckoutModal({
         setTaxEstimatePending(false);
       }
     }
-  }, [appliedCredits, checkoutLineItems, paymentMethod, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
+  }, [appliedCredits, checkoutLineItems, estimateTotals, paymentMethod, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
 
   useEffect(() => {
     if (!shouldFetchTax || !taxQuoteKey) {
@@ -1006,7 +1062,10 @@ export function CheckoutModal({
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
                     : baseImages;
-                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, { pricingMode: resolvedPricingMode });
+                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
+                    pricingMode: resolvedPricingMode,
+                    markupPercent: pricingMarkupPercent,
+                  });
                   const lineTotal = unitPrice * item.quantity;
                   const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
@@ -1369,7 +1428,15 @@ export function CheckoutModal({
                   onChange={(event) => setTermsAccepted(event.target.checked)}
                 />
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
-	                  I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro's{' '}
+	                  {isDelegateFlow ? (
+	                    <>
+	                      I understand I am shopping as a delegate and will share this cart with {delegateDoctorDisplayName || 'Doctor'}, and I agree to PepPro&apos;s{' '}
+	                    </>
+	                  ) : (
+	                    <>
+	                      I certify that I am {physicianName || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
+	                    </>
+	                  )}
 	                  <button
 	                    type="button"
 	                    className="legal-inline-link"

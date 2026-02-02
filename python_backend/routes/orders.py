@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import requests
@@ -9,7 +10,7 @@ from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
 from ..repositories import order_repository
-from ..services import order_service
+from ..services import order_service, delegation_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action
 
@@ -352,6 +353,145 @@ def estimate_order_totals():
             payment_method=payment_method,
         )
     )
+
+
+@blueprint.post("/delegate/estimate")
+def delegate_estimate_order_totals():
+    payload = request.get_json(force=True, silent=True) or {}
+    items = payload.get("items") or []
+    shipping_address = payload.get("shippingAddress") or {}
+    shipping_estimate = payload.get("shippingEstimate") or {}
+    shipping_total = payload.get("shippingTotal") or 0
+    payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
+    delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
+
+    def action():
+        delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        doctor_id = delegate_info.get("doctorId")
+        if not doctor_id:
+            err = ValueError("Invalid or expired delegation link")
+            setattr(err, "status", 404)
+            raise err
+        return order_service.estimate_order_totals(
+            user_id=str(doctor_id),
+            items=items,
+            shipping_address=shipping_address,
+            shipping_estimate=shipping_estimate,
+            shipping_total=shipping_total,
+            payment_method=payment_method,
+        )
+
+    return handle_action(action)
+
+
+@blueprint.post("/delegate/share")
+def delegate_share_order():
+    payload = request.get_json(force=True, silent=True) or {}
+    items = payload.get("items") or []
+    shipping_address = payload.get("shippingAddress") or {}
+    shipping_estimate = payload.get("shippingEstimate") or {}
+    shipping_total = payload.get("shippingTotal") or 0
+    payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
+    expected_shipment_window = payload.get("expectedShipmentWindow") or payload.get("expected_shipment_window") or None
+    delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
+
+    def action():
+        delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        doctor_id = str(delegate_info.get("doctorId") or "").strip()
+        doctor_name = str(delegate_info.get("doctorName") or "Doctor").strip() or "Doctor"
+        if not doctor_id:
+            err = ValueError("Invalid or expired delegation link")
+            setattr(err, "status", 404)
+            raise err
+
+        estimate = order_service.estimate_order_totals(
+            user_id=doctor_id,
+            items=items,
+            shipping_address=shipping_address,
+            shipping_estimate=shipping_estimate,
+            shipping_total=shipping_total,
+            payment_method=payment_method,
+        )
+        totals = estimate.get("totals") if isinstance(estimate, dict) else None
+        if not isinstance(totals, dict):
+            err = RuntimeError("Unable to estimate order totals")
+            setattr(err, "status", 502)
+            raise err
+
+        items_subtotal = float(totals.get("itemsTotal") or 0.0)
+        shipping_total_value = float(totals.get("shippingTotal") or 0.0)
+        tax_total_value = float(totals.get("taxTotal") or 0.0)
+        grand_total_value = float(totals.get("grandTotal") or 0.0)
+
+        raw_payment_method = str(payment_method or "").strip().lower()
+        normalized_payment_method = raw_payment_method
+        if normalized_payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer", "zelle"):
+            normalized_payment_method = "bacs"
+        else:
+            normalized_payment_method = "stripe"
+
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        order_id = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+        order = {
+            "id": order_id,
+            "userId": doctor_id,
+            "items": items,
+            "pricingMode": "wholesale",
+            "total": items_subtotal,
+            "itemsSubtotal": items_subtotal,
+            "shippingTotal": shipping_total_value,
+            "taxTotal": tax_total_value,
+            "grandTotal": grand_total_value,
+            "shippingEstimate": shipping_estimate or {},
+            "shippingAddress": shipping_address or {},
+            "expectedShipmentWindow": expected_shipment_window,
+            "physicianCertificationAccepted": False,
+            "paymentMethod": normalized_payment_method,
+            "paymentDetails": raw_payment_method if normalized_payment_method == "bacs" else None,
+            "status": "delegation_draft",
+            "createdAt": now,
+            "updatedAt": now,
+            "delegation": {
+                "token": delegate_info.get("token"),
+                "doctorId": doctor_id,
+                "doctorName": doctor_name,
+                "markupPercent": delegate_info.get("markupPercent"),
+                "sharedAt": now,
+            },
+        }
+        stored = order_repository.insert(order) or order
+        stored_id = stored.get("id") if isinstance(stored, dict) else order_id
+        delegation_service.store_delegate_submission(
+            str(delegate_info.get("token") or ""),
+            cart={"items": items},
+            shipping={
+                "shippingAddress": shipping_address or {},
+                "shippingEstimate": shipping_estimate or {},
+                "shippingTotal": shipping_total_value,
+                "taxTotal": tax_total_value,
+                "expectedShipmentWindow": expected_shipment_window,
+                "itemsSubtotal": items_subtotal,
+                "grandTotal": grand_total_value,
+            },
+            payment={
+                "paymentMethod": normalized_payment_method,
+                "paymentDetails": raw_payment_method if normalized_payment_method == "bacs" else None,
+                "rawPaymentMethod": raw_payment_method,
+            },
+            order_id=str(stored_id or order_id),
+            shared_at=now_dt,
+        )
+        return {
+            "success": True,
+            "message": f"Shared with {doctor_name}",
+            "order": {
+                "id": stored.get("id") if isinstance(stored, dict) else order_id,
+                "number": (stored.get("wooOrderNumber") or stored.get("id")) if isinstance(stored, dict) else order_id,
+            },
+        }
+
+    return handle_action(action, status=201)
 
 
 @blueprint.patch("/<order_id>/notes")

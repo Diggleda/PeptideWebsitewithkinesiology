@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -211,6 +211,7 @@ interface AccountOrderSummary {
 interface HeaderProps {
   user: HeaderUser | null;
   researchDashboardEnabled?: boolean;
+  patientLinksEnabled?: boolean;
   onLogin: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout: () => void;
   cartItems: number;
@@ -857,6 +858,7 @@ const formatRelativeMinutes = (value?: string | null) => {
 export function Header({
   user,
   researchDashboardEnabled = false,
+  patientLinksEnabled = false,
   onLogin,
   onLogout,
   cartItems,
@@ -901,7 +903,15 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [accountTab, setAccountTab] = useState<'details' | 'orders' | 'research'>('details');
+  const [accountTab, setAccountTab] = useState<'details' | 'orders' | 'research' | 'patient_links'>('details');
+  const [patientLinksLoading, setPatientLinksLoading] = useState(false);
+  const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
+  const [patientLinks, setPatientLinks] = useState<any[]>([]);
+  const [patientMarkupDraft, setPatientMarkupDraft] = useState('0');
+  const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
+  const [patientLinksSaving, setPatientLinksSaving] = useState(false);
+  const [patientLinksCreating, setPatientLinksCreating] = useState(false);
+  const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
   const [researchOverlayExpanded, setResearchOverlayExpanded] = useState(false);
   const [researchOverlayRect, setResearchOverlayRect] = useState<{
@@ -2976,11 +2986,153 @@ export function Header({
     </div>
   );
 
-  const accountHeaderTabs = [
-    { id: 'details', label: 'Details', Icon: Info },
-    { id: 'orders', label: 'Orders', Icon: Package },
-    { id: 'research', label: 'Research', Icon: Users },
-  ] as const;
+  const normalizedRole = String((localUser as any)?.role || '').toLowerCase();
+  const showPatientLinksTab = Boolean(
+    localUser && (normalizedRole === 'test_doctor' || (normalizedRole === 'doctor' && patientLinksEnabled)),
+  );
+  type AccountTabId = 'details' | 'orders' | 'research' | 'patient_links';
+  const accountHeaderTabs = useMemo(() => {
+    const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
+      { id: 'details', label: 'Details', Icon: Info },
+      { id: 'orders', label: 'Orders', Icon: Package },
+    ];
+    if (showPatientLinksTab) {
+      tabs.push({ id: 'patient_links', label: 'Patient Links', Icon: Link2 });
+    }
+    tabs.push({ id: 'research', label: 'Research', Icon: Users });
+    return tabs;
+  }, [showPatientLinksTab]);
+
+  const normalizeMarkupPercent = useCallback((value: unknown) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return 0;
+    }
+    const clamped = Math.max(0, Math.min(500, parsed));
+    return Math.round((clamped + Number.EPSILON) * 100) / 100;
+  }, []);
+
+  const loadPatientLinks = useCallback(async () => {
+    if (!showPatientLinksTab) {
+      return;
+    }
+    setPatientLinksLoading(true);
+    setPatientLinksError(null);
+    try {
+      const api = await import('../services/api');
+      const response = await api.delegationAPI.listLinks();
+      const links = Array.isArray((response as any)?.links) ? (response as any).links : [];
+      const config = (response as any)?.config || {};
+      const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
+      setPatientLinks(links);
+      setPatientMarkupDraft(String(markupPercent));
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' && error.message.trim()
+        ? error.message
+        : 'Unable to load patient links right now.';
+      setPatientLinksError(message);
+      setPatientLinks([]);
+    } finally {
+      setPatientLinksLoading(false);
+    }
+  }, [normalizeMarkupPercent, showPatientLinksTab]);
+
+  const handleSavePatientMarkup = useCallback(async () => {
+    if (!showPatientLinksTab || patientLinksSaving) {
+      return;
+    }
+    const markupPercent = normalizeMarkupPercent(patientMarkupDraft);
+    setPatientLinksSaving(true);
+    try {
+      const api = await import('../services/api');
+      const response = await api.delegationAPI.updateConfig({ markupPercent });
+      const saved = normalizeMarkupPercent((response as any)?.config?.markupPercent ?? markupPercent);
+      setPatientMarkupDraft(String(saved));
+      toast.success('Patient markup updated.');
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to update patient markup right now.',
+      );
+    } finally {
+      setPatientLinksSaving(false);
+    }
+  }, [normalizeMarkupPercent, patientMarkupDraft, patientLinksSaving, showPatientLinksTab]);
+
+  const handleCreatePatientLink = useCallback(async () => {
+    if (!showPatientLinksTab || patientLinksCreating) {
+      return;
+    }
+    setPatientLinksCreating(true);
+    try {
+      const api = await import('../services/api');
+      const label = patientLinkLabelDraft.trim();
+      await api.delegationAPI.createLink({ label: label ? label : null });
+      setPatientLinkLabelDraft('');
+      toast.success('Patient link created.');
+      await loadPatientLinks();
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to create a patient link right now.',
+      );
+    } finally {
+      setPatientLinksCreating(false);
+    }
+  }, [loadPatientLinks, patientLinkLabelDraft, patientLinksCreating, showPatientLinksTab]);
+
+  const handleCopyPatientLink = useCallback(async (token: string) => {
+    if (typeof window === 'undefined') return;
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) return;
+    const url = `${window.location.origin}/?delegate=${encodeURIComponent(normalized)}`;
+    try {
+      if (!navigator?.clipboard) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(url);
+      toast.success('Link copied.');
+    } catch {
+      toast.error('Unable to copy link.');
+    }
+  }, []);
+
+  const handleRevokePatientLink = useCallback(async (token: string) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized || patientLinksUpdatingToken) {
+      return;
+    }
+    setPatientLinksUpdatingToken(normalized);
+    try {
+      const api = await import('../services/api');
+      await api.delegationAPI.updateLink(normalized, { revoke: true });
+      toast.success('Link revoked.');
+      await loadPatientLinks();
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to revoke link right now.',
+      );
+    } finally {
+      setPatientLinksUpdatingToken(null);
+    }
+  }, [loadPatientLinks, patientLinksUpdatingToken]);
+
+  useEffect(() => {
+    if (!showPatientLinksTab && accountTab === 'patient_links') {
+      setAccountTab('details');
+    }
+  }, [accountTab, showPatientLinksTab]);
+
+  useEffect(() => {
+    if (!welcomeOpen) return;
+    if (accountTab !== 'patient_links') return;
+    if (!showPatientLinksTab) return;
+    void loadPatientLinks();
+  }, [accountTab, loadPatientLinks, showPatientLinksTab, welcomeOpen]);
 
   const saveProfileField = useCallback(
     async (label: string, payload: Record<string, string | null>) => {
@@ -4115,12 +4267,169 @@ export function Header({
     </div>
   ) : null;
 
+  const patientLinksPanel = showPatientLinksTab ? (
+    <div className="space-y-6">
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5">
+        <h3 className="text-base font-semibold text-slate-900">Patient pricing markup</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Apply a percent markup to all products shown to delegates using your patient link.
+        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Label htmlFor="patient-markup" className="text-sm font-semibold text-slate-700">
+              Markup percent
+            </Label>
+            <Input
+              id="patient-markup"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={500}
+              step={0.01}
+              value={patientMarkupDraft}
+              onChange={(event) => setPatientMarkupDraft(event.target.value)}
+              className="mt-1 h-10 squircle-sm bg-white/90"
+            />
+          </div>
+          <Button
+            type="button"
+            onClick={() => void handleSavePatientMarkup()}
+            disabled={!showPatientLinksTab || patientLinksSaving}
+            className="squircle-sm"
+          >
+            {patientLinksSaving ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
+
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5">
+        <h3 className="text-base font-semibold text-slate-900">Generate a patient link</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Create a delegate link and share it however you like (copy/paste).
+        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Label htmlFor="patient-link-label" className="text-sm font-semibold text-slate-700">
+              Label (optional)
+            </Label>
+            <Input
+              id="patient-link-label"
+              value={patientLinkLabelDraft}
+              onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
+              placeholder="e.g., John Doe"
+              className="mt-1 h-10 squircle-sm bg-white/90"
+            />
+          </div>
+          <Button
+            type="button"
+            onClick={() => void handleCreatePatientLink()}
+            disabled={!showPatientLinksTab || patientLinksCreating}
+            className="squircle-sm"
+          >
+            {patientLinksCreating ? 'Creating…' : 'Create link'}
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-slate-900">Your links</h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void loadPatientLinks()}
+            disabled={!showPatientLinksTab || patientLinksLoading}
+            className="squircle-sm"
+          >
+            {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+
+        {patientLinksError && (
+          <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/60">
+            <p className="text-sm text-red-700 font-medium">{patientLinksError}</p>
+          </div>
+        )}
+
+        {patientLinksLoading ? (
+          <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-1)] bg-white/80">
+            <p className="text-sm text-slate-600">Loading links…</p>
+          </div>
+        ) : patientLinks.length === 0 ? (
+          <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-1)] bg-white/80">
+            <p className="text-sm text-slate-600">No patient links yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {patientLinks.map((link) => {
+              const token = typeof link?.token === 'string' ? link.token : '';
+              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
+              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
+              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
+              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
+              const isRevoked = Boolean(revokedAt);
+              const isUpdating = patientLinksUpdatingToken === token;
+
+              return (
+                <div
+                  key={token || label}
+                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+                      {isRevoked && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                          Revoked
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+                      {createdAt && <div>Created: {createdAt}</div>}
+                      {lastUsedAt && <div>Last used: {lastUsedAt}</div>}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCopyPatientLink(token)}
+                      disabled={!token}
+                      className="squircle-sm gap-2"
+                    >
+                      <Copy className="h-4 w-4" aria-hidden="true" />
+                      Copy link
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleRevokePatientLink(token)}
+                      disabled={!token || isRevoked || isUpdating}
+                      className="squircle-sm"
+                    >
+                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke'}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   const activeAccountPanel =
     accountTab === 'details'
       ? accountInfoPanel
       : accountTab === 'orders'
         ? accountOrdersPanel
-        : researchPanel;
+        : accountTab === 'patient_links'
+          ? patientLinksPanel
+          : researchPanel;
 
   const researchOverlayStyle: React.CSSProperties =
     researchOverlayRect && !researchOverlayExpanded
