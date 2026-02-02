@@ -783,6 +783,7 @@ export type UpdateProfilePayload = {
   name?: string;
   email?: string;
   phone?: string;
+  delegateLogoUrl?: string | null;
   officeAddressLine1?: string | null;
   officeAddressLine2?: string | null;
   officeCity?: string | null;

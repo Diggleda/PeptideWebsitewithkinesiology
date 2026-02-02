@@ -29,6 +29,7 @@ CREATE_TABLE_STATEMENTS = [
         office_postal_code VARCHAR(32) NULL,
         office_country VARCHAR(64) NULL,
         profile_image_url LONGTEXT NULL,
+        delegate_logo_url LONGTEXT NULL,
         downloads LONGTEXT NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
@@ -341,6 +342,7 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_state VARCHAR(64) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS delegate_logo_url LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_revenue_updated_at DATETIME NULL",
@@ -427,6 +429,12 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "markup_percent"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    try:
+        if not _column_exists("users", "delegate_logo_url"):
+            mysql_client.execute("ALTER TABLE users ADD COLUMN delegate_logo_url LONGTEXT NULL")
     except Exception:
         pass
 

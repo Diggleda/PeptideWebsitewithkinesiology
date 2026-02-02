@@ -111,24 +111,34 @@ def _migrate_legacy_links_to_table() -> None:
         doctor_id = str(doctor_id or "").strip()
         if not doctor_id:
             return
-        # Pull legacy per-doctor markup, but persist it on each link row and the doctor record.
+        # Pull legacy per-doctor markup (if it exists), but do not overwrite newer persisted values.
         legacy_markup = 0.0
+        has_legacy_markup = False
         try:
             payload = _sql_read_key(_config_key(doctor_id))
             if payload is None:
                 payload = _read_store_dict().get(_config_key(doctor_id))
-            if isinstance(payload, dict):
-                legacy_markup = _normalize_markup_percent(payload.get("markupPercent") or payload.get("markup_percent") or 0)
+            if isinstance(payload, dict) and (
+                "markupPercent" in payload or "markup_percent" in payload
+            ):
+                legacy_markup = _normalize_markup_percent(
+                    payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+                )
+                has_legacy_markup = True
         except Exception:
             legacy_markup = 0.0
+        doctor_markup = 0.0
         try:
             doctor = user_repository.find_by_id(doctor_id) or None
             if isinstance(doctor, dict) and doctor:
-                current = _normalize_markup_percent(doctor.get("markupPercent"))
-                if abs(current - legacy_markup) > 0.001:
+                doctor_markup = _normalize_markup_percent(doctor.get("markupPercent"))
+                # Only migrate legacy -> user when legacy is explicitly non-zero and user doesn't have a value yet.
+                if has_legacy_markup and legacy_markup > 0.001 and doctor_markup <= 0.001:
                     user_repository.update({**doctor, "markupPercent": legacy_markup})
+                    doctor_markup = legacy_markup
         except Exception:
-            pass
+            doctor_markup = legacy_markup if has_legacy_markup else 0.0
+        markup_to_persist = legacy_markup if (has_legacy_markup and legacy_markup > 0.001 and doctor_markup <= 0.001) else doctor_markup
         for entry in links or []:
             token = str(entry.get("token") or "").strip()
             if not token:
@@ -156,7 +166,7 @@ def _migrate_legacy_links_to_table() -> None:
                         "label": label,
                         "created_at": created_dt.replace(tzinfo=None),
                         "expires_at": expires_dt.replace(tzinfo=None),
-                        "markup_percent": float(legacy_markup or 0.0),
+                        "markup_percent": float(markup_to_persist or 0.0),
                         "last_used_at": last_used.replace(tzinfo=None) if isinstance(last_used, datetime) else None,
                         "revoked_at": revoked.replace(tzinfo=None) if isinstance(revoked, datetime) else None,
                     },
@@ -491,6 +501,7 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "doctorId": doctor_id,
             "doctorName": doctor_name,
             "markupPercent": _normalize_markup_percent(doctor.get("markupPercent")),
+            "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
         }
 
     index = _load_index()

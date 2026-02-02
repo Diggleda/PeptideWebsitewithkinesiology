@@ -574,6 +574,22 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     phone = (data.get("phone") or user.get("phone") or None)
     email = _normalize_email(data.get("email") or user.get("email") or "")
     profile_image_url = data.get("profileImageUrl") or user.get("profileImageUrl") or None
+    delegate_logo_url = data.get("delegateLogoUrl") if "delegateLogoUrl" in data else user.get("delegateLogoUrl") or None
+
+    if delegate_logo_url is not None and not isinstance(delegate_logo_url, str):
+        delegate_logo_url = None
+    if isinstance(delegate_logo_url, str):
+        delegate_logo_url = delegate_logo_url.strip()
+        if not delegate_logo_url:
+            delegate_logo_url = None
+        if delegate_logo_url is not None:
+            # Only allow data URLs for safety; keep size bounded.
+            lowered = delegate_logo_url.lower()
+            if not lowered.startswith("data:image/"):
+                raise _bad_request("INVALID_DELEGATE_LOGO")
+            # Rough size guard (UTF-8 bytes) to avoid extremely large rows.
+            if len(delegate_logo_url.encode("utf-8")) > 750_000:
+                raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
     shipping_fields = {
         "officeAddressLine1": data.get("officeAddressLine1") or user.get("officeAddressLine1"),
         "officeAddressLine2": data.get("officeAddressLine2") or user.get("officeAddressLine2"),
@@ -594,6 +610,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "phone": phone,
         "email": email or user.get("email"),
         "profileImageUrl": profile_image_url,
+        "delegateLogoUrl": delegate_logo_url,
         **shipping_fields,
     }
 

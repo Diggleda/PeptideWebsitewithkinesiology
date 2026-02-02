@@ -111,6 +111,7 @@ interface User {
   name: string;
   email: string;
   profileImageUrl?: string | null;
+  delegateLogoUrl?: string | null;
   hasPasskeys?: boolean;
   referralCode?: string | null;
   npiNumber?: string | null;
@@ -2731,6 +2732,7 @@ export default function App() {
     doctorId: string;
     doctorName: string;
     markupPercent: number;
+    doctorLogoUrl?: string | null;
   } | null>(null);
   const [delegateLoading, setDelegateLoading] = useState(false);
   const [delegateError, setDelegateError] = useState<string | null>(null);
@@ -2803,6 +2805,7 @@ export default function App() {
           doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
           doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
           markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
+          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
         });
       } catch (error: any) {
         if (cancelled) return;
@@ -18883,6 +18886,7 @@ export default function App() {
                   <Header
                     user={null}
                     delegateMode
+                    delegateLogoUrl={delegateContext?.doctorLogoUrl ?? null}
                     researchDashboardEnabled={false}
                     patientLinksEnabled={false}
                     cartItems={totalCartItems}

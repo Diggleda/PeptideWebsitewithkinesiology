@@ -130,6 +130,7 @@ interface HeaderUser {
   id?: string;
   name: string;
   profileImageUrl?: string | null;
+  delegateLogoUrl?: string | null;
   role?: string | null;
   referralCode?: string | null;
   visits?: number;
@@ -211,6 +212,7 @@ interface AccountOrderSummary {
 interface HeaderProps {
   user: HeaderUser | null;
   delegateMode?: boolean;
+  delegateLogoUrl?: string | null;
   researchDashboardEnabled?: boolean;
   patientLinksEnabled?: boolean;
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
@@ -859,6 +861,7 @@ const formatRelativeMinutes = (value?: string | null) => {
 export function Header({
   user,
   delegateMode = false,
+  delegateLogoUrl = null,
   researchDashboardEnabled = false,
   patientLinksEnabled = false,
   onLogin,
@@ -1837,6 +1840,9 @@ export function Header({
 
 	    let result: AuthActionResult;
 	    try {
+        if (!onLogin) {
+          throw new Error('LOGIN_UNAVAILABLE');
+        }
 	      result = await onLogin(emailValue, passwordValue);
 	    } catch (error: any) {
 	      const message = typeof error?.message === 'string' ? error.message : null;
@@ -2132,6 +2138,9 @@ export function Header({
     if (logoutThanksLogoutPromiseRef.current) {
       return logoutThanksLogoutPromiseRef.current;
     }
+    if (!onLogout) {
+      return Promise.resolve();
+    }
     logoutThanksLogoutTriggeredRef.current = true;
     const promise = Promise.resolve(onLogout()).finally(() => {
       // Keep the promise ref cleared so future logouts can run if needed.
@@ -2411,7 +2420,9 @@ export function Header({
 
     const result = onCreateAccount
       ? await onCreateAccount(details)
-      : await onLogin(signupEmail, signupPassword);
+      : onLogin
+        ? await onLogin(signupEmail, signupPassword)
+        : ({ status: 'error', message: 'LOGIN_UNAVAILABLE' } as any);
 
     if (result.status === 'success') {
       setSignupName('');
@@ -3122,6 +3133,56 @@ export function Header({
       setPatientLinksUpdatingToken(null);
     }
   }, [loadPatientLinks, patientLinksUpdatingToken]);
+
+  const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
+
+  const handleSelectDelegateLogo = useCallback(async (file: File | null) => {
+    if (!file || delegateLogoUploading) {
+      return;
+    }
+    const maxBytes = 650_000;
+    if (file.size > maxBytes) {
+      toast.error('Image is too large. Please choose a smaller file.');
+      return;
+    }
+    if (!file.type || !file.type.startsWith('image/')) {
+      toast.error('Please choose an image file.');
+      return;
+    }
+    setDelegateLogoUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('FILE_READ_FAILED'));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        throw new Error('INVALID_IMAGE');
+      }
+      await saveProfileField('Delegate logo', { delegateLogoUrl: dataUrl });
+    } catch (error) {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateLogoUploading(false);
+      if (delegateLogoInputRef.current) {
+        delegateLogoInputRef.current.value = '';
+      }
+    }
+  }, [delegateLogoUploading, saveProfileField]);
+
+  const handleRemoveDelegateLogo = useCallback(async () => {
+    if (delegateLogoUploading) return;
+    setDelegateLogoUploading(true);
+    try {
+      await saveProfileField('Delegate logo', { delegateLogoUrl: null });
+    } catch (error) {
+      // saveProfileField handles toasts
+    } finally {
+      setDelegateLogoUploading(false);
+    }
+  }, [delegateLogoUploading, saveProfileField]);
 
   useEffect(() => {
     if (!showPatientLinksTab && accountTab === 'patient_links') {
@@ -4271,10 +4332,80 @@ export function Header({
 
   const patientLinksPanel = showPatientLinksTab ? (
     <div className="space-y-6">
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
+        <h3 className="text-lg font-semibold text-slate-900">Patient Links</h3>
+        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+          Patient Links let your patients shop as a “delegate” under your authority. Delegates can browse and build a
+          cart, then share it back to you for checkout. Configure your delegate header logo, optional pricing markup,
+          and generate links below.
+        </p>
+      </div>
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+        <h3 className="text-lg font-semibold text-slate-900">Delegate header logo</h3>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          This logo appears in the delegate header when a patient opens your link. Recommended: square PNG/JPG.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+          Use “Upload logo” to set your clinic/brand logo. Use “Remove” to revert back to the default PepPro logo.
+        </p>
+        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="h-12 w-12 rounded-2xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-2 shadow-sm">
+              <img
+                src={
+                  (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
+                    ? localUser.delegateLogoUrl
+                    : "/Peppro_IconLogo_Transparent_NoBuffer.png"
+                }
+                alt="Delegate logo"
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">
+                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
+                  ? 'Custom logo set'
+                  : 'Using PepPro logo'}
+              </p>
+              <p className="text-xs text-slate-600">Max ~650KB. Stored on your account.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={delegateLogoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => void handleSelectDelegateLogo(event.target.files?.[0] ?? null)}
+            />
+            <Button
+              type="button"
+              onClick={() => delegateLogoInputRef.current?.click()}
+              disabled={delegateLogoUploading}
+              className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+            >
+              {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleRemoveDelegateLogo()}
+              disabled={delegateLogoUploading}
+              className="h-11 w-full sm:w-auto squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Patient pricing markup</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Apply a percent markup to all products shown to delegates using your patient link.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+          This only changes what your delegate sees while shopping. Your own pricing and checkout stay under your
+          account.
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <div className="min-w-0">
@@ -4292,6 +4423,9 @@ export function Header({
               onChange={(event) => setPatientMarkupDraft(event.target.value)}
               className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
             />
+            <p className="mt-2 text-xs text-slate-600">
+              Enter a percentage (e.g., 15 for 15%). Save to apply to all delegate pricing.
+            </p>
           </div>
           <Button
             type="button"
@@ -4302,12 +4436,18 @@ export function Header({
             {patientLinksSaving ? 'Saving…' : 'Save'}
           </Button>
         </div>
+        <p className="mt-3 text-xs text-slate-600">
+          Tip: keep this at 0% if you want delegates to see your base pricing.
+        </p>
       </div>
 
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Create a delegate link and share it however you like (copy/paste).
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+          Links are temporary for safety and expire automatically after 72 hours. You can revoke any link at any time.
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <div className="min-w-0">
@@ -4321,6 +4461,9 @@ export function Header({
               placeholder="e.g., John Doe"
               className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
             />
+            <p className="mt-2 text-xs text-slate-600">
+              Labels are for your reference only and do not appear to the delegate.
+            </p>
           </div>
           <Button
             type="button"
@@ -4347,6 +4490,9 @@ export function Header({
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
+        <p className="text-sm text-slate-700">
+          Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke” to immediately disable a link.
+        </p>
 
         {patientLinksError && (
           <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/60">
@@ -4372,6 +4518,7 @@ export function Header({
               const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
               const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
               const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
+              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
               const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
               const isRevoked = Boolean(revokedAt);
               const isUpdating = patientLinksUpdatingToken === token;
@@ -4392,6 +4539,7 @@ export function Header({
                     </div>
                     <div className="mt-1 text-xs text-slate-600 space-y-0.5">
                       {createdAt && <div>Created: {createdAt}</div>}
+                      {expiresAt && <div>Expires: {expiresAt}</div>}
                       {lastUsedAt && <div>Last used: {lastUsedAt}</div>}
                     </div>
                   </div>
@@ -5126,6 +5274,19 @@ export function Header({
               </div>
             ) : (
               <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+                <div className="h-9 w-9 rounded-xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-1.5 shadow-sm">
+                  <img
+                    src={
+                      (typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
+                        ? delegateLogoUrl
+                        : "/Peppro_IconLogo_Transparent_NoBuffer.png"
+                    }
+                    alt="Delegate logo"
+                    className="h-full w-full object-contain"
+                    loading="eager"
+                    decoding="async"
+                  />
+                </div>
                 <div className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-white/70 px-3 py-1.5 text-sm font-semibold text-[rgb(95,179,249)]">
                   Delegate
                 </div>
