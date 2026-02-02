@@ -859,6 +859,25 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     if isinstance(payload, dict) and payload:
+        payload_items = payload.get("items")
+        if (
+            isinstance(payload_items, list)
+            and not order.get("items")
+        ):
+            order["items"] = payload_items
+        payload_subtotal = payload.get("itemsSubtotal") or payload.get("items_subtotal") or payload.get("itemsTotal") or payload.get("items_total")
+        try:
+            payload_subtotal_value = float(payload_subtotal)
+        except Exception:
+            payload_subtotal_value = None
+        current_subtotal = order.get("itemsSubtotal")
+        if (
+            (current_subtotal is None or float(current_subtotal or 0) <= 0)
+            and payload_subtotal_value is not None
+            and payload_subtotal_value > 0
+        ):
+            order["itemsSubtotal"] = payload_subtotal_value
+    if isinstance(payload, dict) and payload:
         for key, value in payload.items():
             if key not in order:
                 order[key] = value

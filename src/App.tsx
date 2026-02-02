@@ -6232,6 +6232,29 @@ export default function App() {
                     (order: any) => !isPersonalOrderForRep(order),
                   );
                   const personalOrders = personalOrdersForModal;
+                  const personalOrderKeys = new Set(
+                    personalOrders
+                      .map((order) =>
+                        String(
+                          order.id ||
+                            order.number ||
+                            (order as any).wooOrderId ||
+                            (order as any).wooOrderNumber ||
+                            "",
+                        ),
+                      )
+                      .filter((key) => key.length > 0),
+                  );
+                  const filteredSalesOrders = salesOrders.filter((order) => {
+                    const key = String(
+                      order.id ||
+                        order.number ||
+                        (order as any).wooOrderId ||
+                        (order as any).wooOrderNumber ||
+                        "",
+                    );
+                    return key ? !personalOrderKeys.has(key) : true;
+                  });
                   const combinedOrders = (() => {
                     const byKey = new Map<string, AccountOrderSummary>();
                     const keyFor = (order: AccountOrderSummary) =>
@@ -6242,7 +6265,7 @@ export default function App() {
                           (order as any).wooOrderNumber ||
                           "",
                       );
-                    [...personalOrders, ...salesOrders].forEach((order) => {
+                    [...personalOrders, ...filteredSalesOrders].forEach((order) => {
                       const key = keyFor(order);
                       if (!key) return;
                       if (!byKey.has(key)) {
@@ -6253,7 +6276,7 @@ export default function App() {
                   })();
 
                   ordersForModal = combinedOrders;
-                  salesOrdersForModal = salesOrders;
+                  salesOrdersForModal = filteredSalesOrders;
                   orderQuantityForModal = combinedOrders.filter((order) =>
                     shouldCountRevenueForStatus(order?.status),
                   ).length;
@@ -15879,7 +15902,10 @@ export default function App() {
 					                              variant="outline"
 					                              size="sm"
 					                              className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-					                              onClick={() => setAdminDashboardPeriodPickerOpen(false)}
+					                              onClick={() => {
+					                                applyAdminDashboardPeriod();
+					                                setAdminDashboardPeriodPickerOpen(false);
+					                              }}
 					                            >
 					                              Done
 					                            </Button>
