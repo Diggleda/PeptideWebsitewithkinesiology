@@ -2702,7 +2702,15 @@ def get_sales_by_rep(
             if woo_num:
                 woo_numbers.append(woo_num)
 
-        pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
+        try:
+            pricing_mode_lookup = order_repository.get_pricing_mode_lookup_by_woo(woo_ids, woo_numbers)
+        except Exception:
+            pricing_mode_lookup = {}
+
+        try:
+            subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
+        except Exception:
+            subtotal_lookup = {}
         subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:

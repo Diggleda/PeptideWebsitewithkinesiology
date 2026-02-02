@@ -6122,13 +6122,13 @@ export default function App() {
 		          let personalRevenue: number | null = null;
 		          let salesWholesaleRevenueValue: number | null = salesWholesaleRevenue;
 		          let salesRetailRevenueValue: number | null = salesRetailRevenue;
+              let totalOrderValueForModal = totalOrderValue;
 		          let ordersForModal = normalizedOrders;
 		          let personalOrdersForModal = normalizedOrders;
 		          let salesOrdersForModal: AccountOrderSummary[] = [];
 		          let orderQuantityForModal = orderQuantity;
 
 		          if (isSalesProfile) {
-		            personalRevenue = totalOrderValue;
 		            try {
 		              const repOrdersResp = await ordersAPI.getForSalesRep({
 		                salesRepId: id,
@@ -6149,39 +6149,114 @@ export default function App() {
 		                    ? entry.email.trim().toLowerCase()
 		                    : "";
 
-		              const repDoctorOrders = repOrdersNormalized.filter((order: any) => {
-		                if (!shouldCountRevenueForStatus(order?.status)) {
-		                  return false;
-		                }
-		                const rawDoctorId =
-		                  order?.doctorId ||
-		                  order?.doctor_id ||
-		                  order?.userId ||
-		                  order?.user_id ||
-		                  null;
-		                if (rawDoctorId && String(rawDoctorId) === id) {
-		                  return false;
-		                }
-		                const orderEmailRaw =
-		                  (order as any)?.doctorEmail ||
-		                  (order as any)?.doctor_email ||
-		                  (order as any)?.billing?.email ||
-		                  (order as any)?.billing_email ||
-		                  null;
-		                const orderEmail =
-		                  typeof orderEmailRaw === "string" ? orderEmailRaw.trim().toLowerCase() : "";
-		                if (entryEmail && orderEmail && entryEmail === orderEmail) {
-		                  return false;
-		                }
-		                return true;
-		              });
+                  const entryNameKey =
+                    typeof profile?.name === "string" && profile.name.trim()
+                      ? profile.name.trim().toLowerCase()
+                      : typeof entry?.name === "string" && entry.name.trim()
+                        ? entry.name.trim().toLowerCase()
+                        : "";
 
-		              ordersForModal = repDoctorOrders;
-                  salesOrdersForModal = repDoctorOrders;
-		              orderQuantityForModal = repDoctorOrders.length;
+                  const resolveOrderEmailKey = (order: any): string => {
+                    const raw =
+                      order?.doctorEmail ||
+                      order?.doctor_email ||
+                      order?.billingAddress?.email ||
+                      order?.billing?.email ||
+                      order?.billing_email ||
+                      order?.customerEmail ||
+                      order?.customer_email ||
+                      null;
+                    return typeof raw === "string" ? raw.trim().toLowerCase() : "";
+                  };
 
-		              const totals = repDoctorOrders.reduce(
+                  const resolveOrderNameKey = (order: any): string => {
+                    const fromDoctorName =
+                      typeof order?.doctorName === "string" ? order.doctorName.trim() : "";
+                    if (fromDoctorName) {
+                      return fromDoctorName.toLowerCase();
+                    }
+                    const billing =
+                      order?.billingAddress || order?.billing || (order as any)?.billing_address || null;
+                    const shipping =
+                      order?.shippingAddress || order?.shipping || (order as any)?.shipping_address || null;
+                    const buildKey = (address: any) => {
+                      if (!address) return "";
+                      const first =
+                        address?.firstName ||
+                        address?.first_name ||
+                        address?.firstname ||
+                        "";
+                      const last =
+                        address?.lastName ||
+                        address?.last_name ||
+                        address?.lastname ||
+                        "";
+                      const combined = [first, last].filter(Boolean).join(" ").trim();
+                      return combined ? combined.toLowerCase() : "";
+                    };
+                    return buildKey(billing) || buildKey(shipping) || "";
+                  };
+
+                  const resolveOrderUserId = (order: any): string => {
+                    try {
+                      const resolved = resolveOrderDoctorId(order as any);
+                      return resolved ? String(resolved) : "";
+                    } catch {
+                      return String(
+                        order?.doctorId ||
+                          order?.doctor_id ||
+                          order?.userId ||
+                          order?.user_id ||
+                          "",
+                      ).trim();
+                    }
+                  };
+
+                  const isPersonalOrderForRep = (order: any): boolean => {
+                    const orderUserId = resolveOrderUserId(order);
+                    if (orderUserId && orderUserId === id) {
+                      return true;
+                    }
+                    const orderEmailKey = resolveOrderEmailKey(order);
+                    if (entryEmail && orderEmailKey && entryEmail === orderEmailKey) {
+                      return true;
+                    }
+                    const orderNameKey = resolveOrderNameKey(order);
+                    if (entryNameKey && orderNameKey && entryNameKey === orderNameKey) {
+                      return true;
+                    }
+                    return false;
+                  };
+
+                  const personalOrders = repOrdersNormalized.filter(isPersonalOrderForRep);
+                  const salesOrders = repOrdersNormalized.filter((order: any) => !isPersonalOrderForRep(order));
+
+                  ordersForModal = repOrdersNormalized;
+                  personalOrdersForModal = personalOrders;
+                  salesOrdersForModal = salesOrders;
+                  orderQuantityForModal = repOrdersNormalized.filter((order) =>
+                    shouldCountRevenueForStatus(order?.status),
+                  ).length;
+
+                  personalRevenue = personalOrders.reduce((sum: number, order: any) => {
+                    if (!shouldCountRevenueForStatus(order?.status)) {
+                      return sum;
+                    }
+                    return sum + resolveOrderSubtotal(order);
+                  }, 0);
+
+                  totalOrderValueForModal = repOrdersNormalized.reduce((sum: number, order: any) => {
+                    if (!shouldCountRevenueForStatus(order?.status)) {
+                      return sum;
+                    }
+                    return sum + resolveOrderSubtotal(order);
+                  }, 0);
+
+		              const totals = salesOrders.reduce(
 		                (acc: { total: number; wholesale: number; retail: number }, order: any) => {
+                          if (!shouldCountRevenueForStatus(order?.status)) {
+                            return acc;
+                          }
 				                                    const amount = resolveOrderSubtotal(order);
 		                  const pricingModeRaw =
 		                    order?.pricingMode ||
@@ -6208,6 +6283,8 @@ export default function App() {
 		              salesRetailRevenueValue = totals.retail;
 		            } catch (error) {
 		              console.warn("[Admin] Failed to load sales rep revenue", error);
+                  personalRevenue = totalOrderValue;
+                  totalOrderValueForModal = totalOrderValue;
 		            }
 		          }
 
@@ -6242,13 +6319,13 @@ export default function App() {
 	              orders: ordersForModal,
                 personalOrders: personalOrdersForModal,
                 salesOrders: salesOrdersForModal,
-	              total: totalOrderValue,
+	              total: totalOrderValueForModal,
 	              personalRevenue,
 	              salesRevenue,
 	              salesWholesaleRevenue: salesWholesaleRevenueValue,
 	              salesRetailRevenue: salesRetailRevenueValue,
 	              orderQuantity: orderQuantityForModal,
-	              totalOrderValue,
+	              totalOrderValue: totalOrderValueForModal,
 	            },
 	            roleFromProfile || "doctor",
 	          );
@@ -6920,12 +6997,21 @@ export default function App() {
         periodStart: periodStart || undefined,
         periodEnd: periodEnd || undefined,
       });
+      const backendError =
+        response && typeof response === "object" && !Array.isArray(response)
+          ? typeof (response as any)?.error === "string"
+            ? String((response as any).error).trim()
+            : null
+          : null;
       const products = Array.isArray((response as any)?.products)
         ? ((response as any).products as any[])
         : [];
       const commissions = Array.isArray((response as any)?.commissions)
         ? ((response as any).commissions as any[])
         : [];
+      if (backendError && products.length === 0 && commissions.length === 0) {
+        setAdminProductsCommissionError(backendError);
+      }
       const filteredCommissions = commissions.filter((row) => {
         const role = String((row as any)?.role || "").toLowerCase();
         const id = String((row as any)?.id || "");
