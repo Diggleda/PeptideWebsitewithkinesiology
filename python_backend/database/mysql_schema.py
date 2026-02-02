@@ -195,6 +195,7 @@ CREATE_TABLE_STATEMENTS = [
         label VARCHAR(190) NULL,
         created_at DATETIME NOT NULL,
         expires_at DATETIME NOT NULL,
+        markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
         revoked_at DATETIME NULL,
         delegate_cart_json LONGTEXT NULL,
@@ -350,6 +351,7 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
     ]
     for stmt in migrations:
         try:

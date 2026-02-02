@@ -111,6 +111,16 @@ def _migrate_legacy_links_to_table() -> None:
         doctor_id = str(doctor_id or "").strip()
         if not doctor_id:
             return
+        # Pull legacy per-doctor markup, but persist it on each link row.
+        legacy_markup = 0.0
+        try:
+            payload = _sql_read_key(_config_key(doctor_id))
+            if payload is None:
+                payload = _read_store_dict().get(_config_key(doctor_id))
+            if isinstance(payload, dict):
+                legacy_markup = _normalize_markup_percent(payload.get("markupPercent") or payload.get("markup_percent") or 0)
+        except Exception:
+            legacy_markup = 0.0
         for entry in links or []:
             token = str(entry.get("token") or "").strip()
             if not token:
@@ -127,9 +137,9 @@ def _migrate_legacy_links_to_table() -> None:
                 mysql_client.execute(
                     """
                     INSERT IGNORE INTO patient_links (
-                        token, doctor_id, label, created_at, expires_at, last_used_at, revoked_at
+                        token, doctor_id, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
                     ) VALUES (
-                        %(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s, %(last_used_at)s, %(revoked_at)s
+                        %(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s, %(last_used_at)s, %(revoked_at)s
                     )
                     """,
                     {
@@ -138,6 +148,7 @@ def _migrate_legacy_links_to_table() -> None:
                         "label": label,
                         "created_at": created_dt.replace(tzinfo=None),
                         "expires_at": expires_dt.replace(tzinfo=None),
+                        "markup_percent": float(legacy_markup or 0.0),
                         "last_used_at": last_used.replace(tzinfo=None) if isinstance(last_used, datetime) else None,
                         "revoked_at": revoked.replace(tzinfo=None) if isinstance(revoked, datetime) else None,
                     },
@@ -296,6 +307,9 @@ def get_doctor_config(doctor_id: str) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
         return {"markupPercent": 0.0}
+    if _using_mysql():
+        _migrate_legacy_links_to_table()
+        return {"markupPercent": float(patient_links_repository.get_doctor_markup_percent(doctor_id) or 0.0)}
     key = _config_key(doctor_id)
     payload = _sql_read_key(key)
     if payload is None:
@@ -311,8 +325,12 @@ def update_doctor_config(doctor_id: str, patch: Dict[str, Any]) -> Dict[str, Any
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
         raise ValueError("doctor_id is required")
-    current = get_doctor_config(doctor_id)
     markup_percent = _normalize_markup_percent((patch or {}).get("markupPercent"))
+    if _using_mysql():
+        _migrate_legacy_links_to_table()
+        patient_links_repository.set_doctor_markup_percent(doctor_id, markup_percent)
+        return {"markupPercent": markup_percent}
+    current = get_doctor_config(doctor_id)
     merged = {**current, "markupPercent": markup_percent}
     key = _config_key(doctor_id)
     store = _read_store_dict()
@@ -445,13 +463,12 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             pass
 
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
-        config = get_doctor_config(doctor_id)
 
         return {
             "token": token,
             "doctorId": doctor_id,
             "doctorName": doctor_name,
-            "markupPercent": float(config.get("markupPercent") or 0.0),
+            "markupPercent": float(link.get("markupPercent") or 0.0),
         }
 
     index = _load_index()

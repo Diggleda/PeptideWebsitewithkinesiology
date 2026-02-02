@@ -52,6 +52,26 @@ def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any
         raise ValueError("doctor_id is required")
 
     label_value = str(label).strip() if isinstance(label, str) and str(label).strip() else None
+    delete_expired()
+
+    # Default markup is derived from the most-recent active link for this doctor.
+    markup_percent = 0.0
+    try:
+        row = mysql_client.fetch_one(
+            """
+            SELECT markup_percent
+            FROM patient_links
+            WHERE doctor_id = %(doctor_id)s
+              AND expires_at > UTC_TIMESTAMP()
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            {"doctor_id": doctor_id},
+        )
+        if row and row.get("markup_percent") is not None:
+            markup_percent = float(row.get("markup_percent") or 0.0)
+    except Exception:
+        markup_percent = 0.0
 
     # Keep token URL-safe; collisions are extremely unlikely, but retry once on PK conflict.
     for attempt in range(2):
@@ -64,12 +84,13 @@ def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any
             "label": label_value,
             "created_at": now.replace(tzinfo=None),
             "expires_at": expires.replace(tzinfo=None),
+            "markup_percent": float(markup_percent or 0.0),
         }
         try:
             mysql_client.execute(
                 """
-                INSERT INTO patient_links (token, doctor_id, label, created_at, expires_at)
-                VALUES (%(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s)
+                INSERT INTO patient_links (token, doctor_id, label, created_at, expires_at, markup_percent)
+                VALUES (%(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s)
                 """,
                 params,
             )
@@ -78,6 +99,7 @@ def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any
                 "label": label_value,
                 "createdAt": now.isoformat(),
                 "expiresAt": expires.isoformat(),
+                "markupPercent": float(markup_percent or 0.0),
                 "lastUsedAt": None,
                 "revokedAt": None,
             }
@@ -98,7 +120,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     delete_expired()
     rows = mysql_client.fetch_all(
         """
-        SELECT token, label, created_at, expires_at, last_used_at, revoked_at
+        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
         FROM patient_links
         WHERE doctor_id = %(doctor_id)s
           AND expires_at > UTC_TIMESTAMP()
@@ -114,6 +136,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                 "label": row.get("label"),
                 "createdAt": _fmt_datetime(row.get("created_at")),
                 "expiresAt": _fmt_datetime(row.get("expires_at")),
+                "markupPercent": float(row.get("markup_percent") or 0.0),
                 "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
                 "revokedAt": _fmt_datetime(row.get("revoked_at")),
             }
@@ -131,6 +154,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
     row = mysql_client.fetch_one(
         """
         SELECT token, doctor_id, label, created_at, expires_at, last_used_at, revoked_at,
+               markup_percent,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id
         FROM patient_links
@@ -168,6 +192,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         "label": row.get("label"),
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
+        "markupPercent": float(row.get("markup_percent") or 0.0),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
         "delegateCart": _parse_json(row.get("delegate_cart_json")),
@@ -235,7 +260,7 @@ def update_link(
 
     row = mysql_client.fetch_one(
         """
-        SELECT token, label, created_at, expires_at, last_used_at, revoked_at
+        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
         FROM patient_links
         WHERE token = %(token)s
           AND doctor_id = %(doctor_id)s
@@ -250,9 +275,58 @@ def update_link(
         "label": row.get("label"),
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
+        "markupPercent": float(row.get("markup_percent") or 0.0),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
     }
+
+
+def get_doctor_markup_percent(doctor_id: str) -> float:
+    if not _using_mysql():
+        return 0.0
+    doctor_id = str(doctor_id or "").strip()
+    if not doctor_id:
+        return 0.0
+    delete_expired()
+    try:
+        row = mysql_client.fetch_one(
+            """
+            SELECT markup_percent
+            FROM patient_links
+            WHERE doctor_id = %(doctor_id)s
+              AND expires_at > UTC_TIMESTAMP()
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            {"doctor_id": doctor_id},
+        )
+        return float((row or {}).get("markup_percent") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def set_doctor_markup_percent(doctor_id: str, markup_percent: float) -> int:
+    if not _using_mysql():
+        return 0
+    doctor_id = str(doctor_id or "").strip()
+    if not doctor_id:
+        return 0
+    delete_expired()
+    try:
+        return int(
+            mysql_client.execute(
+                """
+                UPDATE patient_links
+                SET markup_percent = %(markup_percent)s
+                WHERE doctor_id = %(doctor_id)s
+                  AND expires_at > UTC_TIMESTAMP()
+                """,
+                {"doctor_id": doctor_id, "markup_percent": float(markup_percent or 0.0)},
+            )
+            or 0
+        )
+    except Exception:
+        return 0
 
 
 def store_delegate_payload(

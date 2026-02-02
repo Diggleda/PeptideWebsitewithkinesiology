@@ -20414,24 +20414,45 @@ export default function App() {
               }}
             >
               <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
-                <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-5 py-4 shadow-lg">
-                  <div className="flex flex-col gap-1">
-                    <p className="text-sm font-semibold text-slate-900">
-                      Shopping as a delegate for {delegateDoctorNameForShare === "Doctor" ? "Doctor" : `Dr. ${delegateDoctorNameForShare}`}
-                    </p>
+                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-5 shadow-xl bg-white/85 backdrop-blur-xl">
+                  <div className="flex items-start gap-4">
+                    <div className="h-11 w-11 shrink-0 rounded-2xl border border-[rgba(95,179,249,0.35)] bg-white/85 p-2 shadow-sm">
+                      <img
+                        src="/Peppro_IconLogo_Transparent_NoBuffer.png"
+                        alt="PepPro"
+                        className="h-full w-full object-contain"
+                        loading="eager"
+                        decoding="async"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-[rgba(95,179,249,0.35)] bg-[rgba(95,179,249,0.08)] px-2.5 py-1 text-xs font-semibold text-[rgb(95,179,249)]">
+                          Delegate
+                        </span>
+                        <p className="text-base font-semibold text-slate-900 leading-snug">
+                          Shopping for{" "}
+                          <span className="text-[rgb(19,115,196)]">
+                            {delegateDoctorNameForShare === "Doctor"
+                              ? "Doctor"
+                              : `Dr. ${delegateDoctorNameForShare}`}
+                          </span>
+                        </p>
+                      </div>
                     {delegateLoading ? (
-                      <p className="text-xs text-slate-600">Loading link details…</p>
+                      <p className="mt-2 text-sm text-slate-600">Loading link details…</p>
                     ) : delegateError ? (
-                      <p className="text-xs text-red-700">{delegateError}</p>
+                      <p className="mt-2 text-sm text-red-700">{delegateError}</p>
                     ) : delegatePricingMarkupPercent > 0 ? (
-                      <p className="text-xs text-slate-600">
+                      <p className="mt-2 text-sm text-slate-700 leading-relaxed">
                         Prices include a {delegatePricingMarkupPercent.toFixed(2)}% doctor markup.
                       </p>
                     ) : (
-                      <p className="text-xs text-slate-600">
-                        Share your cart with the doctor for checkout.
+                      <p className="mt-2 text-sm text-slate-700 leading-relaxed">
+                        Add items to your cart, then share it with the doctor for checkout.
                       </p>
                     )}
+                    </div>
                   </div>
                 </div>
               </div>

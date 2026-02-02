@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode, CSSProperties } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo, FormEvent, MouseEvent, WheelEvent, TouchEvent, ReactNode, CSSProperties } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from './ui/dialog';
@@ -4269,12 +4269,12 @@ export function Header({
 
   const patientLinksPanel = showPatientLinksTab ? (
     <div className="space-y-6">
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5">
-        <h3 className="text-base font-semibold text-slate-900">Patient pricing markup</h3>
-        <p className="mt-1 text-sm text-slate-600">
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+        <h3 className="text-lg font-semibold text-slate-900">Patient pricing markup</h3>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Apply a percent markup to all products shown to delegates using your patient link.
         </p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Label htmlFor="patient-markup" className="text-sm font-semibold text-slate-700">
               Markup percent
@@ -4288,26 +4288,26 @@ export function Header({
               step={0.01}
               value={patientMarkupDraft}
               onChange={(event) => setPatientMarkupDraft(event.target.value)}
-              className="mt-1 h-10 squircle-sm bg-white/90"
+              className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
             />
           </div>
           <Button
             type="button"
             onClick={() => void handleSavePatientMarkup()}
             disabled={!showPatientLinksTab || patientLinksSaving}
-            className="squircle-sm"
+            className="squircle-sm glass-brand btn-hover-lighter px-6 py-2.5 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
           >
             {patientLinksSaving ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </div>
 
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-5">
-        <h3 className="text-base font-semibold text-slate-900">Generate a patient link</h3>
-        <p className="mt-1 text-sm text-slate-600">
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+        <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Create a delegate link and share it however you like (copy/paste).
         </p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Label htmlFor="patient-link-label" className="text-sm font-semibold text-slate-700">
               Label (optional)
@@ -4317,14 +4317,14 @@ export function Header({
               value={patientLinkLabelDraft}
               onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
               placeholder="e.g., John Doe"
-              className="mt-1 h-10 squircle-sm bg-white/90"
+              className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
             />
           </div>
           <Button
             type="button"
             onClick={() => void handleCreatePatientLink()}
             disabled={!showPatientLinksTab || patientLinksCreating}
-            className="squircle-sm"
+            className="squircle-sm glass-brand btn-hover-lighter px-6 py-2.5 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
           >
             {patientLinksCreating ? 'Creating…' : 'Create link'}
           </Button>
@@ -4333,14 +4333,14 @@ export function Header({
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-slate-900">Your links</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => void loadPatientLinks()}
             disabled={!showPatientLinksTab || patientLinksLoading}
-            className="squircle-sm"
+            className="squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
           >
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
@@ -4353,11 +4353,11 @@ export function Header({
         )}
 
         {patientLinksLoading ? (
-          <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-1)] bg-white/80">
+          <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-1)] bg-white/80">
             <p className="text-sm text-slate-600">Loading links…</p>
           </div>
         ) : patientLinks.length === 0 ? (
-          <div className="glass-card squircle-md p-4 border border-[var(--brand-glass-border-1)] bg-white/80">
+          <div className="glass-card squircle-md p-5 border border-[var(--brand-glass-border-1)] bg-white/80">
             <p className="text-sm text-slate-600">No patient links yet.</p>
           </div>
         ) : (
@@ -4374,7 +4374,7 @@ export function Header({
               return (
                 <div
                   key={token || label}
-                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -4397,7 +4397,7 @@ export function Header({
                       size="sm"
                       onClick={() => void handleCopyPatientLink(token)}
                       disabled={!token}
-                      className="squircle-sm gap-2"
+                      className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
                     >
                       <Copy className="h-4 w-4" aria-hidden="true" />
                       Copy link
@@ -4408,7 +4408,7 @@ export function Header({
                       size="sm"
                       onClick={() => void handleRevokePatientLink(token)}
                       disabled={!token || isRevoked || isUpdating}
-                      className="squircle-sm"
+                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
                     >
                       {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke'}
                     </Button>
