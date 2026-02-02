@@ -3134,6 +3134,56 @@ export function Header({
     }
   }, [loadPatientLinks, patientLinksUpdatingToken]);
 
+  const saveProfileField = useCallback(
+    async (label: string, payload: Record<string, string | null>) => {
+      try {
+        const api = await import('../services/api');
+        const updated = await api.authAPI.updateMe(payload);
+
+        const normalizedPayload = Object.fromEntries(
+          Object.entries(payload).map(([key, value]) => {
+            if (typeof value === 'string') {
+              const trimmed = value.trim();
+              return [key, trimmed.length > 0 ? trimmed : null];
+            }
+            return [key, value];
+          }),
+        );
+
+        const nextUserState: HeaderUser = {
+          ...(localUser || {}),
+          ...(updated || {}),
+        };
+
+        Object.entries(normalizedPayload).forEach(([key, value]) => {
+          const serverValue = updated ? (updated as Record<string, unknown>)[key] : undefined;
+          const shouldUsePayload =
+            serverValue === undefined
+            || serverValue === null
+            || (typeof serverValue === 'string' && serverValue.trim().length === 0);
+
+          if (shouldUsePayload) {
+            (nextUserState as Record<string, unknown>)[key] = value;
+          }
+        });
+
+        setLocalUser(nextUserState);
+        onUserUpdated?.(nextUserState);
+        toast.success(`${label} updated`);
+      } catch (error: any) {
+        if (error?.status === 413) {
+          toast.error('Upload too large. Please choose a smaller image.');
+        } else if (error?.message === 'EMAIL_EXISTS') {
+          toast.error('That email is already in use.');
+        } else {
+          toast.error('Update failed');
+        }
+        throw error;
+      }
+    },
+    [setLocalUser, onUserUpdated, localUser],
+  );
+
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
 
@@ -3196,56 +3246,6 @@ export function Header({
     if (!showPatientLinksTab) return;
     void loadPatientLinks();
   }, [accountTab, loadPatientLinks, showPatientLinksTab, welcomeOpen]);
-
-  const saveProfileField = useCallback(
-    async (label: string, payload: Record<string, string | null>) => {
-      try {
-        const api = await import('../services/api');
-        const updated = await api.authAPI.updateMe(payload);
-
-        const normalizedPayload = Object.fromEntries(
-          Object.entries(payload).map(([key, value]) => {
-            if (typeof value === 'string') {
-              const trimmed = value.trim();
-              return [key, trimmed.length > 0 ? trimmed : null];
-            }
-            return [key, value];
-          }),
-        );
-
-        const nextUserState: HeaderUser = {
-          ...(localUser || {}),
-          ...(updated || {}),
-        };
-
-        Object.entries(normalizedPayload).forEach(([key, value]) => {
-          const serverValue = updated ? (updated as Record<string, unknown>)[key] : undefined;
-          const shouldUsePayload =
-            serverValue === undefined
-            || serverValue === null
-            || (typeof serverValue === 'string' && serverValue.trim().length === 0);
-
-          if (shouldUsePayload) {
-            (nextUserState as Record<string, unknown>)[key] = value;
-          }
-        });
-
-        setLocalUser(nextUserState);
-        onUserUpdated?.(nextUserState);
-        toast.success(`${label} updated`);
-      } catch (error: any) {
-        if (error?.status === 413) {
-          toast.error('Upload too large. Please choose a smaller image.');
-        } else if (error?.message === 'EMAIL_EXISTS') {
-          toast.error('That email is already in use.');
-        } else {
-          toast.error('Update failed');
-        }
-        throw error;
-      }
-    },
-    [setLocalUser, onUserUpdated, localUser],
-  );
 
   const identityFields: Array<{ key: 'name' | 'email' | 'phone'; label: string; type?: string; autoComplete?: string }> = [
     { key: 'name', label: 'Full Name', autoComplete: 'name' },
