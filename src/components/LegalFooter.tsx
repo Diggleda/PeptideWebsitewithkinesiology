@@ -310,7 +310,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                 <p className="text-xs text-slate-600">
                   {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
                 </p>
-                <p className="text-xs text-slate-600">12141 Skyline Dr Santa Ana, CA 92705 US</p>
+                <p className="text-xs text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
               </div>
             </div>
           ) : (
@@ -377,7 +377,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
               <p className="text-xs text-slate-600">
                 {MERCHANT_IDENTITY.businessHours} | (714) 932-0232 | support@peppro.net
               </p>
-              <p className="text-xs mb-1 text-slate-600">12141 Skyline Dr Santa Ana, CA 92705 US</p>
+              <p className="text-xs mb-1 text-slate-600">640 S Grand Ave, Santa Ana, Ca 92705, Unit #107</p>
 
             </div>
           </div>

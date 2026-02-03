@@ -219,6 +219,16 @@ interface CartItem {
   variant?: ProductVariant | null;
 }
 
+type CheckoutShippingAddress = {
+  name?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+};
+
 interface FilterState {
   categories: string[];
   types: string[];
@@ -2733,6 +2743,7 @@ function MainApp() {
     delegateOrderId?: string | null;
     sharedAt?: string | null;
   } | null>(null);
+  const [proposalShippingAddress, setProposalShippingAddress] = useState<CheckoutShippingAddress | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
   const [delegateToken, setDelegateToken] = useState<string | null>(() => {
@@ -2740,6 +2751,9 @@ function MainApp() {
     const token = new URLSearchParams(window.location.search).get("delegate");
     return token && token.trim() ? token.trim() : null;
   });
+  const DELEGATE_EXPIRY_CACHE_PREFIX = "peppro_delegate_expiry_v1:";
+  const [delegateExpiryMs, setDelegateExpiryMs] = useState<number | null>(null);
+  const [delegateNowMs, setDelegateNowMs] = useState(() => Date.now());
   const [delegateContext, setDelegateContext] = useState<{
     token: string;
     doctorId: string;
@@ -2766,11 +2780,9 @@ function MainApp() {
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
     return stripped || "Doctor";
   }, [delegateContext?.doctorName]);
-  const formatDelegateTimeRemaining = useCallback((expiresAt: string | null | undefined) => {
-    if (!expiresAt) return null;
-    const expiry = new Date(expiresAt);
-    if (Number.isNaN(expiry.getTime())) return null;
-    const diffMs = expiry.getTime() - Date.now();
+  const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
+    if (!expiryMs || !Number.isFinite(expiryMs)) return null;
+    const diffMs = expiryMs - nowMs;
     if (diffMs <= 0) return 'Expired';
     const totalSeconds = Math.floor(diffMs / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -2779,8 +2791,8 @@ function MainApp() {
     return `${hours}h ${minutes}m remaining`;
   }, []);
   const delegateTimeRemainingLabel = useMemo(
-    () => (isDelegateMode ? formatDelegateTimeRemaining(delegateContext?.expiresAt) : null),
-    [formatDelegateTimeRemaining, isDelegateMode, delegateContext?.expiresAt],
+    () => (isDelegateMode ? formatDelegateTimeRemaining(delegateExpiryMs, delegateNowMs) : null),
+    [formatDelegateTimeRemaining, isDelegateMode, delegateExpiryMs, delegateNowMs],
   );
   const delegateHasSubmittedProposal = Boolean(isDelegateMode && (delegateContext?.delegateSharedAt || delegateContext?.delegateOrderId));
   const [searchQuery, setSearchQuery] = useState("");
@@ -2798,6 +2810,12 @@ function MainApp() {
   >(getInitialLandingMode);
   const [postLoginHold, setPostLoginHold] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
+
+  useEffect(() => {
+    if (!activeDelegationProposal) {
+      setProposalShippingAddress(null);
+    }
+  }, [activeDelegationProposal]);
 
   useEffect(() => {
     if (!canUseRetailPricing && checkoutPricingMode === "retail") {
@@ -2822,6 +2840,44 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!delegateToken) {
+      setDelegateExpiryMs(null);
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`);
+      const parsed = raw ? Number(raw) : Number.NaN;
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setDelegateExpiryMs(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  }, [delegateToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isDelegateMode || !delegateExpiryMs) {
+      return;
+    }
+    const tick = () => setDelegateNowMs(Date.now());
+    tick();
+
+    let intervalId: number | null = null;
+    const msToNextMinute = Math.max(250, 60000 - (Date.now() % 60000) + 25);
+    const timeoutId = window.setTimeout(() => {
+      tick();
+      intervalId = window.setInterval(tick, 60000);
+    }, msToNextMinute);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [delegateExpiryMs, isDelegateMode]);
+
+  useEffect(() => {
     if (!delegateToken) {
       setDelegateContext(null);
       setDelegateError(null);
@@ -2833,33 +2889,45 @@ function MainApp() {
     setDelegateLoading(true);
     setDelegateError(null);
 
-    void (async () => {
-      try {
-        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
-        if (cancelled) return;
-	        setDelegateContext({
-	          token: delegateToken,
-	          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
-	          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
-	          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
+	    void (async () => {
+	      try {
+	        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+	        if (cancelled) return;
+	        const expiresAt =
+	          typeof resolved?.expiresAt === "string"
+	            ? resolved.expiresAt
+	            : typeof resolved?.expires_at === "string"
+	              ? resolved.expires_at
+	              : null;
+	        if (expiresAt) {
+	          const expiresMs = new Date(expiresAt).getTime();
+	          if (Number.isFinite(expiresMs) && expiresMs > 0) {
+	            setDelegateExpiryMs(expiresMs);
+	            try {
+	              window.sessionStorage.setItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`, String(expiresMs));
+	            } catch {
+	              // ignore
+	            }
+	          }
+	        }
+		        setDelegateContext({
+		          token: delegateToken,
+		          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
+		          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
+		          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
 	          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
 	          createdAt:
 	            typeof resolved?.createdAt === "string"
 	              ? resolved.createdAt
-	              : typeof resolved?.created_at === "string"
-	                ? resolved.created_at
-	                : null,
-	          expiresAt:
-	            typeof resolved?.expiresAt === "string"
-	              ? resolved.expiresAt
-	              : typeof resolved?.expires_at === "string"
-	                ? resolved.expires_at
-	                : null,
-	          delegateSharedAt:
-	            typeof resolved?.delegateSharedAt === "string"
-	              ? resolved.delegateSharedAt
-	              : typeof resolved?.delegate_shared_at === "string"
-	                ? resolved.delegate_shared_at
+		              : typeof resolved?.created_at === "string"
+		                ? resolved.created_at
+		                : null,
+		          expiresAt,
+		          delegateSharedAt:
+		            typeof resolved?.delegateSharedAt === "string"
+		              ? resolved.delegateSharedAt
+		              : typeof resolved?.delegate_shared_at === "string"
+		                ? resolved.delegate_shared_at
 	                : null,
 	          delegateOrderId:
 	            typeof resolved?.delegateOrderId === "string"
@@ -2912,25 +2980,37 @@ function MainApp() {
     }
 
     let cancelled = false;
-    const poll = async () => {
-      try {
-        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
-        if (cancelled) return;
-        setDelegateContext((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            expiresAt:
-              typeof resolved?.expiresAt === 'string'
-                ? resolved.expiresAt
-                : typeof resolved?.expires_at === 'string'
-                  ? resolved.expires_at
-                  : prev.expiresAt ?? null,
-            delegateSharedAt:
-              typeof resolved?.delegateSharedAt === 'string'
-                ? resolved.delegateSharedAt
-                : typeof resolved?.delegate_shared_at === 'string'
-                  ? resolved.delegate_shared_at
+	    const poll = async () => {
+	      try {
+	        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+	        if (cancelled) return;
+	        setDelegateContext((prev) => {
+	          if (!prev) return prev;
+	          const nextExpiresAt =
+	            typeof resolved?.expiresAt === 'string'
+	              ? resolved.expiresAt
+	              : typeof resolved?.expires_at === 'string'
+	                ? resolved.expires_at
+	                : prev.expiresAt ?? null;
+	          if (nextExpiresAt) {
+	            const nextMs = new Date(nextExpiresAt).getTime();
+	            if (Number.isFinite(nextMs) && nextMs > 0) {
+	              setDelegateExpiryMs(nextMs);
+	              try {
+	                window.sessionStorage.setItem(`${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`, String(nextMs));
+	              } catch {
+	                // ignore
+	              }
+	            }
+	          }
+	          return {
+	            ...prev,
+	            expiresAt: nextExpiresAt,
+	            delegateSharedAt:
+	              typeof resolved?.delegateSharedAt === 'string'
+	                ? resolved.delegateSharedAt
+	                : typeof resolved?.delegate_shared_at === 'string'
+	                  ? resolved.delegate_shared_at
                   : prev.delegateSharedAt ?? null,
             delegateOrderId:
               typeof resolved?.delegateOrderId === 'string'
@@ -13244,13 +13324,42 @@ function MainApp() {
   }, []);
 
   const handleLoadDelegateProposalIntoCart = useCallback(
-    (payload: { token: string; items: any[]; delegateOrderId?: string | null; sharedAt?: string | null }) => {
+    (payload: {
+      token: string;
+      items: any[];
+      delegateOrderId?: string | null;
+      sharedAt?: string | null;
+      shippingAddress?: any | null;
+    }) => {
       if (!payload?.token || !Array.isArray(payload.items) || payload.items.length === 0) {
         toast.error('Proposal is missing items.');
         return;
       }
 
       void (async () => {
+        const normalizeField = (value: unknown) =>
+          typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim();
+
+        const nextShippingAddress = (() => {
+          const candidate = payload.shippingAddress;
+          if (!candidate || typeof candidate !== 'object') return null;
+          const addressLine1 = normalizeField((candidate as any).addressLine1);
+          const city = normalizeField((candidate as any).city);
+          const state = normalizeField((candidate as any).state);
+          const postalCode = normalizeField((candidate as any).postalCode);
+          const country = normalizeField((candidate as any).country) || 'US';
+          if (!addressLine1 || !city || !state || !postalCode) return null;
+          return {
+            name: normalizeField((candidate as any).name) || null,
+            addressLine1,
+            addressLine2: normalizeField((candidate as any).addressLine2) || null,
+            city,
+            state,
+            postalCode,
+            country,
+          } satisfies CheckoutShippingAddress;
+        })();
+
         const nextCart: CartItem[] = [];
         const addOrMergeCartItem = (
           product: Product,
@@ -13321,6 +13430,7 @@ function MainApp() {
           delegateOrderId: payload.delegateOrderId ?? null,
           sharedAt: payload.sharedAt ?? null,
         });
+        setProposalShippingAddress(nextShippingAddress);
         setCartItems(nextCart);
         setCheckoutOpen(true);
         toast.info(
@@ -20753,8 +20863,8 @@ function MainApp() {
 		                }}
 		              >
 		                {delegateTimeRemainingLabel && (
-		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4">
-		                    <div className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 flex items-center justify-center gap-2">
+		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
+		                    <div className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
 		                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
 		                      <span>
 		                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
@@ -20764,7 +20874,7 @@ function MainApp() {
 		                )}
 		                {delegateHasSubmittedProposal ? (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
-		                    <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-7 sm:p-9">
+		                    <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">
 		                      <div className="flex items-start justify-between gap-4">
 		                        <div className="min-w-0">
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
@@ -20814,11 +20924,6 @@ function MainApp() {
 		                            <span className="font-semibold">Order:</span> {delegateContext.proposalReviewOrderId}
 		                          </p>
 		                        )}
-		                        {delegateTimeRemainingLabel && (
-		                          <p className="pt-2 text-xs text-slate-600">
-		                            Session time remaining: <span className="font-semibold">{delegateTimeRemainingLabel}</span>
-		                          </p>
-		                        )}
 		                      </div>
 		                    </div>
 		                  </div>
@@ -20846,6 +20951,7 @@ function MainApp() {
 	        onClearCart={() => {
 	          setCartItems([]);
 	          setActiveDelegationProposal(null);
+	          setProposalShippingAddress(null);
 	        }}
 	        onPaymentSuccess={
           isDelegateMode
@@ -20878,7 +20984,9 @@ function MainApp() {
         physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
-        defaultShippingAddress={isDelegateMode ? null : checkoutDefaultShippingAddress}
+	        defaultShippingAddress={
+	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
+	        }
         availableCredits={isDelegateMode ? 0 : availableReferralCredits}
         pricingMode={checkoutPricingMode}
         onPricingModeChange={setCheckoutPricingMode}

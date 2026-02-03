@@ -252,6 +252,7 @@ interface HeaderProps {
     items: any[];
     delegateOrderId?: string | null;
     sharedAt?: string | null;
+    shippingAddress?: any | null;
   }) => void;
 }
 
@@ -3181,32 +3182,40 @@ export function Header({
       try {
         const api = await import('../services/api');
         const response = await api.delegationAPI.getLinkProposal(normalized);
-        const proposal = (response as any)?.proposal ?? null;
-        const cart = proposal?.delegateCart ?? proposal?.delegate_cart ?? null;
-        const items = Array.isArray(cart?.items) ? cart.items : [];
-        if (!items.length) {
-          throw new Error('No proposal items found for this link.');
-        }
-        if (typeof onLoadDelegateProposal === 'function') {
-          onLoadDelegateProposal({
-            token: normalized,
-            items,
-            delegateOrderId:
+	        const proposal = (response as any)?.proposal ?? null;
+	        const cart = proposal?.delegateCart ?? proposal?.delegate_cart ?? null;
+	        const shipping = proposal?.delegateShipping ?? proposal?.delegate_shipping ?? null;
+	        const items = Array.isArray(cart?.items) ? cart.items : [];
+	        if (!items.length) {
+	          throw new Error('No proposal items found for this link.');
+	        }
+	        const shippingAddress =
+	          shipping?.shippingAddress ??
+	          shipping?.shipping_address ??
+	          cart?.shippingAddress ??
+	          cart?.shipping_address ??
+	          null;
+	        if (typeof onLoadDelegateProposal === 'function') {
+	          onLoadDelegateProposal({
+	            token: normalized,
+	            items,
+	            delegateOrderId:
               typeof proposal?.delegateOrderId === 'string'
                 ? proposal.delegateOrderId
                 : typeof proposal?.delegate_order_id === 'string'
                   ? proposal.delegate_order_id
                   : null,
-            sharedAt:
-              typeof proposal?.delegateSharedAt === 'string'
-                ? proposal.delegateSharedAt
-                : typeof proposal?.delegate_shared_at === 'string'
-                  ? proposal.delegate_shared_at
-                  : null,
-          });
-        }
-        toast.success('Proposal loaded into your cart.');
-        setAccountModalOpen(false);
+	            sharedAt:
+	              typeof proposal?.delegateSharedAt === 'string'
+	                ? proposal.delegateSharedAt
+	                : typeof proposal?.delegate_shared_at === 'string'
+	                  ? proposal.delegate_shared_at
+	                  : null,
+	            shippingAddress,
+	          });
+	        }
+	        toast.success('Proposal loaded into your cart.');
+	        setAccountModalOpen(false);
       } catch (error: any) {
         toast.error(
           typeof error?.message === 'string' && error.message.trim()

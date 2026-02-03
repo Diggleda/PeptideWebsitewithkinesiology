@@ -8,7 +8,7 @@ import "react-day-picker/dist/style.css";
 createRoot(document.getElementById("root")!).render(
   <>
     <App />
-    <Toaster richColors position="top-center" />
+    <Toaster richColors position="top-center" expand visibleToasts={10} />
   </>
 );
   
