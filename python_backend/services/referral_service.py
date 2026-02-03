@@ -638,7 +638,11 @@ def create_manual_prospect(data: Dict) -> Dict:
     if not sales_rep_id:
         raise _service_error("SALES_REP_REQUIRED", 400)
 
-    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+    resolved_sales_rep_id = (
+        _resolve_sales_rep_id(sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_id))
+        or sales_rep_id
+    )
 
     contact_name = _sanitize_text(data.get("name"))
     if not contact_name:
@@ -736,17 +740,94 @@ def delete_manual_prospect(referral_id: str, sales_rep_id: str) -> None:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
     if not str(referral_id or "").startswith("manual:"):
         raise _service_error("NOT_MANUAL_PROSPECT", 400)
-    resolved_sales_rep_id = _resolve_user_id(sales_rep_id) or sales_rep_id
+    resolved_sales_rep_id = (
+        _resolve_sales_rep_id(sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_id))
+        or _resolve_user_id(sales_rep_id)
+        or sales_rep_id
+    )
     prospect = sales_prospect_repository.find_by_id(referral_id)
     if not prospect:
         raise _service_error("REFERRAL_NOT_FOUND", 404)
     record_sales_rep_id = prospect.get("salesRepId")
-    normalized_record = _resolve_user_id(record_sales_rep_id) or record_sales_rep_id
+    normalized_record = (
+        _resolve_sales_rep_id(record_sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(record_sales_rep_id))
+        or _resolve_user_id(record_sales_rep_id)
+        or record_sales_rep_id
+    )
     if str(record_sales_rep_id or "").strip() != str(resolved_sales_rep_id or "").strip() and str(normalized_record or "").strip() != str(resolved_sales_rep_id or "").strip():
         raise _service_error("REFERRAL_NOT_FOUND", 404)
     if not prospect.get("isManual"):
         raise _service_error("NOT_MANUAL_PROSPECT", 400)
     sales_prospect_repository.delete(referral_id)
+
+def _resolve_sales_rep_id(identifier: Optional[str]) -> Optional[str]:
+    """
+    Resolve an identifier to a canonical `sales_reps.id` when possible.
+
+    - Accepts sales_reps.id directly.
+    - Maps legacy ids via `sales_reps.legacyUserId`.
+    - Maps sales-rep users via `users.salesRepId` or email lookup.
+    """
+    if not identifier:
+        return None
+    candidate = str(identifier or "").strip()
+    if not candidate:
+        return None
+
+    try:
+        rep = sales_rep_repository.find_by_id(candidate)
+    except Exception:
+        rep = None
+    if rep and rep.get("id") is not None:
+        rid = str(rep.get("id") or "").strip()
+        return rid or None
+
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    for record in reps:
+        if not isinstance(record, dict):
+            continue
+        legacy = str(record.get("legacyUserId") or record.get("legacy_user_id") or "").strip()
+        if legacy and legacy == candidate:
+            rid = str(record.get("id") or "").strip()
+            return rid or None
+
+    try:
+        user = user_repository.find_by_id(candidate)
+    except Exception:
+        user = None
+    if user and isinstance(user, dict):
+        role = (user.get("role") or "").lower()
+        if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+            rep_id = str(user.get("salesRepId") or "").strip()
+            if rep_id:
+                return rep_id
+        email = _sanitize_email(user.get("email"))
+        if email:
+            try:
+                rep = sales_rep_repository.find_by_email(email)
+            except Exception:
+                rep = None
+            if rep and rep.get("id") is not None:
+                rid = str(rep.get("id") or "").strip()
+                return rid or None
+
+    if "@" in candidate:
+        email = _sanitize_email(candidate)
+        if email:
+            try:
+                rep = sales_rep_repository.find_by_email(email)
+            except Exception:
+                rep = None
+            if rep and rep.get("id") is not None:
+                rid = str(rep.get("id") or "").strip()
+                return rid or None
+
+    return None
 
 
 def _resolve_user_id(identifier: Optional[str]) -> Optional[str]:
@@ -1047,7 +1128,12 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     The sales_prospects table is the authoritative source for which leads belong in the sales-rep pipeline.
     The referrals table is used only to enrich referral-derived leads (e.g. referrerDoctor details, creditIssuedAt).
     """
-    sales_rep_id = _resolve_user_id(sales_rep_identifier) or sales_rep_identifier
+    sales_rep_id = (
+        _resolve_sales_rep_id(sales_rep_identifier)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_identifier))
+        or _resolve_user_id(sales_rep_identifier)
+        or sales_rep_identifier
+    )
     if not sales_rep_id:
         return []
 
@@ -1593,7 +1679,12 @@ def _update_manual_prospect(prospect_id: str, sales_rep_id: str, updates: Dict) 
 
 
 def get_sales_prospect_for_sales_rep(sales_rep_id: str, identifier: str) -> Optional[Dict]:
-    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    rep_id = str(
+        _resolve_sales_rep_id(sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_id))
+        or _resolve_user_id(sales_rep_id)
+        or sales_rep_id
+    ).strip()
     candidate = str(identifier or "").strip()
     if not rep_id or not candidate:
         return None
@@ -1624,7 +1715,12 @@ def upsert_sales_prospect_for_sales_rep(
     if not sales_rep_id or not identifier:
         raise _service_error("INVALID_PAYLOAD", 400)
 
-    rep_id = str(_resolve_user_id(sales_rep_id) or sales_rep_id).strip()
+    rep_id = str(
+        _resolve_sales_rep_id(sales_rep_id)
+        or _resolve_sales_rep_id(_resolve_user_id(sales_rep_id))
+        or _resolve_user_id(sales_rep_id)
+        or sales_rep_id
+    ).strip()
     candidate = str(identifier or "").strip()
     existing = get_sales_prospect_for_sales_rep(rep_id, candidate)
 

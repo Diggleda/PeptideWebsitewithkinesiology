@@ -354,9 +354,10 @@ def admin_create_manual_prospect():
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
+        sales_rep_id = user.get("salesRepId") or user.get("id")
         referral = referral_service.create_manual_prospect(
             {
-                "salesRepId": user["id"],
+                "salesRepId": sales_rep_id,
                 "name": payload.get("name"),
                 "email": payload.get("email"),
                 "phone": payload.get("phone"),
@@ -409,7 +410,8 @@ def admin_update_referral(referral_id: str):
             )
             if key in payload
         }
-        referral = referral_service.update_referral_for_sales_rep(referral_id, user["id"], updates)
+        sales_rep_id = user.get("salesRepId") or user.get("id")
+        referral = referral_service.update_referral_for_sales_rep(referral_id, str(sales_rep_id), updates)
         return {
             "referral": referral,
             "statuses": referral_service.get_referral_status_choices(),
@@ -425,7 +427,8 @@ def admin_get_sales_prospect(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        prospect = referral_service.get_sales_prospect_for_sales_rep(user["id"], identifier)
+        sales_rep_id = user.get("salesRepId") or user.get("id")
+        prospect = referral_service.get_sales_prospect_for_sales_rep(str(sales_rep_id), identifier)
         return {"prospect": prospect}
 
     return handle_action(action)
@@ -440,6 +443,7 @@ def admin_upsert_sales_prospect(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
+        sales_rep_id = user.get("salesRepId") or user.get("id")
         office_address_updates = {
             key: payload.get(key)
             for key in (
@@ -453,7 +457,7 @@ def admin_upsert_sales_prospect(identifier: str):
             if key in payload
         }
         prospect = referral_service.upsert_sales_prospect_for_sales_rep(
-            sales_rep_id=user["id"],
+            sales_rep_id=str(sales_rep_id),
             identifier=identifier,
             status=payload.get("status") if "status" in payload else None,
             notes=payload.get("notes") if "notes" in payload else None,
