@@ -859,7 +859,7 @@ def patch_user_profile(user_id: str):
             return {"user": auth_service.update_profile(target_id, payload)}
 
         if _is_sales_rep_role(role):
-            # Sales reps may only edit phone for their assigned doctors.
+            # Sales reps may edit limited profile fields (phone + office address) for their assigned doctors.
             target = user_repository.find_by_id(target_id) or {}
             target_role = _normalize_role((target or {}).get("role"))
             if target_role not in ("doctor", "test_doctor"):
@@ -872,8 +872,17 @@ def patch_user_profile(user_id: str):
                 err = RuntimeError("Not authorized to edit this user")
                 setattr(err, "status", 403)
                 raise err
-            phone = payload.get("phone")
-            return {"user": auth_service.update_profile(target_id, {"phone": phone})}
+            allowed_keys = (
+                "phone",
+                "officeAddressLine1",
+                "officeAddressLine2",
+                "officeCity",
+                "officeState",
+                "officePostalCode",
+                "officeCountry",
+            )
+            patch = {key: payload.get(key) for key in allowed_keys if key in payload}
+            return {"user": auth_service.update_profile(target_id, patch)}
 
         err = RuntimeError("Admin access required")
         setattr(err, "status", 403)

@@ -5609,6 +5609,8 @@ function MainApp() {
   }, []);
   const [salesDoctorPhoneDraft, setSalesDoctorPhoneDraft] = useState<string>("");
   const [salesDoctorPhoneSaving, setSalesDoctorPhoneSaving] = useState(false);
+  const [salesDoctorAddressDraft, setSalesDoctorAddressDraft] = useState<string>("");
+  const [salesDoctorAddressSaving, setSalesDoctorAddressSaving] = useState(false);
 	
   useEffect(() => {
     if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
@@ -5651,6 +5653,14 @@ function MainApp() {
     }
     setSalesDoctorPhoneDraft(salesDoctorDetail.phone || "");
   }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.phone]);
+
+  useEffect(() => {
+    if (!salesDoctorDetail?.doctorId) {
+      setSalesDoctorAddressDraft("");
+      return;
+    }
+    setSalesDoctorAddressDraft(salesDoctorDetail.address || "");
+  }, [salesDoctorDetail?.address, salesDoctorDetail?.doctorId]);
 
 	  useEffect(() => {
 	    return () => {
@@ -5744,6 +5754,94 @@ function MainApp() {
     salesDoctorDetail?.doctorId,
     salesDoctorDetail?.phone,
     salesDoctorPhoneDraft,
+    settingsAPI,
+  ]);
+
+  const saveSalesDoctorAddress = useCallback(async () => {
+    if (!salesDoctorDetail?.doctorId) {
+      return;
+    }
+    const trimmed = salesDoctorAddressDraft.trim();
+    const existing = (salesDoctorDetail.address || "").trim();
+    if (trimmed === existing) {
+      return;
+    }
+    setSalesDoctorAddressSaving(true);
+    try {
+      const normalizedLines = salesDoctorAddressDraft
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      const rawCountry = normalizedLines.length > 0 ? normalizedLines[normalizedLines.length - 1] : "";
+      const countryLooksLikeUs =
+        Boolean(rawCountry) &&
+        (/^(us|usa|united states|united states of america)$/i.test(rawCountry) || rawCountry.toUpperCase() === "US");
+
+      const country = countryLooksLikeUs ? "US" : null;
+      const withoutCountry =
+        country ? normalizedLines.slice(0, Math.max(0, normalizedLines.length - 1)) : normalizedLines;
+
+      const cityStateZipIndex = withoutCountry.findIndex((line) => line.includes(","));
+      const cityStateZipLine = cityStateZipIndex >= 0 ? withoutCountry[cityStateZipIndex] : null;
+
+      const parseCityStatePostal = (value: string | null) => {
+        if (!value) return { city: null, state: null, postalCode: null };
+        const parts = value.split(",").map((p) => p.trim()).filter(Boolean);
+        if (parts.length === 0) return { city: null, state: null, postalCode: null };
+        const city = parts[0] || null;
+        const rest = parts.slice(1).join(" ").trim();
+        const tokens = rest.split(/\s+/).filter(Boolean);
+        const state = tokens.length > 0 ? tokens[0] : null;
+        const postalCandidate =
+          tokens.length > 1 ? tokens[tokens.length - 1] : parts.length > 2 ? parts[parts.length - 1] : null;
+        const postalCode = postalCandidate || null;
+        return { city, state, postalCode };
+      };
+
+      const { city, state, postalCode } = parseCityStatePostal(cityStateZipLine);
+      const withoutCityStateZip =
+        cityStateZipIndex >= 0 ? withoutCountry.filter((_, idx) => idx !== cityStateZipIndex) : withoutCountry;
+
+      const officeAddressLine1 = withoutCityStateZip.length > 0 ? withoutCityStateZip[0] : null;
+      const officeAddressLine2 =
+        withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
+
+      await settingsAPI.updateUserProfile(salesDoctorDetail.doctorId, {
+        officeAddressLine1: officeAddressLine1 || null,
+        officeAddressLine2: officeAddressLine2 || null,
+        officeCity: city || null,
+        officeState: state || null,
+        officePostalCode: postalCode || null,
+        officeCountry: country || null,
+      });
+
+      const nextAddressParts = [
+        officeAddressLine1,
+        officeAddressLine2,
+        [city, state, postalCode].filter(Boolean).join(", "),
+        country,
+      ].filter((part) => typeof part === "string" && part.trim().length > 0);
+      const nextAddress = nextAddressParts.length > 0 ? nextAddressParts.join("\n") : null;
+
+      setSalesDoctorDetail((current) =>
+        current ? { ...current, address: nextAddress } : current,
+      );
+      toast.success("Address updated.");
+    } catch (error: any) {
+      console.warn("[SalesDoctor] Failed to update address", error);
+      toast.error(
+        typeof error?.message === "string" && error.message
+          ? error.message
+          : "Unable to update address right now.",
+      );
+    } finally {
+      setSalesDoctorAddressSaving(false);
+    }
+  }, [
+    salesDoctorAddressDraft,
+    salesDoctorDetail?.address,
+    salesDoctorDetail?.doctorId,
     settingsAPI,
   ]);
   const mergeSalesOrderDetail = useCallback(
@@ -7875,29 +7973,6 @@ function MainApp() {
 	    refreshAdminTaxesByState,
 	    refreshSalesBySalesRepSummary,
     user?.id,
-    user?.role,
-  ]);
-
-  useEffect(() => {
-    if (!user || !isAdmin(user.role)) return;
-    if (!salesDoctorDetail?.doctorId) return;
-    const role = normalizeRole(salesDoctorDetail.role || "");
-    if (role !== "admin") return;
-    const targetId = String(salesDoctorDetail.doctorId || "");
-    if (!targetId) return;
-    const hasCommissionRow = adminCommissionRows.some(
-      (row) => String(row.id || "") === targetId,
-    );
-    if (hasCommissionRow) return;
-    if (adminProductsCommissionLoading) return;
-    void refreshAdminProductsCommission();
-  }, [
-    adminCommissionRows,
-    adminProductsCommissionLoading,
-    refreshAdminProductsCommission,
-    salesDoctorDetail?.doctorId,
-    salesDoctorDetail?.role,
-    user,
     user?.role,
   ]);
 
@@ -15367,7 +15442,7 @@ function MainApp() {
 			                      </p>
 			                    </div>
 				                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-				                      <div className="flex items-center gap-2 min-w-0">
+				                      <div className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
 				                        <Popover.Root
 				                          open={adminDashboardPeriodPickerOpen}
 				                          onOpenChange={setAdminDashboardPeriodPickerOpen}
@@ -15437,8 +15512,7 @@ function MainApp() {
 				                        <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
 				                          ({adminDashboardPeriodLabel})
 				                        </span>
-				                      </div>
-				                      <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+				                      
 				                        <Button
 				                          type="button"
 				                          variant="outline"
@@ -15493,9 +15567,9 @@ function MainApp() {
 		                                : "—"}
 		                            </span>
 		                          </span>
-		                        </span>
-		                      </div>
-		                    </div>
+				                        </span>
+				                      </div>
+				                    </div>
 		                  </div>
 
 		                  {/* Totals shown inline above list below */}
@@ -16642,12 +16716,12 @@ function MainApp() {
 				                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
 				                  </p>
 				                </div>
-					                <div className="w-full mt-3 mb-4 flex flex-wrap items-center gap-2 min-w-0">
-					                  <div className="flex items-center gap-2 min-w-0 flex-1">
-					                    <Popover.Root
-					                      open={adminDashboardPeriodPickerOpen}
-					                      onOpenChange={setAdminDashboardPeriodPickerOpen}
-					                    >
+						                <div className="w-full mt-3 mb-4 flex flex-wrap items-center justify-end gap-2 min-w-0">
+						                  <div className="flex items-center gap-2 min-w-0">
+						                    <Popover.Root
+						                      open={adminDashboardPeriodPickerOpen}
+						                      onOpenChange={setAdminDashboardPeriodPickerOpen}
+						                    >
 					                      <Popover.Trigger asChild>
 						                        <Button
 						                          type="button"
@@ -16709,19 +16783,19 @@ function MainApp() {
 					                        </Popover.Content>
 					                      </Popover.Portal>
 					                    </Popover.Root>
-					                    <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-					                      ({adminDashboardPeriodLabel})
-					                    </span>
-					                  </div>
-					                  <Button
-					                    type="button"
-					                    variant="outline"
-					                    size="sm"
-					                    className="gap-2 justify-center px-3 flex-[0_1_220px] max-w-[220px] ml-auto"
-					                    onClick={applyAdminDashboardPeriod}
-					                    disabled={adminDashboardRefreshing}
-					                    aria-busy={adminDashboardRefreshing}
-					                  >
+						                    <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+						                      ({adminDashboardPeriodLabel})
+						                    </span>
+						                  </div>
+						                  <Button
+						                    type="button"
+						                    variant="outline"
+						                    size="sm"
+						                    className="gap-2 justify-center px-3 flex-[0_1_220px] max-w-[220px]"
+						                    onClick={applyAdminDashboardPeriod}
+						                    disabled={adminDashboardRefreshing}
+						                    aria-busy={adminDashboardRefreshing}
+						                  >
 					                    <RefreshCw
 					                      className={`h-4 w-4 ${adminDashboardRefreshing ? "animate-spin" : ""}`}
 					                      aria-hidden="true"
@@ -18148,10 +18222,10 @@ function MainApp() {
 	                            >
 	                              <div className="lead-list-meta">
 	                                <div className="lead-list-name min-w-0">
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-start gap-1 min-w-0 text-left"
-                                    onClick={() => {
+	                                  <button
+	                                    type="button"
+	                                    className="inline-flex items-start gap-1 min-w-0 text-left"
+	                                    onClick={() => {
 	                                      const doctorId =
 	                                        (record as any).referredContactAccountId ||
 	                                        (record as any).referredContactId ||
@@ -18162,21 +18236,31 @@ function MainApp() {
 	                                        record.referredContactEmail ||
 	                                        (leadAccountProfile?.email ?? null) ||
 	                                        null;
-                                    openSalesDoctorDetail(
-                                      {
-                                        doctorId: String(doctorId || record.id),
-                                        referralId: kind === "referral" ? String(record.id) : null,
-                                        doctorName: leadDisplayName,
-                                        doctorEmail,
-                                        doctorAvatar:
-                                          leadAccountProfile?.profileImageUrl ?? null,
-                                        doctorPhone: record.referredContactPhone || null,
-                                        doctorAddress: null,
-                                        orders: [],
-                                        total: 0,
-                                      },
-                                      "doctor",
-                                    );
+	                                      const ownerSalesRepId =
+	                                        (record as any).ownerSalesRepId ||
+	                                        (record as any).owner_sales_rep_id ||
+	                                        (record as any).salesRepId ||
+	                                        (record as any).sales_rep_id ||
+	                                        (record as any).assignedSalesRepId ||
+	                                        (record as any).assigned_sales_rep_id ||
+	                                        (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
+	                                        null;
+	                                    openSalesDoctorDetail(
+	                                      {
+	                                        doctorId: String(doctorId || record.id),
+	                                        referralId: kind === "referral" ? String(record.id) : null,
+	                                        doctorName: leadDisplayName,
+	                                        doctorEmail,
+	                                        doctorAvatar:
+	                                          leadAccountProfile?.profileImageUrl ?? null,
+	                                        doctorPhone: record.referredContactPhone || null,
+	                                        doctorAddress: null,
+	                                        ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+	                                        orders: [],
+	                                        total: 0,
+	                                      },
+	                                      "doctor",
+	                                    );
 	                                    }}
 	                                    onKeyDown={(e) => {
 	                                      if (e.key === "Enter" || e.key === " ") {
@@ -18191,21 +18275,31 @@ function MainApp() {
 	                                          record.referredContactEmail ||
 	                                          (leadAccountProfile?.email ?? null) ||
 	                                          null;
-                                        openSalesDoctorDetail(
-                                          {
-                                            doctorId: String(doctorId || record.id),
-                                            referralId: kind === "referral" ? String(record.id) : null,
-                                            doctorName: leadDisplayName,
-                                            doctorEmail,
-                                            doctorAvatar:
-                                              leadAccountProfile?.profileImageUrl ?? null,
-                                            doctorPhone: record.referredContactPhone || null,
-                                            doctorAddress: null,
-                                            orders: [],
-                                            total: 0,
-                                          },
-                                          "doctor",
-                                        );
+	                                        const ownerSalesRepId =
+	                                          (record as any).ownerSalesRepId ||
+	                                          (record as any).owner_sales_rep_id ||
+	                                          (record as any).salesRepId ||
+	                                          (record as any).sales_rep_id ||
+	                                          (record as any).assignedSalesRepId ||
+	                                          (record as any).assigned_sales_rep_id ||
+	                                          (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
+	                                          null;
+	                                        openSalesDoctorDetail(
+	                                          {
+	                                            doctorId: String(doctorId || record.id),
+	                                            referralId: kind === "referral" ? String(record.id) : null,
+	                                            doctorName: leadDisplayName,
+	                                            doctorEmail,
+	                                            doctorAvatar:
+	                                              leadAccountProfile?.profileImageUrl ?? null,
+	                                            doctorPhone: record.referredContactPhone || null,
+	                                            doctorAddress: null,
+	                                            ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+	                                            orders: [],
+	                                            total: 0,
+	                                          },
+	                                          "doctor",
+	                                        );
 	                                      }
 	                                    }}
 	                                    aria-label={`View ${leadDisplayName} details`}
@@ -21904,9 +21998,49 @@ function MainApp() {
                   <p className="text-sm font-semibold text-slate-700">
                     Address
                   </p>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
-                    {salesDoctorDetail.address || "Unavailable"}
-                  </div>
+                  {(() => {
+                    const canEditAddress = Boolean(
+                      salesDoctorDetail &&
+                        !String(salesDoctorDetail.doctorId || "").startsWith("contact_form:") &&
+                        (isAdmin(user?.role) ||
+                          isSalesLead(user?.role) ||
+                          (isRep(user?.role) &&
+                            userSalesRepId &&
+                            salesDoctorDetail.ownerSalesRepId &&
+                            userSalesRepId === salesDoctorDetail.ownerSalesRepId)),
+                    );
+                    const trimmedDraft = salesDoctorAddressDraft.trim();
+                    const existingAddress = (salesDoctorDetail.address || "").trim();
+                    const hasChanges = trimmedDraft !== existingAddress;
+                    if (!canEditAddress) {
+                      return (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 whitespace-pre-line min-h-[72px]">
+                          {salesDoctorDetail.address || "Unavailable"}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 space-y-2">
+                        <Textarea
+                          value={salesDoctorAddressDraft}
+                          onChange={(event) => setSalesDoctorAddressDraft(event.target.value)}
+                          rows={4}
+                          placeholder="Address line 1&#10;Address line 2&#10;City, State ZIP&#10;Country"
+                          className="block w-full rounded-md border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100 whitespace-pre-line"
+                        />
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          className="self-start whitespace-nowrap"
+                          onClick={() => void saveSalesDoctorAddress()}
+                          disabled={salesDoctorAddressSaving || !hasChanges}
+                        >
+                          {salesDoctorAddressSaving ? "Saving…" : "Save"}
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

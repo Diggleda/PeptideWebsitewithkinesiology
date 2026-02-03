@@ -40,12 +40,13 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-[9999] backdrop-blur-xl duration-[55ms] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+      // Avoid keyframe animations here: backdrop-filter + opacity keyframes can flicker on Safari/WebKit.
+      "fixed inset-0 z-[9999] bg-[rgba(4,14,21,0.55)] backdrop-blur-xl opacity-0 transition-opacity duration-[80ms] data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=closed]:pointer-events-none",
       className,
     )}
     style={{
-      backdropFilter: 'blur(4px) saturate(1.2)',
-      WebkitBackdropFilter: 'blur(4px) saturate(1.2)',
+      backdropFilter: 'blur(16px) saturate(1.4)',
+      WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
       willChange: 'opacity',
       ...style,
     }}

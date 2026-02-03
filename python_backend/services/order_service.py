@@ -3509,20 +3509,22 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             billing_email = _resolve_order_email(local_order)
             doctor = None
-            if billing_email:
-                doctor = doctors_by_email.get(billing_email)
+            order_user_email = _norm_email(order_user.get("email") if isinstance(order_user, dict) else None)
+            attribution_email = billing_email or order_user_email
+            if attribution_email:
+                doctor = doctors_by_email.get(attribution_email)
             if doctor is None and isinstance(order_user, dict) and order_role in ("doctor", "test_doctor"):
                 doctor = order_user
 
-            force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
+            force_house_contact_form = bool(attribution_email and attribution_email in contact_form_emails)
             contact_form_origin = force_house_contact_form
             if doctor and not contact_form_origin:
                 lead_type = str(doctor.get("leadType") or "").strip().lower()
                 if lead_type and ("contact" in lead_type or lead_type == "house"):
                     contact_form_origin = True
-            if billing_email and not contact_form_origin:
+            if attribution_email and not contact_form_origin:
                 try:
-                    prospect = sales_prospect_repository.find_by_contact_email(billing_email)
+                    prospect = sales_prospect_repository.find_by_contact_email(attribution_email)
                     if prospect:
                         prospect_contact_form_id = str(prospect.get("contactFormId") or "").strip()
                         prospect_identifier = str(prospect.get("id") or "")
@@ -3530,7 +3532,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                             contact_form_origin = True
                 except Exception:
                     contact_form_origin = False
-            if billing_email and not contact_form_origin and doctor and doctor.get("id"):
+            if attribution_email and not contact_form_origin and doctor and doctor.get("id"):
                 try:
                     doctor_prospect = sales_prospect_repository.find_contact_form_by_doctor_id(str(doctor.get("id")))
                     if doctor_prospect:
@@ -3561,10 +3563,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             recipient_id = ""
             if order_user_id and (order_role in rep_like_roles or order_role == "admin"):
                 recipient_id = order_user_id
-            elif billing_email and billing_email in user_rep_id_by_email:
-                recipient_id = user_rep_id_by_email[billing_email]
-            elif billing_email and billing_email in admin_id_by_email:
-                recipient_id = admin_id_by_email[billing_email]
+            elif attribution_email and attribution_email in user_rep_id_by_email:
+                recipient_id = user_rep_id_by_email[attribution_email]
+            elif attribution_email and attribution_email in admin_id_by_email:
+                recipient_id = admin_id_by_email[attribution_email]
 
             if not recipient_id and contact_form_origin:
                 recipient_id = "__house__"
