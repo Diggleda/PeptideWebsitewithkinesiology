@@ -121,3 +121,44 @@ def update_config():
 def resolve_token():
     token = (request.args.get("token") or "").strip()
     return handle_action(lambda: {"success": True, **delegation_service.resolve_delegate_token(token)})
+
+
+@blueprint.get("/links/<token>/proposal")
+@require_auth
+def get_link_proposal(token: str):
+    def action():
+        actor = getattr(g, "current_user", None) or {}
+        role = _normalize_role(actor.get("role"))
+        _require_doctor_access(role)
+        doctor_id = _resolve_target_doctor_id(role)
+        proposal = delegation_service.get_link_proposal(doctor_id, token)
+        return {"success": True, "proposal": proposal}
+
+    return handle_action(action)
+
+
+@blueprint.post("/links/<token>/proposal/review")
+@require_auth
+def review_link_proposal(token: str):
+    payload = request.get_json(force=True, silent=True) or {}
+
+    def action():
+        actor = getattr(g, "current_user", None) or {}
+        role = _normalize_role(actor.get("role"))
+        _require_doctor_access(role)
+        doctor_id = _resolve_target_doctor_id(role)
+        status = payload.get("status") or payload.get("proposalStatus") or None
+        order_id = payload.get("orderId") or payload.get("order_id") or payload.get("doctorOrderId") or None
+        if not isinstance(status, str) or not status.strip():
+            err = ValueError("status is required")
+            setattr(err, "status", 400)
+            raise err
+        result = delegation_service.review_link_proposal(
+            doctor_id,
+            token,
+            status=str(status),
+            order_id=str(order_id).strip() if isinstance(order_id, str) and str(order_id).strip() else None,
+        )
+        return {"success": True, **result}
+
+    return handle_action(action)

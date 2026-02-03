@@ -47,10 +47,13 @@ import {
 				  Package,
 				  Upload,
 			  Download,
-			  NotebookPen,
-			  CheckSquare,
-			  Trash2,
-			} from "lucide-react";
+				  NotebookPen,
+				  CheckSquare,
+				  Trash2,
+				  Clock,
+				  CheckCircle2,
+				  XCircle,
+				} from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type DateRange } from "react-day-picker";
 import {
@@ -81,6 +84,7 @@ import {
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
 import { LegalFooter } from "./components/LegalFooter";
+import { PublicSite, isPublicSitePath } from "./components/PublicPages";
 import { AuthActionResult } from "./types/auth";
 import {
   DoctorCreditSummary,
@@ -2714,7 +2718,7 @@ const LazyCatalogProductCard = ({
 
 // (Removed eager variation prefetching for faster catalog loads.)
 
-export default function App() {
+function MainApp() {
   const BROWSER_VARIATION_CACHE_ENABLED =
     String((import.meta as any).env?.VITE_BROWSER_VARIATION_CACHE || "")
       .toLowerCase()
@@ -2723,6 +2727,12 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [activeDelegationProposal, setActiveDelegationProposal] = useState<{
+    token: string;
+    signature: string;
+    delegateOrderId?: string | null;
+    sharedAt?: string | null;
+  } | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
   const [delegateToken, setDelegateToken] = useState<string | null>(() => {
@@ -2736,6 +2746,13 @@ export default function App() {
     doctorName: string;
     markupPercent: number;
     doctorLogoUrl?: string | null;
+    createdAt?: string | null;
+    expiresAt?: string | null;
+    delegateSharedAt?: string | null;
+    delegateOrderId?: string | null;
+    proposalStatus?: string | null;
+    proposalReviewedAt?: string | null;
+    proposalReviewOrderId?: string | null;
   } | null>(null);
   const [delegateLoading, setDelegateLoading] = useState(false);
   const [delegateError, setDelegateError] = useState<string | null>(null);
@@ -2749,6 +2766,23 @@ export default function App() {
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
     return stripped || "Doctor";
   }, [delegateContext?.doctorName]);
+  const formatDelegateTimeRemaining = useCallback((expiresAt: string | null | undefined) => {
+    if (!expiresAt) return null;
+    const expiry = new Date(expiresAt);
+    if (Number.isNaN(expiry.getTime())) return null;
+    const diffMs = expiry.getTime() - Date.now();
+    if (diffMs <= 0) return 'Expired';
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (hours <= 0) return `${minutes}m remaining`;
+    return `${hours}h ${minutes}m remaining`;
+  }, []);
+  const delegateTimeRemainingLabel = useMemo(
+    () => (isDelegateMode ? formatDelegateTimeRemaining(delegateContext?.expiresAt) : null),
+    [formatDelegateTimeRemaining, isDelegateMode, delegateContext?.expiresAt],
+  );
+  const delegateHasSubmittedProposal = Boolean(isDelegateMode && (delegateContext?.delegateSharedAt || delegateContext?.delegateOrderId));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
@@ -2803,13 +2837,55 @@ export default function App() {
       try {
         const resolved = (await delegationAPI.resolve(delegateToken)) as any;
         if (cancelled) return;
-        setDelegateContext({
-          token: delegateToken,
-          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
-          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
-          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
-          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
-        });
+	        setDelegateContext({
+	          token: delegateToken,
+	          doctorId: String(resolved?.doctorId || resolved?.doctor_id || ""),
+	          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
+	          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
+	          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
+	          createdAt:
+	            typeof resolved?.createdAt === "string"
+	              ? resolved.createdAt
+	              : typeof resolved?.created_at === "string"
+	                ? resolved.created_at
+	                : null,
+	          expiresAt:
+	            typeof resolved?.expiresAt === "string"
+	              ? resolved.expiresAt
+	              : typeof resolved?.expires_at === "string"
+	                ? resolved.expires_at
+	                : null,
+	          delegateSharedAt:
+	            typeof resolved?.delegateSharedAt === "string"
+	              ? resolved.delegateSharedAt
+	              : typeof resolved?.delegate_shared_at === "string"
+	                ? resolved.delegate_shared_at
+	                : null,
+	          delegateOrderId:
+	            typeof resolved?.delegateOrderId === "string"
+	              ? resolved.delegateOrderId
+	              : typeof resolved?.delegate_order_id === "string"
+	                ? resolved.delegate_order_id
+	                : null,
+	          proposalStatus:
+	            typeof resolved?.proposalStatus === "string"
+	              ? resolved.proposalStatus
+	              : typeof resolved?.proposal_status === "string"
+	                ? resolved.proposal_status
+	                : null,
+	          proposalReviewedAt:
+	            typeof resolved?.proposalReviewedAt === "string"
+	              ? resolved.proposalReviewedAt
+	              : typeof resolved?.proposal_reviewed_at === "string"
+	                ? resolved.proposal_reviewed_at
+	                : null,
+	          proposalReviewOrderId:
+	            typeof resolved?.proposalReviewOrderId === "string"
+	              ? resolved.proposalReviewOrderId
+	              : typeof resolved?.proposal_review_order_id === "string"
+	                ? resolved.proposal_review_order_id
+	                : null,
+	        });
       } catch (error: any) {
         if (cancelled) return;
         const message =
@@ -2829,6 +2905,71 @@ export default function App() {
       cancelled = true;
     };
   }, [delegateToken]);
+
+  useEffect(() => {
+    if (!delegateToken || delegateError || !delegateHasSubmittedProposal) {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
+        if (cancelled) return;
+        setDelegateContext((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            expiresAt:
+              typeof resolved?.expiresAt === 'string'
+                ? resolved.expiresAt
+                : typeof resolved?.expires_at === 'string'
+                  ? resolved.expires_at
+                  : prev.expiresAt ?? null,
+            delegateSharedAt:
+              typeof resolved?.delegateSharedAt === 'string'
+                ? resolved.delegateSharedAt
+                : typeof resolved?.delegate_shared_at === 'string'
+                  ? resolved.delegate_shared_at
+                  : prev.delegateSharedAt ?? null,
+            delegateOrderId:
+              typeof resolved?.delegateOrderId === 'string'
+                ? resolved.delegateOrderId
+                : typeof resolved?.delegate_order_id === 'string'
+                  ? resolved.delegate_order_id
+                  : prev.delegateOrderId ?? null,
+            proposalStatus:
+              typeof resolved?.proposalStatus === 'string'
+                ? resolved.proposalStatus
+                : typeof resolved?.proposal_status === 'string'
+                  ? resolved.proposal_status
+                  : prev.proposalStatus ?? null,
+            proposalReviewedAt:
+              typeof resolved?.proposalReviewedAt === 'string'
+                ? resolved.proposalReviewedAt
+                : typeof resolved?.proposal_reviewed_at === 'string'
+                  ? resolved.proposal_reviewed_at
+                  : prev.proposalReviewedAt ?? null,
+            proposalReviewOrderId:
+              typeof resolved?.proposalReviewOrderId === 'string'
+                ? resolved.proposalReviewOrderId
+                : typeof resolved?.proposal_review_order_id === 'string'
+                  ? resolved.proposal_review_order_id
+                  : prev.proposalReviewOrderId ?? null,
+          };
+        });
+      } catch {
+        // ignore polling failures
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [delegateError, delegateHasSubmittedProposal, delegateToken]);
 
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
@@ -13081,6 +13222,117 @@ export default function App() {
     })();
   };
 
+  const buildDelegationCartSignature = useCallback((lines: any[]) => {
+    const normalized = (Array.isArray(lines) ? lines : [])
+      .map((line) => {
+        const rawProductId = (line?.productId ?? line?.product_id ?? '').toString().trim();
+        const rawVariantId = (line?.variantId ?? line?.variant_id ?? '').toString().trim();
+        const quantity = Math.max(0, Math.floor(Number(line?.quantity ?? 0) || 0));
+        return {
+          productId: rawProductId,
+          variantId: rawVariantId,
+          quantity,
+        };
+      })
+      .filter((line) => line.productId && line.quantity > 0)
+      .sort((a, b) => {
+        const aKey = `${a.productId}:${a.variantId}`;
+        const bKey = `${b.productId}:${b.variantId}`;
+        return aKey.localeCompare(bKey);
+      });
+    return JSON.stringify(normalized);
+  }, []);
+
+  const handleLoadDelegateProposalIntoCart = useCallback(
+    (payload: { token: string; items: any[]; delegateOrderId?: string | null; sharedAt?: string | null }) => {
+      if (!payload?.token || !Array.isArray(payload.items) || payload.items.length === 0) {
+        toast.error('Proposal is missing items.');
+        return;
+      }
+
+      void (async () => {
+        const nextCart: CartItem[] = [];
+        const addOrMergeCartItem = (
+          product: Product,
+          variant: ProductVariant | null,
+          quantity: number,
+        ) => {
+          const cartItemId = buildCartItemId(product.id, variant?.id ?? null);
+          const existing = nextCart.find((item) => item.id === cartItemId);
+          if (existing) {
+            existing.quantity += quantity;
+            return;
+          }
+          nextCart.push({
+            id: cartItemId,
+            product,
+            quantity,
+            variant: variant ?? undefined,
+          });
+        };
+
+        let skipped = 0;
+        for (const line of payload.items) {
+          const qty = Math.max(1, Math.floor(Number(line?.quantity ?? 1) || 1));
+          const wooProductId = Number(line?.productId ?? line?.product_id ?? NaN);
+          const wooVariationId = Number(line?.variantId ?? line?.variant_id ?? NaN);
+
+          if (!Number.isFinite(wooProductId)) {
+            skipped += 1;
+            continue;
+          }
+
+          let matchedProduct: Product | undefined =
+            catalogProducts.find((product) => product.wooId === wooProductId) ??
+            catalogProducts.find((product) => product.id === `woo-${wooProductId}`);
+
+          if (!matchedProduct) {
+            skipped += 1;
+            continue;
+          }
+
+          if ((matchedProduct.type ?? '').toLowerCase() === 'variable') {
+            matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+          }
+
+          let matchedVariant: ProductVariant | null = null;
+          if (Number.isFinite(wooVariationId) && matchedProduct.variants?.length) {
+            matchedVariant =
+              matchedProduct.variants.find((variant) => variant.wooId === wooVariationId) ?? null;
+          }
+          if (!matchedVariant && matchedProduct.variants?.length) {
+            matchedVariant =
+              matchedProduct.variants.find((variant) => variant.inStock) ??
+              matchedProduct.variants[0] ??
+              null;
+          }
+
+          addOrMergeCartItem(matchedProduct, matchedVariant, qty);
+        }
+
+        if (nextCart.length === 0) {
+          toast.error('Unable to load this proposal into the cart (products not found).');
+          return;
+        }
+
+        setActiveDelegationProposal({
+          token: payload.token,
+          signature: buildDelegationCartSignature(payload.items),
+          delegateOrderId: payload.delegateOrderId ?? null,
+          sharedAt: payload.sharedAt ?? null,
+        });
+        setCartItems(nextCart);
+        setCheckoutOpen(true);
+        toast.info(
+          skipped > 0
+            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped).`
+            : 'Proposal loaded into a new cart.',
+        );
+      })();
+    },
+    [buildDelegationCartSignature, catalogProducts, ensureCatalogProductHasVariants],
+  );
+
   const handleRefreshNews = async () => {
     beginNewsLoading();
     setPeptideNewsError(null);
@@ -13203,24 +13455,50 @@ export default function App() {
 	      typeof options?.shippingTotal === "number" && options.shippingTotal >= 0
 	        ? options.shippingTotal
 	        : 0;
-	    const total = Math.round(
-	      (itemTotal + shippingTotal + taxTotal + Number.EPSILON) * 100,
-	    ) / 100;
+		    const total = Math.round(
+		      (itemTotal + shippingTotal + taxTotal + Number.EPSILON) * 100,
+		    ) / 100;
 
-	    try {
-        if (isDelegateMode && delegateToken) {
-          return await delegationAPI.shareDelegateOrder({
-            delegateToken,
-            items,
-            shippingAddress: options?.shippingAddress,
-            shippingEstimate: options?.shippingRate,
-            shippingTotal: shippingTotal,
-            expectedShipmentWindow: options?.expectedShipmentWindow ?? null,
-            taxTotal,
-            paymentMethod: options?.paymentMethod ?? null,
-          });
-        }
-	      const response = await ordersAPI.create(
+		    const delegationProposalReview = (() => {
+		      if (isDelegateMode) return null;
+		      if (!activeDelegationProposal?.token || !activeDelegationProposal.signature) return null;
+		      const checkoutSignature = buildDelegationCartSignature(items);
+		      const status = checkoutSignature === activeDelegationProposal.signature ? 'accepted' : 'modified';
+		      return { token: activeDelegationProposal.token, status };
+		    })();
+
+		    try {
+	        if (isDelegateMode && delegateToken) {
+	          const shared = await delegationAPI.shareDelegateOrder({
+	            delegateToken,
+	            items,
+	            shippingAddress: options?.shippingAddress,
+	            shippingEstimate: options?.shippingRate,
+	            shippingTotal: shippingTotal,
+	            expectedShipmentWindow: options?.expectedShipmentWindow ?? null,
+	            taxTotal,
+	            paymentMethod: options?.paymentMethod ?? null,
+	          });
+	          try {
+	            const orderIdRaw = (shared as any)?.order?.id ?? (shared as any)?.orderId ?? null;
+	            const orderId = orderIdRaw ? String(orderIdRaw).trim() : null;
+	            setDelegateContext((prev) => {
+	              if (!prev) return prev;
+	              return {
+	                ...prev,
+	                delegateSharedAt: new Date().toISOString(),
+	                delegateOrderId: orderId ?? prev.delegateOrderId ?? null,
+	                proposalStatus: 'pending',
+	                proposalReviewedAt: null,
+	                proposalReviewOrderId: null,
+	              };
+	            });
+	          } catch {
+	            // ignore
+	          }
+	          return shared;
+	        }
+		      const response = await ordersAPI.create(
 	        items,
 	        total,
 	        undefined,
@@ -13268,13 +13546,28 @@ export default function App() {
 	          if (!created.wooOrderId && wooOrderId) created.wooOrderId = wooOrderId;
 	          if (!created.wooOrderNumber && wooOrderNumber) created.wooOrderNumber = wooOrderNumber;
 	        }
-		      } catch {
-		        postCheckoutOrderRef.current = { pepproOrderId: null, wooOrderId: null, wooOrderNumber: null, createdAtMs: Date.now() };
-		      }
+			      } catch {
+			        postCheckoutOrderRef.current = { pepproOrderId: null, wooOrderId: null, wooOrderNumber: null, createdAtMs: Date.now() };
+			      }
 
-	        try {
-	          const created = response?.order as any;
-	          const meta = postCheckoutOrderRef.current;
+			      if (delegationProposalReview) {
+			        try {
+			          const meta = postCheckoutOrderRef.current;
+			          const orderId = meta?.wooOrderId || meta?.wooOrderNumber || null;
+			          await delegationAPI.reviewLinkProposal(delegationProposalReview.token, {
+			            status: delegationProposalReview.status,
+			            orderId,
+			          });
+			        } catch (error) {
+			          console.warn('[Delegation] Failed to update proposal status after checkout', error);
+			        } finally {
+			          setActiveDelegationProposal(null);
+			        }
+			      }
+
+		        try {
+		          const created = response?.order as any;
+		          const meta = postCheckoutOrderRef.current;
 	          const wooId = meta?.wooOrderId || null;
 	          const wooNumber = meta?.wooOrderNumber || null;
 	          const createdAt =
@@ -18892,7 +19185,8 @@ export default function App() {
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}
 				              catalogLoading={catalogLoading}
-				            />
+				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
+					            />
 			          </div>
 			        )}
 	              {isDelegateMode && !delegateError && (
@@ -20440,45 +20734,120 @@ export default function App() {
             </main>
           )}
 
-		          {isDelegateMode && (
-		            delegateError ? (
-		              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
-		                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
-		                  <p className="text-lg font-semibold text-slate-900">This session has expired.</p>
-		                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-		                    The delegate link you used is no longer valid. Please request a new link from your doctor and try
-		                    again.
-		                  </p>
-		                </div>
+			          {isDelegateMode && (
+			            delegateError ? (
+			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
+			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
+			                  <p className="text-lg font-semibold text-slate-900">This session has expired.</p>
+			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
+			                    The delegate link you used is no longer valid. Please request a new link from your doctor and try
+			                    again.
+			                  </p>
+			                </div>
+			              </main>
+			            ) : (
+		              <main
+		                className="w-full pb-12 mobile-safe-area"
+		                style={{
+		                  paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
+		                }}
+		              >
+		                {delegateTimeRemainingLabel && (
+		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4">
+		                    <div className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 flex items-center justify-center gap-2">
+		                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
+		                      <span>
+		                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
+		                      </span>
+		                    </div>
+		                  </div>
+		                )}
+		                {delegateHasSubmittedProposal ? (
+		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
+		                    <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-7 sm:p-9">
+		                      <div className="flex items-start justify-between gap-4">
+		                        <div className="min-w-0">
+		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
+		                          <p className="mt-1 text-sm text-slate-700">
+		                            Your proposal has been sent to{' '}
+		                            {delegateDoctorNameForShare === 'Doctor'
+		                              ? 'your doctor'
+		                              : `Dr. ${delegateDoctorNameForShare}`}
+		                            .
+		                          </p>
+		                        </div>
+		                        {(() => {
+		                          const status = String(delegateContext?.proposalStatus || 'pending').toLowerCase();
+		                          const meta =
+		                            status === 'accepted'
+		                              ? { Icon: CheckCircle2, label: 'Accepted', className: 'text-emerald-700' }
+		                              : status === 'modified'
+		                                ? { Icon: NotebookPen, label: 'Modified', className: 'text-blue-700' }
+		                                : status === 'rejected'
+		                                  ? { Icon: XCircle, label: 'Rejected', className: 'text-red-700' }
+		                                  : { Icon: Clock, label: 'Pending review', className: 'text-slate-700' };
+		                          const Icon = meta.Icon as any;
+		                          return (
+		                            <div className={`flex items-center gap-2 font-semibold ${meta.className}`}>
+		                              <Icon className="h-5 w-5" aria-hidden="true" />
+		                              <span>{meta.label}</span>
+		                            </div>
+		                          );
+		                        })()}
+		                      </div>
+
+		                      <div className="mt-5 space-y-2 text-sm text-slate-700">
+		                        {delegateContext?.delegateSharedAt && (
+		                          <p>
+		                            <span className="font-semibold">Submitted:</span>{' '}
+		                            {new Date(delegateContext.delegateSharedAt).toLocaleString()}
+		                          </p>
+		                        )}
+		                        {delegateContext?.proposalReviewedAt && (
+		                          <p>
+		                            <span className="font-semibold">Updated:</span>{' '}
+		                            {new Date(delegateContext.proposalReviewedAt).toLocaleString()}
+		                          </p>
+		                        )}
+		                        {delegateContext?.proposalReviewOrderId && (
+		                          <p>
+		                            <span className="font-semibold">Order:</span> {delegateContext.proposalReviewOrderId}
+		                          </p>
+		                        )}
+		                        {delegateTimeRemainingLabel && (
+		                          <p className="pt-2 text-xs text-slate-600">
+		                            Session time remaining: <span className="font-semibold">{delegateTimeRemainingLabel}</span>
+		                          </p>
+		                        )}
+		                      </div>
+		                    </div>
+		                  </div>
+		                ) : (
+		                  renderProductSection()
+		                )}
 		              </main>
-		            ) : (
-	              <main
-	                className="w-full pb-12 mobile-safe-area"
-	                style={{
-	                  paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
-	                }}
-	              >
-	                {renderProductSection()}
-	              </main>
-	            )
-	          )}
-	        </div>
+		            )
+		          )}
+		        </div>
 
 	      {isDelegateMode && delegateError ? null : user ? (
 	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : (
-	        <LegalFooter showContactCTA variant="ctaOnly" />
+	        <LegalFooter showContactCTA variant="full" />
 	      )}
       </div>
 
       {/* Checkout Modal */}
-      <CheckoutModal
-        isOpen={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        cartItems={cartItems}
-        onCheckout={handleCheckout}
-        onClearCart={() => setCartItems([])}
-        onPaymentSuccess={
+	      <CheckoutModal
+	        isOpen={checkoutOpen}
+	        onClose={() => setCheckoutOpen(false)}
+	        cartItems={cartItems}
+	        onCheckout={handleCheckout}
+	        onClearCart={() => {
+	          setCartItems([]);
+	          setActiveDelegationProposal(null);
+	        }}
+	        onPaymentSuccess={
           isDelegateMode
             ? undefined
             : () => {
@@ -22188,4 +22557,15 @@ export default function App() {
       />
     </div>
   );
+}
+
+export default function App() {
+  const pathname =
+    typeof window !== "undefined"
+      ? normalizePathname(window.location.pathname)
+      : "/";
+  if (isPublicSitePath(pathname)) {
+    return <PublicSite pathname={pathname} />;
+  }
+  return <MainApp />;
 }

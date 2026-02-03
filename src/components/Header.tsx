@@ -247,6 +247,12 @@ interface HeaderProps {
   onCancelOrder?: (orderId: string) => Promise<unknown>;
   referralCodes?: string[] | null;
   catalogLoading?: boolean;
+  onLoadDelegateProposal?: (payload: {
+    token: string;
+    items: any[];
+    delegateOrderId?: string | null;
+    sharedAt?: string | null;
+  }) => void;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -887,11 +893,12 @@ export function Header({
   suppressAccountHomeButton = false,
   showCanceledOrders = false,
   onToggleShowCanceled,
-  onBuyOrderAgain,
-  onCancelOrder,
-  referralCodes = [],
-  catalogLoading = false,
-}: HeaderProps) {
+	  onBuyOrderAgain,
+	  onCancelOrder,
+	  referralCodes = [],
+	  catalogLoading = false,
+	  onLoadDelegateProposal,
+	}: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
   const elevatedShadow = '0 32px 60px -28px rgba(95, 179, 249, 0.55)';
@@ -2970,7 +2977,15 @@ export function Header({
     </Button>
   );
 
-  const renderSearchField = (inputClassName = '') => (
+  const renderSearchField = (
+    inputClassName = '',
+    options?: {
+      value?: string;
+      readOnly?: boolean;
+      showClearButton?: boolean;
+      borderColor?: string | null;
+    },
+  ) => (
     <div className="relative">
       <Search
         className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-500"
@@ -2980,17 +2995,31 @@ export function Header({
         inputMode="search"
         enterKeyHint="search"
         placeholder="Search peptides..."
-        value={searchQuery}
-        onChange={(e) => handleSearchChange(e.target.value)}
-        ref={searchInputRef}
+        value={options && typeof options.value === 'string' ? options.value : searchQuery}
+        onChange={(e) => {
+          if (options?.readOnly) return;
+          handleSearchChange(e.target.value);
+        }}
+        ref={options?.readOnly ? undefined : searchInputRef}
         className={`glass squircle-sm pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
-        style={{ borderColor: translucentSecondary, minWidth: '100%' }}
+        style={{
+          ...(options?.borderColor === null
+            ? {}
+            : {
+                borderColor:
+                  typeof options?.borderColor === 'string'
+                    ? options.borderColor
+                    : translucentSecondary,
+              }),
+          minWidth: '100%',
+        }}
+        readOnly={Boolean(options?.readOnly)}
       />
-	      {searchQuery.trim().length > 0 && (
-	        <button
-	          type="button"
-	          aria-label="Clear search"
-          onClick={() => {
+		      {(options?.showClearButton ?? true) && searchQuery.trim().length > 0 && (
+		        <button
+		          type="button"
+		          aria-label="Clear search"
+	          onClick={() => {
             handleSearchChange('');
             requestAnimationFrame(() => {
 	              searchInputRef.current?.focus();
@@ -3139,6 +3168,82 @@ export function Header({
       setPatientLinksUpdatingToken(null);
     }
   }, [loadPatientLinks, patientLinksUpdatingToken]);
+
+  const [patientLinksProposalToken, setPatientLinksProposalToken] = useState<string | null>(null);
+
+  const handleViewPatientProposal = useCallback(
+    async (token: string) => {
+      const normalized = typeof token === 'string' ? token.trim() : '';
+      if (!normalized || patientLinksProposalToken) {
+        return;
+      }
+      setPatientLinksProposalToken(normalized);
+      try {
+        const api = await import('../services/api');
+        const response = await api.delegationAPI.getLinkProposal(normalized);
+        const proposal = (response as any)?.proposal ?? null;
+        const cart = proposal?.delegateCart ?? proposal?.delegate_cart ?? null;
+        const items = Array.isArray(cart?.items) ? cart.items : [];
+        if (!items.length) {
+          throw new Error('No proposal items found for this link.');
+        }
+        if (typeof onLoadDelegateProposal === 'function') {
+          onLoadDelegateProposal({
+            token: normalized,
+            items,
+            delegateOrderId:
+              typeof proposal?.delegateOrderId === 'string'
+                ? proposal.delegateOrderId
+                : typeof proposal?.delegate_order_id === 'string'
+                  ? proposal.delegate_order_id
+                  : null,
+            sharedAt:
+              typeof proposal?.delegateSharedAt === 'string'
+                ? proposal.delegateSharedAt
+                : typeof proposal?.delegate_shared_at === 'string'
+                  ? proposal.delegate_shared_at
+                  : null,
+          });
+        }
+        toast.success('Proposal loaded into your cart.');
+        setAccountModalOpen(false);
+      } catch (error: any) {
+        toast.error(
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message
+            : 'Unable to load proposal right now.',
+        );
+      } finally {
+        setPatientLinksProposalToken(null);
+      }
+    },
+    [onLoadDelegateProposal, patientLinksProposalToken],
+  );
+
+  const handleRejectPatientProposal = useCallback(
+    async (token: string) => {
+      const normalized = typeof token === 'string' ? token.trim() : '';
+      if (!normalized || patientLinksProposalToken) {
+        return;
+      }
+      setPatientLinksProposalToken(normalized);
+      try {
+        const api = await import('../services/api');
+        await api.delegationAPI.reviewLinkProposal(normalized, { status: 'rejected' });
+        toast.success('Proposal rejected.');
+        await loadPatientLinks();
+      } catch (error: any) {
+        toast.error(
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message
+            : 'Unable to reject proposal right now.',
+        );
+      } finally {
+        setPatientLinksProposalToken(null);
+      }
+    },
+    [loadPatientLinks, patientLinksProposalToken],
+  );
 
   const saveProfileField = useCallback(
     async (label: string, payload: Record<string, string | null>) => {
@@ -4402,15 +4507,14 @@ export function Header({
 	        </p>
 	        <p className="mt-2 text-sm leading-relaxed text-slate-700">
 	         Recommended: horizontal rectangle
-	          PNG/JPG (we’ll resize to fit the header).
+	          PNG (we’ll resize to fit the header).
 	        </p>
-	        <div className="mt-2 space-y-4">
+		        <div className="mt-2 space-y-4">
 		          <div className="glass-card squircle-lg p-3 !border-0">
 		            <p className="text-xs font-semibold text-slate-700">Header preview</p>
 			            <div className="mt-3 w-full bg-white/80 px-6 py-4">
-			              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-12 sm:items-center sm:gap-4">
-			                <div className="sm:col-span-3">
-			                  <div className="flex items-center justify-between gap-3 sm:justify-start">
+			              <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
+			                <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
 			                    <div className="brand-logo relative flex items-center justify-center flex-shrink-0 min-w-0">
 		                      <img
 		                        src={
@@ -4424,8 +4528,8 @@ export function Header({
 		                          display: 'block',
 		                          width: 'auto',
 		                          height: 'auto',
-		                          maxWidth: isLargeScreen ? '320px' : 'min(260px, 60vw)',
-		                          maxHeight: isLargeScreen ? '80px' : '64px',
+		                          maxWidth: '100%',
+		                          maxHeight: isLargeScreen ? '88px' : '72px',
 		                          objectFit: 'contain',
 		                        }}
 		                        loading="eager"
@@ -4441,16 +4545,20 @@ export function Header({
 		                        <span className="font-semibold truncate max-w-[55vw]">{`Delegate of ${localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'}`}</span>
 		                      </div>
 		                    </div>
-		                  </div>
 		                </div>
 
-		                <div className="hidden sm:block sm:col-span-6 pointer-events-none opacity-95">
-		                  <div className="mx-auto w-full max-w-md">
-		                    {renderSearchField()}
-		                  </div>
-		                </div>
+			                <div className="hidden sm:flex flex-1 justify-center pointer-events-none opacity-95">
+			                  <div className="w-full max-w-md">
+			                    {renderSearchField('bg-white/75 border border-[rgba(15,23,42,0.12)]', {
+			                      value: '',
+			                      readOnly: true,
+			                      showClearButton: false,
+			                      borderColor: 'rgba(15,23,42,0.12)',
+			                    })}
+			                  </div>
+			                </div>
 
-		                <div className="hidden sm:flex sm:col-span-3 sm:justify-end">
+		                <div className="hidden sm:flex items-center justify-end flex-shrink-0">
 		                  <div
 		                    className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
 		                    aria-label="Delegate header preview"
@@ -4605,57 +4713,111 @@ export function Header({
 	          </div>
 	        ) : (
 	          <div className="space-y-3 pt-1">
-	            {patientLinks.map((link) => {
-	              const token = typeof link?.token === 'string' ? link.token : '';
-	              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
-	              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
-              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
-              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
-              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
-              const isRevoked = Boolean(revokedAt);
-              const isUpdating = patientLinksUpdatingToken === token;
+		            {patientLinks.map((link) => {
+		              const token = typeof link?.token === 'string' ? link.token : '';
+		              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
+		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
+	              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
+	              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
+	              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
+	              const delegateSharedAt =
+	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim() ? link.delegateSharedAt.trim() : '';
+	              const delegateOrderId =
+	                typeof link?.delegateOrderId === 'string' && link.delegateOrderId.trim() ? link.delegateOrderId.trim() : '';
+	              const delegateReviewStatusRaw =
+	                typeof link?.delegateReviewStatus === 'string' && link.delegateReviewStatus.trim()
+	                  ? link.delegateReviewStatus.trim().toLowerCase()
+	                  : '';
+	              const proposalStatus =
+	                delegateReviewStatusRaw || (delegateSharedAt || delegateOrderId ? 'pending' : '');
+	              const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
+	              const isRevoked = Boolean(revokedAt);
+	              const isUpdating = patientLinksUpdatingToken === token;
+	              const isProposalBusy = patientLinksProposalToken === token;
+	              const canRejectProposal = hasProposal && proposalStatus === 'pending';
+	              const proposalLabel =
+	                proposalStatus === 'accepted'
+	                  ? 'Accepted'
+	                  : proposalStatus === 'modified'
+	                    ? 'Modified'
+	                    : proposalStatus === 'rejected'
+	                      ? 'Rejected'
+	                      : proposalStatus === 'pending'
+	                        ? 'Pending review'
+	                        : '';
 
-	              return (
-	                <div
-	                  key={token || label}
-	                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-	                >
-	                  <div className="min-w-0">
-	                    <div className="flex items-center gap-2">
-	                      <span className="font-semibold text-slate-900 truncate">{label}</span>
-	                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
+		              return (
+		                <div
+		                  key={token || label}
+		                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+		                >
+		                  <div className="min-w-0">
+		                    <div className="flex items-center gap-2">
+		                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+		                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
+		                    </div>
+	                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+	                      {createdAt && <div>Created: {createdAt}</div>}
+	                      {expiresAt && <div>Expires: {expiresAt}</div>}
+	                      {lastUsedAt && <div>Last used: {lastUsedAt}</div>}
+	                      {hasProposal && (
+	                        <div className="font-semibold text-slate-700">
+	                          Proposal: {proposalLabel || 'Pending review'}
+	                        </div>
+	                      )}
 	                    </div>
-                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
-                      {createdAt && <div>Created: {createdAt}</div>}
-                      {expiresAt && <div>Expires: {expiresAt}</div>}
-                      {lastUsedAt && <div>Last used: {lastUsedAt}</div>}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleCopyPatientLink(token)}
-                      disabled={!token}
-                      className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+	                  </div>
+	                  <div className="flex flex-wrap items-center gap-2">
+	                    {hasProposal && (
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => void handleViewPatientProposal(token)}
+	                        disabled={!token || isProposalBusy}
+	                        className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+	                      >
+	                        <Eye className="h-4 w-4" aria-hidden="true" />
+	                        {isProposalBusy ? 'Loading…' : 'View Proposal'}
+	                      </Button>
+	                    )}
+	                    {canRejectProposal && (
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => void handleRejectPatientProposal(token)}
+	                        disabled={!token || isProposalBusy}
+	                        className="squircle-sm gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+	                      >
+	                        <X className="h-4 w-4" aria-hidden="true" />
+	                        {isProposalBusy ? 'Working…' : 'Reject'}
+	                      </Button>
+	                    )}
+	                    <Button
+	                      type="button"
+	                      variant="outline"
+	                      size="sm"
+	                      onClick={() => void handleCopyPatientLink(token)}
+	                      disabled={!token}
+	                      className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
                     >
                       <Copy className="h-4 w-4" aria-hidden="true" />
                       Copy link
                     </Button>
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleRevokePatientLink(token)}
-                      disabled={!token || isRevoked || isUpdating}
-                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
-                    >
-                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke'}
-                    </Button>
-                  </div>
-                </div>
-              );
+	                      variant="outline"
+	                      size="sm"
+	                      onClick={() => void handleRevokePatientLink(token)}
+	                      disabled={!token || isRevoked || isUpdating}
+	                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+	                    >
+	                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke'}
+	                    </Button>
+	                  </div>
+	                </div>
+	              );
             })}
 	          </div>
 	        )}

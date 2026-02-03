@@ -496,12 +496,27 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
 
         doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
 
+        review_status = (
+            str(link.get("delegateReviewStatus") or "").strip().lower()
+            if isinstance(link.get("delegateReviewStatus"), str)
+            else None
+        )
+        if not review_status:
+            review_status = "pending" if str(link.get("delegateSharedAt") or "").strip() else None
+
         return {
             "token": token,
             "doctorId": doctor_id,
             "doctorName": doctor_name,
             "markupPercent": _normalize_markup_percent(doctor.get("markupPercent")),
             "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
+            "createdAt": link.get("createdAt"),
+            "expiresAt": link.get("expiresAt"),
+            "delegateSharedAt": link.get("delegateSharedAt"),
+            "delegateOrderId": link.get("delegateOrderId"),
+            "proposalStatus": review_status,
+            "proposalReviewedAt": link.get("delegateReviewedAt"),
+            "proposalReviewOrderId": link.get("delegateReviewOrderId"),
         }
 
     index = _load_index()
@@ -574,3 +589,119 @@ def store_delegate_submission(
     err = RuntimeError("Unable to persist delegate payload")
     setattr(err, "status", 502)
     raise err
+
+
+def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
+    if not _using_mysql():
+        err = RuntimeError("MySQL backend is required for patient links")
+        setattr(err, "status", 501)
+        raise err
+    _migrate_legacy_links_to_table()
+    doctor_id = str(doctor_id or "").strip()
+    token = _normalize_token(token)
+    if not doctor_id:
+        err = ValueError("doctor_id is required")
+        setattr(err, "status", 400)
+        raise err
+    if not token:
+        err = ValueError("token is required")
+        setattr(err, "status", 400)
+        raise err
+
+    link = patient_links_repository.find_by_token(token)
+    if not isinstance(link, dict):
+        err = ValueError("Link not found")
+        setattr(err, "status", 404)
+        raise err
+    if str(link.get("doctorId") or "").strip() != doctor_id or str(link.get("revokedAt") or "").strip():
+        err = ValueError("Link not found")
+        setattr(err, "status", 404)
+        raise err
+
+    review_status = (
+        str(link.get("delegateReviewStatus") or "").strip().lower()
+        if isinstance(link.get("delegateReviewStatus"), str)
+        else None
+    )
+    if not review_status:
+        review_status = "pending" if str(link.get("delegateSharedAt") or "").strip() else None
+
+    return {
+        "token": token,
+        "doctorId": doctor_id,
+        "createdAt": link.get("createdAt"),
+        "expiresAt": link.get("expiresAt"),
+        "label": link.get("label"),
+        "markupPercent": link.get("markupPercent"),
+        "delegateCart": link.get("delegateCart"),
+        "delegateShipping": link.get("delegateShipping"),
+        "delegatePayment": link.get("delegatePayment"),
+        "delegateSharedAt": link.get("delegateSharedAt"),
+        "delegateOrderId": link.get("delegateOrderId"),
+        "proposalStatus": review_status,
+        "proposalReviewedAt": link.get("delegateReviewedAt"),
+        "proposalReviewOrderId": link.get("delegateReviewOrderId"),
+    }
+
+
+def review_link_proposal(
+    doctor_id: str,
+    token: str,
+    *,
+    status: str,
+    order_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not _using_mysql():
+        err = RuntimeError("MySQL backend is required for patient links")
+        setattr(err, "status", 501)
+        raise err
+    _migrate_legacy_links_to_table()
+    doctor_id = str(doctor_id or "").strip()
+    token = _normalize_token(token)
+    if not doctor_id:
+        err = ValueError("doctor_id is required")
+        setattr(err, "status", 400)
+        raise err
+    if not token:
+        err = ValueError("token is required")
+        setattr(err, "status", 400)
+        raise err
+
+    link = patient_links_repository.find_by_token(token)
+    if not isinstance(link, dict):
+        err = ValueError("Link not found")
+        setattr(err, "status", 404)
+        raise err
+    if str(link.get("doctorId") or "").strip() != doctor_id or str(link.get("revokedAt") or "").strip():
+        err = ValueError("Link not found")
+        setattr(err, "status", 404)
+        raise err
+    if not str(link.get("delegateSharedAt") or "").strip():
+        err = ValueError("No proposal found for this link")
+        setattr(err, "status", 409)
+        raise err
+
+    ok = patient_links_repository.set_delegate_review_status(
+        doctor_id,
+        token,
+        status=status,
+        order_id=order_id,
+        reviewed_at=datetime.now(timezone.utc),
+    )
+    if not ok:
+        err = RuntimeError("Unable to update proposal status")
+        setattr(err, "status", 502)
+        raise err
+
+    updated = patient_links_repository.find_by_token(token) or {}
+    review_status = (
+        str(updated.get("delegateReviewStatus") or "").strip().lower()
+        if isinstance(updated.get("delegateReviewStatus"), str)
+        else None
+    )
+    return {
+        "token": token,
+        "proposalStatus": review_status or status,
+        "proposalReviewedAt": updated.get("delegateReviewedAt"),
+        "proposalReviewOrderId": updated.get("delegateReviewOrderId"),
+    }

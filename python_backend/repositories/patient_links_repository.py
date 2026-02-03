@@ -112,7 +112,9 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     delete_expired()
     rows = mysql_client.fetch_all(
         """
-        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
+        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at,
+               delegate_shared_at, delegate_order_id,
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
         WHERE doctor_id = %(doctor_id)s
           AND expires_at > UTC_TIMESTAMP()
@@ -131,6 +133,11 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                 "markupPercent": float(row.get("markup_percent") or 0.0),
                 "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
                 "revokedAt": _fmt_datetime(row.get("revoked_at")),
+                "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
+                "delegateOrderId": row.get("delegate_order_id"),
+                "delegateReviewStatus": row.get("delegate_review_status"),
+                "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
+                "delegateReviewOrderId": row.get("delegate_review_order_id"),
             }
         )
     return results
@@ -148,7 +155,8 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         SELECT token, doctor_id, label, created_at, expires_at, last_used_at, revoked_at,
                markup_percent,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
-               delegate_shared_at, delegate_order_id
+               delegate_shared_at, delegate_order_id,
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
         WHERE token = %(token)s
           AND expires_at > UTC_TIMESTAMP()
@@ -192,6 +200,9 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         "delegatePayment": _parse_json(row.get("delegate_payment_json")),
         "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
         "delegateOrderId": row.get("delegate_order_id"),
+        "delegateReviewStatus": row.get("delegate_review_status"),
+        "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
+        "delegateReviewOrderId": row.get("delegate_review_order_id"),
     }
 
 
@@ -347,6 +358,9 @@ def store_delegate_payload(
                 delegate_payment_json = %(payment)s,
                 delegate_shared_at = %(shared_at)s,
                 delegate_order_id = COALESCE(%(order_id)s, delegate_order_id),
+                delegate_review_status = 'pending',
+                delegate_reviewed_at = NULL,
+                delegate_review_order_id = NULL,
                 last_used_at = UTC_TIMESTAMP()
             WHERE token = %(token)s
               AND expires_at > UTC_TIMESTAMP()
@@ -357,6 +371,51 @@ def store_delegate_payload(
                 "shipping": _serialize_json(shipping),
                 "payment": _serialize_json(payment),
                 "shared_at": when.replace(tzinfo=None),
+                "order_id": str(order_id).strip() if order_id is not None and str(order_id).strip() else None,
+            },
+        )
+        return int(affected or 0) > 0
+    except Exception:
+        return False
+
+
+def set_delegate_review_status(
+    doctor_id: str,
+    token: str,
+    *,
+    status: str,
+    order_id: Optional[str] = None,
+    reviewed_at: Optional[datetime] = None,
+) -> bool:
+    if not _using_mysql():
+        return False
+    doctor_id = str(doctor_id or "").strip()
+    token = str(token or "").strip()
+    if not doctor_id or not token:
+        return False
+    normalized_status = str(status or "").strip().lower()
+    allowed = {"pending", "accepted", "modified", "rejected"}
+    if normalized_status not in allowed:
+        return False
+    delete_expired()
+    when = reviewed_at.astimezone(timezone.utc) if isinstance(reviewed_at, datetime) else datetime.now(timezone.utc)
+    try:
+        affected = mysql_client.execute(
+            """
+            UPDATE patient_links
+            SET
+                delegate_review_status = %(status)s,
+                delegate_reviewed_at = %(reviewed_at)s,
+                delegate_review_order_id = %(order_id)s
+            WHERE token = %(token)s
+              AND doctor_id = %(doctor_id)s
+              AND expires_at > UTC_TIMESTAMP()
+            """,
+            {
+                "token": token,
+                "doctor_id": doctor_id,
+                "status": normalized_status,
+                "reviewed_at": when.replace(tzinfo=None),
                 "order_id": str(order_id).strip() if order_id is not None and str(order_id).strip() else None,
             },
         )

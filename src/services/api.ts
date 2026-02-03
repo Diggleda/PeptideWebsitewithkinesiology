@@ -1558,6 +1558,30 @@ export const delegationAPI = {
     });
   },
 
+  getLinkProposal: async (token: string) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) {
+      throw new Error('token is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/delegation/links/${encodeURIComponent(normalized)}/proposal`, {
+      method: 'GET',
+    });
+  },
+
+  reviewLinkProposal: async (
+    token: string,
+    payload: { status: string; orderId?: string | null },
+  ) => {
+    const normalized = typeof token === 'string' ? token.trim() : '';
+    if (!normalized) {
+      throw new Error('token is required');
+    }
+    return fetchWithAuth(`${API_BASE_URL}/delegation/links/${encodeURIComponent(normalized)}/proposal/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
   estimateDelegateTotals: async (
     payload: {
       delegateToken: string;

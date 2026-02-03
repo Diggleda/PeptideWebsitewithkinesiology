@@ -20,16 +20,13 @@ const documents = [
     html: 'src/content/landing/care-compliance.html',
   },
   {
-    docx: 'src/content/legal/Terms-of-service.docx',
+    // Source doc is versioned in this repo; keep `terms.html` as the stable output path.
+    docx: 'src/content/legal/Terms-of-service-2.docx',
     html: 'src/content/legal/terms.html',
   },
   {
-    docx: 'src/content/legal/Privacy-policy.docx',
-    html: 'src/content/legal/privacy.html',
-  },
-  // Updated privacy policy source file (previous name left in place by history/backups).
-  {
-    docx: 'src/content/legal/Privacy-policy-3.docx',
+    // Source doc is versioned in this repo; keep `privacy.html` as the stable output path.
+    docx: 'src/content/legal/Privacy-policy-4.docx',
     html: 'src/content/legal/privacy.html',
   },
   {
@@ -108,6 +105,11 @@ function replaceRegionalAdministrator(html) {
   });
 }
 
+function normalizeSupportEmails(html) {
+  // Underwriting/compliance requires a domain-based email. Keep a single canonical contact email.
+  return html.replace(/support@peppro\.com/gi, 'support@peppro.net');
+}
+
 async function convertDocument({ docx, html }) {
   const inputPath = path.join(projectRoot, docx);
   const outputPath = path.join(projectRoot, html);
@@ -127,7 +129,7 @@ async function convertDocument({ docx, html }) {
 
   const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
-  const finalHtml = `${styles ? `${styles}\n` : ''}${replaceRegionalAdministrator(linkifyEmails(content))}\n`;
+  const finalHtml = `${styles ? `${styles}\n` : ''}${normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content)))}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
 

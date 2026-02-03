@@ -205,6 +205,9 @@ CREATE_TABLE_STATEMENTS = [
         delegate_payment_json LONGTEXT NULL,
         delegate_shared_at DATETIME NULL,
         delegate_order_id VARCHAR(32) NULL,
+        delegate_review_status VARCHAR(32) NULL,
+        delegate_reviewed_at DATETIME NULL,
+        delegate_review_order_id VARCHAR(32) NULL,
         KEY idx_patient_links_doctor (doctor_id),
         KEY idx_patient_links_expires (expires_at)
     ) CHARACTER SET utf8mb4
@@ -356,6 +359,9 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_status VARCHAR(32) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_reviewed_at DATETIME NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_order_id VARCHAR(32) NULL",
     ]
     for stmt in migrations:
         try:
@@ -442,5 +448,16 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("patient_links", "markup_percent"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    # Ensure patient link proposal review fields exist.
+    try:
+        if not _column_exists("patient_links", "delegate_review_status"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_status VARCHAR(32) NULL")
+        if not _column_exists("patient_links", "delegate_reviewed_at"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_reviewed_at DATETIME NULL")
+        if not _column_exists("patient_links", "delegate_review_order_id"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_order_id VARCHAR(32) NULL")
     except Exception:
         pass
