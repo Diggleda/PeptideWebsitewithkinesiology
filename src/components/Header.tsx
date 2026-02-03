@@ -1602,6 +1602,31 @@ export function Header({
     onAccountModalRequestHandled?.(token);
   }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled]);
   useEffect(() => { setLocalUser(user); }, [user]);
+  const accountDetailsRefreshSeqRef = useRef(0);
+  useEffect(() => {
+    if (!welcomeOpen) return;
+    if (accountTab !== 'details') return;
+    if (!user) return;
+    const seq = ++accountDetailsRefreshSeqRef.current;
+    (async () => {
+      try {
+        const api = await import('../services/api');
+        const fresh = await api.authAPI.getCurrentUser();
+        if (seq !== accountDetailsRefreshSeqRef.current) return;
+        if (!fresh) return;
+        setLocalUser((prev) => {
+          const nextUserState: HeaderUser = {
+            ...(prev || {}),
+            ...(fresh as any),
+          };
+          onUserUpdated?.(nextUserState);
+          return nextUserState;
+        });
+      } catch (error) {
+        console.warn('[Header] Failed to refresh account details', error);
+      }
+    })();
+  }, [welcomeOpen, accountTab, user, onUserUpdated]);
   useEffect(() => {
     if (!loginOpen || authMode !== 'login') {
       return;

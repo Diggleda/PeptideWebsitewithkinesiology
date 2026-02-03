@@ -11069,7 +11069,7 @@ function MainApp() {
   }, []);
 
   const refreshReferralData = useCallback(
-    async (options?: { showLoading?: boolean }) => {
+    async (options?: { showLoading?: boolean; force?: boolean }) => {
       if (!user) {
         console.debug("[Referral] refreshReferralData skipped: no user");
         return;
@@ -11083,8 +11083,9 @@ function MainApp() {
       }
 
       const shouldShowLoading = options?.showLoading ?? true;
+      const forceRefresh = options?.force === true;
       const now = Date.now();
-      if (!shouldShowLoading) {
+      if (!forceRefresh && !shouldShowLoading) {
         const last = referralLastRefreshAtRef.current;
         if (last > 0 && now - last < REFERRAL_BACKGROUND_MIN_INTERVAL_MS) {
           console.debug("[Referral] refreshReferralData throttled", {
@@ -11096,6 +11097,7 @@ function MainApp() {
       }
 
       if (
+        !forceRefresh &&
         referralSummaryCooldownRef.current &&
         referralSummaryCooldownRef.current > Date.now()
       ) {
@@ -11235,7 +11237,7 @@ function MainApp() {
   );
 
   const tracedRefreshReferralData = useCallback(
-    async (trigger: string, options?: { showLoading?: boolean }) => {
+    async (trigger: string, options?: { showLoading?: boolean; force?: boolean }) => {
       const userSnapshot = user
         ? { id: user.id, role: user.role }
         : { id: null, role: null };
@@ -11243,6 +11245,7 @@ function MainApp() {
       console.debug("[Referral] refreshReferralData invoke", {
         trigger,
         showLoading,
+        force: options?.force === true,
         user: userSnapshot,
         suppressed: referralPollingSuppressed,
         postLoginHold,
@@ -11336,6 +11339,7 @@ function MainApp() {
 	        closeManualProspectModal();
         await tracedRefreshReferralData("manual-prospect-submit", {
           showLoading: false,
+          force: true,
         });
       } catch (error: any) {
         console.error("[Referral] Manual prospect create failed", error);
@@ -11384,9 +11388,10 @@ function MainApp() {
 	        }
 
 	        toast.success("Prospect updated.");
-	        await tracedRefreshReferralData("synthetic-account-promote", {
-	          showLoading: false,
-	        });
+        await tracedRefreshReferralData("synthetic-account-promote", {
+          showLoading: false,
+          force: true,
+        });
 	      } catch (error: any) {
         console.error("[Referral] Synthetic account promote failed", error);
         const message =
@@ -14228,6 +14233,7 @@ function MainApp() {
       });
       await tracedRefreshReferralData("referral-status-update", {
         showLoading: true,
+        force: true,
       });
     } catch (error: any) {
       console.warn("[Referral] Update referral status failed", error);
@@ -14262,6 +14268,7 @@ function MainApp() {
         toast.success("Manual prospect deleted.");
         await tracedRefreshReferralData("manual-prospect-delete", {
           showLoading: false,
+          force: true,
         });
       } catch (error: any) {
         console.error("[Referral] Manual prospect delete failed", error);
@@ -21412,7 +21419,7 @@ function MainApp() {
 	                  }))
 	                }
 	                rows={3}
-	                placeholder="Address line 1&#10;Address line 2&#10;City, State ZIP&#10;Country"
+	                placeholder="Address line 1&#10;City, State ZIP&#10;Country"
 	                className="notes-textarea"
 	              />
 	            </div>
@@ -21513,16 +21520,32 @@ function MainApp() {
 				                      "—"
 				                    )}
 				                  </div>
-					                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
-					                    isDoctorRole(salesDoctorDetail.role) && (
-					                      <div className="text-sm font-normal text-slate-600">
-					                        {(() => {
-					                          const ownerId = String(
-					                            salesDoctorDetail.ownerSalesRepId || "",
-					                          ).trim();
-				                          if (!ownerId) {
-				                            return "Sales Rep: Unassigned";
-				                          }
+						                  {(isAdmin(user?.role) || isSalesLead(user?.role)) &&
+						                    isDoctorRole(salesDoctorDetail.role) && (
+						                      <div className="text-sm font-normal text-slate-600">
+						                        {(() => {
+						                          const leadType = String(
+						                            salesTrackingDoctors?.get?.(salesDoctorDetail.doctorId)
+						                              ?.leadType || "",
+						                          )
+						                            .trim()
+						                            .toLowerCase();
+						                          const isHouseAccount =
+						                            String(salesDoctorDetail.doctorId || "").startsWith(
+						                              "contact_form:",
+						                            ) ||
+						                            leadType === "contact_form" ||
+						                            (leadType.length > 0 && leadType.includes("contact")) ||
+						                            leadType === "house";
+						                          if (isHouseAccount) {
+						                            return "Sales Rep: House Account";
+						                          }
+						                          const ownerId = String(
+						                            salesDoctorDetail.ownerSalesRepId || "",
+						                          ).trim();
+					                          if (!ownerId) {
+					                            return "Sales Rep: Unassigned";
+					                          }
 					                          const ownerProfile =
 					                            salesDoctorOwnerRepProfiles[ownerId] || null;
 					                          const name =

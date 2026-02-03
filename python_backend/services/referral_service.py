@@ -449,6 +449,22 @@ def _enrich_referral(referral: Dict) -> Dict:
     )
     enriched["referredContactTotalOrders"] = contact_order_count
     enriched["referredContactEligibleForCredit"] = contact_order_count > 0
+    # Address priority: prefer the users table address when the referred contact has an account
+    # and that account has address data.
+    if contact_account:
+        user_line1 = (contact_account.get("officeAddressLine1") or contact_account.get("office_address_line1") or "").strip()
+        user_line2 = (contact_account.get("officeAddressLine2") or contact_account.get("office_address_line2") or "").strip()
+        user_city = (contact_account.get("officeCity") or contact_account.get("office_city") or "").strip()
+        user_state = (contact_account.get("officeState") or contact_account.get("office_state") or "").strip()
+        user_postal = (contact_account.get("officePostalCode") or contact_account.get("office_postal_code") or "").strip()
+        user_country = (contact_account.get("officeCountry") or contact_account.get("office_country") or "").strip()
+        if any([user_line1, user_line2, user_city, user_state, user_postal, user_country]):
+            enriched["officeAddressLine1"] = user_line1 or None
+            enriched["officeAddressLine2"] = user_line2 or None
+            enriched["officeCity"] = user_city or None
+            enriched["officeState"] = user_state or None
+            enriched["officePostalCode"] = user_postal or None
+            enriched["officeCountry"] = user_country or None
     # Promote prospect status to account_created when an account exists but status is still early-stage.
     status = (enriched.get("status") or "").lower()
     if enriched["referredContactHasAccount"] and status in ("pending", "contact_form", "contacted"):
@@ -526,6 +542,22 @@ def _apply_referred_contact_account_fields(record: Dict) -> Dict:
     )
     record["referredContactTotalOrders"] = contact_order_count
     record["referredContactEligibleForCredit"] = contact_order_count > 0
+    # Address priority: if the referred contact has an account and *that* account already
+    # has address data, prefer it over any sales_prospects stored address.
+    if contact_account:
+        user_line1 = (contact_account.get("officeAddressLine1") or contact_account.get("office_address_line1") or "").strip()
+        user_line2 = (contact_account.get("officeAddressLine2") or contact_account.get("office_address_line2") or "").strip()
+        user_city = (contact_account.get("officeCity") or contact_account.get("office_city") or "").strip()
+        user_state = (contact_account.get("officeState") or contact_account.get("office_state") or "").strip()
+        user_postal = (contact_account.get("officePostalCode") or contact_account.get("office_postal_code") or "").strip()
+        user_country = (contact_account.get("officeCountry") or contact_account.get("office_country") or "").strip()
+        if any([user_line1, user_line2, user_city, user_state, user_postal, user_country]):
+            record["officeAddressLine1"] = user_line1 or None
+            record["officeAddressLine2"] = user_line2 or None
+            record["officeCity"] = user_city or None
+            record["officeState"] = user_state or None
+            record["officePostalCode"] = user_postal or None
+            record["officeCountry"] = user_country or None
     return record
 
 
@@ -1781,6 +1813,32 @@ def upsert_sales_prospect_for_sales_rep(
             payload["officePostalCode"] = _sanitize_address_field(office_address_updates.get("officePostalCode"))
         if "officeCountry" in office_address_updates:
             payload["officeCountry"] = _sanitize_address_field(office_address_updates.get("officeCountry"))
+
+        # If this prospect corresponds to an existing user account, persist the address on the users table too.
+        # The users table is the authoritative source once an account exists.
+        try:
+            user_target = None
+            if payload.get("doctorId"):
+                user_target = user_repository.find_by_id(payload.get("doctorId"))
+            if not user_target and payload.get("contactEmail"):
+                user_target = user_repository.find_by_email(payload.get("contactEmail"))
+
+            if user_target and user_target.get("id"):
+                address_updates: Dict[str, object] = {}
+                for key in (
+                    "officeAddressLine1",
+                    "officeAddressLine2",
+                    "officeCity",
+                    "officeState",
+                    "officePostalCode",
+                    "officeCountry",
+                ):
+                    if key in payload:
+                        address_updates[key] = payload.get(key)
+                if address_updates:
+                    user_repository.update({"id": user_target.get("id"), **address_updates})
+        except Exception:
+            pass
     return sales_prospect_repository.upsert(payload)
 
 

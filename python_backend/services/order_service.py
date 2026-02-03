@@ -3568,12 +3568,17 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             elif attribution_email and attribution_email in admin_id_by_email:
                 recipient_id = admin_id_by_email[attribution_email]
 
-            if not recipient_id and contact_form_origin:
+            # House commission comes from any order whose attribution email appears in the contact-form
+            # submissions table. This is an *additional* admin split and should not prevent a rep/admin
+            # from earning their normal commission for the same order.
+            house_commission = False
+            if contact_form_origin and not recipient_id:
                 recipient_id = "__house__"
-            # Business rule: house commission comes from any user with orders whose email appears in the
-            # contact-form submissions table, even if the ordering user is a rep/admin.
+                house_commission = True
             if force_house_contact_form:
-                recipient_id = "__house__"
+                house_commission = True
+                if not recipient_id:
+                    recipient_id = "__house__"
 
             if not recipient_id:
                 if rep_id:
@@ -3638,6 +3643,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             attributed_orders.append(
                 {
                     "recipientId": recipient_id or "",
+                    "houseCommission": bool(house_commission),
                     "itemsSubtotal": items_subtotal,
                     "items": items,
                     "total": total,
@@ -3747,8 +3753,16 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         order_breakdown: List[Dict[str, object]] = []
 
+        def _allocate_house_commission(*, total_commission: float) -> Dict[str, float]:
+            if not admin_ids:
+                return {}
+            if float(total_commission or 0.0) <= 0:
+                return {}
+            return _split_amount(total_commission, admin_ids)
+
         for entry in attributed_orders:
             recipient_id = str(entry.get("recipientId") or "").strip()
+            house_commission = bool(entry.get("houseCommission") or False)
             subtotal_value = _resolve_order_subtotal(entry)
             base = max(0.0, subtotal_value)
             if base <= 0:
@@ -3756,15 +3770,26 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             pricing_mode = _resolve_pricing_mode(entry)
             rate = 0.2 if pricing_mode == "retail" else 0.1
-            # For house/contact-form orders, split commission equally across admins and round
-            # per-admin to cents (so each admin sees the same amount).
-            if recipient_id == "__house__" and admin_ids:
-                per_admin_commission = round((base * rate) / len(admin_ids), 2)
-                commission = round(per_admin_commission * len(admin_ids), 2)
-                supplier_share = round(base - commission, 2)
-            else:
-                commission = round(base * rate, 2)
-                supplier_share = round(base - commission, 2)
+
+            # Primary commission: rep/admin (normal) OR house/unassigned split.
+            primary_commission_total = 0.0
+            primary_house_allocations: Dict[str, float] = {}
+            if recipient_id == "__house__":
+                primary_house_allocations = _allocate_house_commission(total_commission=round(base * rate, 2))
+                primary_commission_total = round(sum(primary_house_allocations.values()), 2)
+            elif recipient_id:
+                primary_commission_total = round(base * rate, 2)
+
+            # Additional house commission: split across admins when the order's attribution email is a contact-form email.
+            # Do not double-pay if the primary recipient is already the house bucket.
+            house_commission_total = 0.0
+            house_allocations: Dict[str, float] = {}
+            if house_commission and recipient_id != "__house__":
+                house_allocations = _allocate_house_commission(total_commission=round(base * rate, 2))
+                house_commission_total = round(sum(house_allocations.values()), 2)
+
+            commission = round(primary_commission_total + house_commission_total, 2)
+            supplier_share = round(base - commission, 2)
             created_at = _parse_datetime_utc(entry.get("createdAt")) if entry.get("createdAt") else None
 
             totals["ordersCounted"] += 1
@@ -3782,30 +3807,36 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(base)
 
             if recipient_id == "__house__":
-                allocations = (
-                    {admin_id: per_admin_commission for admin_id in admin_ids}
-                    if admin_ids
-                    else {}
-                )
-                if not allocations:
-                    _add_commission(supplier_row_id, commission)
-                else:
-                    for target_id, amount in allocations.items():
-                        _add_commission(target_id, amount)
-                        if commission > 0:
-                            base_share = base * (amount / commission)
-                            stats = _ensure_stats(target_id)
-                            if pricing_mode == "retail":
-                                stats["houseRetailOrders"] = int(stats.get("houseRetailOrders") or 0) + 1
-                                stats["houseRetailBase"] = round(float(stats.get("houseRetailBase") or 0.0) + float(base_share or 0.0), 2)
-                                stats["houseRetailCommission"] = round(float(stats.get("houseRetailCommission") or 0.0) + float(amount or 0.0), 2)
-                            else:
-                                stats["houseWholesaleOrders"] = int(stats.get("houseWholesaleOrders") or 0) + 1
-                                stats["houseWholesaleBase"] = round(float(stats.get("houseWholesaleBase") or 0.0) + float(base_share or 0.0), 2)
-                                stats["houseWholesaleCommission"] = round(float(stats.get("houseWholesaleCommission") or 0.0) + float(amount or 0.0), 2)
+                for target_id, amount in primary_house_allocations.items():
+                    _add_commission(target_id, amount)
+                    if primary_commission_total > 0:
+                        base_share = base * (amount / primary_commission_total)
+                        stats = _ensure_stats(target_id)
+                        if pricing_mode == "retail":
+                            stats["houseRetailOrders"] = int(stats.get("houseRetailOrders") or 0) + 1
+                            stats["houseRetailBase"] = round(float(stats.get("houseRetailBase") or 0.0) + float(base_share or 0.0), 2)
+                            stats["houseRetailCommission"] = round(float(stats.get("houseRetailCommission") or 0.0) + float(amount or 0.0), 2)
+                        else:
+                            stats["houseWholesaleOrders"] = int(stats.get("houseWholesaleOrders") or 0) + 1
+                            stats["houseWholesaleBase"] = round(float(stats.get("houseWholesaleBase") or 0.0) + float(base_share or 0.0), 2)
+                            stats["houseWholesaleCommission"] = round(float(stats.get("houseWholesaleCommission") or 0.0) + float(amount or 0.0), 2)
             elif recipient_id:
-                _add_commission(recipient_id, commission)
+                _add_commission(recipient_id, primary_commission_total)
                 _accumulate_stats(recipient_id, pricing_mode=pricing_mode, base=base)
+
+            for target_id, amount in house_allocations.items():
+                _add_commission(target_id, amount)
+                if house_commission_total > 0:
+                    base_share = base * (amount / house_commission_total)
+                    stats = _ensure_stats(target_id)
+                    if pricing_mode == "retail":
+                        stats["houseRetailOrders"] = int(stats.get("houseRetailOrders") or 0) + 1
+                        stats["houseRetailBase"] = round(float(stats.get("houseRetailBase") or 0.0) + float(base_share or 0.0), 2)
+                        stats["houseRetailCommission"] = round(float(stats.get("houseRetailCommission") or 0.0) + float(amount or 0.0), 2)
+                    else:
+                        stats["houseWholesaleOrders"] = int(stats.get("houseWholesaleOrders") or 0) + 1
+                        stats["houseWholesaleBase"] = round(float(stats.get("houseWholesaleBase") or 0.0) + float(base_share or 0.0), 2)
+                        stats["houseWholesaleCommission"] = round(float(stats.get("houseWholesaleCommission") or 0.0) + float(amount or 0.0), 2)
 
             _add_commission(supplier_row_id, supplier_share)
 

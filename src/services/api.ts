@@ -917,13 +917,13 @@ export const authAPI = {
     }
   },
 
-  getCurrentUser: async () => {
-    try {
-      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`);
-      setAuthUserId((user as any)?.id);
-      setAuthEmail((user as any)?.email);
-      return user;
-    } catch (error) {
+	  getCurrentUser: async () => {
+	    try {
+	      const user = await fetchWithAuth(`${API_BASE_URL}/auth/me`, { method: 'GET', cache: 'no-store' });
+	      setAuthUserId((user as any)?.id);
+	      setAuthEmail((user as any)?.email);
+	      return user;
+	    } catch (error) {
       const maybeAny = error as any;
       const status = typeof maybeAny?.status === 'number' ? maybeAny.status : null;
       const code = typeof maybeAny?.code === 'string' ? maybeAny.code : null;

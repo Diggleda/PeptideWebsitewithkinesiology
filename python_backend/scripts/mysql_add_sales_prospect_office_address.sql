@@ -7,5 +7,4 @@ ALTER TABLE sales_prospects
   ADD COLUMN office_city VARCHAR(190) NULL,
   ADD COLUMN office_state VARCHAR(64) NULL,
   ADD COLUMN office_postal_code VARCHAR(32) NULL,
-  ADD COLUMN office_country VARCHAR(32) NULL;
-
+  ADD COLUMN office_country VARCHAR(64) NULL;

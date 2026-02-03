@@ -121,6 +121,12 @@ CREATE_TABLE_STATEMENTS = [
         contact_name VARCHAR(190) NULL,
         contact_email VARCHAR(190) NULL,
         contact_phone VARCHAR(32) NULL,
+        office_address_line1 VARCHAR(190) NULL,
+        office_address_line2 VARCHAR(190) NULL,
+        office_city VARCHAR(190) NULL,
+        office_state VARCHAR(64) NULL,
+        office_postal_code VARCHAR(32) NULL,
+        office_country VARCHAR(64) NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
         UNIQUE KEY uniq_sales_rep_doctor (sales_rep_id, doctor_id),
@@ -334,6 +340,12 @@ def ensure_schema() -> None:
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_name VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(32) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_address_line1 VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_address_line2 VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_city VARCHAR(190) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_state VARCHAR(64) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_postal_code VARCHAR(32) NULL",
+        "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS office_country VARCHAR(64) NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL",
         "ALTER TABLE sales_prospects ADD COLUMN IF NOT EXISTS created_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS lead_type VARCHAR(32) NULL",
@@ -420,6 +432,23 @@ def ensure_schema() -> None:
         if not _column_exists("orders", "notes"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN notes LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE orders MODIFY COLUMN notes LONGTEXT NULL")
+    except Exception:
+        pass
+
+    # Ensure sales prospects office address fields exist (used by manual prospects + contact form pipeline).
+    try:
+        if not _column_exists("sales_prospects", "office_address_line1"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_address_line1 VARCHAR(190) NULL")
+        if not _column_exists("sales_prospects", "office_address_line2"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_address_line2 VARCHAR(190) NULL")
+        if not _column_exists("sales_prospects", "office_city"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_city VARCHAR(190) NULL")
+        if not _column_exists("sales_prospects", "office_state"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_state VARCHAR(64) NULL")
+        if not _column_exists("sales_prospects", "office_postal_code"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_postal_code VARCHAR(32) NULL")
+        if not _column_exists("sales_prospects", "office_country"):
+            mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_country VARCHAR(64) NULL")
     except Exception:
         pass
 
