@@ -3311,7 +3311,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if email:
                 doctors_by_email[email] = u
 
-        # Any order placed by an email present in the MySQL `contact_forms` table should be
+        # Any order placed by an email present in the MySQL contact-form submissions table should be
         # treated as a house/contact-form order and split across admins.
         contact_form_emails: set[str] = set()
         try:
@@ -3319,13 +3319,19 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             from ..database import mysql_client  # type: ignore
 
             if bool(get_config().mysql.get("enabled")):
-                rows = mysql_client.fetch_all("SELECT DISTINCT email FROM contact_forms", {})
-                for row in rows or []:
-                    if not isinstance(row, dict):
-                        continue
-                    form_email = _norm_email(row.get("email"))
-                    if form_email:
-                        contact_form_emails.add(form_email)
+                # Some deployments use `contact_form` while others use `contact_forms`.
+                # Prefer loading from both when possible.
+                for table in ("contact_form", "contact_forms"):
+                    try:
+                        rows = mysql_client.fetch_all(f"SELECT DISTINCT email FROM {table}", {})
+                    except Exception:
+                        rows = []
+                    for row in rows or []:
+                        if not isinstance(row, dict):
+                            continue
+                        form_email = _norm_email(row.get("email"))
+                        if form_email:
+                            contact_form_emails.add(form_email)
         except Exception:
             contact_form_emails = set()
 
@@ -3561,6 +3567,10 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 recipient_id = admin_id_by_email[billing_email]
 
             if not recipient_id and contact_form_origin:
+                recipient_id = "__house__"
+            # Business rule: house commission comes from any user with orders whose email appears in the
+            # contact-form submissions table, even if the ordering user is a rep/admin.
+            if force_house_contact_form:
                 recipient_id = "__house__"
 
             if not recipient_id:

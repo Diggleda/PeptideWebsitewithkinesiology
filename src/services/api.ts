@@ -382,7 +382,7 @@ const _timeoutMsForRequest = (url: string, method: string) => {
   const normalized = String(url || '').toLowerCase();
   if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
   if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
-  if (normalized.includes('/api/settings/user-activity/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  if (normalized.includes('/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
   // Order placement can be slower because it may sync with WooCommerce.
   if (method === 'POST' && (normalized.endsWith('/api/orders') || normalized.includes('/api/orders/'))) {
     return _PEPPRO_CHECKOUT_TIMEOUT_MS;
@@ -409,149 +409,183 @@ const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: numb
   }
 };
 
+const _inflightGetRequests = new Map<string, Promise<any>>();
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   const token = getAuthToken();
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
+  const method = (options.method || 'GET').toUpperCase();
+  const headers: Record<string, string> = {
+    ...((options.headers as any) || {}),
   };
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const method = (options.method || 'GET').toUpperCase();
-  let requestUrl = url;
-
-  if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
-    const separator = requestUrl.includes('?') ? '&' : '?';
-    requestUrl = `${requestUrl}${separator}_ts=${Date.now()}`;
+  const hasBody = method !== 'GET' && method !== 'HEAD' && options.body != null;
+  const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (hasBody && !isFormDataBody && headers['Content-Type'] == null) {
+    headers['Content-Type'] = 'application/json';
   }
 
-  let response: Response;
-  try {
-    const timeoutMs = _timeoutMsForRequest(requestUrl, method);
-    response = await _fetchWithTimeout(requestUrl, {
-      cache: options.cache ?? 'no-store',
-      ...options,
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-        ...headers,
-      },
-    }, timeoutMs);
-  } catch (error: any) {
-    const isAbort = error?.name === 'AbortError';
-    const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-    dispatchApiReachability({ ok: false, status: null, message });
-    if (isAbort) {
-      const wrapped = new Error('Request timed out');
-      (wrapped as any).code = 'TIMEOUT';
-      (wrapped as any).status = null;
-      throw wrapped;
+  const run = async () => {
+    let requestUrl = url;
+
+    if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
+      const normalized = requestUrl.toLowerCase();
+      const shouldAddTs =
+        !normalized.includes('/longpoll')
+        && !/[?&]_ts=/.test(normalized)
+        && !/[?&]etag=/.test(normalized)
+        && !/[?&]timeoutms=/.test(normalized);
+      if (shouldAddTs) {
+        const separator = requestUrl.includes('?') ? '&' : '?';
+        requestUrl = `${requestUrl}${separator}_ts=${Date.now()}`;
+      }
     }
-    throw error;
-  }
 
-  if (response.ok) {
-    dispatchApiReachability({ ok: true, status: response.status });
-  } else if (response.status >= 500 || response.status === 429) {
-    dispatchApiReachability({ ok: false, status: response.status });
-  }
-
-  if (!response.ok) {
-    const contentType = response.headers.get('content-type') || '';
-    let errorMessage = `Request failed (${response.status})`;
-    let errorDetails: Record<string, unknown> | string | null = null;
-
-    let htmlLikePayload = false;
+    let response: Response;
     try {
-      if (contentType.includes('application/json')) {
-        errorDetails = await response.json();
-        if (errorDetails && typeof errorDetails === 'object' && 'error' in errorDetails) {
-          const candidate = (errorDetails as Record<string, unknown>).error;
-          if (typeof candidate === 'string' && candidate.trim().length > 0) {
-            errorMessage = candidate;
+      const timeoutMs = _timeoutMsForRequest(requestUrl, method);
+      response = await _fetchWithTimeout(requestUrl, {
+        cache: options.cache ?? 'no-store',
+        ...options,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+          ...headers,
+        },
+      }, timeoutMs);
+    } catch (error: any) {
+      const isAbort = error?.name === 'AbortError';
+      const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+      dispatchApiReachability({ ok: false, status: null, message });
+      if (isAbort) {
+        const wrapped = new Error('Request timed out');
+        (wrapped as any).code = 'TIMEOUT';
+        (wrapped as any).status = null;
+        throw wrapped;
+      }
+      throw error;
+    }
+
+    if (response.ok) {
+      dispatchApiReachability({ ok: true, status: response.status });
+    } else if (response.status >= 500 || response.status === 429) {
+      dispatchApiReachability({ ok: false, status: response.status });
+    }
+
+    if (!response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      let errorMessage = `Request failed (${response.status})`;
+      let errorDetails: Record<string, unknown> | string | null = null;
+
+      let htmlLikePayload = false;
+      try {
+        if (contentType.includes('application/json')) {
+          errorDetails = await response.json();
+          if (errorDetails && typeof errorDetails === 'object' && 'error' in errorDetails) {
+            const candidate = (errorDetails as Record<string, unknown>).error;
+            if (typeof candidate === 'string' && candidate.trim().length > 0) {
+              errorMessage = candidate;
+            }
+          }
+        } else {
+          errorDetails = await response.text();
+          if (typeof errorDetails === 'string' && errorDetails.trim().length > 0) {
+            const trimmed = errorDetails.trim();
+            htmlLikePayload = trimmed.startsWith('<') || trimmed.includes('<html');
+            errorMessage = `${errorMessage}: ${trimmed}`;
           }
         }
-      } else {
-        errorDetails = await response.text();
-        if (typeof errorDetails === 'string' && errorDetails.trim().length > 0) {
-          const trimmed = errorDetails.trim();
-          htmlLikePayload = trimmed.startsWith('<') || trimmed.includes('<html');
-          errorMessage = `${errorMessage}: ${trimmed}`;
+      } catch (parseError) {
+        errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
+      }
+
+      if (htmlLikePayload) {
+        const normalizedUrl = url.toLowerCase();
+        if (normalizedUrl.includes('/shipping/')) {
+          errorMessage = 'Address cannot be identified.';
+        } else {
+          errorMessage = `Request failed (${response.status}). Please try again in a moment.`;
         }
       }
-    } catch (parseError) {
-      errorDetails = { parseError: parseError instanceof Error ? parseError.message : String(parseError) };
-    }
 
-    if (htmlLikePayload) {
-      const normalizedUrl = url.toLowerCase();
-      if (normalizedUrl.includes('/shipping/')) {
-        errorMessage = 'Address cannot be identified.';
-      } else {
-        errorMessage = `Request failed (${response.status}). Please try again in a moment.`;
+      errorMessage = sanitizeServiceNames(errorMessage);
+      if (typeof errorDetails === 'string') {
+        errorDetails = sanitizeServiceNames(errorDetails);
+      } else if (errorDetails && typeof errorDetails === 'object') {
+        sanitizePayloadMessages(errorDetails as any);
       }
-    }
 
-    errorMessage = sanitizeServiceNames(errorMessage);
-    if (typeof errorDetails === 'string') {
-      errorDetails = sanitizeServiceNames(errorDetails);
-    } else if (errorDetails && typeof errorDetails === 'object') {
-      sanitizePayloadMessages(errorDetails as any);
-    }
-
-    const error = new Error(errorMessage);
-    (error as any).status = response.status;
-    (error as any).details = errorDetails;
-    const codeField = typeof errorDetails === 'object' && errorDetails !== null
-      ? (errorDetails as any).code
-      : null;
-    const isAuthError = response.status === 401
-      || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
-    if (isAuthError) {
-      clearAuthToken();
-      clearSessionId();
-      // Only broadcast a logout if this tab *thought* it was authenticated.
-      // Otherwise (e.g., calling /auth/logout without a token) we'd recurse.
-      if (token) {
-        const authCode = typeof codeField === 'string' ? codeField : undefined;
-        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
-        dispatchForceLogout(reason, { authCode });
+      const error = new Error(errorMessage);
+      (error as any).status = response.status;
+      (error as any).details = errorDetails;
+      const codeField = typeof errorDetails === 'object' && errorDetails !== null
+        ? (errorDetails as any).code
+        : null;
+      const isAuthError = response.status === 401
+        || (response.status === 403 && typeof codeField === 'string' && codeField.startsWith('TOKEN_'));
+      if (isAuthError) {
+        clearAuthToken();
+        clearSessionId();
+        // Only broadcast a logout if this tab *thought* it was authenticated.
+        // Otherwise (e.g., calling /auth/logout without a token) we'd recurse.
+        if (token) {
+          const authCode = typeof codeField === 'string' ? codeField : undefined;
+          const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+          dispatchForceLogout(reason, { authCode });
+        }
+        (error as any).code = 'AUTH_REQUIRED';
+        if (typeof codeField === 'string') {
+          (error as any).authCode = codeField;
+        }
+      } else if (response.status === 403) {
+        (error as any).code = 'FORBIDDEN';
       }
-      (error as any).code = 'AUTH_REQUIRED';
-      if (typeof codeField === 'string') {
-        (error as any).authCode = codeField;
-      }
-    } else if (response.status === 403) {
-      (error as any).code = 'FORBIDDEN';
+      throw error;
     }
-    throw error;
-  }
 
-  if (response.status === 204 || response.status === 205) {
-    return null;
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/json')) {
-    const text = await response.text();
-    if (!text) {
+    if (response.status === 204 || response.status === 205) {
       return null;
     }
-    try {
-      const parsed = JSON.parse(text);
-      return sanitizePayloadMessages(parsed);
-    } catch (error) {
-      console.warn('[fetchWithAuth] Failed to parse JSON response', { error });
-      return sanitizeServiceNames(text);
+
+    const contentType = response.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      const text = await response.text();
+      if (!text) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(text);
+        return sanitizePayloadMessages(parsed);
+      } catch (error) {
+        console.warn('[fetchWithAuth] Failed to parse JSON response', { error });
+        return sanitizeServiceNames(text);
+      }
     }
+
+    return response.text();
+  };
+
+  const dedupeKey = method === 'GET' && !options.signal ? `${token || ''}|${url}` : null;
+  if (!dedupeKey) {
+    return run();
   }
 
-  return response.text();
+  const existing = _inflightGetRequests.get(dedupeKey);
+  if (existing) return existing;
+
+  const promise = run();
+  _inflightGetRequests.set(dedupeKey, promise);
+  void promise.finally(() => {
+    if (_inflightGetRequests.get(dedupeKey) === promise) {
+      _inflightGetRequests.delete(dedupeKey);
+    }
+  });
+  return promise;
 };
 
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {

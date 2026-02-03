@@ -7535,8 +7535,17 @@ function MainApp() {
 		    user?.role,
 		  ]);
 
-  const refreshAdminProductsCommission = useCallback(async () => {
+  const adminProductsCommissionNextAllowedAtRef = useRef<number>(0);
+  const adminProductsCommissionFailureCountRef = useRef<number>(0);
+
+  const refreshAdminProductsCommission = useCallback(async (options?: { force?: boolean }) => {
     if (!user || !isAdmin(user.role)) return;
+    const now = Date.now();
+    const force = Boolean(options?.force);
+    if (!force) {
+      if (adminProductsCommissionLoading) return;
+      if (now < adminProductsCommissionNextAllowedAtRef.current) return;
+    }
     setAdminProductsCommissionLoading(true);
     setAdminProductsCommissionError(null);
     try {
@@ -7627,7 +7636,20 @@ function MainApp() {
         totals: (response as any)?.totals ?? null,
       });
       setAdminProductsCommissionLastFetchedAt(Date.now());
+      adminProductsCommissionFailureCountRef.current = 0;
+      adminProductsCommissionNextAllowedAtRef.current = 0;
     } catch (error: any) {
+      const status = typeof error?.status === "number" ? error.status : null;
+      const nextFailures = Math.min(
+        8,
+        Math.max(0, adminProductsCommissionFailureCountRef.current) + 1,
+      );
+      adminProductsCommissionFailureCountRef.current = nextFailures;
+      const baseMs = status === 429 ? 15_000 : 3_000;
+      const capMs = status === 429 ? 180_000 : 60_000;
+      const cooldownMs = Math.min(capMs, baseMs * Math.pow(2, nextFailures - 1));
+      adminProductsCommissionNextAllowedAtRef.current = Date.now() + cooldownMs;
+
       const message =
         typeof error?.message === "string"
           ? error.message
@@ -7639,7 +7661,7 @@ function MainApp() {
     } finally {
       setAdminProductsCommissionLoading(false);
     }
-  }, [salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
+  }, [adminProductsCommissionLoading, salesRepPeriodEnd, salesRepPeriodStart, user?.id, user?.role]);
 
 	  const downloadAdminProductsCommissionCsv = useCallback(async () => {
 	    try {
@@ -7818,7 +7840,7 @@ function MainApp() {
   const applyAdminDashboardPeriod = useCallback(() => {
     void refreshSalesBySalesRepSummary();
     void refreshAdminTaxesByState();
-    void refreshAdminProductsCommission();
+    void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
   const clearAdminDashboardPeriod = useCallback(() => {
@@ -7827,7 +7849,7 @@ function MainApp() {
     setSalesRepPeriodEnd(defaults.end);
     void refreshSalesBySalesRepSummary();
     void refreshAdminTaxesByState();
-    void refreshAdminProductsCommission();
+    void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
 	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
@@ -7844,7 +7866,7 @@ function MainApp() {
 	    if (isAdmin(user.role)) {
 	      void refreshSalesBySalesRepSummary();
 	      void refreshAdminTaxesByState();
-	      void refreshAdminProductsCommission();
+	      void refreshAdminProductsCommission({ force: true });
 	    } else {
 	      void refreshSalesBySalesRepSummary();
 	    }
@@ -8344,15 +8366,18 @@ function MainApp() {
 		              })
 		            : raw;
 		          setLiveClients(clients);
-		        } catch (error: any) {
-		          if (cancelled) break;
-		          if (typeof error?.status === "number" && error.status === 404) {
-		            liveClientsLongPollDisabledRef.current = true;
+	        } catch (error: any) {
+	          if (cancelled) break;
+	          if (typeof error?.status === "number" && error.status === 404) {
+	            liveClientsLongPollDisabledRef.current = true;
 	            startIntervalFallback();
 	            return;
 	          }
+	          const status = typeof error?.status === "number" ? error.status : null;
+	          const message = typeof error?.message === "string" ? error.message : "";
+	          const isRateLimited = status === 429 || message.includes("429");
 	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(1000);
+	          await sleep(isRateLimited ? 10000 : 1000);
 	        }
 	      }
 	    };
@@ -8439,8 +8464,11 @@ function MainApp() {
 	            startIntervalFallback();
 	            return;
 	          }
+	          const status = typeof error?.status === "number" ? error.status : null;
+	          const message = typeof error?.message === "string" ? error.message : "";
+	          const isRateLimited = status === 429 || message.includes("429");
 	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(1000);
+	          await sleep(isRateLimited ? 10000 : 1000);
 	        }
 	      }
 	    };
