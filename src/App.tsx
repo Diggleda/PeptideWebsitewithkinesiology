@@ -1744,33 +1744,61 @@ const PipelineTooltip = ({
   active,
   payload,
   label,
+  onLeadClick,
 }: {
   active?: boolean;
   payload?: any[];
   label?: string;
+  onLeadClick?: (lead: { id?: string; name?: string; email?: string | null; role?: string | null }) => void;
 }) => {
   if (!active || !payload || payload.length === 0) {
     return null;
   }
   const entry = payload[0]?.payload || {};
+  const leads = Array.isArray(entry.leads) ? entry.leads : [];
   const names = Array.isArray(entry.names) ? entry.names : [];
   const count = Number(entry.count) || 0;
   const maxNames = 10;
-  const visibleNames = names.slice(0, maxNames);
-  const remaining = names.length - visibleNames.length;
+  const list = leads.length > 0 ? leads : names.map((name: string) => ({ name }));
+  const visibleItems = list.slice(0, maxNames);
+  const remaining = list.length - visibleItems.length;
   return (
     <div className="pipeline-tooltip max-w-[260px] rounded-xl border border-slate-200/90 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-lg backdrop-blur-lg">
       <div className="text-sm font-semibold text-slate-900">{label}</div>
       <div className="text-[11px] text-slate-500">
         {count} lead{count === 1 ? "" : "s"}
       </div>
-      {visibleNames.length > 0 && (
+      {visibleItems.length > 0 && (
         <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-1 text-[11px] text-slate-700">
-          {visibleNames.map((name: string) => (
-            <li key={name} className="truncate">
-              {name}
-            </li>
-          ))}
+          {visibleItems.map((item: any, index: number) => {
+            const name = String(item?.name || "").trim() || "Prospect";
+            const id = String(item?.id || "").trim();
+            const canOpen = Boolean(onLeadClick && id);
+            return (
+              <li key={id || `${name}:${index}`} className="truncate">
+                {canOpen ? (
+                  <button
+                    type="button"
+                    className="max-w-full truncate text-left text-[rgb(26,85,173)] hover:underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onLeadClick?.({
+                        id,
+                        name,
+                        email: item?.email ?? null,
+                        role: item?.role ?? null,
+                      });
+                    }}
+                  >
+                    {name}
+                  </button>
+                ) : (
+                  name
+                )}
+              </li>
+            );
+          })}
           {remaining > 0 && (
             <li className="text-slate-500">+{remaining} more</li>
           )}
@@ -5498,19 +5526,96 @@ function MainApp() {
 		    >
 		  >({});
 		  const salesDoctorOwnerRepFetchInFlightRef = useRef<Set<string>>(new Set());
-	  const [salesDoctorCommissionFromReport, setSalesDoctorCommissionFromReport] =
-	    useState<number | null>(null);
-	  const [salesDoctorCommissionFromReportLoading, setSalesDoctorCommissionFromReportLoading] =
-	    useState(false);
-	  const salesDoctorCommissionFromReportKeyRef = useRef<string>("");
+		  const [salesDoctorCommissionFromReport, setSalesDoctorCommissionFromReport] =
+		    useState<number | null>(null);
+		  const [salesDoctorCommissionFromReportLoading, setSalesDoctorCommissionFromReportLoading] =
+		    useState(false);
+		  const salesDoctorCommissionFromReportKeyRef = useRef<string>("");
 
-	  useEffect(() => {
-	    setSalesDoctorCommissionRange(undefined);
-	    setSalesDoctorCommissionPickerOpen(false);
-	    setSalesDoctorCommissionFromReport(null);
-	    setSalesDoctorCommissionFromReportLoading(false);
-	    salesDoctorCommissionFromReportKeyRef.current = "";
-	  }, [salesDoctorDetail?.doctorId]);
+		  const [salesRepProspectsForModal, setSalesRepProspectsForModal] = useState<any[] | null>(
+		    null,
+		  );
+		  const [salesRepProspectsLoading, setSalesRepProspectsLoading] = useState(false);
+		  const [salesRepProspectsError, setSalesRepProspectsError] = useState<string | null>(null);
+		  const salesRepProspectsKeyRef = useRef<string | null>(null);
+
+		  useEffect(() => {
+		    setSalesDoctorCommissionRange(undefined);
+		    setSalesDoctorCommissionPickerOpen(false);
+		    setSalesDoctorCommissionFromReport(null);
+		    setSalesDoctorCommissionFromReportLoading(false);
+		    salesDoctorCommissionFromReportKeyRef.current = "";
+		  }, [salesDoctorDetail?.doctorId]);
+
+		  useEffect(() => {
+		    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
+		    const targetId = String(salesDoctorDetail?.doctorId || "").trim();
+		    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
+		    const isTargetRep =
+		      targetRole === "sales_rep" ||
+		      targetRole === "rep" ||
+		      targetRole === "sales_lead" ||
+		      targetRole === "saleslead" ||
+		      targetRole === "sales-lead";
+
+		    if (!targetId || !canViewProspects || !isTargetRep) {
+		      salesRepProspectsKeyRef.current = null;
+		      setSalesRepProspectsForModal(null);
+		      setSalesRepProspectsLoading(false);
+		      setSalesRepProspectsError(null);
+		      return;
+		    }
+
+		    salesRepProspectsKeyRef.current = targetId;
+		    let canceled = false;
+		    (async () => {
+		      setSalesRepProspectsLoading(true);
+		      setSalesRepProspectsError(null);
+		      try {
+		        const response = await referralAPI.getSalesRepDashboard({
+		          salesRepId: targetId,
+		          scope: "mine",
+		        });
+		        const respObj =
+		          response && typeof response === "object" ? (response as any) : null;
+		        const rawReferrals = Array.isArray(respObj?.referrals)
+		          ? respObj.referrals
+		          : Array.isArray(respObj?.leads)
+		            ? respObj.leads
+		            : [];
+		        const active = rawReferrals
+		          .filter((row: any) => row && typeof row === "object")
+		          .filter((row: any) => {
+		            const status = String(row?.status || "pending").trim().toLowerCase();
+		            return status !== "converted";
+		          })
+		          .sort((a: any, b: any) => {
+		            const aTs = Date.parse(String(a?.updatedAt || a?.createdAt || "")) || 0;
+		            const bTs = Date.parse(String(b?.updatedAt || b?.createdAt || "")) || 0;
+		            return bTs - aTs;
+		          });
+		        if (canceled) return;
+		        if (salesRepProspectsKeyRef.current !== targetId) return;
+		        setSalesRepProspectsForModal(active);
+		      } catch (error: any) {
+		        if (canceled) return;
+		        if (salesRepProspectsKeyRef.current !== targetId) return;
+		        setSalesRepProspectsForModal(null);
+		        const message =
+		          typeof error?.message === "string" && error.message.trim().length
+		            ? error.message
+		            : "Unable to load prospects.";
+		        setSalesRepProspectsError(message);
+		      } finally {
+		        if (!canceled && salesRepProspectsKeyRef.current === targetId) {
+		          setSalesRepProspectsLoading(false);
+		        }
+		      }
+		    })();
+		    return () => {
+		      canceled = true;
+		    };
+		  }, [referralAPI, salesDoctorDetail?.doctorId, salesDoctorDetail?.role, user?.role]);
 
 		  useEffect(() => {
 		    const canSeeOwner =
@@ -10171,18 +10276,18 @@ function MainApp() {
     setCollapsedReferralIds(next);
   }, [filteredSalesRepReferrals]);
 
-		  const salesRepChartData = useMemo(() => {
-		    const statusRank = new Map<string, number>();
-		    SALES_REP_PIPELINE.forEach((stage, index) => {
-		      stage.statuses.forEach((statusKey) => statusRank.set(statusKey, index));
-		    });
+			  const salesRepChartData = useMemo(() => {
+			    const statusRank = new Map<string, number>();
+			    SALES_REP_PIPELINE.forEach((stage, index) => {
+			      stage.statuses.forEach((statusKey) => statusRank.set(statusKey, index));
+			    });
 
         const chartReferrals: any[] = [
           ...normalizedReferrals,
           ...accountProspectEntries.map((entry) => entry.record),
         ];
 
-			    const identityKeyForReferral = (referral: any, index: number): string => {
+				    const identityKeyForReferral = (referral: any, index: number): string => {
 		      const accountId =
 		        referral?.referredContactAccountId ||
 		        referral?.convertedDoctorId ||
@@ -10213,67 +10318,128 @@ function MainApp() {
 			      return `idx:${index}`;
 			    };
 
-			    const pipelineNameForReferral = (referral: any): string => {
+				    const pipelineNameForReferral = (referral: any): string => {
 			      const name =
 			        referral?.referredContactName ||
 			        referral?.referredContactEmail ||
 			        referral?.referredContactPhone ||
 			        referral?.referrerDoctorName ||
 			        "Prospect";
-			      return String(name).trim() || "Prospect";
-			    };
+				      return String(name).trim() || "Prospect";
+				    };
 
-			    const bestByIdentity = new Map<string, { status: string; name: string }>();
-				    chartReferrals.forEach((referral, index) => {
-				      const normalizedStatus = sanitizeReferralStatus(referral.status);
-				      const status =
-				        hasLeadPlacedOrder(referral) && normalizedStatus !== "converted"
-				          ? "nuture"
-				          : normalizedStatus;
-				      const key = identityKeyForReferral(referral, index);
-				      const name = pipelineNameForReferral(referral);
-				      const existing = bestByIdentity.get(key);
-				      if (!existing) {
-			        bestByIdentity.set(key, { status, name });
-			        return;
-			      }
-			      const nextRank = statusRank.get(status) ?? -1;
-			      const prevRank = statusRank.get(existing.status) ?? -1;
-			      if (nextRank > prevRank) {
-			        bestByIdentity.set(key, { status, name });
-			      }
-			    });
+				    const leadForReferral = (referral: any, index: number) => {
+				      const accountId =
+				        referral?.referredContactAccountId ||
+				        referral?.convertedDoctorId ||
+				        referral?.referredContactId ||
+				        referral?.userId ||
+				        referral?.doctorId ||
+				        null;
+				      const id =
+				        accountId != null
+				          ? String(accountId)
+				          : referral?.id != null
+				            ? String(referral.id)
+				            : null;
+				      const email =
+				        typeof referral?.referredContactEmail === "string"
+				          ? referral.referredContactEmail.trim()
+				          : typeof referral?.contactEmail === "string"
+				            ? referral.contactEmail.trim()
+				            : typeof referral?.email === "string"
+				              ? referral.email.trim()
+				              : null;
+				      const role =
+				        typeof referral?.role === "string"
+				          ? referral.role
+				          : accountId != null
+				            ? "doctor"
+				            : "doctor";
+				      return {
+				        id: id || undefined,
+				        name: pipelineNameForReferral(referral),
+				        email: email || null,
+				        role: role || null,
+				      };
+				    };
 
-			    const counts: Record<string, number> = {};
-			    const namesByStatus: Record<string, Set<string>> = {};
-			    bestByIdentity.forEach(({ status, name }) => {
-			      counts[status] = (counts[status] || 0) + 1;
-			      if (!namesByStatus[status]) {
-			        namesByStatus[status] = new Set();
-			      }
-			      if (name) {
-			        namesByStatus[status].add(name);
-			      }
-			    });
+				    const bestByIdentity = new Map<
+				      string,
+				      { status: string; lead: { id?: string; name?: string; email?: string | null; role?: string | null } }
+				    >();
+					    chartReferrals.forEach((referral, index) => {
+					      const normalizedStatus = sanitizeReferralStatus(referral.status);
+					      const status =
+					        hasLeadPlacedOrder(referral) && normalizedStatus !== "converted"
+					          ? "nuture"
+					          : normalizedStatus;
+					      const key = identityKeyForReferral(referral, index);
+					      const lead = leadForReferral(referral, index);
+					      const existing = bestByIdentity.get(key);
+					      if (!existing) {
+				        bestByIdentity.set(key, { status, lead });
+				        return;
+				      }
+				      const nextRank = statusRank.get(status) ?? -1;
+				      const prevRank = statusRank.get(existing.status) ?? -1;
+				      if (nextRank > prevRank) {
+				        bestByIdentity.set(key, { status, lead });
+				      }
+				    });
 
-		    return SALES_REP_PIPELINE.map((stage) => ({
-		      status: stage.key,
-		      label: stage.label,
-	      count: stage.statuses.reduce(
-	        (total, statusKey) => total + (counts[statusKey] || 0),
-	        0,
-	      ),
-		      names: (() => {
-		        const nameSet = new Set<string>();
+				    const counts: Record<string, number> = {};
+				    const leadsByStatus: Record<string, Map<string, any>> = {};
+				    bestByIdentity.forEach(({ status, lead }) => {
+				      counts[status] = (counts[status] || 0) + 1;
+				      if (!leadsByStatus[status]) {
+				        leadsByStatus[status] = new Map();
+				      }
+				      const leadKey =
+				        String(lead?.id || "").trim() ||
+				        String(lead?.email || "").trim().toLowerCase() ||
+				        String(lead?.name || "").trim().toLowerCase();
+				      if (leadKey) {
+				        leadsByStatus[status].set(leadKey, lead);
+				      }
+				    });
+
+			    return SALES_REP_PIPELINE.map((stage) => ({
+			      status: stage.key,
+			      label: stage.label,
+		      count: stage.statuses.reduce(
+		        (total, statusKey) => total + (counts[statusKey] || 0),
+		        0,
+		      ),
+		      leads: (() => {
+		        const byKey = new Map<string, any>();
 		        stage.statuses.forEach((statusKey) => {
-		          const names = namesByStatus[statusKey];
-		          if (!names) return;
-		          names.forEach((value) => nameSet.add(value));
+		          const leadsMap = leadsByStatus[statusKey];
+		          if (!leadsMap) return;
+		          for (const [key, value] of leadsMap.entries()) {
+		            if (!byKey.has(key)) {
+		              byKey.set(key, value);
+		            }
+		          }
 		        });
-		        return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+		        const arr = Array.from(byKey.values());
+		        arr.sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+		        return arr;
 		      })(),
-	    }));
-		  }, [accountProspectEntries, hasLeadPlacedOrder, normalizedReferrals]);
+			      names: (() => {
+			        const nameSet = new Set<string>();
+			        stage.statuses.forEach((statusKey) => {
+			          const leadsMap = leadsByStatus[statusKey];
+			          if (!leadsMap) return;
+			          for (const value of leadsMap.values()) {
+			            const name = String(value?.name || "").trim();
+			            if (name) nameSet.add(name);
+			          }
+			        });
+			        return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+			      })(),
+		    }));
+			  }, [accountProspectEntries, hasLeadPlacedOrder, normalizedReferrals]);
 
   const handleReferralSortToggle = useCallback(() => {
     setReferralSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -16860,23 +17026,23 @@ function MainApp() {
 	            </div>
 	          )}
 
-			          {isAdmin(user?.role) && (
-				            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
-				              <div className="flex flex-col gap-3">
-				                <div className="min-w-0">
-				                  <h3 className="text-lg font-semibold text-slate-900">
-				                    Admin Reports
-				                  </h3>
-				                  <p className="text-sm text-slate-600">
-				                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
-				                  </p>
-				                </div>
-						                <div className="w-full mt-3 mb-4 flex flex-wrap items-center justify-end gap-2 min-w-0">
-						                  <div className="flex items-center gap-2 min-w-0">
-						                    <Popover.Root
-						                      open={adminDashboardPeriodPickerOpen}
-						                      onOpenChange={setAdminDashboardPeriodPickerOpen}
-						                    >
+				          {isAdmin(user?.role) && (
+					            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+					              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+					                <div className="min-w-0">
+					                  <h3 className="text-lg font-semibold text-slate-900">
+					                    Admin Reports
+					                  </h3>
+					                  <p className="text-sm text-slate-600">
+					                    Sales by Sales Rep, Taxes by State, and Products Sold & Commission.
+					                  </p>
+					                </div>
+							                <div className="w-full sm:w-auto mt-3 sm:mt-0 mb-4 sm:mb-0 flex flex-wrap items-center justify-end gap-2 min-w-0">
+							                  <div className="flex items-center gap-2 min-w-0">
+							                    <Popover.Root
+							                      open={adminDashboardPeriodPickerOpen}
+							                      onOpenChange={setAdminDashboardPeriodPickerOpen}
+							                    >
 					                      <Popover.Trigger asChild>
 						                        <Button
 						                          type="button"
@@ -17471,26 +17637,45 @@ function MainApp() {
 						                          <div className="whitespace-nowrap text-right">Amount</div>
 						                        </div>
 						                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-						                          {adminCommissionRows.map((row) => (
-						                            <li
-						                              key={row.id}
-						                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
-						                              style={{
-						                                gridTemplateColumns: "minmax(0,1fr) max-content",
-						                              }}
-						                            >
-						                            <div className="min-w-0">
-						                              <div
-						                                className="text-sm font-semibold text-slate-900 truncate"
-						                                title={row.name}
-						                              >
-						                                {row.name}
-						                              </div>
-						                              <div className="mt-0.5 text-[11px] leading-tight text-slate-600 whitespace-nowrap overflow-x-auto no-scrollbar">
-								                              {(() => {
-					                                const retailOrders = Number(row.retailOrders || 0);
-					                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
-					                                const retailBase = Number(row.retailBase || 0);
+							                          {adminCommissionRows.map((row) => (
+							                            <li
+							                              key={row.id}
+							                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+							                              style={{
+							                                gridTemplateColumns: "minmax(0,1fr) max-content",
+							                              }}
+							                            >
+							                            <div className="min-w-0">
+							                              {(() => {
+							                                const canOpen =
+							                                  Boolean(row.id) && !String(row.id).startsWith("__");
+							                                const label = row.name || row.id || "User";
+							                                return (
+							                                  <button
+							                                    type="button"
+							                                    className={`text-sm font-semibold text-slate-900 truncate text-left ${
+							                                      canOpen ? "hover:underline cursor-pointer" : "cursor-default"
+							                                    }`}
+							                                    title={label}
+							                                    onClick={() => {
+							                                      if (!canOpen) return;
+							                                      openLiveUserDetail({
+							                                        id: row.id,
+							                                        name: row.name,
+							                                        role: row.role,
+							                                      });
+							                                    }}
+							                                    disabled={!canOpen}
+							                                  >
+							                                    {label}
+							                                  </button>
+							                                );
+							                              })()}
+							                              <div className="mt-0.5 text-[11px] leading-tight text-slate-600 whitespace-nowrap overflow-x-auto no-scrollbar">
+									                              {(() => {
+						                                const retailOrders = Number(row.retailOrders || 0);
+						                                const wholesaleOrders = Number(row.wholesaleOrders || 0);
+						                                const retailBase = Number(row.retailBase || 0);
 				                                const wholesaleBase = Number(row.wholesaleBase || 0);
 				                                const houseRetailOrders = Number((row as any).houseRetailOrders || 0);
 				                                const houseWholesaleOrders = Number((row as any).houseWholesaleOrders || 0);
@@ -17699,10 +17884,24 @@ function MainApp() {
 	                      width={34}
 	                      tickMargin={2}
 	                    />
-                    <Tooltip
-                      cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
-                      content={PipelineTooltip}
-                    />
+	                    <Tooltip
+	                      cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
+	                      wrapperStyle={{ pointerEvents: "auto" }}
+	                      content={(props: any) => (
+	                        <PipelineTooltip
+	                          {...props}
+	                          onLeadClick={(lead) => {
+	                            if (!lead?.id) return;
+	                            openLiveUserDetail({
+	                              id: lead.id,
+	                              name: lead.name,
+	                              email: lead.email,
+	                              role: lead.role || "doctor",
+	                            });
+	                          }}
+	                        />
+	                      )}
+	                    />
 	                    <Bar
 	                      dataKey="count"
 	                      radius={[4, 4, 2.5, 2.5]}
@@ -22334,11 +22533,11 @@ function MainApp() {
                 );
               })()}
 
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-slate-700">
-                  Recent Orders
-                </p>
-	                {(() => {
+		              <div className="space-y-2">
+		                <p className="text-sm font-semibold text-slate-700">
+		                  Recent Orders
+		                </p>
+		                {(() => {
 	                  const personalOrders = Array.isArray(salesDoctorDetail.personalOrders)
 	                    ? salesDoctorDetail.personalOrders
 	                    : [];
@@ -22434,13 +22633,101 @@ function MainApp() {
 	                      </div>
 	                    </div>
 	                  );
-	                })()}
-	              </div>
+		                })()}
+		              </div>
 
-	              <div className="mt-2 text-center text-[11px] font-normal text-slate-400">
-	                {(() => {
-	                  const rawId = String(salesDoctorDetail.doctorId ?? "").trim();
-	                  const displayId = rawId.includes(":")
+		              {(isAdmin(user?.role) || isSalesLead(user?.role)) && isRep(salesDoctorDetail.role) && (
+		                <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 px-4 py-3">
+		                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+		                    <h4 className="text-sm font-semibold text-slate-900">
+		                      Active Prospects
+		                    </h4>
+		                    <span className="text-[11px] font-semibold text-slate-500">
+		                      {salesRepProspectsLoading
+		                        ? "Loading..."
+		                        : `${(salesRepProspectsForModal || []).length} active`}
+		                    </span>
+		                  </div>
+		                  <p className="mt-1 text-xs text-slate-600">
+		                    Leads assigned to this rep (excluding Converted).
+		                  </p>
+
+		                  {salesRepProspectsError && (
+		                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+		                      {salesRepProspectsError}
+		                    </div>
+		                  )}
+
+		                  {!salesRepProspectsError && (
+		                    <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
+		                      {salesRepProspectsLoading ? (
+		                        <p className="text-xs text-slate-500">Loading prospects…</p>
+		                      ) : (salesRepProspectsForModal || []).length > 0 ? (
+		                        (salesRepProspectsForModal || []).map((row: any) => {
+		                          const id = String(
+		                            row?.id ||
+		                              row?.referralId ||
+		                              row?.doctorId ||
+		                              row?.contactFormId ||
+		                              "",
+		                          ).trim();
+		                          const name =
+		                            String(
+		                              row?.referredContactName ||
+		                                row?.contactName ||
+		                                row?.name ||
+		                                row?.referred_contact_name ||
+		                                "",
+		                            ).trim() || "Prospect";
+		                          const email = String(
+		                            row?.referredContactEmail || row?.contactEmail || row?.email || "",
+		                          ).trim();
+		                          const status = String(row?.status || "pending")
+		                            .trim()
+		                            .toLowerCase() || "pending";
+		                          const when = String(row?.updatedAt || row?.createdAt || "").trim();
+		                          const whenLabel = when ? formatDateTime(when) : null;
+		                          return (
+		                            <div
+		                              key={id || `${email}:${name}:${status}`}
+		                              className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+		                            >
+		                              <div className="min-w-0">
+		                                <div className="flex items-center gap-2 min-w-0">
+		                                  <span className="text-sm font-semibold text-slate-900 truncate">
+		                                    {name}
+		                                  </span>
+		                                  <Badge variant="secondary" className="uppercase">
+		                                    {titleCaseFromSlug(status.replace(/_/g, "-"))}
+		                                  </Badge>
+		                                </div>
+		                                <div className="text-xs text-slate-600 truncate">
+		                                  {email || "No email on file"}
+		                                </div>
+		                                {whenLabel && (
+		                                  <div className="text-[11px] text-slate-400">
+		                                    Updated: {whenLabel}
+		                                  </div>
+		                                )}
+		                              </div>
+		                              <div className="text-right text-xs text-slate-500 whitespace-nowrap">
+		                                {row?.referredContactHasAccount ? "Has account" : "No account"}
+		                              </div>
+		                            </div>
+		                          );
+		                        })
+		                      ) : (
+		                        <p className="text-xs text-slate-500">No active prospects found.</p>
+		                      )}
+		                    </div>
+		                  )}
+		                </div>
+		              )}
+
+		              <div className="mt-2 text-center text-[11px] font-normal text-slate-400">
+		                {(() => {
+		                  const rawId = String(salesDoctorDetail.doctorId ?? "").trim();
+		                  const displayId = rawId.includes(":")
 	                    ? rawId.split(":").slice(-1)[0].trim()
 	                    : rawId;
 	                  return `ID: ${displayId || "—"}`;

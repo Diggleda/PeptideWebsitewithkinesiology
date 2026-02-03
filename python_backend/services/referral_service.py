@@ -1172,7 +1172,10 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     user = user_repository.find_by_id(str(sales_rep_id))
     role = (user.get("role") or "").lower() if user else ""
     token_is_admin = (token_role or "").lower() == "admin"
-    is_admin = role == "admin" or token_is_admin
+    # `is_admin` here means the *target* dashboard is for an admin account.
+    # Do not treat "viewer is admin" as "target is admin" or else house/contact-form
+    # prospects leak into every sales rep/sales lead dashboard.
+    is_admin = role == "admin"
 
     def _is_manual_prospect(p: Dict) -> bool:
         if not isinstance(p, dict):
@@ -1264,7 +1267,11 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         }
         return _apply_referred_contact_account_fields(base)
 
-    prospects = sales_prospect_repository.get_all() if (is_admin and scope_all) else sales_prospect_repository.find_by_sales_rep(str(sales_rep_id))
+    prospects = (
+        sales_prospect_repository.get_all()
+        if (is_admin and scope_all)
+        else sales_prospect_repository.find_by_sales_rep(str(sales_rep_id))
+    )
 
     if is_admin and not scope_all:
         try:
@@ -1355,6 +1362,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "sales_rep_id": str(sales_rep_id),
             "scope_all": bool(scope_all),
             "admin": bool(is_admin),
+            "viewer_admin": bool(token_is_admin),
             "lead_count": len(combined),
         },
     )
