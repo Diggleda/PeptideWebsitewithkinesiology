@@ -5447,29 +5447,30 @@ function MainApp() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-		  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-		    doctorId: string;
-		    referralId?: string | null;
-		    name: string;
-		    email?: string | null;
-	    avatar?: string | null;
-		    revenue: number;
-		    personalRevenue?: number | null;
-		    salesRevenue?: number | null;
-		    salesWholesaleRevenue?: number | null;
-		    salesRetailRevenue?: number | null;
-		    orderQuantity?: number | null;
-		    totalOrderValue?: number | null;
-		    orders: AccountOrderSummary[];
-        personalOrders?: AccountOrderSummary[];
-        salesOrders?: AccountOrderSummary[];
-	    phone?: string | null;
-	    address?: string | null;
-	    lastOrderDate?: string | null;
-	    avgOrderValue?: number | null;
-	    role: string;
-	    ownerSalesRepId?: string | null;
-	    ownerSalesRepName?: string | null;
+			  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+			    doctorId: string;
+			    referralId?: string | null;
+			    name: string;
+			    email?: string | null;
+		    avatar?: string | null;
+			    revenue: number;
+			    personalRevenue?: number | null;
+			    salesRevenue?: number | null;
+			    salesWholesaleRevenue?: number | null;
+			    salesRetailRevenue?: number | null;
+			    orderQuantity?: number | null;
+			    totalOrderValue?: number | null;
+			    orders: AccountOrderSummary[];
+	        personalOrders?: AccountOrderSummary[];
+	        salesOrders?: AccountOrderSummary[];
+		    phone?: string | null;
+		    address?: string | null;
+		    addressOrigin?: "prospect" | "user" | "order" | "unknown" | null;
+		    lastOrderDate?: string | null;
+		    avgOrderValue?: number | null;
+		    role: string;
+		    ownerSalesRepId?: string | null;
+		    ownerSalesRepName?: string | null;
 	    ownerSalesRepEmail?: string | null;
 	    isOnline?: boolean | null;
 	    isIdle?: boolean | null;
@@ -5612,39 +5613,76 @@ function MainApp() {
   const [salesDoctorAddressDraft, setSalesDoctorAddressDraft] = useState<string>("");
   const [salesDoctorAddressSaving, setSalesDoctorAddressSaving] = useState(false);
 	
-  useEffect(() => {
-    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
-      setSalesDoctorNoteDraft("");
-      setSalesDoctorNotesLoading(false);
-      setSalesDoctorNotesSaved(false);
-      return;
-    }
-	    const doctorId = String(salesDoctorDetail.doctorId);
-	    let canceled = false;
-	    (async () => {
+	  useEffect(() => {
+	    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
 	      setSalesDoctorNoteDraft("");
-	      setSalesDoctorNotesLoading(true);
-	      try {
-	        const response = await referralAPI.getSalesProspect(doctorId);
-	        const notes = (response as any)?.prospect?.notes;
-	        if (!canceled) {
-	          setSalesDoctorNoteDraft(typeof notes === "string" ? notes : "");
-	          setSalesDoctorNotesLoading(false);
-	          setSalesDoctorNotesSaved(false);
-	        }
-	      } catch {
-	        if (!canceled) {
-	          const fallbackKey = String(salesDoctorDetail.doctorId);
-	          setSalesDoctorNoteDraft(salesDoctorNotes[fallbackKey] || "");
-	          setSalesDoctorNotesLoading(false);
-	          setSalesDoctorNotesSaved(false);
-	        }
-	      }
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [salesDoctorDetail?.doctorId, salesDoctorDetail?.role, salesDoctorNotes]);
+	      setSalesDoctorNotesLoading(false);
+	      setSalesDoctorNotesSaved(false);
+	      return;
+	    }
+		    const identifier = String(
+		      salesDoctorDetail.referralId || salesDoctorDetail.doctorId,
+		    ).trim();
+		    if (!identifier) {
+		      return;
+		    }
+		    let canceled = false;
+		    (async () => {
+		      setSalesDoctorNoteDraft("");
+		      setSalesDoctorNotesLoading(true);
+		      try {
+		        const response = await referralAPI.getSalesProspect(identifier);
+		        const prospect = (response as any)?.prospect;
+		        const notes = prospect?.notes;
+		        const addressParts = [
+		          prospect?.officeAddressLine1,
+		          prospect?.officeAddressLine2,
+		          [prospect?.officeCity, prospect?.officeState, prospect?.officePostalCode]
+		            .filter(Boolean)
+		            .join(", "),
+		          prospect?.officeCountry,
+		        ].filter((part: any) => typeof part === "string" && part.trim().length > 0);
+		        const officeAddress =
+		          addressParts.length > 0 ? addressParts.join("\n") : null;
+		        if (!canceled) {
+		          setSalesDoctorNoteDraft(typeof notes === "string" ? notes : "");
+		          if (officeAddress) {
+		            setSalesDoctorDetail((current) => {
+		              if (!current) return current;
+		              if (String(current.doctorId || "") !== String(salesDoctorDetail.doctorId || "")) {
+		                return current;
+		              }
+		              if (current.addressOrigin === "prospect" && current.address === officeAddress) {
+		                return current;
+		              }
+		              return {
+		                ...current,
+		                address: officeAddress,
+		                addressOrigin: "prospect",
+		              };
+		            });
+		          }
+		          setSalesDoctorNotesLoading(false);
+		          setSalesDoctorNotesSaved(false);
+		        }
+		      } catch {
+		        if (!canceled) {
+		          const fallbackKey = String(salesDoctorDetail.doctorId);
+		          setSalesDoctorNoteDraft(salesDoctorNotes[fallbackKey] || "");
+		          setSalesDoctorNotesLoading(false);
+		          setSalesDoctorNotesSaved(false);
+		        }
+		      }
+	    })();
+	    return () => {
+	      canceled = true;
+	    };
+	  }, [
+	    salesDoctorDetail?.doctorId,
+	    salesDoctorDetail?.referralId,
+	    salesDoctorDetail?.role,
+	    salesDoctorNotes,
+	  ]);
 
   useEffect(() => {
     if (!salesDoctorDetail?.doctorId) {
@@ -5757,15 +5795,17 @@ function MainApp() {
     settingsAPI,
   ]);
 
-  const saveSalesDoctorAddress = useCallback(async () => {
-    if (!salesDoctorDetail?.doctorId) {
-      return;
-    }
-    const trimmed = salesDoctorAddressDraft.trim();
-    const existing = (salesDoctorDetail.address || "").trim();
-    if (trimmed === existing) {
-      return;
-    }
+	  const saveSalesDoctorAddress = useCallback(async () => {
+	    if (!salesDoctorDetail?.doctorId) {
+	      return;
+	    }
+	    const doctorId = String(salesDoctorDetail.doctorId).trim();
+	    if (!doctorId) return;
+	    const trimmed = salesDoctorAddressDraft.trim();
+	    const existing = (salesDoctorDetail.address || "").trim();
+	    if (trimmed === existing) {
+	      return;
+	    }
     setSalesDoctorAddressSaving(true);
     try {
       const normalizedLines = salesDoctorAddressDraft
@@ -5804,17 +5844,42 @@ function MainApp() {
         cityStateZipIndex >= 0 ? withoutCountry.filter((_, idx) => idx !== cityStateZipIndex) : withoutCountry;
 
       const officeAddressLine1 = withoutCityStateZip.length > 0 ? withoutCityStateZip[0] : null;
-      const officeAddressLine2 =
-        withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
+	      const officeAddressLine2 =
+	        withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
 
-      await settingsAPI.updateUserProfile(salesDoctorDetail.doctorId, {
-        officeAddressLine1: officeAddressLine1 || null,
-        officeAddressLine2: officeAddressLine2 || null,
-        officeCity: city || null,
-        officeState: state || null,
-        officePostalCode: postalCode || null,
-        officeCountry: country || null,
-      });
+	      const addressPayload = {
+	        officeAddressLine1: officeAddressLine1 || null,
+	        officeAddressLine2: officeAddressLine2 || null,
+	        officeCity: city || null,
+	        officeState: state || null,
+	        officePostalCode: postalCode || null,
+	        officeCountry: country || null,
+	      };
+
+	      const looksLikeProspectId =
+	        doctorId.startsWith("contact_form:") || doctorId.startsWith("manual:");
+	      let updatedProspect = false;
+	      try {
+	        if (!looksLikeProspectId) {
+	          await settingsAPI.updateUserProfile(doctorId, addressPayload);
+	        } else {
+	          throw new Error("PROSPECT_ADDRESS");
+	        }
+	      } catch (error: any) {
+	        const status = typeof error?.status === "number" ? error.status : null;
+	        const message = typeof error?.message === "string" ? error.message : "";
+	        const doctorAccessRequired =
+	          status === 403 &&
+	          typeof message === "string" &&
+	          message.toLowerCase().includes("doctor access required");
+	        const shouldFallbackToProspect =
+	          looksLikeProspectId || status === 404 || status === 400 || doctorAccessRequired;
+	        if (!shouldFallbackToProspect) {
+	          throw error;
+	        }
+	        await referralAPI.upsertSalesProspect(doctorId, addressPayload);
+	        updatedProspect = true;
+	      }
 
       const nextAddressParts = [
         officeAddressLine1,
@@ -5824,13 +5889,13 @@ function MainApp() {
       ].filter((part) => typeof part === "string" && part.trim().length > 0);
       const nextAddress = nextAddressParts.length > 0 ? nextAddressParts.join("\n") : null;
 
-      setSalesDoctorDetail((current) =>
-        current ? { ...current, address: nextAddress } : current,
-      );
-      toast.success("Address updated.");
-    } catch (error: any) {
-      console.warn("[SalesDoctor] Failed to update address", error);
-      toast.error(
+	      setSalesDoctorDetail((current) =>
+	        current ? { ...current, address: nextAddress } : current,
+	      );
+	      toast.success(updatedProspect ? "Prospect address updated." : "Address updated.");
+	    } catch (error: any) {
+	      console.warn("[SalesDoctor] Failed to update address", error);
+	      toast.error(
         typeof error?.message === "string" && error.message
           ? error.message
           : "Unable to update address right now.",
@@ -5838,12 +5903,13 @@ function MainApp() {
     } finally {
       setSalesDoctorAddressSaving(false);
     }
-  }, [
-    salesDoctorAddressDraft,
-    salesDoctorDetail?.address,
-    salesDoctorDetail?.doctorId,
-    settingsAPI,
-  ]);
+	  }, [
+	    salesDoctorAddressDraft,
+	    salesDoctorDetail?.address,
+	    salesDoctorDetail?.doctorId,
+	    referralAPI,
+	    settingsAPI,
+	  ]);
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
@@ -6336,11 +6402,18 @@ function MainApp() {
         ]
           .filter((part) => typeof part === "string" && part.trim().length > 0)
           .join("\n");
-      const address =
-        bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
-          ? bucket.doctorAddress
-          : addressFromOrder || null;
-      const lastOrderDate = latestOrder?.createdAt || null;
+	      const address =
+	        bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
+	          ? bucket.doctorAddress
+	          : addressFromOrder || null;
+	      const addressOrigin: "prospect" | "user" | "order" | "unknown" | null =
+	        (bucket as any).addressOrigin ||
+	        (bucket.doctorAddress && bucket.doctorAddress.trim().length > 0
+	          ? "unknown"
+	          : addressFromOrder
+	            ? "order"
+	            : null);
+	      const lastOrderDate = latestOrder?.createdAt || null;
       const relevantOrders = bucket.orders.filter((order) =>
         shouldCountRevenueForStatus(order.status),
       );
@@ -6387,7 +6460,7 @@ function MainApp() {
 	        name: bucket.doctorName,
 	        email: bucket.doctorEmail,
 	        avatar: bucket.doctorAvatar ?? null,
-		        revenue: bucket.total,
+	        revenue: bucket.total,
 	        personalRevenue: bucket.personalRevenue ?? null,
 	        salesRevenue: bucket.salesRevenue ?? null,
 	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
@@ -6395,15 +6468,16 @@ function MainApp() {
 	        orderQuantity: bucket.orderQuantity ?? null,
 	        totalOrderValue: bucket.totalOrderValue ?? null,
 	        orders: bucket.orders,
-          personalOrders: Array.isArray(bucket.personalOrders) ? bucket.personalOrders : undefined,
-          salesOrders: Array.isArray(bucket.salesOrders) ? bucket.salesOrders : undefined,
-        phone:
-          bucket.doctorPhone ||
-          (addressSource as any)?.phone ||
-          (addressSource as any)?.phoneNumber ||
-          null,
-        address,
-        lastOrderDate,
+	        personalOrders: Array.isArray(bucket.personalOrders) ? bucket.personalOrders : undefined,
+	        salesOrders: Array.isArray(bucket.salesOrders) ? bucket.salesOrders : undefined,
+	        phone:
+	          bucket.doctorPhone ||
+	          (addressSource as any)?.phone ||
+	          (addressSource as any)?.phoneNumber ||
+	          null,
+	        address,
+	        addressOrigin,
+	        lastOrderDate,
 	        avgOrderValue,
 	        role: normalizedRole,
 	        ownerSalesRepId: bucket.ownerSalesRepId ?? null,
@@ -6553,24 +6627,37 @@ function MainApp() {
               return null;
             })();
 
-            const doctorName =
-              doctorFromList?.name ||
-              [doctorFromList?.firstName, doctorFromList?.lastName].filter(Boolean).join(" ").trim() ||
-              displayName;
+	            const doctorName =
+	              doctorFromList?.name ||
+	              [doctorFromList?.firstName, doctorFromList?.lastName].filter(Boolean).join(" ").trim() ||
+	              displayName;
+	            const doctorAddress = (() => {
+	              const addr = doctorFromList as any;
+	              const parts = [
+	                addr?.officeAddressLine1,
+	                addr?.officeAddressLine2,
+	                [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+	                  .filter(Boolean)
+	                  .join(", "),
+	                addr?.officeCountry,
+	              ].filter((p) => typeof p === "string" && p.trim().length > 0);
+	              return parts.length > 0 ? parts.join("\n") : null;
+	            })();
 
-            openSalesDoctorDetail(
-              {
-                doctorId: id,
-                referralId: null,
-                doctorName,
-                doctorEmail: doctorFromList?.email || entry?.email || null,
-                doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
-                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
-                doctorAddress: null,
-                ownerSalesRepId:
-                  doctorFromList?.ownerSalesRepId ||
-                  doctorFromList?.owner_sales_rep_id ||
-                  doctorFromList?.salesRepId ||
+	            openSalesDoctorDetail(
+	              {
+	                doctorId: id,
+	                referralId: null,
+	                doctorName,
+	                doctorEmail: doctorFromList?.email || entry?.email || null,
+	                doctorAvatar: doctorFromList?.profileImageUrl || doctorFromList?.profile_image_url || avatarUrl,
+	                doctorPhone: doctorFromList?.phone || doctorFromList?.phoneNumber || doctorFromList?.phone_number || null,
+	                doctorAddress,
+	                addressOrigin: doctorAddress ? "user" : null,
+	                ownerSalesRepId:
+	                  doctorFromList?.ownerSalesRepId ||
+	                  doctorFromList?.owner_sales_rep_id ||
+	                  doctorFromList?.salesRepId ||
                   doctorFromList?.sales_rep_id ||
                   null,
                 isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
@@ -6936,19 +7023,20 @@ function MainApp() {
 		            }
 		          }
 
-	          openSalesDoctorDetail(
-	            {
-              doctorId: id,
-              referralId: null,
-              doctorName: profile?.name || displayName,
-              doctorEmail: profile?.email || entry?.email || null,
-              doctorAvatar: profile?.profileImageUrl || avatarUrl,
-              doctorPhone: profile?.phone || null,
-              doctorAddress: address,
-              ownerSalesRepId:
-                profile?.salesRepId ||
-                profile?.sales_rep_id ||
-                profile?.ownerSalesRepId ||
+		          openSalesDoctorDetail(
+		            {
+	              doctorId: id,
+	              referralId: null,
+	              doctorName: profile?.name || displayName,
+	              doctorEmail: profile?.email || entry?.email || null,
+	              doctorAvatar: profile?.profileImageUrl || avatarUrl,
+	              doctorPhone: profile?.phone || null,
+	              doctorAddress: address,
+	              addressOrigin: address ? "user" : null,
+	              ownerSalesRepId:
+	                profile?.salesRepId ||
+	                profile?.sales_rep_id ||
+	                profile?.ownerSalesRepId ||
                 profile?.owner_sales_rep_id ||
                 entry?.ownerSalesRepId ||
                 entry?.owner_sales_rep_id ||
@@ -8129,22 +8217,24 @@ function MainApp() {
   const [showManualProspectModal, setShowManualProspectModal] = useState(false);
   const [manualProspectSubmitting, setManualProspectSubmitting] =
     useState(false);
-  const [manualProspectForm, setManualProspectForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    notes: "",
-    status: "pending",
-  });
-  const resetManualProspectForm = useCallback(() => {
-    setManualProspectForm({
-      name: "",
-      email: "",
-      phone: "",
-      notes: "",
-      status: "pending",
-    });
-  }, []);
+	  const [manualProspectForm, setManualProspectForm] = useState({
+	    name: "",
+	    email: "",
+	    phone: "",
+	    address: "",
+	    notes: "",
+	    status: "pending",
+	  });
+	  const resetManualProspectForm = useCallback(() => {
+	    setManualProspectForm({
+	      name: "",
+	      email: "",
+	      phone: "",
+	      address: "",
+	      notes: "",
+	      status: "pending",
+	    });
+	  }, []);
   const closeManualProspectModal = useCallback(() => {
     setShowManualProspectModal(false);
     resetManualProspectForm();
@@ -11167,25 +11257,83 @@ function MainApp() {
     [user, referralPollingSuppressed, postLoginHold, refreshReferralData],
   );
 
-  const handleManualProspectSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (!manualProspectForm.name.trim()) {
-        toast.error("Name is required.");
-        return;
-      }
-      try {
-        setManualProspectSubmitting(true);
+	  const handleManualProspectSubmit = useCallback(
+	    async (event: FormEvent<HTMLFormElement>) => {
+	      event.preventDefault();
+	      if (!manualProspectForm.name.trim()) {
+	        toast.error("Name is required.");
+	        return;
+	      }
+	      try {
+	        setManualProspectSubmitting(true);
+	        const normalizedLines = manualProspectForm.address
+	          .split(/\r?\n/)
+	          .map((line) => line.trim())
+	          .filter((line) => line.length > 0);
+
+	        const rawCountry =
+	          normalizedLines.length > 0 ? normalizedLines[normalizedLines.length - 1] : "";
+	        const countryLooksLikeUs =
+	          Boolean(rawCountry) &&
+	          (/^(us|usa|united states|united states of america)$/i.test(rawCountry) ||
+	            rawCountry.toUpperCase() === "US");
+
+	        const country = countryLooksLikeUs ? "US" : null;
+	        const withoutCountry = country
+	          ? normalizedLines.slice(0, Math.max(0, normalizedLines.length - 1))
+	          : normalizedLines;
+
+	        const cityStateZipIndex = withoutCountry.findIndex((line) => line.includes(","));
+	        const cityStateZipLine =
+	          cityStateZipIndex >= 0 ? withoutCountry[cityStateZipIndex] : null;
+
+	        const parseCityStatePostal = (value: string | null) => {
+	          if (!value) return { city: null, state: null, postalCode: null };
+	          const parts = value
+	            .split(",")
+	            .map((p) => p.trim())
+	            .filter(Boolean);
+	          if (parts.length === 0) return { city: null, state: null, postalCode: null };
+	          const city = parts[0] || null;
+	          const rest = parts.slice(1).join(" ").trim();
+	          const tokens = rest.split(/\s+/).filter(Boolean);
+	          const state = tokens.length > 0 ? tokens[0] : null;
+	          const postalCandidate =
+	            tokens.length > 1
+	              ? tokens[tokens.length - 1]
+	              : parts.length > 2
+	                ? parts[parts.length - 1]
+	                : null;
+	          const postalCode = postalCandidate || null;
+	          return { city, state, postalCode };
+	        };
+
+	        const { city, state, postalCode } = parseCityStatePostal(cityStateZipLine);
+	        const withoutCityStateZip =
+	          cityStateZipIndex >= 0
+	            ? withoutCountry.filter((_, idx) => idx !== cityStateZipIndex)
+	            : withoutCountry;
+
+	        const officeAddressLine1 =
+	          withoutCityStateZip.length > 0 ? withoutCityStateZip[0] : null;
+	        const officeAddressLine2 =
+	          withoutCityStateZip.length > 1 ? withoutCityStateZip.slice(1).join(", ") : null;
 	        await referralAPI.createManualProspect({
 	          name: manualProspectForm.name.trim(),
 	          email: manualProspectForm.email.trim() || undefined,
 	          phone: manualProspectForm.phone.trim() || undefined,
+	          officeAddressLine1: officeAddressLine1 || undefined,
+	          officeAddressLine2: officeAddressLine2 || undefined,
+	          officeCity: city || undefined,
+	          officeState: state || undefined,
+	          officePostalCode: postalCode || undefined,
+	          officeCountry: country || undefined,
 	          notes: normalizeNotesValue(manualProspectForm.notes) || undefined,
 	          status: manualProspectForm.status,
 	          hasAccount: false,
 	        });
-        toast.success("Prospect added successfully.");
-        closeManualProspectModal();
+	        toast.success("Prospect added successfully.");
+	        closeManualProspectModal();
         await tracedRefreshReferralData("manual-prospect-submit", {
           showLoading: false,
         });
@@ -18225,83 +18373,147 @@ function MainApp() {
 	                                  <button
 	                                    type="button"
 	                                    className="inline-flex items-start gap-1 min-w-0 text-left"
-	                                    onClick={() => {
-	                                      const doctorId =
-	                                        (record as any).referredContactAccountId ||
-	                                        (record as any).referredContactId ||
-	                                        (record as any).userId ||
-	                                        (record as any).doctorId ||
-	                                        record.id;
-	                                      const doctorEmail =
-	                                        record.referredContactEmail ||
-	                                        (leadAccountProfile?.email ?? null) ||
-	                                        null;
-	                                      const ownerSalesRepId =
-	                                        (record as any).ownerSalesRepId ||
-	                                        (record as any).owner_sales_rep_id ||
-	                                        (record as any).salesRepId ||
+		                                    onClick={() => {
+		                                      const doctorId =
+		                                        (record as any).referredContactAccountId ||
+		                                        (record as any).referredContactId ||
+		                                        (record as any).userId ||
+		                                        (record as any).doctorId ||
+		                                        record.id;
+		                                      const doctorEmail =
+		                                        record.referredContactEmail ||
+		                                        (leadAccountProfile?.email ?? null) ||
+		                                        null;
+		                                      const prospectAddress = (() => {
+		                                        const addr = record as any;
+		                                        const parts = [
+		                                          addr?.officeAddressLine1,
+		                                          addr?.officeAddressLine2,
+		                                          [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+		                                            .filter(Boolean)
+		                                            .join(", "),
+		                                          addr?.officeCountry,
+		                                        ].filter(
+		                                          (p) => typeof p === "string" && p.trim().length > 0,
+		                                        );
+		                                        return parts.length > 0 ? parts.join("\n") : null;
+		                                      })();
+		                                      const accountAddress = (() => {
+		                                        const addr = leadAccountProfile as any;
+		                                        const parts = [
+		                                          addr?.officeAddressLine1,
+		                                          addr?.officeAddressLine2,
+		                                          [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+		                                            .filter(Boolean)
+		                                            .join(", "),
+		                                          addr?.officeCountry,
+		                                        ].filter(
+		                                          (p) => typeof p === "string" && p.trim().length > 0,
+		                                        );
+		                                        return parts.length > 0 ? parts.join("\n") : null;
+		                                      })();
+		                                      const doctorAddress = prospectAddress || accountAddress || null;
+		                                      const addressOrigin =
+		                                        prospectAddress ? "prospect" : accountAddress ? "user" : null;
+		                                      const ownerSalesRepId =
+		                                        (record as any).ownerSalesRepId ||
+		                                        (record as any).owner_sales_rep_id ||
+		                                        (record as any).salesRepId ||
 	                                        (record as any).sales_rep_id ||
 	                                        (record as any).assignedSalesRepId ||
 	                                        (record as any).assigned_sales_rep_id ||
 	                                        (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
 	                                        null;
-	                                    openSalesDoctorDetail(
-	                                      {
-	                                        doctorId: String(doctorId || record.id),
-	                                        referralId: kind === "referral" ? String(record.id) : null,
-	                                        doctorName: leadDisplayName,
-	                                        doctorEmail,
-	                                        doctorAvatar:
-	                                          leadAccountProfile?.profileImageUrl ?? null,
-	                                        doctorPhone: record.referredContactPhone || null,
-	                                        doctorAddress: null,
-	                                        ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
-	                                        orders: [],
-	                                        total: 0,
-	                                      },
-	                                      "doctor",
-	                                    );
-	                                    }}
-	                                    onKeyDown={(e) => {
-	                                      if (e.key === "Enter" || e.key === " ") {
-	                                        e.preventDefault();
-	                                        const doctorId =
-	                                          (record as any).referredContactAccountId ||
-	                                          (record as any).referredContactId ||
-	                                          (record as any).userId ||
-	                                          (record as any).doctorId ||
-	                                          record.id;
-	                                        const doctorEmail =
-	                                          record.referredContactEmail ||
-	                                          (leadAccountProfile?.email ?? null) ||
-	                                          null;
-	                                        const ownerSalesRepId =
-	                                          (record as any).ownerSalesRepId ||
-	                                          (record as any).owner_sales_rep_id ||
-	                                          (record as any).salesRepId ||
+		                                      openSalesDoctorDetail(
+		                                        {
+		                                          doctorId: String(doctorId || record.id),
+		                                          referralId: kind === "referral" ? String(record.id) : null,
+		                                          doctorName: leadDisplayName,
+		                                          doctorEmail,
+		                                          doctorAvatar:
+		                                            leadAccountProfile?.profileImageUrl ?? null,
+		                                          doctorPhone: record.referredContactPhone || null,
+		                                          doctorAddress,
+		                                          addressOrigin,
+		                                          ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+		                                          orders: [],
+		                                          total: 0,
+		                                        },
+		                                        "doctor",
+		                                      );
+		                                    }}
+		                                    onKeyDown={(e) => {
+		                                      if (e.key === "Enter" || e.key === " ") {
+		                                        e.preventDefault();
+		                                        const doctorId =
+		                                          (record as any).referredContactAccountId ||
+		                                          (record as any).referredContactId ||
+		                                          (record as any).userId ||
+		                                          (record as any).doctorId ||
+		                                          record.id;
+		                                        const doctorEmail =
+		                                          record.referredContactEmail ||
+		                                          (leadAccountProfile?.email ?? null) ||
+		                                          null;
+		                                        const prospectAddress = (() => {
+		                                          const addr = record as any;
+		                                          const parts = [
+		                                            addr?.officeAddressLine1,
+		                                            addr?.officeAddressLine2,
+		                                            [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+		                                              .filter(Boolean)
+		                                              .join(", "),
+		                                            addr?.officeCountry,
+		                                          ].filter(
+		                                            (p) => typeof p === "string" && p.trim().length > 0,
+		                                          );
+		                                          return parts.length > 0 ? parts.join("\n") : null;
+		                                        })();
+		                                        const accountAddress = (() => {
+		                                          const addr = leadAccountProfile as any;
+		                                          const parts = [
+		                                            addr?.officeAddressLine1,
+		                                            addr?.officeAddressLine2,
+		                                            [addr?.officeCity, addr?.officeState, addr?.officePostalCode]
+		                                              .filter(Boolean)
+		                                              .join(", "),
+		                                            addr?.officeCountry,
+		                                          ].filter(
+		                                            (p) => typeof p === "string" && p.trim().length > 0,
+		                                          );
+		                                          return parts.length > 0 ? parts.join("\n") : null;
+		                                        })();
+		                                        const doctorAddress = prospectAddress || accountAddress || null;
+		                                        const addressOrigin =
+		                                          prospectAddress ? "prospect" : accountAddress ? "user" : null;
+		                                        const ownerSalesRepId =
+		                                          (record as any).ownerSalesRepId ||
+		                                          (record as any).owner_sales_rep_id ||
+		                                          (record as any).salesRepId ||
 	                                          (record as any).sales_rep_id ||
 	                                          (record as any).assignedSalesRepId ||
 	                                          (record as any).assigned_sales_rep_id ||
 	                                          (user && (isRep(user.role) || isSalesLead(user.role)) ? (user.salesRepId || user.id) : null) ||
 	                                          null;
-	                                        openSalesDoctorDetail(
-	                                          {
-	                                            doctorId: String(doctorId || record.id),
-	                                            referralId: kind === "referral" ? String(record.id) : null,
-	                                            doctorName: leadDisplayName,
-	                                            doctorEmail,
-	                                            doctorAvatar:
-	                                              leadAccountProfile?.profileImageUrl ?? null,
-	                                            doctorPhone: record.referredContactPhone || null,
-	                                            doctorAddress: null,
-	                                            ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
-	                                            orders: [],
-	                                            total: 0,
-	                                          },
-	                                          "doctor",
-	                                        );
-	                                      }
-	                                    }}
+		                                        openSalesDoctorDetail(
+		                                          {
+		                                            doctorId: String(doctorId || record.id),
+		                                            referralId: kind === "referral" ? String(record.id) : null,
+		                                            doctorName: leadDisplayName,
+		                                            doctorEmail,
+		                                            doctorAvatar:
+		                                              leadAccountProfile?.profileImageUrl ?? null,
+		                                            doctorPhone: record.referredContactPhone || null,
+		                                            doctorAddress,
+		                                            addressOrigin,
+		                                            ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+		                                            orders: [],
+		                                            total: 0,
+		                                          },
+		                                          "doctor",
+		                                        );
+		                                      }
+		                                    }}
 	                                    aria-label={`View ${leadDisplayName} details`}
 	                                    style={{
 	                                      background: "transparent",
@@ -21154,11 +21366,11 @@ function MainApp() {
                 placeholder="Prospect name"
               />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Email
-                </label>
+	            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+	              <div className="space-y-2">
+	                <label className="text-sm font-medium text-slate-700">
+	                  Email
+	                </label>
                 <Input
                   type="email"
                   value={manualProspectForm.email}
@@ -21185,13 +21397,30 @@ function MainApp() {
                   }
                   placeholder="(555) 000-0000"
                 />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
-                Notes
-              </label>
+	              </div>
+	            </div>
+	            <div className="space-y-2">
+	              <label className="text-sm font-medium text-slate-700">
+	                Address
+	              </label>
 	              <Textarea
+	                value={manualProspectForm.address}
+	                onChange={(event) =>
+	                  setManualProspectForm((prev) => ({
+	                    ...prev,
+	                    address: event.target.value,
+	                  }))
+	                }
+	                rows={3}
+	                placeholder="Address line 1&#10;Address line 2&#10;City, State ZIP&#10;Country"
+	                className="notes-textarea"
+	              />
+	            </div>
+	            <div className="space-y-2">
+	              <label className="text-sm font-medium text-slate-700">
+	                Notes
+	              </label>
+		              <Textarea
 	                value={manualProspectForm.notes}
 	                onChange={(event) =>
 	                  setManualProspectForm((prev) => ({
@@ -21998,14 +22227,14 @@ function MainApp() {
                   <p className="text-sm font-semibold text-slate-700">
                     Address
                   </p>
-                  {(() => {
-                    const canEditAddress = Boolean(
-                      salesDoctorDetail &&
-                        !String(salesDoctorDetail.doctorId || "").startsWith("contact_form:") &&
-                        (isAdmin(user?.role) ||
-                          isSalesLead(user?.role) ||
-                          (isRep(user?.role) &&
-                            userSalesRepId &&
+	                  {(() => {
+	                    const canEditAddress = Boolean(
+	                      salesDoctorDetail &&
+	                        !String(salesDoctorDetail.doctorId || "").startsWith("anon:") &&
+	                        (isAdmin(user?.role) ||
+	                          isSalesLead(user?.role) ||
+	                          (isRep(user?.role) &&
+	                            userSalesRepId &&
                             salesDoctorDetail.ownerSalesRepId &&
                             userSalesRepId === salesDoctorDetail.ownerSalesRepId)),
                     );

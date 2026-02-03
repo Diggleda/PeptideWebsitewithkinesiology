@@ -363,6 +363,12 @@ def admin_create_manual_prospect():
                 "notes": payload.get("notes"),
                 "status": payload.get("status"),
                 "hasAccount": payload.get("hasAccount"),
+                "officeAddressLine1": payload.get("officeAddressLine1"),
+                "officeAddressLine2": payload.get("officeAddressLine2"),
+                "officeCity": payload.get("officeCity"),
+                "officeState": payload.get("officeState"),
+                "officePostalCode": payload.get("officePostalCode"),
+                "officeCountry": payload.get("officeCountry"),
             }
         )
         return {"referral": referral}
@@ -434,6 +440,18 @@ def admin_upsert_sales_prospect(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
+        office_address_updates = {
+            key: payload.get(key)
+            for key in (
+                "officeAddressLine1",
+                "officeAddressLine2",
+                "officeCity",
+                "officeState",
+                "officePostalCode",
+                "officeCountry",
+            )
+            if key in payload
+        }
         prospect = referral_service.upsert_sales_prospect_for_sales_rep(
             sales_rep_id=user["id"],
             identifier=identifier,
@@ -442,6 +460,7 @@ def admin_upsert_sales_prospect(identifier: str):
             reseller_permit_exempt=payload.get("resellerPermitExempt")
             if "resellerPermitExempt" in payload
             else None,
+            office_address_updates=office_address_updates if office_address_updates else None,
         )
         return {"prospect": prospect}
 

@@ -25,6 +25,8 @@ from ..integrations import woo_commerce
 from . import get_config
 logger = logging.getLogger(__name__)
 
+_supports_sales_prospect_office_address_columns: Optional[bool] = None
+
 ALLOWED_SUFFIX_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 REFERRAL_STATUS_CHOICES = [
     "pending",
@@ -107,6 +109,31 @@ def _sanitize_phone(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = re.sub(r"[^0-9+()\-\s]", "", str(value)).strip()
     return cleaned[:32] if cleaned else None
+
+def _sanitize_address_field(value: Optional[str], max_length: int = 190) -> Optional[str]:
+    return _sanitize_text(value, max_length=max_length)
+
+def _sales_prospects_support_office_address_columns() -> bool:
+    """
+    Backwards-compatible feature detection for MySQL deployments.
+
+    The sales_prospects table may not have address columns yet.
+    """
+    global _supports_sales_prospect_office_address_columns
+    if _supports_sales_prospect_office_address_columns is not None:
+        return _supports_sales_prospect_office_address_columns
+    try:
+        if not bool(get_config().mysql.get("enabled")):
+            _supports_sales_prospect_office_address_columns = False
+            return False
+        rows = mysql_client.fetch_all(
+            "SHOW COLUMNS FROM sales_prospects LIKE 'office_address_line1'",
+            {},
+        )
+        _supports_sales_prospect_office_address_columns = bool(rows)
+    except Exception:
+        _supports_sales_prospect_office_address_columns = False
+    return _supports_sales_prospect_office_address_columns
 
 
 def _sanitize_notes(value: Optional[str]) -> Optional[str]:
@@ -403,6 +430,12 @@ def _enrich_referral(referral: Dict) -> Dict:
     enriched["resellerPermitFilePath"] = prospect.get("resellerPermitFilePath") if prospect else None
     enriched["resellerPermitFileName"] = prospect.get("resellerPermitFileName") if prospect else None
     enriched["resellerPermitUploadedAt"] = prospect.get("resellerPermitUploadedAt") if prospect else None
+    enriched["officeAddressLine1"] = prospect.get("officeAddressLine1") if prospect else None
+    enriched["officeAddressLine2"] = prospect.get("officeAddressLine2") if prospect else None
+    enriched["officeCity"] = prospect.get("officeCity") if prospect else None
+    enriched["officeState"] = prospect.get("officeState") if prospect else None
+    enriched["officePostalCode"] = prospect.get("officePostalCode") if prospect else None
+    enriched["officeCountry"] = prospect.get("officeCountry") if prospect else None
 
     contact_account, contact_order_count = _resolve_referred_contact_account(referral)
     enriched["referredContactHasAccount"] = bool(contact_account)
@@ -616,6 +649,12 @@ def create_manual_prospect(data: Dict) -> Dict:
     notes = _sanitize_notes(data.get("notes"))
     status = _sanitize_referral_status(data.get("status"), "pending")
     has_account = bool(data.get("hasAccount")) if "hasAccount" in data else False
+    office_address_line1 = _sanitize_address_field(data.get("officeAddressLine1"))
+    office_address_line2 = _sanitize_address_field(data.get("officeAddressLine2"))
+    office_city = _sanitize_address_field(data.get("officeCity"))
+    office_state = _sanitize_address_field(data.get("officeState"))
+    office_postal_code = _sanitize_address_field(data.get("officePostalCode"))
+    office_country = _sanitize_address_field(data.get("officeCountry"))
 
     if contact_email:
         if user_repository.find_by_email(contact_email):
@@ -659,6 +698,12 @@ def create_manual_prospect(data: Dict) -> Dict:
             "contactName": contact_name,
             "contactEmail": contact_email,
             "contactPhone": contact_phone,
+            "officeAddressLine1": office_address_line1,
+            "officeAddressLine2": office_address_line2,
+            "officeCity": office_city,
+            "officeState": office_state,
+            "officePostalCode": office_postal_code,
+            "officeCountry": office_country,
         }
     )
     return {
@@ -839,24 +884,36 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
     mysql_enabled = bool(get_config().mysql.get("enabled"))
 
     try:
+        include_office_address = _sales_prospects_support_office_address_columns()
+        address_select = ""
+        if include_office_address:
+            address_select = """
+                    ,sp.office_address_line1 AS office_address_line1
+                    ,sp.office_address_line2 AS office_address_line2
+                    ,sp.office_city AS office_city
+                    ,sp.office_state AS office_state
+                    ,sp.office_postal_code AS office_postal_code
+                    ,sp.office_country AS office_country
+            """
         if mysql_enabled and sales_rep_id:
-	            rows = mysql_client.fetch_all(
-	                """
-	                SELECT
-	                    cf.id,
-	                    cf.name,
-	                    cf.email,
-	                    cf.phone,
-	                    cf.source,
-	                    cf.created_at,
-	                    sp.doctor_id AS prospect_doctor_id,
-	                    sp.status AS prospect_status,
-	                    sp.notes AS prospect_notes,
-	                    sp.updated_at AS prospect_updated_at,
-	                    sp.reseller_permit_exempt AS reseller_permit_exempt,
-	                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+            rows = mysql_client.fetch_all(
+                f"""
+                SELECT
+                    cf.id,
+                    cf.name,
+                    cf.email,
+                    cf.phone,
+                    cf.source,
+                    cf.created_at,
+                    sp.doctor_id AS prospect_doctor_id,
+                    sp.status AS prospect_status,
+                    sp.notes AS prospect_notes,
+                    sp.updated_at AS prospect_updated_at,
+                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+                    sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                    {address_select}
                 FROM sales_prospects sp
                 JOIN contact_forms cf ON cf.id = sp.contact_form_id
                 WHERE sp.sales_rep_id = %(sales_rep_id)s
@@ -867,24 +924,25 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                 {"sales_rep_id": str(sales_rep_id)},
             )
         elif mysql_enabled:
-	            rows = mysql_client.fetch_all(
-	                """
-	                SELECT
-	                    cf.id,
-	                    cf.name,
-	                    cf.email,
-	                    cf.phone,
-	                    cf.source,
-	                    cf.created_at,
-	                    sp.sales_rep_id AS prospect_sales_rep_id,
-	                    sp.doctor_id AS prospect_doctor_id,
-	                    sp.status AS prospect_status,
-	                    sp.notes AS prospect_notes,
-	                    sp.updated_at AS prospect_updated_at,
-	                    sp.reseller_permit_exempt AS reseller_permit_exempt,
-	                    sp.reseller_permit_file_path AS reseller_permit_file_path,
+            rows = mysql_client.fetch_all(
+                f"""
+                SELECT
+                    cf.id,
+                    cf.name,
+                    cf.email,
+                    cf.phone,
+                    cf.source,
+                    cf.created_at,
+                    sp.sales_rep_id AS prospect_sales_rep_id,
+                    sp.doctor_id AS prospect_doctor_id,
+                    sp.status AS prospect_status,
+                    sp.notes AS prospect_notes,
+                    sp.updated_at AS prospect_updated_at,
+                    sp.reseller_permit_exempt AS reseller_permit_exempt,
+                    sp.reseller_permit_file_path AS reseller_permit_file_path,
                     sp.reseller_permit_file_name AS reseller_permit_file_name,
                     sp.reseller_permit_uploaded_at AS reseller_permit_uploaded_at
+                    {address_select}
                 FROM contact_forms cf
                 LEFT JOIN sales_prospects sp
                   ON sp.id = CONCAT('contact_form:', cf.id)
@@ -959,6 +1017,12 @@ def _load_contact_form_referrals(sales_rep_id: Optional[str] = None) -> list[dic
                 if isinstance(row.get("reseller_permit_uploaded_at"), datetime)
                 else row.get("reseller_permit_uploaded_at")
             ),
+            "officeAddressLine1": row.get("office_address_line1") or None,
+            "officeAddressLine2": row.get("office_address_line2") or None,
+            "officeCity": row.get("office_city") or None,
+            "officeState": row.get("office_state") or None,
+            "officePostalCode": row.get("office_postal_code") or None,
+            "officeCountry": row.get("office_country") or None,
             "createdAt": created_at,
             "updatedAt": updated_at,
             "convertedDoctorId": row.get("prospect_doctor_id") or None,
@@ -1021,6 +1085,12 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "resellerPermitFilePath": p.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": p.get("resellerPermitFileName") or None,
             "resellerPermitUploadedAt": p.get("resellerPermitUploadedAt") or None,
+            "officeAddressLine1": p.get("officeAddressLine1") or None,
+            "officeAddressLine2": p.get("officeAddressLine2") or None,
+            "officeCity": p.get("officeCity") or None,
+            "officeState": p.get("officeState") or None,
+            "officePostalCode": p.get("officePostalCode") or None,
+            "officeCountry": p.get("officeCountry") or None,
             "createdAt": p.get("createdAt"),
             "updatedAt": p.get("updatedAt"),
             "convertedDoctorId": p.get("doctorId") or None,
@@ -1055,6 +1125,12 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "resellerPermitFilePath": p.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": p.get("resellerPermitFileName") or None,
             "resellerPermitUploadedAt": p.get("resellerPermitUploadedAt") or None,
+            "officeAddressLine1": p.get("officeAddressLine1") or None,
+            "officeAddressLine2": p.get("officeAddressLine2") or None,
+            "officeCity": p.get("officeCity") or None,
+            "officeState": p.get("officeState") or None,
+            "officePostalCode": p.get("officePostalCode") or None,
+            "officeCountry": p.get("officeCountry") or None,
             "createdAt": p.get("createdAt"),
             "updatedAt": p.get("updatedAt"),
             "convertedDoctorId": p.get("doctorId") or None,
@@ -1131,6 +1207,12 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
             "resellerPermitFilePath": prospect.get("resellerPermitFilePath") or None,
             "resellerPermitFileName": prospect.get("resellerPermitFileName") or None,
             "resellerPermitUploadedAt": prospect.get("resellerPermitUploadedAt") or None,
+            "officeAddressLine1": prospect.get("officeAddressLine1") or None,
+            "officeAddressLine2": prospect.get("officeAddressLine2") or None,
+            "officeCity": prospect.get("officeCity") or None,
+            "officeState": prospect.get("officeState") or None,
+            "officePostalCode": prospect.get("officePostalCode") or None,
+            "officeCountry": prospect.get("officeCountry") or None,
             "createdAt": prospect.get("createdAt"),
             "updatedAt": prospect.get("updatedAt"),
             "convertedDoctorId": prospect.get("doctorId") or None,
@@ -1537,6 +1619,7 @@ def upsert_sales_prospect_for_sales_rep(
     status: Optional[str] = None,
     notes: Optional[str] = None,
     reseller_permit_exempt: Optional[bool] = None,
+    office_address_updates: Optional[Dict] = None,
 ) -> Dict:
     if not sales_rep_id or not identifier:
         raise _service_error("INVALID_PAYLOAD", 400)
@@ -1589,6 +1672,19 @@ def upsert_sales_prospect_for_sales_rep(
             payload["resellerPermitFilePath"] = None
             payload["resellerPermitFileName"] = None
             payload["resellerPermitUploadedAt"] = None
+    if isinstance(office_address_updates, dict):
+        if "officeAddressLine1" in office_address_updates:
+            payload["officeAddressLine1"] = _sanitize_address_field(office_address_updates.get("officeAddressLine1"))
+        if "officeAddressLine2" in office_address_updates:
+            payload["officeAddressLine2"] = _sanitize_address_field(office_address_updates.get("officeAddressLine2"))
+        if "officeCity" in office_address_updates:
+            payload["officeCity"] = _sanitize_address_field(office_address_updates.get("officeCity"))
+        if "officeState" in office_address_updates:
+            payload["officeState"] = _sanitize_address_field(office_address_updates.get("officeState"))
+        if "officePostalCode" in office_address_updates:
+            payload["officePostalCode"] = _sanitize_address_field(office_address_updates.get("officePostalCode"))
+        if "officeCountry" in office_address_updates:
+            payload["officeCountry"] = _sanitize_address_field(office_address_updates.get("officeCountry"))
     return sales_prospect_repository.upsert(payload)
 
 

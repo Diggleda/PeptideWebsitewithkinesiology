@@ -1879,7 +1879,17 @@ export const referralAPI = {
 
   upsertSalesProspect: async (
     doctorId: string,
-    payload: { status?: string | null; notes?: string | null; resellerPermitExempt?: boolean | null },
+    payload: {
+      status?: string | null;
+      notes?: string | null;
+      resellerPermitExempt?: boolean | null;
+      officeAddressLine1?: string | null;
+      officeAddressLine2?: string | null;
+      officeCity?: string | null;
+      officeState?: string | null;
+      officePostalCode?: string | null;
+      officeCountry?: string | null;
+    },
   ) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/sales-prospects/${encodeURIComponent(doctorId)}`, {
       method: 'PATCH',
@@ -1920,6 +1930,12 @@ export const referralAPI = {
     notes?: string;
     status?: string;
     hasAccount?: boolean;
+    officeAddressLine1?: string;
+    officeAddressLine2?: string;
+    officeCity?: string;
+    officeState?: string;
+    officePostalCode?: string;
+    officeCountry?: string;
   }) => {
     return fetchWithAuth(`${API_BASE_URL}/referrals/admin/manual`, {
       method: 'POST',

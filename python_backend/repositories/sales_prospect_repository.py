@@ -10,6 +10,8 @@ from .. import storage
 
 HOUSE_SALES_REP_ID = "house"
 
+_supports_office_address_columns: Optional[bool] = None
+
 
 def _using_mysql() -> bool:
     return bool(get_config().mysql.get("enabled"))
@@ -36,6 +38,28 @@ def _is_contact_form_prospect(record: Dict) -> bool:
         return True
     return bool(record.get("contactFormId"))
 
+def _sales_prospects_supports_office_address() -> bool:
+    """
+    Backwards-compatible feature detection for MySQL deployments.
+
+    Some environments may not yet have office address columns on `sales_prospects`.
+    """
+    global _supports_office_address_columns
+    if _supports_office_address_columns is not None:
+        return _supports_office_address_columns
+    if not _using_mysql():
+        _supports_office_address_columns = False
+        return False
+    try:
+        rows = mysql_client.fetch_all(
+            "SHOW COLUMNS FROM sales_prospects LIKE 'office_address_line1'",
+            {},
+        )
+        _supports_office_address_columns = bool(rows)
+    except Exception:
+        _supports_office_address_columns = False
+    return _supports_office_address_columns
+
 
 def _ensure_defaults(record: Dict) -> Dict:
     normalized = dict(record)
@@ -59,6 +83,12 @@ def _ensure_defaults(record: Dict) -> Dict:
     normalized.setdefault("contactName", normalized.get("contactName") or None)
     normalized.setdefault("contactEmail", normalized.get("contactEmail") or None)
     normalized.setdefault("contactPhone", normalized.get("contactPhone") or None)
+    normalized.setdefault("officeAddressLine1", normalized.get("officeAddressLine1") or None)
+    normalized.setdefault("officeAddressLine2", normalized.get("officeAddressLine2") or None)
+    normalized.setdefault("officeCity", normalized.get("officeCity") or None)
+    normalized.setdefault("officeState", normalized.get("officeState") or None)
+    normalized.setdefault("officePostalCode", normalized.get("officePostalCode") or None)
+    normalized.setdefault("officeCountry", normalized.get("officeCountry") or None)
     created_at = normalized.get("createdAt") or _now()
     normalized["createdAt"] = created_at
     normalized["updatedAt"] = normalized.get("updatedAt") or created_at
@@ -313,7 +343,39 @@ def upsert(record: Dict) -> Dict:
 
     if _using_mysql():
         params = _to_db_params(merged)
+        supports_office_address = _sales_prospects_supports_office_address()
         if existing:
+            if supports_office_address:
+                mysql_client.execute(
+                    """
+                    UPDATE sales_prospects
+                    SET
+                        sales_rep_id = %(sales_rep_id)s,
+                        doctor_id = %(doctor_id)s,
+                        referral_id = %(referral_id)s,
+                        contact_form_id = %(contact_form_id)s,
+                        status = %(status)s,
+                        notes = %(notes)s,
+                        is_manual = %(is_manual)s,
+                        reseller_permit_exempt = %(reseller_permit_exempt)s,
+                        reseller_permit_file_path = %(reseller_permit_file_path)s,
+                        reseller_permit_file_name = %(reseller_permit_file_name)s,
+                        reseller_permit_uploaded_at = %(reseller_permit_uploaded_at)s,
+                        contact_name = %(contact_name)s,
+                        contact_email = %(contact_email)s,
+                        contact_phone = %(contact_phone)s,
+                        office_address_line1 = %(office_address_line1)s,
+                        office_address_line2 = %(office_address_line2)s,
+                        office_city = %(office_city)s,
+                        office_state = %(office_state)s,
+                        office_postal_code = %(office_postal_code)s,
+                        office_country = %(office_country)s,
+                        updated_at = %(updated_at)s
+                    WHERE id = %(id)s
+                    """,
+                    params,
+                )
+                return find_by_id(merged.get("id")) or merged
             mysql_client.execute(
                 """
                 UPDATE sales_prospects
@@ -334,6 +396,28 @@ def upsert(record: Dict) -> Dict:
                     contact_phone = %(contact_phone)s,
                     updated_at = %(updated_at)s
                 WHERE id = %(id)s
+                """,
+                params,
+            )
+            return find_by_id(merged.get("id")) or merged
+        if supports_office_address:
+            mysql_client.execute(
+                """
+                INSERT INTO sales_prospects (
+                    id, sales_rep_id, doctor_id, referral_id, contact_form_id,
+                    status, notes, is_manual,
+                    reseller_permit_exempt, reseller_permit_file_path, reseller_permit_file_name, reseller_permit_uploaded_at,
+                    contact_name, contact_email, contact_phone,
+                    office_address_line1, office_address_line2, office_city, office_state, office_postal_code, office_country,
+                    created_at, updated_at
+                ) VALUES (
+                    %(id)s, %(sales_rep_id)s, %(doctor_id)s, %(referral_id)s, %(contact_form_id)s,
+                    %(status)s, %(notes)s, %(is_manual)s,
+                    %(reseller_permit_exempt)s, %(reseller_permit_file_path)s, %(reseller_permit_file_name)s, %(reseller_permit_uploaded_at)s,
+                    %(contact_name)s, %(contact_email)s, %(contact_phone)s,
+                    %(office_address_line1)s, %(office_address_line2)s, %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
+                    %(created_at)s, %(updated_at)s
+                )
                 """,
                 params,
             )
@@ -630,6 +714,12 @@ def _row_to_record(row: Optional[Dict]) -> Optional[Dict]:
             "contactName": row.get("contact_name"),
             "contactEmail": row.get("contact_email"),
             "contactPhone": row.get("contact_phone"),
+            "officeAddressLine1": row.get("office_address_line1"),
+            "officeAddressLine2": row.get("office_address_line2"),
+            "officeCity": row.get("office_city"),
+            "officeState": row.get("office_state"),
+            "officePostalCode": row.get("office_postal_code"),
+            "officeCountry": row.get("office_country"),
             "createdAt": fmt_datetime(row.get("created_at")),
             "updatedAt": fmt_datetime(row.get("updated_at")),
         }
@@ -664,6 +754,12 @@ def _to_db_params(record: Dict) -> Dict:
         "contact_name": record.get("contactName"),
         "contact_email": record.get("contactEmail"),
         "contact_phone": record.get("contactPhone"),
+        "office_address_line1": record.get("officeAddressLine1"),
+        "office_address_line2": record.get("officeAddressLine2"),
+        "office_city": record.get("officeCity"),
+        "office_state": record.get("officeState"),
+        "office_postal_code": record.get("officePostalCode"),
+        "office_country": record.get("officeCountry"),
         "created_at": parse_dt(record.get("createdAt")),
         "updated_at": parse_dt(record.get("updatedAt")),
     }
