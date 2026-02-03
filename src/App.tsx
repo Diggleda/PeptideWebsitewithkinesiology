@@ -11279,6 +11279,16 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
+    // Delegate sessions should only load the catalog after the delegate link is validated.
+    // If the link is revoked/expired, we render the expired-session view and skip all catalog loading.
+    if (isDelegateMode) {
+      if (delegateLoading) {
+        return;
+      }
+      if (delegateError) {
+        return;
+      }
+    }
 
     let cancelled = false;
 
@@ -11703,7 +11713,7 @@ export default function App() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-	  }, [ensureVariationCacheReady, persistVariationCache]);
+	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -18885,7 +18895,7 @@ export default function App() {
 				            />
 			          </div>
 			        )}
-	              {isDelegateMode && (
+	              {isDelegateMode && !delegateError && (
 	                <div style={{ display: postLoginHold ? "none" : undefined }}>
 	                  <Header
 	                    user={null}
@@ -18897,11 +18907,11 @@ export default function App() {
 	                    cartItems={totalCartItems}
 	                    onSearch={handleSearch}
 	                    onCartClick={() => setCheckoutOpen(true)}
-                    showCartIconFallback={shouldShowHeaderCartIcon}
-                    catalogLoading={catalogLoading}
-                  />
-                </div>
-              )}
+	                    showCartIconFallback={shouldShowHeaderCartIcon}
+	                    catalogLoading={catalogLoading}
+	                  />
+	                </div>
+	              )}
 
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
@@ -20430,23 +20440,35 @@ export default function App() {
             </main>
           )}
 
-	          {isDelegateMode && (
-	            <main
-	              className="w-full pb-12 mobile-safe-area"
-	              style={{
-	                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
-	              }}
-	            >
-	              {delegateError ? null : renderProductSection()}
-	            </main>
+		          {isDelegateMode && (
+		            delegateError ? (
+		              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
+		                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
+		                  <p className="text-lg font-semibold text-slate-900">This session has expired.</p>
+		                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
+		                    The delegate link you used is no longer valid. Please request a new link from your doctor and try
+		                    again.
+		                  </p>
+		                </div>
+		              </main>
+		            ) : (
+	              <main
+	                className="w-full pb-12 mobile-safe-area"
+	                style={{
+	                  paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
+	                }}
+	              >
+	                {renderProductSection()}
+	              </main>
+	            )
 	          )}
-        </div>
+	        </div>
 
-      {user ? (
-        <LegalFooter showContactCTA={false} variant="full" />
-      ) : (
-        <LegalFooter showContactCTA variant="ctaOnly" />
-      )}
+	      {isDelegateMode && delegateError ? null : user ? (
+	        <LegalFooter showContactCTA={false} variant="full" />
+	      ) : (
+	        <LegalFooter showContactCTA variant="ctaOnly" />
+	      )}
       </div>
 
       {/* Checkout Modal */}

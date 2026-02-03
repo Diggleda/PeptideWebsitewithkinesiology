@@ -220,6 +220,45 @@ body {
   flex: 0 0 auto !important;
 }
 
+.patient-link-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.patient-link-form__input,
+.patient-link-form__button {
+  height: 2.5rem !important;
+}
+
+.patient-link-form__button {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+@media (min-width: 640px) {
+  .patient-link-form {
+    grid-template-columns: minmax(0, 1fr) 20%;
+    align-items: center;
+    column-gap: 1rem;
+  }
+
+  .patient-link-form__label {
+    grid-column: 1 / -1;
+  }
+
+  .patient-link-form__input {
+    grid-column: 1;
+    margin-bottom: 0 !important;
+  }
+
+  .patient-link-form__button {
+    grid-column: 2;
+    align-self: center;
+    margin-bottom: 0 !important;
+  }
+}
+
 .peptide-news-thumb {
   width: 4rem;
   height: 4rem;

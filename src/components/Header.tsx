@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, List, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -2954,7 +2954,11 @@ export function Header({
         borderColor: translucentSecondary,
       }}
     >
-      <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
+      {delegateMode ? (
+        <List className="h-4 w-4" style={{ color: secondaryColor }} />
+      ) : (
+        <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
+      )}
       {cartItems > 0 && (
         <Badge
           variant="outline"
@@ -3189,8 +3193,13 @@ export function Header({
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
 
-  const downscaleImageDataUrl = useCallback(async (dataUrl: string, maxSidePx: number) => {
-    const safeMaxSide = Number.isFinite(maxSidePx) ? Math.max(16, Math.min(512, Math.floor(maxSidePx))) : 96;
+  const downscaleImageDataUrl = useCallback(async (
+    dataUrl: string,
+    maxWidthPx: number,
+    maxHeightPx: number,
+  ) => {
+    const safeMaxWidth = Number.isFinite(maxWidthPx) ? Math.max(16, Math.min(2048, Math.floor(maxWidthPx))) : 480;
+    const safeMaxHeight = Number.isFinite(maxHeightPx) ? Math.max(16, Math.min(2048, Math.floor(maxHeightPx))) : 128;
     const img = new Image();
     img.decoding = 'async';
     img.loading = 'eager';
@@ -3207,7 +3216,7 @@ export function Header({
       throw new Error('IMAGE_DIMENSIONS_INVALID');
     }
 
-    const scale = Math.min(1, safeMaxSide / Math.max(srcW, srcH));
+    const scale = Math.min(1, safeMaxWidth / srcW, safeMaxHeight / srcH);
     const dstW = Math.max(1, Math.round(srcW * scale));
     const dstH = Math.max(1, Math.round(srcH * scale));
 
@@ -3236,7 +3245,7 @@ export function Header({
     if (!file || delegateLogoUploading) {
       return;
     }
-    const maxBytes = 650_000;
+    const maxBytes = 5_000_000;
     if (file.size > maxBytes) {
       toast.error('Image is too large. Please choose a smaller file.');
       return;
@@ -3256,8 +3265,8 @@ export function Header({
       if (!dataUrl || !dataUrl.startsWith('data:image/')) {
         throw new Error('INVALID_IMAGE');
       }
-      const previewBoxPx = 48;
-      const resized = await downscaleImageDataUrl(dataUrl, previewBoxPx * 2);
+      // Match the delegate header logo slot (2x for crispness on retina).
+      const resized = await downscaleImageDataUrl(dataUrl, 640, 160);
       await saveProfileField('Delegate logo', { delegateLogoUrl: resized });
     } catch (error) {
       // saveProfileField handles toasts
@@ -4377,51 +4386,97 @@ export function Header({
     </div>
   ) : null;
 
-  const patientLinksPanel = showPatientLinksTab ? (
-    <div className="space-y-6">
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Patient Links</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">
-          Patient Links let your patients shop as a “delegate” under your authority. Delegates can browse and build a
-          cart, then share it back to you for checkout. Configure your delegate header logo, optional pricing markup,
-          and generate links below.
-        </p>
-      </div>
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Delegate header logo</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          This logo appears in the delegate header when a patient opens your link. Recommended: square PNG/JPG.
-        </p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">
-          Use “Upload logo” to set your clinic/brand logo. Use “Remove” to revert back to the default PepPro logo.
-        </p>
-	        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-	          <div className="flex items-center gap-4 min-w-0">
-	            <div className="h-12 w-12 flex-none overflow-hidden rounded-2xl border border-[rgba(95,179,249,0.28)] bg-white/85 p-2 shadow-sm flex items-center justify-center">
-	              <img
-	                src={
-	                  (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
-	                    ? localUser.delegateLogoUrl
-	                    : "/Peppro_IconLogo_Transparent_NoBuffer.png"
-	                }
-	                alt="Delegate logo"
-	                className="h-full w-full object-contain"
-	              />
-	            </div>
+	  const patientLinksPanel = showPatientLinksTab ? (
+	    <div className="space-y-6">
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
+	        <p className="text-sm leading-relaxed text-slate-700">
+	          Patient Links let your patients shop as a “delegate” under your authority. Delegates can browse and build a
+	          proposal, then share it back to you for checkout. Configure your delegate header logo, optional pricing markup,
+	          and generate links below.
+	        </p>
+	      </div>
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+	        <h3 className="text-lg font-semibold text-slate-900">White Label with your logo</h3>
+	        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+	          Make your logo appear in the header of your patient's session. 
+	        </p>
+	        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+	         Recommended: horizontal rectangle
+	          PNG/JPG (we’ll resize to fit the header).
+	        </p>
+	        <div className="mt-2 space-y-4">
+		          <div className="glass-card squircle-lg p-3 !border-0">
+		            <p className="text-xs font-semibold text-slate-700">Header preview</p>
+			            <div className="mt-3 w-full bg-white/80 px-6 py-4">
+			              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-12 sm:items-center sm:gap-4">
+			                <div className="sm:col-span-3">
+			                  <div className="flex items-center justify-between gap-3 sm:justify-start">
+			                    <div className="brand-logo relative flex items-center justify-center flex-shrink-0 min-w-0">
+		                      <img
+		                        src={
+		                          (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
+		                            ? localUser.delegateLogoUrl
+		                            : "/Peppro_fulllogo.png"
+		                        }
+		                        alt="Delegate header logo preview"
+		                        className="relative z-[1] flex-shrink-0"
+		                        style={{
+		                          display: 'block',
+		                          width: 'auto',
+		                          height: 'auto',
+		                          maxWidth: isLargeScreen ? '320px' : 'min(260px, 60vw)',
+		                          maxHeight: isLargeScreen ? '80px' : '64px',
+		                          objectFit: 'contain',
+		                        }}
+		                        loading="eager"
+		                        decoding="async"
+		                      />
+		                    </div>
+		                    <div className="sm:hidden">
+		                      <div
+		                        className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
+		                        aria-label="Delegate header preview"
+		                      >
+		                        <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+		                        <span className="font-semibold truncate max-w-[55vw]">{`Delegate of ${localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'}`}</span>
+		                      </div>
+		                    </div>
+		                  </div>
+		                </div>
+
+		                <div className="hidden sm:block sm:col-span-6 pointer-events-none opacity-95">
+		                  <div className="mx-auto w-full max-w-md">
+		                    {renderSearchField()}
+		                  </div>
+		                </div>
+
+		                <div className="hidden sm:flex sm:col-span-3 sm:justify-end">
+		                  <div
+		                    className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
+		                    aria-label="Delegate header preview"
+		                  >
+		                    <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+		                    <span className="font-semibold truncate max-w-[22rem]">{`Delegate of ${localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'}`}</span>
+		                  </div>
+		                </div>
+		              </div>
+		            </div>
+		          </div>
+
+	          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 	            <div className="min-w-0">
 	              <p className="text-sm font-semibold text-slate-900 truncate">
 	                {typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0
-                  ? 'Custom logo set'
-                  : 'Using PepPro logo'}
-              </p>
-              <p className="text-xs text-slate-600">Max ~650KB. Stored on your account.</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={delegateLogoInputRef}
-              type="file"
-              accept="image/*"
+	                  ? 'Custom logo set'
+	                  : 'Using PepPro logo'}
+	              </p>
+	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
+	            </div>
+		            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+			            <input
+			              ref={delegateLogoInputRef}
+			              type="file"
+			              accept="image/*"
               className="hidden"
               onChange={(event) => void handleSelectDelegateLogo(event.target.files?.[0] ?? null)}
             />
@@ -4433,95 +4488,85 @@ export function Header({
             >
               {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleRemoveDelegateLogo()}
-              disabled={delegateLogoUploading}
-              className="h-11 w-full sm:w-auto squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
-            >
-              Remove
-            </Button>
-          </div>
-        </div>
-      </div>
+		            <Button
+		              type="button"
+		              variant="outline"
+		              onClick={() => void handleRemoveDelegateLogo()}
+		              disabled={delegateLogoUploading}
+		              className="h-11 w-full sm:w-auto squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+		            >
+		              Remove
+		            </Button>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Patient pricing markup</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Apply a percent markup to all products shown to delegates using your patient link.
+        <h3 className="text-lg font-semibold text-slate-900">Catelogue markup</h3>
+        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+          Apply a markup on products shown to your patients.
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">
-          This only changes what your delegate sees while shopping. Your own pricing and checkout stay under your
-          account.
-        </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          <div className="min-w-0">
-            <Label htmlFor="patient-markup" className="text-sm font-semibold text-slate-700">
-              Markup percent
-            </Label>
-            <Input
-              id="patient-markup"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              max={500}
-              step={0.01}
-              value={patientMarkupDraft}
-              onChange={(event) => setPatientMarkupDraft(event.target.value)}
-              className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
-            />
-            <p className="mt-2 text-xs text-slate-600">
-              Enter a percentage (e.g., 15 for 15%). Save to apply to all delegate pricing.
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => void handleSavePatientMarkup()}
-            disabled={!showPatientLinksTab || patientLinksSaving}
-            className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
-          >
-            {patientLinksSaving ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
-        <p className="mt-3 text-xs text-slate-600">
-          Tip: keep this at 0% if you want delegates to see your base pricing.
-        </p>
+	        <div className="mt-5 patient-link-form">
+	          <Label htmlFor="patient-markup" className="patient-link-form__label text-sm mb-1 font-semibold text-slate-700">
+	            Markup percent
+	          </Label>
+	          <Input
+	            id="patient-markup"
+	            type="number"
+	            inputMode="decimal"
+	            min={0}
+	            max={500}
+	            step={0.1}
+	            value={patientMarkupDraft}
+	            onChange={(event) => setPatientMarkupDraft(event.target.value)}
+            className="patient-link-form__input h-11 w-full mb-2 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Button
+	            type="button"
+	            onClick={() => void handleSavePatientMarkup()}
+	            disabled={!showPatientLinksTab || patientLinksSaving}
+	            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+	          >
+	            {patientLinksSaving ? 'Saving…' : 'Save'}
+	          </Button>
+	        </div>
+	        <p className="mt-2 text-xs text-slate-600">
+	          Enter a percentage (e.g., 15 for 15%). Save to apply to all delegate pricing.
+	        </p>
+	        <p className="mt-3 text-xs text-slate-600">
+	          Tip: keep this at 0% if you want delegates to see your base pricing.
+	        </p>
       </div>
 
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Create a delegate link and share it however you like (copy/paste).
+        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+          Links are temporary and expire automatically after 72 hours. You can also revoke any link at any time.
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">
-          Links are temporary for safety and expire automatically after 72 hours. You can revoke any link at any time.
-        </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          <div className="min-w-0">
-            <Label htmlFor="patient-link-label" className="text-sm font-semibold text-slate-700">
-              Label (optional)
-            </Label>
-            <Input
-              id="patient-link-label"
-              value={patientLinkLabelDraft}
-              onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
-              placeholder="e.g., John Doe"
-              className="mt-2 h-11 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
-            />
-            <p className="mt-2 text-xs text-slate-600">
-              Labels are for your reference only and do not appear to the delegate.
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => void handleCreatePatientLink()}
-            disabled={!showPatientLinksTab || patientLinksCreating}
-            className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
-          >
-            {patientLinksCreating ? 'Creating…' : 'Create link'}
-          </Button>
-        </div>
-      </div>
+	        <div className="mt-5 patient-link-form">
+	          <Label htmlFor="patient-link-label" className="patient-link-form__label text-sm font-semibold text-slate-700">
+	            Label (for your referrence)
+	          </Label>
+	          <Input
+	            id="patient-link-label"
+	            value={patientLinkLabelDraft}
+	            onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
+	            placeholder="e.g., John Doe"
+            className="patient-link-form__input h-11 w-full mb-2 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Button
+	            type="button"
+	            onClick={() => void handleCreatePatientLink()}
+	            disabled={!showPatientLinksTab || patientLinksCreating}
+	            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+	          >
+	            {patientLinksCreating ? 'Creating…' : 'Create link'}
+	          </Button>
+	        </div>
+	        <p className="mt-2 text-xs text-slate-600">
+	          Labels are for your reference only and do not appear to the delegate.
+	        </p>
+	      </div>
 
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-3">
 	        <div className="flex items-center justify-between gap-3">
@@ -4532,12 +4577,12 @@ export function Header({
             size="sm"
             onClick={() => void loadPatientLinks()}
             disabled={!showPatientLinksTab || patientLinksLoading}
-            className="squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+            className="squircle-sm mb-0 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
           >
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
-        <p className="text-sm text-slate-700">
+        <p className="mb-3 text-sm leading-relaxed text-slate-700">
           Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke” to immediately disable a link.
         </p>
 
@@ -4578,12 +4623,8 @@ export function Header({
 	                  <div className="min-w-0">
 	                    <div className="flex items-center gap-2">
 	                      <span className="font-semibold text-slate-900 truncate">{label}</span>
-                      {isRevoked && (
-                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                          Revoked
-                        </span>
-                      )}
-                    </div>
+	                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
+	                    </div>
                     <div className="mt-1 text-xs text-slate-600 space-y-0.5">
                       {createdAt && <div>Created: {createdAt}</div>}
                       {expiresAt && <div>Expires: {expiresAt}</div>}
@@ -5280,9 +5321,16 @@ export function Header({
     </>
   );
 
-  const logoSizing = isLargeScreen
-    ? { maxWidth: '160px', maxHeight: '160px' }
-    : { maxWidth: 'min(190px, 56vw)', maxHeight: '78px' };
+  const logoSizing = (() => {
+    if (delegateMode) {
+      return isLargeScreen
+        ? { maxWidth: '320px', maxHeight: '80px' }
+        : { maxWidth: 'min(260px, 60vw)', maxHeight: '64px' };
+    }
+    return isLargeScreen
+      ? { maxWidth: '160px', maxHeight: '160px' }
+      : { maxWidth: 'min(190px, 56vw)', maxHeight: '78px' };
+  })();
 
 			  return (
 			    <header
