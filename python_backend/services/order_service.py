@@ -3339,14 +3339,53 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
     try:
         users = user_repository.get_all()
-        rep_like_roles = {"sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"}
-        admins = [u for u in users if (u.get("role") or "").lower() == "admin"]
-        reps = [u for u in users if (u.get("role") or "").lower() in rep_like_roles]
+        def _norm_role(value: object) -> str:
+            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+        rep_like_roles = {"sales_rep", "rep", "sales_lead", "saleslead"}
+        admins = [u for u in users if _norm_role(u.get("role")) == "admin"]
+        reps = [u for u in users if _norm_role(u.get("role")) in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         report_tz = _get_report_timezone()
 
         def _norm_email(value: object) -> str:
             return str(value or "").strip().lower()
+
+        rep_lookup_by_id: Dict[str, Dict[str, object]] = {}
+        for u in users:
+            role = _norm_role(u.get("role"))
+            if role not in rep_like_roles and role != "admin":
+                continue
+            user_id = str(u.get("id") or "").strip()
+            if not user_id:
+                continue
+            rep_lookup_by_id[user_id] = {
+                "id": user_id,
+                "name": u.get("name") or u.get("email") or ("Admin" if role == "admin" else "Sales Rep"),
+                "email": u.get("email") or None,
+                "role": role or ("admin" if role == "admin" else "sales_rep"),
+            }
+        for rep in rep_records_list:
+            rep_id = str(rep.get("id") or "").strip()
+            if not rep_id:
+                continue
+            rep_role = _norm_role(rep.get("role"))
+            if rep_role and rep_role not in ("sales_rep", "rep"):
+                continue
+            rep_lookup_by_id.setdefault(
+                rep_id,
+                {
+                    "id": rep_id,
+                    "name": rep.get("name") or rep.get("email") or "Sales Rep",
+                    "email": rep.get("email") or None,
+                    "role": rep_role or "sales_rep",
+                },
+            )
+            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            if legacy_id:
+                legacy_str = str(legacy_id).strip()
+                if legacy_str and legacy_str not in rep_lookup_by_id:
+                    rep_lookup_by_id[legacy_str] = rep_lookup_by_id[rep_id]
 
         user_rep_id_by_email: Dict[str, str] = {}
         admin_id_by_email: Dict[str, str] = {}
@@ -3463,7 +3502,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         skipped_outside_period = 0
 
         def _normalize_role(value: object) -> str:
-            return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+            return _norm_role(value)
 
         def _normalize_rep_id(value: object) -> str:
             if value is None:
@@ -3641,7 +3680,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             recipient_id = ""
             if order_user_id and (order_role in rep_like_roles or order_role == "admin"):
-                recipient_id = order_user_id
+                recipient_id = (
+                    alias_to_rep_id.get(order_user_id, order_user_id) if order_role in rep_like_roles else order_user_id
+                )
             elif attribution_email and attribution_email in user_rep_id_by_email:
                 recipient_id = user_rep_id_by_email[attribution_email]
             elif attribution_email and attribution_email in admin_id_by_email:

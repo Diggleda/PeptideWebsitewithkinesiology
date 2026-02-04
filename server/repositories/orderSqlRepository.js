@@ -338,11 +338,43 @@ const fetchByBillingEmails = async (emails = []) => {
       SELECT *
       FROM peppro_orders
       WHERE JSON_VALID(payload)
-        AND LOWER(
-          JSON_UNQUOTE(
-            JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing.email')
-          )
-        ) IN (${placeholders})
+        AND (
+          LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing.email')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_email')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingEmail')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingAddress.email')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_address.email')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billingAddress.emailAddress')
+            )
+          ) IN (${placeholders})
+          OR LOWER(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(CAST(payload AS JSON), '$.order.billing_address.email_address')
+            )
+          ) IN (${placeholders})
+        )
     `,
     params,
   );

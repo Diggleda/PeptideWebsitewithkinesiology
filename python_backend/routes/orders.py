@@ -223,10 +223,13 @@ def sales_by_rep_summary():
         exclude_id = g.current_user.get("id") if role == "admin" else None
         period_start = request.args.get("periodStart") or request.args.get("start") or None
         period_end = request.args.get("periodEnd") or request.args.get("end") or None
+        force_raw = request.args.get("force") or ""
+        force = str(force_raw).strip().lower() in ("1", "true", "yes", "y", "on")
         return order_service.get_sales_by_rep(
             exclude_sales_rep_id=exclude_id if exclude_id else None,
             period_start=period_start,
             period_end=period_end,
+            force=force,
         )
 
     return handle_action(action)

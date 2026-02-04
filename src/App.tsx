@@ -8480,6 +8480,7 @@ function MainApp() {
       const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
         periodStart: periodStart || undefined,
         periodEnd: periodEnd || undefined,
+        force: true,
       });
       const summaryArray = Array.isArray(salesSummaryResponse)
         ? salesSummaryResponse

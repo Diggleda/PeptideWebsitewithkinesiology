@@ -1444,10 +1444,11 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
-  getSalesByRepForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
+  getSalesByRepForAdmin: async (options?: { periodStart?: string; periodEnd?: string; force?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);
     if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
+    if (options?.force) params.set('force', 'true');
     const query = params.toString();
     // Use non-admin path to avoid infra path-based restrictions; backend supports both.
     const url = query

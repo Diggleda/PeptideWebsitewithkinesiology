@@ -2207,6 +2207,128 @@ const getSalesByRep = async ({
     repTotals.set('__house__', houseTotals);
   }
 
+  const normalizeRepId = (value) => {
+    const normalized = normalizeId(value);
+    if (!normalized) return null;
+    if (normalized.toLowerCase() === 'house') return '__house__';
+    return normalized;
+  };
+
+  const extractOrderDoctorId = (order) => normalizeId(
+    order?.userId
+      ?? order?.user_id
+      ?? order?.customerId
+      ?? order?.customer_id
+      ?? order?.doctorId
+      ?? order?.doctor_id
+      ?? null,
+  );
+
+  const extractOrderSalesRepId = (order) => normalizeRepId(
+    order?.doctorSalesRepId
+      ?? order?.doctor_sales_rep_id
+      ?? order?.salesRepId
+      ?? order?.sales_rep_id
+      ?? null,
+  );
+
+  const doctorIdsFromOrders = new Set();
+  sourceOrders.forEach((order) => {
+    const doctorId = extractOrderDoctorId(order);
+    if (doctorId) {
+      doctorIdsFromOrders.add(doctorId);
+    }
+  });
+
+  const prospectRepByDoctorId = new Map();
+  const prospectRepUpdatedMsByDoctorId = new Map();
+  const coerceProspectTimeMs = (value) => {
+    if (!value) return 0;
+    const parsed = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const setProspectMapping = (doctorId, repId, updatedAt) => {
+    const normalizedDoctorId = normalizeId(doctorId);
+    const normalizedRepId = normalizeRepId(repId);
+    if (!normalizedDoctorId || !normalizedRepId) return;
+    const nextMs = coerceProspectTimeMs(updatedAt);
+    const currentMs = prospectRepUpdatedMsByDoctorId.get(normalizedDoctorId) || 0;
+    if (!prospectRepByDoctorId.has(normalizedDoctorId) || nextMs >= currentMs) {
+      prospectRepByDoctorId.set(normalizedDoctorId, normalizedRepId);
+      prospectRepUpdatedMsByDoctorId.set(normalizedDoctorId, nextMs);
+    }
+  };
+
+  if (doctorIdsFromOrders.size > 0) {
+    if (mysqlClient.isEnabled() && doctorIdsFromOrders.size <= 800) {
+      try {
+        const ids = Array.from(doctorIdsFromOrders);
+        const placeholders = ids.map((_, idx) => `:doc${idx}`).join(', ');
+        const params = ids.reduce((acc, id, idx) => ({ ...acc, [`doc${idx}`]: id }), {});
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT doctor_id, sales_rep_id, updated_at, created_at
+            FROM sales_prospects
+            WHERE doctor_id IN (${placeholders})
+          `,
+          params,
+        );
+        (rows || []).forEach((row) => {
+          setProspectMapping(
+            row?.doctor_id ?? row?.doctorId ?? null,
+            row?.sales_rep_id ?? row?.salesRepId ?? null,
+            row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt ?? null,
+          );
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Sales-by-rep summary: failed to query MySQL sales_prospects mapping');
+      }
+    }
+
+    if (prospectRepByDoctorId.size === 0) {
+      try {
+        const prospects = await salesProspectRepository.getAll();
+        const list = Array.isArray(prospects) ? prospects : [];
+        list.forEach((prospect) => {
+          setProspectMapping(
+            prospect?.doctorId ?? prospect?.doctor_id ?? null,
+            prospect?.salesRepId ?? prospect?.sales_rep_id ?? null,
+            prospect?.updatedAt ?? prospect?.updated_at ?? prospect?.createdAt ?? prospect?.created_at ?? null,
+          );
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Sales-by-rep summary: failed to load sales prospects mapping');
+      }
+    }
+  }
+
+  for (const repId of new Set(Array.from(prospectRepByDoctorId.values()))) {
+    if (repId === '__house__') continue;
+    if (!repLookup.has(repId)) {
+      repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
+    }
+  }
+
+  try {
+    const directory = await fetchSalesRepDirectory(Array.from(repLookup.keys()));
+    directory.forEach((rep, repId) => {
+      const existing = repLookup.get(repId) || null;
+      const existingName = existing?.name ? String(existing.name).trim() : '';
+      const isGeneratedName =
+        !existingName
+        || existingName === 'Sales Rep'
+        || existingName === `Sales Rep ${repId}`
+        || existingName === `Sales Rep ${String(repId)}`;
+      repLookup.set(repId, {
+        id: repId,
+        name: isGeneratedName ? (rep?.name || rep?.email || existingName || 'Sales Rep') : existingName,
+        email: existing?.email || rep?.email || null,
+      });
+    });
+  } catch (error) {
+    logger.warn({ err: error }, 'Sales-by-rep summary: failed to resolve sales rep directory');
+  }
+
   sourceOrders.forEach((order) => {
     if (shouldFilterByWindow) {
       const createdAtMs = coerceOrderTimeMs(order);
@@ -2220,13 +2342,19 @@ const getSalesByRep = async ({
         return;
       }
     }
-    const userId = order.userId || order.user_id || order.id;
-    const normalizedUserId = normalizeId(userId);
-    if (normalizedUserId && excludeDoctorSet.has(normalizedUserId)) {
+    const normalizedDoctorId = extractOrderDoctorId(order);
+    if (normalizedDoctorId && excludeDoctorSet.has(normalizedDoctorId)) {
       return;
     }
-    const repId = userToRep.get(normalizedUserId) || '__house__';
+    const repId =
+      extractOrderSalesRepId(order)
+      || (normalizedDoctorId ? userToRep.get(normalizedDoctorId) : null)
+      || (normalizedDoctorId ? prospectRepByDoctorId.get(normalizedDoctorId) : null)
+      || '__house__';
     if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
+    if (repId !== '__house__' && !repLookup.has(repId)) {
+      repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
+    }
     const current = repTotals.get(repId) || {
       totalOrders: 0,
       totalRevenue: 0,
