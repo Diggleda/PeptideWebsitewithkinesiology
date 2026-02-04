@@ -834,7 +834,7 @@ def _resolve_sales_rep_id(identifier: Optional[str]) -> Optional[str]:
         user = None
     if user and isinstance(user, dict):
         role = (user.get("role") or "").lower()
-        if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+        if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
             rep_id = str(user.get("salesRepId") or "").strip()
             if rep_id:
                 return rep_id
@@ -1169,8 +1169,41 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     if not sales_rep_id:
         return []
 
-    user = user_repository.find_by_id(str(sales_rep_id))
-    role = (user.get("role") or "").lower() if user else ""
+    # Determine the *target* user's role even when `sales_rep_id` resolves to a sales_reps.id.
+    target_user = None
+    try:
+        target_user = user_repository.find_by_id(str(sales_rep_identifier))
+    except Exception:
+        target_user = None
+    if not target_user:
+        try:
+            target_user = user_repository.find_by_id(str(sales_rep_id))
+        except Exception:
+            target_user = None
+    if not target_user:
+        try:
+            rep = sales_rep_repository.find_by_id(str(sales_rep_id))
+        except Exception:
+            rep = None
+        legacy_user_id = str(rep.get("legacyUserId") or rep.get("legacy_user_id") or "").strip() if isinstance(rep, dict) else ""
+        if legacy_user_id:
+            try:
+                target_user = user_repository.find_by_id(legacy_user_id)
+            except Exception:
+                target_user = None
+    if not target_user:
+        try:
+            rep = sales_rep_repository.find_by_id(str(sales_rep_identifier))
+        except Exception:
+            rep = None
+        legacy_user_id = str(rep.get("legacyUserId") or rep.get("legacy_user_id") or "").strip() if isinstance(rep, dict) else ""
+        if legacy_user_id:
+            try:
+                target_user = user_repository.find_by_id(legacy_user_id)
+            except Exception:
+                target_user = None
+
+    role = (target_user.get("role") or "").lower() if isinstance(target_user, dict) else ""
     token_is_admin = (token_role or "").lower() == "admin"
     # `is_admin` here means the *target* dashboard is for an admin account.
     # Do not treat "viewer is admin" as "target is admin" or else house/contact-form

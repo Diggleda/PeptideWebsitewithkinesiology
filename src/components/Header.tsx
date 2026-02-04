@@ -3238,13 +3238,12 @@ export function Header({
 	                  : null,
 	            shippingAddress,
 	          });
-	        }
-	        toast.success('Proposal loaded into your cart.');
-	        setAccountModalOpen(false);
-      } catch (error: any) {
-        toast.error(
-          typeof error?.message === 'string' && error.message.trim()
-            ? error.message
+		        }
+		        toast.success('Proposal loaded into your cart.');
+	      } catch (error: any) {
+	        toast.error(
+	          typeof error?.message === 'string' && error.message.trim()
+	            ? error.message
             : 'Unable to load proposal right now.',
         );
       } finally {
@@ -3404,8 +3403,12 @@ export function Header({
       if (!dataUrl || !dataUrl.startsWith('data:image/')) {
         throw new Error('INVALID_IMAGE');
       }
-      // Match the delegate header logo slot (2x for crispness on retina).
-      const resized = await downscaleImageDataUrl(dataUrl, 640, 160);
+	      // Match the header logo slot (2x for crispness on retina).
+	      const resized = await downscaleImageDataUrl(
+	        dataUrl,
+	        isLargeScreen ? 960 : 840,
+	        isLargeScreen ? 112 : 96,
+	      );
       await saveProfileField('Delegate logo', { delegateLogoUrl: resized });
     } catch (error) {
       // saveProfileField handles toasts
@@ -3415,7 +3418,7 @@ export function Header({
         delegateLogoInputRef.current.value = '';
       }
     }
-  }, [delegateLogoUploading, downscaleImageDataUrl, saveProfileField]);
+	  }, [delegateLogoUploading, downscaleImageDataUrl, isLargeScreen, saveProfileField]);
 
   const handleRemoveDelegateLogo = useCallback(async () => {
     if (delegateLogoUploading) return;
@@ -4453,8 +4456,8 @@ export function Header({
 		    );
 		  };
 
-  const accountOrdersPanel = localUser ? (
-    <div className="space-y-4">
+	  const accountOrdersPanel = localUser ? (
+	    <div className="space-y-4">
       {/* Header Section */}
       <div className="flex flex-col gap-4">
 	        
@@ -4523,12 +4526,18 @@ export function Header({
         {selectedOrder ? renderOrderDetails() : renderOrdersList()}
       </div>
     </div>
-  ) : null;
+	  ) : null;
 
-	  const patientLinksPanel = showPatientLinksTab ? (
-	    <div className="space-y-6">
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
-	        <p className="text-sm leading-relaxed text-slate-700">
+		  const logoSlotHeightPx = isLargeScreen ? 56 : 48;
+		  const logoSizing = {
+		    maxWidth: isLargeScreen ? '240px' : 'min(210px, 56vw)',
+		    heightPx: logoSlotHeightPx,
+		  };
+
+		  const patientLinksPanel = showPatientLinksTab ? (
+		    <div className="space-y-6">
+		      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
+		        <p className="text-sm leading-relaxed text-slate-700">
 	          Patient Links let your patients shop as a “delegate” under your authority. Delegates can browse and build a
 	          proposal, then share it back to you for checkout. Configure your delegate header logo, optional pricing markup,
 	          and generate links below.
@@ -4544,66 +4553,66 @@ export function Header({
 	          PNG (we’ll resize to fit the header).
 	        </p>
 		        <div className="mt-2 space-y-4">
-		          <div className="glass-card squircle-lg p-3 !border-0">
-		            <p className="text-xs font-semibold text-slate-700">Header preview</p>
-			            <div className="mt-3 w-full bg-white/80 px-6 py-4">
-			              <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
-			                <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-			                    <div className="brand-logo relative flex items-center justify-center flex-shrink-0 min-w-0">
-		                      <img
-		                        src={
-		                          (typeof localUser?.delegateLogoUrl === 'string' && localUser.delegateLogoUrl.trim().length > 0)
-		                            ? localUser.delegateLogoUrl
-		                            : "/Peppro_fulllogo.png"
-		                        }
-		                        alt="Delegate header logo preview"
-		                        className="relative z-[1] flex-shrink-0"
-		                        style={{
-		                          display: 'block',
-		                          width: 'auto',
-		                          height: 'auto',
-		                          maxWidth: '100%',
-		                          maxHeight: isLargeScreen ? '88px' : '72px',
-		                          objectFit: 'contain',
-		                        }}
-		                        loading="eager"
-		                        decoding="async"
-		                      />
-		                    </div>
-		                    <div className="sm:hidden">
-		                      <div
-		                        className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
-		                        aria-label="Delegate header preview"
-		                      >
-		                        <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-		                        <span className="font-semibold truncate max-w-[55vw]">{`Delegate of ${localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'}`}</span>
-		                      </div>
-		                    </div>
-		                </div>
-
-			                <div className="hidden sm:flex flex-1 justify-center pointer-events-none opacity-95">
-			                  <div className="w-full max-w-md">
-			                    {renderSearchField('bg-white/75 border border-[rgba(15,23,42,0.12)]', {
-			                      value: '',
-			                      readOnly: true,
-			                      showClearButton: false,
-			                      borderColor: 'rgba(15,23,42,0.12)',
-			                    })}
-			                  </div>
-			                </div>
-
-		                <div className="hidden sm:flex items-center justify-end flex-shrink-0">
-		                  <div
-		                    className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
-		                    aria-label="Delegate header preview"
-		                  >
-		                    <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-		                    <span className="font-semibold truncate max-w-[22rem]">{`Delegate of ${localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'}`}</span>
-		                  </div>
-		                </div>
-		              </div>
-		            </div>
-		          </div>
+			          <div className="glass-card squircle-lg p-3 !border-0">
+			            <p className="text-xs font-semibold text-slate-700">Header preview</p>
+				            <div className="mt-3 w-full app-header-blur border border-slate-200 shadow-sm rounded-xl px-6 py-4">
+				              <div className="flex flex-col gap-3 md:gap-4">
+				                <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
+				                  <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+					                    <div
+					                      className="brand-logo relative flex items-center justify-center flex-shrink-0"
+					                      style={{ height: logoSizing.heightPx }}
+					                    >
+					                      <img
+				                        src={
+				                          typeof localUser?.delegateLogoUrl === 'string' &&
+				                          localUser.delegateLogoUrl.trim().length > 0
+				                            ? localUser.delegateLogoUrl
+				                            : '/Peppro_fulllogo.png'
+				                        }
+				                        alt="Delegate header logo preview"
+					                        className="relative z-[1] flex-shrink-0"
+					                        style={{
+					                          display: 'block',
+					                          width: 'auto',
+					                          height: '100%',
+					                          maxWidth: logoSizing.maxWidth,
+					                          maxHeight: '100%',
+					                          objectFit: 'contain',
+					                        }}
+				                        loading="eager"
+				                        decoding="async"
+				                      />
+				                    </div>
+				                  </div>
+	
+				                  {isLargeScreen && (
+				                    <div className="flex flex-1 justify-center min-w-[240px] pointer-events-none opacity-95">
+				                      <div className="w-full max-w-md">
+				                        {renderSearchField('', {
+				                          value: '',
+				                          readOnly: true,
+				                          showClearButton: false,
+				                        })}
+				                      </div>
+				                    </div>
+				                  )}
+	
+				                  <div className="ml-auto flex items-center justify-end flex-shrink-0">
+				                    <div
+				                      className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
+				                      aria-label="Delegate header preview"
+				                    >
+				                      <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+				                      <span className="font-semibold truncate max-w-[55vw] sm:max-w-[20rem]">{`Delegate of ${
+				                        localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'
+				                      }`}</span>
+				                    </div>
+				                  </div>
+				                </div>
+				              </div>
+				            </div>
+			          </div>
 
 	          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 	            <div className="min-w-0">
@@ -4724,9 +4733,9 @@ export function Header({
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
-        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-          Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke” to immediately disable a link.
-        </p>
+	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+	          Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke link” to immediately disable a link.
+	        </p>
 
         {patientLinksError && (
           <div className="glass-card squircle-md p-4 border border-red-200 bg-red-50/60">
@@ -4786,10 +4795,11 @@ export function Header({
 		                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
 		                >
 		                  <div className="min-w-0">
-		                    <div className="flex items-center gap-2">
-		                      <span className="font-semibold text-slate-900 truncate">{label}</span>
-		                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
-		                    </div>
+			                    <div className="flex items-center gap-2">
+			                      <Link2 className="h-4 w-4 text-[rgb(95,179,249)] shrink-0" aria-hidden="true" />
+			                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
+			                    </div>
 	                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
 	                      {createdAt && <div>Created: {createdAt}</div>}
 	                      {expiresAt && <div>Expires: {expiresAt}</div>}
@@ -4847,8 +4857,8 @@ export function Header({
 	                      disabled={!token || isRevoked || isUpdating}
 	                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
 	                    >
-	                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke'}
-	                    </Button>
+		                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
+		                    </Button>
 	                  </div>
 	                </div>
 	              );
@@ -5515,23 +5525,12 @@ export function Header({
       </Dialog>
       {renderCartButton()}
     </>
-  );
+	  );
 
-  const logoSizing = (() => {
-    if (delegateMode) {
-      return isLargeScreen
-        ? { maxWidth: '320px', maxHeight: '80px' }
-        : { maxWidth: 'min(260px, 60vw)', maxHeight: '64px' };
-    }
-    return isLargeScreen
-      ? { maxWidth: '160px', maxHeight: '160px' }
-      : { maxWidth: 'min(190px, 56vw)', maxHeight: '78px' };
-  })();
-
-			  return (
-			    <header
-			      ref={headerRef}
-			      data-app-header
+				  return (
+				    <header
+				      ref={headerRef}
+				      data-app-header
 			      className={clsx(
 			        "w-full app-header-blur border-b border-slate-200 shadow-sm",
 			        welcomeOpen && "app-header-hidden",
@@ -5552,8 +5551,11 @@ export function Header({
 	            {/* Logo (same header layout for doctor + delegate) */}
 	            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
 	              <div className="flex items-center gap-3">
-	                <div className="brand-logo relative flex items-center justify-center flex-shrink-0">
-	                  <img
+		                <div
+		                  className="brand-logo relative flex items-center justify-center flex-shrink-0"
+		                  style={{ height: logoSizing.heightPx }}
+		                >
+		                  <img
 	                    src={
 	                      delegateMode
 	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
@@ -5562,15 +5564,15 @@ export function Header({
 	                        : "/Peppro_fulllogo.png"
 	                    }
 	                    alt={delegateMode ? 'Doctor logo' : 'PepPro logo'}
-	                    className="relative z-[1] flex-shrink-0"
-	                    style={{
-	                      display: 'block',
-	                      width: 'auto',
-	                      height: 'auto',
-	                      maxWidth: logoSizing.maxWidth,
-	                      maxHeight: logoSizing.maxHeight,
-	                      objectFit: 'contain',
-	                    }}
+		                    className="relative z-[1] flex-shrink-0"
+		                    style={{
+		                      display: 'block',
+		                      width: 'auto',
+		                      height: '100%',
+		                      maxWidth: logoSizing.maxWidth,
+		                      maxHeight: '100%',
+		                      objectFit: 'contain',
+		                    }}
 	                    loading="eager"
 	                    decoding="async"
 	                  />

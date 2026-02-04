@@ -995,6 +995,8 @@ export function CheckoutModal({
 	        hideCloseButton
 	        className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
 	        style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
+	        overlayClassName="bg-slate-950/40"
+	        containerClassName="fixed inset-0 z-[11000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
 	        containerStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
 	        overlayStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
 	        data-legal-overlay={legalModalOpen ? 'true' : 'false'}
