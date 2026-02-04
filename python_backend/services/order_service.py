@@ -2487,38 +2487,54 @@ def get_sales_by_rep(
             if rep_alias and rep_alias not in user_lookup:
                 user_lookup[rep_alias] = u
 
-        # Canonicalize sales rep ids so we don't double-count reps that exist in both
-        # `users` and `sales_reps` with different ids. Prefer `users` as the source of truth
-        # for display names (sales reps manage their own name there).
-        user_rep_id_by_email: Dict[str, str] = {}
-        for rep in reps:
-            rep_id = rep.get("id")
-            email = _norm_email(rep.get("email"))
-            if rep_id and email:
-                user_rep_id_by_email[email] = str(rep_id)
-
-        # Map any known alias id (sales_reps.id, legacy_user_id, user.id) -> canonical user id when possible.
-        alias_to_rep_id: Dict[str, str] = {}
-        for rep in reps:
-            rep_id = rep.get("id")
-            if rep_id:
-                rep_id_str = str(rep_id)
-                alias_to_rep_id[rep_id_str] = rep_id_str
-            rep_alias = str(rep.get("salesRepId") or rep.get("sales_rep_id") or "").strip()
-            if rep_alias and rep_id:
-                alias_to_rep_id[rep_alias] = str(rep_id).strip()
-
-        for rep in rep_records_list:
-            rep_id = rep.get("id")
+        # Canonical rep id is `sales_reps.id`.
+        # We treat `users.id`, `users.sales_rep_id` (external key), and `sales_reps.legacy_user_id`
+        # as aliases that should resolve to `sales_reps.id` for reporting.
+        rep_id_by_email: Dict[str, str] = {}
+        rep_user_id_by_rep_id: Dict[str, str] = {}
+        rep_record_by_email: Dict[str, Dict] = {}
+        for rep_record in rep_records_list:
+            rep_id = str(rep_record.get("id") or "").strip()
             if not rep_id:
                 continue
-            rep_id_str = str(rep_id)
-            rep_email = _norm_email(rep.get("email"))
-            canonical = user_rep_id_by_email.get(rep_email) or rep_id_str
-            alias_to_rep_id[rep_id_str] = canonical
-            legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+            rep_email = _norm_email(rep_record.get("email"))
+            if rep_email:
+                rep_id_by_email.setdefault(rep_email, rep_id)
+                rep_record_by_email.setdefault(rep_email, rep_record)
+            legacy_id_raw = rep_record.get("legacyUserId") or rep_record.get("legacy_user_id")
+            legacy_id = str(legacy_id_raw or "").strip()
             if legacy_id:
-                alias_to_rep_id[str(legacy_id)] = canonical
+                rep_user_id_by_rep_id[rep_id] = legacy_id
+            elif rep_email and rep_email in users_by_email:
+                linked_user_id = str((users_by_email[rep_email] or {}).get("id") or "").strip()
+                if linked_user_id:
+                    rep_user_id_by_rep_id[rep_id] = linked_user_id
+
+        alias_to_rep_id: Dict[str, str] = {}
+        for rep_record in rep_records_list:
+            rep_id = str(rep_record.get("id") or "").strip()
+            if not rep_id:
+                continue
+            alias_to_rep_id[rep_id] = rep_id
+            legacy_id_raw = rep_record.get("legacyUserId") or rep_record.get("legacy_user_id")
+            legacy_id = str(legacy_id_raw or "").strip()
+            if legacy_id:
+                alias_to_rep_id[legacy_id] = rep_id
+        for u in users:
+            if _norm_role(u.get("role")) not in rep_like_roles:
+                continue
+            email = _norm_email(u.get("email"))
+            if not email:
+                continue
+            canonical_rep_id = rep_id_by_email.get(email)
+            if not canonical_rep_id:
+                continue
+            user_id = str(u.get("id") or "").strip()
+            if user_id:
+                alias_to_rep_id[user_id] = canonical_rep_id
+            rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
+            if rep_alias:
+                alias_to_rep_id[rep_alias] = canonical_rep_id
 
         # Prospect-backed mapping for doctors that don't have `salesRepId` persisted yet.
         prospect_rep_by_doctor: Dict[str, str] = {}
@@ -2692,7 +2708,7 @@ def get_sales_by_rep(
                     rep_email_hint = _norm_email(_meta_value(meta_data, "peppro_sales_rep_email"))
                     rep_id_candidate = rep_id_raw
                     if rep_email_hint:
-                        canonical_by_email = user_rep_id_by_email.get(rep_email_hint) or ""
+                        canonical_by_email = rep_id_by_email.get(rep_email_hint) or ""
                         if canonical_by_email:
                             rep_id_candidate = str(canonical_by_email).strip()
                     rep_id = alias_to_rep_id.get(rep_id_candidate, rep_id_candidate)
@@ -2715,7 +2731,7 @@ def get_sales_by_rep(
                     rep_email = _meta_value(meta_data, "peppro_sales_rep_email")
                     rep_email = _norm_email(rep_email)
                     if rep_email:
-                        rep_id = user_rep_id_by_email.get(rep_email) or ""
+                        rep_id = rep_id_by_email.get(rep_email) or ""
                         if rep_id:
                             rep_id = alias_to_rep_id.get(rep_id, rep_id)
                             if debug:
@@ -2733,7 +2749,7 @@ def get_sales_by_rep(
 
                 if not rep_id:
                     # If a sales rep placed the order, it should never be counted as "house".
-                    rep_id = user_rep_id_by_email.get(billing_email, "")
+                    rep_id = rep_id_by_email.get(billing_email, "")
                     if rep_id and debug:
                         debug_counts["billingEmailIsRep"] += 1
 
@@ -2946,8 +2962,16 @@ def get_sales_by_rep(
             )
             rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
             rep_record = rep_records.get(rep_id) or {}
-            # Prefer the user's name if available (sales reps edit their own name there).
-            user_rec = user_lookup.get(rep_id) or {}
+
+            rep_user_id = rep_user_id_by_rep_id.get(rep_id) or ""
+            if not rep_user_id:
+                rep_email_key = _norm_email(rep_record.get("email")) if isinstance(rep_record, dict) else ""
+                if rep_email_key and rep_email_key in users_by_email:
+                    rep_user_id = str((users_by_email[rep_email_key] or {}).get("id") or "").strip()
+            if not rep_user_id and rep_id in user_lookup:
+                rep_user_id = rep_id
+            # Prefer the linked user's name if available (sales reps edit their own name there).
+            user_rec = user_lookup.get(rep_user_id) or {}
             preferred_name = (user_rec.get("name") or "").strip() if isinstance(user_rec, dict) else ""
             legacy_user = None
             legacy_id_raw = rep_record.get("legacyUserId") or rep_record.get("legacy_user_id")
@@ -2963,6 +2987,7 @@ def get_sales_by_rep(
             summary.append(
                 {
                     "salesRepId": rep_id,
+                    "salesRepUserId": rep_user_id or None,
                     "salesRepName": preferred_name
                     or legacy_name
                     or hinted_name
@@ -3048,7 +3073,12 @@ def get_sales_by_rep(
             if exclude_sales_rep_id:
                 exclude_id = str(exclude_sales_rep_id)
                 rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
-                filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                filtered = [
+                    row
+                    for row in rows
+                    if str((row or {}).get("salesRepId")) != exclude_id
+                    and str((row or {}).get("salesRepUserId") or "") != exclude_id
+                ]
                 return {**cached, "orders": filtered}
             return cached
         inflight_event = _sales_by_rep_summary_inflight
@@ -3068,7 +3098,12 @@ def get_sales_by_rep(
                 if exclude_sales_rep_id:
                     exclude_id = str(exclude_sales_rep_id)
                     rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
-                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    filtered = [
+                        row
+                        for row in rows
+                        if str((row or {}).get("salesRepId")) != exclude_id
+                        and str((row or {}).get("salesRepUserId") or "") != exclude_id
+                    ]
                     return {**cached, "orders": filtered, "stale": True}
                 return {**cached, "stale": True}
         # If the leader could not populate cache in time, do not stampede the upstream.
@@ -3111,7 +3146,12 @@ def get_sales_by_rep(
         if exclude_sales_rep_id:
             exclude_id = str(exclude_sales_rep_id)
             rows = summary.get("orders") if isinstance(summary, dict) else []
-            filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+            filtered = [
+                row
+                for row in rows
+                if str((row or {}).get("salesRepId")) != exclude_id
+                and str((row or {}).get("salesRepUserId") or "") != exclude_id
+            ]
             return {**summary, "orders": filtered}
         return summary
     except Exception as exc:
@@ -3127,7 +3167,12 @@ def get_sales_by_rep(
                 if exclude_sales_rep_id:
                     exclude_id = str(exclude_sales_rep_id)
                     rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
-                    filtered = [row for row in rows if str((row or {}).get("salesRepId")) != exclude_id]
+                    filtered = [
+                        row
+                        for row in rows
+                        if str((row or {}).get("salesRepId")) != exclude_id
+                        and str((row or {}).get("salesRepUserId") or "") != exclude_id
+                    ]
                     return {**cached, "orders": filtered, "stale": True, "error": "Sales summary is temporarily unavailable."}
                 return {**cached, "stale": True, "error": "Sales summary is temporarily unavailable."}
         # No cached data yet; return an empty/stale response instead of a 500.

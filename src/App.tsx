@@ -7807,14 +7807,15 @@ function MainApp() {
     },
     [mergeSalesOrderDetail],
   );
-  const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
-    {
-      salesRepId: string;
-      salesRepName: string;
-      salesRepEmail: string | null;
-      totalOrders: number;
-      totalRevenue: number;
-      wholesaleRevenue?: number;
+	  const [salesRepSalesSummary, setSalesRepSalesSummary] = useState<
+	    {
+	      salesRepId: string;
+	      salesRepUserId?: string | null;
+	      salesRepName: string;
+	      salesRepEmail: string | null;
+	      totalOrders: number;
+	      totalRevenue: number;
+	      wholesaleRevenue?: number;
       retailRevenue?: number;
     }[]
   >([]);
@@ -16393,18 +16394,18 @@ function MainApp() {
 		                              }}
 		                            >
 		                              <div className="text-sm font-semibold text-slate-900 min-w-0">
-		                                <button
-		                                  type="button"
-		                                  className="min-w-0 text-left hover:underline"
-		                                  onClick={() =>
-		                                    openLiveUserDetail(
-		                                      {
-		                                        id: rep.salesRepId,
-		                                        name: rep.salesRepName,
-		                                        email: rep.salesRepEmail,
-		                                        role: "sales_rep",
-		                                      },
-		                                      {
+			                                <button
+			                                  type="button"
+			                                  className="min-w-0 text-left hover:underline"
+			                                  onClick={() =>
+			                                    openLiveUserDetail(
+			                                      {
+			                                        id: rep.salesRepUserId || rep.salesRepId,
+			                                        name: rep.salesRepName,
+			                                        email: rep.salesRepEmail,
+			                                        role: "sales_rep",
+			                                      },
+			                                      {
 		                                        salesRepWholesaleRevenue: Number(
 		                                          rep.wholesaleRevenue || 0,
 		                                        ),
@@ -17672,18 +17673,18 @@ function MainApp() {
 			                              }}
 			                            >
 		                            <div className="text-sm font-semibold text-slate-900 min-w-0">
-		                              <button
-		                                type="button"
-		                                className="min-w-0 text-left hover:underline"
-		                                onClick={() =>
-		                                  openLiveUserDetail(
-		                                    {
-		                                      id: rep.salesRepId,
-		                                      name: rep.salesRepName,
-		                                      email: rep.salesRepEmail,
-		                                      role: "sales_rep",
-		                                    },
-		                                    {
+			                              <button
+			                                type="button"
+			                                className="min-w-0 text-left hover:underline"
+			                                onClick={() =>
+			                                  openLiveUserDetail(
+			                                    {
+			                                      id: rep.salesRepUserId || rep.salesRepId,
+			                                      name: rep.salesRepName,
+			                                      email: rep.salesRepEmail,
+			                                      role: "sales_rep",
+			                                    },
+			                                    {
 		                                      salesRepWholesaleRevenue: Number(
 		                                        rep.wholesaleRevenue || 0,
 		                                      ),
@@ -23226,7 +23227,7 @@ function MainApp() {
 		                        : `${(salesRepProspectsForModal || []).length} active`}
 		                    </span>
 		                  </div>
-			                  <p className="mt-1 text-xs text-slate-600">
+			                  <p className="mt-1 mb-1 text-xs text-slate-600">
 			                    Leads assigned to this user (excluding Converted).
 			                  </p>
 
@@ -23381,7 +23382,7 @@ function MainApp() {
 					                              }}
 					                              className="w-full text-left flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white/70 px-4 py-3 transition cursor-pointer hover:shadow-sm hover:border-[rgb(95,179,249)] hover:bg-white"
 				                            >
-				                              <div className="flex items-start gap-4 min-w-0">
+				                              <div className="flex items-start mt-2 gap-4 min-w-0">
 				                                <div
 				                                  className="shrink-0 overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center shadow-sm"
 				                                  style={{

@@ -308,9 +308,6 @@ try {
     'phone = VALUES(phone)',
     'territory = VALUES(territory)',
   ];
-  if ($hasSalesRepsId) {
-    $updates[] = 'id = COALESCE(id, VALUES(id))';
-  }
   if ($hasUpdatedAtCamel) $updates[] = 'updatedAt = NOW()';
   if ($hasUpdatedAtSnake) $updates[] = 'updated_at = NOW()';
 
@@ -320,19 +317,53 @@ try {
      ON DUPLICATE KEY UPDATE ' . implode(', ', $updates)
   );
 
+  $usersCols = [];
+  try {
+    $usersCols = get_table_columns($pdo, 'users');
+  } catch (Throwable $e) {
+    $usersCols = [];
+  }
+  $hasUserSalesRepId = in_array('sales_rep_id', $usersCols, true);
+
   // Optional user sync: only create/update as sales_rep when not already admin/test_doctor.
-  $fetchUser = $pdo->prepare('SELECT id, role FROM users WHERE email = :email LIMIT 1');
+  $fetchUser = $pdo->prepare(
+    $hasUserSalesRepId
+      ? 'SELECT id, role, sales_rep_id FROM users WHERE email = :email LIMIT 1'
+      : 'SELECT id, role FROM users WHERE email = :email LIMIT 1'
+  );
   $upsertUser = $pdo->prepare(
-    'INSERT INTO users (id, name, email, role, phone, status, created_at, last_login_at)
-     VALUES (:id, :name, :email, :role, :phone, :status, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE
-       name = VALUES(name),
-       phone = VALUES(phone),
-       role = CASE
-         WHEN TRIM(LOWER(users.role)) IN ("admin","test_doctor","doctor") THEN users.role
-         WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","rep","") THEN users.role
-         ELSE VALUES(role)
-       END'
+    $hasUserSalesRepId
+      ? 'INSERT INTO users (id, name, email, role, phone, status, sales_rep_id, created_at, last_login_at)
+         VALUES (:id, :name, :email, :role, :phone, :status, :sales_rep_id, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+           name = VALUES(name),
+           phone = VALUES(phone),
+           sales_rep_id = CASE
+             WHEN users.sales_rep_id IS NULL OR TRIM(users.sales_rep_id) = "" THEN VALUES(sales_rep_id)
+             ELSE users.sales_rep_id
+           END,
+           role = CASE
+             WHEN TRIM(LOWER(users.role)) IN ("admin","test_doctor","doctor") THEN users.role
+             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","rep","") THEN users.role
+             ELSE VALUES(role)
+           END'
+      : 'INSERT INTO users (id, name, email, role, phone, status, created_at, last_login_at)
+         VALUES (:id, :name, :email, :role, :phone, :status, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+           name = VALUES(name),
+           phone = VALUES(phone),
+           role = CASE
+             WHEN TRIM(LOWER(users.role)) IN ("admin","test_doctor","doctor") THEN users.role
+             WHEN TRIM(LOWER(users.role)) NOT IN ("sales_rep","rep","") THEN users.role
+             ELSE VALUES(role)
+           END'
+  );
+
+  $updateLegacyUserId = $pdo->prepare(
+    'UPDATE sales_reps
+     SET legacy_user_id = :legacy_user_id
+     WHERE id = :id
+       AND (legacy_user_id IS NULL OR TRIM(legacy_user_id) = "")'
   );
 
   $stored = 0;
@@ -463,32 +494,51 @@ try {
         $protectedRoles = ['admin', 'test_doctor', 'doctor'];
         $allowedOverwrite = ['', 'sales_rep', 'rep', null];
         $candidateId = $user['id'] ?? bin2hex(random_bytes(16));
+        $existingUserSalesRepId = $hasUserSalesRepId ? trim((string)($user['sales_rep_id'] ?? '')) : '';
+        $shouldAttachSalesRepId = $hasUserSalesRepId && $salesRepId !== null && $salesRepId !== '' && $existingUserSalesRepId === '';
+        $salesRepIdParam = $shouldAttachSalesRepId ? $salesRepId : null;
 
         // If role is protected or a custom non-rep role, skip user sync entirely.
         if (in_array($role, $protectedRoles, true)) {
           // preserve as-is
         } elseif (!in_array($role, $allowedOverwrite, true)) {
           // preserve other custom roles; no role change
-          $upsertUser->execute([
+          $params = [
             ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
             ':role' => $role ?: 'sales_rep',
             ':phone' => $rec['phone'],
             ':status' => 'active',
-          ]);
+          ];
+          if ($hasUserSalesRepId) $params[':sales_rep_id'] = $salesRepIdParam;
+          $upsertUser->execute($params);
           $userId = $candidateId;
         } else {
           // New user or existing rep/blank role → set to sales_rep
-          $upsertUser->execute([
+          $params = [
             ':id' => $candidateId,
             ':name' => $rec['name'],
             ':email' => $rec['email'],
             ':role' => 'sales_rep',
             ':phone' => $rec['phone'],
             ':status' => 'active',
-          ]);
+          ];
+          if ($hasUserSalesRepId) $params[':sales_rep_id'] = $salesRepIdParam;
+          $upsertUser->execute($params);
           $userId = $candidateId;
+        }
+
+        // Backfill legacy_user_id on the sales rep record to link to the user id.
+        if ($hasSalesRepsId && $salesRepId && $userId) {
+          try {
+            $updateLegacyUserId->execute([
+              ':legacy_user_id' => $userId,
+              ':id' => $salesRepId,
+            ]);
+          } catch (Throwable $e) {
+            // ignore - optional linkage
+          }
         }
       }
     } catch (Throwable $e) {
