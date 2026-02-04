@@ -427,9 +427,21 @@ def admin_get_sales_prospect(identifier: str):
     def action():
         user = _ensure_user()
         _require_sales_rep(user)
-        sales_rep_id = user.get("salesRepId") or user.get("id")
-        prospect = referral_service.get_sales_prospect_for_sales_rep(str(sales_rep_id), identifier)
-        return {"prospect": prospect}
+        token_role = (g.current_user.get("role") or "").lower()
+        user_role = (user.get("role") or "").lower()
+        is_admin = token_role == "admin" or user_role == "admin"
+
+        if is_admin:
+            prospect = referral_service.get_sales_prospect_for_admin(identifier)
+        else:
+            sales_rep_id = user.get("salesRepId") or user.get("id")
+            prospect = referral_service.get_sales_prospect_for_sales_rep(str(sales_rep_id), identifier)
+
+        payload = {"prospect": prospect}
+        linked_user = referral_service.get_user_for_sales_prospect(prospect)
+        if linked_user:
+            payload["user"] = linked_user
+        return payload
 
     return handle_action(action)
 

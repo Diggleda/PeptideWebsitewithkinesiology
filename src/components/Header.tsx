@@ -4544,13 +4544,9 @@ export function Header({
 	        </p>
 	      </div>
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-	        <h3 className="text-lg font-semibold text-slate-900">White Label with your logo</h3>
-	        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-	          Make your logo appear in the header of your patient's session. 
-	        </p>
-	        <p className="mt-2 text-sm leading-relaxed text-slate-700">
-	         Recommended: horizontal rectangle
-	          PNG (we’ll resize to fit the header).
+	        <h3 className="text-lg font-semibold text-slate-900">White label sessions with your logo</h3>
+	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+	          Make your logo appear in the header of your patient's session. Recommended: horizontal rectangle PNG (we’ll resize to fit the header). 
 	        </p>
 		        <div className="mt-2 space-y-4">
 			          <div className="glass-card squircle-lg p-3 !border-0">

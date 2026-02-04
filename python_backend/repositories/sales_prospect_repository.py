@@ -153,6 +153,30 @@ def find_by_sales_rep_and_doctor(sales_rep_id: str, doctor_id: str) -> Optional[
     )
 
 
+def find_by_doctor_id(doctor_id: str) -> Optional[Dict]:
+    if not doctor_id:
+        return None
+    normalized = str(doctor_id).strip()
+    if not normalized:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE doctor_id = %(doctor_id)s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            {"doctor_id": normalized},
+        )
+        return _row_to_record(row)
+    for record in _get_store().read():
+        if str(record.get("doctorId") or "").strip() == normalized:
+            return _ensure_defaults(record)
+    return None
+
+
 def find_contact_form_by_doctor_id(doctor_id: str) -> Optional[Dict]:
     """
     Find a sales prospect record that indicates the doctor originated from a contact form.

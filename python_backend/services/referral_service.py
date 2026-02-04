@@ -1785,6 +1785,83 @@ def get_sales_prospect_for_sales_rep(sales_rep_id: str, identifier: str) -> Opti
     return sales_prospect_repository.find_by_sales_rep_and_doctor(rep_id, candidate)
 
 
+def get_sales_prospect_for_admin(identifier: str) -> Optional[Dict]:
+    candidate = str(identifier or "").strip()
+    if not candidate:
+        return None
+
+    prospect = sales_prospect_repository.find_by_id(candidate)
+    if prospect:
+        return prospect
+
+    if candidate.startswith("contact_form:"):
+        return sales_prospect_repository.find_by_id(candidate)
+
+    # Some clients pass raw numeric contact_form ids; try the canonical key.
+    if candidate.isdigit():
+        prospect = sales_prospect_repository.find_by_id(f"contact_form:{candidate}")
+        if prospect:
+            return prospect
+
+    # Referral ids can map to multiple prospects; return the most recently updated.
+    matches = sales_prospect_repository.find_all_by_referral_id(candidate)
+    if matches:
+        def _updated_at(row: Dict) -> str:
+            return str(row.get("updatedAt") or row.get("updated_at") or "")
+        matches_sorted = sorted(matches, key=_updated_at, reverse=True)
+        return matches_sorted[0]
+
+    # Doctor id lookup (for account-backed prospects).
+    prospect = sales_prospect_repository.find_by_doctor_id(candidate)
+    if prospect:
+        return prospect
+
+    # Email lookup as a last resort.
+    if "@" in candidate:
+        prospect = sales_prospect_repository.find_by_contact_email(candidate)
+        if prospect:
+            return prospect
+
+    return None
+
+
+def _sanitize_user_for_sales_prospect(user: Optional[Dict]) -> Optional[Dict]:
+    if not user:
+        return None
+    return {
+        "id": user.get("id"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "role": user.get("role"),
+        "phone": user.get("phone") or user.get("phoneNumber") or user.get("phone_number"),
+        "salesRepId": user.get("salesRepId") or user.get("sales_rep_id"),
+        "profileImageUrl": user.get("profileImageUrl") or user.get("profile_image_url"),
+        "officeAddressLine1": user.get("officeAddressLine1") or user.get("office_address_line1"),
+        "officeAddressLine2": user.get("officeAddressLine2") or user.get("office_address_line2"),
+        "officeCity": user.get("officeCity") or user.get("office_city"),
+        "officeState": user.get("officeState") or user.get("office_state"),
+        "officePostalCode": user.get("officePostalCode") or user.get("office_postal_code"),
+        "officeCountry": user.get("officeCountry") or user.get("office_country"),
+    }
+
+
+def get_user_for_sales_prospect(prospect: Optional[Dict]) -> Optional[Dict]:
+    if not prospect:
+        return None
+    doctor_id = prospect.get("doctorId") or prospect.get("doctor_id")
+    if doctor_id:
+        return _sanitize_user_for_sales_prospect(user_repository.find_by_id(str(doctor_id)))
+    email = (
+        prospect.get("contactEmail")
+        or prospect.get("contact_email")
+        or prospect.get("referredContactEmail")
+        or prospect.get("referred_contact_email")
+        or prospect.get("email")
+    )
+    if email:
+        return _sanitize_user_for_sales_prospect(user_repository.find_by_email(str(email)))
+    return None
+
 def upsert_sales_prospect_for_sales_rep(
     sales_rep_id: str,
     identifier: str,

@@ -2763,6 +2763,7 @@ function MainApp() {
       .trim() === "true";
   const shipStationDashboardUrl = "https://ship14.shipstation.com";
   const [user, setUser] = useState<User | null>(null);
+  const prevUserIdRef = useRef<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [activeDelegationProposal, setActiveDelegationProposal] = useState<{
@@ -2774,11 +2775,17 @@ function MainApp() {
   const [proposalShippingAddress, setProposalShippingAddress] = useState<CheckoutShippingAddress | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
-  const [delegateToken, setDelegateToken] = useState<string | null>(() => {
+  const initialDelegateToken = (() => {
     if (typeof window === "undefined") return null;
     const token = new URLSearchParams(window.location.search).get("delegate");
     return token && token.trim() ? token.trim() : null;
-  });
+  })();
+  const [delegateToken, setDelegateToken] = useState<string | null>(
+    initialDelegateToken,
+  );
+  const [delegateValidatedToken, setDelegateValidatedToken] = useState<
+    string | null
+  >(null);
   const DELEGATE_EXPIRY_CACHE_PREFIX = "peppro_delegate_expiry_v1:";
   const [delegateExpiryMs, setDelegateExpiryMs] = useState<number | null>(null);
   const [delegateNowMs, setDelegateNowMs] = useState(() => Date.now());
@@ -2799,6 +2806,7 @@ function MainApp() {
   const [delegateLoading, setDelegateLoading] = useState(false);
   const [delegateError, setDelegateError] = useState<string | null>(null);
   const isDelegateMode = Boolean(delegateToken);
+  const delegateIsValidated = !delegateToken || delegateValidatedToken === delegateToken;
   const delegatePricingMarkupPercent = isDelegateMode
     ? Number(delegateContext?.markupPercent) || 0
     : 0;
@@ -2815,8 +2823,8 @@ function MainApp() {
     const totalSeconds = Math.floor(diffMs / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    if (hours <= 0) return `${minutes}m remaining`;
-    return `${hours}h ${minutes}m remaining`;
+    if (hours <= 0) return `${minutes}m`;
+    return `${hours}h ${minutes}m`;
   }, []);
   const delegateTimeRemainingLabel = useMemo(
     () => (isDelegateMode ? formatDelegateTimeRemaining(delegateExpiryMs, delegateNowMs) : null),
@@ -2910,12 +2918,37 @@ function MainApp() {
       setDelegateContext(null);
       setDelegateError(null);
       setDelegateLoading(false);
+      setDelegateValidatedToken(null);
       return;
     }
 
     let cancelled = false;
     setDelegateLoading(true);
     setDelegateError(null);
+    setDelegateValidatedToken(null);
+
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.sessionStorage.getItem(
+          `${DELEGATE_EXPIRY_CACHE_PREFIX}${delegateToken}`,
+        );
+        const parsed = raw ? Number(raw) : Number.NaN;
+        if (Number.isFinite(parsed) && parsed > 0) {
+          setDelegateExpiryMs(parsed);
+          if (Date.now() >= parsed) {
+            setDelegateContext(null);
+            setDelegateError("This delegate session has expired.");
+            setDelegateLoading(false);
+            setDelegateValidatedToken(delegateToken);
+            return () => {
+              cancelled = true;
+            };
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
 
 	    void (async () => {
 	      try {
@@ -2993,6 +3026,7 @@ function MainApp() {
       } finally {
         if (!cancelled) {
           setDelegateLoading(false);
+          setDelegateValidatedToken(delegateToken);
         }
       }
     })();
@@ -5475,17 +5509,18 @@ function MainApp() {
   const hasInitializedSalesCollapseRef = useRef(false);
   const knownSalesDoctorIdsRef = useRef<Set<string>>(new Set());
   const salesTrackingOrdersRef = useRef<AccountOrderSummary[]>([]);
-			  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
-			    doctorId: string;
-			    referralId?: string | null;
-			    name: string;
-			    email?: string | null;
-		    avatar?: string | null;
-			    revenue: number;
-			    personalRevenue?: number | null;
-			    salesRevenue?: number | null;
-			    salesWholesaleRevenue?: number | null;
-			    salesRetailRevenue?: number | null;
+				  const [salesDoctorDetail, setSalesDoctorDetail] = useState<{
+				    doctorId: string;
+				    referralId?: string | null;
+				    name: string;
+				    email?: string | null;
+			    avatar?: string | null;
+            prospectNotes?: string | null;
+				    revenue: number;
+				    personalRevenue?: number | null;
+				    salesRevenue?: number | null;
+				    salesWholesaleRevenue?: number | null;
+				    salesRetailRevenue?: number | null;
 			    orderQuantity?: number | null;
 			    totalOrderValue?: number | null;
 			    orders: AccountOrderSummary[];
@@ -5506,8 +5541,9 @@ function MainApp() {
 	    lastSeenAt?: string | null;
 	    lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
-	  } | null>(null);
-	  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
+		  } | null>(null);
+		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
+		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
 	    DateRange | undefined
 	  >(undefined);
@@ -5539,13 +5575,30 @@ function MainApp() {
 		  const [salesRepProspectsError, setSalesRepProspectsError] = useState<string | null>(null);
 		  const salesRepProspectsKeyRef = useRef<string | null>(null);
 
-		  useEffect(() => {
-		    setSalesDoctorCommissionRange(undefined);
-		    setSalesDoctorCommissionPickerOpen(false);
-		    setSalesDoctorCommissionFromReport(null);
-		    setSalesDoctorCommissionFromReportLoading(false);
-		    salesDoctorCommissionFromReportKeyRef.current = "";
-		  }, [salesDoctorDetail?.doctorId]);
+			  useEffect(() => {
+			    setSalesDoctorCommissionRange(undefined);
+			    setSalesDoctorCommissionPickerOpen(false);
+			    setSalesDoctorCommissionFromReport(null);
+			    setSalesDoctorCommissionFromReportLoading(false);
+			    salesDoctorCommissionFromReportKeyRef.current = "";
+			  }, [salesDoctorDetail?.doctorId]);
+
+			  useEffect(() => {
+			    if (!salesDoctorDetail?.doctorId) return;
+			    const content = salesDoctorDialogContentRef.current;
+			    if (!content) return;
+			    const scrollToTop = () => {
+			      try {
+			        (content as any).scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+			      } catch {
+			        // ignore
+			      }
+			      content.scrollTop = 0;
+			    };
+			    scrollToTop();
+			    requestAnimationFrame(scrollToTop);
+			    setTimeout(scrollToTop, 0);
+			  }, [salesDoctorDetail?.doctorId]);
 
 			  useEffect(() => {
 			    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
@@ -5605,6 +5658,33 @@ function MainApp() {
 			            return status !== "converted";
 			          })
 				          .map((row: any) => {
+				            const contactFormIdRaw =
+				              row?.contactFormId ||
+				              row?.contact_form_id ||
+				              row?.contactFormID ||
+				              row?.contact_formId ||
+				              null;
+				            const leadTypeRaw =
+				              typeof row?.leadType === "string"
+				                ? row.leadType
+				                : typeof row?.lead_type === "string"
+				                  ? row.lead_type
+				                  : "";
+				            const leadType = leadTypeRaw.trim().toLowerCase();
+				            const contactFormIdentifier =
+				              typeof contactFormIdRaw === "string" && contactFormIdRaw.trim()
+				                ? (contactFormIdRaw.trim().startsWith("contact_form:")
+				                    ? contactFormIdRaw.trim()
+				                    : `contact_form:${contactFormIdRaw.trim()}`)
+				                : typeof contactFormIdRaw === "number" && Number.isFinite(contactFormIdRaw)
+				                  ? `contact_form:${String(contactFormIdRaw)}`
+				                  : null;
+				            const isContactFormLead =
+				              Boolean(contactFormIdentifier) ||
+				              leadType === "contact_form" ||
+				              leadType === "house" ||
+				              leadType.includes("contact");
+
 				            const accountIdRaw =
 				              row?.referredContactAccountId ||
 				              row?.referred_contact_account_id ||
@@ -5660,21 +5740,41 @@ function MainApp() {
 			                  row?.email ||
 			                  "",
 			              ).trim() || "";
-			            const avatarUrl =
-			              account?.profileImageUrl ||
-			              account?.profile_image_url ||
-			              row?.profileImageUrl ||
-			              row?.profile_image_url ||
-			              null;
-			            const normalized = {
-			              ...row,
-			              _accountId: accountId || null,
-			              _displayName: name,
-			              _displayEmail: email || null,
-			              _avatarUrl: avatarUrl || null,
-			            };
-			            return normalized;
-			          })
+				            const avatarUrl =
+				              account?.profileImageUrl ||
+				              account?.profile_image_url ||
+				              row?.profileImageUrl ||
+				              row?.profile_image_url ||
+				              null;
+				            const prospectIdentifier =
+				              accountId ||
+				              (isContactFormLead ? contactFormIdentifier : null) ||
+				              (typeof row?.id === "string" && row.id.trim().length > 0
+				                ? row.id.trim()
+				                : null) ||
+				              (typeof row?.doctorId === "string" && row.doctorId.trim().length > 0
+				                ? row.doctorId.trim()
+				                : null) ||
+				              (typeof row?.doctor_id === "string" && row.doctor_id.trim().length > 0
+				                ? row.doctor_id.trim()
+				                : null) ||
+				              (typeof row?.referralId === "string" && row.referralId.trim().length > 0
+				                ? row.referralId.trim()
+				                : null) ||
+				              (typeof row?.referral_id === "string" && row.referral_id.trim().length > 0
+				                ? row.referral_id.trim()
+				                : null) ||
+				              null;
+				            const normalized = {
+				              ...row,
+				              _accountId: accountId || null,
+				              _displayName: name,
+				              _displayEmail: email || null,
+				              _avatarUrl: avatarUrl || null,
+				              _prospectIdentifier: prospectIdentifier,
+				            };
+				            return normalized;
+				          })
 			          .sort((a: any, b: any) => {
 			            const aTs = Date.parse(String(a?.updatedAt || a?.createdAt || "")) || 0;
 			            const bTs = Date.parse(String(b?.updatedAt || b?.createdAt || "")) || 0;
@@ -5804,67 +5904,198 @@ function MainApp() {
   const [salesDoctorAddressDraft, setSalesDoctorAddressDraft] = useState<string>("");
   const [salesDoctorAddressSaving, setSalesDoctorAddressSaving] = useState(false);
 	
-	  useEffect(() => {
-	    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
-	      setSalesDoctorNoteDraft("");
-	      setSalesDoctorNotesLoading(false);
-	      setSalesDoctorNotesSaved(false);
-	      return;
-	    }
-		    const identifier = String(
-		      salesDoctorDetail.referralId || salesDoctorDetail.doctorId,
-		    ).trim();
-		    if (!identifier) {
+		  useEffect(() => {
+		    if (!salesDoctorDetail?.doctorId || !isDoctorRole(salesDoctorDetail.role)) {
+		      setSalesDoctorNoteDraft("");
+		      setSalesDoctorNotesLoading(false);
+		      setSalesDoctorNotesSaved(false);
 		      return;
 		    }
-		    let canceled = false;
-		    (async () => {
-		      setSalesDoctorNoteDraft("");
-		      setSalesDoctorNotesLoading(true);
-		      try {
-		        const response = await referralAPI.getSalesProspect(identifier);
-		        const prospect = (response as any)?.prospect;
-		        const notes = prospect?.notes;
-		        const addressParts = [
-		          prospect?.officeAddressLine1,
-		          prospect?.officeAddressLine2,
-		          [prospect?.officeCity, prospect?.officeState, prospect?.officePostalCode]
-		            .filter(Boolean)
-		            .join(", "),
-		          prospect?.officeCountry,
-		        ].filter((part: any) => typeof part === "string" && part.trim().length > 0);
-		        const officeAddress =
-		          addressParts.length > 0 ? addressParts.join("\n") : null;
-		        if (!canceled) {
-		          setSalesDoctorNoteDraft(typeof notes === "string" ? notes : "");
-		          if (officeAddress) {
-		            setSalesDoctorDetail((current) => {
-		              if (!current) return current;
-		              if (String(current.doctorId || "") !== String(salesDoctorDetail.doctorId || "")) {
-		                return current;
-		              }
-		              if (current.addressOrigin === "prospect" && current.address === officeAddress) {
-		                return current;
-		              }
-		              return {
-		                ...current,
-		                address: officeAddress,
-		                addressOrigin: "prospect",
-		              };
-		            });
-		          }
-		          setSalesDoctorNotesLoading(false);
-		          setSalesDoctorNotesSaved(false);
-		        }
-		      } catch {
-		        if (!canceled) {
-		          const fallbackKey = String(salesDoctorDetail.doctorId);
-		          setSalesDoctorNoteDraft(salesDoctorNotes[fallbackKey] || "");
-		          setSalesDoctorNotesLoading(false);
-		          setSalesDoctorNotesSaved(false);
-		        }
-		      }
-	    })();
+			    const referralId = String(salesDoctorDetail.referralId || "").trim();
+			    const doctorId = String(salesDoctorDetail.doctorId || "").trim();
+			    const referralLooksNumeric = Boolean(referralId) && /^\d+$/.test(referralId);
+			    const doctorLooksNumeric = Boolean(doctorId) && /^\d+$/.test(doctorId);
+			    const preferDoctorId =
+			      Boolean(doctorId) &&
+			      Boolean(referralId) &&
+			      doctorId !== referralId &&
+			      referralLooksNumeric &&
+			      !doctorLooksNumeric;
+			    const identifiersToTry = Array.from(
+			      new Set(
+			        [
+			          ...(preferDoctorId ? [doctorId, referralId] : [referralId, doctorId]),
+			        ].filter(Boolean),
+			      ),
+			    );
+			    if (identifiersToTry.length === 0) return;
+
+			    const buildOfficeAddress = (record: any) => {
+			      const parts = [
+			        record?.officeAddressLine1 ?? record?.office_address_line1,
+			        record?.officeAddressLine2 ?? record?.office_address_line2,
+			        [
+			          record?.officeCity ?? record?.office_city,
+			          record?.officeState ?? record?.office_state,
+			          record?.officePostalCode ?? record?.office_postal_code,
+			        ]
+			          .filter(Boolean)
+			          .join(", "),
+			        record?.officeCountry ?? record?.office_country,
+			      ].filter((part: any) => typeof part === "string" && part.trim().length > 0);
+			      return parts.length > 0 ? parts.join("\n") : null;
+			    };
+
+			    const buildAddressFallback = (record: any) => {
+			      const parts = [
+			        record?.addressLine1 ?? record?.address_line1 ?? record?.address1 ?? record?.address_1,
+			        record?.addressLine2 ?? record?.address_line2 ?? record?.address2 ?? record?.address_2,
+			        [record?.city, record?.state, record?.postalCode ?? record?.postcode].filter(Boolean).join(", "),
+			        record?.country,
+			      ].filter((part: any) => typeof part === "string" && part.trim().length > 0);
+			      return parts.length > 0 ? parts.join("\n") : null;
+			    };
+
+				    let canceled = false;
+				    (async () => {
+              const prefilledNotes =
+                typeof salesDoctorDetail?.prospectNotes === "string"
+                  ? salesDoctorDetail.prospectNotes
+                  : null;
+              setSalesDoctorNoteDraft(prefilledNotes ? prefilledNotes : "");
+				      setSalesDoctorNotesLoading(true);
+				      try {
+			        type ProspectCandidate = {
+			          response: any;
+			          prospect: any;
+			          userRecord: any;
+			          score: number;
+			        };
+			        let best: ProspectCandidate | null = null;
+			        for (const identifier of identifiersToTry) {
+			          const response = await referralAPI.getSalesProspect(identifier);
+			          const prospect = (response as any)?.prospect || null;
+			          const userRecord =
+			            (response as any)?.user ||
+			            (response as any)?.account ||
+			            (response as any)?.doctor ||
+			            null;
+			          const notesValue =
+			            typeof prospect?.notes === "string"
+			              ? prospect.notes.trim()
+			              : typeof prospect?.salesRepNotes === "string"
+			                ? prospect.salesRepNotes.trim()
+			                : typeof prospect?.sales_rep_notes === "string"
+			                  ? String(prospect.sales_rep_notes).trim()
+			                  : "";
+			          const prospectAddress = buildOfficeAddress(prospect) || null;
+			          const userAddress =
+			            buildOfficeAddress(userRecord) ||
+			            buildAddressFallback(userRecord) ||
+			            null;
+			          const score =
+			            (notesValue ? 3 : 0) +
+			            (prospectAddress ? 2 : 0) +
+			            (userAddress ? 2 : 0) +
+			            (userRecord ? 1 : 0) +
+			            (prospect ? 1 : 0);
+			          if (!best || score > best.score) {
+			            best = { response, prospect, userRecord, score };
+			          }
+			          // If we have notes + (prospect or user address), it's good enough—avoid extra calls.
+			          if (notesValue && (prospectAddress || userAddress)) {
+			            break;
+			          }
+			        }
+
+			        const prospect = best?.prospect || null;
+			        const userRecord = best?.userRecord || null;
+			        const notesRaw =
+			          typeof prospect?.notes === "string"
+			            ? prospect.notes
+			            : typeof prospect?.salesRepNotes === "string"
+			              ? prospect.salesRepNotes
+			              : typeof prospect?.sales_rep_notes === "string"
+			                ? String(prospect.sales_rep_notes)
+			                : "";
+			        const notes = typeof notesRaw === "string" ? notesRaw : "";
+
+			        const prospectOfficeAddress = buildOfficeAddress(prospect);
+			        const userOfficeAddress =
+			          buildOfficeAddress(userRecord) || buildAddressFallback(userRecord);
+			        const resolvedAddress = userOfficeAddress || prospectOfficeAddress || null;
+			        const resolvedAddressOrigin: "prospect" | "user" | null = userOfficeAddress
+			          ? "user"
+			          : prospectOfficeAddress
+			            ? "prospect"
+			            : null;
+
+			        const resolvedName =
+			          typeof userRecord?.name === "string" && userRecord.name.trim()
+			            ? userRecord.name.trim()
+			            : null;
+			        const resolvedEmail =
+			          typeof userRecord?.email === "string" && userRecord.email.trim()
+			            ? userRecord.email.trim()
+			            : null;
+			        const resolvedAvatar =
+			          typeof userRecord?.profileImageUrl === "string" && userRecord.profileImageUrl.trim()
+			            ? userRecord.profileImageUrl.trim()
+			            : typeof userRecord?.profile_image_url === "string" && userRecord.profile_image_url.trim()
+			              ? userRecord.profile_image_url.trim()
+			              : null;
+			        const resolvedPhone =
+			          typeof userRecord?.phone === "string" && userRecord.phone.trim()
+			            ? userRecord.phone.trim()
+			            : typeof userRecord?.phoneNumber === "string" && userRecord.phoneNumber.trim()
+			              ? userRecord.phoneNumber.trim()
+			              : typeof userRecord?.phone_number === "string" && String(userRecord.phone_number).trim()
+			                ? String(userRecord.phone_number).trim()
+			                : null;
+
+				        if (!canceled) {
+				          setSalesDoctorNoteDraft((current) => {
+				            const incoming = typeof notes === "string" ? notes : "";
+				            return incoming.trim().length > 0 ? incoming : current;
+				          });
+				          if (resolvedAddress || resolvedName || resolvedEmail || resolvedAvatar || resolvedPhone) {
+				            setSalesDoctorDetail((current) => {
+				              if (!current) return current;
+				              if (String(current.doctorId || "") !== String(salesDoctorDetail.doctorId || "")) {
+			                return current;
+			              }
+			              const next = { ...current };
+			              if (resolvedName) {
+			                next.name = resolvedName;
+			              }
+			              if (resolvedEmail) {
+			                next.email = resolvedEmail;
+			              }
+			              if (resolvedAvatar) {
+			                next.avatar = resolvedAvatar;
+			              }
+			              if (resolvedPhone) {
+			                next.phone = resolvedPhone;
+			              }
+			              if (resolvedAddress) {
+			                next.address = resolvedAddress;
+			                next.addressOrigin = resolvedAddressOrigin;
+			              }
+			              return next;
+			            });
+			          }
+			          setSalesDoctorNotesLoading(false);
+			          setSalesDoctorNotesSaved(false);
+			        }
+				      } catch {
+				        if (!canceled) {
+				          const fallbackKey = String(salesDoctorDetail.doctorId);
+				          setSalesDoctorNoteDraft((current) => current || salesDoctorNotes[fallbackKey] || "");
+				          setSalesDoctorNotesLoading(false);
+			          setSalesDoctorNotesSaved(false);
+			        }
+			      }
+		    })();
 	    return () => {
 	      canceled = true;
 	    };
@@ -6645,17 +6876,23 @@ function MainApp() {
             }
           : resolvePresence();
 
-	      setSalesDoctorDetail({
-	        doctorId: bucket.doctorId,
-	        referralId: bucket.referralId ?? null,
-	        name: bucket.doctorName,
-	        email: bucket.doctorEmail,
-	        avatar: bucket.doctorAvatar ?? null,
-	        revenue: bucket.total,
-	        personalRevenue: bucket.personalRevenue ?? null,
-	        salesRevenue: bucket.salesRevenue ?? null,
-	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
-	        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
+		      setSalesDoctorDetail({
+		        doctorId: bucket.doctorId,
+		        referralId: bucket.referralId ?? null,
+		        name: bucket.doctorName,
+		        email: bucket.doctorEmail,
+		        avatar: bucket.doctorAvatar ?? null,
+            prospectNotes:
+              typeof (bucket as any)?.prospectNotes === "string"
+                ? (bucket as any).prospectNotes
+                : typeof (bucket as any)?.notes === "string"
+                  ? (bucket as any).notes
+                  : null,
+		        revenue: bucket.total,
+		        personalRevenue: bucket.personalRevenue ?? null,
+		        salesRevenue: bucket.salesRevenue ?? null,
+		        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
+		        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
 	        orderQuantity: bucket.orderQuantity ?? null,
 	        totalOrderValue: bucket.totalOrderValue ?? null,
 	        orders: bucket.orders,
@@ -8430,6 +8667,10 @@ function MainApp() {
     setShowManualProspectModal(false);
     resetManualProspectForm();
   }, [resetManualProspectForm]);
+  const [prospectDetailModalOpen, setProspectDetailModalOpen] =
+    useState(false);
+  const [prospectDetailModalProspect, setProspectDetailModalProspect] =
+    useState<any | null>(null);
 	  const [referralDataLoading, setReferralDataLoading] = useState(false);
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
@@ -12011,6 +12252,9 @@ function MainApp() {
     // Delegate sessions should only load the catalog after the delegate link is validated.
     // If the link is revoked/expired, we render the expired-session view and skip all catalog loading.
     if (isDelegateMode) {
+      if (!delegateIsValidated) {
+        return;
+      }
       if (delegateLoading) {
         return;
       }
@@ -13295,6 +13539,30 @@ function MainApp() {
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const nextUserId =
+      user?.id !== undefined && user?.id !== null ? String(user.id) : null;
+    const prevUserId = prevUserIdRef.current;
+
+    // When we transition from logged-in -> logged-out, reset scroll so the login screen
+    // doesn't show up at the previous scroll position (often near the bottom).
+    if (prevUserId && !nextUserId) {
+      const scrollToTop = () => {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      };
+
+      scrollToTop();
+      requestAnimationFrame(scrollToTop);
+      setTimeout(scrollToTop, 0);
+    }
+
+    prevUserIdRef.current = nextUserId;
+  }, [user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -15848,136 +16116,123 @@ function MainApp() {
 			                        Orders placed by doctors assigned to each rep.
 			                      </p>
 			                    </div>
-				                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-				                      <div className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
-				                        <Popover.Root
-				                          open={adminDashboardPeriodPickerOpen}
-				                          onOpenChange={setAdminDashboardPeriodPickerOpen}
-				                        >
-				                          <Popover.Trigger asChild>
-				                            <Button
-				                              type="button"
-				                              variant="outline"
-				                              size="icon"
-				                              className="header-home-button squircle-sm h-9 w-9 shrink-0"
-				                              aria-label="Select sales by rep date range"
-				                              title="Select date range"
-				                            >
-				                              <CalendarDays aria-hidden="true" />
-				                            </Button>
-				                          </Popover.Trigger>
-				                          <Popover.Portal>
-				                            <Popover.Content
-				                              side="bottom"
-				                              align="end"
-				                              sideOffset={8}
-				                              className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-				                            >
-				                              <div className="text-sm font-semibold text-slate-800">
-				                                Sales by Sales Rep timeframe
-				                              </div>
-				                              <div className="mt-2">
-				                                <DayPicker
-				                                  mode="range"
-				                                  numberOfMonths={1}
-				                                  selected={adminDashboardPeriodRange}
-				                                  onSelect={handleAdminDashboardPeriodSelect}
-				                                  defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-				                                />
-				                              </div>
-				                              <div className="mt-3 flex items-center justify-between">
-				                                <Button
-				                                  type="button"
-				                                  variant="ghost"
-				                                  size="sm"
-				                                  className="text-slate-700"
-				                                  onClick={() => {
-				                                    const defaults = getDefaultSalesBySalesRepPeriod();
-				                                    setSalesRepPeriodStart(defaults.start);
-				                                    setSalesRepPeriodEnd(defaults.end);
-				                                  }}
-				                                >
-				                                  Default
-				                                </Button>
-					                                <Button
-					                                  type="button"
-					                                  variant="outline"
-					                                  size="sm"
-					                                  className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-					                                  onClick={() => {
-					                                    applyAdminDashboardPeriod();
-					                                    setAdminDashboardPeriodPickerOpen(false);
-					                                  }}
-					                                >
-					                                  Done
-					                                </Button>
-				                              </div>
-				                              <Popover.Arrow className="calendar-popover-arrow" />
-				                            </Popover.Content>
-				                          </Popover.Portal>
-				                        </Popover.Root>
-				                        <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-				                          ({adminDashboardPeriodLabel})
-				                        </span>
-				                      
-				                        <Button
-				                          type="button"
-				                          variant="outline"
-			                          size="sm"
-			                          className="gap-2 order-2 sm:order-1"
-			                          onClick={() => void refreshSalesBySalesRepSummary()}
-			                          disabled={salesRepSalesSummaryLoading}
-			                          aria-busy={salesRepSalesSummaryLoading}
-			                          title="Refresh"
-			                        >
-			                          <RefreshCw
-			                            className={`h-4 w-4 ${salesRepSalesSummaryLoading ? "animate-spin" : ""}`}
-			                            aria-hidden="true"
-			                          />
-			                          Refresh
-			                        </Button>
-			                        <Button
-			                          type="button"
-			                          variant="outline"
-			                          size="sm"
-			                          className="gap-2 order-2 sm:order-1"
-		                          onClick={downloadSalesBySalesRepCsv}
-		                          disabled={salesRepSalesSummary.length === 0}
-		                          title="Download CSV"
-		                        >
-		                          <Download className="h-4 w-4" aria-hidden="true" />
-		                          Download CSV
-		                        </Button>
-		                        <span className="sales-rep-action-meta order-1 sm:order-2 min-w-0 text-[11px] text-slate-500 leading-tight text-right">
-		                          <span className="sm:hidden block min-w-0 truncate">
-		                            Last downloaded:{" "}
-		                            {salesRepSalesCsvDownloadedAt
-		                              ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(
-		                                  undefined,
-		                                  {
-		                                    timeZone: "America/Los_Angeles",
-		                                  },
-		                                )
-		                              : "—"}
-		                          </span>
-		                          <span className="hidden sm:block">
-		                            <span className="sales-rep-action-meta-label block">
-		                              Last downloaded
-		                            </span>
-		                            <span className="sales-rep-action-meta-value block">
-		                              {salesRepSalesCsvDownloadedAt
-		                                ? new Date(
-		                                    salesRepSalesCsvDownloadedAt,
-		                                  ).toLocaleString(undefined, {
-		                                    timeZone: "America/Los_Angeles",
-		                                  })
-		                                : "—"}
-		                            </span>
-		                          </span>
-				                        </span>
-				                      </div>
-				                    </div>
-		                  </div>
+					                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+					                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+					                        <div className="flex flex-wrap items-center justify-end gap-2">
+					                          <Popover.Root
+					                            open={adminDashboardPeriodPickerOpen}
+					                            onOpenChange={setAdminDashboardPeriodPickerOpen}
+					                          >
+					                            <Popover.Trigger asChild>
+					                              <Button
+					                                type="button"
+					                                variant="outline"
+					                                size="icon"
+					                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
+					                                aria-label="Select sales by rep date range"
+					                                title="Select date range"
+					                              >
+					                                <CalendarDays aria-hidden="true" />
+					                              </Button>
+					                            </Popover.Trigger>
+					                            <Popover.Portal>
+					                              <Popover.Content
+					                                side="bottom"
+					                                align="end"
+					                                sideOffset={8}
+					                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+					                              >
+					                                <div className="text-sm font-semibold text-slate-800">
+					                                  Sales by Sales Rep timeframe
+					                                </div>
+					                                <div className="mt-2">
+					                                  <DayPicker
+					                                    mode="range"
+					                                    numberOfMonths={1}
+					                                    selected={adminDashboardPeriodRange}
+					                                    onSelect={handleAdminDashboardPeriodSelect}
+					                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+					                                  />
+					                                </div>
+					                                <div className="mt-3 flex items-center justify-between">
+					                                  <Button
+					                                    type="button"
+					                                    variant="ghost"
+					                                    size="sm"
+					                                    className="text-slate-700"
+					                                    onClick={() => {
+					                                      const defaults = getDefaultSalesBySalesRepPeriod();
+					                                      setSalesRepPeriodStart(defaults.start);
+					                                      setSalesRepPeriodEnd(defaults.end);
+					                                    }}
+					                                  >
+					                                    Default
+					                                  </Button>
+					                                  <Button
+					                                    type="button"
+					                                    variant="outline"
+					                                    size="sm"
+					                                    className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+					                                    onClick={() => {
+					                                      applyAdminDashboardPeriod();
+					                                      setAdminDashboardPeriodPickerOpen(false);
+					                                    }}
+					                                  >
+					                                    Done
+					                                  </Button>
+					                                </div>
+					                                <Popover.Arrow className="calendar-popover-arrow" />
+					                              </Popover.Content>
+					                            </Popover.Portal>
+					                          </Popover.Root>
+					                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+					                            ({adminDashboardPeriodLabel})
+					                          </span>
+					                          <Button
+					                            type="button"
+					                            variant="outline"
+					                            size="sm"
+					                            className="gap-2"
+					                            onClick={() => void refreshSalesBySalesRepSummary()}
+					                            disabled={salesRepSalesSummaryLoading}
+					                            aria-busy={salesRepSalesSummaryLoading}
+					                            title="Refresh"
+					                          >
+					                            <RefreshCw
+					                              className={`h-4 w-4 ${salesRepSalesSummaryLoading ? "animate-spin" : ""}`}
+					                              aria-hidden="true"
+					                            />
+					                            Refresh
+					                          </Button>
+					                        </div>
+					
+					                        <div className="flex flex-wrap items-center justify-end gap-2">
+					                          <Button
+					                            type="button"
+					                            variant="outline"
+					                            size="sm"
+					                            className="gap-2"
+					                            onClick={downloadSalesBySalesRepCsv}
+					                            disabled={salesRepSalesSummary.length === 0}
+					                            title="Download CSV"
+					                          >
+					                            <Download className="h-4 w-4" aria-hidden="true" />
+					                            Download CSV
+					                          </Button>
+					                          <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+					                            <span className="block min-w-0 truncate">
+					                              Last downloaded:{" "}
+					                              {salesRepSalesCsvDownloadedAt
+					                                ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+					                                    timeZone: "America/Los_Angeles",
+					                                  })
+					                                : "—"}
+					                            </span>
+					                          </span>
+					                        </div>
+					                      </div>
+					                    </div>
+				                  </div>
 
 		                  {/* Totals shown inline above list below */}
 		                </div>
@@ -17755,7 +18010,6 @@ function MainApp() {
 							                                        role: row.role,
 							                                      });
 							                                    }}
-							                                    disabled={!canOpen}
 							                                  >
 							                                    {label}
 							                                  </button>
@@ -19929,7 +20183,7 @@ function MainApp() {
 					            />
 			          </div>
 			        )}
-	              {isDelegateMode && !delegateError && (
+	              {isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError && (
 	                <div style={{ display: postLoginHold ? "none" : undefined }}>
 	                  <Header
 	                    user={null}
@@ -21475,13 +21729,21 @@ function MainApp() {
           )}
 
 			          {isDelegateMode && (
-			            delegateError ? (
+			            !delegateIsValidated || delegateLoading ? (
 			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
-			                  <p className="text-lg font-semibold text-slate-900">This session has expired.</p>
+			                  <p className="text-lg font-semibold text-slate-900">Loading…</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    The delegate link you used is no longer valid. Please request a new link from your doctor and try
-			                    again.
+			                    Checking your delegate session.
+			                  </p>
+			                </div>
+			              </main>
+			            ) : delegateError ? (
+			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
+			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
+			                  <p className="text-lg font-semibold text-slate-900">This delegate session has expired.</p>
+			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
+			                    Please request a new link from your doctor and try again.
 			                  </p>
 			                </div>
 			              </main>
@@ -21494,7 +21756,7 @@ function MainApp() {
 		              >
 		                {delegateTimeRemainingLabel && (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
-		                    <div className="glass-card p-3 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
+		                    <div className="glass-card p-2 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
 		                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
 		                      <span>
 		                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
@@ -21504,7 +21766,7 @@ function MainApp() {
 		                )}
 		                {delegateHasSubmittedProposal ? (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
-		                    <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">
+		                    <div className="glass-card squircle-xl mt-2 border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">
 		                      <div className="flex items-start justify-between gap-4">
 		                        <div className="min-w-0">
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
@@ -21565,7 +21827,7 @@ function MainApp() {
 		          )}
 		        </div>
 
-	      {isDelegateMode && delegateError ? null : user ? (
+	      {isDelegateMode && (!delegateIsValidated || delegateError) ? null : user ? (
 	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : (
 	        <LegalFooter showContactCTA variant="full" />
@@ -21607,7 +21869,9 @@ function MainApp() {
         onRemoveItem={handleRemoveCartItem}
         isAuthenticated={Boolean(user)}
         onRequireLogin={handleRequireLogin}
-        allowUnauthenticatedCheckout={Boolean(isDelegateMode && !delegateError)}
+        allowUnauthenticatedCheckout={Boolean(
+          isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError,
+        )}
         delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
         estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
         pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
@@ -21620,12 +21884,92 @@ function MainApp() {
         availableCredits={isDelegateMode ? 0 : availableReferralCredits}
         pricingMode={checkoutPricingMode}
         onPricingModeChange={setCheckoutPricingMode}
-        showRetailPricingToggle={Boolean(canUseRetailPricing && !isDelegateMode)}
-      />
+	        showRetailPricingToggle={Boolean(canUseRetailPricing && !isDelegateMode)}
+	      />
 
-      <Dialog
-        open={showManualProspectModal}
-        onOpenChange={(open) => {
+	      <Dialog
+	        open={prospectDetailModalOpen}
+	        onOpenChange={(open) => {
+	          if (!open) {
+	            setProspectDetailModalOpen(false);
+	            setProspectDetailModalProspect(null);
+	          } else {
+	            setProspectDetailModalOpen(true);
+	          }
+	        }}
+	      >
+	        <DialogContent className="glass-card squircle-lg w-full max-w-[min(720px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl">
+	          <DialogHeader>
+	            <DialogTitle>Prospect</DialogTitle>
+	            <DialogDescription>Prospect details (no user account yet).</DialogDescription>
+	          </DialogHeader>
+	          {(() => {
+	            const row = prospectDetailModalProspect;
+	            if (!row) return null;
+	            const name = String(
+	              row?._displayName || row?.referredContactName || row?.contactName || "Prospect",
+	            ).trim();
+	            const email = String(
+	              row?._displayEmail ||
+	                row?.referredContactEmail ||
+	                row?.contactEmail ||
+	                row?.email ||
+	                "",
+	            ).trim();
+	            const phone = String(row?.referredContactPhone || row?.contactPhone || row?.phone || "").trim();
+	            const status = String(row?.status || "pending").trim();
+	            const updatedAt = String(row?.updatedAt || row?.createdAt || "").trim();
+	            const idLabel = String(row?.id || row?.referralId || row?.contactFormId || "").trim();
+	            return (
+	              <div className="space-y-4">
+	                <div className="flex flex-wrap items-start justify-between gap-3">
+	                  <div className="min-w-0">
+	                    <div className="flex items-center gap-2 min-w-0">
+	                      <p className="text-base font-semibold text-slate-900 truncate">{name}</p>
+	                      <Badge variant="secondary" className="uppercase">
+	                        {titleCaseFromSlug(status.replace(/_/g, "-"))}
+	                      </Badge>
+	                    </div>
+	                    {email && <p className="text-sm text-slate-700 break-all">{email}</p>}
+	                    {phone && <p className="text-sm text-slate-700">{phone}</p>}
+	                    {updatedAt && (
+	                      <p className="text-xs text-slate-500 mt-1">Updated: {formatDateTime(updatedAt)}</p>
+	                    )}
+	                    {idLabel && <p className="text-xs text-slate-400 mt-1">ID: {idLabel}</p>}
+	                  </div>
+	                  <div className="flex items-center gap-2">
+	                    <Button
+	                      type="button"
+	                      variant="outline"
+	                      size="sm"
+	                      className="gap-2"
+	                      onClick={async () => {
+	                        try {
+	                          if (!navigator?.clipboard) throw new Error("Clipboard unavailable");
+	                          const text = email || phone;
+	                          if (!text) return;
+	                          await navigator.clipboard.writeText(text);
+	                          toast.success("Copied.");
+	                        } catch {
+	                          toast.error("Unable to copy.");
+	                        }
+	                      }}
+	                      disabled={!email && !phone}
+	                    >
+	                      <Copy className="h-4 w-4" aria-hidden="true" />
+	                      Copy
+	                    </Button>
+	                  </div>
+	                </div>
+	              </div>
+	            );
+	          })()}
+	        </DialogContent>
+	      </Dialog>
+
+	      <Dialog
+	        open={showManualProspectModal}
+	        onOpenChange={(open) => {
           if (!open) {
             closeManualProspectModal();
           } else {
@@ -21784,9 +22128,9 @@ function MainApp() {
             setSalesDoctorDetailLoading(false);
           }
         }}
-	      >
-	        <DialogContent className="max-w-2xl">
-          {salesDoctorDetailLoading ? (
+		      >
+		        <DialogContent ref={salesDoctorDialogContentRef} className="max-w-2xl">
+	          {salesDoctorDetailLoading ? (
               <>
                 <VisuallyHidden>
                   <DialogTitle>Loading account details</DialogTitle>
@@ -22751,12 +23095,12 @@ function MainApp() {
 			                    </div>
 			                  )}
 
-			                  {!salesRepProspectsError && (
-			                    <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
-			                      {salesRepProspectsLoading ? (
-			                        <p className="text-xs text-slate-500">Loading prospects…</p>
-			                      ) : (salesRepProspectsForModal || []).length > 0 ? (
-			                        (salesRepProspectsForModal || []).map((row: any) => {
+				                  {!salesRepProspectsError && (
+				                    <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+				                      {salesRepProspectsLoading ? (
+				                        <p className="text-xs text-slate-500">Loading prospects…</p>
+				                      ) : (salesRepProspectsForModal || []).length > 0 ? (
+				                        (salesRepProspectsForModal || []).map((row: any) => {
 			                          const listKey = String(
 			                            row?._accountId ||
 			                              row?.id ||
@@ -22777,75 +23121,161 @@ function MainApp() {
 				                              .toLowerCase() || "pending";
 			                          const when = String(row?.updatedAt || row?.createdAt || "").trim();
 			                          const whenLabel = when ? formatDateTime(when) : null;
-			                          return (
-			                            <button
-			                              key={listKey || `${email}:${name}:${status}`}
-			                              type="button"
-			                              disabled={!canOpen}
-				                              onClick={() => {
-				                                if (!canOpen) return;
-				                                openLiveUserDetail({
-				                                  id: accountId,
-				                                  name,
-				                                  email: email || undefined,
-				                                  role: "doctor",
-				                                  profileImageUrl: avatarUrl || undefined,
-				                                });
-				                              }}
-				                              className={`w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-3 transition ${
-				                                canOpen
-				                                  ? "cursor-pointer hover:shadow-sm hover:border-[rgb(95,179,249)] hover:bg-slate-50 bg-white"
-				                                  : "cursor-default bg-white/80 opacity-90"
-				                              }`}
+				                          return (
+				                            <button
+				                              key={listKey || `${email}:${name}:${status}`}
+				                              type="button"
+					                              onClick={() => {
+					                                const doctorId =
+					                                  row?._prospectIdentifier ||
+					                                  accountId ||
+					                                  row?.referredContactAccountId ||
+					                                  row?.referredContactId ||
+					                                  row?.referred_contact_id ||
+					                                  row?.userId ||
+					                                  row?.user_id ||
+					                                  row?.doctorId ||
+					                                  row?.doctor_id ||
+					                                  row?.referralId ||
+					                                  row?.referral_id ||
+					                                  row?.contactFormId ||
+					                                  row?.contact_form_id ||
+					                                  row?.id;
+					                                const doctorEmail = email || null;
+					                                const doctorPhone = String(
+					                                  row?.referredContactPhone ||
+					                                    row?.referred_contact_phone ||
+					                                    row?.contactPhone ||
+					                                    row?.contact_phone ||
+					                                    row?.phone ||
+					                                    "",
+					                                ).trim() || null;
+					                                const prospectAddress = (() => {
+					                                  const parts = [
+					                                    row?.officeAddressLine1 || row?.office_address_line1,
+					                                    row?.officeAddressLine2 || row?.office_address_line2,
+					                                    [
+					                                      row?.officeCity || row?.office_city,
+					                                      row?.officeState || row?.office_state,
+					                                      row?.officePostalCode || row?.office_postal_code,
+					                                    ]
+					                                      .filter(Boolean)
+					                                      .join(", "),
+					                                    row?.officeCountry || row?.office_country,
+					                                  ].filter(
+					                                    (p) => typeof p === "string" && p.trim().length > 0,
+					                                  );
+					                                  return parts.length > 0 ? parts.join("\n") : null;
+					                                })();
+					                                const ownerSalesRepId =
+					                                  row?.ownerSalesRepId ||
+					                                  row?.owner_sales_rep_id ||
+					                                  row?.salesRepId ||
+					                                  row?.sales_rep_id ||
+					                                  row?.assignedSalesRepId ||
+					                                  row?.assigned_sales_rep_id ||
+					                                  null;
+
+						                                openSalesDoctorDetail(
+						                                  {
+						                                    doctorId: String(doctorId || ""),
+						                                    referralId:
+						                                      String(
+						                                        row?.id ||
+						                                          row?.referralId ||
+						                                          row?.referral_id ||
+						                                          row?.contactFormId ||
+						                                          row?.contact_form_id ||
+						                                          "",
+						                                      ).trim() || null,
+						                                    doctorName: name,
+						                                    doctorEmail,
+						                                    doctorAvatar: avatarUrl || null,
+                                            prospectNotes:
+                                              row?.notes ||
+                                              row?.salesRepNotes ||
+                                              row?.sales_rep_notes ||
+                                              null,
+						                                    doctorPhone,
+						                                    doctorAddress: prospectAddress,
+						                                    addressOrigin: prospectAddress ? "prospect" : null,
+						                                    ownerSalesRepId: ownerSalesRepId ? String(ownerSalesRepId) : null,
+						                                    orders: [],
+						                                    total: 0,
+						                                  },
+						                                  "doctor",
+						                                );
+					                              }}
+					                              className="w-full text-left flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white/70 px-4 py-3 transition cursor-pointer hover:shadow-sm hover:border-[rgb(95,179,249)] hover:bg-white"
 				                            >
-				                              <div className="flex items-start gap-3 min-w-0">
+				                              <div className="flex items-start gap-4 min-w-0">
 				                                <div
-				                                  className="h-10 w-10 shrink-0 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center"
-				                                  style={{ borderRadius: 9999 }}
+				                                  className="shrink-0 overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center shadow-sm"
+				                                  style={{
+				                                    width: 44,
+				                                    height: 44,
+				                                    minWidth: 44,
+				                                    minHeight: 44,
+				                                    aspectRatio: "1 / 1",
+				                                    borderRadius: 9999,
+				                                  }}
 				                                >
 				                                  {avatarUrl ? (
 				                                    <img
 				                                      src={avatarUrl}
 				                                      alt={name}
-				                                      className="h-full w-full object-cover rounded-full"
-				                                      style={{ borderRadius: 9999 }}
+				                                      className="h-full w-full object-cover"
+				                                      style={{
+				                                        width: "100%",
+				                                        height: "100%",
+				                                        aspectRatio: "1 / 1",
+				                                        borderRadius: 9999,
+				                                      }}
 				                                      loading="lazy"
 				                                      decoding="async"
 				                                    />
 				                                  ) : (
-			                                    <span className="text-[11px] font-semibold text-slate-600">
-			                                      {getInitials(name)}
-			                                    </span>
-			                                  )}
-			                                </div>
-			                                <div className="min-w-0 text-sm text-slate-700">
-			                                  <div className="flex items-center gap-2 min-w-0">
-			                                    <span className="text-sm font-semibold text-slate-800 truncate">
-			                                      {name}
-			                                    </span>
-			                                    <span className="shrink-0">
-			                                      <Badge variant="secondary" className="uppercase">
-			                                        {titleCaseFromSlug(status.replace(/_/g, "-"))}
+				                                    <span className="text-xs font-semibold text-slate-700">
+				                                      {getInitials(name)}
+				                                    </span>
+				                                  )}
+				                                </div>
+				                                <div className="min-w-0 text-sm text-slate-700">
+				                                  <div className="flex items-center gap-2 min-w-0">
+				                                    <span className="text-base font-semibold text-slate-900 truncate">
+				                                      {name}
+				                                    </span>
+				                                    <span className="shrink-0">
+				                                      <Badge variant="secondary" className="uppercase">
+				                                        {titleCaseFromSlug(status.replace(/_/g, "-"))}
 			                                      </Badge>
 			                                    </span>
 			                                  </div>
-			                                  <div className="text-xs text-slate-500 truncate">
-			                                    {email || "No email on file"}
-			                                  </div>
-			                                  {whenLabel && (
-			                                    <div className="text-xs text-slate-500">
-			                                      Updated: {whenLabel}
-			                                    </div>
-			                                  )}
-			                                </div>
+				                                  <div className="text-xs text-slate-500 truncate">
+				                                    {email || "No email on file"}
+				                                  </div>
+				                                  {whenLabel && (
+				                                    <div className="text-xs text-slate-500">
+				                                      Updated: {whenLabel}
+				                                    </div>
+				                                  )}
+				                                </div>
 				                              </div>
-				                              <div className="text-right text-xs font-semibold text-slate-700 whitespace-nowrap">
-				                                {hasAccount ? "Has account" : "No account"}
+				                              <div className="text-right whitespace-nowrap">
+				                                <span
+				                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+				                                    hasAccount
+				                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+				                                      : "bg-slate-100 text-slate-700 border border-slate-200"
+				                                  }`}
+				                                >
+				                                  {hasAccount ? "Has account" : "No account"}
+				                                </span>
 				                              </div>
 				                            </button>
 				                          );
 				                        })
-			                      ) : (
+				                      ) : (
 			                        <p className="text-xs text-slate-500">No active prospects found.</p>
 			                      )}
 			                    </div>
