@@ -2479,6 +2479,14 @@ def get_sales_by_rep(
             if email:
                 users_by_email[email] = u
 
+        # Allow resolving a rep by their `users.sales_rep_id` external key (common in MySQL deployments).
+        for u in users:
+            if _norm_role(u.get("role")) not in rep_like_roles:
+                continue
+            rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
+            if rep_alias and rep_alias not in user_lookup:
+                user_lookup[rep_alias] = u
+
         # Canonicalize sales rep ids so we don't double-count reps that exist in both
         # `users` and `sales_reps` with different ids. Prefer `users` as the source of truth
         # for display names (sales reps manage their own name there).
@@ -2496,6 +2504,9 @@ def get_sales_by_rep(
             if rep_id:
                 rep_id_str = str(rep_id)
                 alias_to_rep_id[rep_id_str] = rep_id_str
+            rep_alias = str(rep.get("salesRepId") or rep.get("sales_rep_id") or "").strip()
+            if rep_alias and rep_id:
+                alias_to_rep_id[rep_alias] = str(rep_id).strip()
 
         for rep in rep_records_list:
             rep_id = rep.get("id")

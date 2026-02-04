@@ -102,6 +102,22 @@ const fetchSalesRepDirectory = async (repIds) => {
   if (mysqlClient.isEnabled()) {
     const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
     const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+    const shouldOverlay = (existing, incoming) => {
+      if (!incoming) return false;
+      const name = typeof incoming?.name === 'string' ? incoming.name.trim() : '';
+      const email = typeof incoming?.email === 'string' ? incoming.email.trim() : '';
+      if (!name && !email) return false;
+      if (!existing) return true;
+      const existingName = typeof existing?.name === 'string' ? existing.name.trim() : '';
+      const existingEmail = typeof existing?.email === 'string' ? existing.email.trim() : '';
+      const existingIsGenerated =
+        !existingName
+        || existingName === 'Sales Rep'
+        || existingName === `Sales Rep ${existing?.id}`
+        || existingName === `Sales Rep ${String(existing?.id || '')}`;
+      return existingIsGenerated || (!existingEmail && Boolean(email));
+    };
+
     const query = `
       SELECT id, name, email, legacy_user_id
       FROM sales_reps
@@ -200,6 +216,37 @@ const fetchSalesRepDirectory = async (repIds) => {
       } catch {
         // ignore
       }
+    }
+
+    // Also map rep ids that are stored as `users.sales_rep_id` (external rep key).
+    // This is the most common source of the numeric ids shown in the admin report.
+    try {
+      const rows = await mysqlClient.fetchAll(
+        `
+          SELECT id, name, email, role, sales_rep_id
+          FROM users
+          WHERE id IN (${placeholders})
+             OR sales_rep_id IN (${placeholders})
+        `,
+        params,
+      );
+      (rows || []).forEach((row) => {
+        const userId = normalizeId(row?.id);
+        const repAlias = normalizeId(row?.sales_rep_id ?? row?.salesRepId ?? null);
+        const incoming = {
+          id: repAlias || userId || null,
+          name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
+          email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
+        };
+        if (repAlias && shouldOverlay(lookup.get(repAlias), incoming)) {
+          lookup.set(repAlias, { id: repAlias, name: incoming.name, email: incoming.email });
+        }
+        if (userId && shouldOverlay(lookup.get(userId), incoming)) {
+          lookup.set(userId, { id: userId, name: incoming.name, email: incoming.email });
+        }
+      });
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to query MySQL users directory for sales rep ids');
     }
   }
 
@@ -2176,12 +2223,40 @@ const getSalesByRep = async ({
   const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
   const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
+  const normalizeRepAlias = (value) => {
+    const normalized = normalizeId(value);
+    if (!normalized) return null;
+    if (normalized.toLowerCase() === 'house') return '__house__';
+    return normalized;
+  };
   const repLikeRoleSet = new Set(['sales_rep', 'rep', 'admin', 'sales_lead', 'saleslead', 'sales-lead']);
   const repsFromUsers = users.filter((u) => repLikeRoleSet.has(normalizeRole(u.role)));
   const repsFromStore = Array.isArray(salesRepRepository?.getAll?.())
     ? salesRepRepository.getAll()
     : [];
   const repLookup = new Map();
+
+  // Canonicalize rep identity: in many deployments, `users.sales_rep_id` is used as an external rep key
+  // referenced by doctors/orders, while reps themselves have their own `users.id` (uuid or numeric).
+  // Prefer the rep user's `users.id` as the canonical id in reports to keep names/emails consistent.
+  const canonicalRepIdByAlias = new Map();
+  repsFromUsers.forEach((repUser) => {
+    const alias = normalizeRepAlias(repUser?.salesRepId);
+    const canonical = normalizeId(repUser?.id);
+    if (alias && canonical && alias !== '__house__') {
+      canonicalRepIdByAlias.set(alias, canonical);
+    }
+  });
+  repsFromStore.forEach((repRecord) => {
+    const recordAlias = normalizeRepAlias(repRecord?.id || repRecord?.salesRepId);
+    const recordEmail = normalizeEmail(repRecord?.email);
+    if (!recordAlias || recordAlias === '__house__' || !recordEmail) return;
+    const userMatch = repsFromUsers.find((u) => normalizeEmail(u?.email) === recordEmail) || null;
+    const canonical = normalizeId(userMatch?.id);
+    if (canonical) {
+      canonicalRepIdByAlias.set(recordAlias, canonical);
+    }
+  });
 
   // Seed with reps from the sales rep store (used by sales codes / contact forms).
   for (const rep of repsFromStore) {
@@ -2198,13 +2273,17 @@ const getSalesByRep = async ({
 
   // Overlay any matching app users (more authoritative for name/email).
   for (const rep of repsFromUsers) {
-    const repId = normalizeId(rep?.id);
-    if (!repId) continue;
-    repLookup.set(repId, {
-      id: repId,
-      name: rep?.name || rep?.email || 'Sales Rep',
-      email: rep?.email || null,
-    });
+    const name = rep?.name || rep?.email || 'Sales Rep';
+    const email = rep?.email || null;
+    const canonical = normalizeId(rep?.id);
+    if (canonical) {
+      repLookup.set(canonical, { id: canonical, name, email });
+    }
+    const alias = normalizeRepAlias(rep?.salesRepId);
+    if (alias && alias !== '__house__') {
+      const mapped = canonicalRepIdByAlias.get(alias) || alias;
+      repLookup.set(mapped, { id: mapped, name, email });
+    }
   }
   const userToRep = new Map();
   users.forEach((user) => {
@@ -2214,6 +2293,9 @@ const getSalesByRep = async ({
     let repId = normalizeId(user?.salesRepId);
     if (repId && repId.toLowerCase() === 'house') {
       repId = '__house__';
+    }
+    if (repId && repId !== '__house__') {
+      repId = canonicalRepIdByAlias.get(repId) || repId;
     }
     if (repId && !repLookup.has(repId) && repId !== '__house__') {
       // Allow users to reference reps from the sales_rep store even if not in the lookup yet.
@@ -2274,10 +2356,10 @@ const getSalesByRep = async ({
   );
 
   const normalizeRepId = (value) => {
-    const normalized = normalizeId(value);
+    const normalized = normalizeRepAlias(value);
     if (!normalized) return null;
-    if (normalized.toLowerCase() === 'house') return '__house__';
-    return normalized;
+    if (normalized === '__house__') return '__house__';
+    return canonicalRepIdByAlias.get(normalized) || normalized;
   };
 
   const extractOrderDoctorId = (order) => normalizeId(
@@ -2535,12 +2617,12 @@ const getSalesByRep = async ({
       return;
     }
 
-    const repFromOrder = extractOrderSalesRepId(order);
-    const repFromDoctorUser = normalizedDoctorId ? userToRep.get(normalizedDoctorId) : null;
-    const repFromProspectDoctor = normalizedDoctorId ? prospectRepByDoctorId.get(normalizedDoctorId) : null;
+  const repFromOrder = extractOrderSalesRepId(order);
+    const repFromDoctorUser = normalizedDoctorId ? normalizeRepId(userToRep.get(normalizedDoctorId)) : null;
+    const repFromProspectDoctor = normalizedDoctorId ? normalizeRepId(prospectRepByDoctorId.get(normalizedDoctorId)) : null;
     const billingEmail = extractBillingEmail(order);
-    const repFromProspectEmail = billingEmail ? prospectRepByEmail.get(billingEmail) : null;
-    const repFromRepEmail = billingEmail ? repIdByEmail.get(billingEmail) : null;
+    const repFromProspectEmail = billingEmail ? normalizeRepId(prospectRepByEmail.get(billingEmail)) : null;
+    const repFromRepEmail = billingEmail ? normalizeRepId(repIdByEmail.get(billingEmail)) : null;
 
     let repId = repFromOrder || repFromDoctorUser || repFromProspectDoctor || '__house__';
 
