@@ -5623,7 +5623,9 @@ function MainApp() {
 				                row?.referredContactAccountEmail ||
 				                row?.referred_contact_account_email ||
 				                row?.referredContactEmail ||
+				                row?.referred_contact_email ||
 				                row?.contactEmail ||
+				                row?.contact_email ||
 				                row?.email ||
 				                "";
 				              const emailCandidate =
@@ -21492,7 +21494,7 @@ function MainApp() {
 		              >
 		                {delegateTimeRemainingLabel && (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
-		                    <div className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
+		                    <div className="glass-card p-3 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
 		                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
 		                      <span>
 		                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
@@ -22792,7 +22794,7 @@ function MainApp() {
 				                              }}
 				                              className={`w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-3 transition ${
 				                                canOpen
-				                                  ? "cursor-pointer hover:shadow-sm hover:border-[rgb(95,179,249)] bg-white"
+				                                  ? "cursor-pointer hover:shadow-sm hover:border-[rgb(95,179,249)] hover:bg-slate-50 bg-white"
 				                                  : "cursor-default bg-white/80 opacity-90"
 				                              }`}
 				                            >

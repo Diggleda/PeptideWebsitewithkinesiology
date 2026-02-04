@@ -520,7 +520,15 @@ def _enrich_referral(referral: Dict) -> Dict:
 
 
 def _resolve_referred_contact_account(referral: Dict):
-    email = _sanitize_email(referral.get("referredContactEmail"))
+    email = _sanitize_email(
+        referral.get("referredContactEmail")
+        or referral.get("referred_contact_email")
+        or referral.get("referredContactAccountEmail")
+        or referral.get("referred_contact_account_email")
+        or referral.get("contactEmail")
+        or referral.get("contact_email")
+        or referral.get("email")
+    )
     contact_account = user_repository.find_by_email(email) if email else None
     order_count = 0
     if contact_account and contact_account.get("id"):
