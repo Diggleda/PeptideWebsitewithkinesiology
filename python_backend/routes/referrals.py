@@ -178,24 +178,26 @@ def admin_dashboard():
         build = config.backend_build
         requested_sales_rep_id = (request.args.get("salesRepId") or user.get("salesRepId") or user.get("id") or "").strip()
         scope_all = (request.args.get("scope") or "").lower() == "all"
+        token_role = (g.current_user.get("role") or "").lower()
+        role = (user.get("role") or "").lower()
+        can_scope_all = token_role == "admin" or role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or role in ("sales_lead", "saleslead", "sales-lead")
         # Admins can view all referrals; sales reps stay scoped to their own assignments.
         target_sales_rep_id = user["id"] if not scope_all and not requested_sales_rep_id else requested_sales_rep_id or user["id"]
         referrals = referral_service.list_referrals_for_sales_rep(
             target_sales_rep_id,
-            scope_all=scope_all and user.get("role", "").lower() == "admin",
-            token_role=(g.current_user.get("role") or "").lower(),
+            scope_all=scope_all and can_scope_all,
+            token_role=token_role,
         )
         codes = (
             referral_code_repository.get_all()
-            if scope_all and (user.get("role") or "").lower() == "admin"
+            if scope_all and can_scope_all
             else [code for code in referral_code_repository.get_all() if str(code.get("salesRepId")) == str(target_sales_rep_id)]
         )
         users = referral_service.list_accounts_for_sales_rep(
             target_sales_rep_id,
-            scope_all=scope_all and (user.get("role") or "").lower() == "admin",
+            scope_all=scope_all and can_scope_all,
         )
-        token_role = (g.current_user.get("role") or "").lower()
-        can_view_sales_reps = token_role == "admin" or token_role in ("sales_lead", "saleslead", "sales-lead") or (user.get("role") or "").lower() == "admin"
+        can_view_sales_reps = can_scope_all
         sales_reps = None
         if can_view_sales_reps:
             try:

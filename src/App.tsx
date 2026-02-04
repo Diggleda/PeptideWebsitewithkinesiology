@@ -11750,16 +11750,17 @@ function MainApp() {
             referrals: normalizedReferrals.length,
             credits: normalizedCredits,
           });
-        } else if (isRep(user.role) || isAdmin(user.role)) {
-          const dashboard = await referralAPI.getSalesRepDashboard({
-            salesRepId: user.salesRepId || user.id,
-            scope: isAdmin(user.role) ? "mine" : "mine",
-          });
-          setSalesRepDashboard(dashboard);
-          console.debug("[Referral] Sales rep dashboard loaded", {
-            referrals: dashboard?.referrals?.length ?? 0,
-            statuses: dashboard?.statuses ?? null,
-          });
+	        } else if (isRep(user.role) || isAdmin(user.role)) {
+	          const scopeAll = isSalesLead(user.role);
+	          const dashboard = await referralAPI.getSalesRepDashboard({
+	            salesRepId: scopeAll ? undefined : user.salesRepId || user.id,
+	            scope: scopeAll ? "all" : "mine",
+	          });
+	          setSalesRepDashboard(dashboard);
+	          console.debug("[Referral] Sales rep dashboard loaded", {
+	            referrals: dashboard?.referrals?.length ?? 0,
+	            statuses: dashboard?.statuses ?? null,
+	          });
         } else {
           console.debug("[Referral] Refresh skipped for role", {
             role: user.role,

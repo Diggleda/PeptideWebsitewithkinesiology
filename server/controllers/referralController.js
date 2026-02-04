@@ -428,17 +428,17 @@ const getDoctorLedger = (req, res, next) => {
   }
 };
 
-const getSalesRepDashboard = async (req, res, next) => {
-  try {
-    ensureSalesRep(req.user, 'getSalesRepDashboard');
-    const role = normalizeRole(req.user.role);
-    const isAdmin = role === 'admin';
-    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-    const scopeAll = isAdmin && (req.query.scope || '').toLowerCase() === 'all';
-    const salesRepId = scopeAll ? null : requestedSalesRepId;
-    logger.info(
-      {
-        userId: req.user.id,
+  const getSalesRepDashboard = async (req, res, next) => {
+	  try {
+	    ensureSalesRep(req.user, 'getSalesRepDashboard');
+	    const role = normalizeRole(req.user.role);
+	    const isAdmin = role === 'admin';
+	    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+	    const scopeAll = (isAdmin || isSalesLead(role)) && (req.query.scope || '').toLowerCase() === 'all';
+	    const salesRepId = scopeAll ? null : requestedSalesRepId;
+	    logger.info(
+	      {
+	        userId: req.user.id,
         role,
         requestedSalesRepId,
         salesRepId,
