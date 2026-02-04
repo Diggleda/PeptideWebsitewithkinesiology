@@ -2390,6 +2390,7 @@ def get_sales_by_rep(
     exclude_sales_rep_id: Optional[str] = None,
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
+    force: bool = False,
 ):
     global _sales_by_rep_summary_inflight
 
@@ -2507,6 +2508,31 @@ def get_sales_by_rep(
             if legacy_id:
                 alias_to_rep_id[str(legacy_id)] = canonical
 
+        # Prospect-backed mapping for doctors that don't have `salesRepId` persisted yet.
+        prospect_rep_by_doctor: Dict[str, str] = {}
+        prospect_rep_updated_ms: Dict[str, int] = {}
+        try:
+            prospects = sales_prospect_repository.get_all()
+        except Exception:
+            prospects = []
+        for prospect in prospects or []:
+            if not isinstance(prospect, dict):
+                continue
+            doctor_id = str(prospect.get("doctorId") or "").strip()
+            rep_id_raw = str(prospect.get("salesRepId") or "").strip()
+            if not doctor_id or not rep_id_raw:
+                continue
+            rep_id_norm = alias_to_rep_id.get(rep_id_raw, rep_id_raw)
+            if str(rep_id_norm or "").strip().lower() == "house":
+                rep_id_norm = "__house__"
+            updated_at = prospect.get("updatedAt") or prospect.get("updated_at") or prospect.get("createdAt") or prospect.get("created_at")
+            updated_dt = _parse_datetime_utc(updated_at)
+            updated_ms = int(updated_dt.timestamp() * 1000) if updated_dt else 0
+            prev_ms = prospect_rep_updated_ms.get(doctor_id, -1)
+            if updated_ms >= prev_ms:
+                prospect_rep_by_doctor[doctor_id] = str(rep_id_norm)
+                prospect_rep_updated_ms[doctor_id] = updated_ms
+
         # Used as a fallback when older Woo orders are missing meta.
         doctors_by_email = {}
         for u in users:
@@ -2555,6 +2581,9 @@ def get_sales_by_rep(
         valid_rep_ids = {alias_to_rep_id[str(rep.get("id"))] for rep in reps if rep.get("id")}
         for rep in rep_records_list:
             rep_id = rep.get("id")
+            if rep_id:
+                valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
+        for rep_id in (prospect_rep_by_doctor.values() if isinstance(prospect_rep_by_doctor, dict) else []):
             if rep_id:
                 valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
 
@@ -2621,6 +2650,21 @@ def get_sales_by_rep(
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
                 if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                if not rep_id:
+                    rep_code = _meta_value(meta_data, "peppro_sales_rep_code")
+                    rep_code = str(rep_code).strip() if rep_code is not None else ""
+                    if rep_code:
+                        rep_record = sales_rep_repository.find_by_sales_code(rep_code)
+                        rep_id = str((rep_record or {}).get("id") or "").strip()
+                        if rep_id:
+                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                if not rep_id:
+                    rep_email = _meta_value(meta_data, "peppro_sales_rep_email")
+                    rep_email = _norm_email(rep_email)
+                    if rep_email:
+                        rep_id = user_rep_id_by_email.get(rep_email) or ""
+                        if rep_id:
+                            rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
                 force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
@@ -2634,6 +2678,8 @@ def get_sales_by_rep(
                     user_match = users_by_email.get(billing_email)
                     if user_match:
                         rep_id = str(user_match.get("salesRepId") or "").strip()
+                        if not rep_id and user_match.get("id"):
+                            rep_id = str(prospect_rep_by_doctor.get(str(user_match.get("id")), "") or "").strip()
                         if not rep_id and _norm_role(user_match.get("role")) in rep_like_roles:
                             rep_id = str(user_match.get("id") or "").strip()
                         if rep_id:
@@ -2642,6 +2688,8 @@ def get_sales_by_rep(
                 if not rep_id:
                     doctor = doctors_by_email.get(billing_email)
                     rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                    if not rep_id and doctor and doctor.get("id"):
+                        rep_id = str(prospect_rep_by_doctor.get(str(doctor.get("id")), "") or "").strip()
                     if rep_id:
                         rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
@@ -2650,7 +2698,7 @@ def get_sales_by_rep(
                 if rep_id == "house":
                     rep_id = "__house__"
 
-                if rep_id and rep_id in valid_rep_ids:
+                if rep_id and rep_id != "__house__":
                     pricing_mode_hint = (
                         _meta_value(meta_data, "peppro_pricing_mode")
                         or _meta_value(meta_data, "peppro_pricingMode")
@@ -2812,7 +2860,9 @@ def get_sales_by_rep(
             rep_lookup.setdefault(canonical, rep_record)
 
         summary: List[Dict] = []
-        for rep_id in sorted(valid_rep_ids):
+        rep_ids_for_summary = set(valid_rep_ids)
+        rep_ids_for_summary.update({rid for rid in rep_totals.keys() if rid and rid != "__house__"})
+        for rep_id in sorted(rep_ids_for_summary):
             totals = rep_totals.get(
                 rep_id,
                 {"totalOrders": 0.0, "totalRevenue": 0.0, "wholesaleRevenue": 0.0, "retailRevenue": 0.0},
@@ -2896,7 +2946,7 @@ def get_sales_by_rep(
         cached = _sales_by_rep_summary_cache.get("data")
         expires_at = int(_sales_by_rep_summary_cache.get("expiresAtMs") or 0)
         cache_key = _sales_by_rep_summary_cache.get("key")
-        if isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
+        if not force and isinstance(cached, dict) and expires_at > now_ms and cache_key == period_cache_key:
             if exclude_sales_rep_id:
                 exclude_id = str(exclude_sales_rep_id)
                 rows = cached.get("orders") if isinstance(cached.get("orders"), list) else []
