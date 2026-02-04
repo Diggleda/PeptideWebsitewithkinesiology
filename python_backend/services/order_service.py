@@ -2391,6 +2391,7 @@ def get_sales_by_rep(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
     force: bool = False,
+    debug: bool = False,
 ):
     global _sales_by_rep_summary_inflight
 
@@ -2511,6 +2512,8 @@ def get_sales_by_rep(
         # Prospect-backed mapping for doctors that don't have `salesRepId` persisted yet.
         prospect_rep_by_doctor: Dict[str, str] = {}
         prospect_rep_updated_ms: Dict[str, int] = {}
+        prospect_rep_by_email: Dict[str, str] = {}
+        prospect_rep_email_updated_ms: Dict[str, int] = {}
         try:
             prospects = sales_prospect_repository.get_all()
         except Exception:
@@ -2518,9 +2521,10 @@ def get_sales_by_rep(
         for prospect in prospects or []:
             if not isinstance(prospect, dict):
                 continue
-            doctor_id = str(prospect.get("doctorId") or "").strip()
-            rep_id_raw = str(prospect.get("salesRepId") or "").strip()
-            if not doctor_id or not rep_id_raw:
+            doctor_id = str(prospect.get("doctorId") or prospect.get("doctor_id") or "").strip()
+            rep_id_raw = str(prospect.get("salesRepId") or prospect.get("sales_rep_id") or "").strip()
+            contact_email = _norm_email(prospect.get("contactEmail") or prospect.get("contact_email"))
+            if not rep_id_raw:
                 continue
             rep_id_norm = alias_to_rep_id.get(rep_id_raw, rep_id_raw)
             if str(rep_id_norm or "").strip().lower() == "house":
@@ -2528,10 +2532,16 @@ def get_sales_by_rep(
             updated_at = prospect.get("updatedAt") or prospect.get("updated_at") or prospect.get("createdAt") or prospect.get("created_at")
             updated_dt = _parse_datetime_utc(updated_at)
             updated_ms = int(updated_dt.timestamp() * 1000) if updated_dt else 0
-            prev_ms = prospect_rep_updated_ms.get(doctor_id, -1)
-            if updated_ms >= prev_ms:
-                prospect_rep_by_doctor[doctor_id] = str(rep_id_norm)
-                prospect_rep_updated_ms[doctor_id] = updated_ms
+            if doctor_id:
+                prev_ms = prospect_rep_updated_ms.get(doctor_id, -1)
+                if updated_ms >= prev_ms:
+                    prospect_rep_by_doctor[doctor_id] = str(rep_id_norm)
+                    prospect_rep_updated_ms[doctor_id] = updated_ms
+            if contact_email:
+                prev_ms = prospect_rep_email_updated_ms.get(contact_email, -1)
+                if updated_ms >= prev_ms:
+                    prospect_rep_by_email[contact_email] = str(rep_id_norm)
+                    prospect_rep_email_updated_ms[contact_email] = updated_ms
 
         # Used as a fallback when older Woo orders are missing meta.
         doctors_by_email = {}
@@ -2586,6 +2596,9 @@ def get_sales_by_rep(
         for rep_id in (prospect_rep_by_doctor.values() if isinstance(prospect_rep_by_doctor, dict) else []):
             if rep_id:
                 valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
+        for rep_id in (prospect_rep_by_email.values() if isinstance(prospect_rep_by_email, dict) else []):
+            if rep_id:
+                valid_rep_ids.add(alias_to_rep_id.get(str(rep_id), str(rep_id)))
 
         logger.info(
             "[SalesByRep] Begin aggregation",
@@ -2598,6 +2611,20 @@ def get_sales_by_rep(
 
         attributed_orders: List[Dict[str, object]] = []
         debug_samples: List[Dict[str, object]] = []
+        debug_counts: Dict[str, int] = {}
+        if debug:
+            debug_counts = {
+                "metaRepId": 0,
+                "metaRepCode": 0,
+                "metaRepEmail": 0,
+                "prospectEmail": 0,
+                "billingEmailIsRep": 0,
+                "userSalesRepId": 0,
+                "prospectDoctorId": 0,
+                "userIsRep": 0,
+                "doctorSalesRepId": 0,
+                "fallbackHouse": 0,
+            }
         counted_rep = 0
         counted_house = 0
         skipped_unattributed = 0
@@ -2650,6 +2677,8 @@ def get_sales_by_rep(
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
                 if rep_id:
                     rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                    if debug:
+                        debug_counts["metaRepId"] += 1
                 if not rep_id:
                     rep_code = _meta_value(meta_data, "peppro_sales_rep_code")
                     rep_code = str(rep_code).strip() if rep_code is not None else ""
@@ -2658,6 +2687,8 @@ def get_sales_by_rep(
                         rep_id = str((rep_record or {}).get("id") or "").strip()
                         if rep_id:
                             rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                            if debug:
+                                debug_counts["metaRepCode"] += 1
                 if not rep_id:
                     rep_email = _meta_value(meta_data, "peppro_sales_rep_email")
                     rep_email = _norm_email(rep_email)
@@ -2665,31 +2696,52 @@ def get_sales_by_rep(
                         rep_id = user_rep_id_by_email.get(rep_email) or ""
                         if rep_id:
                             rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                            if debug:
+                                debug_counts["metaRepEmail"] += 1
 
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
                 force_house_contact_form = bool(billing_email and billing_email in contact_form_emails)
 
+                if not rep_id and billing_email:
+                    rep_id = str(prospect_rep_by_email.get(billing_email, "") or "").strip()
+                    if rep_id:
+                        rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                        if debug:
+                            debug_counts["prospectEmail"] += 1
+
                 if not rep_id:
                     # If a sales rep placed the order, it should never be counted as "house".
                     rep_id = user_rep_id_by_email.get(billing_email, "")
+                    if rep_id and debug:
+                        debug_counts["billingEmailIsRep"] += 1
 
                 if not rep_id and billing_email:
                     # Fall back to the user's assigned rep (covers all roles, not just doctors).
                     user_match = users_by_email.get(billing_email)
                     if user_match:
                         rep_id = str(user_match.get("salesRepId") or "").strip()
+                        if rep_id and debug:
+                            debug_counts["userSalesRepId"] += 1
                         if not rep_id and user_match.get("id"):
                             rep_id = str(prospect_rep_by_doctor.get(str(user_match.get("id")), "") or "").strip()
+                            if rep_id and debug:
+                                debug_counts["prospectDoctorId"] += 1
                         if not rep_id and _norm_role(user_match.get("role")) in rep_like_roles:
                             rep_id = str(user_match.get("id") or "").strip()
+                            if rep_id and debug:
+                                debug_counts["userIsRep"] += 1
                         if rep_id:
                             rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
                 if not rep_id:
                     doctor = doctors_by_email.get(billing_email)
                     rep_id = str(doctor.get("salesRepId") or "").strip() if doctor else ""
+                    if rep_id and debug:
+                        debug_counts["doctorSalesRepId"] += 1
                     if not rep_id and doctor and doctor.get("id"):
                         rep_id = str(prospect_rep_by_doctor.get(str(doctor.get("id")), "") or "").strip()
+                        if rep_id and debug:
+                            debug_counts["prospectDoctorId"] += 1
                     if rep_id:
                         rep_id = alias_to_rep_id.get(rep_id, rep_id)
 
@@ -2722,6 +2774,8 @@ def get_sales_by_rep(
                         rep_id = "__house__"
                     if rep_id != "__house__":
                         rep_id = "__house__"
+                    if debug:
+                        debug_counts["fallbackHouse"] += 1
                     pricing_mode_hint = (
                         _meta_value(meta_data, "peppro_pricing_mode")
                         or _meta_value(meta_data, "peppro_pricingMode")
@@ -2937,7 +2991,10 @@ def get_sales_by_rep(
             )
         except Exception:
             pass
-        return {"orders": summary, "totals": totals_all, **period_meta}
+        payload: Dict[str, Any] = {"orders": summary, "totals": totals_all, **period_meta}
+        if debug:
+            payload["debug"] = {"counts": debug_counts, "samples": debug_samples}
+        return payload
 
     now_ms = int(time.time() * 1000)
     cached = None

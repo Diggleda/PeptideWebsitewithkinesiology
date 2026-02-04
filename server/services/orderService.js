@@ -2112,6 +2112,7 @@ const getSalesByRep = async ({
   periodStart = null,
   periodEnd = null,
   timeZone = 'America/Los_Angeles',
+  debug = false,
 } = {}) => {
   const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
   const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
@@ -2207,6 +2208,12 @@ const getSalesByRep = async ({
     repTotals.set('__house__', houseTotals);
   }
 
+  const userById = new Map(
+    users
+      .map((user) => [normalizeId(user?.id), user])
+      .filter(([id]) => Boolean(id)),
+  );
+
   const normalizeRepId = (value) => {
     const normalized = normalizeId(value);
     if (!normalized) return null;
@@ -2233,15 +2240,47 @@ const getSalesByRep = async ({
   );
 
   const doctorIdsFromOrders = new Set();
+  const billingEmailsFromOrders = new Set();
+  const extractBillingEmail = (order) => {
+    const direct = normalizeEmail(
+      order?.billingEmail
+        ?? order?.billing_email
+        ?? order?.doctorEmail
+        ?? order?.doctor_email
+        ?? order?.customerEmail
+        ?? order?.customer_email
+        ?? null,
+    );
+    if (direct) return direct;
+    const billing = order?.billingAddress || order?.billing_address || null;
+    const nested = normalizeEmail(
+      billing?.email
+        ?? billing?.emailAddress
+        ?? billing?.email_address
+        ?? order?.payload?.order?.billing?.email
+        ?? order?.payload?.order?.billing_email
+        ?? order?.payload?.order?.billingAddress?.email
+        ?? order?.payload?.order?.billing_address?.email
+        ?? null,
+    );
+    return nested || '';
+  };
+
   sourceOrders.forEach((order) => {
     const doctorId = extractOrderDoctorId(order);
     if (doctorId) {
       doctorIdsFromOrders.add(doctorId);
     }
+    const email = extractBillingEmail(order);
+    if (email) {
+      billingEmailsFromOrders.add(email);
+    }
   });
 
   const prospectRepByDoctorId = new Map();
   const prospectRepUpdatedMsByDoctorId = new Map();
+  const prospectRepByEmail = new Map();
+  const prospectRepUpdatedMsByEmail = new Map();
   const coerceProspectTimeMs = (value) => {
     if (!value) return 0;
     const parsed = value instanceof Date ? value.getTime() : Date.parse(String(value));
@@ -2256,6 +2295,18 @@ const getSalesByRep = async ({
     if (!prospectRepByDoctorId.has(normalizedDoctorId) || nextMs >= currentMs) {
       prospectRepByDoctorId.set(normalizedDoctorId, normalizedRepId);
       prospectRepUpdatedMsByDoctorId.set(normalizedDoctorId, nextMs);
+    }
+  };
+
+  const setProspectEmailMapping = (email, repId, updatedAt) => {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedRepId = normalizeRepId(repId);
+    if (!normalizedEmail || !normalizedRepId) return;
+    const nextMs = coerceProspectTimeMs(updatedAt);
+    const currentMs = prospectRepUpdatedMsByEmail.get(normalizedEmail) || 0;
+    if (!prospectRepByEmail.has(normalizedEmail) || nextMs >= currentMs) {
+      prospectRepByEmail.set(normalizedEmail, normalizedRepId);
+      prospectRepUpdatedMsByEmail.set(normalizedEmail, nextMs);
     }
   };
 
@@ -2302,7 +2353,56 @@ const getSalesByRep = async ({
     }
   }
 
+  if (billingEmailsFromOrders.size > 0) {
+    if (mysqlClient.isEnabled() && billingEmailsFromOrders.size <= 800) {
+      try {
+        const emails = Array.from(billingEmailsFromOrders);
+        const placeholders = emails.map((_, idx) => `:email${idx}`).join(', ');
+        const params = emails.reduce((acc, email, idx) => ({ ...acc, [`email${idx}`]: email }), {});
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT contact_email, sales_rep_id, updated_at, created_at
+            FROM sales_prospects
+            WHERE LOWER(TRIM(contact_email)) IN (${placeholders})
+          `,
+          params,
+        );
+        (rows || []).forEach((row) => {
+          setProspectEmailMapping(
+            row?.contact_email ?? row?.contactEmail ?? null,
+            row?.sales_rep_id ?? row?.salesRepId ?? null,
+            row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt ?? null,
+          );
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Sales-by-rep summary: failed to query MySQL sales_prospects email mapping');
+      }
+    }
+
+    if (prospectRepByEmail.size === 0) {
+      try {
+        const prospects = await salesProspectRepository.getAll();
+        const list = Array.isArray(prospects) ? prospects : [];
+        list.forEach((prospect) => {
+          setProspectEmailMapping(
+            prospect?.contactEmail ?? prospect?.contact_email ?? null,
+            prospect?.salesRepId ?? prospect?.sales_rep_id ?? null,
+            prospect?.updatedAt ?? prospect?.updated_at ?? prospect?.createdAt ?? prospect?.created_at ?? null,
+          );
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Sales-by-rep summary: failed to load sales prospects email mapping');
+      }
+    }
+  }
+
   for (const repId of new Set(Array.from(prospectRepByDoctorId.values()))) {
+    if (repId === '__house__') continue;
+    if (!repLookup.has(repId)) {
+      repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
+    }
+  }
+  for (const repId of new Set(Array.from(prospectRepByEmail.values()))) {
     if (repId === '__house__') continue;
     if (!repLookup.has(repId)) {
       repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
@@ -2329,6 +2429,35 @@ const getSalesByRep = async ({
     logger.warn({ err: error }, 'Sales-by-rep summary: failed to resolve sales rep directory');
   }
 
+  const repIdByEmail = new Map();
+  users.forEach((user) => {
+    const role = normalizeRole(user?.role);
+    if (!repLikeRoleSet.has(role)) return;
+    const email = normalizeEmail(user?.email);
+    const id = normalizeId(user?.id);
+    if (email && id) {
+      repIdByEmail.set(email, id);
+    }
+  });
+  repsFromStore.forEach((rep) => {
+    const email = normalizeEmail(rep?.email);
+    const id = normalizeRepId(rep?.id || rep?.salesRepId);
+    if (email && id) {
+      repIdByEmail.set(email, id);
+    }
+  });
+
+  const debugCounts = debug
+    ? {
+      fromOrderRepId: 0,
+      fromDoctorUser: 0,
+      fromProspectDoctorId: 0,
+      fromProspectEmail: 0,
+      fromRepEmail: 0,
+      fallbackHouse: 0,
+    }
+    : null;
+
   sourceOrders.forEach((order) => {
     if (shouldFilterByWindow) {
       const createdAtMs = coerceOrderTimeMs(order);
@@ -2346,11 +2475,25 @@ const getSalesByRep = async ({
     if (normalizedDoctorId && excludeDoctorSet.has(normalizedDoctorId)) {
       return;
     }
-    const repId =
-      extractOrderSalesRepId(order)
-      || (normalizedDoctorId ? userToRep.get(normalizedDoctorId) : null)
-      || (normalizedDoctorId ? prospectRepByDoctorId.get(normalizedDoctorId) : null)
-      || '__house__';
+
+    const repFromOrder = extractOrderSalesRepId(order);
+    const repFromDoctorUser = normalizedDoctorId ? userToRep.get(normalizedDoctorId) : null;
+    const repFromProspectDoctor = normalizedDoctorId ? prospectRepByDoctorId.get(normalizedDoctorId) : null;
+    const billingEmail = extractBillingEmail(order);
+    const repFromProspectEmail = billingEmail ? prospectRepByEmail.get(billingEmail) : null;
+    const repFromRepEmail = billingEmail ? repIdByEmail.get(billingEmail) : null;
+
+    let repId = repFromOrder || repFromDoctorUser || repFromProspectDoctor || '__house__';
+
+    // If the order is stored under an admin user id (e.g. house sale) or otherwise
+    // un-attributed, try assigning via billing email / contact-form prospect.
+    const doctorRole = normalizedDoctorId ? normalizeRole(userById.get(normalizedDoctorId)?.role) : '';
+    const doctorIsAdminLike = doctorRole === 'admin' || doctorRole === 'sales_lead' || doctorRole === 'saleslead';
+    const repFromEmail = normalizeRepId(repFromProspectEmail || repFromRepEmail);
+    if (repFromEmail && (repId === '__house__' || doctorIsAdminLike || !repId)) {
+      repId = repFromEmail;
+    }
+
     if (excludeSalesRepIdNormalized && repId === excludeSalesRepIdNormalized) return;
     if (repId !== '__house__' && !repLookup.has(repId)) {
       repLookup.set(repId, { id: repId, name: `Sales Rep ${repId}`, email: null });
@@ -2387,6 +2530,15 @@ const getSalesByRep = async ({
       current.wholesaleRevenue += orderSubtotal;
     }
     repTotals.set(repId, current);
+
+    if (debugCounts) {
+      if (repFromOrder && repId === repFromOrder) debugCounts.fromOrderRepId += 1;
+      else if (repFromDoctorUser && repId === repFromDoctorUser) debugCounts.fromDoctorUser += 1;
+      else if (repFromProspectDoctor && repId === repFromProspectDoctor) debugCounts.fromProspectDoctorId += 1;
+      else if (repFromProspectEmail && repId === repFromProspectEmail) debugCounts.fromProspectEmail += 1;
+      else if (repFromRepEmail && repId === repFromRepEmail) debugCounts.fromRepEmail += 1;
+      else debugCounts.fallbackHouse += 1;
+    }
   });
 
   const rows = Array.from(repTotals.entries())
@@ -2439,6 +2591,7 @@ const getSalesByRep = async ({
       endUtc: window.endMs !== null ? new Date(window.endMs).toISOString() : null,
     },
     totals,
+    debug: debugCounts || undefined,
   };
 };
 

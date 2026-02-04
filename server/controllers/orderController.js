@@ -420,12 +420,15 @@ const getSalesByRepForAdmin = async (req, res, next) => {
     }
     const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
     const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
+    const debugRaw = typeof req.query?.debug === 'string' ? req.query.debug.trim().toLowerCase() : '';
+    const debug = debugRaw === '1' || debugRaw === 'true' || debugRaw === 'yes' || debugRaw === 'on';
     const summary = await orderService.getSalesByRep({
       excludeSalesRepId: role === 'admin' ? req.user.id : null,
       excludeDoctorIds: role === 'admin' ? [String(req.user.id)] : [],
       periodStart,
       periodEnd,
       timeZone: 'America/Los_Angeles',
+      debug,
     });
     res.json(summary);
   } catch (error) {

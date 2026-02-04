@@ -225,11 +225,14 @@ def sales_by_rep_summary():
         period_end = request.args.get("periodEnd") or request.args.get("end") or None
         force_raw = request.args.get("force") or ""
         force = str(force_raw).strip().lower() in ("1", "true", "yes", "y", "on")
+        debug_raw = request.args.get("debug") or ""
+        debug = str(debug_raw).strip().lower() in ("1", "true", "yes", "y", "on")
         return order_service.get_sales_by_rep(
             exclude_sales_rep_id=exclude_id if exclude_id else None,
             period_start=period_start,
             period_end=period_end,
             force=force,
+            debug=debug,
         )
 
     return handle_action(action)
