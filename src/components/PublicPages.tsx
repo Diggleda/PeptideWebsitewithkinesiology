@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { listProducts } from '../lib/wooClient';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
 import { LegalFooter } from './LegalFooter';
+import { withStaticAssetStamp } from '../lib/assetUrl';
 
 type PublicPageKey =
   | 'contact'
@@ -32,7 +33,7 @@ const PublicTopNav = () => (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="/" className="flex items-center gap-3 min-w-0">
           <img
-            src="/Peppro_fulllogo.png"
+            src={withStaticAssetStamp('/Peppro_fulllogo.png')}
             alt="PepPro"
             className="h-10 w-auto object-contain"
             loading="eager"

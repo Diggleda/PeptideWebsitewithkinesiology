@@ -10,6 +10,7 @@ import {
   forwardRef,
 } from "react";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
+import { withStaticAssetStamp } from "./lib/assetUrl";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -5709,12 +5710,15 @@ function MainApp() {
 			          : Array.isArray(respObj?.leads)
 			            ? respObj.leads
 			            : [];
-			        const active = rawReferrals
-			          .filter((row: any) => row && typeof row === "object")
-			          .filter((row: any) => {
-			            const status = String(row?.status || "pending").trim().toLowerCase();
-			            return status !== "converted";
-			          })
+				        const active = rawReferrals
+				          .filter((row: any) => row && typeof row === "object")
+				          .filter((row: any) => {
+				            if (row?.creditIssuedAt) {
+				              return false;
+				            }
+				            const status = sanitizeReferralStatus(row?.status);
+				            return status !== "nuture";
+				          })
 				          .map((row: any) => {
 				            const contactFormIdRaw =
 				              row?.contactFormId ||
@@ -20281,10 +20285,10 @@ function MainApp() {
 			                    <div className="flex items-center justify-between gap-6 lg:gap-8 mb-8 w-full">
 		                      <div className="flex-shrink-0">
 		                        <div className="brand-logo brand-logo--landing">
-		                          <img
-		                            src="/Peppro_fulllogo.png"
-		                            alt="PepPro"
-                            style={{
+			                          <img
+			                            src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+			                            alt="PepPro"
+	                            style={{
                               display: "block",
                               width: "auto",
                               height: "auto",
@@ -20322,10 +20326,10 @@ function MainApp() {
                     <div className="flex flex-col items-center gap-6 mb-8">
                       <div className="flex w-full items-center justify-between gap-4 px-4">
                         <div className="brand-logo brand-logo--landing flex-shrink-0">
-                          <img
-                            src="/Peppro_fulllogo.png"
-                            alt="PepPro"
-                            style={{
+	                          <img
+	                            src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+	                            alt="PepPro"
+	                            style={{
                               display: "block",
                               width: "auto",
                               height: "auto",
@@ -20414,10 +20418,10 @@ function MainApp() {
                   }`}
                 >
                   <div className="brand-logo brand-logo--landing">
-                    <img
-                      src="/Peppro_fulllogo.png"
-                      alt="PepPro"
-                      style={{
+	                    <img
+	                      src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+	                      alt="PepPro"
+	                      style={{
                         display: "block",
                         width: "auto",
                         height: "auto",
@@ -23227,9 +23231,9 @@ function MainApp() {
 		                        : `${(salesRepProspectsForModal || []).length} active`}
 		                    </span>
 		                  </div>
-			                  <p className="mt-1 mb-1 text-xs text-slate-600">
-			                    Leads assigned to this user (excluding Converted).
-			                  </p>
+				                  <p className="mt-1 mb-1 text-xs text-slate-600">
+				                    Leads assigned to this user (including Converted).
+				                  </p>
 
 			                  {salesRepProspectsError && (
 			                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

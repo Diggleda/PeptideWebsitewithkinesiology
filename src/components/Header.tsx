@@ -12,6 +12,7 @@ import clsx from 'clsx';
 import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
+import { withStaticAssetStamp } from '../lib/assetUrl';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -4564,7 +4565,7 @@ export function Header({
 				                          typeof localUser?.delegateLogoUrl === 'string' &&
 				                          localUser.delegateLogoUrl.trim().length > 0
 				                            ? localUser.delegateLogoUrl
-				                            : '/Peppro_fulllogo.png'
+					                            : withStaticAssetStamp('/Peppro_fulllogo.png')
 				                        }
 				                        alt="Delegate header logo preview"
 					                        className="relative z-[1] flex-shrink-0"
@@ -5556,9 +5557,9 @@ export function Header({
 	                      delegateMode
 	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
 	                          ? delegateLogoUrl
-	                          : "/Peppro_fulllogo.png")
-	                        : "/Peppro_fulllogo.png"
-	                    }
+	                          : withStaticAssetStamp('/Peppro_fulllogo.png'))
+	                        : withStaticAssetStamp('/Peppro_fulllogo.png')
+		                    }
 	                    alt={delegateMode ? 'Doctor logo' : 'PepPro logo'}
 		                    className="relative z-[1] flex-shrink-0"
 		                    style={{
