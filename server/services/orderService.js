@@ -103,40 +103,99 @@ const fetchSalesRepDirectory = async (repIds) => {
     const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
     const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
     const query = `
-      SELECT id, name, email
+      SELECT id, name, email, legacy_user_id
       FROM sales_reps
       WHERE id IN (${placeholders})
+         OR legacy_user_id IN (${placeholders})
     `;
     try {
       const rows = await mysqlClient.fetchAll(query, params);
+      const legacyIds = new Set();
       (rows || []).forEach((row) => {
-        const id = normalizeId(row?.id);
-        if (!id) return;
-        lookup.set(id, {
-          id,
+        const repId = normalizeId(row?.id);
+        const legacyId = normalizeId(row?.legacy_user_id ?? row?.legacyUserId ?? null);
+        if (legacyId) legacyIds.add(legacyId);
+
+        const base = {
           name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
           email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
-        });
+          legacyUserId: legacyId,
+        };
+
+        if (repId) {
+          lookup.set(repId, { id: repId, name: base.name, email: base.email, legacyUserId: base.legacyUserId });
+        }
+        if (legacyId && !lookup.has(legacyId)) {
+          lookup.set(legacyId, { id: legacyId, name: base.name, email: base.email, legacyUserId: base.legacyUserId });
+        }
       });
+
+      // Overlay names/emails from `users` when a sales_reps row points at a legacy user id.
+      if (legacyIds.size > 0) {
+        const legacyList = Array.from(legacyIds);
+        const userPlaceholders = legacyList.map((_, idx) => `:uid${idx}`).join(', ');
+        const userParams = legacyList.reduce((acc, id, idx) => ({ ...acc, [`uid${idx}`]: id }), {});
+        try {
+          const userRows = await mysqlClient.fetchAll(
+            `
+              SELECT id, name, email, role
+              FROM users
+              WHERE id IN (${userPlaceholders})
+            `,
+            userParams,
+          );
+          const userById = new Map();
+          (userRows || []).forEach((row) => {
+            const id = normalizeId(row?.id);
+            if (!id) return;
+            userById.set(id, {
+              id,
+              name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
+              email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
+              role: normalizeRole(row?.role),
+            });
+          });
+
+          lookup.forEach((rep, key) => {
+            const legacyUserId = normalizeId(rep?.legacyUserId);
+            const legacyUser = legacyUserId ? userById.get(legacyUserId) : null;
+            if (!legacyUser) return;
+            const existingName = typeof rep?.name === 'string' ? rep.name.trim() : '';
+            const existingEmail = typeof rep?.email === 'string' ? rep.email.trim() : '';
+            lookup.set(key, {
+              id: rep?.id || key,
+              legacyUserId,
+              name: existingName || legacyUser.name || legacyUser.email || null,
+              email: existingEmail || legacyUser.email || null,
+            });
+          });
+        } catch (error) {
+          logger.warn({ err: error }, 'Failed to query MySQL users directory for sales rep legacy ids');
+        }
+      }
     } catch (error) {
       logger.warn({ err: error, ids: ids.length }, 'Failed to query MySQL sales_reps directory');
       try {
         const rows = await mysqlClient.fetchAll(
           `
-            SELECT id, name, email
+            SELECT id, name, email, legacy_user_id
             FROM sales_rep
             WHERE id IN (${placeholders})
+               OR legacy_user_id IN (${placeholders})
           `,
           params,
         );
         (rows || []).forEach((row) => {
-          const id = normalizeId(row?.id);
-          if (!id) return;
-          lookup.set(id, {
-            id,
-            name: typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null,
-            email: typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null,
-          });
+          const repId = normalizeId(row?.id);
+          const legacyId = normalizeId(row?.legacy_user_id ?? row?.legacyUserId ?? null);
+          const baseName = typeof row?.name === 'string' && row.name.trim().length ? row.name.trim() : null;
+          const baseEmail = typeof row?.email === 'string' && row.email.trim().length ? row.email.trim() : null;
+          if (repId) {
+            lookup.set(repId, { id: repId, name: baseName, email: baseEmail, legacyUserId: legacyId });
+          }
+          if (legacyId && !lookup.has(legacyId)) {
+            lookup.set(legacyId, { id: legacyId, name: baseName, email: baseEmail, legacyUserId: legacyId });
+          }
         });
       } catch {
         // ignore

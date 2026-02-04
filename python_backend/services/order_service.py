@@ -2611,6 +2611,7 @@ def get_sales_by_rep(
 
         attributed_orders: List[Dict[str, object]] = []
         debug_samples: List[Dict[str, object]] = []
+        rep_email_hint_by_rep_id: Dict[str, str] = {}
         debug_counts: Dict[str, int] = {}
         if debug:
             debug_counts = {
@@ -2676,7 +2677,17 @@ def get_sales_by_rep(
                 rep_id = _meta_value(meta_data, "peppro_sales_rep_id")
                 rep_id = str(rep_id).strip() if rep_id is not None else ""
                 if rep_id:
-                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                    rep_id_raw = rep_id
+                    rep_email_hint = _norm_email(_meta_value(meta_data, "peppro_sales_rep_email"))
+                    rep_id_candidate = rep_id_raw
+                    if rep_email_hint:
+                        canonical_by_email = user_rep_id_by_email.get(rep_email_hint) or ""
+                        if canonical_by_email:
+                            rep_id_candidate = str(canonical_by_email).strip()
+                    rep_id = alias_to_rep_id.get(rep_id_candidate, rep_id_candidate)
+                    if rep_email_hint:
+                        rep_email_hint_by_rep_id[rep_id_raw] = rep_email_hint
+                        rep_email_hint_by_rep_id[rep_id] = rep_email_hint
                     if debug:
                         debug_counts["metaRepId"] += 1
                 if not rep_id:
@@ -2801,6 +2812,7 @@ def get_sales_by_rep(
                             "status": status,
                             "repId": rep_id or None,
                             "metaRepId": _meta_value(meta_data, "peppro_sales_rep_id"),
+                            "metaRepEmail": _meta_value(meta_data, "peppro_sales_rep_email"),
                             "billingEmail": ((woo_order.get("billing") or {}) or {}).get("email"),
                             "total": total,
                             "pricingModeHint": _meta_value(meta_data, "peppro_pricing_mode")
@@ -2926,17 +2938,35 @@ def get_sales_by_rep(
             # Prefer the user's name if available (sales reps edit their own name there).
             user_rec = user_lookup.get(rep_id) or {}
             preferred_name = (user_rec.get("name") or "").strip() if isinstance(user_rec, dict) else ""
+            legacy_user = None
+            legacy_id_raw = rep_record.get("legacyUserId") or rep_record.get("legacy_user_id")
+            if legacy_id_raw:
+                legacy_id = str(legacy_id_raw).strip()
+                legacy_user = user_lookup.get(legacy_id) if legacy_id else None
+            legacy_name = (legacy_user.get("name") or "").strip() if isinstance(legacy_user, dict) else ""
+            legacy_email = (legacy_user.get("email") or "").strip() if isinstance(legacy_user, dict) else ""
+            hinted_email = rep_email_hint_by_rep_id.get(rep_id) or rep_email_hint_by_rep_id.get(str(rep_record.get("id") or "")) or ""
+            hinted_user = users_by_email.get(hinted_email) if hinted_email else None
+            hinted_name = (hinted_user.get("name") or "").strip() if isinstance(hinted_user, dict) else ""
+            hinted_user_email = (hinted_user.get("email") or "").strip() if isinstance(hinted_user, dict) else ""
             summary.append(
                 {
                     "salesRepId": rep_id,
                     "salesRepName": preferred_name
+                    or legacy_name
+                    or hinted_name
                     or rep.get("name")
                     or rep_record.get("name")
                     or rep.get("email")
                     or rep_record.get("email")
+                    or hinted_email
                     or rep_id
                     or "Sales Rep",
-                    "salesRepEmail": rep.get("email") or rep_record.get("email"),
+                    "salesRepEmail": rep.get("email")
+                    or rep_record.get("email")
+                    or (legacy_email or None)
+                    or (hinted_user_email or None)
+                    or (hinted_email or None),
                     "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
                     "totalOrders": int(totals["totalOrders"]),
                     "totalRevenue": float(totals["totalRevenue"]),
