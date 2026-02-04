@@ -2438,6 +2438,35 @@ def get_sales_by_rep(
         rep_records_list = sales_rep_repository.get_all()
         rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
         user_lookup = {str(u.get("id")): u for u in users if u.get("id")}
+        rep_lookup_by_id: Dict[str, Dict] = {}
+        for u in users:
+            if _norm_role(u.get("role")) not in rep_like_roles:
+                continue
+            user_id = str(u.get("id") or "").strip()
+            if not user_id:
+                continue
+            rep_lookup_by_id[user_id] = {
+                "id": user_id,
+                "name": u.get("name") or u.get("email") or "Sales Rep",
+                "email": u.get("email"),
+                "role": _norm_role(u.get("role")) or "sales_rep",
+            }
+        for rep in rep_records_list:
+            rep_id = str(rep.get("id") or "").strip()
+            if not rep_id:
+                continue
+            rep_role = _norm_role(rep.get("role"))
+            if rep_role and rep_role not in ("sales_rep", "rep"):
+                continue
+            rep_lookup_by_id.setdefault(
+                rep_id,
+                {
+                    "id": rep_id,
+                    "name": rep.get("name") or rep.get("email") or "Sales Rep",
+                    "email": rep.get("email"),
+                    "role": rep_role or "sales_rep",
+                },
+            )
 
         def _norm_email(value: object) -> str:
             return str(value or "").strip().lower()
@@ -3598,11 +3627,19 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             if recipient_id and recipient_id not in recipient_rows and recipient_id not in ("__house__", supplier_row_id):
                 admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
+                rep = rep_lookup_by_id.get(str(recipient_id))
                 if admin:
                     recipient_rows[str(recipient_id)] = {
                         "id": str(recipient_id),
                         "name": admin.get("name") or "Admin",
                         "role": "admin",
+                        "amount": 0.0,
+                    }
+                elif rep:
+                    recipient_rows[str(recipient_id)] = {
+                        "id": str(recipient_id),
+                        "name": rep.get("name") or "Sales Rep",
+                        "role": rep.get("role") or "sales_rep",
                         "amount": 0.0,
                     }
                 else:
@@ -3661,7 +3698,21 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         def _add_commission(recipient_id: str, amount: float) -> None:
             row = recipient_rows.get(recipient_id)
             if not row:
-                recipient_rows[recipient_id] = {"id": recipient_id, "name": recipient_id, "role": "unknown", "amount": 0.0}
+                rep = rep_lookup_by_id.get(str(recipient_id))
+                if rep:
+                    recipient_rows[recipient_id] = {
+                        "id": recipient_id,
+                        "name": rep.get("name") or "Sales Rep",
+                        "role": rep.get("role") or "sales_rep",
+                        "amount": 0.0,
+                    }
+                else:
+                    recipient_rows[recipient_id] = {
+                        "id": recipient_id,
+                        "name": recipient_id,
+                        "role": "unknown",
+                        "amount": 0.0,
+                    }
                 row = recipient_rows[recipient_id]
             row["amount"] = float(row.get("amount") or 0.0) + float(amount or 0.0)
 

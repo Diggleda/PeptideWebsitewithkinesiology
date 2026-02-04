@@ -2128,7 +2128,7 @@ const getSalesByRep = async ({
     const repId = normalizeId(rep?.id || rep?.salesRepId);
     if (!repId) continue;
     const role = normalizeRole(rep?.role);
-    if (role && role !== 'sales_rep') continue;
+    if (role && role !== 'sales_rep' && role !== 'rep') continue;
     repLookup.set(repId, {
       id: repId,
       name: rep?.name || rep?.email || 'Sales Rep',
