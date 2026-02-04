@@ -5239,8 +5239,6 @@ function MainApp() {
       const integration = (order.integrationDetails ||
         order.integrations) as Record<string, any> | null;
       const candidate =
-        asAny.userId ??
-        asAny.user_id ??
         asAny.doctorId ??
         asAny.doctor_id ??
         asAny.salesRepDoctorId ??
@@ -5250,6 +5248,8 @@ function MainApp() {
         integration?.doctor_id ??
         integration?.referrer_doctor_id ??
         integration?.userId ??
+        asAny.userId ??
+        asAny.user_id ??
         null;
       if (!candidate) {
         return null;
@@ -5387,24 +5387,29 @@ function MainApp() {
 	    },
 	    [orderIdentitySet, user?.email, user?.id],
 	  );
-		  const shouldRemoveFromActiveProspects = useCallback(
-		    (lead: any) => {
-		      if (lead?.creditIssuedAt) {
-		        return true;
-		      }
-			      const status = sanitizeReferralStatus(lead?.status);
-			      if (status === "nuture") {
+			  const shouldRemoveFromActiveProspects = useCallback(
+			    (lead: any) => {
+			      if (lead?.creditIssuedAt) {
 			        return true;
 			      }
-			      // Converted prospects stay active until the rep explicitly clicks "Credit",
-			      // even if the doctor has already placed an order.
-			      if (status === "converted") {
-			        return false;
-			      }
-			      return hasLeadPlacedOrder(lead);
-			    },
-			    [hasLeadPlacedOrder],
-			  );
+				      const status = sanitizeReferralStatus(lead?.status);
+				      if (status === "nuture") {
+				        return true;
+				      }
+				      // Converted prospects stay active until the rep explicitly clicks "Credit",
+				      // even if the doctor has already placed an order.
+				      if (status === "converted") {
+				        return false;
+				      }
+				      // For house/contact-form leads, keep them visible even if they've already ordered,
+				      // so an admin/sales lead can still review and mark them appropriately.
+				      if (isContactFormEntry(lead)) {
+				        return false;
+				      }
+				      return hasLeadPlacedOrder(lead);
+				    },
+				    [hasLeadPlacedOrder, isContactFormEntry],
+				  );
 
 	  const normalizeNotesValue = useCallback((value: unknown): string | null => {
 	    if (typeof value !== "string") {
@@ -5542,6 +5547,17 @@ function MainApp() {
 	    lastInteractionAt?: string | null;
     lastLoginAt?: string | null;
 		  } | null>(null);
+      const [salesDoctorDetailStack, setSalesDoctorDetailStack] = useState<
+        NonNullable<typeof salesDoctorDetail>[]
+      >([]);
+      const salesDoctorDetailRef = useRef<typeof salesDoctorDetail>(null);
+      const salesDoctorDetailStackRef = useRef<NonNullable<typeof salesDoctorDetail>[]>([]);
+      useEffect(() => {
+        salesDoctorDetailRef.current = salesDoctorDetail;
+      }, [salesDoctorDetail]);
+      useEffect(() => {
+        salesDoctorDetailStackRef.current = salesDoctorDetailStack;
+      }, [salesDoctorDetailStack]);
 		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
 		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
@@ -5582,6 +5598,18 @@ function MainApp() {
 			    setSalesDoctorCommissionFromReportLoading(false);
 			    salesDoctorCommissionFromReportKeyRef.current = "";
 			  }, [salesDoctorDetail?.doctorId]);
+
+        const closeTopSalesDoctorDetailModal = useCallback(() => {
+          const stack = salesDoctorDetailStackRef.current;
+          if (stack.length > 0) {
+            const restored = stack[stack.length - 1];
+            setSalesDoctorDetailStack(stack.slice(0, -1));
+            setSalesDoctorDetail(restored);
+          } else {
+            setSalesDoctorDetail(null);
+          }
+          setSalesDoctorDetailLoading(false);
+        }, []);
 
 			  useEffect(() => {
 			    if (!salesDoctorDetail?.doctorId) return;
@@ -6056,6 +6084,10 @@ function MainApp() {
 				        if (!canceled) {
 				          setSalesDoctorNoteDraft((current) => {
 				            const incoming = typeof notes === "string" ? notes : "";
+				            const hasProspectRecord = Boolean(prospect && typeof prospect === "object");
+				            if (hasProspectRecord) {
+				              return incoming;
+				            }
 				            return incoming.trim().length > 0 ? incoming : current;
 				          });
 				          if (resolvedAddress || resolvedName || resolvedEmail || resolvedAvatar || resolvedPhone) {
@@ -6876,23 +6908,23 @@ function MainApp() {
             }
           : resolvePresence();
 
-		      setSalesDoctorDetail({
-		        doctorId: bucket.doctorId,
-		        referralId: bucket.referralId ?? null,
-		        name: bucket.doctorName,
-		        email: bucket.doctorEmail,
-		        avatar: bucket.doctorAvatar ?? null,
+        const nextDetail = {
+	        doctorId: bucket.doctorId,
+	        referralId: bucket.referralId ?? null,
+	        name: bucket.doctorName,
+	        email: bucket.doctorEmail,
+	        avatar: bucket.doctorAvatar ?? null,
             prospectNotes:
               typeof (bucket as any)?.prospectNotes === "string"
                 ? (bucket as any).prospectNotes
                 : typeof (bucket as any)?.notes === "string"
                   ? (bucket as any).notes
                   : null,
-		        revenue: bucket.total,
-		        personalRevenue: bucket.personalRevenue ?? null,
-		        salesRevenue: bucket.salesRevenue ?? null,
-		        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
-		        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
+	        revenue: bucket.total,
+	        personalRevenue: bucket.personalRevenue ?? null,
+	        salesRevenue: bucket.salesRevenue ?? null,
+	        salesWholesaleRevenue: bucket.salesWholesaleRevenue ?? null,
+	        salesRetailRevenue: bucket.salesRetailRevenue ?? null,
 	        orderQuantity: bucket.orderQuantity ?? null,
 	        totalOrderValue: bucket.totalOrderValue ?? null,
 	        orders: bucket.orders,
@@ -6917,7 +6949,17 @@ function MainApp() {
 	        lastSeenAt: presence?.lastSeenAt ?? null,
         lastInteractionAt: presence?.lastInteractionAt ?? null,
         lastLoginAt: presence?.lastLoginAt ?? null,
-      });
+      } as NonNullable<typeof salesDoctorDetail>;
+
+        const current = salesDoctorDetailRef.current;
+        if (
+          current &&
+          String(current.doctorId || "").trim() &&
+          String(current.doctorId || "").trim() !== String(nextDetail.doctorId || "").trim()
+        ) {
+          setSalesDoctorDetailStack((prev) => [...prev, current as any]);
+        }
+        setSalesDoctorDetail(nextDetail);
     },
     [],
   );
@@ -10068,33 +10110,28 @@ function MainApp() {
   }, [normalizedReferrals, isContactFormEntry]);
 
   const contactFormQueue = useMemo(() => {
-    return contactFormEntries.filter(
-      (entry) => !isLeadStatus(entry.status) && !hasLeadPlacedOrder(entry),
-    );
-  }, [contactFormEntries, hasLeadPlacedOrder, isLeadStatus]);
+    // Keep inbound items visible even if they already placed an order.
+    // (Some house/contact-form leads can place an order before an admin marks them "Converted".)
+    return contactFormEntries.filter((entry) => !isLeadStatus(entry.status));
+  }, [contactFormEntries, isLeadStatus]);
 
-	  const contactFormPipeline = useMemo(() => {
-	    return contactFormEntries.filter((entry) => {
-	      if (entry?.creditIssuedAt) {
-	        return false;
-	      }
+		  const contactFormPipeline = useMemo(() => {
+		    return contactFormEntries.filter((entry) => {
+		      if (entry?.creditIssuedAt) {
+		        return false;
+		      }
 	      if (!isLeadStatus(entry.status)) {
 	        return false;
 	      }
 	      if (isCurrentUserLead(entry)) {
 	        return false;
 	      }
-	      if (entry.referredContactEligibleForCredit === true) {
-	        return false;
-	      }
-	      const status = sanitizeReferralStatus(entry.status);
-	      const hasOrders = hasLeadPlacedOrder(entry);
-	      if (hasOrders && status !== "converted") {
-	        return false;
-	      }
-	      return true;
-	    });
-	  }, [contactFormEntries, hasLeadPlacedOrder, isCurrentUserLead, isLeadStatus]);
+		      if (entry.referredContactEligibleForCredit === true) {
+		        return false;
+		      }
+		      return true;
+		    });
+		  }, [contactFormEntries, isCurrentUserLead, isLeadStatus]);
 
   const creditedDoctorLedgerEntries = useMemo(() => {
     const ledger = doctorSummary?.ledger ?? [];
@@ -20736,14 +20773,70 @@ function MainApp() {
                                         {(() => {
                                           const dateValue = item?.date ?? null;
                                           const dateMs = dateValue ? Date.parse(dateValue) : Number.NaN;
-                                          const isPast = Number.isFinite(dateMs) ? dateMs < Date.now() : false;
                                           const recording = item?.recording && String(item.recording).trim() ? String(item.recording).trim() : null;
                                           const webinarLink = item?.link && String(item.link).trim() ? String(item.link).trim() : null;
 
-                                          const href = isPast ? recording : webinarLink;
+                                          const nowMs = Date.now();
+                                          const rawItem = item as any;
+                                          const durationMinutesCandidate =
+                                            typeof rawItem?.durationMinutes === "number"
+                                              ? rawItem.durationMinutes
+                                              : typeof rawItem?.duration_minutes === "number"
+                                                ? rawItem.duration_minutes
+                                                : typeof rawItem?.duration === "number"
+                                                  ? rawItem.duration
+                                                  : typeof rawItem?.lengthMinutes === "number"
+                                                    ? rawItem.lengthMinutes
+                                                    : typeof rawItem?.length_minutes === "number"
+                                                      ? rawItem.length_minutes
+                                                      : null;
+                                          const durationMs =
+                                            typeof durationMinutesCandidate === "number" &&
+                                            Number.isFinite(durationMinutesCandidate) &&
+                                            durationMinutesCandidate > 0
+                                              ? durationMinutesCandidate * 60_000
+                                              : 60 * 60_000; // default: 60 minutes
+                                          const endDateValue =
+                                            rawItem?.endDate ??
+                                            rawItem?.end_date ??
+                                            rawItem?.endsAt ??
+                                            rawItem?.ends_at ??
+                                            rawItem?.end ??
+                                            null;
+                                          const endMsCandidate =
+                                            typeof endDateValue === "string" && endDateValue.trim().length > 0
+                                              ? Date.parse(endDateValue)
+                                              : Number.NaN;
+                                          const endMs =
+                                            Number.isFinite(endMsCandidate)
+                                              ? endMsCandidate
+                                              : Number.isFinite(dateMs)
+                                                ? dateMs + durationMs
+                                                : Number.NaN;
+                                          const joinWindowStartMs = Number.isFinite(dateMs)
+                                            ? dateMs - 10 * 60_000
+                                            : Number.NaN;
+                                          const isDuringClass =
+                                            Number.isFinite(dateMs) &&
+                                            Number.isFinite(endMs) &&
+                                            nowMs >= dateMs &&
+                                            nowMs <= endMs;
+                                          const isJoinWindow =
+                                            Number.isFinite(joinWindowStartMs) &&
+                                            Number.isFinite(endMs) &&
+                                            nowMs >= joinWindowStartMs &&
+                                            nowMs <= endMs;
+                                          const isPast = Number.isFinite(endMs) ? nowMs > endMs : false;
+
+                                          const href = isPast && recording ? recording : webinarLink;
                                           if (!href) return null;
 
-	                                          const label = isPast ? "Recording Available" : "Join the Lecture";
+	                                          const label =
+	                                            isPast && recording
+	                                              ? "Recording Available"
+	                                              : isJoinWindow || isDuringClass
+	                                                ? "Join the Lecture"
+	                                                : "Lecture Link";
 	
 	                                          return (
 	                                            <p className="text-sm mt-1 pt-0.5">
@@ -22124,8 +22217,7 @@ function MainApp() {
         open={Boolean(salesDoctorDetail)}
         onOpenChange={(open) => {
           if (!open) {
-            setSalesDoctorDetail(null);
-            setSalesDoctorDetailLoading(false);
+            closeTopSalesDoctorDetailModal();
           }
         }}
 		      >
@@ -23191,11 +23283,43 @@ function MainApp() {
 						                                    doctorName: name,
 						                                    doctorEmail,
 						                                    doctorAvatar: avatarUrl || null,
-                                            prospectNotes:
-                                              row?.notes ||
-                                              row?.salesRepNotes ||
-                                              row?.sales_rep_notes ||
-                                              null,
+                                            prospectNotes: (() => {
+                                              const contactFormIdRaw =
+                                                row?.contactFormId ||
+                                                row?.contact_form_id ||
+                                                row?.contactFormID ||
+                                                row?.contact_formId ||
+                                                null;
+                                              const leadTypeRaw =
+                                                typeof row?.leadType === "string"
+                                                  ? row.leadType
+                                                  : typeof row?.lead_type === "string"
+                                                    ? row.lead_type
+                                                    : "";
+                                              const leadType = leadTypeRaw.trim().toLowerCase();
+                                              const hasContactFormId =
+                                                (typeof contactFormIdRaw === "string" &&
+                                                  contactFormIdRaw.trim().length > 0) ||
+                                                (typeof contactFormIdRaw === "number" &&
+                                                  Number.isFinite(contactFormIdRaw));
+                                              const isContactFormLead =
+                                                hasContactFormId ||
+                                                leadType === "contact_form" ||
+                                                leadType === "house" ||
+                                                leadType.includes("contact");
+
+                                              const candidates = [
+                                                row?.salesRepNotes,
+                                                row?.sales_rep_notes,
+                                                isContactFormLead ? null : row?.notes,
+                                              ];
+                                              for (const candidate of candidates) {
+                                                if (typeof candidate === "string" && candidate.trim().length > 0) {
+                                                  return candidate;
+                                                }
+                                              }
+                                              return null;
+                                            })(),
 						                                    doctorPhone,
 						                                    doctorAddress: prospectAddress,
 						                                    addressOrigin: prospectAddress ? "prospect" : null,

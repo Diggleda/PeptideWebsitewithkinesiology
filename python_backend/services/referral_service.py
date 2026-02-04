@@ -1218,6 +1218,49 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     # prospects leak into every sales rep/sales lead dashboard.
     is_admin = role == "admin"
 
+    def _is_blank_lead(record: Dict) -> bool:
+        if not isinstance(record, dict):
+            return True
+
+        def has_text(value) -> bool:
+            return isinstance(value, str) and value.strip() != ""
+
+        # Must have an id to be actionable.
+        if not has_text(record.get("id")):
+            return True
+
+        meaningful_fields = [
+            "referredContactName",
+            "referredContactEmail",
+            "referredContactPhone",
+            "referredContactAccountId",
+            "referredContactAccountEmail",
+            "referrerDoctorId",
+            "referrerDoctorName",
+            "referrerDoctorEmail",
+            "referrerDoctorPhone",
+            "convertedDoctorId",
+            "officeAddressLine1",
+            "officeAddressLine2",
+            "officeCity",
+            "officeState",
+            "officePostalCode",
+            "officeCountry",
+            "salesRepNotes",
+            "notes",
+        ]
+        for key in meaningful_fields:
+            value = record.get(key)
+            if isinstance(value, bool):
+                continue
+            if value is None:
+                continue
+            if isinstance(value, (int, float)) and value != 0:
+                return False
+            if has_text(value):
+                return False
+        return True
+
     def _is_manual_prospect(p: Dict) -> bool:
         if not isinstance(p, dict):
             return False
@@ -1395,6 +1438,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         referral_leads.append(_apply_referred_contact_account_fields(base))
 
     combined = [*referral_leads, *contact_form_leads, *manual_leads]
+    combined = [lead for lead in combined if not _is_blank_lead(lead)]
     combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
 
     logger.info(
