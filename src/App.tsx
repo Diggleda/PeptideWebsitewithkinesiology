@@ -5239,6 +5239,31 @@ function MainApp() {
       const integration = (order.integrationDetails ||
         order.integrations) as Record<string, any> | null;
       const candidate =
+        asAny.userId ??
+        asAny.user_id ??
+        asAny.doctorId ??
+        asAny.doctor_id ??
+        asAny.salesRepDoctorId ??
+        asAny.sales_rep_doctor_id ??
+        integration?.doctorId ??
+        integration?.referrerDoctorId ??
+        integration?.doctor_id ??
+        integration?.referrer_doctor_id ??
+        integration?.userId ??
+        null;
+      if (!candidate) {
+        return null;
+      }
+      return String(candidate);
+    },
+    [],
+  );
+  const resolveOrderDoctorIdForBucket = useCallback(
+    (order: AccountOrderSummary): string | null => {
+      const asAny = order as Record<string, any>;
+      const integration = (order.integrationDetails ||
+        order.integrations) as Record<string, any> | null;
+      const candidate =
         asAny.doctorId ??
         asAny.doctor_id ??
         asAny.salesRepDoctorId ??
@@ -5326,7 +5351,8 @@ function MainApp() {
   const orderIdentitySet = useMemo(() => {
     const set = new Set<string>();
     salesTrackingOrders.forEach((order) => {
-      const doctorId = resolveOrderDoctorId(order) || order.userId || order.doctorId;
+      const doctorId =
+        resolveOrderDoctorIdForBucket(order) || order.userId || order.doctorId;
       if (doctorId) {
         set.add(`id:${String(doctorId)}`);
       }
@@ -5342,7 +5368,7 @@ function MainApp() {
       });
     });
     return set;
-  }, [resolveOrderDoctorId, salesTrackingOrders]);
+  }, [resolveOrderDoctorIdForBucket, salesTrackingOrders]);
 
 	  const hasLeadPlacedOrder = useCallback(
 	    (lead: any) => {
@@ -5403,12 +5429,16 @@ function MainApp() {
 				      }
 				      // For house/contact-form leads, keep them visible even if they've already ordered,
 				      // so an admin/sales lead can still review and mark them appropriately.
-				      if (isContactFormEntry(lead)) {
+				      const leadId = String(lead?.id || "");
+				      const leadStatusRaw = String(lead?.status || "").toLowerCase();
+				      const isContactFormLead =
+				        leadStatusRaw === "contact_form" || leadId.startsWith("contact_form:");
+				      if (isContactFormLead) {
 				        return false;
 				      }
 				      return hasLeadPlacedOrder(lead);
 				    },
-				    [hasLeadPlacedOrder, isContactFormEntry],
+				    [hasLeadPlacedOrder],
 				  );
 
 	  const normalizeNotesValue = useCallback((value: unknown): string | null => {
@@ -10115,8 +10145,8 @@ function MainApp() {
     return contactFormEntries.filter((entry) => !isLeadStatus(entry.status));
   }, [contactFormEntries, isLeadStatus]);
 
-		  const contactFormPipeline = useMemo(() => {
-		    return contactFormEntries.filter((entry) => {
+  const contactFormPipeline = useMemo(() => {
+    return contactFormEntries.filter((entry) => {
 		      if (entry?.creditIssuedAt) {
 		        return false;
 		      }
@@ -10129,9 +10159,12 @@ function MainApp() {
 		      if (entry.referredContactEligibleForCredit === true) {
 		        return false;
 		      }
-		      return true;
-		    });
-		  }, [contactFormEntries, isCurrentUserLead, isLeadStatus]);
+      return true;
+    });
+  }, [contactFormEntries, isCurrentUserLead, isLeadStatus]);
+  const contactFormOrderedEntries = useMemo(() => {
+    return contactFormQueue.filter((entry) => hasLeadPlacedOrder(entry));
+  }, [contactFormQueue, hasLeadPlacedOrder]);
 
   const creditedDoctorLedgerEntries = useMemo(() => {
     const ledger = doctorSummary?.ledger ?? [];
@@ -10534,11 +10567,11 @@ function MainApp() {
 		      return `${entry.kind}:idx:${index}`;
 		    };
 
-			    const combined = [
-			      ...manualProspectEntries.map((record) => ({
-			        kind: "referral" as const,
-			        record,
-			      })),
+    const combined = [
+      ...manualProspectEntries.map((record) => ({
+        kind: "referral" as const,
+        record,
+      })),
       ...activeReferralEntries.map((record) => ({
         kind: "referral" as const,
         record,
@@ -10547,8 +10580,12 @@ function MainApp() {
         kind: "contact_form" as const,
         record,
       })),
-		      ...accountProspectEntries,
-		    ];
+      ...contactFormOrderedEntries.map((record) => ({
+        kind: "contact_form" as const,
+        record,
+      })),
+      ...accountProspectEntries,
+    ];
 
 				    const filtered = combined.filter(
 				      (entry) => !shouldRemoveFromActiveProspects(entry.record),
@@ -10604,14 +10641,15 @@ function MainApp() {
 	      const bId = b.record?.id ? String(b.record.id) : "";
 	      return aId.localeCompare(bId);
 	    });
-			  }, [
-			    accountProspectEntries,
-			    activeReferralEntries,
-			    contactFormPipeline,
-		    manualProspectEntries,
-		    hasLeadPlacedOrder,
-		    shouldRemoveFromActiveProspects,
-		  ]);
+  }, [
+    accountProspectEntries,
+    activeReferralEntries,
+    contactFormOrderedEntries,
+    contactFormPipeline,
+    manualProspectEntries,
+    hasLeadPlacedOrder,
+    shouldRemoveFromActiveProspects,
+  ]);
 
   const filteredActiveProspects = useMemo(() => {
     if (activeProspectFilter === "all") {
@@ -11186,7 +11224,7 @@ function MainApp() {
         .filter((order) => {
           if (!currentUserId && !currentUserEmail) return true;
           const candidateId =
-            resolveOrderDoctorId(order) ||
+            resolveOrderDoctorIdForBucket(order) ||
             (order as any)?.doctorId ||
             (order as any)?.doctor_id ||
             (order as any)?.userId ||
@@ -11300,7 +11338,8 @@ function MainApp() {
 
       const newlySeenDoctorIds: string[] = [];
       normalizedOrders.forEach((order) => {
-        const docId = resolveOrderDoctorId(order) || order.userId || order.id;
+        const docId =
+          resolveOrderDoctorIdForBucket(order) || order.userId || order.id;
         if (!docId) return;
         const idStr = String(docId);
         if (!knownSalesDoctorIdsRef.current.has(idStr)) {
@@ -11358,7 +11397,7 @@ function MainApp() {
 	    userSalesRepId,
 	    user?.email,
 	    postLoginHold,
-	    resolveOrderDoctorId,
+	    resolveOrderDoctorIdForBucket,
 	    enrichMissingOrderDetails,
 	    refreshSalesBySalesRepSummary,
 	  ]);
@@ -11447,10 +11486,10 @@ function MainApp() {
 	    [referralIdLookupForDoctorNotes],
 	  );
 
-	  const salesTrackingOrdersByDoctor = useMemo(() => {
-	    const buckets = new Map<
-	      string,
-	      {
+  const salesTrackingOrdersByDoctor = useMemo(() => {
+		    const buckets = new Map<
+		      string,
+		      {
 	        doctorId: string;
 	        doctorName: string;
 	        doctorEmail?: string | null;
@@ -11469,7 +11508,7 @@ function MainApp() {
     >();
     for (const order of salesTrackingOrders) {
       const doctorId =
-        resolveOrderDoctorId(order) || order.userId || `anon:${order.id}`;
+        resolveOrderDoctorIdForBucket(order) || order.userId || `anon:${order.id}`;
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
       const doctorName =
         doctorInfo?.name ||
@@ -11581,7 +11620,7 @@ function MainApp() {
     return Array.from(buckets.values()).sort((a, b) => b.total - a.total);
   }, [
     salesTrackingOrders,
-    resolveOrderDoctorId,
+    resolveOrderDoctorIdForBucket,
     salesTrackingDoctors,
     salesRepDoctorsById,
   ]);

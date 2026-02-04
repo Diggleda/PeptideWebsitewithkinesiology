@@ -2116,7 +2116,7 @@ const getSalesByRep = async ({
   const excludeSalesRepIdNormalized = normalizeId(excludeSalesRepId);
   const excludeDoctorSet = new Set(excludeDoctorIds.map(normalizeId).filter(Boolean));
   const users = userRepository.getAll();
-  const repLikeRoleSet = new Set(['sales_rep', 'admin', 'sales_lead']);
+  const repLikeRoleSet = new Set(['sales_rep', 'rep', 'admin', 'sales_lead', 'saleslead', 'sales-lead']);
   const repsFromUsers = users.filter((u) => repLikeRoleSet.has(normalizeRole(u.role)));
   const repsFromStore = Array.isArray(salesRepRepository?.getAll?.())
     ? salesRepRepository.getAll()

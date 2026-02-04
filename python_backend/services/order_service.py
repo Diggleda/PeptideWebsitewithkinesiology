@@ -2433,7 +2433,7 @@ def get_sales_by_rep(
         def _norm_role(value: object) -> str:
             return re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
 
-        rep_like_roles = {"sales_rep", "admin", "sales_lead"}
+        rep_like_roles = {"sales_rep", "rep", "admin", "sales_lead", "saleslead", "sales-lead"}
         reps = [u for u in users if _norm_role(u.get("role")) in rep_like_roles]
         rep_records_list = sales_rep_repository.get_all()
         rep_records = {str(rep.get("id")): rep for rep in rep_records_list if rep.get("id")}
