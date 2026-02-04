@@ -59,16 +59,48 @@ def sync_sales_reps(payload: Dict, headers: Dict[str, str]) -> Dict:
         sales_code = _sanitize_string(row.get("salesCode") or row.get("sales_code") or "", 8)
         sales_code = sales_code.upper() or None
 
+        user = user_repository.find_by_email(email)
+
         existing = sales_rep_repository.find_by_email(email)
         if existing:
-            sales_rep_repository.update({**existing, "name": name, "email": email, "phone": phone or existing.get("phone"),
-                                         "territory": territory or existing.get("territory"), "initials": initials,
-                                         "salesCode": sales_code or existing.get("salesCode")})
+            update_payload = {
+                **existing,
+                "name": name,
+                "email": email,
+                "phone": phone or existing.get("phone"),
+                "territory": territory or existing.get("territory"),
+                "initials": initials,
+                "salesCode": sales_code or existing.get("salesCode"),
+            }
+            if user and not existing.get("legacyUserId"):
+                update_payload["legacyUserId"] = user.get("id")
+            sales_rep_repository.update(update_payload)
         else:
-            sales_rep_repository.insert({"name": name, "email": email, "phone": phone, "territory": territory,
-                                         "initials": initials, "salesCode": sales_code})
+            # IMPORTANT: do not create a new sales rep id when we can reuse an existing identifier.
+            # In this system, many deployments use `users.sales_rep_id` (`salesRepId`) as an external
+            # rep key referenced by orders and integrations. When we sync reps from Google Sheets and
+            # insert without an explicit id, the repository will generate a new timestamp-like id,
+            # which can create a mismatch between `sales_reps.id` and `users.sales_rep_id`.
+            rep_id = None
+            if user:
+                rep_id = (user.get("salesRepId") or user.get("sales_rep_id") or "").strip() or None
+                if not rep_id:
+                    rep_id = str(user.get("id") or "").strip() or None
+            insert_payload = {
+                "id": rep_id,
+                "legacyUserId": user.get("id") if user else None,
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "territory": territory,
+                "initials": initials,
+                "salesCode": sales_code,
+            }
+            # Remove None ids so the repository can generate one only when unavoidable.
+            if not insert_payload.get("id"):
+                insert_payload.pop("id", None)
+            sales_rep_repository.insert(insert_payload)
 
-        user = user_repository.find_by_email(email)
         if user and user.get("role") != "sales_rep":
             user_repository.update({**user, "role": "sales_rep"})
 

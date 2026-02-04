@@ -1468,10 +1468,11 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
-  getProductSalesCommissionForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
+  getProductSalesCommissionForAdmin: async (options?: { periodStart?: string; periodEnd?: string; debug?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);
     if (options?.periodEnd) params.set('periodEnd', options.periodEnd);
+    if (options?.debug) params.set('debug', 'true');
     const query = params.toString();
     const url = query
       ? `${API_BASE_URL}/orders/admin/product-sales-commission?${query}`

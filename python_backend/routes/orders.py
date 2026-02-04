@@ -265,7 +265,9 @@ def admin_products_commission():
             raise err
         period_start = request.args.get("periodStart") or request.args.get("start") or None
         period_end = request.args.get("periodEnd") or request.args.get("end") or None
-        return order_service.get_products_and_commission_for_admin(period_start=period_start, period_end=period_end)
+        debug_raw = request.args.get("debug") or request.args.get("debugMode") or request.args.get("debug_mode") or None
+        debug = str(debug_raw or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        return order_service.get_products_and_commission_for_admin(period_start=period_start, period_end=period_end, debug=debug)
 
     return handle_action(action)
 

@@ -3363,7 +3363,7 @@ def get_taxes_by_state_for_admin(*, period_start: Optional[str] = None, period_e
             _admin_taxes_by_state_inflight = None
 
 
-def get_products_and_commission_for_admin(*, period_start: Optional[str] = None, period_end: Optional[str] = None) -> Dict:
+def get_products_and_commission_for_admin(*, period_start: Optional[str] = None, period_end: Optional[str] = None, debug: bool = False) -> Dict:
     """
     For the given period:
       - Count quantity sold per product/sku
@@ -3463,6 +3463,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 "email": u.get("email") or None,
                 "role": role or ("admin" if role == "admin" else "sales_rep"),
             }
+            rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
+            if rep_alias and rep_alias not in rep_lookup_by_id:
+                rep_lookup_by_id[rep_alias] = rep_lookup_by_id[user_id]
         for rep in rep_records_list:
             rep_id = str(rep.get("id") or "").strip()
             if not rep_id:
@@ -3506,6 +3509,9 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if rep_id:
                 rep_id_str = str(rep_id)
                 alias_to_rep_id[rep_id_str] = rep_id_str
+            rep_alias = str(rep.get("salesRepId") or rep.get("sales_rep_id") or "").strip()
+            if rep_alias and rep_id:
+                alias_to_rep_id[rep_alias] = str(rep_id).strip()
 
         for rep in rep_records_list:
             rep_id = rep.get("id")
@@ -3518,6 +3524,30 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
             if legacy_id:
                 alias_to_rep_id[str(legacy_id)] = canonical
+
+        def _norm_sales_code(value: object) -> str:
+            raw = str(value or "").strip()
+            if not raw:
+                return ""
+            return re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+
+        rep_canonical_by_email: Dict[str, str] = {}
+        rep_canonical_by_sales_code: Dict[str, str] = {}
+        rep_canonical_by_initials: Dict[str, str] = {}
+        for rep in rep_records_list:
+            rep_id = str(rep.get("id") or "").strip()
+            if not rep_id:
+                continue
+            canonical = alias_to_rep_id.get(rep_id, rep_id)
+            rep_email = _norm_email(rep.get("email"))
+            if rep_email:
+                rep_canonical_by_email.setdefault(rep_email, canonical)
+            rep_code = _norm_sales_code(rep.get("salesCode") or rep.get("sales_code"))
+            if rep_code:
+                rep_canonical_by_sales_code.setdefault(rep_code, canonical)
+            rep_initials = str(rep.get("initials") or "").strip().upper()
+            if rep_initials:
+                rep_canonical_by_initials.setdefault(rep_initials, canonical)
 
         doctors_by_email = {}
         for u in users:
@@ -3598,6 +3628,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         skipped_status = 0
         skipped_refunded = 0
         skipped_outside_period = 0
+        unresolved_recipient_counts: Dict[str, int] = {}
+        unresolved_recipient_examples: List[Dict[str, object]] = []
 
         def _normalize_role(value: object) -> str:
             return _norm_role(value)
@@ -3639,6 +3671,32 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 email = shipping.get("email")
                 if isinstance(email, str) and email.strip():
                     return email.strip().lower()
+            return ""
+
+        def _resolve_rep_from_email_hint(email_hint: str) -> str:
+            if not email_hint:
+                return ""
+            resolved = user_rep_id_by_email.get(email_hint) or admin_id_by_email.get(email_hint) or rep_canonical_by_email.get(email_hint) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
+            return ""
+
+        def _resolve_rep_from_code_hint(code_hint: str) -> str:
+            code = _norm_sales_code(code_hint)
+            if not code:
+                return ""
+            resolved = rep_canonical_by_sales_code.get(code) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
+            return ""
+
+        def _resolve_rep_from_initials_hint(initials_hint: str) -> str:
+            initials = str(initials_hint or "").strip().upper()
+            if not initials:
+                return ""
+            resolved = rep_canonical_by_initials.get(initials) or ""
+            if resolved:
+                return alias_to_rep_id.get(resolved, resolved)
             return ""
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
@@ -3732,6 +3790,15 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if doctor is None and isinstance(order_user, dict) and order_role in ("doctor", "test_doctor"):
                 doctor = order_user
 
+            meta_data = local_order.get("meta_data") or local_order.get("metaData") or local_order.get("meta") or []
+            if isinstance(meta_data, str):
+                try:
+                    meta_data = json.loads(meta_data)
+                except Exception:
+                    meta_data = []
+            if not isinstance(meta_data, list):
+                meta_data = []
+
             force_house_contact_form = bool(attribution_email and attribution_email in contact_form_emails)
             contact_form_origin = force_house_contact_form
             if doctor and not contact_form_origin:
@@ -3776,15 +3843,86 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                     or integrations.get("doctor_sales_rep_id")
                 )
 
+            rep_email_hint = _norm_email(
+                local_order.get("salesRepEmail")
+                or local_order.get("sales_rep_email")
+                or local_order.get("doctorSalesRepEmail")
+                or local_order.get("doctor_sales_rep_email")
+                or (integrations.get("salesRepEmail") if isinstance(integrations, dict) else None)
+                or (integrations.get("sales_rep_email") if isinstance(integrations, dict) else None)
+            )
+            rep_code_hint = str(
+                local_order.get("salesRepCode")
+                or local_order.get("sales_rep_code")
+                or local_order.get("doctorSalesRepCode")
+                or local_order.get("doctor_sales_rep_code")
+                or (integrations.get("salesRepCode") if isinstance(integrations, dict) else None)
+                or (integrations.get("sales_rep_code") if isinstance(integrations, dict) else None)
+                or ""
+            ).strip()
+            rep_initials_hint = str(
+                local_order.get("salesRepInitials")
+                or local_order.get("sales_rep_initials")
+                or local_order.get("doctorSalesRepInitials")
+                or local_order.get("doctor_sales_rep_initials")
+                or (integrations.get("salesRepInitials") if isinstance(integrations, dict) else None)
+                or (integrations.get("sales_rep_initials") if isinstance(integrations, dict) else None)
+                or ""
+            ).strip()
+
+            meta_rep_id = _normalize_rep_id(
+                _meta_value(meta_data, "peppro_sales_rep_id")
+                or _meta_value(meta_data, "sales_rep_id")
+                or _meta_value(meta_data, "salesRepId")
+                or _meta_value(meta_data, "doctor_sales_rep_id")
+                or _meta_value(meta_data, "doctorSalesRepId")
+            )
+            meta_rep_email = _norm_email(
+                _meta_value(meta_data, "peppro_sales_rep_email")
+                or _meta_value(meta_data, "sales_rep_email")
+                or _meta_value(meta_data, "salesRepEmail")
+                or _meta_value(meta_data, "doctor_sales_rep_email")
+                or _meta_value(meta_data, "doctorSalesRepEmail")
+            )
+            meta_rep_code = str(
+                _meta_value(meta_data, "peppro_sales_rep_code")
+                or _meta_value(meta_data, "sales_rep_code")
+                or _meta_value(meta_data, "salesRepCode")
+                or _meta_value(meta_data, "doctor_sales_rep_code")
+                or _meta_value(meta_data, "doctorSalesRepCode")
+                or ""
+            ).strip()
+            meta_rep_initials = str(
+                _meta_value(meta_data, "sales_rep_initials")
+                or _meta_value(meta_data, "salesRepInitials")
+                or _meta_value(meta_data, "doctor_sales_rep_initials")
+                or _meta_value(meta_data, "doctorSalesRepInitials")
+                or ""
+            ).strip()
+
+            if not rep_id and meta_rep_id:
+                rep_id = meta_rep_id
+            if not rep_email_hint and meta_rep_email:
+                rep_email_hint = meta_rep_email
+            if not rep_code_hint and meta_rep_code:
+                rep_code_hint = meta_rep_code
+            if not rep_initials_hint and meta_rep_initials:
+                rep_initials_hint = meta_rep_initials
+
+            recipient_source = ""
+
             recipient_id = ""
             if order_user_id and (order_role in rep_like_roles or order_role == "admin"):
                 recipient_id = (
                     alias_to_rep_id.get(order_user_id, order_user_id) if order_role in rep_like_roles else order_user_id
                 )
+                recipient_source = "order_user"
             elif attribution_email and attribution_email in user_rep_id_by_email:
                 recipient_id = user_rep_id_by_email[attribution_email]
+                recipient_source = "attribution_email_rep"
             elif attribution_email and attribution_email in admin_id_by_email:
                 recipient_id = admin_id_by_email[attribution_email]
+                recipient_source = "attribution_email_admin"
 
             # House commission comes from any order whose attribution email appears in the contact-form
             # submissions table. This is an *additional* admin split and should not prevent a rep/admin
@@ -3793,26 +3931,57 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if contact_form_origin and not recipient_id:
                 recipient_id = "__house__"
                 house_commission = True
+                recipient_source = "house_contact_form"
             if force_house_contact_form:
                 house_commission = True
                 if not recipient_id:
                     recipient_id = "__house__"
+                    recipient_source = "house_contact_form_forced"
 
             if not recipient_id:
                 if rep_id:
-                    rep_id = alias_to_rep_id.get(rep_id, rep_id)
-                    if str(rep_id or "").strip().lower() == "house":
+                    rep_canonical = alias_to_rep_id.get(rep_id) or rep_id
+                    if str(rep_canonical or "").strip().lower() == "house":
                         recipient_id = "__house__"
+                        recipient_source = "order_rep_id_house"
                     else:
-                        recipient_id = rep_id
+                        recipient_id = rep_canonical
+                        recipient_source = "order_rep_id"
+                if recipient_id and recipient_id not in ("__house__", supplier_row_id) and not rep_lookup_by_id.get(str(recipient_id)) and rep_email_hint:
+                    email_resolved = _resolve_rep_from_email_hint(rep_email_hint)
+                    if email_resolved:
+                        recipient_id = email_resolved
+                        recipient_source = "rep_email_hint"
+                if not recipient_id and rep_email_hint:
+                    email_resolved = _resolve_rep_from_email_hint(rep_email_hint)
+                    if email_resolved:
+                        recipient_id = email_resolved
+                        recipient_source = "rep_email_hint"
+                if not recipient_id and rep_code_hint:
+                    code_resolved = _resolve_rep_from_code_hint(rep_code_hint)
+                    if code_resolved:
+                        recipient_id = code_resolved
+                        recipient_source = "rep_code_hint"
+                if not recipient_id and rep_initials_hint:
+                    initials_resolved = _resolve_rep_from_initials_hint(rep_initials_hint)
+                    if initials_resolved:
+                        recipient_id = initials_resolved
+                        recipient_source = "rep_initials_hint"
                 if not recipient_id and doctor:
                     doctor_rep_id = str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip()
                     if doctor_rep_id:
-                        doctor_rep_id = alias_to_rep_id.get(doctor_rep_id, doctor_rep_id)
-                        if str(doctor_rep_id or "").strip().lower() == "house":
+                        doctor_rep_canonical = alias_to_rep_id.get(doctor_rep_id) or doctor_rep_id
+                        if str(doctor_rep_canonical or "").strip().lower() == "house":
                             recipient_id = "__house__"
+                            recipient_source = "doctor_rep_id_house"
                         else:
-                            recipient_id = doctor_rep_id
+                            recipient_id = doctor_rep_canonical
+                            recipient_source = "doctor_rep_id"
+
+            if recipient_id and recipient_id not in ("__house__", supplier_row_id):
+                canonical = alias_to_rep_id.get(recipient_id)
+                if canonical:
+                    recipient_id = canonical
 
             if recipient_id and recipient_id not in recipient_rows and recipient_id not in ("__house__", supplier_row_id):
                 admin = next((a for a in admins if str(a.get("id")) == str(recipient_id)), None)
@@ -3838,6 +4007,26 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         "role": "unknown",
                         "amount": 0.0,
                     }
+                    if debug and recipient_id:
+                        unresolved_recipient_counts[str(recipient_id)] = int(unresolved_recipient_counts.get(str(recipient_id)) or 0) + 1
+                        if len(unresolved_recipient_examples) < 25:
+                            unresolved_recipient_examples.append(
+                                {
+                                    "recipientId": str(recipient_id),
+                                    "source": recipient_source or "unknown",
+                                    "repId": rep_id or None,
+                                    "repEmailHint": rep_email_hint or None,
+                                    "repCodeHint": rep_code_hint or None,
+                                    "repInitialsHint": rep_initials_hint or None,
+                                    "attributionEmail": attribution_email or None,
+                                    "orderUserId": order_user_id or None,
+                                    "orderUserRole": order_role or None,
+                                    "doctorId": str(doctor.get("id")) if isinstance(doctor, dict) and doctor.get("id") else None,
+                                    "doctorSalesRepId": str(doctor.get("salesRepId") or doctor.get("sales_rep_id") or "").strip() if isinstance(doctor, dict) else None,
+                                    "orderNumber": local_order.get("wooOrderNumber") or local_order.get("wooOrderId") or local_order.get("number") or None,
+                                    "orderId": local_order.get("id") or None,
+                                }
+                            )
 
             items = _resolve_items_list(local_order)
 
@@ -3902,6 +4091,15 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                         "role": "unknown",
                         "amount": 0.0,
                     }
+                    if debug and recipient_id:
+                        unresolved_recipient_counts[str(recipient_id)] = int(unresolved_recipient_counts.get(str(recipient_id)) or 0) + 1
+                        if len(unresolved_recipient_examples) < 25:
+                            unresolved_recipient_examples.append(
+                                {
+                                    "recipientId": str(recipient_id),
+                                    "source": "commission_add",
+                                }
+                            )
                 row = recipient_rows[recipient_id]
             row["amount"] = float(row.get("amount") or 0.0) + float(amount or 0.0)
 
@@ -4123,6 +4321,16 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         commissions = list(recipient_rows.values())
         commissions.sort(key=lambda r: float(r.get("amount") or 0.0), reverse=True)
 
+        debug_payload: Dict[str, object] = {
+            "ordersSeen": orders_seen,
+            "skippedStatus": skipped_status,
+            "skippedRefunded": skipped_refunded,
+            "skippedOutsidePeriod": skipped_outside_period,
+        }
+        if debug:
+            debug_payload["unresolvedRecipientCounts"] = unresolved_recipient_counts
+            debug_payload["unresolvedRecipientExamples"] = unresolved_recipient_examples
+
         result = {
             "products": products,
             "commissions": [
@@ -4151,12 +4359,7 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             ],
             "totals": totals,
             "orderBreakdown": order_breakdown,
-            "debug": {
-                "ordersSeen": orders_seen,
-                "skippedStatus": skipped_status,
-                "skippedRefunded": skipped_refunded,
-                "skippedOutsidePeriod": skipped_outside_period,
-            },
+            "debug": debug_payload,
             **period_meta,
         }
 
