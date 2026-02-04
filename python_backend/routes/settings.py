@@ -822,11 +822,86 @@ def get_sales_rep_profile(sales_rep_id: str):
             err = RuntimeError("Sales rep id is required")
             setattr(err, "status", 400)
             raise err
+
+        # IMPORTANT: `sales_rep_id` can refer to multiple identifier namespaces depending on the deployment:
+        # - `sales_reps.id` (canonical rep record id)
+        # - `sales_reps.legacy_user_id` (linked app user id)
+        # - `users.sales_rep_id` (external rep key used by some integrations and stored on doctors)
+        #
+        # The admin UI may pass any of these values, so we attempt to resolve the best matching
+        # `sales_reps` record without mutating any ids.
         rep = sales_rep_repository.find_by_id(rep_id)
+        resolved_user_id = None
+        if not rep:
+            try:
+                reps = sales_rep_repository.get_all() or []
+            except Exception:
+                reps = []
+            # Try legacy user id match first.
+            rep = next(
+                (
+                    entry
+                    for entry in reps
+                    if entry
+                    and str(entry.get("legacyUserId") or entry.get("legacy_user_id") or "").strip() == rep_id
+                ),
+                None,
+            )
+
+        # If the input looks like a user id (or external rep key), try resolving via users table.
+        if not rep:
+            user = None
+            try:
+                user = user_repository.find_by_id(rep_id)
+            except Exception:
+                user = None
+            if user and user.get("email"):
+                resolved_user_id = str(user.get("id") or "").strip() or None
+                try:
+                    rep = sales_rep_repository.find_by_email(str(user.get("email")))
+                except Exception:
+                    rep = None
+
+        if not rep:
+            # Final fallback: `rep_id` might be `users.sales_rep_id` (external key). Query for a rep-like user
+            # whose `sales_rep_id` matches, then resolve to the `sales_reps` record by email.
+            try:
+                from ..services import get_config
+                from ..database import mysql_client
+
+                if bool(get_config().mysql.get("enabled")):
+                    row = mysql_client.fetch_one(
+                        """
+                        SELECT id, email, role
+                        FROM users
+                        WHERE sales_rep_id = %(sales_rep_id)s
+                        LIMIT 1
+                        """,
+                        {"sales_rep_id": rep_id},
+                    )
+                    email = (row.get("email") or "").strip() if isinstance(row, dict) else ""
+                    if email:
+                        resolved_user_id = str(row.get("id") or "").strip() or None
+                        rep = sales_rep_repository.find_by_email(email)
+            except Exception:
+                rep = None
+
         if not rep:
             err = RuntimeError("Sales rep not found")
             setattr(err, "status", 404)
             raise err
+
+        # Resolve linked user id when possible (used by admin UI deep-links).
+        legacy_user_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
+        if legacy_user_id:
+            resolved_user_id = str(legacy_user_id).strip() or resolved_user_id
+        if not resolved_user_id and rep.get("email"):
+            try:
+                linked = user_repository.find_by_email(str(rep.get("email")))
+                if linked and linked.get("id"):
+                    resolved_user_id = str(linked.get("id")).strip() or resolved_user_id
+            except Exception:
+                pass
         return {
             "salesRep": {
                 "id": rep.get("id"),
@@ -837,6 +912,7 @@ def get_sales_rep_profile(sales_rep_id: str):
                 "salesCode": rep.get("salesCode"),
                 "status": rep.get("status"),
                 "role": rep.get("role"),
+                "userId": resolved_user_id,
             }
         }
 

@@ -229,6 +229,7 @@ if (!$hasExistingKey) {
 }
 
 $deletedSalesCodes = [];
+$deletionsDisabled = true;
 
 try {
   $pdo = new PDO(
@@ -257,62 +258,17 @@ try {
   $hasCreatedAtSnake = in_array('created_at', $salesRepsCols, true);
 
   /**
-   * Mirror delete behavior:
+   * IMPORTANT: deletions are intentionally disabled.
    *
-   * - If "existingSalesCodes" key WAS included in the request:
-   *      Treat it as full source of truth.
-   *      - If it's empty: delete ALL rows in sales_reps.
-   *      - If not empty: delete only rows whose sales_code is NOT in that list.
+   * Historically, this webhook supported "mirror deletes" (removing any rep from the database
+   * when its sales code is removed from the Google Sheet). In practice, that behavior is risky:
+   * it can break historical attribution and id mappings if the sheet is temporarily incomplete,
+   * formulas haven't populated, or a rep is removed accidentally.
    *
-   * - If "existingSalesCodes" key was NOT included:
-   *      Legacy behavior: mirror against incoming cleaned codes only.
+   * This handler is now "upsert-only": it will create/update reps present in the payload, but
+   * it will never delete any rows from `sales_reps`.
    */
-  if ($hasExistingKey) {
-    // Authoritative list from the Sheet (possibly empty)
-    $stmtExisting = $pdo->query('SELECT sales_code FROM sales_reps');
-    $dbCodes = $stmtExisting->fetchAll(PDO::FETCH_COLUMN);
-
-    if (empty($existingCodes)) {
-      // Sheet says: nothing should exist → delete everything.
-      $deletedSalesCodes = array_map('strtoupper', $dbCodes);
-      if (!empty($dbCodes)) {
-        $pdo->exec('DELETE FROM sales_reps');
-      }
-    } else {
-      // Delete any DB rows whose sales_code is NOT in the Sheet's set.
-      $toDelete = array_values(array_diff(array_map('strtoupper', $dbCodes), $existingCodes));
-      if (!empty($toDelete)) {
-        $deletedSalesCodes = $toDelete;
-
-        // Chunked deletes for safety
-        $chunkSize = 500;
-        for ($o = 0; $o < count($toDelete); $o += $chunkSize) {
-          $chunk = array_slice($toDelete, $o, $chunkSize);
-          $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-          $del = $pdo->prepare("DELETE FROM sales_reps WHERE UPPER(sales_code) IN ($placeholders)");
-          $del->execute($chunk);
-        }
-      }
-    }
-  } else {
-    // Legacy mirror delete: use just the incoming cleaned codes.
-    if (!empty($incomingCodes)) {
-      $stmtExisting = $pdo->query('SELECT sales_code FROM sales_reps');
-      $dbCodes = $stmtExisting->fetchAll(PDO::FETCH_COLUMN);
-      $toDelete = array_values(array_diff(array_map('strtoupper', $dbCodes), $incomingCodes));
-      if (!empty($toDelete)) {
-        $deletedSalesCodes = $toDelete;
-
-        $chunkSize = 500;
-        for ($o = 0; $o < count($toDelete); $o += $chunkSize) {
-          $chunk = array_slice($toDelete, $o, $chunkSize);
-          $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-          $del = $pdo->prepare("DELETE FROM sales_reps WHERE UPPER(sales_code) IN ($placeholders)");
-          $del->execute($chunk);
-        }
-      }
-    }
-  }
+  $deletedSalesCodes = [];
 
   // Lookups so we can reuse existing IDs (and avoid generating a new ID on a duplicate update).
   $findSalesRepIdBySalesCode = $pdo->prepare('SELECT id FROM sales_reps WHERE sales_code = :sales_code LIMIT 1');
@@ -557,13 +513,7 @@ try {
     ];
   }
 
-  // Add deletion results
-  foreach ($deletedSalesCodes as $code) {
-    $results[] = [
-      'salesCode' => strtoupper($code),
-      'status'    => 'deleted',
-    ];
-  }
+  // Deletions are disabled; no delete results.
 
   $pdo->commit();
 
@@ -573,7 +523,8 @@ try {
     'stored'            => $stored,
     'skipped'           => count($body['salesReps']) - count($clean),
     'errors'            => $errors,
-    'deletedSalesCodes' => array_values(array_unique(array_map('strtoupper', $deletedSalesCodes))),
+    'deletedSalesCodes' => [],
+    'deletionsDisabled' => $deletionsDisabled,
     'results'           => $results,
   ]);
 } catch (Throwable $e) {

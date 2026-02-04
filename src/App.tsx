@@ -5881,56 +5881,47 @@ function MainApp() {
 		      typeof salesDoctorDetail?.ownerSalesRepEmail === "string"
 		        ? salesDoctorDetail.ownerSalesRepEmail.trim()
 		        : "";
-		    (async () => {
-		      try {
-		        if (localName || localEmail) {
-		          setSalesDoctorOwnerRepProfiles((current) => ({
-		            ...current,
-		            [ownerId]: {
-		              id: ownerId,
-		              name: localName || null,
-		              email: localEmail || null,
-		              role: "sales_rep",
-		              userId: null,
-		            },
-		          }));
-		          return;
-		        }
-
-		        // Fetch the doctor record to resolve its `salesRepId` (maps to `users.sales_rep_id`).
-		        const doctorId = String(salesDoctorDetail?.doctorId || "").trim();
-		        if (!doctorId) return;
-		        const userResp = (await settingsAPI.getAdminUserProfile(doctorId)) as any;
-		        const doctorProfile = userResp?.user || null;
-		        const salesRepId = String(
-		          doctorProfile?.salesRepId ||
-		            doctorProfile?.sales_rep_id ||
-		            ownerId,
-		        ).trim();
-		        if (!salesRepId) return;
-
-		        // Fetch the sales rep record to get `name` (maps to `sales_rep.name` / `sales_reps.name`).
-		        const repResp = (await settingsAPI.getSalesRepProfile(salesRepId)) as any;
-		        const repProfile = repResp?.salesRep || repResp?.sales_rep || null;
-		        if (!repProfile) return;
-		        const repName =
-		          typeof repProfile?.name === "string" ? repProfile.name.trim() : "";
-		        const repEmail =
-		          typeof repProfile?.email === "string" ? repProfile.email.trim() : "";
-		        if (!repName && !repEmail) return;
-		        setSalesDoctorOwnerRepProfiles((current) => ({
-		          ...current,
-		          [ownerId]: {
-		            id: salesRepId,
-		            name: repName || null,
-		            email: repEmail || null,
-		            role: "sales_rep",
-		            userId: null,
-		          },
-		        }));
-		      } catch {
-		        // ignore; UI will show ID fallback
-		      } finally {
+			    (async () => {
+			      try {
+			        if (localName || localEmail) {
+			          setSalesDoctorOwnerRepProfiles((current) => ({
+			            ...current,
+			            [ownerId]: {
+			              id: ownerId,
+			              name: localName || null,
+			              email: localEmail || null,
+			              role: "sales_rep",
+			              userId: null,
+			            },
+			          }));
+			          return;
+			        }
+			        // Fetch the sales rep record to get `name` (maps to `sales_rep.name` / `sales_reps.name`).
+			        // NOTE: `ownerId` can be either a `sales_reps.id` or an external rep key stored in `users.sales_rep_id`.
+			        // The backend route resolves these aliases to a canonical sales rep record when possible.
+				        const repResp = (await settingsAPI.getSalesRepProfile(ownerId)) as any;
+				        const repProfile = repResp?.salesRep || repResp?.sales_rep || null;
+				        if (!repProfile) return;
+				        const resolvedRepId = String(repProfile?.id || ownerId).trim();
+				        const repName =
+				          typeof repProfile?.name === "string" ? repProfile.name.trim() : "";
+				        const repEmail =
+				          typeof repProfile?.email === "string" ? repProfile.email.trim() : "";
+				        if (!repName && !repEmail) return;
+				        const repUserId = String(repProfile?.userId || "").trim() || null;
+				        setSalesDoctorOwnerRepProfiles((current) => ({
+				          ...current,
+				          [ownerId]: {
+				            id: resolvedRepId,
+				            name: repName || null,
+				            email: repEmail || null,
+				            role: "sales_rep",
+				            userId: repUserId,
+				          },
+				        }));
+			      } catch {
+			        // ignore; UI will show ID fallback
+			      } finally {
 		        salesDoctorOwnerRepFetchInFlightRef.current.delete(ownerId);
 		      }
 		    })();
@@ -22311,27 +22302,45 @@ function MainApp() {
 					                          if (!ownerId) {
 					                            return "Sales Rep: Unassigned";
 					                          }
-					                          const ownerProfile =
-					                            salesDoctorOwnerRepProfiles[ownerId] || null;
-					                          const name =
-					                            ownerProfile?.name ||
-					                            (() => {
-					                              const reps = (salesRepDashboard as any)?.salesReps;
-					                              if (!Array.isArray(reps)) return null;
-					                              const hit = reps.find(
-					                                (rep: any) =>
-					                                  String(rep?.id || "") === String(ownerId),
-					                              );
-					                              const repName =
-					                                typeof hit?.name === "string" ? hit.name.trim() : "";
-					                              return repName.length ? repName : null;
-					                            })() ||
-					                            null;
-					                          const email = ownerProfile?.email || null;
-					                          const userId = ownerProfile?.userId || null;
-					                          const role = normalizeRole(
-					                            ownerProfile?.role || "sales_rep",
-					                          );
+						                          const ownerProfile =
+						                            salesDoctorOwnerRepProfiles[ownerId] || null;
+						                          const name =
+						                            ownerProfile?.name ||
+						                            (() => {
+						                              const rawName = (salesDoctorDetail as any)
+						                                ?.ownerSalesRepName;
+						                              const trimmed =
+						                                typeof rawName === "string" ? rawName.trim() : "";
+						                              return trimmed.length ? trimmed : null;
+						                            })() ||
+						                            (() => {
+						                              const reps = (salesRepDashboard as any)?.salesReps;
+						                              if (!Array.isArray(reps)) return null;
+						                              const hit = reps.find(
+						                                (rep: any) =>
+						                                  String(rep?.id || "") === String(ownerId),
+						                              );
+						                              const repName =
+						                                typeof hit?.name === "string" ? hit.name.trim() : "";
+						                              return repName.length ? repName : null;
+						                            })() ||
+						                            null;
+						                          const email =
+						                            ownerProfile?.email ||
+						                            (() => {
+						                              const rawEmail = (salesDoctorDetail as any)
+						                                ?.ownerSalesRepEmail;
+						                              const trimmed =
+						                                typeof rawEmail === "string"
+						                                  ? rawEmail.trim()
+						                                  : "";
+						                              return trimmed.length ? trimmed : null;
+						                            })() ||
+						                            null;
+						                          const userId = ownerProfile?.userId || null;
+						                          const role = normalizeRole(
+						                            ownerProfile?.role || "sales_rep",
+						                          );
 					                          const content = name || ownerId;
 					                          const resolved = Boolean(name);
 					                          const canOpen = Boolean(userId);
