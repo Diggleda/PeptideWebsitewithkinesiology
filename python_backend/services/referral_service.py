@@ -1359,7 +1359,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
 
     # Admin "mine" dashboards should still include the house pipeline so admins can track
     # inbound/house contacts without leaking other reps' pipelines.
-    if is_admin and not scope_all:
+    if token_is_admin and not scope_all:
         try:
             from ..repositories.sales_prospect_repository import HOUSE_SALES_REP_ID
 
@@ -1382,7 +1382,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
     manual_leads = [_make_manual_lead(p) for p in normalized_prospects if _is_manual_prospect(p)]
 
     # Admin dashboards include house contact-form leads; they are not tied to any rep sales code.
-    if is_admin:
+    if token_is_admin:
         contact_form_leads = _load_contact_form_referrals(sales_rep_id=None)
     else:
         contact_form_leads = [_make_contact_form_lead(p) for p in normalized_prospects if _is_contact_form_prospect(p)]

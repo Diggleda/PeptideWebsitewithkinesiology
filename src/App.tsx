@@ -10948,13 +10948,13 @@ function MainApp() {
     [salesRepDoctorsById],
   );
 
-  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
-    const role = userRole;
-    const salesRepId = userSalesRepId || userId;
-    const salesRepIdParam = isAdmin(role) ? undefined : salesRepId;
-    const currentUserId = userId != null ? String(userId).trim() : "";
-    const currentUserEmail =
-      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
+	  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
+	    const role = userRole;
+	    const salesRepId = userSalesRepId || userId;
+	    const salesRepIdParam = salesRepId;
+	    const currentUserId = userId != null ? String(userId).trim() : "";
+	    const currentUserEmail =
+	      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
     if (!role || (!isRep(role) && !isAdmin(role))) {
       setSalesTrackingOrders([]);
       setSalesTrackingDoctors(new Map());
@@ -11024,10 +11024,10 @@ function MainApp() {
         }
       >();
 
-      const response = await ordersAPI.getForSalesRep({
-        salesRepId: salesRepIdParam || undefined,
-        scope: isAdmin(role) ? "all" : "mine",
-      });
+	      const response = await ordersAPI.getForSalesRep({
+	        salesRepId: salesRepIdParam || undefined,
+	        scope: "mine",
+	      });
       if (
         response &&
         typeof response === "object" &&

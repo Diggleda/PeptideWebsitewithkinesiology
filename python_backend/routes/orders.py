@@ -191,6 +191,7 @@ def list_orders_for_sales_rep():
             include_doctors=include_doctors,
             force=force,
             include_all_doctors=scope_all,
+            include_house_contacts=(role == "admin"),
         )
 
     return handle_action(action)

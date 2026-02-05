@@ -1592,6 +1592,7 @@ def get_orders_for_sales_rep(
     include_doctors: bool = False,
     force: bool = False,
     include_all_doctors: bool = False,
+    include_house_contacts: bool = False,
 ):
     normalized_sales_rep_id = str(sales_rep_id or "").strip()
     scope_key = "all" if include_all_doctors else "mine"
@@ -1675,7 +1676,7 @@ def get_orders_for_sales_rep(
         if doc.get("id") is not None
     }
 
-    # Include contact-form prospects so admins can see "house" sales/leads and so order attribution by
+    # Include contact-form prospects so reps/admins can see lead activity, and so order attribution by
     # billing email can match house leads even when no doctor user exists yet.
     try:
         prospects = sales_prospect_repository.get_all()
@@ -1683,6 +1684,14 @@ def get_orders_for_sales_rep(
         prospects = []
 
     if isinstance(prospects, list) and prospects:
+        house_sales_rep_id = None
+        if include_house_contacts:
+            try:
+                from ..repositories.sales_prospect_repository import HOUSE_SALES_REP_ID
+
+                house_sales_rep_id = str(HOUSE_SALES_REP_ID or "").strip() or None
+            except Exception:
+                house_sales_rep_id = None
         seen_doctor_ids = set(doctor_lookup.keys())
         for prospect in prospects:
             if not isinstance(prospect, dict):
@@ -1705,11 +1714,12 @@ def get_orders_for_sales_rep(
                 continue
 
             prospect_sales_rep_id = str(prospect.get("salesRepId") or prospect.get("sales_rep_id") or "").strip()
+            is_house_contact = bool(house_sales_rep_id) and prospect_sales_rep_id == house_sales_rep_id
             if include_all_doctors:
                 if allowed_rep_ids and prospect_sales_rep_id not in allowed_rep_ids:
                     continue
             else:
-                if allowed_rep_ids and prospect_sales_rep_id not in allowed_rep_ids:
+                if not is_house_contact and allowed_rep_ids and prospect_sales_rep_id not in allowed_rep_ids:
                     continue
 
             existing = doctor_lookup.get(lead_id) or {}
@@ -1871,7 +1881,22 @@ def get_orders_for_sales_rep(
     )
     if woo_enabled:
         # Build lookup: normalized email -> list of doctor metadata
-        email_to_doctors: Dict[str, List[Dict[str, object]]] = {}
+        email_to_best: Dict[str, Dict[str, object]] = {}
+
+        def _meta_priority(meta: Dict[str, object]) -> int:
+            try:
+                doctor_id = str(meta.get("id") or "").strip()
+            except Exception:
+                doctor_id = ""
+            if doctor_id and doctor_id in user_by_id:
+                role = str((user_by_id.get(doctor_id) or {}).get("role") or "").lower()
+                if role in ("doctor", "test_doctor"):
+                    return 30
+            if doctor_id and not doctor_id.startswith(("contact_form:", "manual:")):
+                return 20
+            if doctor_id.startswith("contact_form:"):
+                return 10
+            return 0
         for doctor in doctors:
             doctor_id = doctor.get("id")
             doctor_name = doctor.get("name") or doctor.get("email") or "Doctor"
@@ -1910,13 +1935,14 @@ def get_orders_for_sales_rep(
                 )
                 continue
             for em in normalized_emails:
-                email_to_doctors.setdefault(em, []).append(
-                    {
-                        "id": doctor_id,
-                        "name": doctor_name,
-                        "email": doctor_email,
-                    }
-                )
+                candidate = {"id": doctor_id, "name": doctor_name, "email": doctor_email}
+                existing = email_to_best.get(em)
+                if not existing or _meta_priority(candidate) > _meta_priority(existing):
+                    email_to_best[em] = candidate
+
+        email_to_doctors: Dict[str, List[Dict[str, object]]] = {
+            em: [meta] for em, meta in email_to_best.items()
+        }
 
         per_page = 50
         max_pages = 20
