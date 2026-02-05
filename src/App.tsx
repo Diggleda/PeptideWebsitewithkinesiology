@@ -782,7 +782,7 @@ const deriveShippingAddressFromOrders = (
   return undefined;
 };
 
-const WOO_PLACEHOLDER_IMAGE = "/Peppro_IconLogo_Transparent_NoBuffer.png";
+const WOO_PLACEHOLDER_IMAGE = "/PepPro_icon.png";
 
 const normalizeWooImageUrl = (value?: string | null): string | null => {
   if (typeof value !== "string") {
@@ -11751,9 +11751,14 @@ function MainApp() {
             credits: normalizedCredits,
           });
 	        } else if (isRep(user.role) || isAdmin(user.role)) {
+	          const isAdminRole = isAdmin(user.role);
 	          const scopeAll = isSalesLead(user.role);
 	          const dashboard = await referralAPI.getSalesRepDashboard({
-	            salesRepId: scopeAll ? undefined : user.salesRepId || user.id,
+	            salesRepId: scopeAll
+	              ? undefined
+	              : isAdminRole
+	                ? String(user.id)
+	                : user.salesRepId || user.id,
 	            scope: scopeAll ? "all" : "mine",
 	          });
 	          setSalesRepDashboard(dashboard);
@@ -20287,7 +20292,7 @@ function MainApp() {
 		                      <div className="flex-shrink-0">
 		                        <div className="brand-logo brand-logo--landing">
 			                          <img
-			                            src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+			                            src={withStaticAssetStamp("/PepPro_fulllogo.png")}
 			                            alt="PepPro"
 	                            style={{
                               display: "block",
@@ -20328,7 +20333,7 @@ function MainApp() {
                       <div className="flex w-full items-center justify-between gap-4 px-4">
                         <div className="brand-logo brand-logo--landing flex-shrink-0">
 	                          <img
-	                            src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+	                            src={withStaticAssetStamp("/PepPro_fulllogo.png")}
 	                            alt="PepPro"
 	                            style={{
                               display: "block",
@@ -20375,8 +20380,7 @@ function MainApp() {
                               "font-size 600ms ease, transform 600ms ease",
                           }}
                         >
-                          Welcome{user.visits && user.visits > 1 ? " back!" : "!"}
-                          , {user.name}!
+                          Welcome{user.visits && user.visits > 1 ? " back" : ""}, {user.name}!
                         </p>
                         <div
                           className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500 mt-6`}
@@ -20420,7 +20424,7 @@ function MainApp() {
                 >
                   <div className="brand-logo brand-logo--landing">
 	                    <img
-	                      src={withStaticAssetStamp("/Peppro_fulllogo.png")}
+	                      src={withStaticAssetStamp("/PepPro_fulllogo.png")}
 	                      alt="PepPro"
 	                      style={{
                         display: "block",
@@ -23424,11 +23428,6 @@ function MainApp() {
 				                                    <span className="text-base font-semibold text-slate-900 truncate">
 				                                      {name}
 				                                    </span>
-				                                    <span className="shrink-0">
-				                                      <Badge variant="secondary" className="uppercase">
-				                                        {titleCaseFromSlug(status.replace(/_/g, "-"))}
-			                                      </Badge>
-			                                    </span>
 			                                  </div>
 				                                  <div className="text-xs text-slate-500 truncate">
 				                                    {email || "No email on file"}
@@ -23440,7 +23439,10 @@ function MainApp() {
 				                                  )}
 				                                </div>
 				                              </div>
-				                              <div className="text-right whitespace-nowrap">
+				                              <div className="text-right whitespace-nowrap flex flex-col items-end gap-1">
+				                                <Badge variant="secondary" className="uppercase">
+				                                  {titleCaseFromSlug(status.replace(/_/g, "-"))}
+				                                </Badge>
 				                                <span
 				                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
 				                                    hasAccount

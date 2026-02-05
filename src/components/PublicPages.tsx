@@ -33,7 +33,7 @@ const PublicTopNav = () => (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="/" className="flex items-center gap-3 min-w-0">
           <img
-            src={withStaticAssetStamp('/Peppro_fulllogo.png')}
+            src={withStaticAssetStamp('/PepPro_fulllogo.png')}
             alt="PepPro"
             className="h-10 w-auto object-contain"
             loading="eager"

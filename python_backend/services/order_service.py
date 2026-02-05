@@ -1587,9 +1587,21 @@ def update_order_fields(
     return {"order": saved}
 
 
-def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, force: bool = False):
-    logger.info("[SalesRep] Fetch start salesRepId=%s includeDoctors=%s", sales_rep_id, include_doctors)
-    cache_key = f"{str(sales_rep_id)}::{'withDoctors' if include_doctors else 'ordersOnly'}"
+def get_orders_for_sales_rep(
+    sales_rep_id: Optional[str],
+    include_doctors: bool = False,
+    force: bool = False,
+    include_all_doctors: bool = False,
+):
+    normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    scope_key = "all" if include_all_doctors else "mine"
+    logger.info(
+        "[SalesRep] Fetch start salesRepId=%s scope=%s includeDoctors=%s",
+        normalized_sales_rep_id or "ALL",
+        scope_key,
+        include_doctors,
+    )
+    cache_key = f"{normalized_sales_rep_id or 'ALL'}::{scope_key}::{'withDoctors' if include_doctors else 'ordersOnly'}"
     now = time.time()
     if not force and _SALES_REP_ORDERS_TTL_SECONDS > 0:
         with _sales_rep_orders_cache_lock:
@@ -1597,28 +1609,47 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             if cached and float(cached.get("expiresAt") or 0) > now:
                 logger.info(
                     "[SalesRep] Cache hit salesRepId=%s ttlSeconds=%s",
-                    sales_rep_id,
+                    normalized_sales_rep_id or "ALL",
                     _SALES_REP_ORDERS_TTL_SECONDS,
                 )
                 return cached.get("value")
     users = user_repository.get_all()
     user_by_id = {str(u.get("id")): u for u in users if isinstance(u, dict) and u.get("id") is not None}
     rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
-    allowed_rep_ids = _compute_allowed_sales_rep_ids(sales_rep_id, users, rep_records)
+    allowed_rep_ids = (
+        _compute_allowed_sales_rep_ids(normalized_sales_rep_id, users, rep_records)
+        if normalized_sales_rep_id
+        else set()
+    )
+    include_sales_rep_customers = include_all_doctors and not allowed_rep_ids
 
     doctors = []
     for user in users:
         role = (user.get("role") or "").lower()
-        if role not in ("doctor", "test_doctor"):
+        is_doctor = role in ("doctor", "test_doctor")
+        is_sales_rep_customer = include_sales_rep_customers and role in ("sales_rep", "rep")
+        if not is_doctor and not is_sales_rep_customer:
             continue
-        doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "")
-        if doctor_sales_rep not in allowed_rep_ids:
-            continue
+        doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+        if include_all_doctors:
+            if allowed_rep_ids and doctor_sales_rep not in allowed_rep_ids:
+                continue
+        else:
+            if doctor_sales_rep not in allowed_rep_ids:
+                continue
         doctors.append(user)
 
     # Ensure doctors have a stable lead type stored for commission tracking.
     try:
-        doctors = referral_service.backfill_lead_types_for_doctors(doctors)
+        doctor_only = [d for d in doctors if (d.get("role") or "").lower() in ("doctor", "test_doctor")]
+        backfilled = referral_service.backfill_lead_types_for_doctors(doctor_only)
+        if isinstance(backfilled, list) and backfilled:
+            backfilled_by_id = {str(d.get("id")): d for d in backfilled if isinstance(d, dict) and d.get("id") is not None}
+            merged: List[Dict] = []
+            for entry in doctors:
+                entry_id = str(entry.get("id")) if isinstance(entry, dict) else ""
+                merged.append(backfilled_by_id.get(entry_id) or entry)
+            doctors = merged
     except Exception:
         pass
 
@@ -1643,6 +1674,89 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
         for doc in doctors
         if doc.get("id") is not None
     }
+
+    # Include contact-form prospects so admins can see "house" sales/leads and so order attribution by
+    # billing email can match house leads even when no doctor user exists yet.
+    try:
+        prospects = sales_prospect_repository.get_all()
+    except Exception:
+        prospects = []
+
+    if isinstance(prospects, list) and prospects:
+        seen_doctor_ids = set(doctor_lookup.keys())
+        for prospect in prospects:
+            if not isinstance(prospect, dict):
+                continue
+            email = _normalize_email(prospect.get("contactEmail"))
+            if not email:
+                continue
+
+            # Determine a stable id for the lead.
+            contact_form_id = str(prospect.get("contactFormId") or "").strip()
+            prospect_id = str(prospect.get("id") or "").strip()
+            doctor_id = str(prospect.get("doctorId") or "").strip()
+            if doctor_id:
+                lead_id = doctor_id
+            elif contact_form_id:
+                lead_id = f"contact_form:{contact_form_id}"
+            elif prospect_id.startswith("contact_form:"):
+                lead_id = prospect_id
+            else:
+                continue
+
+            prospect_sales_rep_id = str(prospect.get("salesRepId") or prospect.get("sales_rep_id") or "").strip()
+            if include_all_doctors:
+                if allowed_rep_ids and prospect_sales_rep_id not in allowed_rep_ids:
+                    continue
+            else:
+                if allowed_rep_ids and prospect_sales_rep_id not in allowed_rep_ids:
+                    continue
+
+            existing = doctor_lookup.get(lead_id) or {}
+            lead_meta = {
+                "id": lead_id,
+                "name": prospect.get("contactName") or email or "House / Contact Form",
+                "email": email,
+                "phone": prospect.get("contactPhone") or None,
+                "profileImageUrl": None,
+                "salesRepId": prospect_sales_rep_id or None,
+                "leadType": "contact_form",
+                "leadTypeSource": "contact_form",
+                "leadTypeLockedAt": prospect.get("updatedAt") or prospect.get("createdAt") or None,
+                "address1": prospect.get("officeAddressLine1"),
+                "address2": prospect.get("officeAddressLine2"),
+                "city": prospect.get("officeCity"),
+                "state": prospect.get("officeState"),
+                "postalCode": prospect.get("officePostalCode"),
+                "country": prospect.get("officeCountry"),
+            }
+
+            if existing:
+                doctor_lookup[lead_id] = {
+                    **lead_meta,
+                    **existing,
+                    "id": lead_id,
+                    "name": existing.get("name") or lead_meta["name"],
+                    "email": existing.get("email") or lead_meta["email"],
+                    "profileImageUrl": existing.get("profileImageUrl") or lead_meta["profileImageUrl"],
+                }
+            else:
+                doctor_lookup[lead_id] = lead_meta
+
+            if lead_id not in seen_doctor_ids:
+                doctors.append(
+                    {
+                        "id": lead_id,
+                        "name": lead_meta.get("name"),
+                        "email": lead_meta.get("email"),
+                        "phone": lead_meta.get("phone"),
+                        "leadType": lead_meta.get("leadType"),
+                        "leadTypeSource": lead_meta.get("leadTypeSource"),
+                        "leadTypeLockedAt": lead_meta.get("leadTypeLockedAt"),
+                        "salesRepId": lead_meta.get("salesRepId"),
+                    }
+                )
+                seen_doctor_ids.add(lead_id)
 
     # Overlay sales rep details from `sales_rep` / `sales_reps` table for UI display.
     for doctor_meta in doctor_lookup.values():
@@ -1694,8 +1808,13 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
 
         local_user = user_by_id.get(local_user_id)
         local_role = (local_user.get("role") or "").lower() if isinstance(local_user, dict) else ""
-        if local_role and local_role not in ("doctor", "test_doctor"):
-            continue
+        if local_role:
+            if local_role in ("doctor", "test_doctor"):
+                pass
+            elif include_sales_rep_customers and local_role in ("sales_rep", "rep"):
+                pass
+            else:
+                continue
 
         rep_from_order = _normalize_rep_id(
             local.get("doctorSalesRepId")
@@ -1707,11 +1826,12 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
             (local_user or {}).get("salesRepId")
             or (local_user or {}).get("sales_rep_id")
         )
-        if not (
-            (rep_from_order and rep_from_order in allowed_rep_ids)
-            or (rep_from_user and rep_from_user in allowed_rep_ids)
-        ):
-            continue
+        if allowed_rep_ids:
+            if not (
+                (rep_from_order and rep_from_order in allowed_rep_ids)
+                or (rep_from_user and rep_from_user in allowed_rep_ids)
+            ):
+                continue
 
         local_by_id[str(local_id)] = local
 
@@ -1744,7 +1864,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
     woo_enabled = woo_commerce.is_configured()
     logger.info(
         "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
-        sales_rep_id,
+        normalized_sales_rep_id or "ALL",
         len(doctors),
         woo_enabled,
         [d.get("email") for d in doctors],
@@ -1818,11 +1938,21 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
                 meta_data = woo_order.get("meta_data") or []
                 rep_id = _normalize_rep_id(_meta_value(meta_data, "peppro_sales_rep_id"))
                 billing_email = str((woo_order.get("billing") or {}).get("email") or "").strip().lower()
-                if not (
-                    (rep_id and rep_id in allowed_rep_ids)
-                    or (billing_email and billing_email in email_to_doctors)
-                ):
-                    continue
+                if allowed_rep_ids:
+                    if not (
+                        (rep_id and rep_id in allowed_rep_ids)
+                        or (billing_email and billing_email in email_to_doctors)
+                    ):
+                        continue
+                else:
+                    # Admin "scope=all": include any rep-attributed order, plus any order that matches
+                    # a known doctor/lead email.
+                    if include_all_doctors:
+                        if not ((rep_id and rep_id.strip()) or (billing_email and billing_email in email_to_doctors)):
+                            continue
+                    else:
+                        if not (billing_email and billing_email in email_to_doctors):
+                            continue
 
                 doctor_metas: List[Dict[str, object]] = []
                 if billing_email and billing_email in email_to_doctors:
@@ -1956,7 +2086,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
 
     logger.info(
         "[SalesRep] Fetch complete salesRepId=%s doctorCount=%s orderCount=%s sampleOrders=%s",
-        sales_rep_id,
+        normalized_sales_rep_id or "ALL",
         len(doctors),
         len(summaries),
         [o.get("id") or o.get("number") for o in summaries[:5]],
@@ -1966,7 +2096,7 @@ def get_orders_for_sales_rep(sales_rep_id: str, include_doctors: bool = False, f
         sample = summaries[0] if summaries else {}
         logger.info(
             "[SalesRep] Response snapshot salesRepId=%s orderCount=%s sampleId=%s sampleTracking=%s shipStationStatus=%s",
-            sales_rep_id,
+            normalized_sales_rep_id or "ALL",
             len(summaries),
             sample.get("id") or sample.get("number") or sample.get("wooOrderNumber"),
             sample.get("trackingNumber")

@@ -174,14 +174,24 @@ def list_orders_for_sales_rep():
             err = ValueError("Sales rep access required")
             setattr(err, "status", 403)
             raise err
-        sales_rep_id = g.current_user.get("id")
-        # Optional override: allow explicit salesRepId query param for admins and sales leads
-        override = request.args.get("salesRepId") or None
+        scope = (request.args.get("scope") or "").strip().lower()
+        scope_all = role == "admin" and scope == "all"
+
+        # Optional override: allow explicit salesRepId query param for admins and sales leads.
+        override = (request.args.get("salesRepId") or "").strip() or None
         if override and role in ("admin", "sales_lead", "saleslead", "sales-lead"):
             sales_rep_id = override
+        else:
+            # When admin is requesting "all", omit the sales rep filter entirely.
+            sales_rep_id = None if scope_all else g.current_user.get("id")
         force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
         include_doctors = (request.args.get("includeDoctors") or "").strip().lower() not in ("0", "false", "no")
-        return order_service.get_orders_for_sales_rep(sales_rep_id, include_doctors=include_doctors, force=force)
+        return order_service.get_orders_for_sales_rep(
+            sales_rep_id,
+            include_doctors=include_doctors,
+            force=force,
+            include_all_doctors=scope_all,
+        )
 
     return handle_action(action)
 

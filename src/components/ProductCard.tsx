@@ -45,7 +45,7 @@ const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
 })();
 
 const PLACEHOLDER_VARIATION_ID = '__peppro_needs_variant__';
-const PLACEHOLDER_IMAGE_SRC = '/Peppro_IconLogo_Transparent_NoBuffer.png';
+const PLACEHOLDER_IMAGE_SRC = '/PepPro_icon.png';
 
 const AUTO_OPEN_IMAGE_TIMEOUT_MS = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_IMAGE_TIMEOUT_MS || '').trim();

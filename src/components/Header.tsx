@@ -4531,7 +4531,7 @@ export function Header({
 
 		  const logoSlotHeightPx = isLargeScreen ? 56 : 48;
 		  const logoSizing = {
-		    maxWidth: isLargeScreen ? '240px' : 'min(210px, 56vw)',
+		    maxWidth: isLargeScreen ? '240px' : 'min(170px, 40vw)',
 		    heightPx: logoSlotHeightPx,
 		  };
 
@@ -4552,28 +4552,27 @@ export function Header({
 		        <div className="mt-2 space-y-4">
 			          <div className="glass-card squircle-lg p-3 !border-0">
 			            <p className="text-xs font-semibold text-slate-700">Header preview</p>
-				            <div className="mt-3 w-full app-header-blur border border-slate-200 shadow-sm rounded-xl px-6 py-4">
+				            <div className="mt-3 w-full max-w-full overflow-hidden app-header-blur border border-slate-200 shadow-sm rounded-xl px-4 sm:px-6 py-4">
 				              <div className="flex flex-col gap-3 md:gap-4">
-				                <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
-				                  <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+				                <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4 justify-between flex-nowrap">
+				                  <div className="flex items-center gap-3 min-w-0">
 					                    <div
-					                      className="brand-logo relative flex items-center justify-center flex-shrink-0"
-					                      style={{ height: logoSizing.heightPx }}
+					                      className="brand-logo relative flex items-center justify-start flex-shrink min-w-0"
+					                      style={{ height: logoSizing.heightPx, maxWidth: logoSizing.maxWidth }}
 					                    >
 					                      <img
 				                        src={
 				                          typeof localUser?.delegateLogoUrl === 'string' &&
 				                          localUser.delegateLogoUrl.trim().length > 0
 				                            ? localUser.delegateLogoUrl
-					                            : withStaticAssetStamp('/Peppro_fulllogo.png')
+					                            : withStaticAssetStamp('/PepPro_fulllogo.png')
 				                        }
 				                        alt="Delegate header logo preview"
 					                        className="relative z-[1] flex-shrink-0"
 					                        style={{
 					                          display: 'block',
-					                          width: 'auto',
+					                          width: '100%',
 					                          height: '100%',
-					                          maxWidth: logoSizing.maxWidth,
 					                          maxHeight: '100%',
 					                          objectFit: 'contain',
 					                        }}
@@ -4584,8 +4583,8 @@ export function Header({
 				                  </div>
 	
 				                  {isLargeScreen && (
-				                    <div className="flex flex-1 justify-center min-w-[240px] pointer-events-none opacity-95">
-				                      <div className="w-full max-w-md">
+				                    <div className="flex flex-1 justify-center min-w-0 pointer-events-none opacity-95">
+				                      <div className="w-full min-w-0 max-w-md">
 				                        {renderSearchField('', {
 				                          value: '',
 				                          readOnly: true,
@@ -4595,13 +4594,13 @@ export function Header({
 				                    </div>
 				                  )}
 	
-				                  <div className="ml-auto flex items-center justify-end flex-shrink-0">
+				                  <div className="ml-auto flex w-auto items-center justify-end min-w-0 max-w-full">
 				                    <div
-				                      className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full"
+				                      className="squircle-sm glass-brand px-3 py-1.5 sm:px-4 sm:py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full min-w-0 overflow-hidden flex-shrink text-xs sm:text-sm"
 				                      aria-label="Delegate header preview"
 				                    >
 				                      <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-				                      <span className="font-semibold truncate max-w-[55vw] sm:max-w-[20rem]">{`Delegate of ${
+				                      <span className="font-semibold truncate max-w-[45vw] sm:max-w-[20rem] min-w-0">{`Delegate of ${
 				                        localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'
 				                      }`}</span>
 				                    </div>
@@ -4789,7 +4788,7 @@ export function Header({
 		              return (
 		                <div
 		                  key={token || label}
-		                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+		                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-7 py-7 sm:px-8 sm:py-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
 		                >
 		                  <div className="min-w-0">
 			                    <div className="flex items-center gap-2">
@@ -5557,8 +5556,8 @@ export function Header({
 	                      delegateMode
 	                        ? ((typeof delegateLogoUrl === 'string' && delegateLogoUrl.trim().length > 0)
 	                          ? delegateLogoUrl
-	                          : withStaticAssetStamp('/Peppro_fulllogo.png'))
-	                        : withStaticAssetStamp('/Peppro_fulllogo.png')
+	                          : withStaticAssetStamp('/PepPro_fulllogo.png'))
+	                        : withStaticAssetStamp('/PepPro_fulllogo.png')
 		                    }
 	                    alt={delegateMode ? 'Doctor logo' : 'PepPro logo'}
 		                    className="relative z-[1] flex-shrink-0"
