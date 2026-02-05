@@ -3078,6 +3078,13 @@ export function Header({
     return tabs;
   }, [showPatientLinksTab]);
 
+  const accountTabDescriptionById: Record<AccountTabId, string> = {
+    details: 'Update your profile, shipping info, and settings.',
+    orders: 'Track your orders, invoices, and buy again.',
+    patient_links: 'Manage your patient sessions and proposals.',
+    research: 'Where you will soon find research tools and resources. We are excited to bring these to you soon!',
+  };
+
   const normalizeMarkupPercent = useCallback((value: unknown) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) {
@@ -4541,17 +4548,10 @@ export function Header({
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
-		      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7">
-		        <p className="text-sm leading-relaxed text-slate-700">
-	          Patient Links let your patients shop as a “delegate” under your authority. Delegates can browse and build a
-	          proposal, then share it back to you for checkout. Configure your delegate header logo, optional pricing markup,
-	          and generate links below.
-	        </p>
-	      </div>
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
 	        <h3 className="text-lg font-semibold text-slate-900">White label sessions with your logo</h3>
 	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-	          Make your logo appear in the header of your patient's session. Recommended: horizontal rectangle PNG (we’ll resize to fit the header). 
+	          Make your logo appear in the header of your patient's session. Recommended: horizontal rectangle PNG (we’ll resize to fit the header).
 	        </p>
 		        <div className="mt-2 space-y-4">
 			          <div className="glass-card squircle-lg p-3 !border-0">
@@ -4789,15 +4789,15 @@ export function Header({
 	                        ? 'Pending review'
 	                        : '';
 
-		              return (
-		                <div
-		                  key={token || label}
-		                  className="glass-card squircle-md border border-[rgba(95,179,249,0.35)] bg-white/80 p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between"
-		                >
-		                  <div className="min-w-0">
-			                    <div className="flex items-center gap-2">
-			                      <Link2 className="h-4 w-4 text-[rgb(95,179,249)] shrink-0" aria-hidden="true" />
-			                      <span className="font-semibold text-slate-900 truncate">{label}</span>
+			              return (
+			                <div
+			                  key={token || label}
+			                  className="glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.5)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between"
+			                >
+			                  <div className="min-w-0">
+				                    <div className="flex items-center gap-2">
+				                      <Link2 className="h-4 w-4 text-[rgb(95,179,249)] shrink-0" aria-hidden="true" />
+				                      <span className="font-semibold text-slate-900 truncate">{label}</span>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
 	                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
@@ -4904,15 +4904,15 @@ export function Header({
     return `Dr. ${raw}`;
   })();
 
-  const authControls = delegateMode ? (
-    <div className="flex items-center gap-2">
-      <div
-        className="squircle-sm glass-brand whitespace-nowrap px-4 py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none cursor-default"
-        aria-label={`Delegate of ${delegateDoctorLabel}`}
-        title={`Delegate of ${delegateDoctorLabel}`}
-      >
-        <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-        <span className="font-semibold truncate max-w-[55vw] sm:max-w-[20rem]">{`Delegate of ${delegateDoctorLabel}`}</span>
+	  const authControls = delegateMode ? (
+	    <div className="flex items-center gap-2 min-w-0 max-w-full">
+	      <div
+	        className="squircle-sm glass-card inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border border-[rgba(95,179,249,0.45)] bg-white/70 text-slate-900"
+	        aria-label={`Delegate of ${delegateDoctorLabel}`}
+	        title={`Delegate of ${delegateDoctorLabel}`}
+	      >
+	        <User className="h-4 w-4 flex-shrink-0 text-[rgb(95,179,249)]" aria-hidden="true" />
+	        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
     </div>
@@ -5003,11 +5003,14 @@ export function Header({
                   </>
                 )}
 	              </div>
-	              <DialogDescription className="account-header-description">
-	                {((localUser?.visits ?? user?.visits ?? 1) > 1)
-	                  ? `We appreciate you joining us on the path to making healthcare simpler and more transparent! You can manage your account details and orders below.`
-	                  : `We are thrilled to have you with us—let's make healthcare simpler together!`}
-	              </DialogDescription>
+              <DialogDescription className="account-header-description">
+                {((localUser?.visits ?? user?.visits ?? 1) > 1)
+                  ? `We appreciate you joining us on the path to making healthcare simpler and more fulfilling!`
+                  : `We are thrilled to have you with us—let's make healthcare fulfilling together!`}
+              </DialogDescription>
+              <p className="text-sm text-slate-600">
+                {accountTabDescriptionById[accountTab]}
+              </p>
               <div className="relative w-full">
                 <div
                   className="w-full account-tab-scroll-container"
@@ -5545,7 +5548,7 @@ export function Header({
 			        pointerEvents: welcomeOpen ? 'none' : 'auto',
 			      }}
 			    >
-      <div className="w-full px-6 sm:px-6 py-4">
+      <div className="w-full px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
           <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
 	            {/* Logo (same header layout for doctor + delegate) */}
@@ -5593,7 +5596,7 @@ export function Header({
             )}
 
 	            {/* User Actions */}
-	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end">
+	            <div className="ml-auto flex items-center gap-2 md:gap-4 flex-wrap sm:flex-nowrap justify-end min-w-0 max-w-full">
 		              {(networkQuality === 'offline' || networkQuality === 'poor') && (
 		                <div
 		                  className="flex items-center justify-center squircle-sm border border-slate-200 bg-white/70 px-2 py-1"

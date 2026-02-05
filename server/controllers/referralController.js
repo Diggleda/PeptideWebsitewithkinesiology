@@ -428,29 +428,30 @@ const getDoctorLedger = (req, res, next) => {
   }
 };
 
-  const getSalesRepDashboard = async (req, res, next) => {
-	  try {
-	    ensureSalesRep(req.user, 'getSalesRepDashboard');
-	    const role = normalizeRole(req.user.role);
-	    const isAdmin = role === 'admin';
-	    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-	    const scopeAll = (isAdmin || isSalesLead(role)) && (req.query.scope || '').toLowerCase() === 'all';
-	    const salesRepId = scopeAll ? null : requestedSalesRepId;
-	    logger.info(
-	      {
-	        userId: req.user.id,
-        role,
-        requestedSalesRepId,
-        salesRepId,
-        scopeAll,
-        path: '/api/referrals/admin/dashboard',
-      },
-      'Sales rep dashboard request',
-    );
-    const allReferrals = referralRepository.getAll();
-    let referrals = scopeAll
-      ? allReferrals
-      : referralRepository.findBySalesRepId(salesRepId);
+	  const getSalesRepDashboard = async (req, res, next) => {
+		  try {
+		    ensureSalesRep(req.user, 'getSalesRepDashboard');
+		    const role = normalizeRole(req.user.role);
+		    const isAdmin = role === 'admin';
+		    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+		    const scopeAll = (isAdmin || isSalesLead(role)) && (req.query.scope || '').toLowerCase() === 'all';
+		    const adminViewingAll = isAdmin && scopeAll;
+		    const salesRepId = scopeAll ? null : requestedSalesRepId;
+		    logger.info(
+		      {
+		        userId: req.user.id,
+	        role,
+	        requestedSalesRepId,
+	        salesRepId,
+	        scopeAll,
+	        path: '/api/referrals/admin/dashboard',
+	      },
+	      'Sales rep dashboard request',
+	    );
+	    const allReferrals = referralRepository.getAll();
+	    let referrals = scopeAll
+	      ? allReferrals
+	      : referralRepository.findBySalesRepId(salesRepId);
     // Include users/accounts to help UI detect account creation
     const rawUsers = userRepository.getAll();
     const users = scopeAll
@@ -501,35 +502,24 @@ const getDoctorLedger = (req, res, next) => {
         }
       }
     }
-    const usersWithOrders = (users || []).map((u) => ({
-      ...u,
-      totalOrders: orderCounts[String(u?.id)] || 0,
-    }));
+	    const usersWithOrders = (users || []).map((u) => ({
+	      ...u,
+	      totalOrders: orderCounts[String(u?.id)] || 0,
+	    }));
 
-    // Always merge in any unmatched referrals so local data (mismatched salesRepId) still appears
-    if (!scopeAll) {
-      const dedup = new Map();
-      referrals.forEach((r) => dedup.set(r.id, r));
-      allReferrals.forEach((r) => {
-        if (!dedup.has(r.id)) {
-          dedup.set(r.id, r);
-        }
-      });
-      referrals = Array.from(dedup.values());
-    }
-    let codes = [];
-    if (isAdmin) {
-      codes = referralCodeRepository.getAll();
-    } else {
-      const ownerIds = [
-        salesRepId || null,
-        req.user?.id || null,
-        req.user?.salesRepId || null,
-      ].filter(Boolean);
-      ownerIds.forEach((ownerId) => {
-        codes = codes.concat(referralCodeRepository.findBySalesRepId(ownerId));
-      });
-    }
+	    let codes = [];
+	    if (adminViewingAll) {
+	      codes = referralCodeRepository.getAll();
+	    } else {
+	      const ownerIds = [
+	        salesRepId || null,
+	        req.user?.id || null,
+	        req.user?.salesRepId || null,
+	      ].filter(Boolean);
+	      ownerIds.forEach((ownerId) => {
+	        codes = codes.concat(referralCodeRepository.findBySalesRepId(ownerId));
+	      });
+	    }
 
     // Merge sales rep "salesCode" from local store
     const mergeRepCodes = (repList) => {
@@ -561,21 +551,21 @@ const getDoctorLedger = (req, res, next) => {
       });
     };
 
-    if (isAdmin) {
-      mergeRepCodes(salesRepRepository.getAll());
-    } else {
-      const rep =
-        salesRepRepository.findById(salesRepId) ||
-        salesRepRepository.findByEmail(req.user?.email) ||
-        [];
-      mergeRepCodes([rep].filter(Boolean));
-    }
+	    if (adminViewingAll) {
+	      mergeRepCodes(salesRepRepository.getAll());
+	    } else {
+	      const rep =
+	        salesRepRepository.findById(salesRepId) ||
+	        salesRepRepository.findByEmail(req.user?.email) ||
+	        [];
+	      mergeRepCodes([rep].filter(Boolean));
+	    }
 
-    if (isAdmin && mysqlClient.isEnabled()) {
-      try {
-        const rows = await mysqlClient.fetchAll(
-          `
-            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
+	    if (isAdmin && mysqlClient.isEnabled()) {
+	      try {
+	        const rows = await mysqlClient.fetchAll(
+	          `
+	            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
             FROM contact_forms
             ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
           `,
@@ -599,12 +589,12 @@ const getDoctorLedger = (req, res, next) => {
             updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString(),
             source: 'contact_form',
           };
-        });
-        referrals = [...mapped, ...referrals];
-      } catch (error) {
-        logger.error({ err: error }, 'Failed to load contact form referrals from MySQL');
-      }
-    }
+	        });
+	        referrals = [...mapped, ...referrals];
+	      } catch (error) {
+	        logger.error({ err: error }, 'Failed to load contact form referrals from MySQL');
+	      }
+	    }
 
     // Overlay prospect-owned fields (status/notes/isManual) onto the referral list.
     // This allows the UI to remain backward compatible while we migrate the source of truth.

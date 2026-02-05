@@ -736,12 +736,36 @@ const sanitizeAccountAddress = (
 };
 
 const getInitials = (name?: string | null) => {
-  if (!name) return "Dr";
-  const parts = name.split(" ").filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  if (!name) return "PP";
+  const honorifics = new Set([
+    "mr",
+    "mrs",
+    "ms",
+    "miss",
+    "mx",
+    "dr",
+    "doctor",
+    "prof",
+    "sir",
+    "madam",
+  ]);
+  const suffixes = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+  const tokens = name
+    .split(/\s+/)
+    .map((token) => token.replace(/[.,]/g, "").trim())
+    .filter(Boolean);
+  const filtered = tokens.filter((token, idx) => {
+    const lower = token.toLowerCase();
+    if (honorifics.has(lower)) return false;
+    if (idx === tokens.length - 1 && suffixes.has(lower)) return false;
+    return true;
+  });
+  const parts = filtered.length ? filtered : tokens;
+  if (parts.length === 0) return "PP";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase() || "PP";
+  const first = parts[0]?.[0] || "";
+  const last = parts[parts.length - 1]?.[0] || "";
+  return (first + last).toUpperCase() || "PP";
 };
 
 const buildShippingAddressFromUserProfile = (
@@ -8841,10 +8865,11 @@ function MainApp() {
 	  const [isIdle, setIsIdle] = useState(false);
 	  const isIdleRef = useRef(false);
 	  const lastActivityAtRef = useRef<number>(Date.now());
-	  const idleLogoutFiredRef = useRef(false);
-	  const sessionLogoutFiredRef = useRef(false);
-	  const lastPresenceHeartbeatPingAtRef = useRef(0);
-	  const lastPresenceInteractionPingAtRef = useRef(0);
+		  const idleLogoutFiredRef = useRef(false);
+		  const sessionLogoutFiredRef = useRef(false);
+		  const lastPresenceHeartbeatPingAtRef = useRef(0);
+		  const lastPresenceInteractionPingAtRef = useRef(0);
+		  const lastSessionCheckAtRef = useRef(0);
 
   useEffect(() => {
 	    isIdleRef.current = isIdle;
@@ -8991,37 +9016,46 @@ function MainApp() {
 	      }, 5000);
 	    };
 
-	    const controller = new AbortController();
-		    const runLongPoll = async () => {
-		      if (liveClientsLongPollDisabledRef.current) {
-		        startIntervalFallback();
-		        return;
-		      }
-		      while (!cancelled) {
-	        if (!isPageVisible() || !isOnline()) {
-	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(800);
-	          continue;
-		        }
-		        try {
-		          const payload = (await (isSalesLeadRole
-		            ? settingsAPI.getLiveUsersLongPoll(
-		                liveClientsEtagRef.current,
-		                25000,
-		                controller.signal,
-		              )
-		            : settingsAPI.getLiveClientsLongPoll(
-		                null,
-		                liveClientsEtagRef.current,
-		                25000,
-		                controller.signal,
-		              ))) as any;
-		          if (cancelled) break;
-		          liveClientsEtagRef.current =
-		            typeof payload?.etag === "string" ? payload.etag : null;
-		          const raw = isSalesLeadRole
-		            ? Array.isArray(payload?.users)
-		              ? payload.users
+		    const controller = new AbortController();
+			    const runLongPoll = async () => {
+			      if (liveClientsLongPollDisabledRef.current) {
+			        startIntervalFallback();
+			        return;
+			      }
+			      while (!cancelled) {
+		        if (!isPageVisible() || !isOnline()) {
+		          // eslint-disable-next-line no-await-in-loop
+		          await sleep(800);
+		          continue;
+			        }
+			        try {
+			          const requestStartedAt = Date.now();
+			          const payload = (await (isSalesLeadRole
+			            ? settingsAPI.getLiveUsersLongPoll(
+			                liveClientsEtagRef.current,
+			                25000,
+			                controller.signal,
+			              )
+			            : settingsAPI.getLiveClientsLongPoll(
+			                null,
+			                liveClientsEtagRef.current,
+			                25000,
+			                controller.signal,
+			              ))) as any;
+			          if (cancelled) break;
+			          const elapsedMs = Date.now() - requestStartedAt;
+			          // If the server can't hold the request open (or concurrency is exceeded),
+			          // the endpoint may return immediately and this loop can hammer the backend.
+			          const minLoopMs = 1000;
+			          if (elapsedMs < minLoopMs) {
+			            // eslint-disable-next-line no-await-in-loop
+			            await sleep(minLoopMs - elapsedMs);
+			          }
+			          liveClientsEtagRef.current =
+			            typeof payload?.etag === "string" ? payload.etag : null;
+			          const raw = isSalesLeadRole
+			            ? Array.isArray(payload?.users)
+			              ? payload.users
 		              : []
 		            : Array.isArray(payload?.clients)
 		              ? payload.clients
@@ -9103,30 +9137,37 @@ function MainApp() {
 	      }, 5000);
 	    };
 
-	    const controller = new AbortController();
-	    const runLongPoll = async () => {
-	      if (adminLiveUsersLongPollDisabledRef.current) {
-	        startIntervalFallback();
-	        return;
-	      }
-	      while (!cancelled) {
-	        if (!isPageVisible() || !isOnline()) {
-	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(800);
-	          continue;
-	        }
-	        try {
-	          const payload = (await settingsAPI.getLiveUsersLongPoll(
-	            adminLiveUsersEtagRef.current,
-	            25000,
-	            controller.signal,
-	          )) as any;
-	          if (cancelled) break;
-	          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
-	          const users = Array.isArray(payload?.users) ? payload.users : [];
-	          setAdminLiveUsers(users);
-	        } catch (error: any) {
-	          if (cancelled) break;
+		    const controller = new AbortController();
+		    const runLongPoll = async () => {
+		      if (adminLiveUsersLongPollDisabledRef.current) {
+		        startIntervalFallback();
+		        return;
+		      }
+		      while (!cancelled) {
+		        if (!isPageVisible() || !isOnline()) {
+		          // eslint-disable-next-line no-await-in-loop
+		          await sleep(800);
+		          continue;
+		        }
+		        try {
+		          const requestStartedAt = Date.now();
+		          const payload = (await settingsAPI.getLiveUsersLongPoll(
+		            adminLiveUsersEtagRef.current,
+		            25000,
+		            controller.signal,
+		          )) as any;
+		          if (cancelled) break;
+		          const elapsedMs = Date.now() - requestStartedAt;
+		          const minLoopMs = 1000;
+		          if (elapsedMs < minLoopMs) {
+		            // eslint-disable-next-line no-await-in-loop
+		            await sleep(minLoopMs - elapsedMs);
+		          }
+		          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
+		          const users = Array.isArray(payload?.users) ? payload.users : [];
+		          setAdminLiveUsers(users);
+		        } catch (error: any) {
+		          if (cancelled) break;
 	          if (typeof error?.status === "number" && error.status === 404) {
 	            adminLiveUsersLongPollDisabledRef.current = true;
 	            startIntervalFallback();
@@ -11759,9 +11800,7 @@ function MainApp() {
 	          const dashboard = await referralAPI.getSalesRepDashboard({
 	            salesRepId: scopeAll
 	              ? undefined
-	              : isAdminRole
-	                ? String(user.id)
-	                : user.salesRepId || user.id,
+	              : user.salesRepId || user.id,
 	            scope: scopeAll ? "all" : "mine",
 	          });
 	          setSalesRepDashboard(dashboard);
@@ -13851,34 +13890,50 @@ function MainApp() {
 	    if (typeof window === "undefined") return;
 	    if (!user) return;
 
-    let cancelled = false;
-    const intervalMs = 5_000;
+	    let cancelled = false;
+	    const intervalMs = 60_000;
 
-    const checkSession = async () => {
-      if (cancelled) return;
-      if (!isOnline() || !isPageVisible()) return;
-      try {
-        const current = await authAPI.getCurrentUser();
-        if (!current && !cancelled) {
-          handleLogout();
-        }
+	    const checkSession = async () => {
+	      if (cancelled) return;
+	      if (!isOnline() || !isPageVisible()) return;
+	      const now = Date.now();
+	      // Avoid hammering `/auth/me` when multiple events fire close together.
+	      const throttleMs = 15_000;
+	      if (now - lastSessionCheckAtRef.current < throttleMs) return;
+	      lastSessionCheckAtRef.current = now;
+	      try {
+	        const current = await authAPI.getCurrentUser();
+	        if (!current && !cancelled) {
+	          handleLogout();
+	        }
       } catch {
         // Ignore transient network/server failures; keep the user signed in.
       }
     };
 
-    const interval = window.setInterval(() => {
-      void checkSession();
-    }, intervalMs);
+	    const interval = window.setInterval(() => {
+	      void checkSession();
+	    }, intervalMs);
 
-    // Run one check shortly after mount so stale sessions resolve quickly.
-    window.setTimeout(() => void checkSession(), 1_500);
+	    // Run one check shortly after mount so stale sessions resolve quickly.
+	    window.setTimeout(() => void checkSession(), 1_500);
 
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [user?.id, handleLogout]);
+	    const handleVisibilityOrFocus = () => {
+	      if (!isPageVisible() || !isOnline()) return;
+	      void checkSession();
+	    };
+	    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+	    window.addEventListener("focus", handleVisibilityOrFocus);
+	    window.addEventListener("online", handleVisibilityOrFocus);
+
+	    return () => {
+	      cancelled = true;
+	      window.clearInterval(interval);
+	      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+	      window.removeEventListener("focus", handleVisibilityOrFocus);
+	      window.removeEventListener("online", handleVisibilityOrFocus);
+	    };
+	  }, [user?.id, handleLogout]);
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
@@ -20168,7 +20223,7 @@ function MainApp() {
 		          {normalized}{" "}
 		          <button
 		            type="button"
-		            className="font-semibold text-[rgb(95,179,249)] bg-transparent p-0"
+		            className="text-xs font-semibold text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
 		            onClick={() =>
 		              setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: false }))
 		            }
@@ -20186,7 +20241,8 @@ function MainApp() {
 		      lastSpace >= minCutoff ? head.slice(0, lastSpace) : head.slice(0, PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS);
 		    const cleaned = trimmed.replace(/[\s.,;:!?)}\]]+$/g, "");
 
-		    const reservedCharsForMore = 24;
+		    // Reserve extra room to keep "... more" on the same final line.
+		    const reservedCharsForMore = 44;
 		    const safeMax = Math.max(
 		      60,
 		      PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS - reservedCharsForMore,
@@ -20196,14 +20252,16 @@ function MainApp() {
 
 		    return (
 		      <>
-		        {baseText}...{" "}
+		        {baseText}
+		        {"\u00A0"}
 		        <button
 		          type="button"
-		          className="text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
+		          className="text-xs text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
 		          onClick={() =>
 		            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
 		          }
 		        >
+		          <span aria-hidden>... </span>
 		          <span className="font-semibold">more</span>
 		        </button>
 		      </>
