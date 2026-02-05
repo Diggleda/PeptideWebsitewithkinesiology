@@ -142,6 +142,7 @@ interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
+  forceProposalMode?: boolean;
   onCheckout: (payload: {
     shippingAddress: ShippingAddress;
     shippingRate: ShippingRate | null;
@@ -215,6 +216,7 @@ export function CheckoutModal({
   isOpen,
   onClose,
   cartItems,
+  forceProposalMode,
   onCheckout,
   onUpdateItemQuantity,
   onRemoveItem,
@@ -416,7 +418,7 @@ export function CheckoutModal({
   }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost, paymentMethod]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
   const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
-  const proposalMode = isDelegateFlow;
+  const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
   const delegateDoctorDisplayName = isDelegateFlow
     ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
       ? 'Doctor'
@@ -1011,7 +1013,9 @@ export function CheckoutModal({
 	              </DialogTitle>
 	              <DialogDescription>
 	                {proposalMode
-	                  ? 'Review your proposal and share it with the doctor.'
+	                  ? (isDelegateFlow
+	                    ? `Review your proposal and share it with ${delegateDoctorDisplayName || 'the doctor'}.`
+	                    : 'Review this proposal and place your order.')
 	                  : 'Review and place your order.'}
 	              </DialogDescription>
 	            </div>

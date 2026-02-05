@@ -682,7 +682,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     <div className="glass-card squircle-sm border border-[var(--brand-glass-border-2)] p-3 space-y-2">{bulkContent}</div>
   ) : null;
 
-	  const addToCartButton = (
+  const addToCartButton = (
 	    <Button
       onClick={() => {
         onAddToCart(product.id, selectedVariation.id, quantity);
@@ -692,7 +692,11 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
       }}
       className="squircle-sm glass-brand btn-hover-lighter w-full"
 	    >
-	      <ShoppingCart className="w-4 h-4 mr-2" />
+	      {proposalMode ? (
+	        <Plus className="w-4 h-4 mr-2" />
+	      ) : (
+	        <ShoppingCart className="w-4 h-4 mr-2" />
+	      )}
 	      {proposalMode ? 'Add to Proposal' : 'Add to Cart'}
 	    </Button>
 	  );

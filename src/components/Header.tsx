@@ -4715,7 +4715,7 @@ export function Header({
 	        </p>
 	      </div>
 
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-3">
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-2">
 	        <div className="flex items-center justify-between gap-3">
 	          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
 	          <Button
@@ -4729,7 +4729,7 @@ export function Header({
             {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
-	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
+	        <p className="text-sm leading-relaxed text-slate-700">
 	          Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke link” to immediately disable a link.
 	        </p>
 
@@ -4751,7 +4751,7 @@ export function Header({
 	            </div>
 	          </div>
 	        ) : (
-	          <div className="space-y-3 pt-1">
+	          <div className="space-y-4 pt-1">
 		            {patientLinks.map((link) => {
 		              const token = typeof link?.token === 'string' ? link.token : '';
 		              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
@@ -4788,7 +4788,7 @@ export function Header({
 		              return (
 		                <div
 		                  key={token || label}
-		                  className="glass-card squircle-md border border-[var(--brand-glass-border-1)] bg-white/80 px-7 py-7 sm:px-8 sm:py-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+		                  className="glass-card squircle-md border border-[rgba(95,179,249,0.35)] bg-white/80 p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between"
 		                >
 		                  <div className="min-w-0">
 			                    <div className="flex items-center gap-2">

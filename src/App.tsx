@@ -2773,6 +2773,7 @@ function MainApp() {
     delegateOrderId?: string | null;
     sharedAt?: string | null;
   } | null>(null);
+  const isProposalReviewMode = Boolean(activeDelegationProposal);
   const [proposalShippingAddress, setProposalShippingAddress] = useState<CheckoutShippingAddress | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
@@ -3131,6 +3132,7 @@ function MainApp() {
       recording?: string | null;
     }>
   >([]);
+  const [expandedPeptideForumDescriptions, setExpandedPeptideForumDescriptions] = useState<Record<string, boolean>>({});
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
     useState(false);
   const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
@@ -14275,7 +14277,7 @@ function MainApp() {
         }
 
         if (nextCart.length === 0) {
-          toast.error('Unable to load this proposal into the cart (products not found).');
+          toast.error('Unable to load this proposal (products not found).');
           return;
         }
 
@@ -14291,7 +14293,7 @@ function MainApp() {
         toast.info(
           skipped > 0
             ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped).`
-            : 'Proposal loaded into a new cart.',
+            : 'Proposal loaded.',
         );
       })();
     },
@@ -15704,7 +15706,7 @@ function MainApp() {
 	                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
 	                >
 	                  <ShoppingCart className="w-4 h-4 mr-2" />
-	                  {isDelegateMode ? `Proposal (${totalCartItems})` : `Checkout (${totalCartItems})`}
+	                  {isDelegateMode || isProposalReviewMode ? `Proposal (${totalCartItems})` : `Checkout (${totalCartItems})`}
 	                </Button>
 	              )}
 	            </div>
@@ -15723,7 +15725,7 @@ function MainApp() {
 			                  key={product.id}
 			                  product={product}
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
-	                      proposalMode={isDelegateMode}
+	                      proposalMode={isDelegateMode || isProposalReviewMode}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
 			                  onAddToCart={(productId, variationId, qty) =>
 			                    handleAddToCart(productId, qty, undefined, variationId)
@@ -20152,6 +20154,55 @@ function MainApp() {
 		    totalCartItems > 0 && !isCheckoutButtonVisible;
 		  const newsLoadingPlaceholders = Array.from({ length: 5 });
 		  const forumLoadingPlaceholders = Array.from({ length: 1 });
+		  const PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS = 180;
+		  const renderPeptideForumDescription = (itemId: string, value: string) => {
+		    const normalized = String(value).replace(/\s+/g, " ").trim();
+		    if (!normalized) return null;
+		    const canTruncate = normalized.length > PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS;
+		    const isExpanded = Boolean(expandedPeptideForumDescriptions[itemId]);
+		    if (!canTruncate) return normalized;
+		    if (isExpanded) {
+		      return (
+		        <>
+		          {normalized}{" "}
+		          <button
+		            type="button"
+		            className="font-semibold text-[rgb(95,179,249)] bg-transparent p-0"
+		            onClick={() =>
+		              setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: false }))
+		            }
+		          >
+		            Less
+		          </button>
+		        </>
+		      );
+		    }
+
+		    const head = normalized.slice(0, PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS + 1);
+		    const lastSpace = head.lastIndexOf(" ");
+		    const minCutoff = Math.floor(PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS * 0.6);
+		    const trimmed =
+		      lastSpace >= minCutoff ? head.slice(0, lastSpace) : head.slice(0, PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS);
+		    const cleaned = trimmed.replace(/[\s.,;:!?)}\]]+$/g, "");
+
+		    return (
+		      <span className="flex w-full min-w-0 items-baseline gap-1">
+		        <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+		          {cleaned}
+		        </span>
+		        <button
+		          type="button"
+		          className="text-[rgb(95,179,249)] bg-transparent p-0 flex-shrink-0"
+		          onClick={() =>
+		            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
+		          }
+		        >
+		          <span aria-hidden>... </span>
+		          <span className="font-semibold">more</span>
+		        </button>
+		      </span>
+		    );
+		  };
 		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
 		  const landingAccountButton = user ? (
 		    <Button
@@ -20808,7 +20859,7 @@ function MainApp() {
                                         </p>
                                         {item.description && (
                                           <p className="text-xs text-slate-600 leading-relaxed">
-                                            {item.description}
+                                            {renderPeptideForumDescription(item.id, item.description)}
                                           </p>
                                         )}
                                         {(() => {
@@ -21969,10 +22020,11 @@ function MainApp() {
       </div>
 
       {/* Checkout Modal */}
-	      <CheckoutModal
+      <CheckoutModal
 	        isOpen={checkoutOpen}
 	        onClose={() => setCheckoutOpen(false)}
 	        cartItems={cartItems}
+          forceProposalMode={isProposalReviewMode}
 	        onCheckout={handleCheckout}
 	        onClearCart={() => {
 	          setCartItems([]);
@@ -24102,7 +24154,7 @@ function MainApp() {
         onClose={handleCloseProductDetail}
         onAddToCart={handleAddToCart}
         pricingMarkupPercent={delegatePricingMarkupPercent}
-        proposalMode={isDelegateMode}
+        proposalMode={isDelegateMode || isProposalReviewMode}
       />
     </div>
   );

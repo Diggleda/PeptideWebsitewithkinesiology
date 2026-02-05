@@ -469,7 +469,11 @@ export function ProductDetailDialog({
 	                    disabled={isVariantSelectionLoading}
 	                    className="w-full h-14 text-base font-semibold glass-brand squircle-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
 	                  >
-	                    <ShoppingCart className="mr-2 h-5 w-5" />
+	                    {proposalMode ? (
+	                      <Plus className="mr-2 h-5 w-5" />
+	                    ) : (
+	                      <ShoppingCart className="mr-2 h-5 w-5" />
+	                    )}
 	                    {isVariantSelectionLoading
 	                      ? 'Loading options…'
 	                      : proposalMode ? 'Add to Proposal' : 'Add to Cart'}
