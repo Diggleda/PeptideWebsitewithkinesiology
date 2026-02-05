@@ -3690,6 +3690,10 @@ export function Header({
         return source === 'woocommerce' || source === 'peppro' || source === 'local' || hasWooIntegration;
       })
       .filter((order) => {
+        const status = String(order.status || '').toLowerCase().trim();
+        return status !== 'delegation_draft';
+      })
+      .filter((order) => {
         if (showCanceledOrders) {
           return true;
         }

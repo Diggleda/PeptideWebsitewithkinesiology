@@ -11754,7 +11754,8 @@ function MainApp() {
           });
 	        } else if (isRep(user.role) || isAdmin(user.role)) {
 	          const isAdminRole = isAdmin(user.role);
-	          const scopeAll = isSalesLead(user.role);
+	          // Sales leads should only see their own prospects (same scope as reps).
+	          const scopeAll = false;
 	          const dashboard = await referralAPI.getSalesRepDashboard({
 	            salesRepId: scopeAll
 	              ? undefined
@@ -20185,22 +20186,27 @@ function MainApp() {
 		      lastSpace >= minCutoff ? head.slice(0, lastSpace) : head.slice(0, PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS);
 		    const cleaned = trimmed.replace(/[\s.,;:!?)}\]]+$/g, "");
 
+		    const reservedCharsForMore = 24;
+		    const safeMax = Math.max(
+		      60,
+		      PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS - reservedCharsForMore,
+		    );
+		    const baseText =
+		      cleaned.length > safeMax ? cleaned.slice(0, safeMax).replace(/[\s.,;:!?)}\]]+$/g, "") : cleaned;
+
 		    return (
-		      <span className="flex w-full min-w-0 items-baseline gap-1">
-		        <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-		          {cleaned}
-		        </span>
+		      <>
+		        {baseText}...{" "}
 		        <button
 		          type="button"
-		          className="text-[rgb(95,179,249)] bg-transparent p-0 flex-shrink-0"
+		          className="text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
 		          onClick={() =>
 		            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
 		          }
 		        >
-		          <span aria-hidden>... </span>
 		          <span className="font-semibold">more</span>
 		        </button>
-		      </span>
+		      </>
 		    );
 		  };
 		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
