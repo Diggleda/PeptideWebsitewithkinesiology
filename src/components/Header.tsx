@@ -273,6 +273,24 @@ const formatOrderDate = (value?: string | null) => {
   });
 };
 
+const formatLinkDateTime = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const datePart = date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${datePart} @ ${timePart}`;
+};
+
 const formatCurrency = (amount?: number | null, currency = 'USD') => {
   if (amount === null || amount === undefined || Number.isNaN(amount)) {
     return '—';
@@ -923,6 +941,8 @@ export function Header({
   const [patientLinksLoading, setPatientLinksLoading] = useState(false);
   const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
   const [patientLinks, setPatientLinks] = useState<any[]>([]);
+  const patientLinksPrefetchedRef = useRef(false);
+  const patientLinksLoadInFlightRef = useRef(false);
   const [patientMarkupDraft, setPatientMarkupDraft] = useState('0');
   const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
   const [patientLinksSaving, setPatientLinksSaving] = useState(false);
@@ -3080,9 +3100,9 @@ export function Header({
 
   const accountTabDescriptionById: Record<AccountTabId, string> = {
     details: 'Update your profile, shipping info, and settings.',
-    orders: 'Track your orders, invoices, and buy again.',
+    orders: 'Track your orders, reorders, and invoices.',
     patient_links: 'Manage your patient sessions and proposals.',
-    research: 'Where you will soon find research tools and resources. We are excited to bring these to you soon!',
+    research: 'Where you will soon find research tools and resources. We are excited to bring these to you!',
   };
 
   const normalizeMarkupPercent = useCallback((value: unknown) => {
@@ -3098,6 +3118,10 @@ export function Header({
     if (!showPatientLinksTab) {
       return;
     }
+    if (patientLinksLoadInFlightRef.current) {
+      return;
+    }
+    patientLinksLoadInFlightRef.current = true;
     setPatientLinksLoading(true);
     setPatientLinksError(null);
     try {
@@ -3116,8 +3140,60 @@ export function Header({
       setPatientLinks([]);
     } finally {
       setPatientLinksLoading(false);
+      patientLinksLoadInFlightRef.current = false;
     }
   }, [normalizeMarkupPercent, showPatientLinksTab]);
+
+  const outstandingPatientProposalCount = useMemo(() => {
+    return (patientLinks || []).reduce((count, link) => {
+      const revokedAtRaw =
+        (typeof (link as any)?.revokedAt === 'string' && (link as any).revokedAt.trim())
+          ? (link as any).revokedAt.trim()
+          : (typeof (link as any)?.revoked_at === 'string' && (link as any).revoked_at.trim())
+            ? (link as any).revoked_at.trim()
+            : '';
+      if (revokedAtRaw) return count;
+
+      const delegateSharedAt =
+        (typeof (link as any)?.delegateSharedAt === 'string' && (link as any).delegateSharedAt.trim())
+          ? (link as any).delegateSharedAt.trim()
+          : (typeof (link as any)?.delegate_shared_at === 'string' && (link as any).delegate_shared_at.trim())
+            ? (link as any).delegate_shared_at.trim()
+            : '';
+      const delegateOrderId =
+        (typeof (link as any)?.delegateOrderId === 'string' && (link as any).delegateOrderId.trim())
+          ? (link as any).delegateOrderId.trim()
+          : (typeof (link as any)?.delegate_order_id === 'string' && (link as any).delegate_order_id.trim())
+            ? (link as any).delegate_order_id.trim()
+            : '';
+      const delegateReviewStatusRaw =
+        (typeof (link as any)?.delegateReviewStatus === 'string' && (link as any).delegateReviewStatus.trim())
+          ? (link as any).delegateReviewStatus.trim().toLowerCase()
+          : (typeof (link as any)?.delegate_review_status === 'string' && (link as any).delegate_review_status.trim())
+            ? (link as any).delegate_review_status.trim().toLowerCase()
+            : '';
+
+      const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
+      const proposalStatus = delegateReviewStatusRaw || (hasProposal ? 'pending' : '');
+      const isOutstanding = hasProposal && proposalStatus === 'pending';
+      return count + (isOutstanding ? 1 : 0);
+    }, 0);
+  }, [patientLinks]);
+
+  useEffect(() => {
+    if (!welcomeOpen) {
+      patientLinksPrefetchedRef.current = false;
+      return;
+    }
+    if (!showPatientLinksTab) {
+      return;
+    }
+    if (patientLinksPrefetchedRef.current) {
+      return;
+    }
+    patientLinksPrefetchedRef.current = true;
+    void loadPatientLinks();
+  }, [loadPatientLinks, showPatientLinksTab, welcomeOpen]);
 
   const handleSavePatientMarkup = useCallback(async () => {
     if (!showPatientLinksTab || patientLinksSaving) {
@@ -4598,16 +4674,37 @@ export function Header({
 				                    </div>
 				                  )}
 	
-				                  <div className="ml-auto flex w-auto items-center justify-end min-w-0 max-w-full">
+				                  <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
 				                    <div
-				                      className="squircle-sm glass-brand px-3 py-1.5 sm:px-4 sm:py-2 inline-flex items-center gap-2 text-white shadow-lg shadow-[rgba(95,179,249,0.22)] select-none max-w-full min-w-0 overflow-hidden flex-shrink text-xs sm:text-sm"
+				                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-2 !border-[rgb(95,179,249)] !bg-transparent !text-[rgb(95,179,249)]"
 				                      aria-label="Delegate header preview"
+				                      style={{
+				                        border: '2px solid rgb(95,179,249)',
+				                        backgroundColor: 'transparent',
+				                        color: 'rgb(95,179,249)',
+				                      }}
 				                    >
-				                      <User className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-				                      <span className="font-semibold truncate max-w-[45vw] sm:max-w-[20rem] min-w-0">{`Delegate of ${
+				                      <User className="h-4 w-4 flex-shrink-0 !text-[rgb(95,179,249)]" aria-hidden="true" />
+				                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
 				                        localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'
 				                      }`}</span>
 				                    </div>
+				                    {!isLargeScreen && (
+				                      <Button
+				                        type="button"
+				                        variant="outline"
+				                        size="icon"
+				                        disabled
+				                        aria-hidden="true"
+				                        className="glass squircle-sm pointer-events-none"
+				                        style={{
+				                          color: secondaryColor,
+				                          borderColor: translucentSecondary,
+				                        }}
+				                      >
+				                        <Search className="h-4 w-4" style={{ color: secondaryColor }} />
+				                      </Button>
+				                    )}
 				                  </div>
 				                </div>
 				              </div>
@@ -4790,78 +4887,78 @@ export function Header({
 	                        : '';
 
 			              return (
-			                <div
-			                  key={token || label}
-			                  className="glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.5)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between"
-			                >
-			                  <div className="min-w-0">
+				                <div
+				                  key={token || label}
+				                  className="glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.55)] hover:border-[rgb(95,179,249)] transition-colors p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
+				                >
+			                  <div className="min-w-0 flex-1">
 				                    <div className="flex items-center gap-2">
 				                      <Link2 className="h-4 w-4 text-[rgb(95,179,249)] shrink-0" aria-hidden="true" />
 				                      <span className="font-semibold text-slate-900 truncate">{label}</span>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
-	                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
-	                      {createdAt && <div>Created: {createdAt}</div>}
-	                      {expiresAt && <div>Expires: {expiresAt}</div>}
-	                      {lastUsedAt && <div>Last used: {lastUsedAt}</div>}
-	                      {hasProposal && (
-	                        <div className="font-semibold text-slate-700">
-	                          Proposal: {proposalLabel || 'Pending review'}
-	                        </div>
-	                      )}
+		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+		                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
+		                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
+		                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
+		                      {hasProposal && (
+		                        <div className="font-semibold text-slate-700">
+		                          Proposal: {proposalLabel || 'Pending review'}
+		                        </div>
+		                      )}
 	                    </div>
 	                  </div>
-	                  <div className="flex flex-wrap items-center gap-2">
-	                    {hasProposal && (
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => void handleViewPatientProposal(token)}
-	                        disabled={!token || isProposalBusy}
-	                        className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
-	                      >
-	                        <Eye className="h-4 w-4" aria-hidden="true" />
-	                        {isProposalBusy ? 'Loading…' : 'View Proposal'}
-	                      </Button>
-	                    )}
-	                    {canRejectProposal && (
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => void handleRejectPatientProposal(token)}
-	                        disabled={!token || isProposalBusy}
-	                        className="squircle-sm gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
-	                      >
-	                        <X className="h-4 w-4" aria-hidden="true" />
-	                        {isProposalBusy ? 'Working…' : 'Reject'}
-	                      </Button>
-	                    )}
+		                  <div className="patient-link-actions">
+		                    {hasProposal && (
+		                      <Button
+		                        type="button"
+		                        variant="outline"
+		                        size="sm"
+		                        onClick={() => void handleViewPatientProposal(token)}
+		                        disabled={!token || isProposalBusy}
+		                        className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+		                      >
+		                        <Eye className="h-4 w-4" aria-hidden="true" />
+		                        {isProposalBusy ? 'Loading…' : 'View Proposal'}
+		                      </Button>
+		                    )}
+		                    {canRejectProposal && (
+		                      <Button
+		                        type="button"
+		                        variant="outline"
+		                        size="sm"
+		                        onClick={() => void handleRejectPatientProposal(token)}
+		                        disabled={!token || isProposalBusy}
+		                        className="squircle-sm gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+		                      >
+		                        <X className="h-4 w-4" aria-hidden="true" />
+		                        {isProposalBusy ? 'Working…' : 'Reject'}
+		                      </Button>
+		                    )}
+		                    <Button
+		                      type="button"
+		                      variant="outline"
+		                      size="sm"
+		                      onClick={() => void handleCopyPatientLink(token)}
+		                      disabled={!token}
+		                      className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+	                    >
+	                      <Copy className="h-4 w-4" aria-hidden="true" />
+	                      Copy link
+	                    </Button>
 	                    <Button
 	                      type="button"
-	                      variant="outline"
-	                      size="sm"
-	                      onClick={() => void handleCopyPatientLink(token)}
-	                      disabled={!token}
-	                      className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
-                    >
-                      <Copy className="h-4 w-4" aria-hidden="true" />
-                      Copy link
-                    </Button>
-                    <Button
-                      type="button"
-	                      variant="outline"
-	                      size="sm"
-	                      onClick={() => void handleRevokePatientLink(token)}
-	                      disabled={!token || isRevoked || isUpdating}
-	                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
-	                    >
-		                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
-		                    </Button>
-	                  </div>
-	                </div>
-	              );
+		                      variant="outline"
+		                      size="sm"
+		                      onClick={() => void handleRevokePatientLink(token)}
+		                      disabled={!token || isRevoked || isUpdating}
+		                      className="squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+		                    >
+			                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
+			                    </Button>
+		                  </div>
+		                </div>
+		              );
             })}
 	          </div>
 	        )}
@@ -4904,15 +5001,20 @@ export function Header({
     return `Dr. ${raw}`;
   })();
 
-	  const authControls = delegateMode ? (
-	    <div className="flex items-center gap-2 min-w-0 max-w-full">
-	      <div
-	        className="squircle-sm glass-card inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border border-[rgba(95,179,249,0.45)] bg-white/70 text-slate-900"
-	        aria-label={`Delegate of ${delegateDoctorLabel}`}
-	        title={`Delegate of ${delegateDoctorLabel}`}
-	      >
-	        <User className="h-4 w-4 flex-shrink-0 text-[rgb(95,179,249)]" aria-hidden="true" />
-	        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
+		  const authControls = delegateMode ? (
+		    <div className="flex items-center gap-2 min-w-0 max-w-full">
+		      <div
+		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-2 !border-[rgb(95,179,249)] !bg-transparent !text-[rgb(95,179,249)]"
+		        aria-label={`Delegate of ${delegateDoctorLabel}`}
+		        title={`Delegate of ${delegateDoctorLabel}`}
+		        style={{
+		          border: '2px solid rgb(95,179,249)',
+		          backgroundColor: 'transparent',
+		          color: 'rgb(95,179,249)',
+		        }}
+		      >
+		        <User className="h-4 w-4 flex-shrink-0 !text-[rgb(95,179,249)]" aria-hidden="true" />
+		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
     </div>
@@ -5027,9 +5129,9 @@ export function Header({
                   <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
                     {accountHeaderTabs.map((tab) => {
                       const isActive = accountTab === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
+	                      return (
+	                        <button
+	                          key={tab.id}
                           type="button"
                           className={clsx(
                             'relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0',
@@ -5037,14 +5139,25 @@ export function Header({
                           )}
                           data-tab={tab.id}
                           aria-pressed={isActive}
-                          onClick={() => setAccountTab(tab.id)}
-                        >
-                          <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+	                          onClick={() => setAccountTab(tab.id)}
+	                        >
+	                          <span className="relative inline-flex items-center justify-center">
+	                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+	                            {tab.id === 'patient_links' && showPatientLinksTab && (patientLinksLoading || outstandingPatientProposalCount > 0) && (
+	                              <span
+	                                className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold text-white"
+	                                title="Outstanding proposals"
+	                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
+	                              >
+	                                {patientLinksLoading ? '…' : outstandingPatientProposalCount}
+	                              </span>
+	                            )}
+	                          </span>
+	                          {tab.label}
+	                        </button>
+	                      );
+	                    })}
+	                  </div>
                 </div>
                 <span
                   aria-hidden="true"

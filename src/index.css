@@ -236,6 +236,20 @@ body {
   padding-bottom: 0 !important;
 }
 
+.patient-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.patient-link-actions > * {
+  flex: 1 1 140px;
+  min-width: min(140px, 100%);
+}
+
 @media (min-width: 640px) {
   .patient-link-form {
     grid-template-columns: minmax(0, 1fr) 20%;
@@ -256,6 +270,16 @@ body {
     grid-column: 2;
     align-self: center;
     margin-bottom: 0 !important;
+  }
+
+  .patient-link-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .patient-link-actions > * {
+    flex: 0 0 auto;
+    min-width: 0;
   }
 }
 
@@ -3592,11 +3616,14 @@ html {
 
 @media (max-width: 640px) {
   .account-tab-scroll-container {
-    padding-bottom: 0.4rem;
+    padding-bottom: 0.25rem;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
   .account-tab-scroll-container::-webkit-scrollbar {
-    height: 0.22rem;
+    display: none;
+    height: 0;
   }
 }
 
@@ -6231,6 +6258,27 @@ body.account-modal-open .info-focus-overlay {
     transparent
   );
   animation: news-swipe 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Quick shimmer used for forum refresh placeholders */
+.forum-container-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.forum-container-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(95, 179, 249, 0.18),
+    transparent
+  );
+  animation: news-swipe 1.15s ease-in-out infinite;
   pointer-events: none;
 }
 

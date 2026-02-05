@@ -978,6 +978,11 @@ export function CheckoutModal({
     return null;
   }
 
+  // `--modal-header-offset` already includes a small extra gap (+0.5rem) to
+  // avoid the header feeling cramped. For checkout, reduce that gap so the
+  // modal sits closer to the header.
+  const checkoutModalTopOffset = 'calc(var(--modal-header-offset, 6rem) + var(--safe-area-top, 0px) - 0.5rem)';
+
     return (
       <Dialog
         open={isOpen}
@@ -993,18 +998,34 @@ export function CheckoutModal({
         }
       }}
     >
-	      <DialogContent
-	        hideCloseButton
-	        className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
-	        style={{ backdropFilter: 'blur(38px) saturate(1.6)' }}
-	        overlayClassName="bg-slate-950/40"
-	        containerClassName="fixed inset-0 z-[11000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
-	        containerStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
-	        overlayStyle={legalModalOpen ? { pointerEvents: 'none' } : undefined}
-	        data-legal-overlay={legalModalOpen ? 'true' : 'false'}
-        trapFocus={!legalModalOpen}
-        disableOutsidePointerEvents={false}
-      >
+	        <DialogContent
+	          hideCloseButton
+	          className="checkout-modal glass-card squircle-lg w-full max-w-[min(960px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 flex flex-col max-h-[90vh] overflow-hidden"
+	          style={{
+              backdropFilter: 'blur(38px) saturate(1.6)',
+              // Match the reduced top offset so we don't keep "reserved" empty space
+              // in the dialog sizing calculation.
+              maxHeight:
+                'calc(var(--viewport-height, 100dvh) - var(--modal-header-offset, 6rem) + 0.5rem - clamp(1.5rem, 6vh, 3rem))',
+            }}
+	          overlayClassName="bg-slate-950/40 z-[9000]"
+            overlayStyle={{ top: checkoutModalTopOffset }}
+	          containerStyle={
+	            legalModalOpen
+	              ? {
+	                  pointerEvents: 'none',
+	                  zIndex: 11000,
+	                  top: checkoutModalTopOffset,
+	                }
+	              : {
+	                  zIndex: 11000,
+	                  top: checkoutModalTopOffset,
+	                }
+	          }
+	          data-legal-overlay={legalModalOpen ? 'true' : 'false'}
+          trapFocus={!legalModalOpen}
+          disableOutsidePointerEvents={false}
+        >
         <DialogHeader className="sticky top-0 z-10 glass-card border-b border-[var(--brand-glass-border-1)] px-6 py-4 backdrop-blur-lg">
           <div className="flex items-start justify-between gap-4">
 	            <div className="flex-1 min-w-0">

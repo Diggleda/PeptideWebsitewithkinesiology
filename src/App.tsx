@@ -3143,13 +3143,15 @@ function MainApp() {
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
   const [peptideForumEnabled, setPeptideForumEnabled] =
     useState(true);
-  const [peptideForumLoading, setPeptideForumLoading] = useState(false);
-  const [peptideForumError, setPeptideForumError] = useState<string | null>(null);
-  const [peptideForumUpdatedAt, setPeptideForumUpdatedAt] = useState<string | null>(null);
-  const [peptideForumItems, setPeptideForumItems] = useState<
-    Array<{
-      id: string;
-      title: string;
+	  const [peptideForumLoading, setPeptideForumLoading] = useState(false);
+	  const [peptideForumError, setPeptideForumError] = useState<string | null>(null);
+	  const [peptideForumUpdatedAt, setPeptideForumUpdatedAt] = useState<string | null>(null);
+	  const peptideForumInFlightRef = useRef(false);
+	  const peptideForumLastFetchedAtRef = useRef(0);
+	  const [peptideForumItems, setPeptideForumItems] = useState<
+	    Array<{
+	      id: string;
+	      title: string;
       date?: string | null;
       description?: string | null;
       link?: string | null;
@@ -3225,14 +3227,25 @@ function MainApp() {
     }
   }, []);
 
-	  const refreshPeptideForum = useCallback(async () => {
-	    if (!user) {
-	      return;
-	    }
-	    setPeptideForumLoading(true);
-	    setPeptideForumError(null);
-	    try {
-	      const response = await forumAPI.listPeptideForum();
+		  const refreshPeptideForum = useCallback(async (options?: { force?: boolean }) => {
+		    if (!user?.id) {
+		      return;
+		    }
+		    const now = Date.now();
+		    const ttlMs = 5 * 60_000;
+		    if (!options?.force && now - peptideForumLastFetchedAtRef.current < ttlMs) {
+		      return;
+		    }
+		    if (peptideForumInFlightRef.current) {
+		      return;
+		    }
+		    peptideForumInFlightRef.current = true;
+		    peptideForumLastFetchedAtRef.current = now;
+		    const startedAt = Date.now();
+		    setPeptideForumLoading(true);
+		    setPeptideForumError(null);
+		    try {
+		      const response = await forumAPI.listPeptideForum();
 	      const items = Array.isArray((response as any)?.items) ? (response as any).items : [];
 	      const shouldAddLocalDummyForumItem =
 	        import.meta.env.DEV && /localhost|127\\.0\\.0\\.1/i.test(API_BASE_URL);
@@ -3261,11 +3274,19 @@ function MainApp() {
         typeof error?.message === "string" && error.message
           ? error.message
           : "Unable to load The Peptide Forum right now.",
-      );
-    } finally {
-      setPeptideForumLoading(false);
-    }
-  }, [user]);
+	      );
+	    } finally {
+	      const minLoadingMs = 500;
+	      const elapsedMs = Date.now() - startedAt;
+	      if (elapsedMs < minLoadingMs) {
+	        await new Promise<void>((resolve) =>
+	          window.setTimeout(resolve, minLoadingMs - elapsedMs),
+	        );
+	      }
+	      setPeptideForumLoading(false);
+	      peptideForumInFlightRef.current = false;
+	    }
+	  }, [user?.id]);
 
   const shouldShowPeptideForumCard =
     peptideForumEnabled || isAdmin(user?.role);
@@ -3273,15 +3294,15 @@ function MainApp() {
   useEffect(() => {
     if (!postLoginHold || !user) {
       return;
-    }
-    if (!shouldShowPeptideForumCard) {
-      setPeptideForumItems([]);
-      setPeptideForumUpdatedAt(null);
-      setPeptideForumError(null);
-      return;
-    }
-    void refreshPeptideForum();
-  }, [postLoginHold, user?.id, refreshPeptideForum, shouldShowPeptideForumCard]);
+	    }
+	    if (!shouldShowPeptideForumCard) {
+	      setPeptideForumItems([]);
+	      setPeptideForumUpdatedAt(null);
+	      setPeptideForumError(null);
+	      return;
+	    }
+	    void refreshPeptideForum();
+	  }, [postLoginHold, user?.id, refreshPeptideForum, shouldShowPeptideForumCard]);
 
   const variationFetchInFlightRef = useRef<Map<number, Promise<WooVariation[]>>>(
     new Map(),
@@ -15127,11 +15148,10 @@ function MainApp() {
 			                  </div>
 	          )}
 
-          <div className="glass squircle-lg p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-6">
-            <form
-              className="glass-strong squircle-md p-3 sm:p-5 space-y-3 w-full"
-              onSubmit={handleSubmitReferral}
-            >
+          <form
+            className="glass-strong squircle-lg p-4 sm:p-6 lg:p-8 mx-0 sm:mx-5 shadow-sm space-y-3 w-full"
+            onSubmit={handleSubmitReferral}
+          >
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <label
@@ -15214,30 +15234,27 @@ function MainApp() {
                   />
                 </div>
               </div>
-              <div className="pt-1 flex w-full justify-end">
-                <div className="inline-flex flex-col items-start gap-3 text-left sm:flex-nowrap sm:flex-row sm:items-center sm:justify-end sm:text-right">
-                  <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
-                    Your representative will credit you $50 each time
-                    your new referee has completed their first checkout.
-                  </p>
-                  <Button
-                    type="submit"
-                    disabled={referralSubmitting}
-                    className="glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+              <div className="pt-1 flex w-full flex-col items-start justify-end gap-3 text-left sm:flex-row sm:flex-nowrap sm:items-center sm:justify-end sm:text-right">
+                <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
+                  Your representative will credit you $50 each time
+                  your new referee has completed their first checkout.
+                </p>
+                <Button
+                  type="submit"
+                  disabled={referralSubmitting}
+                  className="glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                >
+                  {referralSubmitting ? "Submitting…" : "Submit Referral"}
+                </Button>
+                {referralStatusMessage && (
+                  <span
+                    className={`text-sm ${referralStatusMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}
                   >
-                    {referralSubmitting ? "Submitting…" : "Submit Referral"}
-                  </Button>
-                  {referralStatusMessage && (
-                    <span
-                      className={`text-sm ${referralStatusMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}
-                    >
-                      {referralStatusMessage.message}
-                    </span>
-                  )}
-                </div>
+                    {referralStatusMessage.message}
+                  </span>
+                )}
               </div>
-            </form>
-          </div>
+          </form>
 
           <div className="mt-8 grid gap-6 md:grid-cols-2 w-full max-w-none px-1 sm:px-5">
             <div className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-8 shadow-xl space-y-6 w-full max-w-none">
@@ -17793,7 +17810,7 @@ function MainApp() {
 
             <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
               <div className="flex flex-col gap-3 mb-4">
-                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="sales-rep-header-row flex w-full flex-col gap-3">
 	                  <div className="min-w-0">
 	                    <h3 className="text-lg font-semibold text-slate-900">Taxes by State</h3>
 	                    <p className="text-sm text-slate-600">
@@ -18103,14 +18120,46 @@ function MainApp() {
 					                    </div>
 						              </div>
 
-						                  <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
-						                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-					                      <span>Commission</span>
-					                    </div>
-						                    <div className="w-full" style={{ minWidth: 920 }}>
-						                      <div className="w-max">
-						                        <div
-						                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+							                  <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
+							                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+						                      <span>Commission</span>
+                                <Button
+                                  asChild
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-full"
+                                  title="Open Google Sheet"
+                                >
+                                  <a
+                                    href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Open Google Sheet"
+                                  >
+                                    <svg
+                                      viewBox="0 0 48 48"
+                                      width="18"
+                                      height="18"
+                                      aria-hidden="true"
+                                    >
+                                      <path
+                                        fill="#0F9D58"
+                                        d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
+                                      />
+                                      <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
+                                      <path
+                                        fill="#FFFFFF"
+                                        d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
+                                      />
+                                    </svg>
+                                  </a>
+                                </Button>
+						                    </div>
+							                    <div className="w-full" style={{ minWidth: 920 }}>
+							                      <div className="w-max">
+							                        <div
+							                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
 						                          style={{
 						                            gridTemplateColumns: "minmax(0,1fr) max-content",
 						                          }}
@@ -18891,12 +18940,12 @@ function MainApp() {
                               : isManualLead
                                 ? "lead-source-pill--manual"
                                 : "lead-source-pill--referral";
-                          const sourceLabel =
-                            kind === "contact_form"
-                              ? "Contact Form"
-                              : isManualLead
-                                ? "Manual"
-                                : "Referral";
+	                          const sourceLabel =
+	                            kind === "contact_form"
+	                              ? "House / Contact Form"
+	                              : isManualLead
+	                                ? "Manual"
+	                                : "Referral";
 	                          const hasContactAccount =
 	                            typeof record.referredContactHasAccount === "boolean"
 	                              ? record.referredContactHasAccount
@@ -20254,19 +20303,19 @@ function MainApp() {
 		      <>
 		        {baseText}
 		        {"\u00A0"}
-		        <button
-		          type="button"
-		          className="text-xs text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
-		          onClick={() =>
-		            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
-		          }
-		        >
-		          <span aria-hidden>... </span>
-		          <span className="font-semibold">more</span>
-		        </button>
-		      </>
-		    );
-		  };
+			        <button
+			          type="button"
+			          className="text-xs text-[rgb(95,179,249)] bg-transparent p-0 whitespace-nowrap"
+			          onClick={() =>
+			            setExpandedPeptideForumDescriptions((prev) => ({ ...prev, [itemId]: true }))
+			          }
+			        >
+			          <span aria-hidden>...</span>
+			          <span className="font-semibold">more</span>
+			        </button>
+			      </>
+			    );
+			  };
 		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
 		  const landingAccountButton = user ? (
 		    <Button
@@ -20806,7 +20855,7 @@ function MainApp() {
                             </div>
                           )}
 		                        {shouldShowPeptideForumCard && (
-		                        <div className="glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)]">
+			                        <div className={`glass-card squircle-md p-4 space-y-3 border border-[var(--brand-glass-border-2)] ${peptideForumLoading ? "forum-container-shimmer" : ""}`}>
 		                          <div className="flex items-start justify-between gap-3">
 		                            <div className="space-y-1">
 	                              <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
@@ -20825,7 +20874,7 @@ function MainApp() {
 	                                variant="outline"
 	                                size="sm"
 	                                className="header-home-button squircle-sm bg-white text-slate-900"
-	                                onClick={() => void refreshPeptideForum()}
+	                                onClick={() => void refreshPeptideForum({ force: true })}
 	                                disabled={peptideForumLoading}
 	                              >
 	                                {peptideForumLoading ? "Refreshing…" : "Refresh"}
@@ -20836,10 +20885,10 @@ function MainApp() {
 	                          {peptideForumLoading && (
 	                            <ul className="space-y-3" aria-live="polite">
 	                              {forumLoadingPlaceholders.map((_, index) => (
-	                                <li
-	                                  key={index}
-	                                  className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm animate-pulse min-h-[108px]"
-	                                >
+		                                <li
+		                                  key={index}
+		                                  className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm min-h-[108px] forum-container-shimmer"
+		                                >
 	                                  <div className="space-y-2">
 	                                    <div className="h-4 w-4/5 rounded bg-[rgba(95,179,249,0.14)]" />
 	                                    <div className="h-3 w-full rounded bg-[rgba(95,179,249,0.10)]" />
