@@ -431,12 +431,17 @@ const getDoctorLedger = (req, res, next) => {
 	  const getSalesRepDashboard = async (req, res, next) => {
 		  try {
 		    ensureSalesRep(req.user, 'getSalesRepDashboard');
-		    const role = normalizeRole(req.user.role);
-		    const isAdmin = role === 'admin';
-		    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
-		    const scopeAll = (isAdmin || isSalesLead(role)) && (req.query.scope || '').toLowerCase() === 'all';
-		    const adminViewingAll = isAdmin && scopeAll;
-		    const salesRepId = scopeAll ? null : requestedSalesRepId;
+			    const role = normalizeRole(req.user.role);
+			    const isAdmin = role === 'admin';
+			    const viewerSalesRepId = req.user.salesRepId || req.user.id;
+			    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+			    const scopeAll = (isAdmin || isSalesLead(role)) && (req.query.scope || '').toLowerCase() === 'all';
+			    const adminViewingAll = isAdmin && scopeAll;
+			    const salesRepId = scopeAll ? null : requestedSalesRepId;
+			    const isViewingOwnDashboard =
+			      !req.query.salesRepId || String(req.query.salesRepId) === String(viewerSalesRepId);
+			    const includeContactForms =
+			      isAdmin && mysqlClient.isEnabled() && (scopeAll || isViewingOwnDashboard);
 		    logger.info(
 		      {
 		        userId: req.user.id,
@@ -561,15 +566,18 @@ const getDoctorLedger = (req, res, next) => {
 	      mergeRepCodes([rep].filter(Boolean));
 	    }
 
-	    if (isAdmin && mysqlClient.isEnabled()) {
-	      try {
-	        const rows = await mysqlClient.fetchAll(
-	          `
-	            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
-            FROM contact_forms
-            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
-          `,
-        );
+		    // Contact form leads are "house/unassigned" prospects. They should be visible on the
+		    // admin's own dashboard (and in global scope=all), but should NOT be injected when an
+		    // admin fetches another rep's dashboard for the user modal.
+		    if (includeContactForms) {
+		      try {
+		        const rows = await mysqlClient.fetchAll(
+		          `
+		            SELECT id, name, email, phone, source, created_at, updated_at, createdAt, updatedAt
+	            FROM contact_forms
+	            ORDER BY COALESCE(updated_at, updatedAt, created_at, createdAt) DESC
+	          `,
+	        );
         const mapped = (rows || []).map((row) => {
           const createdAt = row.created_at || row.createdAt || null;
           const updatedAt = row.updated_at || row.updatedAt || createdAt || null;

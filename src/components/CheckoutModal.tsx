@@ -179,6 +179,7 @@ interface CheckoutModalProps {
   allowUnauthenticatedCheckout?: boolean;
   delegateDoctorName?: string | null;
   pricingMarkupPercent?: number | null;
+  proposalMarkupPercent?: number | null;
 }
 
 const formatCardNumber = (value: string) =>
@@ -236,6 +237,7 @@ export function CheckoutModal({
   allowUnauthenticatedCheckout = false,
   delegateDoctorName,
   pricingMarkupPercent,
+  proposalMarkupPercent,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
@@ -312,6 +314,12 @@ export function CheckoutModal({
 
   const resolvedPricingMode: PricingMode = pricingMode ?? 'wholesale';
   const retailPricingEnabled = resolvedPricingMode === 'retail';
+
+  const proposalMarkupPercentValue = useMemo(() => {
+    const raw = Number(proposalMarkupPercent ?? NaN);
+    if (!Number.isFinite(raw)) return null;
+    return Math.max(0, Math.min(500, raw));
+  }, [proposalMarkupPercent]);
 
   const getVisibleBulkTiers = (product: Product, quantity: number) => {
     const tiers = product.bulkPricingTiers ?? [];
@@ -419,6 +427,8 @@ export function CheckoutModal({
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
   const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
   const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
+  const showDualPricing = proposalMode && !isDelegateFlow && proposalMarkupPercentValue != null;
+  const delegateComparisonPricingMode: PricingMode = 'wholesale';
   const delegateDoctorDisplayName = isDelegateFlow
     ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
       ? 'Doctor'
@@ -510,6 +520,22 @@ export function CheckoutModal({
       disclaimer: 'Carrier transit begins after shipment and is not guaranteed.',
     };
   }, [requiresBackorder, selectedShippingRate]);
+
+  const delegateSubtotal = useMemo(() => {
+    if (!showDualPricing || proposalMarkupPercentValue == null) return null;
+    return cartItems.reduce((sum, item) => {
+      const delegateUnitPrice = computeUnitPrice(item.product, item.variant ?? null, item.quantity, {
+        pricingMode: delegateComparisonPricingMode,
+        markupPercent: proposalMarkupPercentValue,
+      });
+      return sum + delegateUnitPrice * item.quantity;
+    }, 0);
+  }, [cartItems, delegateComparisonPricingMode, proposalMarkupPercentValue, showDualPricing]);
+
+  const delegateTotal = useMemo(() => {
+    if (delegateSubtotal == null) return null;
+    return Math.max(0, delegateSubtotal + displayShippingCost + displayTaxAmount);
+  }, [delegateSubtotal, displayShippingCost, displayTaxAmount]);
 
   const handleGetRates = async () => {
     if (!shippingAddressComplete) {
@@ -1098,11 +1124,23 @@ export function CheckoutModal({
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
                     : baseImages;
-                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
-                    pricingMode: resolvedPricingMode,
-                    markupPercent: pricingMarkupPercent,
-                  });
-                  const lineTotal = unitPrice * item.quantity;
+	                  const doctorUnitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
+	                    pricingMode: resolvedPricingMode,
+	                    markupPercent: 0,
+	                  });
+	                  const delegateUnitPrice =
+	                    showDualPricing && proposalMarkupPercentValue != null
+	                      ? computeUnitPrice(item.product, item.variant, item.quantity, {
+	                          pricingMode: delegateComparisonPricingMode,
+	                          markupPercent: proposalMarkupPercentValue,
+	                        })
+	                      : null;
+	                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
+	                    pricingMode: resolvedPricingMode,
+	                    markupPercent: pricingMarkupPercent,
+	                  });
+	                  const lineTotal = unitPrice * item.quantity;
+	                  const delegateLineTotal = delegateUnitPrice != null ? delegateUnitPrice * item.quantity : null;
                   const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);
                   const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
                   const upcomingTier = allTiers.find((tier) => item.quantity < tier.minQuantity) || null;
@@ -1134,15 +1172,31 @@ export function CheckoutModal({
                                   {item.variant && (
                                     <p className="text-xs text-gray-500">Variant: {item.variant.label}</p>
                                   )}
-                                  <div className="mt-2 mb-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                    <span className={retailPricingEnabled ? 'text-green-700 font-bold' : 'text-green-600 font-bold'}>
-                                      ${unitPrice.toFixed(2)}
-                                      {retailPricingEnabled ? (
-                                        <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
-                                      ) : null}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                      <Button
+	                                  <div className="mt-2 mb-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+	                                    {showDualPricing && delegateUnitPrice != null ? (
+	                                      <div className="flex flex-col leading-tight">
+	                                        <span className={retailPricingEnabled ? 'text-green-700 font-bold tabular-nums' : 'text-green-600 font-bold tabular-nums'}>
+	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Doctor:</span>
+	                                          ${doctorUnitPrice.toFixed(2)}
+	                                          {retailPricingEnabled ? (
+	                                            <span className="ml-1 text-[11px] font-semibold text-green-700">(Retail)</span>
+	                                          ) : null}
+	                                        </span>
+	                                        <span className="text-[rgb(95,179,249)] font-semibold tabular-nums text-[12px]">
+	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Delegate:</span>
+	                                          ${delegateUnitPrice.toFixed(2)}
+	                                        </span>
+	                                      </div>
+	                                    ) : (
+	                                      <span className={retailPricingEnabled ? 'text-green-700 font-bold' : 'text-green-600 font-bold'}>
+	                                        ${unitPrice.toFixed(2)}
+	                                        {retailPricingEnabled ? (
+	                                          <span className="ml-1 text-xs font-semibold text-green-700">(Retail)</span>
+	                                        ) : null}
+	                                      </span>
+	                                    )}
+	                                    <div className="flex items-center gap-2">
+	                                      <Button
                                         type="button"
                                         variant="outline"
                                         size="icon"
@@ -1228,12 +1282,19 @@ export function CheckoutModal({
                                   )}
                                 </div>
                               </div>
-                              <div className="flex flex-col items-end gap-3 shrink-0 text-right">
-                                <p className={`${retailPricingEnabled ? 'text-green-700' : ''} font-bold tabular-nums tracking-tight`}>
-                                  ${lineTotal.toFixed(2)}
-                                </p>
-                                <Button
-                                  type="button"
+	                              <div className="flex flex-col items-end gap-3 shrink-0 text-right">
+	                                <div className="flex flex-col items-end leading-tight">
+	                                  <p className={`${retailPricingEnabled ? 'text-green-700' : ''} font-bold tabular-nums tracking-tight`}>
+	                                    ${lineTotal.toFixed(2)}
+	                                  </p>
+	                                  {showDualPricing && delegateLineTotal != null && (
+	                                    <p className="text-[12px] font-semibold text-[rgb(95,179,249)] tabular-nums">
+	                                      Delegate: ${delegateLineTotal.toFixed(2)}
+	                                    </p>
+	                                  )}
+	                                </div>
+	                                <Button
+	                                  type="button"
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => handleRemoveItem(item.id)}
@@ -1515,19 +1576,27 @@ export function CheckoutModal({
               {/* Order Total */}
 	              <div className="space-y-2">
 	                <Separator />
-		                <div className="flex justify-between">
-		                  <span>Subtotal:</span>
-		                  <span className={retailPricingEnabled ? 'text-green-700 font-semibold tabular-nums' : 'tabular-nums'}>
-                        ${subtotal.toFixed(2)}
-                      </span>
-		                </div>
-	                {displayAppliedCredits > 0 && (
-	                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
-	                    <span>Referral Credit</span>
-	                    <span>
-	                      - ${displayAppliedCredits.toFixed(2)}
-	                    </span>
-	                  </div>
+			                <div className="flex justify-between">
+			                  <span>Subtotal:</span>
+			                  <span className={retailPricingEnabled ? 'text-green-700 font-semibold tabular-nums' : 'tabular-nums'}>
+	                        ${subtotal.toFixed(2)}
+	                      </span>
+			                </div>
+		                {showDualPricing && delegateSubtotal != null && (
+		                  <div className="flex justify-between text-sm text-slate-700">
+		                    <span>Delegate subtotal:</span>
+		                    <span className="tabular-nums text-[rgb(95,179,249)] font-semibold">
+		                      ${delegateSubtotal.toFixed(2)}
+		                    </span>
+		                  </div>
+		                )}
+		                {displayAppliedCredits > 0 && (
+		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+		                    <span>Referral Credit</span>
+		                    <span>
+		                      - ${displayAppliedCredits.toFixed(2)}
+		                    </span>
+		                  </div>
 	                )}
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Shipping:</span>
@@ -1550,9 +1619,9 @@ export function CheckoutModal({
                   </div>
 	                )}
 	                <Separator />
-		                <div className="flex justify-between font-bold items-baseline gap-2">
-		                  <span className="flex items-baseline gap-2">
-		                    <span>Total:</span>
+			                <div className="flex justify-between font-bold items-baseline gap-2">
+			                  <span className="flex items-baseline gap-2">
+			                    <span>Total:</span>
                         {retailPricingEnabled ? (
                           <span className="text-xs font-semibold text-green-700">(Retail)</span>
                         ) : null}
@@ -1562,10 +1631,18 @@ export function CheckoutModal({
 		                      </span>
 		                    )}
 		                  </span>
-		                  <span className={`${retailPricingEnabled ? 'text-green-700' : ''} tabular-nums`}>
-                        ${displayTotal.toFixed(2)}
-                      </span>
-		                </div>
+			                  <span className={`${retailPricingEnabled ? 'text-green-700' : ''} tabular-nums`}>
+	                        ${displayTotal.toFixed(2)}
+	                      </span>
+			                </div>
+		                {showDualPricing && delegateTotal != null && (
+		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+		                    <span>Delegate pays:</span>
+		                    <span className="tabular-nums">
+		                      ${delegateTotal.toFixed(2)}
+		                    </span>
+		                  </div>
+		                )}
 	                {testOverrideApplied && originalGrandTotal != null && (
 	                  <div className="flex justify-between text-xs text-slate-500">
 	                    <span>Original total:</span>

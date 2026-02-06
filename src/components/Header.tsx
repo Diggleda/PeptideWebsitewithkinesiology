@@ -251,6 +251,7 @@ interface HeaderProps {
   onLoadDelegateProposal?: (payload: {
     token: string;
     items: any[];
+    markupPercent?: number | null;
     delegateOrderId?: string | null;
     sharedAt?: string | null;
     shippingAddress?: any | null;
@@ -3296,16 +3297,30 @@ export function Header({
 	          cart?.shippingAddress ??
 	          cart?.shipping_address ??
 	          null;
-	        if (typeof onLoadDelegateProposal === 'function') {
-	          onLoadDelegateProposal({
-	            token: normalized,
-	            items,
-	            delegateOrderId:
-              typeof proposal?.delegateOrderId === 'string'
-                ? proposal.delegateOrderId
-                : typeof proposal?.delegate_order_id === 'string'
-                  ? proposal.delegate_order_id
-                  : null,
+		        if (typeof onLoadDelegateProposal === 'function') {
+		          const markupPercentRaw =
+		            typeof proposal?.markupPercent === 'number'
+		              ? proposal.markupPercent
+		              : typeof proposal?.markupPercent === 'string'
+		                ? Number(proposal.markupPercent)
+		                : typeof proposal?.markup_percent === 'number'
+		                  ? proposal.markup_percent
+		                  : typeof proposal?.markup_percent === 'string'
+		                    ? Number(proposal.markup_percent)
+		                    : null;
+		          const markupPercent = typeof markupPercentRaw === 'number' && Number.isFinite(markupPercentRaw)
+		            ? markupPercentRaw
+		            : null;
+		          onLoadDelegateProposal({
+		            token: normalized,
+		            items,
+		            markupPercent,
+		            delegateOrderId:
+	              typeof proposal?.delegateOrderId === 'string'
+	                ? proposal.delegateOrderId
+	                : typeof proposal?.delegate_order_id === 'string'
+	                  ? proposal.delegate_order_id
+	                  : null,
 	            sharedAt:
 	              typeof proposal?.delegateSharedAt === 'string'
 	                ? proposal.delegateSharedAt
@@ -4668,10 +4683,10 @@ export function Header({
 	
 				                  <div className="ml-auto flex w-auto items-center justify-end gap-2 min-w-0 max-w-full">
 				                    <div
-				                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-2 !border-[rgb(95,179,249)] !bg-transparent !text-[rgb(95,179,249)]"
+				                      className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
 				                      aria-label="Delegate header preview"
 				                      style={{
-				                        border: '2px solid rgb(95,179,249)',
+				                        border: '0',
 				                        backgroundColor: 'transparent',
 				                        color: 'rgb(95,179,249)',
 				                      }}
@@ -4995,11 +5010,11 @@ export function Header({
 		  const authControls = delegateMode ? (
 		    <div className="flex items-center gap-2 min-w-0 max-w-full">
 		      <div
-		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-2 !border-[rgb(95,179,249)] !bg-transparent !text-[rgb(95,179,249)]"
+		        className="squircle-sm inline-flex items-center gap-2 select-none cursor-default min-w-0 max-w-[58vw] sm:max-w-[20rem] flex-shrink overflow-hidden px-4 py-2 sm:px-5 sm:py-2.5 text-sm sm:text-base border-0 !border-0 !bg-transparent !text-[rgb(95,179,249)]"
 		        aria-label={`Delegate of ${delegateDoctorLabel}`}
 		        title={`Delegate of ${delegateDoctorLabel}`}
 		        style={{
-		          border: '2px solid rgb(95,179,249)',
+		          border: '0',
 		          backgroundColor: 'transparent',
 		          color: 'rgb(95,179,249)',
 		        }}
@@ -5124,27 +5139,27 @@ export function Header({
 	                        <button
 	                          key={tab.id}
                           type="button"
-                          className={clsx(
-                            'relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0',
-                            isActive && 'text-slate-900'
-                          )}
+	                          className={clsx(
+	                            'relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible',
+	                            isActive && 'text-slate-900'
+	                          )}
                           data-tab={tab.id}
                           aria-pressed={isActive}
 	                          onClick={() => setAccountTab(tab.id)}
 	                        >
-		                          <span className="relative inline-flex items-center justify-center">
-		                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-		                            {tab.id === 'patient_links' && showPatientLinksTab && (patientLinksLoading || outstandingPatientProposalCount > 0) && (
-		                              <span
-		                                className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold !text-white shadow-sm translate-x-1/2 -translate-y-1/2"
-		                                title="Outstanding proposals"
-		                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
-		                                style={{
-		                                  backgroundColor: 'rgb(95,179,249)',
-		                                  color: '#fff',
-		                                }}
-		                              >
-		                                {patientLinksLoading ? '…' : outstandingPatientProposalCount}
+			                          <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-visible">
+			                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+			                            {tab.id === 'patient_links' && showPatientLinksTab && !patientLinksLoading && outstandingPatientProposalCount > 0 && (
+			                              <span
+			                                className="absolute -right-1 -top-1 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full !bg-[rgb(95,179,249)] text-[10px] font-semibold !text-white shadow-sm leading-none pointer-events-none"
+			                                title="Outstanding proposals"
+			                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
+			                                style={{
+			                                  backgroundColor: 'rgb(95,179,249)',
+			                                  color: '#fff',
+			                                }}
+			                              >
+		                                {outstandingPatientProposalCount > 9 ? '9+' : outstandingPatientProposalCount}
 		                              </span>
 		                            )}
 		                          </span>

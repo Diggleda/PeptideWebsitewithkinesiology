@@ -2794,6 +2794,7 @@ function MainApp() {
   const [activeDelegationProposal, setActiveDelegationProposal] = useState<{
     token: string;
     signature: string;
+    markupPercent?: number | null;
     delegateOrderId?: string | null;
     sharedAt?: string | null;
   } | null>(null);
@@ -14258,13 +14259,14 @@ function MainApp() {
   }, []);
 
   const handleLoadDelegateProposalIntoCart = useCallback(
-    (payload: {
-      token: string;
-      items: any[];
-      delegateOrderId?: string | null;
-      sharedAt?: string | null;
-      shippingAddress?: any | null;
-    }) => {
+	    (payload: {
+	      token: string;
+	      items: any[];
+	      markupPercent?: number | null;
+	      delegateOrderId?: string | null;
+	      sharedAt?: string | null;
+	      shippingAddress?: any | null;
+	    }) => {
       if (!payload?.token || !Array.isArray(payload.items) || payload.items.length === 0) {
         toast.error('Proposal is missing items.');
         return;
@@ -14358,12 +14360,16 @@ function MainApp() {
           return;
         }
 
-        setActiveDelegationProposal({
-          token: payload.token,
-          signature: buildDelegationCartSignature(payload.items),
-          delegateOrderId: payload.delegateOrderId ?? null,
-          sharedAt: payload.sharedAt ?? null,
-        });
+	        setActiveDelegationProposal({
+	          token: payload.token,
+	          signature: buildDelegationCartSignature(payload.items),
+	          markupPercent:
+	            typeof payload.markupPercent === 'number' && Number.isFinite(payload.markupPercent)
+	              ? payload.markupPercent
+	              : null,
+	          delegateOrderId: payload.delegateOrderId ?? null,
+	          sharedAt: payload.sharedAt ?? null,
+	        });
         setProposalShippingAddress(nextShippingAddress);
         setCartItems(nextCart);
         setCheckoutOpen(true);
@@ -22133,7 +22139,7 @@ function MainApp() {
       </div>
 
       {/* Checkout Modal */}
-      <CheckoutModal
+	      <CheckoutModal
 	        isOpen={checkoutOpen}
 	        onClose={() => setCheckoutOpen(false)}
 	        cartItems={cartItems}
@@ -22172,9 +22178,10 @@ function MainApp() {
           isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError,
         )}
         delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
-        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
-        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
-        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
+	        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
+	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
+	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
+	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
 	        defaultShippingAddress={
