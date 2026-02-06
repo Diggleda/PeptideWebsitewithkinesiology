@@ -44,7 +44,12 @@ def delete_expired() -> int:
         return 0
 
 
-def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any]:
+def create_link(
+    doctor_id: str,
+    *,
+    label: Optional[str] = None,
+    markup_percent: Optional[float] = None,
+) -> Dict[str, Any]:
     if not _using_mysql():
         raise RuntimeError("MySQL backend is required for patient links")
     doctor_id = str(doctor_id or "").strip()
@@ -54,16 +59,18 @@ def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any
     label_value = str(label).strip() if isinstance(label, str) and str(label).strip() else None
     delete_expired()
 
-    # Default markup comes from the doctor record (non-volatile across sessions).
-    markup_percent = 0.0
-    try:
-        from ..repositories import user_repository
-
-        doctor = user_repository.find_by_id(doctor_id) or {}
-        if isinstance(doctor, dict):
-            markup_percent = float(doctor.get("markupPercent") or 0.0)
-    except Exception:
+    # Default markup comes from the doctor record (non-volatile across sessions),
+    # but callers may override it per link.
+    if markup_percent is None:
         markup_percent = 0.0
+        try:
+            from ..repositories import user_repository
+
+            doctor = user_repository.find_by_id(doctor_id) or {}
+            if isinstance(doctor, dict):
+                markup_percent = float(doctor.get("markupPercent") or 0.0)
+        except Exception:
+            markup_percent = 0.0
 
     # Keep token URL-safe; collisions are extremely unlikely, but retry once on PK conflict.
     for attempt in range(2):
@@ -227,6 +234,7 @@ def update_link(
     *,
     label: Optional[str] = None,
     revoke: Optional[bool] = None,
+    markup_percent: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     if not _using_mysql():
         return None
@@ -247,6 +255,10 @@ def update_link(
         updates.append("revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP())")
     elif revoke is False:
         updates.append("revoked_at = NULL")
+
+    if markup_percent is not None:
+        updates.append("markup_percent = %(markup_percent)s")
+        params["markup_percent"] = float(markup_percent or 0.0)
 
     if updates:
         delete_expired()

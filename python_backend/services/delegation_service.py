@@ -356,11 +356,6 @@ def update_doctor_config(doctor_id: str, patch: Dict[str, Any]) -> Dict[str, Any
         if not isinstance(existing, dict) or not existing:
             raise ValueError("Doctor not found")
         user_repository.update({**existing, "markupPercent": markup_percent})
-        # Keep active links in sync (used for resolve snapshot / debugging).
-        try:
-            patient_links_repository.set_doctor_markup_percent(doctor_id, markup_percent)
-        except Exception:
-            pass
         return {"markupPercent": markup_percent}
     current = get_doctor_config(doctor_id)
     merged = {**current, "markupPercent": markup_percent}
@@ -384,19 +379,32 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     return links
 
 
-def create_link(doctor_id: str, *, label: Optional[str] = None) -> Dict[str, Any]:
+def create_link(
+    doctor_id: str,
+    *,
+    label: Optional[str] = None,
+    markup_percent: Optional[object] = None,
+) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
         raise ValueError("doctor_id is required")
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        return patient_links_repository.create_link(doctor_id, label=label)
+        markup_value = None if markup_percent is None else _normalize_markup_percent(markup_percent)
+        return patient_links_repository.create_link(doctor_id, label=label, markup_percent=markup_value)
     token = secrets.token_urlsafe(24)
     now = datetime.now(timezone.utc).isoformat()
+    config = get_doctor_config(doctor_id)
+    markup_value = (
+        _normalize_markup_percent(config.get("markupPercent"))
+        if markup_percent is None
+        else _normalize_markup_percent(markup_percent)
+    )
     link = {
         "token": token,
         "label": str(label).strip() if isinstance(label, str) and str(label).strip() else None,
         "createdAt": now,
+        "markupPercent": float(markup_value or 0.0),
         "lastUsedAt": None,
         "revokedAt": None,
     }
@@ -416,6 +424,7 @@ def update_link(
     *,
     label: Optional[str] = None,
     revoke: Optional[bool] = None,
+    markup_percent: Optional[object] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     token = _normalize_token(token)
@@ -425,7 +434,14 @@ def update_link(
         raise ValueError("token is required")
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        updated = patient_links_repository.update_link(doctor_id, token, label=label, revoke=revoke)
+        markup_value = None if markup_percent is None else _normalize_markup_percent(markup_percent)
+        updated = patient_links_repository.update_link(
+            doctor_id,
+            token,
+            label=label,
+            revoke=revoke,
+            markup_percent=markup_value,
+        )
         if updated is None:
             err = ValueError("Link not found")
             setattr(err, "status", 404)
@@ -440,6 +456,8 @@ def update_link(
             continue
         if label is not None:
             entry["label"] = str(label).strip() if isinstance(label, str) and str(label).strip() else None
+        if markup_percent is not None:
+            entry["markupPercent"] = float(_normalize_markup_percent(markup_percent) or 0.0)
         if revoke is True:
             entry["revokedAt"] = entry.get("revokedAt") or now
         if revoke is False:
@@ -508,7 +526,7 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "token": token,
             "doctorId": doctor_id,
             "doctorName": doctor_name,
-            "markupPercent": _normalize_markup_percent(doctor.get("markupPercent")),
+            "markupPercent": _normalize_markup_percent(link.get("markupPercent")),
             "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
             "createdAt": link.get("createdAt"),
             "expiresAt": link.get("expiresAt"),
@@ -554,13 +572,11 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
         raise err
 
     doctor_name = (doctor.get("name") or doctor.get("email") or "Doctor") if isinstance(doctor, dict) else "Doctor"
-    config = get_doctor_config(doctor_id)
-
     return {
         "token": token,
         "doctorId": doctor_id,
         "doctorName": doctor_name,
-        "markupPercent": float(config.get("markupPercent") or 0.0),
+        "markupPercent": float(_normalize_markup_percent(link.get("markupPercent")) or 0.0),
     }
 
 

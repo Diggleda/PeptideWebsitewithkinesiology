@@ -72,7 +72,12 @@ def create_link():
         _require_doctor_access(role)
         doctor_id = _resolve_target_doctor_id(role)
         label = payload.get("label")
-        link = delegation_service.create_link(doctor_id, label=label if isinstance(label, str) else None)
+        markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        link = delegation_service.create_link(
+            doctor_id,
+            label=label if isinstance(label, str) else None,
+            markup_percent=markup_percent if markup_percent is not None else None,
+        )
         return {"success": True, "link": link}
 
     return handle_action(action, status=201)
@@ -90,11 +95,13 @@ def update_link(token: str):
         doctor_id = _resolve_target_doctor_id(role)
         label = payload.get("label") if "label" in payload else None
         revoke = payload.get("revoke") if "revoke" in payload else None
+        markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
         updated = delegation_service.update_link(
             doctor_id,
             token,
             label=label if isinstance(label, str) else None,
             revoke=bool(revoke) if revoke is not None else None,
+            markup_percent=markup_percent if markup_percent is not None else None,
         )
         return {"success": True, "link": updated}
 

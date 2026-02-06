@@ -1569,14 +1569,17 @@ export const delegationAPI = {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, { method: 'GET' });
   },
 
-  createLink: async (payload?: { label?: string | null }) => {
+  createLink: async (payload?: { label?: string | null; markupPercent?: number | null }) => {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
     });
   },
 
-  updateLink: async (token: string, payload: { label?: string | null; revoke?: boolean | null }) => {
+  updateLink: async (
+    token: string,
+    payload: { label?: string | null; revoke?: boolean | null; markupPercent?: number | null },
+  ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {
       throw new Error('token is required');

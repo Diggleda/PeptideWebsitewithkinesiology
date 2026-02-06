@@ -943,9 +943,8 @@ export function Header({
   const [patientLinks, setPatientLinks] = useState<any[]>([]);
   const patientLinksPrefetchedRef = useRef(false);
   const patientLinksLoadInFlightRef = useRef(false);
-  const [patientMarkupDraft, setPatientMarkupDraft] = useState('0');
+  const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
   const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
-  const [patientLinksSaving, setPatientLinksSaving] = useState(false);
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
   const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
@@ -3114,6 +3113,18 @@ export function Header({
     return Math.round((clamped + Number.EPSILON) * 100) / 100;
   }, []);
 
+  const normalizeMarkupDraftText = useCallback((raw: string) => {
+    const input = typeof raw === 'string' ? raw : String(raw ?? '');
+    const stripped = input.replace(/%/g, '').replace(/[^\d.]/g, '');
+    const dotIndex = stripped.indexOf('.');
+    if (dotIndex === -1) {
+      return stripped;
+    }
+    const head = stripped.slice(0, dotIndex + 1);
+    const tail = stripped.slice(dotIndex + 1).replace(/\./g, '');
+    return `${head}${tail}`;
+  }, []);
+
   const loadPatientLinks = useCallback(async () => {
     if (!showPatientLinksTab) {
       return;
@@ -3131,7 +3142,7 @@ export function Header({
       const config = (response as any)?.config || {};
       const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
       setPatientLinks(links);
-      setPatientMarkupDraft(String(markupPercent));
+      setPatientLinkMarkupDraft(String(markupPercent));
     } catch (error: any) {
       const message = typeof error?.message === 'string' && error.message.trim()
         ? error.message
@@ -3173,7 +3184,7 @@ export function Header({
             ? (link as any).delegate_review_status.trim().toLowerCase()
             : '';
 
-      const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
+      const hasProposal = Boolean(delegateReviewStatusRaw || delegateSharedAt || delegateOrderId);
       const proposalStatus = delegateReviewStatusRaw || (hasProposal ? 'pending' : '');
       const isOutstanding = hasProposal && proposalStatus === 'pending';
       return count + (isOutstanding ? 1 : 0);
@@ -3195,29 +3206,6 @@ export function Header({
     void loadPatientLinks();
   }, [loadPatientLinks, showPatientLinksTab, welcomeOpen]);
 
-  const handleSavePatientMarkup = useCallback(async () => {
-    if (!showPatientLinksTab || patientLinksSaving) {
-      return;
-    }
-    const markupPercent = normalizeMarkupPercent(patientMarkupDraft);
-    setPatientLinksSaving(true);
-    try {
-      const api = await import('../services/api');
-      const response = await api.delegationAPI.updateConfig({ markupPercent });
-      const saved = normalizeMarkupPercent((response as any)?.config?.markupPercent ?? markupPercent);
-      setPatientMarkupDraft(String(saved));
-      toast.success('Patient markup updated.');
-    } catch (error: any) {
-      toast.error(
-        typeof error?.message === 'string' && error.message.trim()
-          ? error.message
-          : 'Unable to update patient markup right now.',
-      );
-    } finally {
-      setPatientLinksSaving(false);
-    }
-  }, [normalizeMarkupPercent, patientMarkupDraft, patientLinksSaving, showPatientLinksTab]);
-
   const handleCreatePatientLink = useCallback(async () => {
     if (!showPatientLinksTab || patientLinksCreating) {
       return;
@@ -3226,7 +3214,11 @@ export function Header({
     try {
       const api = await import('../services/api');
       const label = patientLinkLabelDraft.trim();
-      await api.delegationAPI.createLink({ label: label ? label : null });
+      const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
+      await api.delegationAPI.createLink({
+        label: label ? label : null,
+        markupPercent,
+      });
       setPatientLinkLabelDraft('');
       toast.success('Patient link created.');
       await loadPatientLinks();
@@ -3239,7 +3231,7 @@ export function Header({
     } finally {
       setPatientLinksCreating(false);
     }
-  }, [loadPatientLinks, patientLinkLabelDraft, patientLinksCreating, showPatientLinksTab]);
+  }, [loadPatientLinks, normalizeMarkupPercent, patientLinkLabelDraft, patientLinkMarkupDraft, patientLinksCreating, showPatientLinksTab]);
 
   const handleCopyPatientLink = useCallback(async (token: string) => {
     if (typeof window === 'undefined') return;
@@ -4720,7 +4712,7 @@ export function Header({
 	              </p>
 	              <p className="text-xs text-slate-600">Max ~5MB. Stored on your account (we resize to fit the header).</p>
 	            </div>
-		            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+			            <div className="flex min-w-0 flex-col flex-wrap items-stretch gap-2 sm:flex-row sm:items-center">
 			            <input
 			              ref={delegateLogoInputRef}
 			              type="file"
@@ -4728,80 +4720,64 @@ export function Header({
               className="hidden"
               onChange={(event) => void handleSelectDelegateLogo(event.target.files?.[0] ?? null)}
             />
-            <Button
-              type="button"
-              onClick={() => delegateLogoInputRef.current?.click()}
-              disabled={delegateLogoUploading}
-              className="h-11 w-full sm:w-auto squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
-            >
+	            <Button
+	              type="button"
+	              onClick={() => delegateLogoInputRef.current?.click()}
+	              disabled={delegateLogoUploading}
+	              className="h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+	            >
               {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
             </Button>
-		            <Button
-		              type="button"
-		              variant="outline"
-		              onClick={() => void handleRemoveDelegateLogo()}
-		              disabled={delegateLogoUploading}
-		              className="h-11 w-full sm:w-auto squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
-		            >
-		              Remove
-		            </Button>
-	            </div>
+			            <Button
+			              type="button"
+			              variant="outline"
+			              onClick={() => void handleRemoveDelegateLogo()}
+			              disabled={delegateLogoUploading}
+			              className="h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+			            >
+			              Remove
+			            </Button>
+		            </div>
 	          </div>
 	        </div>
 	      </div>
-      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Catelogue markup</h3>
-        <p className="mb-3 text-sm leading-relaxed text-slate-700">
-          Apply a markup on products shown to your patients.
-        </p>
-	        <div className="mt-5 patient-link-form">
-	          <Label htmlFor="patient-markup" className="patient-link-form__label text-sm mb-1 font-semibold text-slate-700">
-	            Markup percent
-	          </Label>
-	          <Input
-	            id="patient-markup"
-	            type="number"
-	            inputMode="decimal"
-	            min={0}
-	            max={500}
-	            step={0.1}
-	            value={patientMarkupDraft}
-	            onChange={(event) => setPatientMarkupDraft(event.target.value)}
-            className="patient-link-form__input h-11 w-full mb-2 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
-	          />
-	          <Button
-	            type="button"
-	            onClick={() => void handleSavePatientMarkup()}
-	            disabled={!showPatientLinksTab || patientLinksSaving}
-	            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
-	          >
-	            {patientLinksSaving ? 'Saving…' : 'Save'}
-	          </Button>
-	        </div>
-	        <p className="mt-2 text-xs text-slate-600">
-	          Enter a percentage (e.g., 15 for 15%). Save to apply to all delegate pricing.
-	        </p>
-	        <p className="mt-3 text-xs text-slate-600">
-	          Tip: keep this at 0% if you want delegates to see your base pricing.
-	        </p>
-      </div>
-
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
           Links are temporary and expire automatically after 72 hours. You can also revoke any link at any time.
         </p>
 	        <div className="mt-5 patient-link-form">
-	          <Label htmlFor="patient-link-label" className="patient-link-form__label text-sm font-semibold text-slate-700">
+	          <Label
+	            htmlFor="patient-link-label"
+	            className="patient-link-form__label patient-link-form__label--link text-sm font-semibold text-slate-700"
+	          >
 	            Label (for your referrence)
+	          </Label>
+	          <Label
+	            htmlFor="patient-link-markup"
+	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
+	          >
+	            Markup %
 	          </Label>
 	          <Input
 	            id="patient-link-label"
 	            value={patientLinkLabelDraft}
 	            onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
 	            placeholder="e.g., John Doe"
-            className="patient-link-form__input h-11 w-full mb-2 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
+	          <div className="patient-link-form__markup relative w-full mb-0">
+	            <Input
+	              id="patient-link-markup"
+	              type="text"
+	              inputMode="decimal"
+	              value={patientLinkMarkupDraft}
+	              onChange={(event) => setPatientLinkMarkupDraft(normalizeMarkupDraftText(event.target.value))}
+	              placeholder="0"
+	              className="!h-11 w-full text-right tabular-nums squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	              style={{ direction: 'ltr' }}
+	            />
+	          </div>
 	          <Button
 	            type="button"
 	            onClick={() => void handleCreatePatientLink()}
@@ -4813,6 +4789,9 @@ export function Header({
 	        </div>
 	        <p className="mt-2 text-xs text-slate-600">
 	          Labels are for your reference only and do not appear to the delegate.
+	        </p>
+	        <p className="mt-3 text-xs text-slate-600">
+	          Markup is stored per link (e.g., 15 for 15%). Use 0% to show base pricing.
 	        </p>
 	      </div>
 
@@ -4857,6 +4836,17 @@ export function Header({
 		              const token = typeof link?.token === 'string' ? link.token : '';
 		              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
+		              const markupPercentValueRaw =
+		                typeof (link as any)?.markupPercent === 'number'
+		                  ? (link as any).markupPercent
+		                  : typeof (link as any)?.markupPercent === 'string'
+		                    ? Number((link as any).markupPercent)
+		                    : typeof (link as any)?.markup_percent === 'number'
+		                      ? (link as any).markup_percent
+		                      : typeof (link as any)?.markup_percent === 'string'
+		                        ? Number((link as any).markup_percent)
+		                        : 0;
+		              const markupPercentValue = Number.isFinite(markupPercentValueRaw) ? markupPercentValueRaw : 0;
 	              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
 	              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
 	              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
@@ -4889,7 +4879,7 @@ export function Header({
 			              return (
 				                <div
 				                  key={token || label}
-				                  className="glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.55)] hover:border-[rgb(95,179,249)] transition-colors p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
+				                  className="patient-link-item glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.55)] transition-colors p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
 				                >
 			                  <div className="min-w-0 flex-1">
 				                    <div className="flex items-center gap-2">
@@ -4897,13 +4887,14 @@ export function Header({
 				                      <span className="font-semibold text-slate-900 truncate">{label}</span>
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
-		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
-		                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
-		                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
-		                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
-		                      {hasProposal && (
-		                        <div className="font-semibold text-slate-700">
-		                          Proposal: {proposalLabel || 'Pending review'}
+			                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
+			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
+			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
+			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
+			                      {hasProposal && (
+			                        <div className="font-semibold text-slate-700">
+			                          Proposal: {proposalLabel || 'Pending review'}
 		                        </div>
 		                      )}
 	                    </div>
@@ -5141,18 +5132,22 @@ export function Header({
                           aria-pressed={isActive}
 	                          onClick={() => setAccountTab(tab.id)}
 	                        >
-	                          <span className="relative inline-flex items-center justify-center">
-	                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-	                            {tab.id === 'patient_links' && showPatientLinksTab && (patientLinksLoading || outstandingPatientProposalCount > 0) && (
-	                              <span
-	                                className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold text-white"
-	                                title="Outstanding proposals"
-	                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
-	                              >
-	                                {patientLinksLoading ? '…' : outstandingPatientProposalCount}
-	                              </span>
-	                            )}
-	                          </span>
+		                          <span className="relative inline-flex items-center justify-center">
+		                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+		                            {tab.id === 'patient_links' && showPatientLinksTab && (patientLinksLoading || outstandingPatientProposalCount > 0) && (
+		                              <span
+		                                className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold !text-white shadow-sm translate-x-1/2 -translate-y-1/2"
+		                                title="Outstanding proposals"
+		                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
+		                                style={{
+		                                  backgroundColor: 'rgb(95,179,249)',
+		                                  color: '#fff',
+		                                }}
+		                              >
+		                                {patientLinksLoading ? '…' : outstandingPatientProposalCount}
+		                              </span>
+		                            )}
+		                          </span>
 	                          {tab.label}
 	                        </button>
 	                      );
