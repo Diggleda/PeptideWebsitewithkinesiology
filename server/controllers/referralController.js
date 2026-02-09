@@ -440,8 +440,12 @@ const getDoctorLedger = (req, res, next) => {
 			    const salesRepId = scopeAll ? null : requestedSalesRepId;
 			    const isViewingOwnDashboard =
 			      !req.query.salesRepId || String(req.query.salesRepId) === String(viewerSalesRepId);
+			    const requestContext = String(req.query.context || '').trim().toLowerCase();
 			    const includeContactForms =
-			      isAdmin && mysqlClient.isEnabled() && (scopeAll || isViewingOwnDashboard);
+			      isAdmin &&
+			      mysqlClient.isEnabled() &&
+			      (scopeAll || isViewingOwnDashboard) &&
+			      requestContext !== 'modal';
 		    logger.info(
 		      {
 		        userId: req.user.id,

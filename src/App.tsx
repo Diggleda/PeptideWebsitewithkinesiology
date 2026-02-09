@@ -5707,38 +5707,53 @@ function MainApp() {
 			    setTimeout(scrollToTop, 0);
 			  }, [salesDoctorDetail?.doctorId]);
 
-			  useEffect(() => {
-			    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
-			    const targetId = String(salesDoctorDetail?.doctorId || "").trim();
-			    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
-			    const isTargetProspectOwner =
-			      targetRole === "sales_rep" ||
-			      targetRole === "rep" ||
-			      targetRole === "sales_lead" ||
+				  useEffect(() => {
+				    const canViewProspects = isAdmin(user?.role) || isSalesLead(user?.role);
+				    const targetRole = normalizeRole(salesDoctorDetail?.role || "");
+				    const targetIdRaw = String(salesDoctorDetail?.doctorId || "").trim();
+				    const targetSalesRepId = (() => {
+				      if (
+				        targetRole === "sales_rep" ||
+				        targetRole === "rep" ||
+				        targetRole === "sales_lead" ||
+				        targetRole === "saleslead" ||
+				        targetRole === "sales-lead" ||
+				        targetRole === "admin"
+				      ) {
+				        const ownerId = String(salesDoctorDetail?.ownerSalesRepId || "").trim();
+				        if (ownerId) return ownerId;
+				      }
+				      return targetIdRaw;
+				    })();
+				    const isTargetProspectOwner =
+				      targetRole === "sales_rep" ||
+				      targetRole === "rep" ||
+				      targetRole === "sales_lead" ||
 			      targetRole === "saleslead" ||
 			      targetRole === "sales-lead" ||
 			      targetRole === "admin";
 
-			    if (!targetId || !canViewProspects || !isTargetProspectOwner) {
-			      salesRepProspectsKeyRef.current = null;
-			      setSalesRepProspectsForModal(null);
-			      setSalesRepProspectsLoading(false);
-			      setSalesRepProspectsError(null);
+				    if (!targetSalesRepId || !canViewProspects || !isTargetProspectOwner) {
+				      salesRepProspectsKeyRef.current = null;
+				      setSalesRepProspectsForModal(null);
+				      setSalesRepProspectsLoading(false);
+				      setSalesRepProspectsError(null);
 			      return;
 		    }
 
-		    salesRepProspectsKeyRef.current = targetId;
-		    let canceled = false;
-			    (async () => {
-			      setSalesRepProspectsLoading(true);
-			      setSalesRepProspectsError(null);
-			      try {
-			        const response = await referralAPI.getSalesRepDashboard({
-			          salesRepId: targetId,
-			          scope: "mine",
-			        });
-			        const respObj =
-			          response && typeof response === "object" ? (response as any) : null;
+			    salesRepProspectsKeyRef.current = targetSalesRepId;
+			    let canceled = false;
+				    (async () => {
+				      setSalesRepProspectsLoading(true);
+				      setSalesRepProspectsError(null);
+				      try {
+				        const response = await referralAPI.getSalesRepDashboard({
+				          salesRepId: targetSalesRepId,
+				          scope: "mine",
+				          context: "modal",
+				        });
+				        const respObj =
+				          response && typeof response === "object" ? (response as any) : null;
 			        const rawUsers = Array.isArray(respObj?.users) ? respObj.users : [];
 			        const userById = new Map<string, any>();
 			        const userIdByEmail = new Map<string, string>();
@@ -5890,24 +5905,24 @@ function MainApp() {
 			            const bTs = Date.parse(String(b?.updatedAt || b?.createdAt || "")) || 0;
 			            return bTs - aTs;
 			          });
-		        if (canceled) return;
-		        if (salesRepProspectsKeyRef.current !== targetId) return;
-		        setSalesRepProspectsForModal(active);
-		      } catch (error: any) {
-		        if (canceled) return;
-		        if (salesRepProspectsKeyRef.current !== targetId) return;
-		        setSalesRepProspectsForModal(null);
-		        const message =
-		          typeof error?.message === "string" && error.message.trim().length
-		            ? error.message
-		            : "Unable to load prospects.";
-		        setSalesRepProspectsError(message);
-		      } finally {
-		        if (!canceled && salesRepProspectsKeyRef.current === targetId) {
-		          setSalesRepProspectsLoading(false);
-		        }
-		      }
-		    })();
+			        if (canceled) return;
+			        if (salesRepProspectsKeyRef.current !== targetSalesRepId) return;
+			        setSalesRepProspectsForModal(active);
+			      } catch (error: any) {
+			        if (canceled) return;
+			        if (salesRepProspectsKeyRef.current !== targetSalesRepId) return;
+			        setSalesRepProspectsForModal(null);
+			        const message =
+			          typeof error?.message === "string" && error.message.trim().length
+			            ? error.message
+			            : "Unable to load prospects.";
+			        setSalesRepProspectsError(message);
+			      } finally {
+			        if (!canceled && salesRepProspectsKeyRef.current === targetSalesRepId) {
+			          setSalesRepProspectsLoading(false);
+			        }
+			      }
+			    })();
 		    return () => {
 		      canceled = true;
 		    };

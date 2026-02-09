@@ -1823,13 +1823,20 @@ export const referralAPI = {
     return fetchWithAuth(`${API_BASE_URL}/referrals/doctor/ledger`);
   },
 
-  getSalesRepDashboard: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all' }) => {
+  getSalesRepDashboard: async (options?: {
+    salesRepId?: string | null;
+    scope?: 'mine' | 'all';
+    context?: 'dashboard' | 'modal';
+  }) => {
     const params = new URLSearchParams();
     if (options?.salesRepId) {
       params.set('salesRepId', options.salesRepId);
     }
     if (options?.scope) {
       params.set('scope', options.scope);
+    }
+    if (options?.context) {
+      params.set('context', options.context);
     }
     const query = params.toString();
     // Use non-admin path to avoid infra path-based restrictions; backend supports both.
