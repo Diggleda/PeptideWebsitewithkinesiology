@@ -47,7 +47,8 @@ def delete_expired() -> int:
 def create_link(
     doctor_id: str,
     *,
-    label: Optional[str] = None,
+    reference_label: Optional[str] = None,
+    patient_id: Optional[str] = None,
     markup_percent: Optional[float] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
@@ -56,7 +57,10 @@ def create_link(
     if not doctor_id:
         raise ValueError("doctor_id is required")
 
-    label_value = str(label).strip() if isinstance(label, str) and str(label).strip() else None
+    reference_label_value = (
+        str(reference_label).strip() if isinstance(reference_label, str) and str(reference_label).strip() else None
+    )
+    patient_id_value = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
     delete_expired()
 
     # Default markup comes from the doctor record (non-volatile across sessions),
@@ -80,7 +84,8 @@ def create_link(
         params = {
             "token": token,
             "doctor_id": doctor_id,
-            "label": label_value,
+            "patient_id": patient_id_value,
+            "reference_label": reference_label_value,
             "created_at": now.replace(tzinfo=None),
             "expires_at": expires.replace(tzinfo=None),
             "markup_percent": float(markup_percent or 0.0),
@@ -88,14 +93,16 @@ def create_link(
         try:
             mysql_client.execute(
                 """
-                INSERT INTO patient_links (token, doctor_id, label, created_at, expires_at, markup_percent)
-                VALUES (%(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s)
+                INSERT INTO patient_links (token, doctor_id, patient_id, reference_label, created_at, expires_at, markup_percent)
+                VALUES (%(token)s, %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s)
                 """,
                 params,
             )
             return {
                 "token": token,
-                "label": label_value,
+                "patientId": patient_id_value,
+                "referenceLabel": reference_label_value,
+                "label": reference_label_value,
                 "createdAt": now.isoformat(),
                 "expiresAt": expires.isoformat(),
                 "markupPercent": float(markup_percent or 0.0),
@@ -119,7 +126,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     delete_expired()
     rows = mysql_client.fetch_all(
         """
-        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at,
+        SELECT token, patient_id, reference_label, label, created_at, expires_at, markup_percent, last_used_at, revoked_at,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
@@ -134,7 +141,9 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         results.append(
             {
                 "token": row.get("token"),
-                "label": row.get("label"),
+                "patientId": row.get("patient_id"),
+                "referenceLabel": row.get("reference_label") or row.get("label"),
+                "label": row.get("reference_label") or row.get("label"),
                 "createdAt": _fmt_datetime(row.get("created_at")),
                 "expiresAt": _fmt_datetime(row.get("expires_at")),
                 "markupPercent": float(row.get("markup_percent") or 0.0),
@@ -159,7 +168,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
     delete_expired()
     row = mysql_client.fetch_one(
         """
-        SELECT token, doctor_id, label, created_at, expires_at, last_used_at, revoked_at,
+        SELECT token, doctor_id, patient_id, reference_label, label, created_at, expires_at, last_used_at, revoked_at,
                markup_percent,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
@@ -196,7 +205,9 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
     return {
         "token": row.get("token"),
         "doctorId": row.get("doctor_id"),
-        "label": row.get("label"),
+        "patientId": row.get("patient_id"),
+        "referenceLabel": row.get("reference_label") or row.get("label"),
+        "label": row.get("reference_label") or row.get("label"),
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
         "markupPercent": float(row.get("markup_percent") or 0.0),
@@ -232,7 +243,8 @@ def update_link(
     doctor_id: str,
     token: str,
     *,
-    label: Optional[str] = None,
+    reference_label: Optional[str] = None,
+    patient_id: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -246,10 +258,19 @@ def update_link(
     updates: list[str] = []
     params: Dict[str, Any] = {"doctor_id": doctor_id, "token": token}
 
-    if label is not None:
-        label_value = str(label).strip() if isinstance(label, str) and str(label).strip() else None
-        updates.append("label = %(label)s")
-        params["label"] = label_value
+    if reference_label is not None:
+        reference_label_value = (
+            str(reference_label).strip()
+            if isinstance(reference_label, str) and str(reference_label).strip()
+            else None
+        )
+        updates.append("reference_label = %(reference_label)s")
+        params["reference_label"] = reference_label_value
+
+    if patient_id is not None:
+        patient_id_value = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
+        updates.append("patient_id = %(patient_id)s")
+        params["patient_id"] = patient_id_value
 
     if revoke is True:
         updates.append("revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP())")
@@ -275,7 +296,7 @@ def update_link(
 
     row = mysql_client.fetch_one(
         """
-        SELECT token, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
+        SELECT token, patient_id, reference_label, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
         FROM patient_links
         WHERE token = %(token)s
           AND doctor_id = %(doctor_id)s
@@ -287,7 +308,9 @@ def update_link(
         return None
     return {
         "token": row.get("token"),
-        "label": row.get("label"),
+        "patientId": row.get("patient_id"),
+        "referenceLabel": row.get("reference_label") or row.get("label"),
+        "label": row.get("reference_label") or row.get("label"),
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
         "markupPercent": float(row.get("markup_percent") or 0.0),

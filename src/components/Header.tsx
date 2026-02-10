@@ -30,6 +30,7 @@ const isDoctorRole = (role?: string | null) => {
 };
 
 type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
+type AccountTabId = 'details' | 'orders' | 'research' | 'patient_links';
 
 const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
   const active = Math.max(0, Math.min(activeBars, 3));
@@ -938,7 +939,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [accountTab, setAccountTab] = useState<'details' | 'orders' | 'research' | 'patient_links'>('details');
+  const [accountTab, setAccountTab] = useState<AccountTabId>('details');
   const [patientLinksLoading, setPatientLinksLoading] = useState(false);
   const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
   const [patientLinks, setPatientLinks] = useState<any[]>([]);
@@ -946,6 +947,7 @@ export function Header({
   const patientLinksLoadInFlightRef = useRef(false);
   const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
   const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
+  const [patientLinkPatientIdDraft, setPatientLinkPatientIdDraft] = useState('');
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
   const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
@@ -3085,7 +3087,6 @@ export function Header({
   const showPatientLinksTab = Boolean(
     localUser && (normalizedRole === 'test_doctor' || (normalizedRole === 'doctor' && patientLinksEnabled)),
   );
-  type AccountTabId = 'details' | 'orders' | 'research' | 'patient_links';
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
       { id: 'details', label: 'Details', Icon: Info },
@@ -3192,6 +3193,19 @@ export function Header({
     }, 0);
   }, [patientLinks]);
 
+  const accountTabIndicatorCounts = useMemo<Partial<Record<AccountTabId, number>>>(() => {
+    const counts: Partial<Record<AccountTabId, number>> = {};
+    if (showPatientLinksTab && !patientLinksLoading && outstandingPatientProposalCount > 0) {
+      counts.patient_links = outstandingPatientProposalCount;
+    }
+    return counts;
+  }, [outstandingPatientProposalCount, patientLinksLoading, showPatientLinksTab]);
+
+  const accountButtonIndicatorTotal = useMemo(
+    () => Object.values(accountTabIndicatorCounts).reduce((sum, count) => sum + (Number(count) || 0), 0),
+    [accountTabIndicatorCounts],
+  );
+
   useEffect(() => {
     if (!welcomeOpen) {
       patientLinksPrefetchedRef.current = false;
@@ -3214,12 +3228,15 @@ export function Header({
     setPatientLinksCreating(true);
     try {
       const api = await import('../services/api');
-      const label = patientLinkLabelDraft.trim();
+      const referenceLabel = patientLinkLabelDraft.trim();
+      const patientId = patientLinkPatientIdDraft.trim();
       const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
       await api.delegationAPI.createLink({
-        label: label ? label : null,
+        referenceLabel: referenceLabel ? referenceLabel : null,
+        patientId: patientId ? patientId : null,
         markupPercent,
       });
+      setPatientLinkPatientIdDraft('');
       setPatientLinkLabelDraft('');
       toast.success('Patient link created.');
       await loadPatientLinks();
@@ -3232,7 +3249,15 @@ export function Header({
     } finally {
       setPatientLinksCreating(false);
     }
-  }, [loadPatientLinks, normalizeMarkupPercent, patientLinkLabelDraft, patientLinkMarkupDraft, patientLinksCreating, showPatientLinksTab]);
+  }, [
+    loadPatientLinks,
+    normalizeMarkupPercent,
+    patientLinkLabelDraft,
+    patientLinkMarkupDraft,
+    patientLinkPatientIdDraft,
+    patientLinksCreating,
+    showPatientLinksTab,
+  ]);
 
   const handleCopyPatientLink = useCallback(async (token: string) => {
     if (typeof window === 'undefined') return;
@@ -4628,6 +4653,7 @@ export function Header({
 		    maxWidth: isLargeScreen ? '240px' : 'min(170px, 40vw)',
 		    heightPx: logoSlotHeightPx,
 		  };
+  const delegateUserIconClassName = 'h-5 w-5 flex-shrink-0 !text-[rgb(95,179,249)]';
 
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
@@ -4691,7 +4717,7 @@ export function Header({
 				                        color: 'rgb(95,179,249)',
 				                      }}
 				                    >
-				                      <User className="h-4 w-4 flex-shrink-0 !text-[rgb(95,179,249)]" aria-hidden="true" />
+				                      <User className={delegateUserIconClassName} aria-hidden="true" />
 				                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
 				                        localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'
 				                      }`}</span>
@@ -4763,16 +4789,23 @@ export function Header({
         </p>
 	        <div className="mt-5 patient-link-form">
 	          <Label
+	            htmlFor="patient-link-patient-id"
+	            className="patient-link-form__label patient-link-form__label--patient-id text-sm font-semibold text-slate-700"
+	          >
+	            Patient ID (from your proprietary system)
+	          </Label>
+	          <Input
+	            id="patient-link-patient-id"
+	            value={patientLinkPatientIdDraft}
+	            onChange={(event) => setPatientLinkPatientIdDraft(event.target.value)}
+	            placeholder="e.g., 12345"
+            className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Label
 	            htmlFor="patient-link-label"
 	            className="patient-link-form__label patient-link-form__label--link text-sm font-semibold text-slate-700"
 	          >
-	            Label (for your referrence)
-	          </Label>
-	          <Label
-	            htmlFor="patient-link-markup"
-	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
-	          >
-	            Markup %
+	            Referrence label for your link (optional)
 	          </Label>
 	          <Input
 	            id="patient-link-label"
@@ -4781,6 +4814,12 @@ export function Header({
 	            placeholder="e.g., John Doe"
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
+	          <Label
+	            htmlFor="patient-link-markup"
+	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
+	          >
+	            Patient catelogue markup %
+	          </Label>
 	          <div className="patient-link-form__markup relative w-full mb-0">
 	            <Input
 	              id="patient-link-markup"
@@ -4819,9 +4858,15 @@ export function Header({
             size="sm"
             onClick={() => void loadPatientLinks()}
             disabled={!showPatientLinksTab || patientLinksLoading}
-            className="squircle-sm mb-0 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+            className="gap-2"
+            aria-busy={patientLinksLoading}
+            title="Refresh"
           >
-            {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
+            <RefreshCw
+              className={`h-4 w-4 ${patientLinksLoading ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            {patientLinksLoading ? 'Refreshing...' : 'Refresh'}
           </Button>
         </div>
 	        <p className="text-sm leading-relaxed text-slate-700">
@@ -4849,7 +4894,21 @@ export function Header({
 	          <div className="space-y-4 pt-1">
 		            {patientLinks.map((link) => {
 		              const token = typeof link?.token === 'string' ? link.token : '';
-		              const label = typeof link?.label === 'string' && link.label.trim() ? link.label.trim() : 'Patient link';
+		              const referenceLabelRaw =
+		                (typeof link?.referenceLabel === 'string' && link.referenceLabel.trim())
+		                  ? link.referenceLabel.trim()
+		                  : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
+		                    ? (link as any).reference_label.trim()
+		                    : (typeof link?.label === 'string' && link.label.trim())
+		                      ? link.label.trim()
+		                      : '';
+		              const label = referenceLabelRaw || 'Patient link';
+		              const patientId =
+		                (typeof link?.patientId === 'string' && link.patientId.trim())
+		                  ? link.patientId.trim()
+		                  : (typeof (link as any)?.patient_id === 'string' && (link as any).patient_id.trim())
+		                    ? (link as any).patient_id.trim()
+		                    : '';
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
 		              const markupPercentValueRaw =
 		                typeof (link as any)?.markupPercent === 'number'
@@ -4903,6 +4962,7 @@ export function Header({
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
 			                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
+			                      {patientId && <div>Patient ID: {patientId}</div>}
 			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
 			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
 			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
@@ -5019,7 +5079,7 @@ export function Header({
 		          color: 'rgb(95,179,249)',
 		        }}
 		      >
-		        <User className="h-4 w-4 flex-shrink-0 !text-[rgb(95,179,249)]" aria-hidden="true" />
+		        <User className={delegateUserIconClassName} aria-hidden="true" />
 		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
@@ -5036,7 +5096,7 @@ export function Header({
             variant="default"
             size="sm"
             onClick={() => setWelcomeOpen(true)}
-            className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+            className="relative squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
             aria-haspopup="dialog"
             aria-expanded={welcomeOpen}
           >
@@ -5044,6 +5104,15 @@ export function Header({
             <span className="header-account-avatar-shell">
               {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
             </span>
+            {accountButtonIndicatorTotal > 0 && (
+              <span
+                className="absolute -right-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1.5 text-[10px] font-semibold leading-none text-[rgb(95,179,249)] shadow-sm"
+                aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
+                title={`Notifications: ${accountButtonIndicatorTotal}`}
+              >
+                {accountButtonIndicatorTotal > 99 ? '99+' : accountButtonIndicatorTotal}
+              </span>
+            )}
           </Button>
 			        </DialogTrigger>
 					        <DialogContent
@@ -5149,17 +5218,17 @@ export function Header({
 	                        >
 			                          <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-visible">
 			                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-			                            {tab.id === 'patient_links' && showPatientLinksTab && !patientLinksLoading && outstandingPatientProposalCount > 0 && (
+			                            {(accountTabIndicatorCounts[tab.id] || 0) > 0 && (
 			                              <span
 			                                className="absolute -right-1 -top-1 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full !bg-[rgb(95,179,249)] text-[10px] font-semibold !text-white shadow-sm leading-none pointer-events-none"
-			                                title="Outstanding proposals"
-			                                aria-label={`Outstanding proposals: ${outstandingPatientProposalCount}`}
+			                                title={`${tab.label} notifications`}
+			                                aria-label={`${tab.label} notifications: ${accountTabIndicatorCounts[tab.id]}`}
 			                                style={{
 			                                  backgroundColor: 'rgb(95,179,249)',
 			                                  color: '#fff',
 			                                }}
 			                              >
-		                                {outstandingPatientProposalCount > 9 ? '9+' : outstandingPatientProposalCount}
+		                                {(accountTabIndicatorCounts[tab.id] || 0) > 9 ? '9+' : accountTabIndicatorCounts[tab.id]}
 		                              </span>
 		                            )}
 		                          </span>

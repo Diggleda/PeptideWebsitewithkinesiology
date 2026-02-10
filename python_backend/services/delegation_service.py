@@ -147,23 +147,36 @@ def _migrate_legacy_links_to_table() -> None:
             expires_dt = created_dt + timedelta(hours=patient_links_repository.TTL_HOURS)
             if expires_dt <= now:
                 continue
-            label_value = entry.get("label")
-            label = str(label_value).strip() if isinstance(label_value, str) and str(label_value).strip() else None
+            reference_label_value = entry.get("referenceLabel")
+            if not (isinstance(reference_label_value, str) and str(reference_label_value).strip()):
+                reference_label_value = entry.get("reference_label")
+            if not (isinstance(reference_label_value, str) and str(reference_label_value).strip()):
+                reference_label_value = entry.get("label")
+            reference_label = (
+                str(reference_label_value).strip()
+                if isinstance(reference_label_value, str) and str(reference_label_value).strip()
+                else None
+            )
+            patient_id_value = entry.get("patientId")
+            if not (isinstance(patient_id_value, str) and str(patient_id_value).strip()):
+                patient_id_value = entry.get("patient_id")
+            patient_id = str(patient_id_value).strip() if isinstance(patient_id_value, str) and str(patient_id_value).strip() else None
             last_used = _parse_iso_utc(entry.get("lastUsedAt"))
             revoked = _parse_iso_utc(entry.get("revokedAt"))
             try:
                 mysql_client.execute(
                     """
                     INSERT IGNORE INTO patient_links (
-                        token, doctor_id, label, created_at, expires_at, markup_percent, last_used_at, revoked_at
+                        token, doctor_id, patient_id, reference_label, created_at, expires_at, markup_percent, last_used_at, revoked_at
                     ) VALUES (
-                        %(token)s, %(doctor_id)s, %(label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s, %(last_used_at)s, %(revoked_at)s
+                        %(token)s, %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s, %(last_used_at)s, %(revoked_at)s
                     )
                     """,
                     {
                         "token": token,
                         "doctor_id": doctor_id,
-                        "label": label,
+                        "patient_id": patient_id,
+                        "reference_label": reference_label,
                         "created_at": created_dt.replace(tzinfo=None),
                         "expires_at": expires_dt.replace(tzinfo=None),
                         "markup_percent": float(markup_to_persist or 0.0),
@@ -382,7 +395,8 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
 def create_link(
     doctor_id: str,
     *,
-    label: Optional[str] = None,
+    reference_label: Optional[str] = None,
+    patient_id: Optional[str] = None,
     markup_percent: Optional[object] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
@@ -391,7 +405,12 @@ def create_link(
     if _using_mysql():
         _migrate_legacy_links_to_table()
         markup_value = None if markup_percent is None else _normalize_markup_percent(markup_percent)
-        return patient_links_repository.create_link(doctor_id, label=label, markup_percent=markup_value)
+        return patient_links_repository.create_link(
+            doctor_id,
+            reference_label=reference_label,
+            patient_id=patient_id,
+            markup_percent=markup_value,
+        )
     token = secrets.token_urlsafe(24)
     now = datetime.now(timezone.utc).isoformat()
     config = get_doctor_config(doctor_id)
@@ -402,7 +421,10 @@ def create_link(
     )
     link = {
         "token": token,
-        "label": str(label).strip() if isinstance(label, str) and str(label).strip() else None,
+        "patientId": str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None,
+        "referenceLabel": (
+            str(reference_label).strip() if isinstance(reference_label, str) and str(reference_label).strip() else None
+        ),
         "createdAt": now,
         "markupPercent": float(markup_value or 0.0),
         "lastUsedAt": None,
@@ -422,7 +444,8 @@ def update_link(
     doctor_id: str,
     token: str,
     *,
-    label: Optional[str] = None,
+    reference_label: Optional[str] = None,
+    patient_id: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[object] = None,
 ) -> Dict[str, Any]:
@@ -438,7 +461,8 @@ def update_link(
         updated = patient_links_repository.update_link(
             doctor_id,
             token,
-            label=label,
+            reference_label=reference_label,
+            patient_id=patient_id,
             revoke=revoke,
             markup_percent=markup_value,
         )
@@ -454,8 +478,14 @@ def update_link(
     for entry in links:
         if str(entry.get("token") or "") != token:
             continue
-        if label is not None:
-            entry["label"] = str(label).strip() if isinstance(label, str) and str(label).strip() else None
+        if reference_label is not None:
+            entry["referenceLabel"] = (
+                str(reference_label).strip()
+                if isinstance(reference_label, str) and str(reference_label).strip()
+                else None
+            )
+        if patient_id is not None:
+            entry["patientId"] = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
         if markup_percent is not None:
             entry["markupPercent"] = float(_normalize_markup_percent(markup_percent) or 0.0)
         if revoke is True:
@@ -647,7 +677,9 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "doctorId": doctor_id,
         "createdAt": link.get("createdAt"),
         "expiresAt": link.get("expiresAt"),
-        "label": link.get("label"),
+        "patientId": link.get("patientId"),
+        "referenceLabel": link.get("referenceLabel") or link.get("label"),
+        "label": link.get("referenceLabel") or link.get("label"),
         "markupPercent": link.get("markupPercent"),
         "delegateCart": link.get("delegateCart"),
         "delegateShipping": link.get("delegateShipping"),

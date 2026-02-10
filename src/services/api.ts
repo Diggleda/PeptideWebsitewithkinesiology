@@ -1569,7 +1569,11 @@ export const delegationAPI = {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, { method: 'GET' });
   },
 
-  createLink: async (payload?: { label?: string | null; markupPercent?: number | null }) => {
+  createLink: async (payload?: {
+    referenceLabel?: string | null;
+    patientId?: string | null;
+    markupPercent?: number | null;
+  }) => {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
@@ -1578,7 +1582,12 @@ export const delegationAPI = {
 
   updateLink: async (
     token: string,
-    payload: { label?: string | null; revoke?: boolean | null; markupPercent?: number | null },
+    payload: {
+      referenceLabel?: string | null;
+      patientId?: string | null;
+      revoke?: boolean | null;
+      markupPercent?: number | null;
+    },
   ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {

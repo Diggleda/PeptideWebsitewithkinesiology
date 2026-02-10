@@ -200,6 +200,8 @@ CREATE_TABLE_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS patient_links (
         token VARCHAR(128) PRIMARY KEY,
         doctor_id VARCHAR(32) NOT NULL,
+        patient_id VARCHAR(128) NULL,
+        reference_label VARCHAR(190) NULL,
         label VARCHAR(190) NULL,
         created_at DATETIME NOT NULL,
         expires_at DATETIME NOT NULL,
@@ -370,6 +372,8 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN mime_type VARCHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN sha256 CHAR(64) NULL",
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id VARCHAR(128) NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label VARCHAR(190) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_status VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_reviewed_at DATETIME NULL",
@@ -475,6 +479,15 @@ def ensure_schema() -> None:
 
     # Ensure patient_links snapshot has markup column (best-effort; table may not exist yet on older installs).
     try:
+        if not _column_exists("patient_links", "patient_id"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id VARCHAR(128) NULL")
+        if not _column_exists("patient_links", "reference_label"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label VARCHAR(190) NULL")
+            # Backfill from legacy `label` column when present.
+            if _column_exists("patient_links", "label"):
+                mysql_client.execute(
+                    "UPDATE patient_links SET reference_label = label WHERE reference_label IS NULL AND label IS NOT NULL"
+                )
         if not _column_exists("patient_links", "markup_percent"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
     except Exception:
