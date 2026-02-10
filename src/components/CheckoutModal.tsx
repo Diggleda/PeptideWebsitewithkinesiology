@@ -449,8 +449,19 @@ export function CheckoutModal({
       rateFingerprint,
       shippingCost.toFixed(2),
       paymentMethod || 'payment',
+      discountCodeApplied?.code || 'no-discount',
+      discountCodeAmount.toFixed(2),
     ].join('|');
-  }, [shouldFetchTax, cartLineItemSignature, shippingAddressSignature, selectedShippingRate, shippingCost, paymentMethod]);
+  }, [
+    shouldFetchTax,
+    cartLineItemSignature,
+    shippingAddressSignature,
+    selectedShippingRate,
+    shippingCost,
+    paymentMethod,
+    discountCodeApplied?.code,
+    discountCodeAmount,
+  ]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
   const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
   const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
@@ -1030,6 +1041,7 @@ export function CheckoutModal({
           shippingEstimate: selectedShippingRate,
           shippingTotal: shippingCost,
           paymentMethod,
+          discountCode: discountCodeApplied?.code ?? null,
         },
         { signal: controller.signal },
       );
@@ -1039,7 +1051,7 @@ export function CheckoutModal({
       const totals = response?.totals || null;
       const amount = Math.max(0, Number(totals?.taxTotal) || 0);
       const grandTotalFromApi = Number(totals?.grandTotal);
-      const fallbackGrandTotal = Math.max(0, subtotal - appliedCredits + shippingCost + amount);
+      const fallbackGrandTotal = Math.max(0, discountedSubtotal - appliedCredits + shippingCost + amount);
       const testPaymentOverrideApplied = totals?.testPaymentOverrideApplied === true;
       const originalGrandTotalCandidate = Number(totals?.originalGrandTotal);
       setTaxEstimate({
@@ -1069,7 +1081,19 @@ export function CheckoutModal({
         setTaxEstimatePending(false);
       }
     }
-  }, [appliedCredits, checkoutLineItems, estimateTotals, paymentMethod, selectedShippingRate, shippingAddress, shippingCost, shouldFetchTax, subtotal, taxQuoteKey]);
+  }, [
+    appliedCredits,
+    checkoutLineItems,
+    discountedSubtotal,
+    estimateTotals,
+    paymentMethod,
+    selectedShippingRate,
+    shippingAddress,
+    shippingCost,
+    shouldFetchTax,
+    taxQuoteKey,
+    discountCodeApplied?.code,
+  ]);
 
   useEffect(() => {
     if (!shouldFetchTax || !taxQuoteKey) {

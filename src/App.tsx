@@ -23882,6 +23882,16 @@ function MainApp() {
 	                    (coerceNumber(line.price) ?? 0) * (coerceNumber(line.quantity) ?? 0);
 	                  return sum + (Number.isFinite(lineTotal) ? lineTotal : 0);
 	                }, 0);
+                  const discountCode = String((salesOrderDetail as any).discountCode || '')
+                    .trim()
+                    .toUpperCase() || null;
+                  const discountCodeAmount = Math.abs(coerceNumber((salesOrderDetail as any).discountCodeAmount) ?? 0);
+                  const appliedReferralCredit = Math.abs(coerceNumber((salesOrderDetail as any).appliedReferralCredit) ?? 0);
+                  const hasExplicitDiscounts = discountCodeAmount > 0 || appliedReferralCredit > 0;
+                  const originalItemsSubtotal =
+                    coerceNumber((salesOrderDetail as any).originalItemsSubtotal) ?? (subtotal + discountCodeAmount);
+                  const subtotalForSummary = hasExplicitDiscounts ? originalItemsSubtotal : subtotal;
+                  const discountTotal = hasExplicitDiscounts ? discountCodeAmount + appliedReferralCredit : 0;
 	                const shippingTotal =
 	                  coerceNumber(
 	                    salesOrderDetail.shippingTotal ??
@@ -23894,7 +23904,7 @@ function MainApp() {
 	                      (salesOrderDetail as any).total_tax ??
 	                      (salesOrderDetail as any).totalTax,
 	                  ) ?? 0;
-                const computedGrandTotal = subtotal + shippingTotal + taxTotal;
+                const computedGrandTotal = subtotalForSummary + shippingTotal + taxTotal - discountTotal;
                 const storedGrandTotal =
                   typeof (salesOrderDetail as any).grandTotal === "number"
                     ? (salesOrderDetail as any).grandTotal
@@ -24341,9 +24351,25 @@ function MainApp() {
                         <div className="flex justify-between">
                           <span>Subtotal</span>
                           <span>
-                            {formatCurrency(subtotal, salesOrderDetail.currency || "USD")}
+                            {formatCurrency(subtotalForSummary, salesOrderDetail.currency || "USD")}
                           </span>
                         </div>
+                        {hasExplicitDiscounts && discountCodeAmount > 0 && (
+                          <div className="flex justify-between text-[rgb(26,85,173)]">
+                            <span>{discountCode ? `Discount (${discountCode})` : "Discount"}</span>
+                            <span>
+                              -{formatCurrency(discountCodeAmount, salesOrderDetail.currency || "USD")}
+                            </span>
+                          </div>
+                        )}
+                        {hasExplicitDiscounts && appliedReferralCredit > 0 && (
+                          <div className="flex justify-between text-[rgb(26,85,173)]">
+                            <span>Referral Credit</span>
+                            <span>
+                              -{formatCurrency(appliedReferralCredit, salesOrderDetail.currency || "USD")}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span>Shipping</span>
                           <span>

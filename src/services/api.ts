@@ -1413,6 +1413,7 @@ export const ordersAPI = {
       shippingEstimate: any;
       shippingTotal: number;
       paymentMethod?: string | null;
+      discountCode?: string | null;
     },
     options?: { signal?: AbortSignal },
   ) => {

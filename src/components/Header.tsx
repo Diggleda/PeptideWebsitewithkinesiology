@@ -4436,7 +4436,7 @@ export function Header({
       return sum + lineTotal;
     }, 0);
     const stripeMeta = parseMaybeJson(integrationDetails?.stripe || (integrationDetails as any)?.Stripe) || {};
-    const subtotal = parseWooMoney(
+    const itemsSubtotalEffective = parseWooMoney(
       (selectedOrder as any).itemsSubtotal ?? (selectedOrder as any).itemsTotal,
       summedLineItems > 0
         ? summedLineItems
@@ -4444,6 +4444,39 @@ export function Header({
             wooResponse.total ?? wooPayload.total ?? wooResponse.subtotal ?? wooPayload.subtotal,
             0,
           ),
+    );
+    const wooMeta = Array.isArray(wooResponse?.meta_data)
+      ? wooResponse.meta_data
+      : Array.isArray(wooPayload?.meta_data)
+        ? wooPayload.meta_data
+        : [];
+    const findWooMetaValue = (key: string) => {
+      if (!key) return null;
+      const normalizedKey = String(key).trim().toLowerCase();
+      const match = Array.isArray(wooMeta)
+        ? wooMeta.find((entry: any) => String(entry?.key || '').trim().toLowerCase() === normalizedKey)
+        : null;
+      return match?.value ?? null;
+    };
+    const discountCodeFromWoo = findWooMetaValue('peppro_discount_code');
+    const discountCodeAmountFromWoo = findWooMetaValue('peppro_discount_code_amount');
+    const discountCode = String(
+      (selectedOrder as any).discountCode ?? discountCodeFromWoo ?? '',
+    )
+      .trim()
+      .toUpperCase() || null;
+    const discountCodeAmount = Math.abs(
+      parseWooMoney(
+        (selectedOrder as any).discountCodeAmount,
+        parseWooMoney(discountCodeAmountFromWoo, 0),
+      ),
+    );
+    const appliedReferralCreditRaw = parseWooMoney((selectedOrder as any).appliedReferralCredit, 0);
+    const appliedReferralCredit = Math.abs(appliedReferralCreditRaw);
+    const hasExplicitDiscounts = discountCodeAmount > 0 || appliedReferralCredit > 0;
+    const originalItemsSubtotal = parseWooMoney(
+      (selectedOrder as any).originalItemsSubtotal,
+      itemsSubtotalEffective + discountCodeAmount,
     );
     const shippingTotal = parseWooMoney(
       selectedOrder.shippingTotal,
@@ -4456,19 +4489,18 @@ export function Header({
       (selectedOrder as any).taxTotal,
       parseWooMoney(wooResponse.total_tax ?? wooPayload.total_tax, 0),
     );
-    const discountTotalRaw = parseWooMoney(
-      (selectedOrder as any).appliedReferralCredit,
-      parseWooMoney(
-        wooResponse.discount_total ?? wooPayload.discount_total ?? (wooPayload.discount_lines?.[0]?.total ?? 0),
-        0,
-      ),
+    const legacyDiscountTotalRaw = parseWooMoney(
+      wooResponse.discount_total ?? wooPayload.discount_total ?? (wooPayload.discount_lines?.[0]?.total ?? 0),
+      0,
     );
-    const discountTotal = Math.abs(discountTotalRaw);
+    const legacyDiscountTotal = Math.abs(legacyDiscountTotalRaw);
+    const discountTotal = hasExplicitDiscounts ? discountCodeAmount + appliedReferralCredit : legacyDiscountTotal;
     const storedGrandTotal = parseWooMoney(
       (selectedOrder as any).grandTotal,
       parseWooMoney(selectedOrder.total, 0),
     );
-    const computedGrandTotal = subtotal + shippingTotal + taxTotal - discountTotal;
+    const subtotalForSummary = hasExplicitDiscounts ? originalItemsSubtotal : itemsSubtotalEffective;
+    const computedGrandTotal = subtotalForSummary + shippingTotal + taxTotal - discountTotal;
     const baseGrandTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
     const grandTotal =
       taxTotal > 0 && computedGrandTotal > baseGrandTotal + 0.01
@@ -4717,8 +4749,20 @@ export function Header({
 		              <div className="space-y-2 text-sm text-slate-700">
 	                <div className="flex justify-between">
 	                  <span>Subtotal</span>
-	                  <span>{formatCurrency(subtotal, selectedOrder.currency || 'USD')}</span>
+	                  <span>{formatCurrency(subtotalForSummary, selectedOrder.currency || 'USD')}</span>
 	                </div>
+                  {hasExplicitDiscounts && discountCodeAmount > 0 && (
+                    <div className="flex justify-between text-[rgb(26,85,173)]">
+                      <span>{discountCode ? `Discount (${discountCode})` : 'Discount'}</span>
+                      <span>-{formatCurrency(discountCodeAmount, selectedOrder.currency || 'USD')}</span>
+                    </div>
+                  )}
+                  {hasExplicitDiscounts && appliedReferralCredit > 0 && (
+                    <div className="flex justify-between text-[rgb(26,85,173)]">
+                      <span>Referral Credit</span>
+                      <span>-{formatCurrency(appliedReferralCredit, selectedOrder.currency || 'USD')}</span>
+                    </div>
+                  )}
 	                <div className="flex justify-between">
 	                  <span>Shipping</span>
 	                  <span>{formatCurrency(shippingTotal, selectedOrder.currency || 'USD')}</span>
@@ -4729,7 +4773,7 @@ export function Header({
 	                    <span>{formatCurrency(taxTotal, selectedOrder.currency || 'USD')}</span>
 	                  </div>
 	                )}
-	                {discountTotal > 0 && (
+	                {!hasExplicitDiscounts && discountTotal > 0 && (
 	                  <div className="flex justify-between text-[rgb(26,85,173)]">
 	                    <span>Credits & Discounts</span>
 	                    <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>

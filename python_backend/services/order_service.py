@@ -417,6 +417,7 @@ def estimate_order_totals(
     shipping_estimate: Optional[Dict] = None,
     shipping_total: float | int | str = 0,
     payment_method: Optional[str] = None,
+    discount_code: Optional[str] = None,
 ) -> Dict:
     if not _validate_items(items):
         err = ValueError("Invalid items payload")
@@ -472,8 +473,24 @@ def estimate_order_totals(
     test_override_payment = normalized_payment_method == "bacs"
     test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
 
+    normalized_discount_code = (discount_code or "").strip().upper() or None
+    if test_override:
+        normalized_discount_code = None
+
+    discount_code_amount = 0.0
+    items_total_effective = float(items_total)
+    if normalized_discount_code:
+        applied = discount_code_service.apply_discount_to_subtotal(
+            user_id=user_id,
+            code=normalized_discount_code,
+            items_subtotal=float(items_total),
+        )
+        discount_code_amount = float(applied.get("discountAmount") or 0.0)
+        items_total_effective = max(0.0, float(items_total) - max(0.0, discount_code_amount))
+        normalized_discount_code = str(applied.get("code") or normalized_discount_code).strip().upper() or normalized_discount_code
+
     if _is_tax_exempt_for_checkout(user):
-        original_grand_total = max(0.0, items_total + shipping_total_value)
+        original_grand_total = max(0.0, items_total_effective + shipping_total_value)
         if test_override:
             return {
                 "success": True,
@@ -494,13 +511,16 @@ def estimate_order_totals(
         return {
             "success": True,
             "totals": {
-                "itemsTotal": round(items_total, 2),
+                "itemsTotal": round(items_total_effective, 2),
                 "shippingTotal": round(shipping_total_value, 2),
                 "taxTotal": 0.0,
                 "grandTotal": round(original_grand_total, 2),
                 "currency": "USD",
                 "source": "tax_exempt",
                 "testPaymentOverrideApplied": False,
+                "originalItemsTotal": round(items_total, 2),
+                "discountCode": normalized_discount_code,
+                "discountCodeAmount": round(max(0.0, discount_code_amount), 2),
             },
         }
 
@@ -518,18 +538,21 @@ def estimate_order_totals(
     tax_total = 0.0
     source = "flat_zero"
     if is_ca:
-        base = float(items_total + shipping_total_value)
+        base = float(items_total_effective + shipping_total_value)
         tax_total = round(max(0.0, base * 0.077), 2)
         source = "ca_flat_7_7"
-    grand_total = max(0.0, items_total + shipping_total_value + tax_total)
+    grand_total = max(0.0, items_total_effective + shipping_total_value + tax_total)
 
     totals = {
-        "itemsTotal": round(items_total, 2),
+        "itemsTotal": round(items_total_effective, 2),
         "shippingTotal": round(shipping_total_value, 2),
         "taxTotal": round(tax_total, 2),
         "grandTotal": round(grand_total, 2),
         "currency": "USD",
         "source": source,
+        "originalItemsTotal": round(items_total, 2),
+        "discountCode": normalized_discount_code,
+        "discountCodeAmount": round(max(0.0, discount_code_amount), 2),
     }
 
     if test_override:

@@ -363,6 +363,7 @@ def estimate_order_totals():
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
+    discount_code = payload.get("discountCode") or payload.get("discount_code") or None
     user_id = g.current_user.get("id")
     return handle_action(
         lambda: order_service.estimate_order_totals(
@@ -372,6 +373,7 @@ def estimate_order_totals():
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
             payment_method=payment_method,
+            discount_code=discount_code,
         )
     )
 
@@ -385,6 +387,7 @@ def delegate_estimate_order_totals():
     shipping_total = payload.get("shippingTotal") or 0
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
+    discount_code = payload.get("discountCode") or payload.get("discount_code") or None
 
     def action():
         delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
@@ -400,6 +403,7 @@ def delegate_estimate_order_totals():
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
             payment_method=payment_method,
+            discount_code=discount_code,
         )
 
     return handle_action(action)
