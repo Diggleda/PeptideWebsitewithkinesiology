@@ -575,6 +575,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     email = _normalize_email(data.get("email") or user.get("email") or "")
     profile_image_url = data.get("profileImageUrl") or user.get("profileImageUrl") or None
     delegate_logo_url = data.get("delegateLogoUrl") if "delegateLogoUrl" in data else user.get("delegateLogoUrl") or None
+    zelle_contact = data.get("zelleContact") if "zelleContact" in data else user.get("zelleContact") or None
 
     if delegate_logo_url is not None and not isinstance(delegate_logo_url, str):
         delegate_logo_url = None
@@ -590,6 +591,15 @@ def update_profile(user_id: str, data: Dict) -> Dict:
             # Rough size guard (UTF-8 bytes) to avoid extremely large rows.
             if len(delegate_logo_url.encode("utf-8")) > 750_000:
                 raise _bad_request("DELEGATE_LOGO_TOO_LARGE")
+
+    if zelle_contact is not None and not isinstance(zelle_contact, str):
+        zelle_contact = None
+    if isinstance(zelle_contact, str):
+        zelle_contact = zelle_contact.strip()
+        if not zelle_contact:
+            zelle_contact = None
+        if zelle_contact is not None and len(zelle_contact) > 190:
+            raise _bad_request("ZELLE_CONTACT_TOO_LONG")
     shipping_fields = {
         "officeAddressLine1": data.get("officeAddressLine1") or user.get("officeAddressLine1"),
         "officeAddressLine2": data.get("officeAddressLine2") or user.get("officeAddressLine2"),
@@ -611,6 +621,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "email": email or user.get("email"),
         "profileImageUrl": profile_image_url,
         "delegateLogoUrl": delegate_logo_url,
+        "zelleContact": zelle_contact,
         **shipping_fields,
     }
 

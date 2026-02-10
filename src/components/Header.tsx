@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 import { Search, User, Gift, ShoppingCart, List, LogOut, Home, Copy, X, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
@@ -27,6 +28,32 @@ const isRep = (role?: string | null) => {
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return normalized === 'doctor' || normalized === 'test_doctor';
+};
+
+type PatientLinkPaymentMethod = 'none' | 'zelle';
+
+const patientLinkPaymentMethodOptions: Array<{ value: PatientLinkPaymentMethod; label: string }> = [
+  { value: 'none', label: '-' },
+  { value: 'zelle', label: 'Zelle' },
+];
+
+const buildPatientLinkDefaultInstructions = (
+  method: PatientLinkPaymentMethod,
+  zelleContact?: string | null,
+) => {
+  if (method !== 'zelle') return '';
+  const contact = typeof zelleContact === 'string' ? zelleContact.trim() : '';
+  return contact
+    ? `Payment will be handled via Zelle. Please send payment to ${contact}.`
+    : 'Payment will be handled via Zelle.';
+};
+
+const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMethod => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (raw === 'zelle') return 'zelle';
+  if (raw === 'zelle_ach' || raw === 'zelle/ach' || raw === 'zelle-ach' || raw === 'zelleach') return 'zelle';
+  if (raw === 'insurance') return 'none';
+  return 'none';
 };
 
 type NetworkQuality = 'good' | 'fair' | 'poor' | 'offline';
@@ -133,6 +160,7 @@ interface HeaderUser {
   name: string;
   profileImageUrl?: string | null;
   delegateLogoUrl?: string | null;
+  zelleContact?: string | null;
   role?: string | null;
   referralCode?: string | null;
   visits?: number;
@@ -948,8 +976,13 @@ export function Header({
   const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
   const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
   const [patientLinkPatientIdDraft, setPatientLinkPatientIdDraft] = useState('');
+  const [patientLinkPaymentMethodDraft, setPatientLinkPaymentMethodDraft] = useState<PatientLinkPaymentMethod>('zelle');
+  const [patientLinkInstructionsDraft, setPatientLinkInstructionsDraft] = useState<string>('');
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
   const [patientLinksUpdatingToken, setPatientLinksUpdatingToken] = useState<string | null>(null);
+  const [patientLinksSavingPaymentToken, setPatientLinksSavingPaymentToken] = useState<string | null>(null);
+  const [patientLinkPaymentMethodDraftByToken, setPatientLinkPaymentMethodDraftByToken] = useState<Record<string, PatientLinkPaymentMethod>>({});
+  const [patientLinkInstructionsDraftByToken, setPatientLinkInstructionsDraftByToken] = useState<Record<string, string>>({});
   const [researchDashboardExpanded, setResearchDashboardExpanded] = useState(false);
   const [researchOverlayExpanded, setResearchOverlayExpanded] = useState(false);
   const [researchOverlayRect, setResearchOverlayRect] = useState<{
@@ -987,6 +1020,9 @@ export function Header({
     measuredAt: number | null;
   }>({ downloadMbps: null, uploadMbps: null, latencyMs: null, measuredAt: null });
   const [localUser, setLocalUser] = useState<HeaderUser | null>(user);
+  const lastZelleContactRef = useRef<string | null>(null);
+  const [zelleContactDraft, setZelleContactDraft] = useState('');
+  const [zelleContactSaving, setZelleContactSaving] = useState(false);
   const loginFormRef = useRef<HTMLFormElement | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AccountOrderSummary | null>(null);
   const trackingStatusCacheRef = useRef<Map<string, any>>(new Map());
@@ -1625,6 +1661,52 @@ export function Header({
     onAccountModalRequestHandled?.(token);
   }, [accountModalRequest, mergeOrderIntoCache, onAccountModalRequestHandled]);
   useEffect(() => { setLocalUser(user); }, [user]);
+  useEffect(() => {
+    const raw = typeof localUser?.zelleContact === 'string' ? localUser.zelleContact : '';
+    setZelleContactDraft(raw ? raw.trim() : '');
+  }, [localUser?.zelleContact]);
+  useEffect(() => {
+    const nextZelleContact = typeof localUser?.zelleContact === 'string' ? localUser.zelleContact.trim() : '';
+    const prevZelleContact = typeof lastZelleContactRef.current === 'string' ? lastZelleContactRef.current : '';
+
+    if (patientLinkPaymentMethodDraft === 'zelle') {
+      const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact);
+      const nextDefault = buildPatientLinkDefaultInstructions('zelle', nextZelleContact);
+      const shouldReplace =
+        !patientLinkInstructionsDraft.trim()
+        || patientLinkInstructionsDraft.trim() === prevDefault.trim();
+      if (shouldReplace && nextDefault.trim() !== patientLinkInstructionsDraft.trim()) {
+        setPatientLinkInstructionsDraft(nextDefault);
+      }
+    }
+
+    setPatientLinkInstructionsDraftByToken((prev) => {
+      const next = { ...prev };
+      for (const link of patientLinks || []) {
+        const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
+        if (!token) continue;
+        const method = normalizePatientLinkPaymentMethod(
+          patientLinkPaymentMethodDraftByToken[token] ?? (link as any)?.paymentMethod ?? (link as any)?.payment_method ?? null,
+        );
+        if (method !== 'zelle') continue;
+        const existing = typeof prev[token] === 'string' ? prev[token] : '';
+        const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact);
+        const shouldReplace = !existing.trim() || existing.trim() === prevDefault.trim();
+        if (shouldReplace) {
+          next[token] = buildPatientLinkDefaultInstructions('zelle', nextZelleContact);
+        }
+      }
+      return next;
+    });
+
+    lastZelleContactRef.current = nextZelleContact || null;
+  }, [
+    localUser?.zelleContact,
+    patientLinkInstructionsDraft,
+    patientLinkPaymentMethodDraft,
+    patientLinkPaymentMethodDraftByToken,
+    patientLinks,
+  ]);
   const accountDetailsRefreshSeqRef = useRef(0);
   useEffect(() => {
     if (!welcomeOpen) return;
@@ -3157,6 +3239,91 @@ export function Header({
     }
   }, [normalizeMarkupPercent, showPatientLinksTab]);
 
+  useEffect(() => {
+    if (!Array.isArray(patientLinks) || patientLinks.length === 0) {
+      return;
+    }
+
+    setPatientLinkPaymentMethodDraftByToken((prev) => {
+      const next: Record<string, PatientLinkPaymentMethod> = { ...prev };
+      for (const link of patientLinks) {
+        const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
+        if (!token || next[token]) continue;
+        const raw =
+          (link as any)?.paymentMethod ??
+          (link as any)?.payment_method ??
+          (link as any)?.payment_method_id ??
+          null;
+        next[token] = normalizePatientLinkPaymentMethod(raw);
+      }
+      return next;
+    });
+
+    setPatientLinkInstructionsDraftByToken((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const link of patientLinks) {
+        const token = typeof (link as any)?.token === 'string' ? String((link as any).token).trim() : '';
+        if (!token || typeof next[token] === 'string') continue;
+        const method = normalizePatientLinkPaymentMethod(
+          (link as any)?.paymentMethod ?? (link as any)?.payment_method ?? null,
+        );
+        const raw =
+          (link as any)?.paymentInstructions ??
+          (link as any)?.payment_instructions ??
+          (link as any)?.instructions ??
+          (link as any)?.delegateInstructions ??
+          (link as any)?.delegate_instructions ??
+          null;
+        const text = typeof raw === 'string' ? raw : '';
+        next[token] = text.trim()
+          ? text
+          : buildPatientLinkDefaultInstructions(method, localUser?.zelleContact ?? null);
+      }
+      return next;
+    });
+  }, [localUser?.zelleContact, patientLinks]);
+
+  const handleSavePatientLinkPaymentSettings = useCallback(
+    async (token: string) => {
+      const normalized = typeof token === 'string' ? token.trim() : '';
+      if (!normalized || patientLinksSavingPaymentToken) {
+        return;
+      }
+      const paymentMethodDraft = patientLinkPaymentMethodDraftByToken[normalized] ?? 'none';
+      const paymentInstructionsDraft = (patientLinkInstructionsDraftByToken[normalized] ?? '').trim();
+      const paymentMethod = paymentMethodDraft === 'zelle' ? 'zelle' : '';
+      const paymentInstructions = paymentMethod === 'zelle'
+        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null))
+        : '';
+
+      setPatientLinksSavingPaymentToken(normalized);
+      try {
+        const api = await import('../services/api');
+        await api.delegationAPI.updateLink(normalized, {
+          paymentMethod,
+          paymentInstructions,
+        });
+        toast.success('Payment settings saved.');
+        await loadPatientLinks();
+      } catch (error: any) {
+        toast.error(
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message
+            : 'Unable to save payment settings right now.',
+        );
+      } finally {
+        setPatientLinksSavingPaymentToken(null);
+      }
+    },
+    [
+      loadPatientLinks,
+      localUser?.zelleContact,
+      patientLinkInstructionsDraftByToken,
+      patientLinkPaymentMethodDraftByToken,
+      patientLinksSavingPaymentToken,
+    ],
+  );
+
   const outstandingPatientProposalCount = useMemo(() => {
     return (patientLinks || []).reduce((count, link) => {
       const revokedAtRaw =
@@ -3231,10 +3398,17 @@ export function Header({
       const referenceLabel = patientLinkLabelDraft.trim();
       const patientId = patientLinkPatientIdDraft.trim();
       const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
+      const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
+      const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
+      const paymentInstructions = paymentMethod === 'zelle'
+        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null))
+        : '';
       await api.delegationAPI.createLink({
         referenceLabel: referenceLabel ? referenceLabel : null,
         patientId: patientId ? patientId : null,
         markupPercent,
+        paymentMethod,
+        paymentInstructions,
       });
       setPatientLinkPatientIdDraft('');
       setPatientLinkLabelDraft('');
@@ -3255,7 +3429,10 @@ export function Header({
     patientLinkLabelDraft,
     patientLinkMarkupDraft,
     patientLinkPatientIdDraft,
+    patientLinkInstructionsDraft,
+    patientLinkPaymentMethodDraft,
     patientLinksCreating,
+    localUser?.zelleContact,
     showPatientLinksTab,
   ]);
 
@@ -3443,6 +3620,17 @@ export function Header({
     },
     [setLocalUser, onUserUpdated, localUser],
   );
+
+  const handleSaveZelleContact = useCallback(async () => {
+    if (zelleContactSaving) return;
+    setZelleContactSaving(true);
+    try {
+      const trimmed = zelleContactDraft.trim();
+      await saveProfileField('Zelle contact', { zelleContact: trimmed ? trimmed : null });
+    } finally {
+      setZelleContactSaving(false);
+    }
+  }, [saveProfileField, zelleContactDraft, zelleContactSaving]);
 
   const delegateLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [delegateLogoUploading, setDelegateLogoUploading] = useState(false);
@@ -4783,6 +4971,35 @@ export function Header({
 	        </div>
 	      </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
+        <h3 className="text-lg font-semibold text-slate-900">Payment Settings</h3>
+        <p className="mb-4 text-sm leading-relaxed text-slate-700">
+          Set the Zelle email or phone number you want patients to use when paying you.
+        </p>
+        <div className="patient-link-form">
+          <Label
+            htmlFor="doctor-zelle-contact"
+            className="patient-link-form__label patient-link-form__label--zelle-contact text-sm font-semibold text-slate-700"
+          >
+            Zelle email or phone
+          </Label>
+          <Input
+            id="doctor-zelle-contact"
+            value={zelleContactDraft}
+            onChange={(event) => setZelleContactDraft(event.target.value)}
+            placeholder="e.g., billing@clinic.com or +1 (555) 555-5555"
+            className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+          />
+          <Button
+            type="button"
+            onClick={() => void handleSaveZelleContact()}
+            disabled={!localUser || zelleContactSaving}
+            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+          >
+            {zelleContactSaving ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
+      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
           Links are temporary and expire automatically after 72 hours. You can also revoke any link at any time.
@@ -4818,7 +5035,10 @@ export function Header({
 	            htmlFor="patient-link-markup"
 	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
 	          >
-	            Patient catelogue markup %
+	            <span className="block">Patient Catelogue Markup %</span>
+	            <span className="mt-0.5 block text-xs font-normal text-slate-500">
+	              The difference between what your patient pays you and what you pay us.
+	            </span>
 	          </Label>
 	          <div className="patient-link-form__markup relative w-full mb-0">
 	            <Input
@@ -4832,6 +5052,50 @@ export function Header({
 	              style={{ direction: 'ltr' }}
 	            />
 	          </div>
+	          <Label
+	            htmlFor="patient-link-payment-method"
+	            className="patient-link-form__label patient-link-form__label--payment text-sm font-semibold text-slate-700"
+	          >
+	            Payment method
+	          </Label>
+	          <select
+	            id="patient-link-payment-method"
+	            value={patientLinkPaymentMethodDraft}
+	            onChange={(event) => {
+	              const next = normalizePatientLinkPaymentMethod(event.target.value);
+	              const currentDefault = buildPatientLinkDefaultInstructions(
+	                patientLinkPaymentMethodDraft,
+	                localUser?.zelleContact ?? null,
+	              );
+	              const shouldReplace =
+	                !patientLinkInstructionsDraft.trim()
+	                || patientLinkInstructionsDraft.trim() === currentDefault.trim();
+	              setPatientLinkPaymentMethodDraft(next);
+	              if (shouldReplace) {
+	                setPatientLinkInstructionsDraft(buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null));
+	              }
+	            }}
+	            className="patient-link-form__select h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          >
+	            {patientLinkPaymentMethodOptions.map((opt) => (
+	              <option key={opt.value} value={opt.value}>
+	                {opt.label}
+	              </option>
+	            ))}
+	          </select>
+	          <Label
+	            htmlFor="patient-link-instructions"
+	            className="patient-link-form__label patient-link-form__label--instructions text-sm font-semibold text-slate-700"
+	          >
+	            Instructions (shown to the delegate)
+	          </Label>
+	          <Textarea
+	            id="patient-link-instructions"
+	            value={patientLinkInstructionsDraft}
+	            onChange={(event) => setPatientLinkInstructionsDraft(event.target.value)}
+	            placeholder="Enter instructions that the delegate will see in their proposal modal…"
+	            className="patient-link-form__instructions squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
 	          <Button
 	            type="button"
 	            onClick={() => void handleCreatePatientLink()}
@@ -4841,12 +5105,6 @@ export function Header({
 	            {patientLinksCreating ? 'Creating…' : 'Create link'}
 	          </Button>
 	        </div>
-	        <p className="mt-2 text-xs text-slate-600">
-	          Labels are for your reference only and do not appear to the delegate.
-	        </p>
-	        <p className="mt-3 text-xs text-slate-600">
-	          Markup is stored per link (e.g., 15 for 15%). Use 0% to show base pricing.
-	        </p>
 	      </div>
 
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-2">
@@ -4932,28 +5190,42 @@ export function Header({
 	                typeof link?.delegateReviewStatus === 'string' && link.delegateReviewStatus.trim()
 	                  ? link.delegateReviewStatus.trim().toLowerCase()
 	                  : '';
-	              const proposalStatus =
-	                delegateReviewStatusRaw || (delegateSharedAt || delegateOrderId ? 'pending' : '');
-	              const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
-	              const isRevoked = Boolean(revokedAt);
-	              const isUpdating = patientLinksUpdatingToken === token;
-	              const isProposalBusy = patientLinksProposalToken === token;
-	              const canRejectProposal = hasProposal && proposalStatus === 'pending';
-	              const proposalLabel =
-	                proposalStatus === 'accepted'
-	                  ? 'Accepted'
+		              const proposalStatus =
+		                delegateReviewStatusRaw || (delegateSharedAt || delegateOrderId ? 'pending' : '');
+		              const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
+		              const isRevoked = Boolean(revokedAt);
+		              const isUpdating = patientLinksUpdatingToken === token;
+		              const isSavingPayment = patientLinksSavingPaymentToken === token;
+		              const isProposalBusy = patientLinksProposalToken === token;
+		              const canRejectProposal = hasProposal && proposalStatus === 'pending';
+		              const proposalLabel =
+		                proposalStatus === 'accepted'
+		                  ? 'Accepted'
 	                  : proposalStatus === 'modified'
 	                    ? 'Modified'
 	                    : proposalStatus === 'rejected'
 	                      ? 'Rejected'
 	                      : proposalStatus === 'pending'
-	                        ? 'Pending review'
-	                        : '';
+		                        ? 'Pending review'
+		                        : '';
+		              const paymentMethodDraft =
+		                patientLinkPaymentMethodDraftByToken[token]
+		                  ?? normalizePatientLinkPaymentMethod((link as any)?.paymentMethod ?? (link as any)?.payment_method ?? null);
+		              const paymentInstructionsDraft =
+		                patientLinkInstructionsDraftByToken[token]
+		                  ?? (typeof (link as any)?.paymentInstructions === 'string'
+		                    ? String((link as any).paymentInstructions)
+		                    : typeof (link as any)?.payment_instructions === 'string'
+		                      ? String((link as any).payment_instructions)
+		                      : '');
+		              const paymentMethodLabel =
+		                patientLinkPaymentMethodOptions.find((opt) => opt.value === paymentMethodDraft)?.label
+		                  ?? (paymentMethodDraft === 'zelle' ? 'Zelle' : '-');
 
 			              return (
 				                <div
 				                  key={token || label}
-				                  className="patient-link-item glass-liquid squircle-lg border-2 border-[rgba(95,179,249,0.55)] transition-colors p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
+				                  className="patient-link-item glass-liquid squircle-lg border border-[rgba(95,179,249,0.35)] transition-colors hover:border-[rgba(95,179,249,0.55)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
 				                >
 			                  <div className="min-w-0 flex-1">
 				                    <div className="flex items-center gap-2">
@@ -4965,6 +5237,7 @@ export function Header({
 			                      {patientId && <div>Patient ID: {patientId}</div>}
 			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
 			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
+			                      <div>Payment: {paymentMethodLabel}</div>
 			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
 			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
 			                      {hasProposal && (
@@ -4973,6 +5246,79 @@ export function Header({
 		                        </div>
 		                      )}
 	                    </div>
+	                    <details className="mt-3 rounded-xl border border-[rgba(95,179,249,0.18)] bg-white/55 px-3 py-3">
+	                      <summary className="cursor-pointer select-none text-sm font-semibold text-slate-800">
+	                        Payment settings (delegate)
+	                      </summary>
+	                      <div className="mt-3 space-y-3">
+	                        <div className="space-y-1">
+	                          <Label
+	                            htmlFor={`patient-link-payment-method-${token || label}`}
+	                            className="text-xs font-semibold text-slate-700"
+	                          >
+	                            Payment method
+	                          </Label>
+	                          <select
+	                            id={`patient-link-payment-method-${token || label}`}
+	                            value={paymentMethodDraft}
+	                            onChange={(event) => {
+	                              const next = normalizePatientLinkPaymentMethod(event.target.value);
+	                              setPatientLinkPaymentMethodDraftByToken((prev) => ({ ...prev, [token]: next }));
+	                              setPatientLinkInstructionsDraftByToken((prev) => {
+	                                const existing = typeof prev[token] === 'string' ? prev[token] : '';
+	                                const currentDefault = buildPatientLinkDefaultInstructions(
+	                                  paymentMethodDraft,
+	                                  localUser?.zelleContact ?? null,
+	                                );
+	                                const shouldReplace =
+	                                  !existing.trim()
+	                                  || existing.trim() === currentDefault.trim();
+	                                if (!shouldReplace) return { ...prev, [token]: existing };
+	                                return {
+	                                  ...prev,
+	                                  [token]: buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null),
+	                                };
+	                              });
+	                            }}
+	                            className="h-10 w-full squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	                          >
+	                            {patientLinkPaymentMethodOptions.map((opt) => (
+	                              <option key={opt.value} value={opt.value}>
+	                                {opt.label}
+	                              </option>
+	                            ))}
+	                          </select>
+	                        </div>
+	                        <div className="space-y-1">
+	                          <Label
+	                            htmlFor={`patient-link-payment-instructions-${token || label}`}
+	                            className="text-xs font-semibold text-slate-700"
+	                          >
+	                            Instructions
+	                          </Label>
+	                          <Textarea
+	                            id={`patient-link-payment-instructions-${token || label}`}
+	                            value={paymentInstructionsDraft}
+	                            onChange={(event) =>
+	                              setPatientLinkInstructionsDraftByToken((prev) => ({ ...prev, [token]: event.target.value }))
+	                            }
+	                            className="min-h-[96px] resize-y squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	                          />
+	                        </div>
+	                        <div className="flex items-center justify-end">
+	                          <Button
+	                            type="button"
+	                            variant="outline"
+	                            size="sm"
+	                            onClick={() => void handleSavePatientLinkPaymentSettings(token)}
+	                            disabled={!token || isSavingPayment}
+	                            className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+	                          >
+	                            {isSavingPayment ? 'Saving…' : 'Save'}
+	                          </Button>
+	                        </div>
+	                      </div>
+	                    </details>
 	                  </div>
 		                  <div className="patient-link-actions">
 		                    {hasProposal && (

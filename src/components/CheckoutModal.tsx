@@ -21,6 +21,18 @@ import type { CSSProperties } from 'react';
 import { sanitizeServiceNames } from '../lib/publicText';
 import { computeUnitPrice, type PricingMode } from '../lib/pricing';
 
+type CheckoutPaymentMethod = 'zelle' | 'bank_transfer' | 'none';
+
+const normalizeCheckoutPaymentMethod = (value: unknown): CheckoutPaymentMethod | null => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!raw) return null;
+  if (raw === 'zelle') return 'zelle';
+  if (raw === 'bank_transfer' || raw === 'banktransfer' || raw === 'bank transfer') return 'bank_transfer';
+  if (raw === 'zelle_ach' || raw === 'zelle/ach' || raw === 'zelle-ach' || raw === 'zelleach') return 'zelle';
+  if (raw === 'insurance') return 'none';
+  return null;
+};
+
 interface CheckoutResult {
   success?: boolean;
   message?: string | null;
@@ -178,6 +190,8 @@ interface CheckoutModalProps {
   ) => Promise<any>;
   allowUnauthenticatedCheckout?: boolean;
   delegateDoctorName?: string | null;
+  delegatePaymentMethod?: string | null;
+  delegatePaymentInstructions?: string | null;
   pricingMarkupPercent?: number | null;
   proposalMarkupPercent?: number | null;
 }
@@ -236,6 +250,8 @@ export function CheckoutModal({
   estimateTotals,
   allowUnauthenticatedCheckout = false,
   delegateDoctorName,
+  delegatePaymentMethod,
+  delegatePaymentInstructions,
   pricingMarkupPercent,
   proposalMarkupPercent,
 }: CheckoutModalProps) {
@@ -244,7 +260,7 @@ export function CheckoutModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'zelle' | 'bank_transfer'>('zelle');
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('zelle');
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
@@ -434,6 +450,31 @@ export function CheckoutModal({
       ? 'Doctor'
       : `Dr. ${delegateDoctorName}`)
     : null;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (isDelegateFlow) {
+      const normalized = normalizeCheckoutPaymentMethod(delegatePaymentMethod) ?? 'none';
+      setPaymentMethod(normalized);
+      return;
+    }
+    if (paymentMethod === 'none') {
+      setPaymentMethod('zelle');
+    }
+  }, [delegatePaymentMethod, isDelegateFlow, isOpen, paymentMethod]);
+
+  const delegatePaymentInstructionsText = useMemo(() => {
+    if (!isDelegateFlow) return null;
+    const raw = typeof delegatePaymentInstructions === 'string' ? delegatePaymentInstructions.trim() : '';
+    return raw ? raw : null;
+  }, [delegatePaymentInstructions, isDelegateFlow]);
+
+  const paymentMethodTitle = useMemo(() => {
+    if (paymentMethod === 'zelle') return 'Zelle';
+    if (paymentMethod === 'bank_transfer') return 'Direct Bank Transfer';
+    return '-';
+  }, [paymentMethod]);
+
   let checkoutButtonLabel = isDelegateFlow
     ? `Share with ${delegateDoctorDisplayName}`
     : `Place Order (${displayTotal.toFixed(2)})`;
@@ -604,7 +645,7 @@ export function CheckoutModal({
 	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
-	        paymentMethod,
+	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
 	      });
 	      if (isDelegateFlow) {
 	        const candidateMessage =
@@ -1461,50 +1502,70 @@ export function CheckoutModal({
 	                      />
 	                    )}
 	                    <p className="font-bold text-slate-800">
-	                      {paymentMethod === "zelle" ? "Zelle" : "Direct Bank Transfer"}
+	                      {paymentMethodTitle}
 	                    </p>
 	                  </div>
-	                  <p className="mt-2">
-	                    After you place your order, we’ll email{" "}
-	                    {paymentMethod === "zelle" ? "Zelle" : "bank transfer"} instructions to{" "}
-	                    <span className="font-semibold">{customerEmail || "your email address"}</span>.
-	                  </p>
-	                  <p className="mt-2 text-[13px] text-slate-600">
-	                    Important: Include your order number in the payment memo/notes (we’ll show it here after you place
-	                    the order).
-	                    {paymentMethod === "zelle"
-	                      ? " Ensure your bank supports Zelle and that your Zelle account is set up and ready."
-	                      : ""}
-	                  </p>
+	                  {isDelegateFlow ? (
+	                    <>
+	                      <p className="mt-2">
+	                        Payment method is configured by {delegateDoctorDisplayName || 'the doctor'} for this proposal.
+	                      </p>
+	                      {delegatePaymentInstructionsText ? (
+	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+	                          <p className="text-xs font-semibold text-slate-700">Instructions</p>
+	                          <p className="mt-1 whitespace-pre-wrap text-[13px] text-slate-700">
+	                            {delegatePaymentInstructionsText}
+	                          </p>
+	                        </div>
+	                      ) : null}
+	                    </>
+	                  ) : (
+	                    <>
+	                      <p className="mt-2">
+	                        After you place your order, we’ll email{' '}
+	                        {paymentMethod === 'zelle' ? 'Zelle' : 'bank transfer'} instructions to{' '}
+	                        <span className="font-semibold">{customerEmail || 'your email address'}</span>.
+	                      </p>
+	                      <p className="mt-2 text-[13px] text-slate-600">
+	                        Important: Include your order number in the payment memo/notes (we’ll show it here after you place
+	                        the order).
+	                        {paymentMethod === 'zelle'
+	                          ? ' Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
+	                          : ''}
+	                      </p>
+	                    </>
+	                  )}
 	                </div>
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setPaymentMethod('zelle')}
-                    aria-pressed={paymentMethod === 'zelle'}
-                    className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
-                      paymentMethod === 'zelle'
-                        ? 'checkout-payment-method-button--active'
-                        : 'checkout-payment-method-button--inactive'
-                    }`}
-                  >
-                    Zelle
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setPaymentMethod('bank_transfer')}
-                    aria-pressed={paymentMethod === 'bank_transfer'}
-                    className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
-                      paymentMethod === 'bank_transfer'
-                        ? 'checkout-payment-method-button--active'
-                        : 'checkout-payment-method-button--inactive'
-                    }`}
-                  >
-                    Direct Bank Transfer
-                  </Button>
-                </div>
+	                {!isDelegateFlow && (
+	                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+	                    <Button
+	                      type="button"
+	                      variant="secondary"
+	                      onClick={() => setPaymentMethod('zelle')}
+	                      aria-pressed={paymentMethod === 'zelle'}
+	                      className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
+	                        paymentMethod === 'zelle'
+	                          ? 'checkout-payment-method-button--active'
+	                          : 'checkout-payment-method-button--inactive'
+	                      }`}
+	                    >
+	                      Zelle
+	                    </Button>
+	                    <Button
+	                      type="button"
+	                      variant="secondary"
+	                      onClick={() => setPaymentMethod('bank_transfer')}
+	                      aria-pressed={paymentMethod === 'bank_transfer'}
+	                      className={`squircle-sm checkout-payment-method-button justify-center gap-2 font-semibold ${
+	                        paymentMethod === 'bank_transfer'
+	                          ? 'checkout-payment-method-button--active'
+	                          : 'checkout-payment-method-button--inactive'
+	                      }`}
+	                    >
+	                      Direct Bank Transfer
+	                    </Button>
+	                  </div>
+	                )}
 	                {checkoutStatus === 'success' && placedOrderNumber && (
 	                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
 	                    <p className="font-semibold">Your order number: {placedOrderNumber}</p>

@@ -50,6 +50,8 @@ def create_link(
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     markup_percent: Optional[float] = None,
+    payment_method: Optional[str] = None,
+    payment_instructions: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
         raise RuntimeError("MySQL backend is required for patient links")
@@ -61,6 +63,12 @@ def create_link(
         str(reference_label).strip() if isinstance(reference_label, str) and str(reference_label).strip() else None
     )
     patient_id_value = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
+    payment_method_value = str(payment_method).strip() if isinstance(payment_method, str) and str(payment_method).strip() else None
+    payment_instructions_value = (
+        str(payment_instructions).strip()
+        if isinstance(payment_instructions, str) and str(payment_instructions).strip()
+        else None
+    )
     delete_expired()
 
     # Default markup comes from the doctor record (non-volatile across sessions),
@@ -89,12 +97,20 @@ def create_link(
             "created_at": now.replace(tzinfo=None),
             "expires_at": expires.replace(tzinfo=None),
             "markup_percent": float(markup_percent or 0.0),
+            "payment_method": payment_method_value,
+            "payment_instructions": payment_instructions_value,
         }
         try:
             mysql_client.execute(
                 """
-                INSERT INTO patient_links (token, doctor_id, patient_id, reference_label, created_at, expires_at, markup_percent)
-                VALUES (%(token)s, %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s)
+                INSERT INTO patient_links (
+                    token, doctor_id, patient_id, reference_label, created_at, expires_at, markup_percent,
+                    payment_method, payment_instructions
+                )
+                VALUES (
+                    %(token)s, %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s,
+                    %(payment_method)s, %(payment_instructions)s
+                )
                 """,
                 params,
             )
@@ -106,6 +122,8 @@ def create_link(
                 "createdAt": now.isoformat(),
                 "expiresAt": expires.isoformat(),
                 "markupPercent": float(markup_percent or 0.0),
+                "paymentMethod": payment_method_value,
+                "paymentInstructions": payment_instructions_value,
                 "lastUsedAt": None,
                 "revokedAt": None,
             }
@@ -126,7 +144,9 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     delete_expired()
     rows = mysql_client.fetch_all(
         """
-        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent, last_used_at, revoked_at,
+        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
+               payment_method, payment_instructions,
+               last_used_at, revoked_at,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
@@ -147,6 +167,8 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                 "createdAt": _fmt_datetime(row.get("created_at")),
                 "expiresAt": _fmt_datetime(row.get("expires_at")),
                 "markupPercent": float(row.get("markup_percent") or 0.0),
+                "paymentMethod": row.get("payment_method") or None,
+                "paymentInstructions": row.get("payment_instructions") or None,
                 "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
                 "revokedAt": _fmt_datetime(row.get("revoked_at")),
                 "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
@@ -170,6 +192,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         """
         SELECT token, doctor_id, patient_id, reference_label, created_at, expires_at, last_used_at, revoked_at,
                markup_percent,
+               payment_method, payment_instructions,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
@@ -211,6 +234,8 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
         "markupPercent": float(row.get("markup_percent") or 0.0),
+        "paymentMethod": row.get("payment_method") or None,
+        "paymentInstructions": row.get("payment_instructions") or None,
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
         "delegateCart": _parse_json(row.get("delegate_cart_json")),
@@ -247,6 +272,8 @@ def update_link(
     patient_id: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[float] = None,
+    payment_method: Optional[str] = None,
+    payment_instructions: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     if not _using_mysql():
         return None
@@ -281,6 +308,24 @@ def update_link(
         updates.append("markup_percent = %(markup_percent)s")
         params["markup_percent"] = float(markup_percent or 0.0)
 
+    if payment_method is not None:
+        payment_method_value = (
+            str(payment_method).strip()
+            if isinstance(payment_method, str) and str(payment_method).strip()
+            else None
+        )
+        updates.append("payment_method = %(payment_method)s")
+        params["payment_method"] = payment_method_value
+
+    if payment_instructions is not None:
+        payment_instructions_value = (
+            str(payment_instructions).strip()
+            if isinstance(payment_instructions, str) and str(payment_instructions).strip()
+            else None
+        )
+        updates.append("payment_instructions = %(payment_instructions)s")
+        params["payment_instructions"] = payment_instructions_value
+
     if updates:
         delete_expired()
         mysql_client.execute(
@@ -296,7 +341,9 @@ def update_link(
 
     row = mysql_client.fetch_one(
         """
-        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent, last_used_at, revoked_at
+        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
+               payment_method, payment_instructions,
+               last_used_at, revoked_at
         FROM patient_links
         WHERE token = %(token)s
           AND doctor_id = %(doctor_id)s
@@ -314,6 +361,8 @@ def update_link(
         "createdAt": _fmt_datetime(row.get("created_at")),
         "expiresAt": _fmt_datetime(row.get("expires_at")),
         "markupPercent": float(row.get("markup_percent") or 0.0),
+        "paymentMethod": row.get("payment_method") or None,
+        "paymentInstructions": row.get("payment_instructions") or None,
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
     }

@@ -1573,6 +1573,8 @@ export const delegationAPI = {
     referenceLabel?: string | null;
     patientId?: string | null;
     markupPercent?: number | null;
+    paymentMethod?: string | null;
+    paymentInstructions?: string | null;
   }) => {
     return fetchWithAuth(`${API_BASE_URL}/delegation/links`, {
       method: 'POST',
@@ -1587,6 +1589,8 @@ export const delegationAPI = {
       patientId?: string | null;
       revoke?: boolean | null;
       markupPercent?: number | null;
+      paymentMethod?: string | null;
+      paymentInstructions?: string | null;
     },
   ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';

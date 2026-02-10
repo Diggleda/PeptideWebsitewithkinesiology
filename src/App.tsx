@@ -2826,6 +2826,8 @@ function MainApp() {
     expiresAt?: string | null;
     delegateSharedAt?: string | null;
     delegateOrderId?: string | null;
+    paymentMethod?: string | null;
+    paymentInstructions?: string | null;
     proposalStatus?: string | null;
     proposalReviewedAt?: string | null;
     proposalReviewOrderId?: string | null;
@@ -2981,6 +2983,24 @@ function MainApp() {
 	      try {
 	        const resolved = (await delegationAPI.resolve(delegateToken)) as any;
 	        if (cancelled) return;
+	        const paymentMethod =
+	          typeof resolved?.paymentMethod === 'string'
+	            ? resolved.paymentMethod
+	            : typeof resolved?.payment_method === 'string'
+	              ? resolved.payment_method
+	              : null;
+	        const paymentInstructions =
+	          typeof resolved?.paymentInstructions === 'string'
+	            ? resolved.paymentInstructions
+	            : typeof resolved?.payment_instructions === 'string'
+	              ? resolved.payment_instructions
+	              : typeof resolved?.instructions === 'string'
+	                ? resolved.instructions
+	                : typeof resolved?.delegateInstructions === 'string'
+	                  ? resolved.delegateInstructions
+	                  : typeof resolved?.delegate_instructions === 'string'
+	                    ? resolved.delegate_instructions
+	                    : null;
 	        const expiresAt =
 	          typeof resolved?.expiresAt === "string"
 	            ? resolved.expiresAt
@@ -3023,6 +3043,8 @@ function MainApp() {
 	              : typeof resolved?.delegate_order_id === "string"
 	                ? resolved.delegate_order_id
 	                : null,
+	          paymentMethod,
+	          paymentInstructions,
 	          proposalStatus:
 	            typeof resolved?.proposalStatus === "string"
 	              ? resolved.proposalStatus
@@ -22193,6 +22215,8 @@ function MainApp() {
           isDelegateMode && delegateIsValidated && !delegateLoading && !delegateError,
         )}
         delegateDoctorName={isDelegateMode ? delegateDoctorNameForShare : null}
+        delegatePaymentMethod={isDelegateMode ? (delegateContext?.paymentMethod ?? null) : null}
+        delegatePaymentInstructions={isDelegateMode ? (delegateContext?.paymentInstructions ?? null) : null}
 	        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
 	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}

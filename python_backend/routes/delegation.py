@@ -80,11 +80,19 @@ def create_link():
         )
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id")
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
+        payment_instructions = (
+            payload.get("paymentInstructions")
+            if "paymentInstructions" in payload
+            else payload.get("payment_instructions")
+        )
         link = delegation_service.create_link(
             doctor_id,
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            payment_method=payment_method if isinstance(payment_method, str) else None,
+            payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
         )
         return {"success": True, "link": link}
 
@@ -113,6 +121,14 @@ def update_link(token: str):
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id") if "patient_id" in payload else None
         revoke = payload.get("revoke") if "revoke" in payload else None
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
+        payment_instructions = (
+            payload.get("paymentInstructions")
+            if "paymentInstructions" in payload
+            else payload.get("payment_instructions")
+            if "payment_instructions" in payload
+            else None
+        )
         updated = delegation_service.update_link(
             doctor_id,
             token,
@@ -120,6 +136,8 @@ def update_link(token: str):
             patient_id=patient_id if isinstance(patient_id, str) else None,
             revoke=bool(revoke) if revoke is not None else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            payment_method=payment_method if isinstance(payment_method, str) else None,
+            payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
         )
         return {"success": True, "link": updated}
 

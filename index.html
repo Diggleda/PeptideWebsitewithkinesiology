@@ -2,11 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/PepPro_icon.png?v=2" />
-    <link rel="icon" href="/peppro-favicon.ico?v=2" sizes="any" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/peppro-favicon-32x32.png?v=2" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/peppro-favicon-16x16.png?v=2" />
-    <link rel="shortcut icon" href="/peppro-favicon.ico?v=2" />
+    <link rel="icon" href="/peppro-favicon-v3.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/peppro-favicon-v3-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/peppro-favicon-v3-16x16.png" />
+    <link rel="shortcut icon" href="/peppro-favicon-v3.ico" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Physician Portal</title>
@@ -35,11 +34,28 @@
     <meta name="application-name" content="Physician Portal" />
     <meta name="apple-mobile-web-app-title" content="Physician Portal" />
     <meta name="theme-color" content="#5FB3F9" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/peppro-apple-touch-icon.png?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/peppro-apple-touch-icon-v3.png" />
 
     <script>
       (() => {
         try {
+          const ensureHeadLink = (selector, attrs) => {
+            const head = document.head || document.querySelector("head");
+            if (!head) return;
+            let link = document.querySelector(selector);
+            if (!link) {
+              link = document.createElement("link");
+              head.appendChild(link);
+            }
+            Object.entries(attrs).forEach(([key, value]) => {
+              if (typeof value === "string") link.setAttribute(key, value);
+            });
+          };
+
+          const faviconIco = "/peppro-favicon-v3.ico";
+          ensureHeadLink('link[rel="icon"][sizes="any"]', { rel: "icon", sizes: "any", href: faviconIco });
+          ensureHeadLink('link[rel="shortcut icon"]', { rel: "shortcut icon", href: faviconIco });
+
           const params = new URLSearchParams(window.location.search);
           const hasDelegateToken = Boolean((params.get("delegate") || "").trim());
           const title = hasDelegateToken ? "Physician Delegate" : "Physician Portal";

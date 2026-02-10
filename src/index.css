@@ -232,13 +232,16 @@ body {
 
 .patient-link-form__patient-id-input,
 .patient-link-form__input,
-.patient-link-form__markup {
+.patient-link-form__markup,
+.patient-link-form__select,
+.patient-link-form__instructions {
   margin-bottom: 0.5rem !important;
 }
 
 .patient-link-form__input,
 .patient-link-form__patient-id-input,
 .patient-link-form__markup,
+.patient-link-form__select,
 .patient-link-form__button {
   height: 2.5rem !important;
 }
@@ -246,6 +249,11 @@ body {
 .patient-link-form__button {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
+}
+
+.patient-link-form__instructions {
+  min-height: 7.25rem;
+  resize: vertical;
 }
 
 .patient-link-actions {
@@ -290,9 +298,19 @@ body {
     grid-row: 5;
   }
 
+  .patient-link-form__label--zelle-contact {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
   .patient-link-form__input {
     grid-column: 1;
     grid-row: 4;
+  }
+
+  .patient-link-form__zelle-contact-input {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   .patient-link-form__markup {
@@ -300,9 +318,29 @@ body {
     grid-row: 6;
   }
 
+  .patient-link-form__label--payment {
+    grid-column: 1;
+    grid-row: 7;
+  }
+
+  .patient-link-form__select {
+    grid-column: 1;
+    grid-row: 8;
+  }
+
+  .patient-link-form__label--instructions {
+    grid-column: 1;
+    grid-row: 9;
+  }
+
+  .patient-link-form__instructions {
+    grid-column: 1;
+    grid-row: 10;
+  }
+
   .patient-link-form__button {
     grid-column: 2;
-    grid-row: 1 / span 6;
+    grid-row: 1 / span 10;
     align-self: end;
     margin-bottom: 0 !important;
   }

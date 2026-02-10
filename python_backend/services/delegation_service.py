@@ -398,6 +398,8 @@ def create_link(
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
     markup_percent: Optional[object] = None,
+    payment_method: Optional[str] = None,
+    payment_instructions: Optional[str] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     if not doctor_id:
@@ -410,6 +412,8 @@ def create_link(
             reference_label=reference_label,
             patient_id=patient_id,
             markup_percent=markup_value,
+            payment_method=payment_method,
+            payment_instructions=payment_instructions,
         )
     token = secrets.token_urlsafe(24)
     now = datetime.now(timezone.utc).isoformat()
@@ -448,6 +452,8 @@ def update_link(
     patient_id: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[object] = None,
+    payment_method: Optional[str] = None,
+    payment_instructions: Optional[str] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     token = _normalize_token(token)
@@ -465,6 +471,8 @@ def update_link(
             patient_id=patient_id,
             revoke=revoke,
             markup_percent=markup_value,
+            payment_method=payment_method,
+            payment_instructions=payment_instructions,
         )
         if updated is None:
             err = ValueError("Link not found")
@@ -558,6 +566,8 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "doctorName": doctor_name,
             "markupPercent": _normalize_markup_percent(link.get("markupPercent")),
             "doctorLogoUrl": doctor.get("delegateLogoUrl") if isinstance(doctor, dict) else None,
+            "paymentMethod": link.get("paymentMethod") if isinstance(link, dict) else None,
+            "paymentInstructions": link.get("paymentInstructions") if isinstance(link, dict) else None,
             "createdAt": link.get("createdAt"),
             "expiresAt": link.get("expiresAt"),
             "delegateSharedAt": link.get("delegateSharedAt"),

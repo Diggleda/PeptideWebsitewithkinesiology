@@ -44,6 +44,7 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized["officeCountry"] = (normalized.get("officeCountry") or None)
     normalized.setdefault("profileImageUrl", None)
     normalized.setdefault("delegateLogoUrl", normalized.get("delegateLogoUrl") or None)
+    normalized.setdefault("zelleContact", normalized.get("zelleContact") or None)
     downloads = normalized.get("downloads")
     if isinstance(downloads, str):
         try:
@@ -315,7 +316,7 @@ def _mysql_insert(user: Dict) -> Dict:
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, delegate_logo_url, downloads,
+            office_postal_code, office_country, profile_image_url, delegate_logo_url, zelle_contact, downloads,
             referral_credits, total_referrals, visits,
             markup_percent,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
@@ -326,7 +327,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(delegate_logo_url)s, %(downloads)s, %(referral_credits)s,
+            %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(downloads)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
@@ -354,6 +355,7 @@ def _mysql_insert(user: Dict) -> Dict:
             office_country = VALUES(office_country),
             profile_image_url = VALUES(profile_image_url),
             delegate_logo_url = VALUES(delegate_logo_url),
+            zelle_contact = VALUES(zelle_contact),
             downloads = VALUES(downloads),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
@@ -407,6 +409,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             office_country = %(office_country)s,
             profile_image_url = %(profile_image_url)s,
             delegate_logo_url = %(delegate_logo_url)s,
+            zelle_contact = %(zelle_contact)s,
             downloads = %(downloads)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
@@ -479,6 +482,7 @@ def _row_to_user(row: Dict) -> Dict:
             "officeCountry": row.get("office_country"),
             "profileImageUrl": row.get("profile_image_url"),
             "delegateLogoUrl": row.get("delegate_logo_url"),
+            "zelleContact": row.get("zelle_contact") or None,
             "downloads": downloads,
             "referralCode": row.get("referral_code"),
             "referralCredits": float(row.get("referral_credits") or 0),
@@ -535,6 +539,7 @@ def _to_db_params(user: Dict) -> Dict:
         "office_country": user.get("officeCountry"),
         "profile_image_url": user.get("profileImageUrl"),
         "delegate_logo_url": user.get("delegateLogoUrl"),
+        "zelle_contact": user.get("zelleContact"),
         "downloads": json.dumps(user.get("downloads") or []),
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
