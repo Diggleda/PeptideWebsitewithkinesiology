@@ -701,6 +701,7 @@ def create_order(
         order["grandTotal"] = 0.01
     else:
         discount_code_amount = 0.0
+        order["originalItemsSubtotal"] = float(items_subtotal)
         if normalized_discount_code:
             applied = discount_code_service.apply_discount_to_subtotal(
                 user_id=user_id,
@@ -713,6 +714,21 @@ def create_order(
             order["discountCodeAmount"] = round(max(0.0, discount_code_amount), 2)
 
         effective_items_subtotal = max(0.0, float(items_subtotal) - max(0.0, discount_code_amount))
+        # Persist the discounted subtotal as the new items subtotal.
+        order["total"] = float(effective_items_subtotal)
+        order["itemsSubtotal"] = float(effective_items_subtotal)
+
+        # Recompute taxes based on discounted subtotal (where applicable).
+        tax_total_value_effective = 0.0
+        if tax_exempt:
+            tax_total_value_effective = 0.0
+        elif is_ca:
+            tax_total_value_effective = round(
+                max(0.0, (effective_items_subtotal + shipping_total_value) * 0.077),
+                2,
+            )
+        order["taxTotal"] = float(tax_total_value_effective)
+        tax_total_value = float(tax_total_value_effective)
 
         # Auto-apply available referral credits to this order
         available_credit = float(user.get("referralCredits") or 0)
@@ -752,9 +768,7 @@ def create_order(
         order["grandTotal"] = round(
             max(
                 0.0,
-                items_subtotal
-                - float(discount_code_amount or 0.0)
-                - applied_credit_value
+                effective_items_subtotal - applied_credit_value
                 + shipping_total_value
                 + tax_total_value,
             ),

@@ -850,14 +850,67 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             override_amount = 0.01
         override_amount = max(0.01, round(override_amount, 2))
 
-    # Optional discounts applied at checkout (referral credits + discount codes)
+    # Discounts (referral credits + discount codes) are tracked in PepPro + stored as Woo meta fields.
+    # Do not send Woo "discount lines"/negative fees; instead, reduce line item totals so Woo total matches.
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
     discount_code_amount = float(order.get("discountCodeAmount") or 0) or 0.0
+    combined_discount = float(applied_credit) + float(discount_code_amount)
     fee_lines = []
     discount_total = "0"
-    combined_discount = float(applied_credit) + float(discount_code_amount)
-    if not test_override and combined_discount > 0:
-        discount_total = f"-{combined_discount:.2f}"
+
+    def _apply_discount_to_items(items: List[Dict[str, Any]], amount: float) -> List[Dict[str, Any]]:
+        safe_amount = float(amount or 0.0)
+        if safe_amount <= 0:
+            return list(items or [])
+        safe_amount = round(max(0.0, safe_amount), 2)
+
+        prepared: List[Dict[str, Any]] = []
+        line_totals: List[float] = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                qty = float(item.get("quantity") or 0) or 0.0
+                unit = float(item.get("price") or 0) or 0.0
+            except Exception:
+                qty = 0.0
+                unit = 0.0
+            qty = max(0.0, qty)
+            unit = max(0.0, unit)
+            total = round(unit * qty, 2)
+            prepared.append(dict(item))
+            line_totals.append(total)
+
+        base_total = round(sum(line_totals), 2)
+        if base_total <= 0:
+            return prepared
+
+        remaining = min(safe_amount, base_total)
+        discounted: List[Dict[str, Any]] = []
+        for idx, item in enumerate(prepared):
+            try:
+                qty = float(item.get("quantity") or 0) or 0.0
+            except Exception:
+                qty = 0.0
+            qty = max(0.0, qty)
+            original_line_total = float(line_totals[idx] or 0.0)
+            if remaining <= 0 or original_line_total <= 0 or qty <= 0:
+                discounted.append(item)
+                continue
+
+            if idx == len(prepared) - 1:
+                allocated = remaining
+            else:
+                allocated = round(remaining * (original_line_total / base_total), 2)
+                allocated = min(allocated, remaining)
+            remaining = round(remaining - allocated, 2)
+
+            new_line_total = round(max(0.0, original_line_total - allocated), 2)
+            new_unit_price = round(new_line_total / qty, 2) if qty > 0 else 0.0
+            item["price"] = float(new_unit_price)
+            discounted.append(item)
+
+        return discounted
 
     tax_total = 0.0
     try:
@@ -975,6 +1028,11 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     if test_override:
         line_items_source = [{**item, "price": 0.0} for item in (order.get("items") or []) if isinstance(item, dict)]
         fee_lines.append({"name": "Test payment override", "total": f"{override_amount:.2f}", "tax_status": "none"})
+    elif combined_discount > 0:
+        line_items_source = _apply_discount_to_items(
+            [item for item in (order.get("items") or []) if isinstance(item, dict)],
+            combined_discount,
+        )
 
     payload = {
         "status": status,

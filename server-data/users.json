@@ -66,10 +66,10 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "2026-02-10T22:17:59.100Z",
-    "lastInteractionAt": "2026-02-10T22:17:57.348Z",
+    "lastSeenAt": "2026-02-10T22:19:56.978Z",
+    "lastInteractionAt": "2026-02-10T22:19:56.978Z",
     "isOnline": true,
-    "isIdle": true
+    "isIdle": false
   },
   {
     "id": "1764556043938",
