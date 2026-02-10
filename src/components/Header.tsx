@@ -4828,7 +4828,7 @@ export function Header({
 	              value={patientLinkMarkupDraft}
 	              onChange={(event) => setPatientLinkMarkupDraft(normalizeMarkupDraftText(event.target.value))}
 	              placeholder="0"
-	              className="!h-11 w-full text-right tabular-nums squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	              className="!h-11 w-full text-left tabular-nums squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	              style={{ direction: 'ltr' }}
 	            />
 	          </div>

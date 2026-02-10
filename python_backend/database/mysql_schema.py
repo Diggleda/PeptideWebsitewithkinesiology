@@ -202,7 +202,6 @@ CREATE_TABLE_STATEMENTS = [
         doctor_id VARCHAR(32) NOT NULL,
         patient_id VARCHAR(128) NULL,
         reference_label VARCHAR(190) NULL,
-        label VARCHAR(190) NULL,
         created_at DATETIME NOT NULL,
         expires_at DATETIME NOT NULL,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
@@ -483,11 +482,12 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id VARCHAR(128) NULL")
         if not _column_exists("patient_links", "reference_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label VARCHAR(190) NULL")
-            # Backfill from legacy `label` column when present.
-            if _column_exists("patient_links", "label"):
-                mysql_client.execute(
-                    "UPDATE patient_links SET reference_label = label WHERE reference_label IS NULL AND label IS NOT NULL"
-                )
+        # Backfill from legacy `label` column, then remove that column.
+        if _column_exists("patient_links", "label"):
+            mysql_client.execute(
+                "UPDATE patient_links SET reference_label = label WHERE reference_label IS NULL AND label IS NOT NULL"
+            )
+            mysql_client.execute("ALTER TABLE patient_links DROP COLUMN label")
         if not _column_exists("patient_links", "markup_percent"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
     except Exception:
