@@ -16,11 +16,13 @@ from ..repositories import (
     sales_rep_repository,
     referral_code_repository,
     sales_prospect_repository,
+    discount_code_repository,
 )
 from ..integrations import ship_station, stripe_payments, woo_commerce
 from .. import storage
 from . import referral_service
 from . import settings_service
+from . import discount_code_service
 
 logger = logging.getLogger(__name__)
 
@@ -584,6 +586,7 @@ def create_order(
     items: List[Dict],
     total: float,
     referral_code: Optional[str],
+    discount_code: Optional[str] = None,
     payment_method: Optional[str] = None,
     pricing_mode: Optional[str] = None,
     tax_total: Optional[float] = None,
@@ -658,6 +661,7 @@ def create_order(
     if test_override:
         normalized_referral = None
     referral_effects: Dict = {}
+    normalized_discount_code = (discount_code or "").strip().upper() or None
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
@@ -671,6 +675,7 @@ def create_order(
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "referralCode": normalized_referral,
+        "discountCode": normalized_discount_code,
         "status": "pending",
         "createdAt": now,
         "expectedShipmentWindow": (expected_shipment_window or None),
@@ -695,10 +700,24 @@ def create_order(
         order["taxTotal"] = 0.0
         order["grandTotal"] = 0.01
     else:
+        discount_code_amount = 0.0
+        if normalized_discount_code:
+            applied = discount_code_service.apply_discount_to_subtotal(
+                user_id=user_id,
+                code=normalized_discount_code,
+                items_subtotal=items_subtotal,
+            )
+            discount_code_amount = float(applied.get("discountAmount") or 0.0)
+            order["discountCode"] = applied.get("code") or normalized_discount_code
+            order["discountCodeValue"] = float(applied.get("discountValue") or 0.0)
+            order["discountCodeAmount"] = round(max(0.0, discount_code_amount), 2)
+
+        effective_items_subtotal = max(0.0, float(items_subtotal) - max(0.0, discount_code_amount))
+
         # Auto-apply available referral credits to this order
         available_credit = float(user.get("referralCredits") or 0)
-        if available_credit > 0 and items_subtotal > 0:
-            applied = min(available_credit, items_subtotal)
+        if available_credit > 0 and effective_items_subtotal > 0:
+            applied = min(available_credit, effective_items_subtotal)
             order["appliedReferralCredit"] = round(applied, 2)
 
         referral_effects = referral_service.handle_order_referral_effects(
@@ -726,10 +745,28 @@ def create_order(
             }
 
         applied_credit_value = float(order.get("appliedReferralCredit") or 0) or 0.0
-        order["grandTotal"] = round(
-            max(0.0, items_subtotal - applied_credit_value + shipping_total_value + tax_total_value),
+        order["discountTotal"] = round(
+            max(0.0, float(discount_code_amount or 0.0) + float(applied_credit_value or 0.0)),
             2,
         )
+        order["grandTotal"] = round(
+            max(
+                0.0,
+                items_subtotal
+                - float(discount_code_amount or 0.0)
+                - applied_credit_value
+                + shipping_total_value
+                + tax_total_value,
+            ),
+            2,
+        )
+
+        if order.get("discountCode") and float(order.get("discountCodeAmount") or 0) > 0:
+            discount_code_repository.reserve_use_once(
+                code=str(order.get("discountCode") or ""),
+                user_id=user_id,
+                order_value=float(order.get("grandTotal") or 0.0),
+            )
 
     order_repository.insert(order)
     try:

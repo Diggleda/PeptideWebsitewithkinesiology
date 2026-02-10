@@ -80,7 +80,7 @@ def _build_invoice_from_local_order(local_order: dict, *, customer_email: str | 
     items_subtotal = _round_money(local_order.get("itemsSubtotal") or local_order.get("total") or 0)
     shipping_total = _round_money(local_order.get("shippingTotal") or 0)
     tax_total = _round_money(local_order.get("taxTotal") or 0)
-    discount = _round_money(local_order.get("appliedReferralCredit") or 0)
+    discount = _round_money(local_order.get("discountTotal") or local_order.get("appliedReferralCredit") or 0)
     grand_total = _round_money(local_order.get("grandTotal") or (items_subtotal - discount + shipping_total + tax_total))
 
     order_number = str(local_order.get("wooOrderNumber") or local_order.get("id") or "Order").strip()
@@ -126,6 +126,7 @@ def create_order():
     items = payload.get("items") or []
     total = payload.get("total")
     referral_code = payload.get("referralCode")
+    discount_code = payload.get("discountCode") or payload.get("discount_code") or None
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     pricing_mode = payload.get("pricingMode") or payload.get("pricing_mode") or None
     tax_total = payload.get("taxTotal")
@@ -145,6 +146,7 @@ def create_order():
             items=items,
             total=total,
             referral_code=referral_code,
+            discount_code=discount_code,
             payment_method=payment_method,
             pricing_mode=pricing_mode,
             tax_total=tax_total,

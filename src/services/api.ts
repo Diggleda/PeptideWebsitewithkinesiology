@@ -1288,6 +1288,7 @@ const buildOrderFingerprint = (payload: {
   items: any[];
   total: number;
   referralCode?: string;
+  discountCode?: string;
   paymentMethod?: string | null;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
@@ -1312,6 +1313,7 @@ const buildOrderFingerprint = (payload: {
     items: normalizedItems,
     total: Number(payload.total) || 0,
     referralCode: payload.referralCode || null,
+    discountCode: payload.discountCode || null,
     paymentMethod: payload.paymentMethod || null,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     shipping: {
@@ -1321,6 +1323,18 @@ const buildOrderFingerprint = (payload: {
       shippingTotal: payload.shipping?.shippingTotal ?? null,
     },
   });
+};
+
+export const discountCodesAPI = {
+  preview: async (code: string, itemsSubtotal: number) => {
+    return fetchWithAuth(`${API_BASE_URL}/discount-codes/preview`, {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+        itemsSubtotal: typeof itemsSubtotal === 'number' ? itemsSubtotal : 0,
+      }),
+    });
+  },
 };
 
 const getOrCreateCheckoutIdempotencyKey = (fingerprint: string) => {
@@ -1340,6 +1354,7 @@ export const ordersAPI = {
     items: any[],
     total: number,
     referralCode?: string,
+    discountCode?: string,
     shipping?: {
       address?: any;
       estimate?: any;
@@ -1357,6 +1372,7 @@ export const ordersAPI = {
       items,
       total,
       referralCode,
+      discountCode,
       shipping,
       paymentMethod,
       taxTotal,
@@ -1372,6 +1388,7 @@ export const ordersAPI = {
         items,
         total,
         referralCode,
+        discountCode: discountCode ?? null,
         pricingMode: pricingMode ?? null,
         paymentMethod: paymentMethod ?? null,
         shippingAddress: shipping?.address,

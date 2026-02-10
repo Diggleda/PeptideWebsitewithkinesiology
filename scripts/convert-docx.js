@@ -21,7 +21,7 @@ const documents = [
   },
   {
     // Source doc is versioned in this repo; keep `terms.html` as the stable output path.
-    docx: 'src/content/legal/Terms-of-service-2.docx',
+    docx: 'src/content/legal/Terms-of-service-5.docx',
     html: 'src/content/legal/terms.html',
   },
   {

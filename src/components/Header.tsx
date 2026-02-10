@@ -5094,7 +5094,8 @@ export function Header({
 	            value={patientLinkInstructionsDraft}
 	            onChange={(event) => setPatientLinkInstructionsDraft(event.target.value)}
 	            placeholder="Enter instructions that the delegate will see in their proposal modal…"
-	            className="patient-link-form__instructions squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	            rows={2}
+	            className="patient-link-form__instructions min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
 	          <Button
 	            type="button"
@@ -5302,7 +5303,8 @@ export function Header({
 	                            onChange={(event) =>
 	                              setPatientLinkInstructionsDraftByToken((prev) => ({ ...prev, [token]: event.target.value }))
 	                            }
-	                            className="min-h-[96px] resize-y squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	                            rows={2}
+	                            className="min-h-[56px] resize-y squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	                          />
 	                        </div>
 	                        <div className="flex items-center justify-end">

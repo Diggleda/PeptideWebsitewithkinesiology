@@ -961,7 +961,7 @@ def _to_db_params(order: Dict) -> Dict:
     items_subtotal = _num(order.get("itemsSubtotal"), 0.0)
     shipping_total = _num(order.get("shippingTotal"), 0.0)
     tax_total = _num(order.get("taxTotal"), 0.0)
-    discount_total = _num(order.get("appliedReferralCredit"), 0.0)
+    discount_total = _num(order.get("discountTotal"), _num(order.get("appliedReferralCredit"), 0.0) + _num(order.get("discountCodeAmount"), 0.0))
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)

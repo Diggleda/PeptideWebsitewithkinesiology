@@ -198,6 +198,16 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS discount_codes (
+        code VARCHAR(64) PRIMARY KEY,
+        discount_value DECIMAL(6,2) NOT NULL DEFAULT 0,
+        used_by_json LONGTEXT NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        KEY idx_discount_codes_updated (updated_at)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS patient_links (
         token VARCHAR(128) PRIMARY KEY,
         doctor_id VARCHAR(32) NOT NULL,

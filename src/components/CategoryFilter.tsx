@@ -321,7 +321,7 @@ export function CategoryFilter({
 
       <CardContent className="space-y-6">
         <div className="space-y-3">
-          <Label>Categories</Label>
+          <Label>Dosage Form</Label>
           <div className="space-y-2">
             {categories.map((category) => (
               <div key={category} className="flex flex-wrap items-center justify-between gap-2">
@@ -347,7 +347,7 @@ export function CategoryFilter({
           <div className="space-y-6">
             {tagSections.map((section) => (
               <div key={section.key} className="space-y-3">
-                <Label>{section.label}</Label>
+                <Label>{section.key === "tags" ? "Research Domains" : section.label}</Label>
                 <div className="space-y-2 max-h-64 overflow-auto pr-1">
                   {section.tags.map((tag) => (
                     <div
@@ -378,6 +378,10 @@ export function CategoryFilter({
           </div>
         )}
 
+        <p className="pt-4 border-t border-[rgba(255,255,255,0.45)] text-xs leading-relaxed text-slate-700">
+          Grouping reflects areas of scientific inquiry reported in the
+          literature and ongoing physician-led research initiatives. Categories are intended to serve as a starting point for your search process.
+        </p>
       </CardContent>
     </Card>
   );

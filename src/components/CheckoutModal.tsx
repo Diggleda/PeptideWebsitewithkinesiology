@@ -15,7 +15,7 @@ import { Card, CardContent } from './ui/card';
 import { Minus, Plus, Trash2, LogIn, ShoppingCart, X, Landmark, ArrowLeftRight } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
 import { toast } from 'sonner@2.0.3';
-import { ordersAPI, shippingAPI } from '../services/api';
+import { discountCodesAPI, ordersAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';
 import { sanitizeServiceNames } from '../lib/publicText';
@@ -163,6 +163,7 @@ interface CheckoutModalProps {
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
     paymentMethod?: 'bacs' | string | null;
+    discountCode?: string | null;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -256,6 +257,14 @@ export function CheckoutModal({
   proposalMarkupPercent,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
+  const [discountCodeDraft, setDiscountCodeDraft] = useState('');
+  const [discountCodeApplied, setDiscountCodeApplied] = useState<{
+    code: string;
+    discountValue: number;
+    discountAmount: number;
+  } | null>(null);
+  const [discountCodeMessage, setDiscountCodeMessage] = useState<string | null>(null);
+  const [discountCodeBusy, setDiscountCodeBusy] = useState(false);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
@@ -386,6 +395,7 @@ export function CheckoutModal({
     () => checkoutLineItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [checkoutLineItems],
   );
+  const discountCodeAmount = Math.max(0, Number(discountCodeApplied?.discountAmount || 0));
   const selectedShippingRate = selectedRateIndex != null && shippingRates
     ? shippingRates[selectedRateIndex]
     : null;
@@ -394,8 +404,9 @@ export function CheckoutModal({
     : 0;
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
-  const appliedCredits = Math.min(subtotal, normalizedCredits);
-  const total = Math.max(0, subtotal - appliedCredits + shippingCost + taxAmount);
+  const discountedSubtotal = Math.max(0, subtotal - discountCodeAmount);
+  const appliedCredits = Math.min(discountedSubtotal, normalizedCredits);
+  const total = Math.max(0, discountedSubtotal - appliedCredits + shippingCost + taxAmount);
   const testOverrideApplied = taxEstimate?.testPaymentOverrideApplied === true;
   const originalGrandTotal = typeof taxEstimate?.originalGrandTotal === 'number' && Number.isFinite(taxEstimate.originalGrandTotal)
     ? Math.max(0, taxEstimate.originalGrandTotal)
@@ -462,6 +473,58 @@ export function CheckoutModal({
       setPaymentMethod('zelle');
     }
   }, [delegatePaymentMethod, isDelegateFlow, isOpen, paymentMethod]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    if (isDelegateFlow || !isAuthenticated || allowUnauthenticatedCheckout) {
+      setDiscountCodeDraft('');
+      setDiscountCodeApplied(null);
+      setDiscountCodeMessage(null);
+    }
+  }, [allowUnauthenticatedCheckout, isAuthenticated, isDelegateFlow, isOpen]);
+
+  useEffect(() => {
+    setDiscountCodeApplied(null);
+    setDiscountCodeMessage(null);
+  }, [cartLineItemSignature]);
+
+  const handleApplyDiscountCode = useCallback(async () => {
+    const code = discountCodeDraft.trim().toUpperCase();
+    if (!code) {
+      setDiscountCodeApplied(null);
+      setDiscountCodeMessage(null);
+      return;
+    }
+    if (!isAuthenticated || allowUnauthenticatedCheckout) {
+      setDiscountCodeApplied(null);
+      setDiscountCodeMessage('Sign in to apply discount codes.');
+      return;
+    }
+    setDiscountCodeBusy(true);
+    try {
+      const resp = await discountCodesAPI.preview(code, subtotal);
+      if (resp?.valid) {
+        const amount = Math.max(0, Number(resp.discountAmount || 0));
+        const value = Math.max(0, Number(resp.discountValue || 0));
+        setDiscountCodeApplied({
+          code: String(resp.code || code),
+          discountValue: value,
+          discountAmount: amount,
+        });
+        setDiscountCodeMessage(null);
+      } else {
+        setDiscountCodeApplied(null);
+        setDiscountCodeMessage(String(resp?.message || 'Invalid discount code'));
+      }
+    } catch (error: any) {
+      setDiscountCodeApplied(null);
+      setDiscountCodeMessage((error?.message || 'Failed to apply discount code').toString());
+    } finally {
+      setDiscountCodeBusy(false);
+    }
+  }, [allowUnauthenticatedCheckout, discountCodeDraft, isAuthenticated, subtotal]);
 
   const delegatePaymentInstructionsText = useMemo(() => {
     if (!isDelegateFlow) return null;
@@ -646,6 +709,7 @@ export function CheckoutModal({
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
 	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
+	        discountCode: discountCodeApplied?.code ?? null,
 	      });
 	      if (isDelegateFlow) {
 	        const candidateMessage =
@@ -1120,8 +1184,8 @@ export function CheckoutModal({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6" ref={checkoutScrollRef}>
-          <div className="space-y-6 pt-6">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3" ref={checkoutScrollRef}>
+          <div className="space-y-6">
             <>
               {/* Cart Items */}
               <div className="space-y-4">
@@ -1191,7 +1255,7 @@ export function CheckoutModal({
                       key={item.id}
                       className="glass squircle-sm h-full w-full"
                     >
-                      <CardContent className="p-3 relative">
+                      <CardContent className="p-3 [&:last-child]:pb-3 relative">
                         <div className="checkout-item-scroll">
                           <div className="checkout-item-scroll-inner">
                             <div className="flex items-start justify-between gap-4">
@@ -1577,6 +1641,46 @@ export function CheckoutModal({
 	                )}
 	              </div>
 
+                {!isDelegateFlow && isAuthenticated && !allowUnauthenticatedCheckout && (
+                  <div className="pt-1">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="checkout-discount-code"
+                        className="text-xs font-semibold text-slate-700"
+                      >
+                        Discount code
+                      </Label>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          id="checkout-discount-code"
+                          value={discountCodeDraft}
+                          onChange={(event) => setDiscountCodeDraft(event.target.value)}
+                          placeholder="Enter code"
+                          className="h-10 w-full sm:flex-1 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleApplyDiscountCode}
+                          disabled={discountCodeBusy}
+                          className="header-home-button h-10 squircle-sm bg-white text-slate-900 gap-2"
+                        >
+                          {discountCodeBusy ? 'Applying…' : 'Apply'}
+                        </Button>
+                      </div>
+                      {discountCodeMessage && (
+                        <div className="text-xs text-red-600">{discountCodeMessage}</div>
+                      )}
+                      {discountCodeApplied && !discountCodeMessage && (
+                        <div className="text-xs text-emerald-700">
+                          Applied {discountCodeApplied.code} (${discountCodeApplied.discountValue.toFixed(2)} off)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
               <div className="flex items-center gap-3 pt-2">
                 <input
                   type="checkbox"
@@ -1643,7 +1747,7 @@ export function CheckoutModal({
 	                        ${subtotal.toFixed(2)}
 	                      </span>
 			                </div>
-		                {showDualPricing && delegateSubtotal != null && (
+			                {showDualPricing && delegateSubtotal != null && (
 		                  <div className="flex justify-between text-sm text-slate-700">
 		                    <span>Delegate subtotal:</span>
 		                    <span className="tabular-nums text-[rgb(95,179,249)] font-semibold">
@@ -1651,6 +1755,12 @@ export function CheckoutModal({
 		                    </span>
 		                  </div>
 		                )}
+                    {!testOverrideApplied && discountCodeApplied && discountCodeAmount > 0 && (
+                      <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+                        <span>Discount ({discountCodeApplied.code})</span>
+                        <span>- ${discountCodeAmount.toFixed(2)}</span>
+                      </div>
+                    )}
 		                {displayAppliedCredits > 0 && (
 		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
 		                    <span>Referral Credit</span>

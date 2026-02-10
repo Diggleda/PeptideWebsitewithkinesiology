@@ -1883,6 +1883,36 @@ const stripHtml = (value?: string | null): string =>
   value
     ? value
         .replace(/<[^>]+>/g, " ")
+        .replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
+          const normalized = String(entity || "").trim();
+          if (!normalized) return match;
+          const named = normalized.toLowerCase();
+          if (named === "amp") return "&";
+          if (named === "lt") return "<";
+          if (named === "gt") return ">";
+          if (named === "quot") return '"';
+          if (named === "apos") return "'";
+          if (named === "nbsp") return " ";
+          if (named.startsWith("#x")) {
+            const codePoint = Number.parseInt(named.slice(2), 16);
+            if (!Number.isFinite(codePoint)) return match;
+            try {
+              return String.fromCodePoint(codePoint);
+            } catch {
+              return match;
+            }
+          }
+          if (named.startsWith("#")) {
+            const codePoint = Number.parseInt(named.slice(1), 10);
+            if (!Number.isFinite(codePoint)) return match;
+            try {
+              return String.fromCodePoint(codePoint);
+            } catch {
+              return match;
+            }
+          }
+          return match;
+        })
         .replace(/\s+/g, " ")
         .trim()
     : "";
@@ -14524,6 +14554,7 @@ function MainApp() {
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
     paymentMethod?: string | null;
+    discountCode?: string | null;
   }) => {
     console.debug("[Checkout] Attempt", {
       items: cartItems.length,
@@ -14620,6 +14651,7 @@ function MainApp() {
 	        items,
 	        total,
 	        undefined,
+	        options?.discountCode ?? undefined,
 	        {
 	          address: options?.shippingAddress,
 	          estimate: options?.shippingRate,

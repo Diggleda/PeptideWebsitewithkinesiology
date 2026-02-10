@@ -850,12 +850,14 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             override_amount = 0.01
         override_amount = max(0.01, round(override_amount, 2))
 
-    # Optional referral credit applied at checkout (negative fee)
+    # Optional discounts applied at checkout (referral credits + discount codes)
     applied_credit = float(order.get("appliedReferralCredit") or 0) or 0.0
+    discount_code_amount = float(order.get("discountCodeAmount") or 0) or 0.0
     fee_lines = []
     discount_total = "0"
-    if not test_override and applied_credit > 0:
-        discount_total = f"-{applied_credit:.2f}"
+    combined_discount = float(applied_credit) + float(discount_code_amount)
+    if not test_override and combined_discount > 0:
+        discount_total = f"-{combined_discount:.2f}"
 
     tax_total = 0.0
     try:
@@ -942,6 +944,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},
         {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
     ]
+    if order.get("discountCode"):
+        meta_data.append({"key": "peppro_discount_code", "value": order.get("discountCode")})
+    if order.get("discountCodeAmount"):
+        meta_data.append({"key": "peppro_discount_code_amount", "value": order.get("discountCodeAmount")})
     if sales_rep_id:
         meta_data.append({"key": "peppro_sales_rep_id", "value": sales_rep_id})
     if sales_rep_name:
