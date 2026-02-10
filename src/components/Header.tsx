@@ -4101,12 +4101,47 @@ export function Header({
               const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));
               return sum + lineTotal;
             }, 0);
-            const subtotalValue = parseWooMoney(
-              (order as any).itemsSubtotal ?? (order as any).itemsTotal,
-              summedLineItems > 0
-                ? summedLineItems
-                : parseWooMoney(wooResponse?.subtotal ?? wooPayload?.subtotal, 0),
+            const wooMeta = Array.isArray(wooResponse?.meta_data)
+              ? wooResponse.meta_data
+              : Array.isArray(wooPayload?.meta_data)
+                ? wooPayload.meta_data
+                : [];
+            const findWooMetaValue = (key: string) => {
+              if (!key) return null;
+              const normalizedKey = String(key).trim().toLowerCase();
+              const match = Array.isArray(wooMeta)
+                ? wooMeta.find((entry: any) => String(entry?.key || '').trim().toLowerCase() === normalizedKey)
+                : null;
+              return match?.value ?? null;
+            };
+            const discountCodeAmountFromWoo = findWooMetaValue('peppro_discount_code_amount');
+            const discountCodeAmount = Math.abs(
+              parseWooMoney(
+                (order as any).discountCodeAmount,
+                parseWooMoney(discountCodeAmountFromWoo, 0),
+              ),
             );
+            const appliedReferralCreditRaw = parseWooMoney((order as any).appliedReferralCredit, 0);
+            const appliedReferralCredit = Math.abs(appliedReferralCreditRaw);
+            const hasExplicitDiscounts = discountCodeAmount > 0 || appliedReferralCredit > 0;
+
+            const fallbackSubtotal = summedLineItems > 0
+              ? summedLineItems
+              : parseWooMoney(wooResponse?.subtotal ?? wooPayload?.subtotal, 0);
+
+            const hasStoredItemsSubtotal = (order as any).itemsSubtotal != null || (order as any).itemsTotal != null;
+            const storedItemsSubtotal = hasStoredItemsSubtotal
+              ? parseWooMoney((order as any).itemsSubtotal ?? (order as any).itemsTotal, 0)
+              : 0;
+            const originalItemsSubtotal = parseWooMoney(
+              (order as any).originalItemsSubtotal,
+              Math.max(0, storedItemsSubtotal || fallbackSubtotal) + discountCodeAmount,
+            );
+            const effectiveItemsSubtotal = hasStoredItemsSubtotal
+              ? storedItemsSubtotal
+              : hasExplicitDiscounts
+                ? Math.max(0, originalItemsSubtotal - discountCodeAmount)
+                : fallbackSubtotal;
             const shippingValue = parseWooMoney(
               order.shippingTotal,
               parseWooMoney(
@@ -4120,22 +4155,19 @@ export function Header({
               order.taxTotal,
               parseWooMoney(wooResponse?.total_tax ?? wooPayload?.total_tax, 0),
             );
-            const discountValue = Math.abs(
-              parseWooMoney(
-                (order as any).appliedReferralCredit,
-                parseWooMoney(
-                  wooResponse?.discount_total ??
-                    wooPayload?.discount_total ??
-                    (wooPayload?.discount_lines?.[0]?.total ?? 0),
-                  0,
-                ),
-              ),
+            const legacyDiscountValueRaw = parseWooMoney(
+              wooResponse?.discount_total ??
+                wooPayload?.discount_total ??
+                (wooPayload?.discount_lines?.[0]?.total ?? 0),
+              0,
             );
+            const legacyDiscountValue = Math.abs(legacyDiscountValueRaw);
+            const discountValue = hasExplicitDiscounts ? appliedReferralCredit : legacyDiscountValue;
             const storedGrandTotal = parseWooMoney(
               (order as any).grandTotal,
-              parseWooMoney(order.total, 0),
+              parseWooMoney(wooResponse?.total ?? wooPayload?.total, 0),
             );
-            const computedGrandTotal = subtotalValue + shippingValue + taxValue - discountValue;
+            const computedGrandTotal = effectiveItemsSubtotal + shippingValue + taxValue - discountValue;
             const baseTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
             const displayTotal =
               taxValue > 0 && computedGrandTotal > baseTotal + 0.01
@@ -4497,7 +4529,7 @@ export function Header({
     const discountTotal = hasExplicitDiscounts ? discountCodeAmount + appliedReferralCredit : legacyDiscountTotal;
     const storedGrandTotal = parseWooMoney(
       (selectedOrder as any).grandTotal,
-      parseWooMoney(selectedOrder.total, 0),
+      parseWooMoney(wooResponse.total ?? wooPayload.total, 0),
     );
     const subtotalForSummary = hasExplicitDiscounts ? originalItemsSubtotal : itemsSubtotalEffective;
     const computedGrandTotal = subtotalForSummary + shippingTotal + taxTotal - discountTotal;

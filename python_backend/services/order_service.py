@@ -1365,7 +1365,16 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "wooOrderNumber": local.get("wooOrderNumber") or None,
                 "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
                 "status": local.get("status") or "pending",
-                "total": float(local.get("total") or 0),
+                # For UI display, expose `grandTotal` so the order card "Total" is correct.
+                # Keep `total` for backward compatibility, but prefer `grandTotal` when present.
+                "total": float(local.get("grandTotal") or local.get("total") or 0),
+                "grandTotal": float(local.get("grandTotal") or 0),
+                "itemsSubtotal": float(local.get("itemsSubtotal") or local.get("total") or 0),
+                "originalItemsSubtotal": float(local.get("originalItemsSubtotal") or 0),
+                "taxTotal": float(local.get("taxTotal") or 0),
+                "appliedReferralCredit": float(local.get("appliedReferralCredit") or 0),
+                "discountCode": local.get("discountCode") or None,
+                "discountCodeAmount": float(local.get("discountCodeAmount") or 0),
                 "shippingTotal": float(local.get("shippingTotal") or 0),
                 "currency": local.get("currency") or "USD",
                 "notes": local.get("notes") if local.get("notes") is not None else None,
@@ -1500,6 +1509,20 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
 
         if local_order.get("items") and not order.get("lineItems"):
             order["lineItems"] = local_order.get("items")
+
+        # Merge local totals/discount metadata so the UI doesn't fall back to summing
+        # raw line items (which may be pre-discount).
+        for key in (
+            "itemsSubtotal",
+            "originalItemsSubtotal",
+            "taxTotal",
+            "grandTotal",
+            "appliedReferralCredit",
+            "discountCode",
+            "discountCodeAmount",
+        ):
+            if local_order.get(key) is not None:
+                order[key] = local_order.get(key)
 
         order["paymentMethod"] = local_order.get("paymentMethod") or order.get("paymentMethod")
         order["paymentDetails"] = (

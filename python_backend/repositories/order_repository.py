@@ -63,30 +63,59 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
         # Non-MySQL installs are small; fall back to full records.
         return find_by_user_id(user_id)
 
-    rows = mysql_client.fetch_all(
-        """
-        SELECT
-            id,
-            pricing_mode,
-            items,
-            total,
-            shipping_total,
-            status,
-            notes,
-            shipping_address,
-            expected_shipment_window,
-            shipping_carrier,
-            shipping_service,
-            woo_order_id,
-            woo_order_number,
-            woo_order_key,
-            created_at,
-            updated_at
-        FROM orders
-        WHERE user_id = %(user_id)s
-        """,
-        {"user_id": user_id},
-    )
+    try:
+        rows = mysql_client.fetch_all(
+            """
+            SELECT
+                id,
+                pricing_mode,
+                items,
+                items_subtotal,
+                total,
+                shipping_total,
+                status,
+                notes,
+                shipping_address,
+                expected_shipment_window,
+                shipping_carrier,
+                shipping_service,
+                woo_order_id,
+                woo_order_number,
+                woo_order_key,
+                payload,
+                created_at,
+                updated_at
+            FROM orders
+            WHERE user_id = %(user_id)s
+            """,
+            {"user_id": user_id},
+        )
+    except Exception:
+        # Backwards compatibility with older schemas missing newer columns.
+        rows = mysql_client.fetch_all(
+            """
+            SELECT
+                id,
+                pricing_mode,
+                items,
+                total,
+                shipping_total,
+                status,
+                notes,
+                shipping_address,
+                expected_shipment_window,
+                shipping_carrier,
+                shipping_service,
+                woo_order_id,
+                woo_order_number,
+                woo_order_key,
+                created_at,
+                updated_at
+            FROM orders
+            WHERE user_id = %(user_id)s
+            """,
+            {"user_id": user_id},
+        )
 
     def parse_json(value, default=None):
         if not value:
@@ -105,11 +134,23 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
 
     result: List[Dict] = []
     for row in rows or []:
+        payload = parse_json(row.get("payload"), {}) if row.get("payload") is not None else {}
+        if not isinstance(payload, dict):
+            payload = {}
         result.append(
             {
                 "id": row.get("id"),
                 "items": parse_json(row.get("items"), []) if row.get("items") is not None else [],
+                # `total` is historically overloaded; treat it as "items subtotal" for UI overlays,
+                # but also surface `grandTotal` when we can.
                 "total": float(row.get("total") or 0),
+                "itemsSubtotal": float(row.get("items_subtotal") or payload.get("itemsSubtotal") or row.get("total") or 0),
+                "originalItemsSubtotal": float(payload.get("originalItemsSubtotal") or 0),
+                "taxTotal": float(payload.get("taxTotal") or 0),
+                "grandTotal": float(payload.get("grandTotal") or 0),
+                "appliedReferralCredit": float(payload.get("appliedReferralCredit") or 0),
+                "discountCode": payload.get("discountCode") or None,
+                "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
                 "pricingMode": row.get("pricing_mode") or "wholesale",
                 "shippingTotal": float(row.get("shipping_total") or 0),
                 "status": row.get("status"),
