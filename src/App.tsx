@@ -233,10 +233,12 @@ type CheckoutShippingAddress = {
 interface FilterState {
   categories: string[];
   types: string[];
+  tags: string[];
 }
 
 type WooImage = { src?: string | null };
 type WooCategory = { id: number; name: string };
+type WooTag = { id: number; name: string; slug?: string | null };
 type WooMeta = { key?: string | null; value?: unknown };
 type WooAttribute = {
   id?: number;
@@ -271,6 +273,7 @@ interface WooProduct {
   price_html?: string;
   images?: WooImage[];
   categories?: WooCategory[];
+  tags?: WooTag[];
   stock_status?: string;
   stock_quantity?: number | null;
   average_rating?: string;
@@ -2319,6 +2322,13 @@ const mapWooProductToProduct = (
   product: WooProduct,
   productVariations: WooVariation[] = [],
 ): Product => {
+  const toTagSlug = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
   const parseStockQuantity = (value: unknown): number | null => {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -2355,6 +2365,25 @@ const mapWooProductToProduct = (
       return withoutUncategorized[0];
     }
     return normalized[0];
+  })();
+  const normalizedTags = (() => {
+    const tags = Array.isArray(product.tags) ? product.tags : [];
+    const seen = new Set<string>();
+    return tags
+      .map((tag) => {
+        const name = stripHtml(tag?.name ?? "").trim();
+        const rawSlug = typeof tag?.slug === "string" ? tag.slug.trim() : "";
+        const slug = (rawSlug || toTagSlug(name)).trim();
+        if (!name || !slug) return null;
+        if (seen.has(slug)) return null;
+        seen.add(slug);
+        return {
+          id: typeof tag?.id === "number" ? tag.id : undefined,
+          name,
+          slug,
+        };
+      })
+      .filter((tag): tag is NonNullable<typeof tag> => Boolean(tag));
   })();
   const subscriptionMetaFlag = (product.meta_data ?? []).some((meta) => {
     const key = (meta?.key ?? "").toString().toLowerCase();
@@ -2617,6 +2646,7 @@ const mapWooProductToProduct = (
     variantSummary,
     bulkPricingTiers:
       productBulkPricing.length > 0 ? productBulkPricing : undefined,
+    tags: normalizedTags.length > 0 ? normalizedTags : undefined,
   };
 };
 
@@ -5008,6 +5038,7 @@ function MainApp() {
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     types: [],
+    tags: [],
   });
   const [doctorSummary, setDoctorSummary] =
     useState<DoctorCreditSummary | null>(null);
@@ -15767,6 +15798,7 @@ function MainApp() {
                 onFiltersChange={setFilters}
                 productCounts={productCounts}
                 typeCounts={{}}
+                tagSections={tagSections}
               />
             ) : (
 	              <div
@@ -16385,22 +16417,18 @@ function MainApp() {
 					                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
 					                            ({adminDashboardPeriodLabel})
 					                          </span>
-					                          <Button
-					                            type="button"
-					                            variant="outline"
-					                            size="sm"
-					                            className="gap-2"
-					                            onClick={() => void refreshSalesBySalesRepSummary()}
-					                            disabled={salesRepSalesSummaryLoading}
-					                            aria-busy={salesRepSalesSummaryLoading}
-					                            title="Refresh"
-					                          >
-					                            <RefreshCw
-					                              className={`h-4 w-4 ${salesRepSalesSummaryLoading ? "animate-spin" : ""}`}
-					                              aria-hidden="true"
-					                            />
-					                            Refresh
-					                          </Button>
+						                          <Button
+						                            type="button"
+						                            variant="outline"
+						                            size="sm"
+						                            className="header-home-button squircle-sm bg-white text-slate-900"
+						                            onClick={() => void refreshSalesBySalesRepSummary()}
+						                            disabled={salesRepSalesSummaryLoading}
+						                            aria-busy={salesRepSalesSummaryLoading}
+						                            title="Refresh"
+						                          >
+						                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
+						                          </Button>
 					                        </div>
 					
 					                        <div className="flex flex-wrap items-center justify-end gap-2">
@@ -16593,21 +16621,17 @@ function MainApp() {
                       </p>
                     </div>
                     <div className="flex-shrink-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void fetchServerHealth({ force: true })}
-                        disabled={serverHealthLoading}
-                        className="gap-2"
-                        title="Refresh server health"
-                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${
-                            serverHealthLoading ? "animate-spin" : ""
-                          }`}
-                        />
-                        Refresh
-                      </Button>
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => void fetchServerHealth({ force: true })}
+	                        disabled={serverHealthLoading}
+	                        className="header-home-button squircle-sm bg-white text-slate-900"
+	                        title="Refresh server health"
+	                      >
+	                        {serverHealthLoading ? "Refreshing…" : "Refresh"}
+	                      </Button>
                     </div>
                   </div>
 
@@ -16805,26 +16829,20 @@ function MainApp() {
 		                        </p>
 		                      </div>
 		                      <div className="flex-shrink-0">
-		                        <Button
-		                          type="button"
-		                          variant="outline"
-		                          onClick={() => {
-		                            void fetchMissingCertificates({ force: true });
-		                            void fetchCertificateProducts({ force: true });
-		                          }}
-		                          disabled={missingCertificatesLoading || certificateProductsLoading}
-		                          className="gap-2"
-		                          title="Refresh certificates"
-		                        >
-		                          <RefreshCw
-		                            className={`h-4 w-4 ${
-		                              missingCertificatesLoading || certificateProductsLoading
-		                                ? "animate-spin"
-		                                : ""
-		                            }`}
-		                          />
-		                          Refresh
-		                        </Button>
+			                        <Button
+			                          type="button"
+			                          variant="outline"
+			                          size="sm"
+			                          onClick={() => {
+			                            void fetchMissingCertificates({ force: true });
+			                            void fetchCertificateProducts({ force: true });
+			                          }}
+			                          disabled={missingCertificatesLoading || certificateProductsLoading}
+			                          className="header-home-button squircle-sm bg-white text-slate-900"
+			                          title="Refresh certificates"
+			                        >
+			                          {missingCertificatesLoading || certificateProductsLoading ? "Refreshing…" : "Refresh"}
+			                        </Button>
 		                      </div>
 		                    </div>
 		
@@ -17647,22 +17665,18 @@ function MainApp() {
 						                      <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
 						                        ({adminDashboardPeriodLabel})
 						                      </span>
-						                      <Button
-						                        type="button"
-						                        variant="outline"
-						                        size="sm"
-						                        className="gap-2 order-2 sm:order-1"
-						                        onClick={applyAdminDashboardPeriod}
-						                        disabled={adminDashboardRefreshing}
-						                        aria-busy={adminDashboardRefreshing}
-						                        title="Refresh"
-						                      >
-						                        <RefreshCw
-						                          className={`h-4 w-4 ${adminDashboardRefreshing ? "animate-spin" : ""}`}
-						                          aria-hidden="true"
-						                        />
-						                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
-						                      </Button>
+							                      <Button
+							                        type="button"
+							                        variant="outline"
+							                        size="sm"
+							                        className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
+							                        onClick={applyAdminDashboardPeriod}
+							                        disabled={adminDashboardRefreshing}
+							                        aria-busy={adminDashboardRefreshing}
+							                        title="Refresh"
+							                      >
+							                        {adminDashboardRefreshing ? "Refreshing..." : "Refresh"}
+							                      </Button>
 						                    </div>
 						                  </div>
 						                </div>
@@ -18530,26 +18544,20 @@ function MainApp() {
                       </p>
                     </div>
                     <div className="sales-rep-card-controls">
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        onClick={(e) => {
-	                          e.stopPropagation();
-	                          void fetchSalesTrackingOrders({ force: true });
-	                        }}
-	                        disabled={salesTrackingLoading || salesTrackingRefreshing}
-	                        className="gap-2"
-	                        title="Refresh your sales data"
-	                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${
-                            salesTrackingLoading || salesTrackingRefreshing
-                              ? "animate-spin"
-                              : ""
-                          }`}
-                        />
-                        Refresh
-                      </Button>
+		                      <Button
+		                        type="button"
+		                        variant="outline"
+		                        size="sm"
+		                        onClick={(e) => {
+		                          e.stopPropagation();
+		                          void fetchSalesTrackingOrders({ force: true });
+		                        }}
+		                        disabled={salesTrackingLoading || salesTrackingRefreshing}
+		                        className="header-home-button squircle-sm bg-white text-slate-900"
+		                        title="Refresh your sales data"
+		                      >
+	                        {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing…" : "Refresh"}
+		                      </Button>
                     </div>
                   </div>
                 </div>
@@ -18874,23 +18882,21 @@ function MainApp() {
                       </p>
                     </div>
                     <div className="sales-rep-card-controls">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void tracedRefreshReferralData("sales-rep-manual-refresh", {
-                            showLoading: true,
-                          });
-                        }}
-                        disabled={referralDataLoading}
-                        className="gap-2"
-                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${referralDataLoading ? "animate-spin" : ""}`}
-                        />
-                        Refresh
-                      </Button>
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={(e) => {
+	                          e.stopPropagation();
+	                          void tracedRefreshReferralData("sales-rep-manual-refresh", {
+	                            showLoading: true,
+	                          });
+	                        }}
+	                        disabled={referralDataLoading}
+	                        className="header-home-button squircle-sm bg-white text-slate-900"
+	                      >
+	                        {referralDataLoading ? "Refreshing…" : "Refresh"}
+	                      </Button>
                     </div>
                   </div>
                 </div>
@@ -20185,6 +20191,15 @@ function MainApp() {
       );
     }
 
+    if (filters.tags.length > 0) {
+      filtered = filtered.filter((product) => {
+        const productTags = product.tags ?? [];
+        if (productTags.length === 0) return false;
+        const tagSlugs = new Set(productTags.map((tag) => tag.slug));
+        return filters.tags.some((slug) => tagSlugs.has(slug));
+      });
+    }
+
     return filtered;
   }, [filteredProductCatalog, searchQuery, filters]);
 
@@ -20197,6 +20212,85 @@ function MainApp() {
     }
     return counts;
   }, [filteredProductCatalog]);
+
+  const tagSections = useMemo(() => {
+    type TagOption = { slug: string; name: string; count: number };
+    const optionBySlug = new Map<string, TagOption>();
+    for (const product of filteredProductCatalog) {
+      for (const tag of product.tags ?? []) {
+        const slug = (tag.slug || "").trim();
+        const name = (tag.name || "").trim();
+        if (!slug || !name) continue;
+        const existing = optionBySlug.get(slug);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          optionBySlug.set(slug, { slug, name, count: 1 });
+        }
+      }
+    }
+
+    const getGroupLabel = (name: string) => {
+      const colonIdx = name.indexOf(":");
+      if (colonIdx > 1 && colonIdx <= 24) {
+        const left = name.slice(0, colonIdx).trim();
+        const right = name.slice(colonIdx + 1).trim();
+        if (left && right) return left;
+      }
+      const dashIdx = name.indexOf(" - ");
+      if (dashIdx > 1 && dashIdx <= 24) {
+        const left = name.slice(0, dashIdx).trim();
+        const right = name.slice(dashIdx + 3).trim();
+        if (left && right) return left;
+      }
+      return null;
+    };
+
+    const groups = new Map<string, TagOption[]>();
+    const ungrouped: TagOption[] = [];
+    for (const option of optionBySlug.values()) {
+      const group = getGroupLabel(option.name);
+      if (!group) {
+        ungrouped.push(option);
+        continue;
+      }
+      const bucket = groups.get(group) ?? [];
+      bucket.push(option);
+      groups.set(group, bucket);
+    }
+
+    const promotedGroups: Array<{ key: string; label: string; tags: TagOption[] }> = [];
+    for (const [group, options] of groups.entries()) {
+      if (options.length < 3) {
+        ungrouped.push(...options);
+        continue;
+      }
+      const sorted = options
+        .slice()
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      promotedGroups.push({ key: group.toLowerCase(), label: group, tags: sorted });
+    }
+
+    const baseTags = ungrouped
+      .slice()
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const baseSection =
+      baseTags.length > 0
+        ? [{ key: "tags", label: "Tags", tags: baseTags }]
+        : [];
+
+    return [...promotedGroups.sort((a, b) => a.label.localeCompare(b.label)), ...baseSection];
+  }, [filteredProductCatalog]);
+
+  const validTagSlugs = useMemo(() => {
+    const slugs = new Set<string>();
+    for (const section of tagSections) {
+      for (const tag of section.tags) {
+        slugs.add(tag.slug);
+      }
+    }
+    return slugs;
+  }, [tagSections]);
 
   const visibleCatalogCategories = useMemo(() => {
     const uncategorizedCount = categoryCountsAll["Uncategorized"] || 0;
@@ -20219,6 +20313,17 @@ function MainApp() {
     }
     setFilters((prev) => ({ ...prev, categories: next }));
   }, [filters.categories, visibleCatalogCategories]);
+
+  useEffect(() => {
+    if (filters.tags.length === 0) {
+      return;
+    }
+    const next = filters.tags.filter((slug) => validTagSlugs.has(slug));
+    if (next.length === filters.tags.length) {
+      return;
+    }
+    setFilters((prev) => ({ ...prev, tags: next }));
+  }, [filters.tags, validTagSlugs]);
 
   const productCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -20657,23 +20762,24 @@ function MainApp() {
                       <div className="space-y-5">
                         <div className="flex items-center justify-between gap-3 mb-4">
                           <div className="flex items-center gap-2">
-                            <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
-                              Peptide News
-                            </h2>
-                            <button
-                              onClick={handleRefreshNews}
-                              disabled={peptideNewsLoading}
-                              className="p-1.5 rounded-md hover:bg-[rgba(95,179,249,0.1)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Refresh news"
-                            >
-                              <RefreshCw
-                                className={`h-4 w-4 text-[rgb(95,179,249)] ${peptideNewsLoading ? "animate-spin" : ""}`}
-                              />
-                            </button>
-                            {peptideNewsUpdatedAt && (
-                              <span className="text-xs text-gray-500">
-                                Updated at:{" "}
-                                {peptideNewsUpdatedAt.toLocaleTimeString(
+	                            <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
+	                              Peptide News
+	                            </h2>
+	                            <Button
+	                              type="button"
+	                              variant="outline"
+	                              size="sm"
+	                              className="header-home-button squircle-sm bg-white text-slate-900"
+	                              onClick={handleRefreshNews}
+	                              disabled={peptideNewsLoading}
+	                              title="Refresh news"
+	                            >
+	                              {peptideNewsLoading ? "Refreshing…" : "Refresh"}
+	                            </Button>
+	                            {peptideNewsUpdatedAt && (
+	                              <span className="text-xs text-gray-500">
+	                                Updated at:{" "}
+	                                {peptideNewsUpdatedAt.toLocaleTimeString(
                                   "en-US",
                                   {
                                     hour: "2-digit",
@@ -22095,16 +22201,16 @@ function MainApp() {
 		                  paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
 		                }}
 		              >
-		                {delegateTimeRemainingLabel && (
-		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
-		                    <div className="glass-card p-2 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-5 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
-		                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
-		                      <span>
-		                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
-		                      </span>
-		                    </div>
-		                  </div>
-		                )}
+			                {delegateTimeRemainingLabel && (
+			                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4 flex justify-center">
+			                    <div className="glass-card p-2 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-6 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
+			                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
+			                      <span>
+			                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
+			                      </span>
+			                    </div>
+			                  </div>
+			                )}
 		                {delegateHasSubmittedProposal ? (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
 		                    <div className="glass-card squircle-xl mt-2 border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">

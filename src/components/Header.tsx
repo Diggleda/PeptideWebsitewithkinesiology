@@ -5110,16 +5110,16 @@ export function Header({
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-2">
 	        <div className="flex items-center justify-between gap-3">
 	          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
-	          <Button
-	            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void loadPatientLinks()}
-            disabled={!showPatientLinksTab || patientLinksLoading}
-            className="gap-2"
-            aria-busy={patientLinksLoading}
-            title="Refresh"
-          >
+		          <Button
+		            type="button"
+	            variant="outline"
+	            size="sm"
+	            onClick={() => void loadPatientLinks()}
+	            disabled={!showPatientLinksTab || patientLinksLoading}
+	            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
+	            aria-busy={patientLinksLoading}
+	            title="Refresh"
+	          >
             <RefreshCw
               className={`h-4 w-4 ${patientLinksLoading ? 'animate-spin' : ''}`}
               aria-hidden="true"
@@ -5237,15 +5237,15 @@ export function Header({
 			                      {patientId && <div>Patient ID: {patientId}</div>}
 			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
 			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
+			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
 			                      <div>Payment: {paymentMethodLabel}</div>
 			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
-			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
 			                      {hasProposal && (
 			                        <div className="font-semibold text-slate-700">
 			                          Proposal: {proposalLabel || 'Pending review'}
 		                        </div>
 		                      )}
-	                    </div>
+		                    </div>
 	                    <details className="mt-3 rounded-xl border border-[rgba(95,179,249,0.18)] bg-white/55 px-3 py-3">
 	                      <summary className="cursor-pointer select-none text-sm font-semibold text-slate-800">
 	                        Payment settings (delegate)

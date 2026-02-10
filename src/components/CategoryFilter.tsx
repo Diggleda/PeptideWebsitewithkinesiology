@@ -9,17 +9,28 @@ import { Filter } from 'lucide-react';
 interface FilterState {
   categories: string[];
   types: string[];
+  tags: string[];
 }
+
+type TagSection = {
+  key: string;
+  label: string;
+  tags: Array<{ slug: string; name: string; count: number }>;
+};
 
 interface CategoryFilterProps {
   categories: string[];
+  types?: string[];
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
   productCounts: Record<string, number>;
+  typeCounts?: Record<string, number>;
+  tagSections?: TagSection[];
 }
 
 export function CategoryFilter({
   categories,
+  tagSections,
   filters,
   onFiltersChange,
   productCounts,
@@ -30,14 +41,22 @@ export function CategoryFilter({
     onFiltersChange({ ...filters, categories: Array.from(categoriesSet) });
   };
 
+  const toggleTag = (slug: string) => {
+    const tagsSet = new Set(filters.tags);
+    tagsSet.has(slug) ? tagsSet.delete(slug) : tagsSet.add(slug);
+    onFiltersChange({ ...filters, tags: Array.from(tagsSet) });
+  };
+
   const clearFilters = () => {
     onFiltersChange({
-      ...filters,
       categories: [],
+      types: [],
+      tags: [],
     });
   };
 
-  const activeFiltersCount = filters.categories.length;
+  const activeFiltersCount =
+    filters.categories.length + filters.types.length + filters.tags.length;
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const bounceTimerRef = useRef<number | null>(null);
@@ -323,6 +342,41 @@ export function CategoryFilter({
             ))}
           </div>
         </div>
+
+        {Array.isArray(tagSections) && tagSections.length > 0 && (
+          <div className="space-y-6">
+            {tagSections.map((section) => (
+              <div key={section.key} className="space-y-3">
+                <Label>{section.label}</Label>
+                <div className="space-y-2 max-h-64 overflow-auto pr-1">
+                  {section.tags.map((tag) => (
+                    <div
+                      key={tag.slug}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <Checkbox
+                          id={`tag-${section.key}-${tag.slug}`}
+                          checked={filters.tags.includes(tag.slug)}
+                          onCheckedChange={() => toggleTag(tag.slug)}
+                        />
+                        <Label
+                          htmlFor={`tag-${section.key}-${tag.slug}`}
+                          className="text-sm cursor-pointer break-words"
+                        >
+                          {tag.name}
+                        </Label>
+                      </div>
+                      <Badge variant="outline" className="text-xs squircle-sm">
+                        {tag.count || 0}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
       </CardContent>
     </Card>

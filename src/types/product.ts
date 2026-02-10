@@ -30,6 +30,12 @@ export interface BulkPricingTier {
   discountPercentage: number;
 }
 
+export interface ProductTag {
+  id?: number;
+  name: string;
+  slug: string;
+}
+
 export interface Product {
   id: string;
   wooId?: number;
@@ -58,4 +64,5 @@ export interface Product {
   defaultVariantId?: string;
   variantSummary?: string;
   bulkPricingTiers?: BulkPricingTier[];
+  tags?: ProductTag[];
 }

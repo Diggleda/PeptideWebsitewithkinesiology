@@ -219,6 +219,35 @@ def _normalize_product_categories(
     return normalized
 
 
+def _normalize_product_tags(product: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw = product.get("tags")
+    if not isinstance(raw, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    seen: Set[int] = set()
+    for tag in raw:
+        if not isinstance(tag, dict):
+            continue
+        tag_id = tag.get("id")
+        try:
+            tag_id_int = int(tag_id) if tag_id is not None else None
+        except Exception:
+            tag_id_int = None
+        if tag_id_int is not None:
+            if tag_id_int in seen:
+                continue
+            seen.add(tag_id_int)
+
+        normalized.append(
+            {
+                "id": tag_id_int,
+                "name": tag.get("name"),
+                "slug": tag.get("slug"),
+            }
+        )
+    return normalized
+
+
 def _product_light_snapshot(product: Dict[str, Any], *, category_by_id: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
     """
     Keep this intentionally small: enough for catalog browsing without variations.
@@ -237,6 +266,7 @@ def _product_light_snapshot(product: Dict[str, Any], *, category_by_id: Dict[int
         "stock_quantity": product.get("stock_quantity"),
         "images": product.get("images") if isinstance(product.get("images"), list) else [],
         "categories": _normalize_product_categories(product, category_by_id=category_by_id),
+        "tags": _normalize_product_tags(product),
         "attributes": product.get("attributes") if isinstance(product.get("attributes"), list) else [],
         "meta_data": product.get("meta_data") if isinstance(product.get("meta_data"), list) else [],
         "updated_at": product.get("date_modified_gmt") or product.get("date_modified") or None,
