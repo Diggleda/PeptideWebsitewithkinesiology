@@ -44,8 +44,8 @@ const buildPatientLinkDefaultInstructions = (
   if (method !== 'zelle') return '';
   const contact = typeof zelleContact === 'string' ? zelleContact.trim() : '';
   return contact
-    ? `Payment will be handled via Zelle. Please send payment to ${contact}.`
-    : 'Payment will be handled via Zelle.';
+    ? `Please send payment to ${contact}.`
+    : 'Reach out to your doctor for Zelle payment details.';
 };
 
 const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMethod => {

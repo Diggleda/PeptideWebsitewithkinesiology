@@ -535,6 +535,61 @@ def get_certificate_of_analysis(product_id: int):
     return handle_action(action)
 
 
+@blueprint.get("/products/<int:product_id>/certificate-of-analysis/delegate")
+def get_certificate_of_analysis_delegate(product_id: int):
+    from ..utils.http import handle_action
+
+    def action():
+        from ..services import delegation_service
+
+        token = str(
+            request.args.get("delegate")
+            or request.args.get("delegateToken")
+            or request.args.get("token")
+            or ""
+        ).strip()
+        if not token:
+            err = ValueError("token is required")
+            setattr(err, "status", 400)
+            raise err
+
+        # Validate delegate session (expiry, revoked, and settings gating).
+        delegation_service.resolve_delegate_token(token)
+
+        row = product_document_repository.get_document(
+            int(product_id),
+            kind=product_document_repository.DEFAULT_KIND_COA,
+        )
+        if not row:
+            err = RuntimeError("Certificate of analysis not found")
+            setattr(err, "status", 404)
+            raise err
+
+        sha256 = str(row.get("sha256") or "").strip()
+        etag = f"\"{sha256}\"" if sha256 else None
+        if etag and request.headers.get("If-None-Match") == etag:
+            return Response(status=304)
+
+        data = row.get("data") or b""
+        if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
+            err = RuntimeError("Certificate of analysis not found")
+            setattr(err, "status", 404)
+            raise err
+
+        filename = row.get("filename") or "certificate-of-analysis.png"
+        mime_type = row.get("mime_type") or "image/png"
+
+        response = Response(bytes(data), status=200)
+        response.headers["Content-Type"] = mime_type
+        response.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        response.headers["Cache-Control"] = "private, max-age=300"
+        if etag:
+            response.headers["ETag"] = etag
+        return response
+
+    return handle_action(action)
+
+
 @blueprint.get("/products/<int:product_id>/certificate-of-analysis/info")
 @require_auth
 def get_certificate_of_analysis_info(product_id: int):

@@ -1740,12 +1740,21 @@ export const wooAPI = {
     if (!productId) {
       throw new Error('productId is required');
     }
+    const token = getAuthToken();
+    if (!token && typeof window !== 'undefined') {
+      const delegateToken = new URLSearchParams(window.location.search).get('delegate');
+      const normalized = delegateToken && delegateToken.trim() ? delegateToken.trim() : '';
+      if (normalized) {
+        const params = new URLSearchParams({ token: normalized });
+        return fetchWithAuthBlob(
+          `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis/delegate?${params.toString()}`,
+          { method: 'GET', cache: 'no-store' },
+        );
+      }
+    }
     return fetchWithAuthBlob(
       `${API_BASE_URL}/woo/products/${encodeURIComponent(String(productId))}/certificate-of-analysis`,
-      {
-        method: 'GET',
-        cache: 'no-store',
-      },
+      { method: 'GET', cache: 'no-store' },
     );
   },
 
