@@ -57,7 +57,10 @@ def preview_discount_for_user(
         except Exception:
             qty = 0
         if min_qty > 0 and qty < min_qty:
-            return {"valid": False, "message": f"Discount code requires at least {min_qty} items in your cart"}
+            return {
+                "valid": False,
+                "message": f"Discount code requires at least {min_qty} total items (quantity) in your cart (you have {qty})",
+            }
 
     discount_value = float(record.get("discountValue") or 0.0)
     discount_value = max(0.0, discount_value)

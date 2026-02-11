@@ -515,8 +515,16 @@ export function CheckoutModal({
     }
     setDiscountCodeBusy(true);
     try {
-      const cartQuantity = cartItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
-      const resp = await discountCodesAPI.preview(code, subtotal, cartQuantity);
+      const cartQuantity = cartItems.reduce((sum, item) => {
+        const qty = Number(item.quantity || 0);
+        return sum + (Number.isFinite(qty) ? Math.max(0, qty) : 0);
+      }, 0);
+      const resp = await discountCodesAPI.preview(
+        code,
+        subtotal,
+        cartQuantity,
+        cartItems.map((item) => ({ quantity: item.quantity })),
+      );
       if (resp?.valid) {
         const amount = Math.max(0, Number(resp.discountAmount || 0));
         const value = Math.max(0, Number(resp.discountValue || 0));

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/peppro-favicon-v3.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/peppro-favicon-v3-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/peppro-favicon-v3-16x16.png" />
+    <link rel="shortcut icon" href="/peppro-favicon-v3.ico" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Physician Portal</title>
+
+    <!-- Share / link previews -->
+    <meta property="og:site_name" content="PepPro" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PepPro — Physician Portal" />
+    <meta
+      property="og:description"
+      content="PepPro's Physician Portal for research, current events, and products."
+    />
+    <meta property="og:image" content="/PepPro_icon.png" />
+    <meta property="og:image:alt" content="PepPro" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:title" content="PepPro — Physician Portal" />
+    <meta
+      property="twitter:description"
+      content="PepPro's Physician Portal for research, current events, and products."
+    />
+    <meta property="twitter:image" content="/PepPro_icon.png" />
+
+    <!-- iOS / PWA -->
+    <meta name="application-name" content="Physician Portal" />
+    <meta name="apple-mobile-web-app-title" content="Physician Portal" />
+    <meta name="theme-color" content="#5FB3F9" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/peppro-apple-touch-icon-v3.png" />
+
+    <script>
+      (() => {
+        try {
+          const ensureHeadLink = (selector, attrs) => {
+            const head = document.head || document.querySelector("head");
+            if (!head) return;
+            let link = document.querySelector(selector);
+            if (!link) {
+              link = document.createElement("link");
+              head.appendChild(link);
+            }
+            Object.entries(attrs).forEach(([key, value]) => {
+              if (typeof value === "string") link.setAttribute(key, value);
+            });
+          };
+
+          const faviconIco = "/peppro-favicon-v3.ico";
+          ensureHeadLink('link[rel="icon"][sizes="any"]', { rel: "icon", sizes: "any", href: faviconIco });
+          ensureHeadLink('link[rel="shortcut icon"]', { rel: "shortcut icon", href: faviconIco });
+
+          const params = new URLSearchParams(window.location.search);
+          const hasDelegateToken = Boolean((params.get("delegate") || "").trim());
+          const title = hasDelegateToken ? "Physician Delegate" : "Physician Portal";
+          document.title = title;
+
+          const appName = document.querySelector('meta[name="application-name"]');
+          if (appName) appName.setAttribute("content", title);
+          const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (appleTitle) appleTitle.setAttribute("content", title);
+
+          const ogTitle = document.querySelector('meta[property="og:title"]');
+          const twTitle = document.querySelector('meta[property="twitter:title"]');
+          if (ogTitle) ogTitle.setAttribute("content", hasDelegateToken ? "PepPro — Physician Delegate" : "PepPro — Physician Portal");
+          if (twTitle) twTitle.setAttribute("content", hasDelegateToken ? "PepPro — Physician Delegate" : "PepPro — Physician Portal");
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BhDTX_Vn-20260211141432.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DzDbNr3h.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -19,11 +19,14 @@ def preview_code():
         code = payload.get("code") or payload.get("discountCode") or payload.get("discount_code") or ""
         items_subtotal = payload.get("itemsSubtotal") or payload.get("subtotal") or payload.get("items_subtotal") or 0
         cart_quantity = payload.get("cartQuantity") or payload.get("cart_quantity") or payload.get("cartQty") or 0
-        if not cart_quantity and isinstance(payload.get("items"), list):
+        items = payload.get("items")
+        if isinstance(items, list):
             try:
-                cart_quantity = sum(float((item or {}).get("quantity") or 0) for item in (payload.get("items") or []))
+                items_qty = sum(float((item or {}).get("quantity") or 0) for item in items)
             except Exception:
-                cart_quantity = 0
+                items_qty = 0
+            if items_qty > 0:
+                cart_quantity = items_qty
         try:
             subtotal = float(items_subtotal or 0)
         except Exception:
