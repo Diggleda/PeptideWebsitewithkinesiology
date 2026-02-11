@@ -1,11 +1,77 @@
 <?php
 /**
  * Plugin Name: PepPro Email Overrides
- * Description: Customize BACS/Zelle instructions in WooCommerce emails + thank-you page.
- * Version: 1.0.0
+ * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce PepPro mail identity (optional SMTP).
+ * Version: 1.1.0
  */
 
 if (!defined('ABSPATH')) exit;
+
+function peppro_email_overrides_get_from_email() {
+  $value = defined('PEPPR_MAIL_FROM_EMAIL') ? (string) PEPPR_MAIL_FROM_EMAIL : '';
+  $value = trim($value);
+  return $value !== '' ? $value : 'support@peppro.net';
+}
+
+function peppro_email_overrides_get_from_name() {
+  $value = defined('PEPPR_MAIL_FROM_NAME') ? (string) PEPPR_MAIL_FROM_NAME : '';
+  $value = trim($value);
+  return $value !== '' ? $value : 'PepPro';
+}
+
+function peppro_email_overrides_get_smtp_setting($name, $fallback = '') {
+  $key = 'PEPPR_SMTP_' . strtoupper($name);
+  if (!defined($key)) return $fallback;
+  $value = trim((string) constant($key));
+  return $value !== '' ? $value : $fallback;
+}
+
+function peppro_email_overrides_configure_smtp($phpmailer) {
+  $host = peppro_email_overrides_get_smtp_setting('HOST', '');
+  $pass = peppro_email_overrides_get_smtp_setting('PASS', '');
+  if ($host === '' || $pass === '') return;
+
+  if (!is_object($phpmailer) || !method_exists($phpmailer, 'isSMTP')) return;
+
+  $port = (int) peppro_email_overrides_get_smtp_setting('PORT', '587');
+  $user = peppro_email_overrides_get_smtp_setting('USER', '');
+  $secure = strtolower(peppro_email_overrides_get_smtp_setting('SECURE', 'tls'));
+
+  $phpmailer->isSMTP();
+  $phpmailer->Host = $host;
+  $phpmailer->Port = $port > 0 ? $port : 587;
+  $phpmailer->SMTPAuth = true;
+  $phpmailer->Username = $user;
+  $phpmailer->Password = $pass;
+  $phpmailer->SMTPAutoTLS = $secure !== 'none';
+
+  if ($secure === 'ssl') {
+    $phpmailer->SMTPSecure = 'ssl';
+  } elseif ($secure === 'tls' || $secure === 'starttls') {
+    $phpmailer->SMTPSecure = 'tls';
+  } else {
+    $phpmailer->SMTPSecure = '';
+  }
+
+  $from_email = peppro_email_overrides_get_from_email();
+  $from_name = peppro_email_overrides_get_from_name();
+  if (is_string($from_email) && $from_email !== '') {
+    $phpmailer->setFrom($from_email, $from_name, false);
+    $phpmailer->Sender = $from_email;
+  }
+}
+
+add_filter('wp_mail_from', function ($from) {
+  $forced = peppro_email_overrides_get_from_email();
+  return $forced ? $forced : $from;
+}, 1000);
+
+add_filter('wp_mail_from_name', function ($name) {
+  $forced = peppro_email_overrides_get_from_name();
+  return $forced ? $forced : $name;
+}, 1000);
+
+add_action('phpmailer_init', 'peppro_email_overrides_configure_smtp', 20);
 
 add_action('plugins_loaded', function () {
   if (!class_exists('WooCommerce')) return;

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: PepPro Mailer Bridge
  * Description: Allows PepPro to send password reset emails via WooCommerce's email system.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: PepPro
  */
 
@@ -99,9 +99,9 @@ function peppr_mailer_bridge_send_password_reset_email(WP_REST_Request $request)
         return new WP_Error('peppr_bad_request', 'resetUrl is not allowed', array('status' => 400));
     }
 
-    $from_email = defined('PEPPR_MAIL_FROM_EMAIL') ? (string) PEPPR_MAIL_FROM_EMAIL : 'support@peppro.com';
+    $from_email = defined('PEPPR_MAIL_FROM_EMAIL') ? (string) PEPPR_MAIL_FROM_EMAIL : 'support@peppro.net';
     $from_name = defined('PEPPR_MAIL_FROM_NAME') ? (string) PEPPR_MAIL_FROM_NAME : 'PepPro';
-    $reply_to = defined('PEPPR_MAIL_REPLY_TO') ? (string) PEPPR_MAIL_REPLY_TO : 'no-reply@peppro.com';
+    $reply_to = defined('PEPPR_MAIL_REPLY_TO') ? (string) PEPPR_MAIL_REPLY_TO : 'support@peppro.net';
 
     $subject = 'Reset your PepPro password';
     $headline = $display_name !== '' ? 'Reset your PepPro password, ' . esc_html($display_name) : 'Reset your PepPro password';
@@ -126,6 +126,65 @@ function peppr_mailer_bridge_send_password_reset_email(WP_REST_Request $request)
     return rest_ensure_response(array('ok' => true, 'status' => 'ok'));
 }
 
+function peppr_mailer_bridge_get_from_email() {
+    $value = defined('PEPPR_MAIL_FROM_EMAIL') ? (string) PEPPR_MAIL_FROM_EMAIL : '';
+    $value = trim($value);
+    return $value !== '' ? $value : 'support@peppro.net';
+}
+
+function peppr_mailer_bridge_get_from_name() {
+    $value = defined('PEPPR_MAIL_FROM_NAME') ? (string) PEPPR_MAIL_FROM_NAME : '';
+    $value = trim($value);
+    return $value !== '' ? $value : 'PepPro';
+}
+
+function peppr_mailer_bridge_get_smtp_setting($name, $fallback = '') {
+    $key = 'PEPPR_SMTP_' . strtoupper($name);
+    if (!defined($key)) return $fallback;
+    $value = trim((string) constant($key));
+    return $value !== '' ? $value : $fallback;
+}
+
+function peppr_mailer_bridge_configure_smtp($phpmailer) {
+    $host = peppr_mailer_bridge_get_smtp_setting('HOST', '');
+    $pass = peppr_mailer_bridge_get_smtp_setting('PASS', '');
+    if ($host === '' || $pass === '') {
+        return;
+    }
+
+    if (!is_object($phpmailer) || !method_exists($phpmailer, 'isSMTP')) {
+        return;
+    }
+
+    $port = (int) peppr_mailer_bridge_get_smtp_setting('PORT', '587');
+    $user = peppr_mailer_bridge_get_smtp_setting('USER', '');
+    $secure = strtolower(peppr_mailer_bridge_get_smtp_setting('SECURE', 'tls'));
+
+    $phpmailer->isSMTP();
+    $phpmailer->Host = $host;
+    $phpmailer->Port = $port > 0 ? $port : 587;
+    $phpmailer->SMTPAuth = true;
+    $phpmailer->Username = $user;
+    $phpmailer->Password = $pass;
+    $phpmailer->SMTPAutoTLS = $secure !== 'none';
+
+    if ($secure === 'ssl') {
+        $phpmailer->SMTPSecure = 'ssl';
+    } elseif ($secure === 'tls' || $secure === 'starttls') {
+        $phpmailer->SMTPSecure = 'tls';
+    } else {
+        $phpmailer->SMTPSecure = '';
+    }
+
+    // Improve alignment and consistency across WooCommerce emails.
+    $from_email = peppr_mailer_bridge_get_from_email();
+    $from_name = peppr_mailer_bridge_get_from_name();
+    if (is_string($from_email) && $from_email !== '') {
+        $phpmailer->setFrom($from_email, $from_name, false);
+        $phpmailer->Sender = $from_email;
+    }
+}
+
 // Reduce WooCommerce email header logo size for PepPro-branded emails.
 add_filter('woocommerce_email_styles', function ($css) {
     $css .= "\n"
@@ -136,6 +195,20 @@ add_filter('woocommerce_email_styles', function ($css) {
         . "}\n";
     return $css;
 }, 100);
+
+// Force a consistent From identity across WooCommerce/WordPress email sending.
+add_filter('wp_mail_from', function ($from) {
+    $forced = peppr_mailer_bridge_get_from_email();
+    return $forced ? $forced : $from;
+}, 1000);
+
+add_filter('wp_mail_from_name', function ($name) {
+    $forced = peppr_mailer_bridge_get_from_name();
+    return $forced ? $forced : $name;
+}, 1000);
+
+// Ensure wp_mail uses SMTP when configured.
+add_action('phpmailer_init', 'peppr_mailer_bridge_configure_smtp', 20);
 
 add_action('rest_api_init', function () {
     register_rest_route('peppr/v1', '/email/password-reset', array(
