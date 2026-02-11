@@ -31,7 +31,7 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
     if not row:
         return None
 
-    def parse_used_by(value: Any) -> Dict[str, float]:
+    def parse_used_by(value: Any) -> Dict[str, Dict[str, Any]]:
         if not value:
             return {}
         try:
@@ -40,12 +40,25 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
             return {}
         if not isinstance(parsed, dict):
             return {}
-        out: Dict[str, float] = {}
+        out: Dict[str, Dict[str, Any]] = {}
         for key, val in parsed.items():
-            try:
-                out[str(key)] = float(val)
-            except Exception:
+            user_key = str(key)
+            # Backward-compatibility: older format stored just a number.
+            if isinstance(val, (int, float)) and user_key:
+                out[user_key] = {"subtotal": float(val), "quantity": None}
                 continue
+            if isinstance(val, dict) and user_key:
+                subtotal = val.get("subtotal")
+                quantity = val.get("quantity")
+                try:
+                    subtotal_value = float(subtotal) if subtotal is not None else None
+                except Exception:
+                    subtotal_value = None
+                try:
+                    quantity_value = int(float(quantity)) if quantity is not None else None
+                except Exception:
+                    quantity_value = None
+                out[user_key] = {"subtotal": subtotal_value, "quantity": quantity_value}
         return out
 
     used_by = parse_used_by(row.get("used_by_json"))
@@ -114,10 +127,10 @@ def ensure_code_exists(
     )
 
 
-def reserve_use_once(*, code: str, user_id: str, order_value: float) -> Dict[str, Any]:
+def reserve_use_once(*, code: str, user_id: str, items_subtotal: float, quantity: int) -> Dict[str, Any]:
     """
     Atomically mark this code as used by `user_id` (once per user).
-    Stores a { userId: orderValue } mapping in `used_by_json`.
+    Stores a { userId: { subtotal, quantity } } mapping in `used_by_json`.
     """
     if not _using_mysql():
         err = RuntimeError("Discount codes are unavailable (MySQL disabled).")
@@ -133,10 +146,15 @@ def reserve_use_once(*, code: str, user_id: str, order_value: float) -> Dict[str
         setattr(err, "status", 400)
         raise err
 
-    safe_value = float(order_value or 0.0)
-    if safe_value < 0:
-        safe_value = 0.0
-    safe_value = round(safe_value, 2)
+    safe_subtotal = float(items_subtotal or 0.0)
+    if safe_subtotal < 0:
+        safe_subtotal = 0.0
+    safe_subtotal = round(safe_subtotal, 2)
+    try:
+        safe_qty = int(quantity or 0)
+    except Exception:
+        safe_qty = 0
+    safe_qty = max(0, safe_qty)
     now = _now_sql()
 
     with mysql_client.cursor() as cur:
@@ -163,7 +181,7 @@ def reserve_use_once(*, code: str, user_id: str, order_value: float) -> Dict[str
             setattr(err, "status", 400)
             raise err
 
-        used_by[str(user_id)] = safe_value
+        used_by[str(user_id)] = {"subtotal": safe_subtotal, "quantity": safe_qty}
         cur.execute(
             """
             UPDATE discount_codes

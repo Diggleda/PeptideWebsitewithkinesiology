@@ -836,10 +836,12 @@ def create_order(
         )
 
         if order.get("discountCode") and float(order.get("discountCodeAmount") or 0) > 0:
+            cart_quantity = _sum_cart_quantity(order.get("items"))
             discount_code_repository.reserve_use_once(
                 code=str(order.get("discountCode") or ""),
                 user_id=user_id,
-                order_value=float(order.get("grandTotal") or 0.0),
+                items_subtotal=float(order.get("itemsSubtotal") or 0.0),
+                quantity=cart_quantity,
             )
 
     order_repository.insert(order)
