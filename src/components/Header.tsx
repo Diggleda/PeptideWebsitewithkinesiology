@@ -3707,6 +3707,21 @@ export function Header({
       if (!dataUrl || !dataUrl.startsWith('data:image/')) {
         throw new Error('INVALID_IMAGE');
       }
+      try {
+        const { moderationAPI } = await import('../services/api');
+        const resp = await moderationAPI.checkImage({ dataUrl, purpose: 'delegate_logo' });
+        if (resp?.flagged) {
+          const proceed = window.confirm(
+            'This image may contain inappropriate content. Please choose a different image.\n\nContinue anyway?',
+          );
+          if (!proceed) {
+            toast.error('Upload canceled.');
+            return;
+          }
+        }
+      } catch {
+        // Soft-fail moderation checks; never block uploads if moderation is unavailable.
+      }
 	      // Match the header logo slot (2x for crispness on retina).
 	      const resized = await downscaleImageDataUrl(
 	        dataUrl,
@@ -3831,6 +3846,50 @@ export function Header({
                   console.info('[Profile] Compressing image before upload', { sizeBytes: file.size, name: file.name });
                   const dataUrl = await compressImageToDataUrl(file, { maxSize: 1600, quality: 0.82 });
                   setAvatarUploadPercent(55);
+
+                  try {
+                    // Lightweight client-side heuristic: if the browser supports FaceDetector and
+                    // no faces are detected, warn the user before uploading.
+                    const FaceDetectorCtor = (window as any)?.FaceDetector;
+                    if (FaceDetectorCtor) {
+                      const img = new Image();
+                      img.decoding = 'async';
+                      await new Promise<void>((resolve, reject) => {
+                        img.onload = () => resolve();
+                        img.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+                        img.src = dataUrl;
+                      });
+                      const detector = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 3 });
+                      const faces = await detector.detect(img);
+                      if (!faces || faces.length === 0) {
+                        const proceed = window.confirm(
+                          'No face was detected in this image. If this is intentional, you can continue.\n\nContinue uploading?',
+                        );
+                        if (!proceed) {
+                          toast.error('Upload canceled.');
+                          return;
+                        }
+                      }
+                    }
+                  } catch {
+                    // ignore
+                  }
+
+                  try {
+                    const { moderationAPI } = await import('../services/api');
+                    const resp = await moderationAPI.checkImage({ dataUrl, purpose: 'profile_photo' });
+                    if (resp?.flagged) {
+                      const proceed = window.confirm(
+                        'This image may contain inappropriate content. Please choose a different image.\n\nContinue anyway?',
+                      );
+                      if (!proceed) {
+                        toast.error('Upload canceled.');
+                        return;
+                      }
+                    }
+                  } catch {
+                    // Soft-fail moderation checks; never block uploads if moderation is unavailable.
+                  }
 
                   // Simulated progress while request is in-flight
                   const startProgress = 60;
@@ -4165,7 +4224,10 @@ export function Header({
             const discountValue = hasExplicitDiscounts ? appliedReferralCredit : legacyDiscountValue;
             const storedGrandTotal = parseWooMoney(
               (order as any).grandTotal,
-              parseWooMoney(wooResponse?.total ?? wooPayload?.total, 0),
+              parseWooMoney(
+                (order as any).total,
+                parseWooMoney(wooResponse?.total ?? wooPayload?.total, 0),
+              ),
             );
             const computedGrandTotal = effectiveItemsSubtotal + shippingValue + taxValue - discountValue;
             const baseTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
@@ -4381,7 +4443,7 @@ export function Header({
 	        })}
 	        {doctorView && (
 		          <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] bg-white/80 px-7 py-4 text-sm text-slate-700">
-		            <div className="space-y-1">
+		            <div className="px-4 space-y-1">
 		              {salesRepEmail && (
 		                <p>
 		                  Sales rep:{' '}
@@ -4526,12 +4588,25 @@ export function Header({
       0,
     );
     const legacyDiscountTotal = Math.abs(legacyDiscountTotalRaw);
-    const discountTotal = hasExplicitDiscounts ? discountCodeAmount + appliedReferralCredit : legacyDiscountTotal;
+    const inferredDiscountCodeAmount = Math.max(
+      0,
+      Math.round(((originalItemsSubtotal - itemsSubtotalEffective) + Number.EPSILON) * 100) / 100,
+    );
+    const resolvedDiscountCodeAmount = discountCodeAmount > 0
+      ? discountCodeAmount
+      : inferredDiscountCodeAmount > 0.01
+        ? inferredDiscountCodeAmount
+        : 0;
+    const resolvedHasExplicitDiscounts = resolvedDiscountCodeAmount > 0 || appliedReferralCredit > 0;
+    const discountTotal = resolvedHasExplicitDiscounts ? resolvedDiscountCodeAmount + appliedReferralCredit : legacyDiscountTotal;
     const storedGrandTotal = parseWooMoney(
       (selectedOrder as any).grandTotal,
-      parseWooMoney(wooResponse.total ?? wooPayload.total, 0),
+      parseWooMoney(
+        (selectedOrder as any).total,
+        parseWooMoney(wooResponse.total ?? wooPayload.total, 0),
+      ),
     );
-    const subtotalForSummary = hasExplicitDiscounts ? originalItemsSubtotal : itemsSubtotalEffective;
+    const subtotalForSummary = resolvedHasExplicitDiscounts ? originalItemsSubtotal : itemsSubtotalEffective;
     const computedGrandTotal = subtotalForSummary + shippingTotal + taxTotal - discountTotal;
     const baseGrandTotal = storedGrandTotal > 0 ? storedGrandTotal : computedGrandTotal;
     const grandTotal =
@@ -4733,7 +4808,7 @@ export function Header({
 	                    return (
 	                      <div
 	                        key={line.id || `${line.sku}-${idx}`}
-	                        className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
+	                        className="flex items-start gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-3"
 	                      >
                         <div
                           className="h-full min-h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0"
@@ -4783,13 +4858,13 @@ export function Header({
 	                  <span>Subtotal</span>
 	                  <span>{formatCurrency(subtotalForSummary, selectedOrder.currency || 'USD')}</span>
 	                </div>
-                  {hasExplicitDiscounts && discountCodeAmount > 0 && (
+                  {resolvedHasExplicitDiscounts && resolvedDiscountCodeAmount > 0 && (
                     <div className="flex justify-between text-[rgb(26,85,173)]">
                       <span>{discountCode ? `Discount (${discountCode})` : 'Discount'}</span>
-                      <span>-{formatCurrency(discountCodeAmount, selectedOrder.currency || 'USD')}</span>
+                      <span>-{formatCurrency(resolvedDiscountCodeAmount, selectedOrder.currency || 'USD')}</span>
                     </div>
                   )}
-                  {hasExplicitDiscounts && appliedReferralCredit > 0 && (
+                  {resolvedHasExplicitDiscounts && appliedReferralCredit > 0 && (
                     <div className="flex justify-between text-[rgb(26,85,173)]">
                       <span>Referral Credit</span>
                       <span>-{formatCurrency(appliedReferralCredit, selectedOrder.currency || 'USD')}</span>
@@ -4805,7 +4880,7 @@ export function Header({
 	                    <span>{formatCurrency(taxTotal, selectedOrder.currency || 'USD')}</span>
 	                  </div>
 	                )}
-	                {!hasExplicitDiscounts && discountTotal > 0 && (
+	                {!resolvedHasExplicitDiscounts && discountTotal > 0 && (
 	                  <div className="flex justify-between text-[rgb(26,85,173)]">
 	                    <span>Credits & Discounts</span>
 	                    <span>-{formatCurrency(discountTotal, selectedOrder.currency || 'USD')}</span>

@@ -336,7 +336,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
               <div className="space-y-1 text-sm text-slate-600 w-full">
                 <p>Advancing healthcare through research and availability.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
-                <p className="text-xs text-slate-500"> This website design is guided by kinesiology for the highest good.</p>
+                <p className="text-xs text-slate-500"> This website design is guided by consciousness calibration.</p>
               </div>
               <nav className="mt-2 mb-2 flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 text-xs sm:text-sm font-medium text-[rgb(95,179,249)]">
                 <button

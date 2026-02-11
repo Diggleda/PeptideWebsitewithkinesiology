@@ -1233,6 +1233,18 @@ export const settingsAPI = {
   },
 };
 
+export const moderationAPI = {
+  checkImage: async (payload: { dataUrl: string; purpose?: 'profile_photo' | 'delegate_logo' | string | null }) => {
+    return fetchWithAuth(`${API_BASE_URL}/moderation/image`, {
+      method: 'POST',
+      body: JSON.stringify({
+        dataUrl: payload.dataUrl,
+        purpose: payload.purpose ?? null,
+      }),
+    });
+  },
+};
+
 type CheckoutIdempotencyRecord = {
   key: string;
   fingerprint: string;

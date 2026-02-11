@@ -176,7 +176,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
   }
 };
 
-const mapRowToOrder = (row) => {
+const mapRowToOrder = (row, options = {}) => {
   if (!row) return null;
   const parseJson = (value, fallback = null) => {
     if (!value) return fallback;
@@ -188,9 +188,17 @@ const mapRowToOrder = (row) => {
   };
 
   const payload = parseJson(row.payload, {});
-  const payloadOrder = (payload && typeof payload.order === 'object')
-    ? payload.order
-    : {};
+  // Node backend stores payload as `{ order: {...}, integrations: ... }`, while the Python backend
+  // stores the order dict directly as the payload. Tolerate both.
+  const payloadOrder = (() => {
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      if (payload.order && typeof payload.order === 'object' && !Array.isArray(payload.order)) {
+        return payload.order;
+      }
+      return payload;
+    }
+    return {};
+  })();
 
   const coalesce = (...values) => {
     for (const value of values) {
@@ -200,6 +208,24 @@ const mapRowToOrder = (row) => {
     }
     return undefined;
   };
+
+  const toIso = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  };
+
+  const computedItemsSubtotal = (() => {
+    const rowSubtotal = toNumber(row.items_subtotal, NaN);
+    if (Number.isFinite(rowSubtotal) && rowSubtotal > 0) {
+      return roundCurrency(rowSubtotal);
+    }
+    const payloadSubtotal = computeItemsSubtotal(payloadOrder);
+    return payloadSubtotal > 0 ? payloadSubtotal : null;
+  })();
 
   const normalized = {
     ...payloadOrder,
@@ -222,14 +248,7 @@ const mapRowToOrder = (row) => {
       const payloadGrand = computeGrandTotal(payloadOrder);
       return payloadGrand > 0 ? payloadGrand : roundCurrency(payloadOrder.total ?? 0);
     })(),
-    itemsSubtotal: (() => {
-      const rowSubtotal = toNumber(row.items_subtotal, NaN);
-      if (Number.isFinite(rowSubtotal) && rowSubtotal > 0) {
-        return roundCurrency(rowSubtotal);
-      }
-      const payloadSubtotal = computeItemsSubtotal(payloadOrder);
-      return payloadSubtotal > 0 ? payloadSubtotal : null;
-    })(),
+    itemsSubtotal: computedItemsSubtotal,
     shippingTotal: (() => {
       const rowShipping = toNumber(row.shipping_total, NaN);
       if (Number.isFinite(rowShipping) && rowShipping > 0) {
@@ -243,11 +262,10 @@ const mapRowToOrder = (row) => {
       ? payloadOrder.physicianCertificationAccepted
       : Boolean(row.physician_certified),
     status: payloadOrder.status || row.status || 'pending',
-    createdAt: payloadOrder.createdAt
-      || (row.created_at ? new Date(row.created_at).toISOString() : null),
-    updatedAt: payloadOrder.updatedAt
-      || (row.updated_at ? new Date(row.updated_at).toISOString() : null),
+    createdAt: toIso(payloadOrder.createdAt || payloadOrder.created_at || row.created_at || row.updated_at || payloadOrder.updatedAt || payloadOrder.updated_at),
+    updatedAt: toIso(payloadOrder.updatedAt || payloadOrder.updated_at || row.updated_at || row.created_at || payloadOrder.createdAt || payloadOrder.created_at),
     integrationDetails: payloadOrder.integrationDetails
+      || payloadOrder.integrations
       || payload.integrations
       || null,
     integrations: payloadOrder.integrations
@@ -270,30 +288,82 @@ const mapRowToOrder = (row) => {
       || null,
     referrerBonus: payloadOrder.referrerBonus || null,
     referralCode: payloadOrder.referralCode || null,
-    taxTotal: payloadOrder.taxTotal ?? null,
-    itemsSubtotal: payloadOrder.itemsSubtotal ?? null,
+    taxTotal: payloadOrder.taxTotal ?? payloadOrder.tax_total ?? payloadOrder.totalTax ?? payloadOrder.total_tax ?? null,
     payload,
-    source: 'mysql',
+    source: options?.source || 'mysql',
   };
 
   return normalized;
 };
 
+const safeFetchAll = async (query, params = {}) => {
+  try {
+    return await mysqlClient.fetchAll(query, params);
+  } catch (error) {
+    const code = error && typeof error === 'object' ? error.code : null;
+    if (code === 'ER_NO_SUCH_TABLE') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+const safeFetchOne = async (query, params) => {
+  try {
+    return await mysqlClient.fetchOne(query, params);
+  } catch (error) {
+    const code = error && typeof error === 'object' ? error.code : null;
+    if (code === 'ER_NO_SUCH_TABLE') {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const dedupeOrders = (orders) => {
+  const byId = new Map();
+  (orders || []).forEach((order) => {
+    const id = sanitizeString(order?.id);
+    if (!id) return;
+    if (!byId.has(id)) {
+      byId.set(id, order);
+      return;
+    }
+    const existing = byId.get(id);
+    const existingUpdated = Date.parse(String(existing?.updatedAt || '')) || 0;
+    const nextUpdated = Date.parse(String(order?.updatedAt || '')) || 0;
+    if (nextUpdated >= existingUpdated) {
+      byId.set(id, order);
+    }
+  });
+  return Array.from(byId.values());
+};
+
 const fetchAll = async () => {
   if (!mysqlClient.isEnabled()) return [];
-  const rows = await mysqlClient.fetchAll('SELECT * FROM peppro_orders');
-  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAll('SELECT * FROM peppro_orders'),
+    safeFetchAll('SELECT * FROM orders'),
+  ]);
+  const orders = []
+    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
+    .filter(Boolean);
+  return dedupeOrders(orders);
 };
 
 const fetchById = async (orderId) => {
   if (!mysqlClient.isEnabled() || !orderId) {
     return null;
   }
-  const row = await mysqlClient.fetchOne(
-    'SELECT * FROM peppro_orders WHERE id = :id LIMIT 1',
-    { id: orderId },
-  );
-  return mapRowToOrder(row);
+  const [pepproRow, legacyRow] = await Promise.all([
+    safeFetchOne('SELECT * FROM peppro_orders WHERE id = :id LIMIT 1', { id: orderId }),
+    safeFetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1', { id: orderId }),
+  ]);
+  const candidates = [];
+  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
+  if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
+  return dedupeOrders(candidates)[0] || null;
 };
 
 const fetchByShipStationOrderId = async (shipStationOrderId) => {
@@ -312,11 +382,15 @@ const fetchByUserIds = async (userIds = []) => {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
   const placeholders = userIds.map((_, idx) => `:id${idx}`).join(', ');
   const params = userIds.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
-  const rows = await mysqlClient.fetchAll(
-    `SELECT * FROM peppro_orders WHERE user_id IN (${placeholders})`,
-    params,
-  );
-  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAll(`SELECT * FROM peppro_orders WHERE user_id IN (${placeholders})`, params),
+    safeFetchAll(`SELECT * FROM orders WHERE user_id IN (${placeholders})`, params),
+  ]);
+  const orders = []
+    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
+    .filter(Boolean);
+  return dedupeOrders(orders);
 };
 
 const fetchByBillingEmails = async (emails = []) => {
@@ -333,7 +407,7 @@ const fetchByBillingEmails = async (emails = []) => {
   if (normalized.length === 0) return [];
   const placeholders = normalized.map((_, idx) => `:email${idx}`).join(', ');
   const params = normalized.reduce((acc, email, idx) => ({ ...acc, [`email${idx}`]: email }), {});
-  const rows = await mysqlClient.fetchAll(
+  const pepproRows = await safeFetchAll(
     `
       SELECT *
       FROM peppro_orders
@@ -378,16 +452,44 @@ const fetchByBillingEmails = async (emails = []) => {
     `,
     params,
   );
-  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+
+  const legacyRows = await safeFetchAll(
+    `
+      SELECT *
+      FROM orders
+      WHERE JSON_VALID(payload)
+        AND (
+          LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing.email'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_email'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingEmail'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingAddress.email'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_address.email'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billingAddress.emailAddress'))) IN (${placeholders})
+          OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.billing_address.email_address'))) IN (${placeholders})
+        )
+    `,
+    params,
+  );
+
+  const orders = []
+    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
+    .filter(Boolean);
+
+  return dedupeOrders(orders);
 };
 
 const fetchByUserId = async (userId) => {
   if (!mysqlClient.isEnabled() || !userId) return [];
-  const rows = await mysqlClient.fetchAll(
-    'SELECT * FROM peppro_orders WHERE user_id = :userId ORDER BY created_at DESC',
-    { userId },
-  );
-  return Array.isArray(rows) ? rows.map(mapRowToOrder).filter(Boolean) : [];
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAll('SELECT * FROM peppro_orders WHERE user_id = :userId ORDER BY created_at DESC', { userId }),
+    safeFetchAll('SELECT * FROM orders WHERE user_id = :userId ORDER BY created_at DESC', { userId }),
+  ]);
+  const orders = []
+    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
+    .filter(Boolean);
+  return dedupeOrders(orders).sort((a, b) => (Date.parse(String(b.createdAt || '')) || 0) - (Date.parse(String(a.createdAt || '')) || 0));
 };
 
 module.exports = {

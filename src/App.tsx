@@ -355,6 +355,11 @@ interface AccountOrderSummary {
   currency?: string | null;
   total?: number | null;
   grandTotal?: number | null;
+  itemsSubtotal?: number | null;
+  originalItemsSubtotal?: number | null;
+  discountCode?: string | null;
+  discountCodeAmount?: number | null;
+  appliedReferralCredit?: number | null;
   notes?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -1236,9 +1241,28 @@ const mergeWooSummaryIntoLocal = (
   localOrder: AccountOrderSummary,
   wooOrder: AccountOrderSummary,
 ) => {
+  const isFinitePositive = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0;
+  const localTotalCandidate = isFinitePositive(localOrder.grandTotal)
+    ? (localOrder.grandTotal as number)
+    : isFinitePositive(localOrder.total)
+      ? (localOrder.total as number)
+      : null;
+  const wooTotalCandidate = isFinitePositive(wooOrder.grandTotal)
+    ? (wooOrder.grandTotal as number)
+    : isFinitePositive(wooOrder.total)
+      ? (wooOrder.total as number)
+      : null;
+
   localOrder.status = wooOrder.status || localOrder.status;
-  localOrder.total =
-    typeof wooOrder.total === "number" ? wooOrder.total : localOrder.total;
+  // Prefer PepPro's computed grand total when present; don't overwrite with Woo totals
+  // (Woo totals can omit PepPro-side discounts).
+  if (!localTotalCandidate && wooTotalCandidate) {
+    localOrder.total = wooTotalCandidate;
+    localOrder.grandTotal = wooTotalCandidate;
+  } else if (isFinitePositive(localOrder.grandTotal)) {
+    localOrder.total = localOrder.grandTotal;
+  }
   localOrder.currency = wooOrder.currency || localOrder.currency;
   localOrder.number = wooOrder.number || localOrder.number;
   localOrder.wooOrderNumber =
@@ -1262,6 +1286,21 @@ const mergeWooSummaryIntoLocal = (
   }
   if (typeof wooOrder.taxTotal === "number") {
     localOrder.taxTotal = wooOrder.taxTotal;
+  }
+  if (!isFinitePositive(localOrder.itemsSubtotal) && isFinitePositive(wooOrder.itemsSubtotal)) {
+    localOrder.itemsSubtotal = wooOrder.itemsSubtotal;
+  }
+  if (!isFinitePositive(localOrder.originalItemsSubtotal) && isFinitePositive(wooOrder.originalItemsSubtotal)) {
+    localOrder.originalItemsSubtotal = wooOrder.originalItemsSubtotal;
+  }
+  if (!localOrder.discountCode && wooOrder.discountCode) {
+    localOrder.discountCode = wooOrder.discountCode;
+  }
+  if (!isFinitePositive(localOrder.discountCodeAmount) && isFinitePositive(wooOrder.discountCodeAmount)) {
+    localOrder.discountCodeAmount = wooOrder.discountCodeAmount;
+  }
+  if (!isFinitePositive(localOrder.appliedReferralCredit) && isFinitePositive(wooOrder.appliedReferralCredit)) {
+    localOrder.appliedReferralCredit = wooOrder.appliedReferralCredit;
   }
   if (!localOrder.lineItems?.length && wooOrder.lineItems?.length) {
     localOrder.lineItems = wooOrder.lineItems;
@@ -1339,6 +1378,11 @@ const normalizeAccountOrdersResponse = (
           currency: order?.currency || "USD",
           total: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
           grandTotal: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          itemsSubtotal: coerceNumber(order?.itemsSubtotal ?? order?.items_subtotal) ?? null,
+          originalItemsSubtotal: coerceNumber(order?.originalItemsSubtotal ?? order?.original_items_subtotal) ?? null,
+          discountCode: normalizeStringField(order?.discountCode ?? order?.discount_code) || null,
+          discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
+          appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
@@ -1402,6 +1446,11 @@ const normalizeAccountOrdersResponse = (
           currency: order?.currency || "USD",
           total: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
           grandTotal: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          itemsSubtotal: coerceNumber(order?.itemsSubtotal ?? order?.items_subtotal ?? order?.itemsTotal ?? order?.items_total) ?? null,
+          originalItemsSubtotal: coerceNumber(order?.originalItemsSubtotal ?? order?.original_items_subtotal) ?? null,
+          discountCode: normalizeStringField(order?.discountCode ?? order?.discount_code) || null,
+          discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
+          appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt:
             order?.createdAt ||
@@ -1922,6 +1971,21 @@ const formatDateInputValue = (date: Date): string => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const parseDateInputValueLocal = (value: string): Date | null => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const date = new Date(year, month, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const getDefaultSalesBySalesRepPeriod = (
@@ -8071,8 +8135,7 @@ function MainApp() {
   useEffect(() => {
     if (adminDashboardPeriodPickerOpen) return;
     const parse = (value: string) => {
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? null : date;
+      return parseDateInputValueLocal(value);
     };
     const from = salesRepPeriodStart ? parse(salesRepPeriodStart) : null;
     const to = salesRepPeriodEnd ? parse(salesRepPeriodEnd) : null;
@@ -12376,8 +12439,8 @@ function MainApp() {
     if (!value) {
       return "—";
     }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
+    const date = parseDateInputValueLocal(value);
+    if (!date || Number.isNaN(date.getTime())) {
       return value;
     }
     return date.toLocaleDateString(undefined, {

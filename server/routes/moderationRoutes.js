@@ -1,0 +1,84 @@
+const { Router } = require('express');
+const axios = require('axios');
+const { authenticate } = require('../middleware/authenticate');
+
+const router = Router();
+
+router.post('/image', authenticate, async (req, res) => {
+  const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+  const purpose = typeof req.body?.purpose === 'string' ? req.body.purpose : null;
+
+  const checked = Boolean(dataUrl && (dataUrl.startsWith('data:image/') || /^https?:\/\//i.test(dataUrl)));
+
+  // Soft gate: if no API key, skip so uploads continue to work.
+  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) {
+    return res.json({
+      status: 'skipped',
+      flagged: false,
+      purpose,
+      checked,
+      provider: null,
+      model: null,
+      categories: null,
+    });
+  }
+
+  if (!checked) {
+    return res.status(400).json({
+      error: 'Invalid image payload; expected a data URL or http(s) URL.',
+      code: 'INVALID_IMAGE',
+    });
+  }
+
+  try {
+    const endpoint = (process.env.OPENAI_MODERATION_URL || 'https://api.openai.com/v1/moderations').trim();
+
+    const response = await axios.post(
+      endpoint,
+      {
+        model: 'omni-moderation-latest',
+        input: [
+          {
+            type: 'image_url',
+            image_url: { url: dataUrl },
+          },
+        ],
+      },
+      {
+        timeout: Number(process.env.OPENAI_TIMEOUT_MS || 15000),
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    const results = Array.isArray(response.data?.results) ? response.data.results : [];
+    const flagged = results.some((r) => Boolean(r && r.flagged));
+    const categories = results[0]?.categories && typeof results[0].categories === 'object' ? results[0].categories : null;
+
+    return res.json({
+      status: 'ok',
+      flagged,
+      purpose,
+      checked,
+      provider: 'openai',
+      model: 'omni-moderation-latest',
+      categories,
+    });
+  } catch (err) {
+    // Fail-open: do not block uploads if moderation is unavailable.
+    return res.json({
+      status: 'error',
+      flagged: false,
+      purpose,
+      checked,
+      provider: 'openai',
+      model: 'omni-moderation-latest',
+      categories: null,
+    });
+  }
+});
+
+module.exports = router;

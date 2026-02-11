@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -14,10 +14,42 @@ from uuid import uuid4
 import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from ..services import get_config
 
 logger = logging.getLogger(__name__)
+
+
+def _to_order_timezone_iso(value: object) -> Optional[str]:
+    """
+    Normalize timestamps so Woo custom fields consistently store Pacific timestamps.
+    """
+    if value is None:
+        return None
+    try:
+        tz = ZoneInfo(os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles")
+    except Exception:
+        tz = timezone.utc
+
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        if " " in text and "T" not in text:
+            text = text.replace(" ", "T", 1)
+        try:
+            parsed = datetime.fromisoformat(text)
+        except Exception:
+            return str(value)
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed.astimezone(tz).isoformat()
 
 _WOO_PROXY_DISK_CACHE_ENABLED = os.environ.get("WOO_PROXY_DISK_CACHE", "true").strip().lower() == "true"
 _WOO_PROXY_MAX_STALE_MS = int(os.environ.get("WOO_PROXY_MAX_STALE_MS", str(24 * 60 * 60 * 1000)).strip() or 0)
@@ -991,7 +1023,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         {"key": "peppro_tax_total", "value": tax_total},
         {"key": "peppro_manual_tax_rate_id", "value": int(tax_rate_id or 0)},
         {"key": "peppro_grand_total", "value": order.get("grandTotal")},
-        {"key": "peppro_created_at", "value": order.get("createdAt")},
+        {"key": "peppro_created_at", "value": _to_order_timezone_iso(order.get("createdAt"))},
         {"key": "peppro_shipping_total", "value": shipping_total},
         {"key": "peppro_shipping_service", "value": shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode")},
         {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId")},

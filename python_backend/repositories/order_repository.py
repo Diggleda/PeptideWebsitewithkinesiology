@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from ..services import get_config
 from ..database import mysql_client
@@ -950,13 +952,34 @@ def _to_db_params(order: Dict) -> Dict:
     def parse_dt(value):
         if not value:
             return None
+        try:
+            pacific = ZoneInfo(os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles")
+        except Exception:
+            pacific = timezone.utc
+
         if isinstance(value, datetime):
-            return value.replace(tzinfo=None)
-        value = str(value)
-        if value.endswith("Z"):
-            value = value[:-1]
-        value = value.replace("T", " ")
-        return value[:26]
+            parsed = value
+        else:
+            text = str(value).strip()
+            if not text:
+                return None
+            # Handle `...Z` and space-separated timestamps.
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            if " " in text and "T" not in text:
+                text = text.replace(" ", "T", 1)
+            try:
+                parsed = datetime.fromisoformat(text)
+            except Exception:
+                return None
+
+        # If a timestamp is naive, treat it as Pacific (historically some clients sent local time).
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=pacific)
+
+        # Persist MySQL DATETIME values as Pacific local time (no timezone component).
+        local = parsed.astimezone(pacific)
+        return local.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
 
     def _num(val, fallback: float = 0.0) -> float:
         try:

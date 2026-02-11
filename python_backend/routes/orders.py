@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
 import requests
@@ -455,7 +457,11 @@ def delegate_share_order():
         else:
             normalized_payment_method = "stripe"
 
-        now_dt = datetime.now(timezone.utc)
+        try:
+            tz = ZoneInfo(os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles")
+        except Exception:
+            tz = timezone.utc
+        now_dt = datetime.now(tz)
         now = now_dt.isoformat()
         order_id = str(int(datetime.now(timezone.utc).timestamp() * 1000))
         order = {

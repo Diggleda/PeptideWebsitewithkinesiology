@@ -72,6 +72,22 @@ def _get_report_timezone() -> timezone:
         return timezone.utc
 
 
+def _get_order_timezone() -> timezone:
+    name = (os.environ.get("ORDER_TIMEZONE") or "America/Los_Angeles").strip() or "America/Los_Angeles"
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return timezone.utc
+
+
+def _now_order_iso() -> str:
+    """
+    Generate an ISO timestamp anchored to the configured order timezone (default Pacific).
+    """
+    tz = _get_order_timezone()
+    return datetime.now(tz).isoformat()
+
+
 def _resolve_report_period_bounds(
     period_start: Optional[str],
     period_end: Optional[str],
@@ -644,7 +660,7 @@ def create_order(
     else:
         normalized_payment_method = "stripe"
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = _now_order_iso()
     shipping_address = shipping_address or {}
     try:
         shipping_total_value = float(shipping_total or 0)
@@ -701,6 +717,7 @@ def create_order(
         "discountCode": normalized_discount_code,
         "status": "pending",
         "createdAt": now,
+        "updatedAt": now,
         "expectedShipmentWindow": (expected_shipment_window or None),
         "physicianCertificationAccepted": bool(physician_certified),
         "paymentMethod": normalized_payment_method,
@@ -1014,7 +1031,7 @@ def sync_order_status_from_woo_webhook(order_data: Dict[str, Any]) -> Dict[str, 
                 local_order["wooOrderNumber"] = woo_order_number
             if woo_order_key:
                 local_order["wooOrderKey"] = woo_order_key
-            local_order["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            local_order["updatedAt"] = _now_order_iso()
             order_repository.update(local_order)
         except Exception:
             pass
@@ -1591,7 +1608,7 @@ def update_order_notes(*, order_id: str, actor: Dict, notes: Optional[str]) -> D
         if (doctor_rep_id and doctor_rep_id not in allowed_rep_ids) and (order_rep_id and order_rep_id not in allowed_rep_ids):
             raise _service_error("ORDER_NOT_FOUND", 404)
 
-    updated = {**local_order, "notes": text, "updatedAt": datetime.now(timezone.utc).isoformat()}
+    updated = {**local_order, "notes": text, "updatedAt": _now_order_iso()}
     saved = order_repository.update(updated) or updated
     return {"order": saved}
 
@@ -1679,7 +1696,7 @@ def update_order_fields(
             estimate["serviceType"] = service
         updated["shippingEstimate"] = estimate
 
-    updated["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    updated["updatedAt"] = _now_order_iso()
     saved = order_repository.update(updated) or updated
     return {"order": saved}
 
