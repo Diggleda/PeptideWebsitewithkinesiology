@@ -279,6 +279,40 @@ def find_by_sales_rep_and_contact_form(sales_rep_id: str, contact_form_id: str) 
     )
 
 
+def find_by_sales_rep_and_contact_email(sales_rep_id: str, contact_email: str) -> Optional[Dict]:
+    if not sales_rep_id or not contact_email:
+        return None
+    email_norm = str(contact_email).strip().lower()
+    if not email_norm:
+        return None
+    if _using_mysql():
+        row = mysql_client.fetch_one(
+            """
+            SELECT *
+            FROM sales_prospects
+            WHERE sales_rep_id = %(sales_rep_id)s
+              AND LOWER(TRIM(contact_email)) = %(email)s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            {"sales_rep_id": str(sales_rep_id), "email": email_norm},
+        )
+        return _row_to_record(row)
+    matches = [
+        _ensure_defaults(item)
+        for item in _get_store().read()
+        if str(item.get("salesRepId") or "") == str(sales_rep_id)
+        and str(item.get("contactEmail") or "").strip().lower() == email_norm
+    ]
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda rec: str(rec.get("updatedAt") or rec.get("createdAt") or ""),
+        reverse=True,
+    )
+    return matches[0]
+
+
 def find_all_by_referral_id(referral_id: str) -> List[Dict]:
     if not referral_id:
         return []

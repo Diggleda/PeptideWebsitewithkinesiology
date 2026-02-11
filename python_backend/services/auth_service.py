@@ -77,6 +77,65 @@ def _is_multi_session_exempt(email: Optional[str]) -> bool:
     # This disables single-session enforcement (session id rotation) for this one email.
     return (email or "").strip().lower() == "test@doctor.com"
 
+def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
+    """
+    Ensure doctor/test_doctor accounts always have a corresponding sales_prospects row so:
+    - They appear in the active prospects list
+    - Notes can be stored against the prospect record
+    """
+    try:
+        role = str(user.get("role") or "").strip().lower()
+        if role not in ("doctor", "test_doctor"):
+            return
+
+        doctor_id = str(user.get("id") or "").strip()
+        sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+        if not doctor_id or not sales_rep_id:
+            return
+
+        name = _sanitize_name(str(user.get("name") or ""))
+        email = _normalize_email(str(user.get("email") or ""))
+        phone = user.get("phone") or None
+
+        existing = sales_prospect_repository.find_by_sales_rep_and_doctor(sales_rep_id, doctor_id)
+        if not existing and email:
+            existing = sales_prospect_repository.find_by_sales_rep_and_contact_email(sales_rep_id, email)
+
+        existing_status = str((existing or {}).get("status") or "").strip().lower()
+        preserve_status = existing_status in ("nuture", "nurturing")
+
+        is_doctor_prospect = False
+        if existing:
+            existing_id = str(existing.get("id") or "")
+            is_doctor_prospect = (
+                existing_id.startswith("doctor:")
+                and bool(existing.get("doctorId"))
+                and not existing.get("referralId")
+                and not existing.get("contactFormId")
+            )
+
+        is_manual = True if (not existing or is_doctor_prospect) else bool(existing.get("isManual"))
+
+        payload = {
+            **(existing or {}),
+            "id": str(existing.get("id")) if existing and existing.get("id") else f"doctor:{doctor_id}",
+            "salesRepId": sales_rep_id,
+            "doctorId": doctor_id,
+            "status": (existing.get("status") if existing else None) if preserve_status else "converted",
+            "isManual": is_manual,
+            "contactName": name or (existing.get("contactName") if existing else None),
+            "contactEmail": email or (existing.get("contactEmail") if existing else None),
+            "contactPhone": phone or (existing.get("contactPhone") if existing else None),
+        }
+
+        if payload.get("status") is None:
+            payload["status"] = "converted"
+
+        sales_prospect_repository.upsert(payload)
+    except Exception:
+        # Best-effort; never block account creation on prospect bookkeeping.
+        return
+
 
 def _safe_check_password(password: str, hashed: str) -> bool:
     encoded = (hashed or "").strip()
@@ -206,6 +265,8 @@ def register(data: Dict) -> Dict:
 
     if onboarding_record:
         referral_service.redeem_onboarding_code({"code": code, "doctorId": user["id"]})
+
+    _ensure_converted_sales_prospect_for_doctor(user)
 
     token_role = (user.get("role") or "doctor").lower()
     token = _create_auth_token(

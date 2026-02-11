@@ -145,7 +145,9 @@ def _sanitize_notes(value: Optional[str]) -> Optional[str]:
     text = text.replace("\x00", "")
     if not text.strip():
         return None
-    return text[:600]
+    # Notes can contain serialized JSON (timestamped logs) and may grow over time.
+    # Keep a reasonable upper bound to avoid truncating JSON mid-string.
+    return text[:4000]
 
 
 def _normalize_status_candidate(status: Optional[str]) -> Optional[str]:
@@ -1939,6 +1941,28 @@ def upsert_sales_prospect_for_sales_rep(
         payload["contactName"] = existing.get("contactName")
         payload["contactEmail"] = existing.get("contactEmail")
         payload["contactPhone"] = existing.get("contactPhone")
+
+        # Account-backed doctor prospects should default to "converted" and behave like manual rows,
+        # since they do not have a referral/contact-form id to anchor them in the pipeline.
+        existing_id = str(existing.get("id") or "")
+        existing_status = str(existing.get("status") or "").strip().lower()
+        is_doctor_prospect = (
+            existing_id.startswith("doctor:")
+            and bool(existing.get("doctorId"))
+            and not existing.get("referralId")
+            and not existing.get("contactFormId")
+        )
+        if is_doctor_prospect:
+            payload["isManual"] = True
+            if status is None and existing_status not in ("nuture", "nurturing"):
+                payload["status"] = "converted"
+            if (not payload.get("contactName")) or (not payload.get("contactEmail")) or (not payload.get("contactPhone")):
+                doctor_id = str(existing.get("doctorId") or "").strip()
+                doctor = user_repository.find_by_id(doctor_id) if doctor_id else None
+                if doctor:
+                    payload["contactName"] = payload.get("contactName") or doctor.get("name") or None
+                    payload["contactEmail"] = payload.get("contactEmail") or doctor.get("email") or None
+                    payload["contactPhone"] = payload.get("contactPhone") or doctor.get("phone") or doctor.get("phoneNumber") or doctor.get("phone_number") or None
     else:
         # Create a new prospect row if needed.
         if candidate.startswith("contact_form:"):
@@ -1953,6 +1977,11 @@ def upsert_sales_prospect_for_sales_rep(
             if doctor and (doctor.get("role") or "").lower() in ("doctor", "test_doctor"):
                 payload["id"] = f"doctor:{candidate}"
                 payload["doctorId"] = candidate
+                payload["status"] = "converted"
+                payload["isManual"] = True
+                payload["contactName"] = doctor.get("name") or None
+                payload["contactEmail"] = doctor.get("email") or None
+                payload["contactPhone"] = doctor.get("phone") or doctor.get("phoneNumber") or doctor.get("phone_number") or None
             elif referral_repository.find_by_id(candidate):
                 payload["id"] = candidate
                 payload["referralId"] = candidate

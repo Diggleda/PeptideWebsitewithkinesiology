@@ -11,6 +11,7 @@ import {
 } from "react";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
+import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
@@ -30,6 +31,7 @@ import {
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
+import { TimestampedNotesField } from "./components/TimestampedNotesField";
 import { toast } from "sonner@2.0.3";
 import {
 	  ShoppingCart,
@@ -15630,11 +15632,13 @@ function MainApp() {
                                           Awaiting credit
                                         </span>
                                       )}
-                                      {referral.notes && (
-                                        <p className="text-xs text-slate-500 mt-2 max-w-[220px]">
-                                          {referral.notes}
-                                        </p>
-                                      )}
+	                                      {referral.notes && (
+	                                        <p className="text-xs text-slate-500 mt-2 max-w-[220px]">
+	                                          {typeof referral.notes === "string"
+	                                            ? formatTimestampedNotesForDisplay(referral.notes)
+	                                            : referral.notes}
+	                                        </p>
+	                                      )}
                                     </div>
                                   </div>
                                   <div
@@ -18897,10 +18901,13 @@ function MainApp() {
 	                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
 	                              : "Expected delivery unavailable";
 	                            const statusLabel = describeSalesOrderStatus(order as any);
-	                            const orderNotes =
-	                              typeof (order as any)?.notes === "string"
-	                                ? String((order as any).notes).trim()
-	                                : "";
+		                            const orderNotesRaw =
+		                              typeof (order as any)?.notes === "string"
+		                                ? String((order as any).notes)
+		                                : "";
+		                            const orderNotes = orderNotesRaw
+		                              ? formatTimestampedNotesForDisplay(orderNotesRaw).trim()
+		                              : "";
 	                            return (
 	                              <li
 	                                key={order.id}
@@ -19885,17 +19892,20 @@ function MainApp() {
                                   </span>
                                 </div>
 
-                                <div className="text-sm text-slate-700 leading-relaxed bg-slate-50/80 border border-slate-200/70 rounded-lg p-3">
-                                  {referral.notes ? (
-                                    <span className="whitespace-pre-wrap">
-                                      Notes from {referrerName}: {referral.notes}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs italic text-slate-400">
-                                      No notes
-                                    </span>
-                                  )}
-                                </div>
+	                                <div className="text-sm text-slate-700 leading-relaxed bg-slate-50/80 border border-slate-200/70 rounded-lg p-3">
+	                                  {referral.notes ? (
+	                                    <span className="whitespace-pre-wrap">
+	                                      Notes from {referrerName}:{" "}
+	                                      {typeof referral.notes === "string"
+	                                        ? formatTimestampedNotesForDisplay(referral.notes)
+	                                        : referral.notes}
+	                                    </span>
+	                                  ) : (
+	                                    <span className="text-xs italic text-slate-400">
+	                                      No notes
+	                                    </span>
+	                                  )}
+	                                </div>
 
                                   <div className="flex flex-wrap items-start justify-between gap-3 w-full">
                                     <div className="min-w-[200px] space-y-1">
@@ -20109,9 +20119,11 @@ function MainApp() {
                                   <td className="px-4 py-4 text-sm text-slate-600">
                                     {lead.referredContactPhone || "—"}
                                   </td>
-                                  <td className="px-4 py-4 text-sm text-slate-600">
-                                    {lead.notes || "Contact form"}
-                                  </td>
+	                                  <td className="px-4 py-4 text-sm text-slate-600">
+	                                    {typeof lead.notes === "string"
+	                                      ? formatTimestampedNotesForDisplay(lead.notes)
+	                                      : lead.notes || "Contact form"}
+	                                  </td>
                                   <td className="px-4 py-4 text-sm text-slate-600">
                                     <div>{formatDateTime(lead.createdAt)}</div>
                                   </td>
@@ -22642,15 +22654,14 @@ function MainApp() {
 	              <label className="text-sm font-medium text-slate-700">
 	                Notes
 	              </label>
-		              <Textarea
+	              <TimestampedNotesField
 	                value={manualProspectForm.notes}
-	                onChange={(event) =>
+	                onChange={(next) =>
 	                  setManualProspectForm((prev) => ({
 	                    ...prev,
-	                    notes: event.target.value,
+	                    notes: next,
 	                  }))
 	                }
-	                rows={3}
 	                placeholder="Add optional context"
 	                className="notes-textarea"
 	              />
@@ -22946,10 +22957,9 @@ function MainApp() {
 		                  <p className="text-sm font-semibold justify-center text-slate-800">
                         Shared Notes (Rep and Admin only)
 		                  </p>
-		                  <Textarea
+		                  <TimestampedNotesField
 		                    value={salesDoctorNoteDraft}
-		                    onChange={(event) => setSalesDoctorNoteDraft(event.target.value)}
-		                    rows={4}
+		                    onChange={(next) => setSalesDoctorNoteDraft(next)}
 		                    placeholder={
 		                      salesDoctorNotesLoading
 		                        ? "Loading notes..."
@@ -24529,7 +24539,7 @@ function MainApp() {
 	                          return (
 	                            <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
 	                              <p className="text-sm text-slate-700 whitespace-pre-wrap">
-	                                {normalizedSaved || ""}
+	                                {formatTimestampedNotesForDisplay(normalizedSaved || "")}
 	                              </p>
 	                            </div>
 	                          );
@@ -24537,11 +24547,10 @@ function MainApp() {
 
 	                        return (
 	                          <div className="space-y-2">
-	                            <textarea
+	                            <TimestampedNotesField
 	                              value={salesOrderNotesDraft}
-	                              onChange={(e) => setSalesOrderNotesDraft(e.target.value)}
+	                              onChange={(next) => setSalesOrderNotesDraft(next)}
 	                              placeholder="Add an order note…"
-	                              rows={4}
 	                              className="w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 	                              disabled={salesOrderNotesSaving}
 	                            />

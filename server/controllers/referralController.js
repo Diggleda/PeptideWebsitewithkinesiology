@@ -1332,12 +1332,20 @@ const upsertSalesProspect = async (req, res, next) => {
         const maybeDoctor = userRepository.findById(identifier);
         const maybeDoctorRole = normalizeRole(maybeDoctor?.role);
         if (maybeDoctor && (maybeDoctorRole === 'doctor' || maybeDoctorRole === 'test_doctor')) {
+          const doctorName = typeof maybeDoctor.name === 'string' ? maybeDoctor.name.trim() : null;
+          const doctorEmail = typeof maybeDoctor.email === 'string' ? maybeDoctor.email.trim().toLowerCase() : null;
+          const doctorPhone = typeof maybeDoctor.phone === 'string'
+            ? maybeDoctor.phone.trim()
+            : (typeof maybeDoctor.phoneNumber === 'string' ? maybeDoctor.phoneNumber.trim() : null);
           base = {
             id: `doctor:${identifier}`,
             salesRepId: String(owner),
             doctorId: String(identifier),
-            status: 'pending',
-            isManual: false,
+            status: 'converted',
+            isManual: true,
+            contactName: doctorName || null,
+            contactEmail: doctorEmail || null,
+            contactPhone: doctorPhone || null,
           };
         } else {
           base = {

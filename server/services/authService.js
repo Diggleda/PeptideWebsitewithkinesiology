@@ -3,13 +3,30 @@ const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/userRepository');
 const referralService = require('./referralService');
 const salesRepRepository = require('../repositories/salesRepRepository');
+const referralCodeRepository = require('../repositories/referralCodeRepository');
 const adminRepository = require('../repositories/adminRepository');
+const salesProspectRepository = require('../repositories/salesProspectRepository');
 const { env } = require('../config/env');
 const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 const { logger } = require('../config/logger');
 const mysqlClient = require('../database/mysqlClient');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
+const SALES_CODE_PATTERN = /^[A-Z]{2}[A-Z0-9]{3}$/;
+
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  return str.length > 0 ? str : null;
+};
+
+const normalizeCode = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 
 const DIRECT_SHIPPING_FIELDS = [
   'officeAddressLine1',
@@ -182,28 +199,101 @@ const isPhysicianTaxonomy = (value) => {
   return normalized.includes('physician');
 };
 
+const resolveSalesRepIdFromReferralCode = (codeValue) => {
+  const normalizedCode = normalizeCode(codeValue);
+  if (!normalizedCode) return null;
+
+  const reps = salesRepRepository.getAll();
+  const repMatch = reps.find((rep) => normalizeCode(rep?.salesCode || rep?.sales_code) === normalizedCode) || null;
+  if (repMatch) {
+    return normalizeId(repMatch?.id || repMatch?.salesRepId || repMatch?.legacyUserId);
+  }
+
+  const record = referralCodeRepository.findByCode(normalizedCode);
+  if (!record) {
+    return null;
+  }
+  const status = (record.status || '').toString().trim().toLowerCase();
+  if (status === 'revoked' || status === 'retired') {
+    throw createError('REFERRAL_CODE_UNAVAILABLE', 409);
+  }
+  return normalizeId(record.salesRepId);
+};
+
+const ensureConvertedSalesProspectForDoctor = async ({
+  doctorId,
+  salesRepId,
+  name,
+  email,
+  phone,
+}) => {
+  const docId = normalizeId(doctorId);
+  const repId = normalizeId(salesRepId);
+  if (!docId || !repId) return null;
+
+  const emailNormalized = normalizeEmail(email);
+  let existing = await salesProspectRepository.findBySalesRepAndDoctorId(repId, docId);
+  if (!existing && emailNormalized) {
+    existing = await salesProspectRepository.findBySalesRepAndContactEmail(repId, emailNormalized);
+  }
+
+  const existingStatus = (existing?.status || '').toString().trim().toLowerCase();
+  const preserveStatus = existingStatus === 'nuture' || existingStatus === 'nurturing';
+
+  const existingId = existing?.id ? String(existing.id) : '';
+  const isDoctorProspect = Boolean(existingId.startsWith('doctor:'))
+    && Boolean(normalizeId(existing?.doctorId))
+    && !normalizeId(existing?.referralId)
+    && !normalizeId(existing?.contactFormId);
+  const resolvedIsManual = existing
+    ? (isDoctorProspect ? true : Boolean(existing.isManual))
+    : true;
+
+  return salesProspectRepository.upsert({
+    ...(existing || {}),
+    id: existing?.id || `doctor:${docId}`,
+    salesRepId: repId,
+    doctorId: docId,
+    status: preserveStatus ? (existing?.status || 'converted') : 'converted',
+    isManual: resolvedIsManual,
+    contactName: name || existing?.contactName || null,
+    contactEmail: emailNormalized || existing?.contactEmail || null,
+    contactPhone: phone || existing?.contactPhone || null,
+  });
+};
+
 const register = async ({
   name,
   email,
   password,
+  code,
   npiNumber,
+  phone,
 }) => {
-  if (!name || !email || !password) {
-    const error = new Error('All fields are required');
-    error.status = 400;
-    throw error;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const normalizedEmail = normalizeEmail(email);
+  const rawPassword = typeof password === 'string' ? password : '';
+  const normalizedCode = normalizeCode(code);
+  const normalizedPhone = normalizeOptionalString(phone);
+
+  if (!normalizedName || !normalizedEmail) {
+    throw createError('NAME_EMAIL_REQUIRED', 400);
+  }
+  if (!rawPassword.trim()) {
+    throw createError('PASSWORD_REQUIRED', 400);
+  }
+  if (!normalizedCode || !SALES_CODE_PATTERN.test(normalizedCode)) {
+    throw createError('INVALID_REFERRAL_CODE', 400);
   }
 
-  const existing = userRepository.findByEmail(email);
+  const existing = userRepository.findByEmail(normalizedEmail);
   if (existing) {
-    const error = new Error('EMAIL_EXISTS');
-    error.status = 409;
-    throw error;
+    throw createError('EMAIL_EXISTS', 409);
   }
 
-  const salesRepAccount = salesRepRepository.findByEmail(email);
+  const salesRepAccount = salesRepRepository.findByEmail(normalizedEmail);
   const isSalesRepEmail = Boolean(salesRepAccount);
-  const adminAccount = adminRepository.findByEmail(email);
+  const adminAccount = adminRepository.findByEmail(normalizedEmail);
   const isAdminEmail = Boolean(adminAccount);
 
   const normalizedNpi = normalizeNpiNumber(npiNumber);
@@ -230,7 +320,7 @@ const register = async ({
     }
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = await bcrypt.hash(rawPassword, 10);
   const now = new Date().toISOString();
 
   let npiVerificationStatus = null;
@@ -248,11 +338,26 @@ const register = async ({
     }
   }
 
+  if (isSalesRepEmail) {
+    const expected = normalizeCode(salesRepAccount?.salesCode || salesRepAccount?.sales_code);
+    if (expected && expected !== normalizedCode) {
+      throw createError('SALES_REP_EMAIL_MISMATCH', 409);
+    }
+  }
+
   const role = isAdminEmail ? 'admin' : (isSalesRepEmail ? 'sales_rep' : 'doctor');
+  const resolvedDoctorSalesRepId = role === 'doctor'
+    ? resolveSalesRepIdFromReferralCode(normalizedCode)
+    : null;
+  if (role === 'doctor' && !resolvedDoctorSalesRepId) {
+    throw createError('REFERRAL_CODE_NOT_FOUND', 404);
+  }
+
   const user = userRepository.insert({
     id: Date.now().toString(),
-    name,
-    email,
+    name: normalizedName,
+    email: normalizedEmail,
+    phone: normalizedPhone,
     password: hashedPassword,
     referralCode: adminAccount?.referralCode || referralService.generateReferralCode(),
     referralCredits: 0,
@@ -266,7 +371,7 @@ const register = async ({
         || salesRepAccount?.legacyUserId
         || salesRepAccount?.salesRepId
         || null
-      : null,
+      : resolvedDoctorSalesRepId,
     npiNumber: npiVerification ? npiVerification.npiNumber : null,
     npiLastVerifiedAt: npiVerification ? now : null,
     npiVerificationStatus,
@@ -284,6 +389,18 @@ const register = async ({
       : null,
     profileImageUrl: null,
   });
+
+  if (role === 'doctor' && resolvedDoctorSalesRepId) {
+    ensureConvertedSalesProspectForDoctor({
+      doctorId: user.id,
+      salesRepId: resolvedDoctorSalesRepId,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+    }).catch((error) => {
+      logger.warn({ err: error, doctorId: user.id, salesRepId: resolvedDoctorSalesRepId }, 'Failed to create converted sales prospect for new doctor');
+    });
+  }
 
   const token = createAuthToken({ id: user.id, email: user.email });
 

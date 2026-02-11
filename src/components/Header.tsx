@@ -14,6 +14,7 @@ import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
+import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -4394,7 +4395,7 @@ export function Header({
 	                          Notes
 	                        </div>
 	                        <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap max-h-24 overflow-auto">
-	                          {order.notes.trim()}
+	                          {formatTimestampedNotesForDisplay(order.notes)}
 	                        </div>
 	                      </div>
 	                    )}
@@ -4905,7 +4906,9 @@ export function Header({
 		                  Notes <span className="label-paren">(from PepPro)</span>
 		                </h4>
 		                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedOrder.notes}</p>
+		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
+		                    {formatTimestampedNotesForDisplay(selectedOrder.notes)}
+		                  </p>
 		                </div>
 		              </div>
 		            )}

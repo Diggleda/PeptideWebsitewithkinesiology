@@ -8,6 +8,11 @@ const normalizeId = (value) => {
   return str.length > 0 ? str : null;
 };
 
+const normalizeEmail = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim().toLowerCase();
+};
+
 const nowIso = () => new Date().toISOString();
 
 const ensureDefaults = (record) => {
@@ -165,6 +170,37 @@ const findBySalesRepAndContactFormId = async (salesRepId, contactFormId) => {
   return list
     .map(ensureDefaults)
     .find((item) => item.salesRepId === rep && item.contactFormId === form) || null;
+};
+
+const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
+  const rep = normalizeId(salesRepId);
+  const email = normalizeEmail(contactEmail);
+  if (!rep || !email) return null;
+  if (mysqlClient.isEnabled()) {
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT * FROM sales_prospects
+        WHERE sales_rep_id = :salesRepId
+          AND LOWER(TRIM(contact_email)) = :contactEmail
+        ORDER BY COALESCE(updated_at, created_at) DESC
+        LIMIT 1
+      `,
+      { salesRepId: rep, contactEmail: email },
+    );
+    return rowToRecord(row);
+  }
+  const records = salesProspectStore.read();
+  const list = Array.isArray(records) ? records : [];
+  const matches = list
+    .map(ensureDefaults)
+    .filter((item) => item.salesRepId === rep && normalizeEmail(item.contactEmail) === email);
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => {
+    const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
+    const bMs = Date.parse(String(b.updatedAt || b.createdAt || '')) || 0;
+    return bMs - aMs;
+  });
+  return matches[0] || null;
 };
 
 const findAllByReferralId = async (referralId) => {
@@ -353,6 +389,7 @@ module.exports = {
   findBySalesRepAndDoctorId,
   findBySalesRepAndReferralId,
   findBySalesRepAndContactFormId,
+  findBySalesRepAndContactEmail,
   findAllByReferralId,
   upsert,
   remove,
