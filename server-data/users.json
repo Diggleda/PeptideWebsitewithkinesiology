@@ -40,9 +40,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 244,
+    "visits": 245,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-02-10T22:05:26.035Z",
+    "lastLoginAt": "2026-02-11T15:02:04.339Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -66,10 +66,10 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-02-10T22:19:56.978Z",
-    "isOnline": false,
-    "isIdle": false
+    "lastSeenAt": "2026-02-11T15:53:47.281Z",
+    "lastInteractionAt": "2026-02-11T15:53:46.983Z",
+    "isOnline": true,
+    "isIdle": true
   },
   {
     "id": "1764556043938",

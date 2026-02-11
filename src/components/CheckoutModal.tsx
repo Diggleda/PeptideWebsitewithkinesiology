@@ -1621,15 +1621,19 @@ export function CheckoutModal({
 	                      <p className="mt-2">
 	                        After you place your order, we’ll email{' '}
 	                        {paymentMethod === 'zelle' ? 'Zelle' : 'bank transfer'} instructions to{' '}
-	                        <span className="font-semibold">{customerEmail || 'your email address'}</span>.
+	                        <span>{customerEmail || 'your email address'}</span>.
 	                      </p>
 	                      <p className="mt-2 text-[13px] text-slate-600">
-	                        Important: Include your order number in the payment memo/notes (we’ll show it here after you place
+	                        <span className="font-semibold">Important:</span> Include your order number in the payment memo/notes (we’ll show it here after you place
 	                        the order).
 	                        {paymentMethod === 'zelle'
 	                          ? ' Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
 	                          : ''}
 	                      </p>
+                        <p className="mt-2 text-[13px] text-slate-600">
+                          <span className="font-semibold">Note:</span> PepPro emails may land in your junk/spam folder. If you’re expecting an email and don’t see it,
+                          please check there.
+                        </p>
 	                    </>
 	                  )}
 	                </div>

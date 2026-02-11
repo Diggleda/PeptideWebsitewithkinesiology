@@ -4902,7 +4902,7 @@ export function Header({
 		            {typeof selectedOrder.notes === 'string' && selectedOrder.notes.trim().length > 0 && (
 		              <div className="space-y-2">
 		                <h4 className="text-base font-semibold text-slate-900">
-		                  Notes <span className="text-sm font-normal text-slate-500">(from PepPro)</span>
+		                  Notes <span className="label-paren">(from PepPro)</span>
 		                </h4>
 		                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
 		                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedOrder.notes}</p>
@@ -4997,7 +4997,7 @@ export function Header({
 		  const patientLinksPanel = showPatientLinksTab ? (
 		    <div className="space-y-6">
 	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-	        <h3 className="text-lg font-semibold text-slate-900">White label sessions with your logo</h3>
+	        <h3 className="text-lg font-semibold text-slate-900">Give your sessions your logo</h3>
 	        <p className="mb-3 text-sm leading-relaxed text-slate-700">
 	          Make your logo appear in the header of your patient's session. Recommended: horizontal rectangle PNG (we’ll resize to fit the header).
 	        </p>
@@ -5122,7 +5122,7 @@ export function Header({
 	        </div>
 	      </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Payment Settings</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Store payment settings</h3>
         <p className="mb-4 text-sm leading-relaxed text-slate-700">
           Set the Zelle email or phone number you want patients to use when paying you.
         </p>
@@ -5155,12 +5155,12 @@ export function Header({
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
           Links are temporary and expire automatically after 72 hours. You can also revoke any link at any time.
         </p>
-	        <div className="mt-5 patient-link-form">
+	        <div className="mt-5 patient-link-form patient-link-form--generate">
 	          <Label
 	            htmlFor="patient-link-patient-id"
 	            className="patient-link-form__label patient-link-form__label--patient-id text-sm font-semibold text-slate-700"
 	          >
-	            Patient ID (from your proprietary system)
+	            Patient ID <span className="label-paren">(from your proprietary system)</span>
 	          </Label>
 	          <Input
 	            id="patient-link-patient-id"
@@ -5173,7 +5173,7 @@ export function Header({
 	            htmlFor="patient-link-label"
 	            className="patient-link-form__label patient-link-form__label--link text-sm font-semibold text-slate-700"
 	          >
-	            Referrence label for your link (optional)
+	            Referrence label for your link <span className="label-paren">(optional)</span>
 	          </Label>
 	          <Input
 	            id="patient-link-label"
@@ -5187,8 +5187,8 @@ export function Header({
 	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
 	          >
 	            <span className="block">Patient Catelogue Markup %</span>
-	            <span className="mt-0.5 block text-xs font-normal text-slate-500">
-	              The difference between what your patient pays you and what you pay us.
+	            <span className="label-paren mt-0.5 block">
+	              (The percent difference between what your patient pays you and what you pay us.)
 	            </span>
 	          </Label>
 	          <div className="patient-link-form__markup relative w-full mb-0">
@@ -5238,7 +5238,7 @@ export function Header({
 	            htmlFor="patient-link-instructions"
 	            className="patient-link-form__label patient-link-form__label--instructions text-sm font-semibold text-slate-700"
 	          >
-	            Instructions (shown to the delegate)
+	            Instructions <span className="label-paren">(shown to the delegate)</span>
 	          </Label>
 	          <Textarea
 	            id="patient-link-instructions"
@@ -5259,28 +5259,24 @@ export function Header({
 	        </div>
 	      </div>
 
-	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-2">
-	        <div className="flex items-center justify-between gap-3">
-	          <h3 className="text-lg font-semibold text-slate-900">Your links</h3>
+	      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/70 p-6 sm:p-7 space-y-1">
+	        <div className="flex items-start justify-between gap-3">
+	          <h3 className="text-lg font-semibold text-slate-900 leading-tight">Manage your links</h3>
 		          <Button
 		            type="button"
 	            variant="outline"
 	            size="sm"
 	            onClick={() => void loadPatientLinks()}
 	            disabled={!showPatientLinksTab || patientLinksLoading}
-	            className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
+	            className="header-home-button squircle-sm bg-white text-slate-900 self-start"
 	            aria-busy={patientLinksLoading}
 	            title="Refresh"
 	          >
-            <RefreshCw
-              className={`h-4 w-4 ${patientLinksLoading ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            />
-            {patientLinksLoading ? 'Refreshing...' : 'Refresh'}
+            {patientLinksLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
 	        <p className="text-sm leading-relaxed text-slate-700">
-	          Use “Copy link” to share a delegate shopping link with a patient. Use “Revoke link” to immediately disable a link.
+	          Copy the link to share your configured session with your patient. Let your patient work as a delegate to build a proposal for your review. After 72 hours, the link will expire. Use “Revoke link” to disable a link prematurely.
 	        </p>
 
         {patientLinksError && (

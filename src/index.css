@@ -230,12 +230,25 @@ body {
   margin-bottom: 0.125rem;
 }
 
+.patient-link-form--generate .patient-link-form__label {
+  margin-bottom: 0.05rem;
+}
+
 .patient-link-form__patient-id-input,
 .patient-link-form__input,
+.patient-link-form__zelle-contact-input,
 .patient-link-form__markup,
 .patient-link-form__select,
 .patient-link-form__instructions {
   margin-bottom: 0.5rem !important;
+}
+
+.patient-link-form--generate .patient-link-form__patient-id-input,
+.patient-link-form--generate .patient-link-form__input,
+.patient-link-form--generate .patient-link-form__markup,
+.patient-link-form--generate .patient-link-form__select,
+.patient-link-form--generate .patient-link-form__instructions {
+  margin-bottom: 1.2rem !important;
 }
 
 .patient-link-form__input,
@@ -243,7 +256,7 @@ body {
 .patient-link-form__markup,
 .patient-link-form__select,
 .patient-link-form__button {
-  height: 2.5rem !important;
+  height: 2rem !important;
 }
 
 .patient-link-form__button {
@@ -1042,14 +1055,26 @@ body {
     height: auto;
   }
 
-  [hidden]:where(:not([hidden="until-found"])) {
-    display: none !important;
-  }
+[hidden]:where(:not([hidden="until-found"])) {
+  display: none !important;
+}
 
-  * {
-    border-color: var(--border);
-    outline-color: var(--ring);
-  }
+[data-slot="label"] {
+  font-weight: 400 !important;
+}
+
+.label-paren {
+  margin-left: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  color: rgb(100, 116, 139);
+}
+
+* {
+  border-color: var(--border);
+  outline-color: var(--ring);
+}
 
   @supports (color: color-mix(in lab, red, red)) {
     * {

@@ -453,7 +453,9 @@ export function ProductDetailDialog({
 
                   {/* Order Notes */}
                   <div className="space-y-3">
-                    <Label htmlFor="quantityDescription" className="text-sm font-semibold">Order Notes (Optional)</Label>
+                    <Label htmlFor="quantityDescription" className="text-sm font-semibold">
+                      Order Notes <span className="label-paren">(Optional)</span>
+                    </Label>
                     <textarea
                       id="quantityDescription"
                       value={quantityDescription}
