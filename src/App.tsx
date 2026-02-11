@@ -21178,8 +21178,44 @@ function MainApp() {
                                 const hasWebinarLink = Boolean(
                                   item?.link && String(item.link).trim(),
                                 );
-                                const isPast = dateMs < Date.now();
+                                const rawItem = item as any;
+                                const durationMinutesCandidate =
+                                  typeof rawItem?.durationMinutes === "number"
+                                    ? rawItem.durationMinutes
+                                    : typeof rawItem?.duration_minutes === "number"
+                                      ? rawItem.duration_minutes
+                                      : typeof rawItem?.duration === "number"
+                                        ? rawItem.duration
+                                        : typeof rawItem?.lengthMinutes === "number"
+                                          ? rawItem.lengthMinutes
+                                          : typeof rawItem?.length_minutes === "number"
+                                            ? rawItem.length_minutes
+                                            : null;
+                                const durationMs =
+                                  typeof durationMinutesCandidate === "number" &&
+                                  Number.isFinite(durationMinutesCandidate) &&
+                                  durationMinutesCandidate > 0
+                                    ? durationMinutesCandidate * 60_000
+                                    : 60 * 60_000; // default: 60 minutes
+                                const endDateValue =
+                                  rawItem?.endDate ??
+                                  rawItem?.end_date ??
+                                  rawItem?.endsAt ??
+                                  rawItem?.ends_at ??
+                                  rawItem?.end ??
+                                  null;
+                                const endMsCandidate =
+                                  typeof endDateValue === "string" && endDateValue.trim().length > 0
+                                    ? Date.parse(endDateValue)
+                                    : Number.NaN;
+                                const endMs =
+                                  Number.isFinite(endMsCandidate)
+                                    ? endMsCandidate
+                                    : dateMs + durationMs;
+                                const nowMs = Date.now();
+                                const isPast = nowMs > endMs;
                                 if (isPast) return hasRecording;
+                                // Show upcoming and in-progress lectures if there is any link/recording.
                                 return hasWebinarLink || hasRecording;
                               });
 
@@ -21284,8 +21320,8 @@ function MainApp() {
 	                                            isPast && recording
 	                                              ? "Recording Available"
 	                                              : isJoinWindow || isDuringClass
-	                                                ? "Join the Lecture"
-	                                                : "Lecture Link";
+	                                                ? "Join the Forum"
+	                                                : "Forum Link";
 	
 	                                          return (
 	                                            <p className="text-sm mt-1 pt-0.5">
