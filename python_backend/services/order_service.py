@@ -840,7 +840,7 @@ def create_order(
             discount_code_repository.reserve_use_once(
                 code=str(order.get("discountCode") or ""),
                 user_id=user_id,
-                items_subtotal=float(order.get("itemsSubtotal") or 0.0),
+                items_subtotal=float(order.get("originalItemsSubtotal") or 0.0),
                 quantity=cart_quantity,
             )
 
