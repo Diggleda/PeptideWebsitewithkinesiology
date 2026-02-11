@@ -515,7 +515,8 @@ export function CheckoutModal({
     }
     setDiscountCodeBusy(true);
     try {
-      const resp = await discountCodesAPI.preview(code, subtotal);
+      const cartQuantity = cartItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+      const resp = await discountCodesAPI.preview(code, subtotal, cartQuantity);
       if (resp?.valid) {
         const amount = Math.max(0, Number(resp.discountAmount || 0));
         const value = Math.max(0, Number(resp.discountValue || 0));
@@ -535,7 +536,7 @@ export function CheckoutModal({
     } finally {
       setDiscountCodeBusy(false);
     }
-  }, [allowUnauthenticatedCheckout, discountCodeDraft, isAuthenticated, subtotal]);
+  }, [allowUnauthenticatedCheckout, cartItems, discountCodeDraft, isAuthenticated, subtotal]);
 
   const delegatePaymentInstructionsText = useMemo(() => {
     if (!isDelegateFlow) return null;

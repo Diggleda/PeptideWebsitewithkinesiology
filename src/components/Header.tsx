@@ -5595,7 +5595,7 @@ export function Header({
             variant="default"
             size="sm"
             onClick={() => setWelcomeOpen(true)}
-            className="relative squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+            className="relative overflow-visible squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
             aria-haspopup="dialog"
             aria-expanded={welcomeOpen}
           >
@@ -5605,9 +5605,10 @@ export function Header({
             </span>
             {accountButtonIndicatorTotal > 0 && (
               <span
-                className="absolute -right-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1.5 text-[10px] font-semibold leading-none text-[rgb(95,179,249)] shadow-sm"
+                className="absolute -left-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1.5 text-[10px] font-semibold leading-none !text-white shadow-sm pointer-events-none"
                 aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
                 title={`Notifications: ${accountButtonIndicatorTotal}`}
+                style={{ backgroundColor: 'rgb(95,179,249)', color: '#fff' }}
               >
                 {accountButtonIndicatorTotal > 99 ? '99+' : accountButtonIndicatorTotal}
               </span>
@@ -5703,6 +5704,7 @@ export function Header({
                   <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
                     {accountHeaderTabs.map((tab) => {
                       const isActive = accountTab === tab.id;
+                      const indicatorCount = Number(accountTabIndicatorCounts[tab.id] || 0);
 	                      return (
 	                        <button
 	                          key={tab.id}
@@ -5717,21 +5719,18 @@ export function Header({
 	                        >
 			                          <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-visible">
 			                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-			                            {(accountTabIndicatorCounts[tab.id] || 0) > 0 && (
-			                              <span
-			                                className="absolute -right-1 -top-1 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full !bg-[rgb(95,179,249)] text-[10px] font-semibold !text-white shadow-sm leading-none pointer-events-none"
-			                                title={`${tab.label} notifications`}
-			                                aria-label={`${tab.label} notifications: ${accountTabIndicatorCounts[tab.id]}`}
-			                                style={{
-			                                  backgroundColor: 'rgb(95,179,249)',
-			                                  color: '#fff',
-			                                }}
-			                              >
-		                                {(accountTabIndicatorCounts[tab.id] || 0) > 9 ? '9+' : accountTabIndicatorCounts[tab.id]}
-		                              </span>
-		                            )}
 		                          </span>
 	                          {tab.label}
+                            {indicatorCount > 0 && (
+                              <span
+                                className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold leading-none !text-white shadow-sm pointer-events-none"
+                                title={`${tab.label} notifications`}
+                                aria-label={`${tab.label} notifications: ${indicatorCount}`}
+                                style={{ backgroundColor: 'rgb(95,179,249)', color: '#fff' }}
+                              >
+                                {indicatorCount > 9 ? '9+' : indicatorCount}
+                              </span>
+                            )}
 	                        </button>
 	                      );
 	                    })}

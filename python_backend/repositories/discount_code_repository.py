@@ -25,7 +25,7 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
     if not candidate or not _using_mysql():
         return None
     row = mysql_client.fetch_one(
-        "SELECT code, discount_value, used_by_json, created_at, updated_at FROM discount_codes WHERE code = %(code)s",
+        "SELECT code, discount_value, used_by_json, `condition`, created_at, updated_at FROM discount_codes WHERE code = %(code)s",
         {"code": candidate},
     )
     if not row:
@@ -49,6 +49,18 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
         return out
 
     used_by = parse_used_by(row.get("used_by_json"))
+    raw_condition = row.get("condition")
+    condition: Dict[str, Any] = {}
+    if raw_condition:
+        try:
+            if isinstance(raw_condition, (dict, list)):
+                parsed = raw_condition
+            else:
+                parsed = json.loads(raw_condition)
+            if isinstance(parsed, dict):
+                condition = parsed
+        except Exception:
+            condition = {}
     try:
         discount_value = float(row.get("discount_value") or 0)
     except Exception:
@@ -57,12 +69,20 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
         "code": row.get("code") or candidate,
         "discountValue": float(discount_value),
         "usedBy": used_by,
+        "condition": condition,
         "createdAt": row.get("created_at"),
         "updatedAt": row.get("updated_at"),
     }
 
 
-def ensure_code_exists(*, code: str, discount_value: float, overwrite_value: bool = False) -> None:
+def ensure_code_exists(
+    *,
+    code: str,
+    discount_value: float,
+    overwrite_value: bool = False,
+    condition: Optional[Dict[str, Any]] = None,
+    overwrite_condition: bool = False,
+) -> None:
     """
     Best-effort seed so we can ship a hard-coded code without manual SQL.
     Safe to call repeatedly.
@@ -74,10 +94,12 @@ def ensure_code_exists(*, code: str, discount_value: float, overwrite_value: boo
     on_duplicate = "updated_at = VALUES(updated_at)"
     if overwrite_value:
         on_duplicate = "discount_value = VALUES(discount_value), updated_at = VALUES(updated_at)"
+    if overwrite_condition:
+        on_duplicate = f"{on_duplicate}, `condition` = VALUES(`condition`)"
     mysql_client.execute(
         f"""
-        INSERT INTO discount_codes (code, discount_value, used_by_json, created_at, updated_at)
-        VALUES (%(code)s, %(discount_value)s, %(used_by_json)s, %(created_at)s, %(updated_at)s)
+        INSERT INTO discount_codes (code, discount_value, used_by_json, `condition`, created_at, updated_at)
+        VALUES (%(code)s, %(discount_value)s, %(used_by_json)s, %(condition)s, %(created_at)s, %(updated_at)s)
         ON DUPLICATE KEY UPDATE
           {on_duplicate}
         """,
@@ -85,6 +107,7 @@ def ensure_code_exists(*, code: str, discount_value: float, overwrite_value: boo
             "code": normalized,
             "discount_value": float(discount_value),
             "used_by_json": json.dumps({}),
+            "condition": json.dumps(condition) if isinstance(condition, dict) else None,
             "created_at": now,
             "updated_at": now,
         },

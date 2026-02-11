@@ -202,6 +202,7 @@ CREATE_TABLE_STATEMENTS = [
         code VARCHAR(64) PRIMARY KEY,
         discount_value DECIMAL(6,2) NOT NULL DEFAULT 0,
         used_by_json LONGTEXT NULL,
+        `condition` JSON NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
         KEY idx_discount_codes_updated (updated_at)
@@ -338,6 +339,7 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_id VARCHAR(32) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_number VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_key VARCHAR(64) NULL",
+        "ALTER TABLE discount_codes ADD COLUMN IF NOT EXISTS `condition` JSON NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_at DATETIME NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_amount DECIMAL(12,2) NULL",
         "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS credit_issued_by VARCHAR(190) NULL",

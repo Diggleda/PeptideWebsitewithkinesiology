@@ -364,6 +364,22 @@ def _validate_items(items: Optional[List[Dict]]) -> bool:
     )
 
 
+def _sum_cart_quantity(items: Optional[List[Dict]]) -> int:
+    if not isinstance(items, list):
+        return 0
+    total = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            qty = int(float(item.get("quantity") or 0))
+        except Exception:
+            qty = 0
+        if qty > 0:
+            total += qty
+    return total
+
+
 def _normalize_address_field(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -493,6 +509,7 @@ def estimate_order_totals(
     if test_override:
         normalized_discount_code = None
 
+    cart_quantity = _sum_cart_quantity(items)
     discount_code_amount = 0.0
     items_total_effective = float(items_total)
     if normalized_discount_code:
@@ -500,6 +517,7 @@ def estimate_order_totals(
             user_id=user_id,
             code=normalized_discount_code,
             items_subtotal=float(items_total),
+            cart_quantity=cart_quantity,
         )
         discount_code_amount = float(applied.get("discountAmount") or 0.0)
         items_total_effective = max(0.0, float(items_total) - max(0.0, discount_code_amount))
@@ -742,11 +760,13 @@ def create_order(
     else:
         discount_code_amount = 0.0
         order["originalItemsSubtotal"] = float(items_subtotal)
+        cart_quantity = _sum_cart_quantity(items)
         if normalized_discount_code:
             applied = discount_code_service.apply_discount_to_subtotal(
                 user_id=user_id,
                 code=normalized_discount_code,
                 items_subtotal=items_subtotal,
+                cart_quantity=cart_quantity,
             )
             discount_code_amount = float(applied.get("discountAmount") or 0.0)
             order["discountCode"] = applied.get("code") or normalized_discount_code

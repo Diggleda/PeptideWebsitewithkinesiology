@@ -16,9 +16,15 @@ def seed_defaults() -> None:
     """
     Ensure RESEARCH exists without manual SQL.
 
-    NOTE: Adjust `discount_value` in MySQL `discount_codes` if you want a different value.
+    NOTE: Adjust `discount_value` / `condition` in MySQL `discount_codes` if you want different behavior.
     """
-    discount_code_repository.ensure_code_exists(code="RESEARCH", discount_value=50.0, overwrite_value=True)
+    discount_code_repository.ensure_code_exists(
+        code="RESEARCH",
+        discount_value=50.0,
+        overwrite_value=True,
+        condition={"min_cart_quantity": 4},
+        overwrite_condition=True,
+    )
 
 
 def preview_discount_for_user(
@@ -26,6 +32,7 @@ def preview_discount_for_user(
     user_id: str,
     code: str,
     items_subtotal: float,
+    cart_quantity: float | int = 0,
 ) -> Dict[str, Any]:
     seed_defaults()
     record = discount_code_repository.find_by_code(code)
@@ -35,6 +42,22 @@ def preview_discount_for_user(
     used_by = record.get("usedBy") or {}
     if isinstance(used_by, dict) and str(user_id) in used_by:
         return {"valid": False, "message": "Discount code already used"}
+
+    condition = record.get("condition") or {}
+    if isinstance(condition, dict):
+        min_qty_raw = condition.get("min_cart_quantity")
+        if min_qty_raw is None:
+            min_qty_raw = condition.get("min_cart_ quantity")
+        try:
+            min_qty = int(min_qty_raw) if min_qty_raw is not None else 0
+        except Exception:
+            min_qty = 0
+        try:
+            qty = int(float(cart_quantity or 0))
+        except Exception:
+            qty = 0
+        if min_qty > 0 and qty < min_qty:
+            return {"valid": False, "message": f"Discount code requires at least {min_qty} items in your cart"}
 
     discount_value = float(record.get("discountValue") or 0.0)
     discount_value = max(0.0, discount_value)
@@ -57,6 +80,7 @@ def apply_discount_to_subtotal(
     user_id: str,
     code: Optional[str],
     items_subtotal: float,
+    cart_quantity: float | int = 0,
 ) -> Dict[str, Any]:
     if not code:
         return {"code": None, "discountValue": 0.0, "discountAmount": 0.0}
@@ -65,6 +89,7 @@ def apply_discount_to_subtotal(
         user_id=user_id,
         code=code,
         items_subtotal=items_subtotal,
+        cart_quantity=cart_quantity,
     )
     if not preview.get("valid"):
         err = ValueError(preview.get("message") or "Invalid discount code")

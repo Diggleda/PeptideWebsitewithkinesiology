@@ -1338,12 +1338,13 @@ const buildOrderFingerprint = (payload: {
 };
 
 export const discountCodesAPI = {
-  preview: async (code: string, itemsSubtotal: number) => {
+  preview: async (code: string, itemsSubtotal: number, cartQuantity: number) => {
     return fetchWithAuth(`${API_BASE_URL}/discount-codes/preview`, {
       method: 'POST',
       body: JSON.stringify({
         code,
         itemsSubtotal: typeof itemsSubtotal === 'number' ? itemsSubtotal : 0,
+        cartQuantity: typeof cartQuantity === 'number' ? cartQuantity : 0,
       }),
     });
   },

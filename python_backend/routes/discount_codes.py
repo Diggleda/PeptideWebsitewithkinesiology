@@ -18,6 +18,12 @@ def preview_code():
     def action():
         code = payload.get("code") or payload.get("discountCode") or payload.get("discount_code") or ""
         items_subtotal = payload.get("itemsSubtotal") or payload.get("subtotal") or payload.get("items_subtotal") or 0
+        cart_quantity = payload.get("cartQuantity") or payload.get("cart_quantity") or payload.get("cartQty") or 0
+        if not cart_quantity and isinstance(payload.get("items"), list):
+            try:
+                cart_quantity = sum(float((item or {}).get("quantity") or 0) for item in (payload.get("items") or []))
+            except Exception:
+                cart_quantity = 0
         try:
             subtotal = float(items_subtotal or 0)
         except Exception:
@@ -26,7 +32,7 @@ def preview_code():
             user_id=g.current_user.get("id"),
             code=str(code),
             items_subtotal=subtotal,
+            cart_quantity=cart_quantity,
         )
 
     return handle_action(action)
-
