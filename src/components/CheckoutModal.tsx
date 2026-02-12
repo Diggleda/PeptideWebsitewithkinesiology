@@ -1618,21 +1618,37 @@ export function CheckoutModal({
 	                    </>
 	                  ) : (
 	                    <>
-	                      <p className="mt-2">
-	                        After you place your order, we’ll email{' '}
-	                        {paymentMethod === 'zelle' ? 'Zelle' : 'bank transfer'} instructions to{' '}
-	                        <span>{customerEmail || 'your email address'}</span>.
-	                      </p>
+	                      {paymentMethod === 'zelle' ? (
+	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+	                          <p className="text-xs font-semibold text-slate-700">Zelle recipient</p>
+	                          <p className="mt-1 text-[13px] text-slate-700">
+	                            Send Zelle to <span className="font-mono">support@peppro.net</span> with memo:{' '}
+	                            <span className="font-mono">({placedOrderNumber ? `Order #${placedOrderNumber}` : '#order number'})</span>. We will resend Zelle
+	                            instructions to{' '}
+	                            {typeof customerEmail === 'string' && customerEmail.trim().length > 0 ? (
+	                              <>
+	                                your <span>{customerEmail.trim()}</span> email
+	                              </>
+	                            ) : (
+	                              'your email address'
+	                            )}{' '}
+	                            after you place your order.
+	                          </p>
+	                        </div>
+	                      ) : null}
+	                      {paymentMethod !== 'zelle' ? (
+	                        <p className="mt-2">
+	                          After you place your order, we’ll email bank transfer instructions to <span>{customerEmail || 'your email address'}</span>.
+	                        </p>
+	                      ) : null}
 	                      <p className="mt-2 text-[13px] text-slate-600">
-	                        <span className="font-semibold">Important:</span> Include your order number in the payment memo/notes (we’ll show it here after you place
-	                        the order).
+	                        <span className="font-semibold">Important:</span>{' '}
 	                        {paymentMethod === 'zelle'
-	                          ? ' Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
-	                          : ''}
+	                          ? 'Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
+	                          : 'Include your order number in the payment memo/notes (we’ll show it here after you place the order).'}
 	                      </p>
                         <p className="mt-2 text-[13px] text-slate-600">
-                          <span className="font-semibold">Note:</span> PepPro emails may land in your junk/spam folder. If you’re expecting an email and don’t see it,
-                          please check there.
+                          <span className="font-semibold">Note:</span> Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t find it, contact us at <span className="font-mono">support@peppro.net.</span>
                         </p>
 	                    </>
 	                  )}

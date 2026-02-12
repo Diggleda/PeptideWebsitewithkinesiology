@@ -77,6 +77,68 @@ def _is_multi_session_exempt(email: Optional[str]) -> bool:
     # This disables single-session enforcement (session id rotation) for this one email.
     return (email or "").strip().lower() == "test@doctor.com"
 
+def _resolve_sales_rep_id_for_prospect(identifier: Optional[str]) -> Optional[str]:
+    candidate = str(identifier or "").strip()
+    if not candidate:
+        return None
+
+    try:
+        rep = sales_rep_repository.find_by_id(candidate)
+    except Exception:
+        rep = None
+    if rep and rep.get("id"):
+        return str(rep.get("id")).strip() or None
+
+    try:
+        rep_user = user_repository.find_by_id(candidate)
+    except Exception:
+        rep_user = None
+    if rep_user and isinstance(rep_user, dict):
+        rep_user_mapped = str(rep_user.get("salesRepId") or rep_user.get("sales_rep_id") or "").strip()
+        if rep_user_mapped:
+            try:
+                mapped_rep = sales_rep_repository.find_by_id(rep_user_mapped)
+            except Exception:
+                mapped_rep = None
+            if mapped_rep and mapped_rep.get("id"):
+                return str(mapped_rep.get("id")).strip() or None
+            return rep_user_mapped
+
+        rep_email = _normalize_email(str(rep_user.get("email") or ""))
+        if rep_email:
+            try:
+                by_email = sales_rep_repository.find_by_email(rep_email)
+            except Exception:
+                by_email = None
+            if by_email and by_email.get("id"):
+                return str(by_email.get("id")).strip() or None
+
+    if "@" in candidate:
+        email = _normalize_email(candidate)
+        if email:
+            try:
+                by_email = sales_rep_repository.find_by_email(email)
+            except Exception:
+                by_email = None
+            if by_email and by_email.get("id"):
+                return str(by_email.get("id")).strip() or None
+
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    for record in reps:
+        if not isinstance(record, dict):
+            continue
+        alias = str(record.get("salesRepId") or record.get("sales_rep_id") or "").strip()
+        legacy = str(record.get("legacyUserId") or record.get("legacy_user_id") or "").strip()
+        if candidate and (candidate == alias or candidate == legacy):
+            rid = str(record.get("id") or "").strip()
+            if rid:
+                return rid
+
+    return candidate
+
 def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
     """
     Ensure doctor/test_doctor accounts always have a corresponding sales_prospects row so:
@@ -89,15 +151,24 @@ def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
             return
 
         doctor_id = str(user.get("id") or "").strip()
-        sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
-        if not doctor_id or not sales_rep_id:
+        if not doctor_id:
             return
 
-        name = _sanitize_name(str(user.get("name") or ""))
-        email = _normalize_email(str(user.get("email") or ""))
-        phone = user.get("phone") or None
+        # Always re-read from users to guarantee we copy canonical account state.
+        canonical_user = user_repository.find_by_id(doctor_id) or user
+        sales_rep_id = _resolve_sales_rep_id_for_prospect(
+            canonical_user.get("salesRepId") or canonical_user.get("sales_rep_id")
+        )
+        if not sales_rep_id:
+            return
+
+        name = _sanitize_name(str(canonical_user.get("name") or ""))
+        email = _normalize_email(str(canonical_user.get("email") or ""))
+        phone = canonical_user.get("phone") or None
 
         existing = sales_prospect_repository.find_by_sales_rep_and_doctor(sales_rep_id, doctor_id)
+        if not existing:
+            existing = sales_prospect_repository.find_by_doctor_id(doctor_id)
         if not existing and email:
             existing = sales_prospect_repository.find_by_sales_rep_and_contact_email(sales_rep_id, email)
 
@@ -126,6 +197,36 @@ def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
             "contactName": name or (existing.get("contactName") if existing else None),
             "contactEmail": email or (existing.get("contactEmail") if existing else None),
             "contactPhone": phone or (existing.get("contactPhone") if existing else None),
+            "officeAddressLine1": (
+                canonical_user.get("officeAddressLine1")
+                or canonical_user.get("office_address_line1")
+                or (existing.get("officeAddressLine1") if existing else None)
+            ),
+            "officeAddressLine2": (
+                canonical_user.get("officeAddressLine2")
+                or canonical_user.get("office_address_line2")
+                or (existing.get("officeAddressLine2") if existing else None)
+            ),
+            "officeCity": (
+                canonical_user.get("officeCity")
+                or canonical_user.get("office_city")
+                or (existing.get("officeCity") if existing else None)
+            ),
+            "officeState": (
+                canonical_user.get("officeState")
+                or canonical_user.get("office_state")
+                or (existing.get("officeState") if existing else None)
+            ),
+            "officePostalCode": (
+                canonical_user.get("officePostalCode")
+                or canonical_user.get("office_postal_code")
+                or (existing.get("officePostalCode") if existing else None)
+            ),
+            "officeCountry": (
+                canonical_user.get("officeCountry")
+                or canonical_user.get("office_country")
+                or (existing.get("officeCountry") if existing else None)
+            ),
         }
 
         if payload.get("status") is None:

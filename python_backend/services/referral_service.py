@@ -833,6 +833,10 @@ def _resolve_sales_rep_id(identifier: Optional[str]) -> Optional[str]:
     for record in reps:
         if not isinstance(record, dict):
             continue
+        rep_alias = str(record.get("salesRepId") or record.get("sales_rep_id") or "").strip()
+        if rep_alias and rep_alias == candidate:
+            rid = str(record.get("id") or "").strip()
+            return rid or None
         legacy = str(record.get("legacyUserId") or record.get("legacy_user_id") or "").strip()
         if legacy and legacy == candidate:
             rid = str(record.get("id") or "").strip()

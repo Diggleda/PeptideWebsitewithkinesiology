@@ -38,6 +38,8 @@ def _ensure_converted_sales_prospect_for_user(user: Dict, *, dry_run: bool) -> O
     phone = user.get("phone") or user.get("phoneNumber") or user.get("phone_number") or None
 
     existing = sales_prospect_repository.find_by_sales_rep_and_doctor(sales_rep_id, doctor_id)
+    if not existing:
+        existing = sales_prospect_repository.find_by_doctor_id(doctor_id)
     if not existing and email:
         existing = sales_prospect_repository.find_by_sales_rep_and_contact_email(sales_rep_id, email)
 
@@ -149,4 +151,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

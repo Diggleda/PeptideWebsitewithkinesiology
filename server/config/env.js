@@ -46,6 +46,23 @@ const parseList = (value) => {
     .filter(Boolean);
 };
 
+const parseBooleanEnv = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
+    return false;
+  }
+  return null;
+};
+
 const resolvePath = (value, fallback) => {
   const candidate = value || fallback;
   if (!candidate) {
@@ -224,9 +241,11 @@ const env = {
   },
 };
 
+const mysqlEnabledFlag = parseBooleanEnv(process.env.MYSQL_ENABLED);
+const hasMysqlConfig = Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE);
+
 env.mysql = {
-  enabled: process.env.MYSQL_ENABLED === 'true'
-    || (Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE)),
+  enabled: mysqlEnabledFlag === true || (mysqlEnabledFlag === null && hasMysqlConfig),
   host: process.env.MYSQL_HOST || '127.0.0.1',
   port: toNumber(process.env.MYSQL_PORT, 3306),
   user: process.env.MYSQL_USER || 'root',

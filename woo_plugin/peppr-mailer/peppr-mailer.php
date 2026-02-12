@@ -104,11 +104,22 @@ function peppr_mailer_bridge_send_password_reset_email(WP_REST_Request $request)
     $reply_to = defined('PEPPR_MAIL_REPLY_TO') ? (string) PEPPR_MAIL_REPLY_TO : 'support@peppro.net';
 
     $subject = 'Reset your PepPro password';
-    $headline = $display_name !== '' ? 'Reset your PepPro password, ' . esc_html($display_name) : 'Reset your PepPro password';
+    $greeting = $display_name !== '' ? 'Hi ' . esc_html($display_name) . ',' : 'Hi,';
 
-    $body = '<p>' . $headline . '.</p>'
-        . '<p><a href="' . esc_url($reset_url) . '">Click here to reset your password</a></p>'
-        . '<p>If you did not request this, you can ignore this email.</p>';
+    $reset_button = '<a href="' . esc_url($reset_url) . '"'
+      . ' style="display:inline-block;background:#5fb3f9;color:#ffffff;text-decoration:none;'
+      . 'padding:12px 18px;border-radius:10px;font-weight:700;line-height:1.1;">'
+      . 'Reset password'
+      . '</a>';
+
+    $body = ''
+      . '<div style="margin:0;padding:0;">'
+      . '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.4;color:#111827;">' . $greeting . '</p>'
+      . '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.5;color:#334155;">We received a request to reset your PepPro password.</p>'
+      . '<div style="margin:0 0 18px 0;">' . $reset_button . '</div>'
+      . '<p style="margin:0 0 10px 0;font-size:13px;line-height:1.5;color:#64748b;">If you didn’t request this, you can safely ignore this email.</p>'
+      . '<p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">Need help? Contact <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">support@peppro.net</span>.</p>'
+      . '</div>';
 
     $html = peppr_mailer_bridge_mailer_wrap($subject, $body);
 
@@ -188,10 +199,16 @@ function peppr_mailer_bridge_configure_smtp($phpmailer) {
 // Reduce WooCommerce email header logo size for PepPro-branded emails.
 add_filter('woocommerce_email_styles', function ($css) {
     $css .= "\n"
-        . "#template_header_image img {"
-        . "max-width: 120px !important;"
+        . "#template_header_image img,"
+        . ".wc-email-header__image img,"
+        . ".email-header-image img,"
+        . ".email_header img {"
+        . "max-width: 180px !important;"
+        . "max-height: 64px !important;"
         . "width: auto !important;"
         . "height: auto !important;"
+        . "display: block !important;"
+        . "margin: 0 auto !important;"
         . "}\n";
     return $css;
 }, 100);

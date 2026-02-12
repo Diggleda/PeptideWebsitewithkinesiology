@@ -3850,13 +3850,21 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             if rep_alias and rep_id:
                 alias_to_rep_id[rep_alias] = str(rep_id).strip()
 
+        for admin in admins:
+            admin_id = admin.get("id")
+            if not admin_id:
+                continue
+            admin_alias = str(admin.get("salesRepId") or admin.get("sales_rep_id") or "").strip()
+            if admin_alias:
+                alias_to_rep_id[admin_alias] = str(admin_id)
+
         for rep in rep_records_list:
             rep_id = rep.get("id")
             if not rep_id:
                 continue
             rep_id_str = str(rep_id)
             rep_email = _norm_email(rep.get("email"))
-            canonical = user_rep_id_by_email.get(rep_email) or rep_id_str
+            canonical = admin_id_by_email.get(rep_email) or user_rep_id_by_email.get(rep_email) or rep_id_str
             alias_to_rep_id[rep_id_str] = canonical
             legacy_id = rep.get("legacyUserId") or rep.get("legacy_user_id")
             if legacy_id:

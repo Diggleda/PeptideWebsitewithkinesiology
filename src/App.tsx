@@ -21732,7 +21732,8 @@ function MainApp() {
                                 className="text-sm text-emerald-600"
                                 role="status"
                               >
-                                Your reset link will likely arrive in your spam folder within the next 30 seconds.
+                                Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t
+                                find it, contact us at <span className="font-mono">support@peppro.net</span>.
                               </p>
                             )}
                             <Button
@@ -23106,32 +23107,35 @@ function MainApp() {
 			                              return ts >= fromMs && ts <= toMs;
 			                            });
 			                          };
-			                          if (role === "admin") {
-			                            const adminRow = adminCommissionRows.find(
-			                              (row) =>
-			                                String(row?.id || "") ===
-			                                String(salesDoctorDetail.doctorId || ""),
-			                            );
-			                            const commissionValue = (() => {
-			                              if (
-			                                Boolean(salesDoctorCommissionRange?.from) &&
-			                                Boolean(salesDoctorCommissionRange?.to)
-			                              ) {
-			                                return typeof salesDoctorCommissionFromReport === "number" &&
-			                                  Number.isFinite(salesDoctorCommissionFromReport)
-			                                  ? salesDoctorCommissionFromReport
-			                                  : null;
-			                              }
-			                              return adminRow ? Number(adminRow.amount || 0) : null;
-			                            })();
-			                            const periodLabel = formatPeriodLabel(
-			                              adminProductsCommissionMeta?.periodStart ?? null,
-			                              adminProductsCommissionMeta?.periodEnd ?? null,
-			                            );
-			                            return (
-			                              <div className="flex items-center gap-2 flex-wrap">
-			                                <p className="text-sm text-slate-600">
-			                                  Total Commission:{" "}
+				                          if (role === "admin") {
+				                            const adminRow = adminCommissionRows.find(
+				                              (row) =>
+				                                String(row?.id || "") ===
+				                                String(salesDoctorDetail.doctorId || ""),
+				                            );
+				                            const commissionValue = (() => {
+				                              if (
+				                                typeof salesDoctorCommissionFromReport === "number" &&
+				                                Number.isFinite(salesDoctorCommissionFromReport)
+				                              ) {
+				                                return salesDoctorCommissionFromReport;
+				                              }
+				                              return adminRow ? Number(adminRow.amount || 0) : null;
+				                            })();
+				                            const periodLabel = formatPeriodLabel(
+				                              adminProductsCommissionMeta?.periodStart ??
+				                                salesRepPeriodStart ??
+				                                salesRepSalesSummaryMeta?.periodStart ??
+				                                null,
+				                              adminProductsCommissionMeta?.periodEnd ??
+				                                salesRepPeriodEnd ??
+				                                salesRepSalesSummaryMeta?.periodEnd ??
+				                                null,
+				                            );
+				                            return (
+				                              <div className="flex items-center gap-2 flex-wrap">
+				                                <p className="text-sm text-slate-600">
+				                                  Total Commission:{" "}
 			                                  {salesDoctorCommissionFromReportLoading
 			                                    ? "Loading..."
 			                                    : commissionValue == null

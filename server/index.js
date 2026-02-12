@@ -1,11 +1,8 @@
 const http = require('http');
 const net = require('net');
-const createApp = require('./app');
 const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { bootstrap } = require('./bootstrap');
-const { startOrderSyncJob } = require('./services/orderService');
-const { startShipStationStatusSyncJob } = require('./services/shipStationSyncService');
 
 process.on('uncaughtException', (err) => {
   // Ensure we see boot/runtime crashes even if logger transport is misconfigured under Passenger.
@@ -29,62 +26,82 @@ const assertSecureRuntimeConfig = () => {
   }
 };
 
-const isPortAvailable = async (port) => new Promise((resolve) => {
+const probeListen = (port, host) => new Promise((resolve) => {
   const tester = net.createServer();
+  let settled = false;
 
-  const cleanup = (available) => {
-    try {
-      tester.close(() => resolve(available));
-    } catch {
-      resolve(available);
-    }
+  const finish = (available, code = null) => {
+    if (settled) return;
+    settled = true;
+    resolve({ available, code });
   };
 
   tester.once('error', (err) => {
-    // Retry on IPv4-only stacks; otherwise treat as unavailable.
-    if (err && (err.code === 'EAFNOSUPPORT' || err.code === 'EADDRNOTAVAIL')) {
-      try {
-        const ipv4Tester = net.createServer()
-          .once('error', () => resolve(false))
-          .once('listening', function onListening() {
-            ipv4Tester.close(() => resolve(true));
-          });
-        ipv4Tester.listen(port, '0.0.0.0');
-        return;
-      } catch {
-        resolve(false);
-        return;
-      }
+    const code = err && typeof err.code === 'string' ? err.code : null;
+    try {
+      tester.close(() => finish(false, code));
+    } catch {
+      finish(false, code);
     }
-    resolve(false);
   });
 
-  tester.once('listening', () => cleanup(true));
-
-  // Match `server.listen(port)` behavior which prefers IPv6 dual-stack (`::`) when available.
-  try {
-    tester.listen({ port, host: '::' });
-  } catch {
-    // If the platform doesn't support IPv6, fall back to IPv4.
+  tester.once('listening', () => {
     try {
-      tester.listen(port, '0.0.0.0');
+      tester.close(() => finish(true, null));
     } catch {
-      resolve(false);
+      finish(true, null);
+    }
+  });
+
+  try {
+    tester.listen({ port, host });
+  } catch (err) {
+    const code = err && typeof err.code === 'string' ? err.code : null;
+    try {
+      tester.close(() => finish(false, code));
+    } catch {
+      finish(false, code);
     }
   }
 });
 
+const probePortAvailability = async (port) => {
+  // Match `server.listen(port)` behavior which prefers IPv6 dual-stack (`::`) when available.
+  const ipv6 = await probeListen(port, '::');
+  if (ipv6.available) {
+    return ipv6;
+  }
+  const retryIpv4 =
+    ipv6.code === 'EAFNOSUPPORT'
+    || ipv6.code === 'EADDRNOTAVAIL'
+    || ipv6.code === 'EPERM'
+    || ipv6.code === 'EACCES';
+  if (!retryIpv4) {
+    return ipv6;
+  }
+  return probeListen(port, '0.0.0.0');
+};
+
 const findAvailablePort = async (startPort, attempts = 5) => {
+  const failureCodes = [];
   for (let i = 0; i < attempts; i += 1) {
     const candidate = startPort + i;
     // eslint-disable-next-line no-await-in-loop
-    const available = await isPortAvailable(candidate);
-    if (available) {
+    const probe = await probePortAvailability(candidate);
+    if (probe.available) {
       if (i > 0) {
         logger.warn({ tried: startPort, selected: candidate }, 'Port in use, using fallback');
       }
       return candidate;
     }
+    failureCodes.push(probe.code);
+  }
+  const distinctCodes = Array.from(new Set(failureCodes.filter(Boolean)));
+  if (distinctCodes.length === 1 && (distinctCodes[0] === 'EPERM' || distinctCodes[0] === 'EACCES')) {
+    throw new Error(
+      `Unable to bind to ports starting at ${startPort} (${distinctCodes[0]}). `
+      + 'This environment may block listening sockets; choose a different PORT or update hosting configuration.',
+    );
   }
   throw new Error(`No available port found starting at ${startPort}`);
 };
@@ -105,14 +122,21 @@ const start = async () => {
     if (env.allowPortFallback) {
       port = await findAvailablePort(env.port, 6);
     } else {
-      const available = await isPortAvailable(env.port);
-      if (!available) {
+      const probe = await probePortAvailability(env.port);
+      if (!probe.available) {
+        if (probe.code === 'EPERM' || probe.code === 'EACCES') {
+          throw new Error(
+            `Unable to bind to port ${env.port} (${probe.code}). `
+            + 'Choose a different PORT or update host permissions.',
+          );
+        }
         throw new Error(
           `Port ${env.port} is already in use. Stop the existing process or set PORT, or set ALLOW_PORT_FALLBACK=true.`,
         );
       }
     }
 
+    const createApp = require('./app');
     const app = createApp();
     const server = http.createServer(app);
 
@@ -125,8 +149,18 @@ const start = async () => {
         },
         'Backend server is ready',
       );
-      startOrderSyncJob();
-      startShipStationStatusSyncJob();
+      try {
+        const { startOrderSyncJob } = require('./services/orderService');
+        startOrderSyncJob();
+      } catch (error) {
+        logger.error({ err: error }, 'Failed to start background order sync job');
+      }
+      try {
+        const { startShipStationStatusSyncJob } = require('./services/shipStationSyncService');
+        startShipStationStatusSyncJob();
+      } catch (error) {
+        logger.error({ err: error }, 'Failed to start ShipStation status sync job');
+      }
     });
 
     server.on('error', (error) => {

@@ -2203,11 +2203,21 @@ body {
   }
 
   .selection\:bg-primary ::selection, .selection\:bg-primary::selection {
-    background-color: var(--primary);
+    background-color: rgba(95, 179, 249, 0.28);
   }
 
   .selection\:text-primary-foreground ::selection, .selection\:text-primary-foreground::selection {
-    color: var(--primary-foreground);
+    color: inherit;
+  }
+
+  ::selection {
+    background-color: rgba(95, 179, 249, 0.28);
+    color: inherit;
+  }
+
+  ::-moz-selection {
+    background-color: rgba(95, 179, 249, 0.28);
+    color: inherit;
   }
 
   .file\:inline-flex::file-selector-button {
@@ -4418,6 +4428,143 @@ html {
 
 .notes-textarea {
   background: rgb(241, 245, 249);
+}
+
+.timestamp-chip {
+  position: relative;
+  background: transparent;
+  color: rgb(51, 65, 85);
+  transition: color 150ms ease;
+}
+
+.timestamp-chip__label {
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+.timestamp-editor-popover {
+  position: relative;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  isolation: isolate;
+  overflow: hidden;
+  contain: paint;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.timestamp-editor-popover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(248, 250, 252, 0.72);
+  -webkit-backdrop-filter: blur(22px) saturate(1.45);
+  backdrop-filter: blur(22px) saturate(1.45);
+  pointer-events: none;
+  transform: translateZ(0);
+  z-index: 0;
+}
+
+.timestamp-editor-popover > * {
+  position: relative;
+  z-index: 1;
+}
+
+.timestamp-editor-popover__delete {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  z-index: 10;
+  color: rgb(100, 116, 139);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.timestamp-editor-popover__delete:hover:not(:disabled),
+.timestamp-editor-popover__delete:focus-visible:not(:disabled) {
+  color: rgb(51, 65, 85);
+  text-decoration: underline;
+}
+
+.timestamp-editor-popover__delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.timestamp-editor-popover__grid-wrap {
+  position: relative;
+}
+
+.timestamp-editor-popover__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding-top: 0;
+}
+
+.timestamp-chip__edit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: rgb(51, 65, 85);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.timestamp-chip:hover:not(:disabled),
+.timestamp-chip:focus-visible:not(:disabled) {
+  color: rgb(51, 65, 85);
+}
+
+.timestamp-chip__edit-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.25rem;
+  line-height: 1;
+  border-radius: 3px;
+  padding: 0 2px;
+  background: rgb(148, 163, 184);
+  color: #fff;
+}
+
+.timestamp-chip__bracket {
+  flex: 0 0 auto;
+}
+
+.timestamp-chip__add-button {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--squircle-xsm, 5px);
+  background: rgba(148, 163, 184, 0.12);
+  color: rgb(100, 116, 139);
+}
+
+.timestamp-chip__add-button:hover:not(:disabled),
+.timestamp-chip__add-button:focus-visible:not(:disabled) {
+  background: rgba(148, 163, 184, 0.2);
+  color: rgb(71, 85, 105);
+}
+
+.timestamp-chip__add-button:disabled {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.timestamp-chip:hover:not(:disabled) .timestamp-chip__label,
+.timestamp-chip:focus-visible:not(:disabled) .timestamp-chip__label {
+  opacity: 0;
+}
+
+.timestamp-chip:hover:not(:disabled) .timestamp-chip__edit,
+.timestamp-chip:focus-visible:not(:disabled) .timestamp-chip__edit {
+  opacity: 1;
 }
 
 .lead-list-actions-footer {

@@ -1,6 +1,6 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { cn } from "./ui/utils";
 
 type TimestampedEntry = {
@@ -209,6 +209,7 @@ export function TimestampedNotesField({
   id,
 }: TimestampedNotesFieldProps) {
   const parsed = useMemo(() => parseNotes(value), [value]);
+  const preambleRef = useRef<HTMLTextAreaElement | null>(null);
   const textRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
   const pendingFocusIndexRef = useRef<number | null>(null);
   const [timestampEditorIndex, setTimestampEditorIndex] = useState<number | null>(null);
@@ -227,6 +228,17 @@ export function TimestampedNotesField({
       // Ignore selection errors for unsupported inputs.
     }
   }, [parsed.entries.length]);
+
+  useLayoutEffect(() => {
+    const autosize = (el: HTMLTextAreaElement | null) => {
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+
+    autosize(preambleRef.current);
+    textRefs.current.forEach((el) => autosize(el));
+  }, [parsed.preamble, parsed.entries]);
 
   const commit = useCallback(
     (next: ParsedNotes) => {
@@ -260,6 +272,31 @@ export function TimestampedNotesField({
     [commit, parsed.entries, parsed.preamble],
   );
 
+  const handleEntryTimestampDelete = useCallback(
+    (index: number) => {
+      const target = parsed.entries[index];
+      if (!target) return;
+      const movedText = typeof target.text === "string" ? target.text : String(target.text ?? "");
+      const nextEntries = parsed.entries
+        .filter((_, idx) => idx !== index)
+        .map((entry) => ({ ...entry }));
+
+      let nextPreamble = parsed.preamble;
+      if (movedText) {
+        if (index > 0 && nextEntries[index - 1]) {
+          const prevText = nextEntries[index - 1].text || "";
+          nextEntries[index - 1].text = prevText ? `${prevText}\n${movedText}` : movedText;
+        } else {
+          nextPreamble = nextPreamble ? `${nextPreamble}\n${movedText}` : movedText;
+        }
+      }
+
+      setTimestampEditorIndex(null);
+      commit({ preamble: nextPreamble, entries: nextEntries });
+    },
+    [commit, parsed.entries, parsed.preamble],
+  );
+
   const handleAddEntry = useCallback(() => {
     if (disabled) return;
     const nextEntries = [...parsed.entries, { timestamp: new Date(), text: "" }];
@@ -268,8 +305,57 @@ export function TimestampedNotesField({
     commit({ preamble: parsed.preamble, entries: nextEntries });
   }, [commit, disabled, parsed.entries, parsed.preamble]);
 
+  const insertNewlineAtCursor = (
+    value: string,
+    start: number | null,
+    end: number | null,
+  ) => {
+    const safeStart = Number.isFinite(start) ? Math.max(0, start as number) : value.length;
+    const safeEnd = Number.isFinite(end) ? Math.max(safeStart, end as number) : safeStart;
+    const next = `${value.slice(0, safeStart)}\n${value.slice(safeEnd)}`;
+    return { next, caret: safeStart + 1 };
+  };
+
+  const handlePreambleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const el = event.currentTarget;
+      const { next, caret } = insertNewlineAtCursor(el.value, el.selectionStart, el.selectionEnd);
+      handlePreambleChange(next);
+      window.requestAnimationFrame(() => {
+        try {
+          el.setSelectionRange(caret, caret);
+        } catch {
+          // Ignore unsupported selection APIs.
+        }
+      });
+    },
+    [handlePreambleChange],
+  );
+
+  const handleEntryKeyDown = useCallback(
+    (index: number, event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const el = event.currentTarget;
+      const { next, caret } = insertNewlineAtCursor(el.value, el.selectionStart, el.selectionEnd);
+      handleEntryTextChange(index, next);
+      window.requestAnimationFrame(() => {
+        try {
+          el.setSelectionRange(caret, caret);
+        } catch {
+          // Ignore unsupported selection APIs.
+        }
+      });
+    },
+    [handleEntryTextChange],
+  );
+
   const rootClasses = cn(
-    "textarea bg-input-background border-input flex min-h-[80px] w-full flex-col gap-2 rounded-md border px-3 py-2 text-base transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+    "textarea bg-input-background border-input flex min-h-[80px] max-h-[420px] w-full flex-col gap-2 overflow-y-auto rounded-md border px-3 py-2 text-base transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
     "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
     className,
   );
@@ -278,9 +364,11 @@ export function TimestampedNotesField({
     <div id={id} className={rootClasses} aria-disabled={disabled || undefined}>
       {parsed.preamble ? (
         <textarea
+          ref={preambleRef}
           value={parsed.preamble}
           onChange={(event) => handlePreambleChange(event.target.value)}
-          className="w-full resize-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+          onKeyDown={handlePreambleKeyDown}
+          className="w-full resize-none overflow-hidden bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
           rows={2}
           disabled={disabled}
           placeholder={parsed.entries.length === 0 ? placeholder : undefined}
@@ -303,16 +391,20 @@ export function TimestampedNotesField({
                 <button
                   type="button"
                   className={cn(
-                    "group relative inline-flex h-7 items-center justify-center whitespace-nowrap squircle-sm px-2 text-[11px] font-semibold tracking-tight",
-                    "bg-slate-200 text-slate-700 hover:bg-slate-500 hover:text-white",
+                    "timestamp-chip inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold tracking-tight",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
                     disabled ? "cursor-not-allowed opacity-60" : "",
                   )}
                   aria-label="Edit timestamp"
                 >
-                  <span className="transition-opacity group-hover:opacity-0">[{formatted}]</span>
-                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-white opacity-0 transition-opacity group-hover:opacity-100">
-                    Edit
+                  <span className="timestamp-chip__label">[{formatted}]</span>
+                  <span className="timestamp-chip__edit pointer-events-none">
+                    <span className="timestamp-chip__bracket">[</span>
+                    <span className="timestamp-chip__edit-pill">
+                      <Pencil className="h-3 w-3" aria-hidden="true" />
+                      Edit
+                    </span>
+                    <span className="timestamp-chip__bracket">]</span>
                   </span>
                 </button>
             </Popover.Trigger>
@@ -321,9 +413,18 @@ export function TimestampedNotesField({
                   side="bottom"
                   align="start"
                   sideOffset={8}
-                  className="z-[10000] w-[260px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                  className="timestamp-editor-popover z-[10000] w-[260px] rounded-xl p-3 shadow-xl"
                 >
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="timestamp-editor-popover__grid-wrap">
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => handleEntryTimestampDelete(index)}
+                      className="timestamp-editor-popover__delete text-xs font-semibold"
+                    >
+                      Delete
+                    </button>
+                    <div className="timestamp-editor-popover__grid">
                     <div className="space-y-1">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                         Date
@@ -355,6 +456,7 @@ export function TimestampedNotesField({
                         className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                       />
                     </div>
+                    </div>
                   </div>
                 </Popover.Content>
               </Popover.Portal>
@@ -366,7 +468,8 @@ export function TimestampedNotesField({
               }}
               value={entry.text}
               onChange={(event) => handleEntryTextChange(index, event.target.value)}
-              className="min-h-7 w-full flex-1 resize-none bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              onKeyDown={(event) => handleEntryKeyDown(index, event)}
+              className="min-h-7 w-full flex-1 resize-none overflow-hidden bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
               rows={1}
               disabled={disabled}
             />
@@ -380,9 +483,9 @@ export function TimestampedNotesField({
           onClick={handleAddEntry}
           disabled={disabled}
           className={cn(
-            "inline-flex h-8 w-8 items-center justify-center squircle-sm bg-slate-200 text-slate-700 transition-colors hover:bg-slate-300",
+            "timestamp-chip__add-button inline-flex items-center justify-center transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.3)]",
-            disabled ? "cursor-not-allowed opacity-60 hover:bg-slate-200" : "",
+            disabled ? "cursor-not-allowed opacity-60" : "",
           )}
           aria-label="Add timestamped log"
         >
