@@ -28,6 +28,19 @@ const normalizeOptionalString = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'on';
+  }
+  return false;
+};
+
 const syncDirectShippingToSql = (user) => {
   if (!mysqlClient.isEnabled()) {
     logger.warn(
@@ -64,6 +77,7 @@ const syncDirectShippingToSql = (user) => {
     isTaxExempt: user.isTaxExempt ? 1 : 0,
     taxExemptSource: user.taxExemptSource || null,
     taxExemptReason: user.taxExemptReason || null,
+    devCommission: user.devCommission ? 1 : 0,
   };
   logger.info(
     {
@@ -102,7 +116,8 @@ const syncDirectShippingToSql = (user) => {
           npi_verified_at,
           is_tax_exempt,
           tax_exempt_source,
-          tax_exempt_reason
+          tax_exempt_reason,
+          dev_commission
         ) VALUES (
           :id,
           :email,
@@ -123,7 +138,8 @@ const syncDirectShippingToSql = (user) => {
           :npiVerifiedAt,
           :isTaxExempt,
           :taxExemptSource,
-          :taxExemptReason
+          :taxExemptReason,
+          :devCommission
         )
         ON DUPLICATE KEY UPDATE
           email = COALESCE(VALUES(email), email),
@@ -144,7 +160,8 @@ const syncDirectShippingToSql = (user) => {
           npi_verified_at = VALUES(npi_verified_at),
           is_tax_exempt = VALUES(is_tax_exempt),
           tax_exempt_source = VALUES(tax_exempt_source),
-          tax_exempt_reason = VALUES(tax_exempt_reason)
+          tax_exempt_reason = VALUES(tax_exempt_reason),
+          dev_commission = VALUES(dev_commission)
       `,
       params,
     )
@@ -255,6 +272,11 @@ const ensureUserDefaults = (user) => {
     normalized.profileImageUrl = null;
   } else {
     normalized.profileImageUrl = normalizeOptionalString(normalized.profileImageUrl);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'devCommission')) {
+    normalized.devCommission = false;
+  } else {
+    normalized.devCommission = normalizeBooleanFlag(normalized.devCommission);
   }
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {

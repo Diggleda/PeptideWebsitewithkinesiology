@@ -161,6 +161,13 @@ const ensureUserColumns = async () => {
         MODIFY COLUMN profile_image_url LONGTEXT NULL
       `,
     },
+    {
+      name: 'dev_commission',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN dev_commission TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
   ];
 
   for (const column of columns) {

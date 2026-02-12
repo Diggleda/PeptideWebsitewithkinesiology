@@ -7201,6 +7201,8 @@ function MainApp() {
     [],
   );
 
+  const adminCommissionRowsRef = useRef<any[]>([]);
+
   const openLiveUserDetail = useCallback(
     (
       entry: any,
@@ -7211,6 +7213,27 @@ function MainApp() {
     ) => {
       const id = String(entry?.id || "").trim();
       if (!id) return;
+      const aliasIds = Array.isArray(entry?.aliasIds)
+        ? (entry.aliasIds as unknown[])
+            .map((value) => String(value || "").trim())
+            .filter((value) => value.length > 0)
+        : [];
+      const candidateIds = Array.from(
+        new Set(
+          [
+            id,
+            ...aliasIds,
+            entry?.ownerSalesRepId,
+            entry?.owner_sales_rep_id,
+            entry?.salesRepId,
+            entry?.sales_rep_id,
+            entry?.assignedSalesRepId,
+            entry?.assigned_sales_rep_id,
+          ]
+            .map((value) => String(value || "").trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
 
       const avatarUrl = entry?.profileImageUrl || null;
       const displayName = entry?.name || entry?.email || "User";
@@ -7398,10 +7421,56 @@ function MainApp() {
 
 	      (async () => {
 	        try {
-          const [profileResp, ordersResp] = await Promise.all([
-            settingsAPI.getAdminUserProfile(id) as any,
-            ordersAPI.getAdminOrdersForUser(id) as any,
-          ]);
+          const tryLoadForUserId = async (candidateId: string) => {
+            const profileResp = (await settingsAPI.getAdminUserProfile(candidateId)) as any;
+            const profile = (profileResp as any)?.user || null;
+            const canonicalUserId = String(profile?.id || candidateId || "").trim();
+            if (!canonicalUserId) {
+              throw new Error("USER_ID_NOT_RESOLVED");
+            }
+            const ordersResp = (await ordersAPI.getAdminOrdersForUser(canonicalUserId)) as any;
+            return { profileResp, ordersResp, canonicalUserId };
+          };
+
+          let profileResp: any = null;
+          let ordersResp: any = null;
+          let resolvedUserId = id;
+          let resolvedSalesRepIdentifier = "";
+
+          for (const candidateId of candidateIds) {
+            try {
+              const loaded = await tryLoadForUserId(candidateId);
+              profileResp = loaded.profileResp;
+              ordersResp = loaded.ordersResp;
+              resolvedUserId = loaded.canonicalUserId;
+              resolvedSalesRepIdentifier = candidateId;
+              break;
+            } catch {
+              // continue to next candidate/strategy
+            }
+
+            try {
+              const salesRepResp = (await settingsAPI.getSalesRepProfile(candidateId)) as any;
+              const rep = (salesRepResp as any)?.salesRep || null;
+              const repUserId = String(rep?.userId || "").trim();
+              const repId = String(rep?.id || "").trim();
+              if (!repUserId) {
+                continue;
+              }
+              const loaded = await tryLoadForUserId(repUserId);
+              profileResp = loaded.profileResp;
+              ordersResp = loaded.ordersResp;
+              resolvedUserId = loaded.canonicalUserId;
+              resolvedSalesRepIdentifier = repId || repUserId;
+              break;
+            } catch {
+              // continue to next candidate
+            }
+          }
+
+          if (!profileResp || !ordersResp) {
+            throw new Error("ADMIN_USER_RESOLUTION_FAILED");
+          }
 
           const profile = (profileResp as any)?.user || null;
           const normalizedOrders = normalizeAccountOrdersResponse(ordersResp, {
@@ -7421,6 +7490,49 @@ function MainApp() {
             shouldCountRevenueForStatus(order.status),
           ).length;
           const roleFromProfile = normalizeRole(profile?.role || entryRole || "doctor");
+          const salesRepIdentifiers = Array.from(
+            new Set(
+              [
+                resolvedSalesRepIdentifier,
+                profile?.salesRepId,
+                profile?.sales_rep_id,
+                resolvedUserId,
+                ...candidateIds,
+              ]
+                .map((value) => String(value || "").trim())
+                .filter((value) => value.length > 0),
+            ),
+          );
+          const profileNameKey =
+            typeof profile?.name === "string" && profile.name.trim()
+              ? profile.name.trim().toLowerCase()
+              : typeof entry?.name === "string" && entry.name.trim()
+                ? entry.name.trim().toLowerCase()
+                : "";
+          const lookupIdSet = new Set<string>(
+            [
+              resolvedUserId,
+              String(profile?.id || "").trim(),
+              ...candidateIds,
+              ...salesRepIdentifiers,
+            ].filter((value) => value.length > 0),
+          );
+          const commissionRowForModal = adminCommissionRowsRef.current.find((row) => {
+            const rowRole = normalizeRole((row as any)?.role || "");
+            const rowNameKey =
+              typeof (row as any)?.name === "string" && String((row as any).name).trim().length > 0
+                ? String((row as any).name).trim().toLowerCase()
+                : "";
+            const rowId = String((row as any)?.id || "").trim();
+            const rowAliasIds = Array.isArray((row as any)?.aliasIds)
+              ? ((row as any).aliasIds as unknown[])
+                  .map((value) => String(value || "").trim())
+                  .filter((value) => value.length > 0)
+              : [];
+            if (rowId && lookupIdSet.has(rowId)) return true;
+            if (rowAliasIds.some((value) => lookupIdSet.has(value))) return true;
+            return Boolean(profileNameKey && rowNameKey && profileNameKey === rowNameKey && rowRole === roleFromProfile);
+          });
 
           const addressParts = [
             profile?.officeAddressLine1,
@@ -7451,11 +7563,28 @@ function MainApp() {
 
 		          if (isSalesProfile) {
 		            try {
-		              const repOrdersResp = await ordersAPI.getForSalesRep({
-		                salesRepId: id,
-		                scope: "all",
-		              });
-		              const repOrders = (repOrdersResp as any)?.orders;
+                  let repOrdersResp: any = null;
+                  for (const repIdentifier of salesRepIdentifiers) {
+                    try {
+                      const candidateResp = await ordersAPI.getForSalesRep({
+                        salesRepId: repIdentifier,
+                        scope: "all",
+                      });
+                      const candidateOrders = Array.isArray((candidateResp as any)?.orders)
+                        ? ((candidateResp as any).orders as any[])
+                        : [];
+                      if (!repOrdersResp) {
+                        repOrdersResp = candidateResp;
+                      }
+                      if (candidateOrders.length > 0) {
+                        repOrdersResp = candidateResp;
+                        break;
+                      }
+                    } catch {
+                      // keep trying aliases
+                    }
+                  }
+                  const repOrders = (repOrdersResp as any)?.orders;
 		              const repOrdersList = Array.isArray(repOrders) ? repOrders : [];
 
 		              const repOrdersNormalized = normalizeAccountOrdersResponse(
@@ -7533,9 +7662,14 @@ function MainApp() {
                     }
                   };
 
+                    const personalIdentityIds = new Set<string>([
+                      resolvedUserId,
+                      ...candidateIds,
+                      ...salesRepIdentifiers,
+                    ]);
 	                  const isPersonalOrderForRep = (order: any): boolean => {
 	                    const orderUserId = resolveOrderUserId(order);
-	                    if (orderUserId && orderUserId === id) {
+	                    if (orderUserId && personalIdentityIds.has(orderUserId)) {
 	                      return true;
 	                    }
                     const orderEmailKey = resolveOrderEmailKey(order);
@@ -7728,11 +7862,31 @@ function MainApp() {
                   personalRevenue = totalOrderValue;
                   totalOrderValueForModal = totalOrderValue;
 		            }
+
+                // Keep modal math aligned with the commission list, including house components.
+                if (commissionRowForModal) {
+                  const regularWholesaleBase = Number((commissionRowForModal as any)?.wholesaleBase || 0);
+                  const regularRetailBase = Number((commissionRowForModal as any)?.retailBase || 0);
+                  const houseWholesaleBase = Number((commissionRowForModal as any)?.houseWholesaleBase || 0);
+                  const houseRetailBase = Number((commissionRowForModal as any)?.houseRetailBase || 0);
+                  const modalWholesale = regularWholesaleBase + houseWholesaleBase;
+                  const modalRetail = regularRetailBase + houseRetailBase;
+                  const modalSalesRevenue = modalWholesale + modalRetail;
+                  salesWholesaleRevenueValue = Number.isFinite(modalWholesale)
+                    ? modalWholesale
+                    : salesWholesaleRevenueValue;
+                  salesRetailRevenueValue = Number.isFinite(modalRetail)
+                    ? modalRetail
+                    : salesRetailRevenueValue;
+                  salesRevenue = Number.isFinite(modalSalesRevenue)
+                    ? modalSalesRevenue
+                    : salesRevenue;
+                }
 		          }
 
 		          openSalesDoctorDetail(
 		            {
-	              doctorId: id,
+	              doctorId: resolvedUserId || id,
 	              referralId: null,
 	              doctorName: profile?.name || displayName,
 	              doctorEmail: profile?.email || entry?.email || null,
@@ -7747,6 +7901,7 @@ function MainApp() {
                 profile?.owner_sales_rep_id ||
                 entry?.ownerSalesRepId ||
                 entry?.owner_sales_rep_id ||
+                resolvedSalesRepIdentifier ||
                 null,
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
@@ -8089,6 +8244,7 @@ function MainApp() {
   const [adminCommissionRows, setAdminCommissionRows] = useState<
     {
       id: string;
+      aliasIds?: string[];
       name: string;
       role: string;
       amount: number;
@@ -8109,6 +8265,9 @@ function MainApp() {
       specialAdminBonusBaseByMonth?: Record<string, number>;
     }[]
   >([]);
+  useEffect(() => {
+    adminCommissionRowsRef.current = adminCommissionRows as any[];
+  }, [adminCommissionRows]);
   const [adminProductsCommissionMeta, setAdminProductsCommissionMeta] = useState<{
     periodStart?: string | null;
     periodEnd?: string | null;
@@ -8471,6 +8630,100 @@ function MainApp() {
         if (id === "__supplier__") return false;
         return true;
       });
+      const mappedCommissionRows = filteredCommissions.map((row) => ({
+        id: String((row as any)?.id || ""),
+        aliasIds: [] as string[],
+        name: String((row as any)?.name || ""),
+        role: String((row as any)?.role || ""),
+        amount: Number((row as any)?.amount || 0),
+        retailOrders: Number((row as any)?.retailOrders || 0),
+        wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
+        retailBase: Number((row as any)?.retailBase || 0),
+        wholesaleBase: Number((row as any)?.wholesaleBase || 0),
+        houseRetailOrders: Number((row as any)?.houseRetailOrders || 0),
+        houseWholesaleOrders: Number((row as any)?.houseWholesaleOrders || 0),
+        houseRetailBase: Number((row as any)?.houseRetailBase || 0),
+        houseWholesaleBase: Number((row as any)?.houseWholesaleBase || 0),
+        houseRetailCommission: Number((row as any)?.houseRetailCommission || 0),
+        houseWholesaleCommission: Number((row as any)?.houseWholesaleCommission || 0),
+        specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
+        specialAdminBonusRate: Number((row as any)?.specialAdminBonusRate || 0),
+        specialAdminBonusMonthlyCap: Number((row as any)?.specialAdminBonusMonthlyCap || 0),
+        specialAdminBonusByMonth: ((row as any)?.specialAdminBonusByMonth ?? undefined) as any,
+        specialAdminBonusBaseByMonth: ((row as any)?.specialAdminBonusBaseByMonth ?? undefined) as any,
+      }));
+      // Some backends can emit the same person under multiple ids (e.g. admin id + rep alias id).
+      // Collapse by role+name and aggregate all metrics so "House + Regular" appear on one line.
+      const mergedCommissionsByKey = new Map<string, (typeof mappedCommissionRows)[number]>();
+      for (const row of mappedCommissionRows) {
+        const roleKey = normalizeRole(row.role || "");
+        const nameKey = String(row.name || "").trim().toLowerCase();
+        const mergeKey =
+          roleKey === "admin" && nameKey.length > 0
+            ? `admin:${nameKey}`
+            : `id:${String(row.id || "").trim() || nameKey}`;
+        const existing = mergedCommissionsByKey.get(mergeKey);
+        if (!existing) {
+          mergedCommissionsByKey.set(mergeKey, { ...row, aliasIds: row.id ? [row.id] : [] });
+          continue;
+        }
+
+        const aliasSet = new Set<string>([
+          ...(Array.isArray(existing.aliasIds) ? existing.aliasIds : []),
+          ...(Array.isArray(row.aliasIds) ? row.aliasIds : []),
+        ]);
+        if (existing.id) aliasSet.add(existing.id);
+        if (row.id) aliasSet.add(row.id);
+        const mergeMonthMap = (
+          base: Record<string, number> | undefined,
+          add: Record<string, number> | undefined,
+        ) => {
+          const next: Record<string, number> = { ...(base || {}) };
+          for (const [month, amount] of Object.entries(add || {})) {
+            next[month] = Number(next[month] || 0) + Number(amount || 0);
+          }
+          return next;
+        };
+
+        mergedCommissionsByKey.set(mergeKey, {
+          ...existing,
+          aliasIds: Array.from(aliasSet),
+          amount: Number(existing.amount || 0) + Number(row.amount || 0),
+          retailOrders: Number(existing.retailOrders || 0) + Number(row.retailOrders || 0),
+          wholesaleOrders: Number(existing.wholesaleOrders || 0) + Number(row.wholesaleOrders || 0),
+          retailBase: Number(existing.retailBase || 0) + Number(row.retailBase || 0),
+          wholesaleBase: Number(existing.wholesaleBase || 0) + Number(row.wholesaleBase || 0),
+          houseRetailOrders: Number(existing.houseRetailOrders || 0) + Number(row.houseRetailOrders || 0),
+          houseWholesaleOrders:
+            Number(existing.houseWholesaleOrders || 0) + Number(row.houseWholesaleOrders || 0),
+          houseRetailBase: Number(existing.houseRetailBase || 0) + Number(row.houseRetailBase || 0),
+          houseWholesaleBase:
+            Number(existing.houseWholesaleBase || 0) + Number(row.houseWholesaleBase || 0),
+          houseRetailCommission:
+            Number(existing.houseRetailCommission || 0) + Number(row.houseRetailCommission || 0),
+          houseWholesaleCommission:
+            Number(existing.houseWholesaleCommission || 0) + Number(row.houseWholesaleCommission || 0),
+          specialAdminBonus:
+            Number(existing.specialAdminBonus || 0) + Number(row.specialAdminBonus || 0),
+          specialAdminBonusRate: Math.max(
+            Number(existing.specialAdminBonusRate || 0),
+            Number(row.specialAdminBonusRate || 0),
+          ),
+          specialAdminBonusMonthlyCap: Math.max(
+            Number(existing.specialAdminBonusMonthlyCap || 0),
+            Number(row.specialAdminBonusMonthlyCap || 0),
+          ),
+          specialAdminBonusByMonth: mergeMonthMap(
+            existing.specialAdminBonusByMonth,
+            row.specialAdminBonusByMonth,
+          ),
+          specialAdminBonusBaseByMonth: mergeMonthMap(
+            existing.specialAdminBonusBaseByMonth,
+            row.specialAdminBonusBaseByMonth,
+          ),
+        });
+      }
+      const mergedCommissions = Array.from(mergedCommissionsByKey.values());
       setAdminProductSalesRows(
         products
           .map((row) => ({
@@ -8483,46 +8736,24 @@ function MainApp() {
           }))
           .filter((row) => row.quantity > 0),
       );
-      setAdminCommissionRows(
-        filteredCommissions
-          .map((row) => ({
-            id: String((row as any)?.id || ""),
-            name: String((row as any)?.name || ""),
-            role: String((row as any)?.role || ""),
-            amount: Number((row as any)?.amount || 0),
-            retailOrders: Number((row as any)?.retailOrders || 0),
-            wholesaleOrders: Number((row as any)?.wholesaleOrders || 0),
-            retailBase: Number((row as any)?.retailBase || 0),
-            wholesaleBase: Number((row as any)?.wholesaleBase || 0),
-            houseRetailOrders: Number((row as any)?.houseRetailOrders || 0),
-            houseWholesaleOrders: Number((row as any)?.houseWholesaleOrders || 0),
-            houseRetailBase: Number((row as any)?.houseRetailBase || 0),
-            houseWholesaleBase: Number((row as any)?.houseWholesaleBase || 0),
-            houseRetailCommission: Number((row as any)?.houseRetailCommission || 0),
-            houseWholesaleCommission: Number((row as any)?.houseWholesaleCommission || 0),
-            specialAdminBonus: Number((row as any)?.specialAdminBonus || 0),
-            specialAdminBonusRate: Number((row as any)?.specialAdminBonusRate || 0),
-            specialAdminBonusMonthlyCap: Number((row as any)?.specialAdminBonusMonthlyCap || 0),
-            specialAdminBonusByMonth: ((row as any)?.specialAdminBonusByMonth ?? undefined) as any,
-            specialAdminBonusBaseByMonth: ((row as any)?.specialAdminBonusBaseByMonth ?? undefined) as any,
-          }))
-          .filter((row) => {
-            return (
-              Number(row.amount || 0) > 0 ||
-              Number(row.retailOrders || 0) > 0 ||
-              Number(row.wholesaleOrders || 0) > 0 ||
-              Number(row.retailBase || 0) > 0 ||
-              Number(row.wholesaleBase || 0) > 0 ||
-              Number(row.houseRetailOrders || 0) > 0 ||
-              Number(row.houseWholesaleOrders || 0) > 0 ||
-              Number(row.houseRetailBase || 0) > 0 ||
-              Number(row.houseWholesaleBase || 0) > 0 ||
-              Number(row.houseRetailCommission || 0) > 0 ||
-              Number(row.houseWholesaleCommission || 0) > 0 ||
-              Number(row.specialAdminBonus || 0) > 0
-            );
-          }),
-      );
+      const nextAdminCommissionRows = mergedCommissions.filter((row) => {
+        return (
+          Number(row.amount || 0) > 0 ||
+          Number(row.retailOrders || 0) > 0 ||
+          Number(row.wholesaleOrders || 0) > 0 ||
+          Number(row.retailBase || 0) > 0 ||
+          Number(row.wholesaleBase || 0) > 0 ||
+          Number(row.houseRetailOrders || 0) > 0 ||
+          Number(row.houseWholesaleOrders || 0) > 0 ||
+          Number(row.houseRetailBase || 0) > 0 ||
+          Number(row.houseWholesaleBase || 0) > 0 ||
+          Number(row.houseRetailCommission || 0) > 0 ||
+          Number(row.houseWholesaleCommission || 0) > 0 ||
+          Number(row.specialAdminBonus || 0) > 0
+        );
+      });
+      adminCommissionRowsRef.current = nextAdminCommissionRows as any[];
+      setAdminCommissionRows(nextAdminCommissionRows);
       setAdminProductsCommissionMeta({
         periodStart: (response as any)?.periodStart ?? null,
         periodEnd: (response as any)?.periodEnd ?? null,
@@ -8549,6 +8780,7 @@ function MainApp() {
           : "Unable to load product/commission report.";
       setAdminProductsCommissionError(message);
       setAdminProductSalesRows([]);
+      adminCommissionRowsRef.current = [];
       setAdminCommissionRows([]);
       setAdminProductsCommissionMeta(null);
     } finally {
@@ -8872,9 +9104,23 @@ function MainApp() {
         const commissions = Array.isArray((response as any)?.commissions)
           ? ((response as any).commissions as any[])
           : [];
-        const match = commissions.find(
-          (row) => String((row as any)?.id || "") === String(salesDoctorDetail.doctorId || ""),
-        );
+        const targetId = String(salesDoctorDetail.doctorId || "").trim();
+        const targetAlias = String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim();
+        const match = commissions.find((row) => {
+          const rowId = String((row as any)?.id || "").trim();
+          const aliasIds = Array.isArray((row as any)?.aliasIds)
+            ? ((row as any).aliasIds as unknown[])
+                .map((value) => String(value || "").trim())
+                .filter((value) => value.length > 0)
+            : [];
+          if (!rowId) return false;
+          return (
+            rowId === targetId ||
+            (Boolean(targetAlias) && rowId === targetAlias) ||
+            aliasIds.includes(targetId) ||
+            (Boolean(targetAlias) && aliasIds.includes(targetAlias))
+          );
+        });
         const amount = match != null ? Number((match as any)?.amount || 0) : null;
         if (!cancelled) {
           setSalesDoctorCommissionFromReport(
@@ -18346,11 +18592,12 @@ function MainApp() {
 							                                    title={label}
 							                                    onClick={() => {
 							                                      if (!canOpen) return;
-							                                      openLiveUserDetail({
-							                                        id: row.id,
-							                                        name: row.name,
-							                                        role: row.role,
-							                                      });
+								                                      openLiveUserDetail({
+								                                        id: row.id,
+								                                        name: row.name,
+								                                        role: row.role,
+                                        aliasIds: (row as any).aliasIds || [],
+								                                      });
 							                                    }}
 							                                  >
 							                                    {label}
@@ -18381,6 +18628,7 @@ function MainApp() {
 					                                const retailEarned = retailBase * 0.2;
 					                                const wholesaleEarned = wholesaleBase * 0.1;
 						                                const segments: ReactNode[] = [];
+                                        const contributionValues: number[] = [];
 						                                segments.push(
 						                                  <span
 						                                    key="role"
@@ -18398,7 +18646,9 @@ function MainApp() {
 						                                      {houseRetailOrders} · {formatCurrency(houseRetailBase)}×0.2)
 						                                    </span>,
 						                                  );
-						                                } else if (retailOrders > 0 || retailBase > 0) {
+                                          contributionValues.push(Number(value || 0));
+						                                }
+						                                if (retailOrders > 0 || retailBase > 0) {
 						                                  const value = retailEarned;
 						                                  segments.push(
 						                                    <span
@@ -18408,6 +18658,7 @@ function MainApp() {
 						                                       Retail: {formatCurrency(value)} ({retailOrders} · {formatCurrency(retailBase)}×0.2)
 						                                    </span>,
 						                                  );
+                                          contributionValues.push(Number(value || 0));
 						                                }
 						                                if (houseWholesaleOrders > 0 || houseWholesaleBase > 0 || houseWholesaleCommission > 0) {
 						                                  const computed = houseWholesaleBase * 0.1;
@@ -18418,7 +18669,9 @@ function MainApp() {
 						                                      {houseWholesaleOrders} · {formatCurrency(houseWholesaleBase)}×0.1)
 						                                    </span>,
 						                                  );
-						                                } else if (wholesaleOrders > 0 || wholesaleBase > 0) {
+                                          contributionValues.push(Number(value || 0));
+						                                }
+						                                if (wholesaleOrders > 0 || wholesaleBase > 0) {
 						                                  const value = wholesaleEarned;
 						                                  segments.push(
 						                                    <span
@@ -18428,6 +18681,7 @@ function MainApp() {
 						                                       Wholesale: {formatCurrency(value)} ({wholesaleOrders} · {formatCurrency(wholesaleBase)}×0.1)
 						                                    </span>,
 						                                  );
+                                          contributionValues.push(Number(value || 0));
 						                                }
 					                                if (bonus > 0) {
 					                                  const monthKeys = Array.from(
@@ -18481,7 +18735,22 @@ function MainApp() {
 				                                      {bonusMath}
 				                                    </span>,
 				                                  );
+                                          contributionValues.push(Number(bonus || 0));
 				                                }
+                                        if (contributionValues.length > 1) {
+                                          const totalAmount = Number(row.amount || 0);
+                                          const breakdown = contributionValues
+                                            .map((value) => formatCurrency(value))
+                                            .join(" + ");
+                                          segments.push(
+                                            <span
+                                              key="total-math"
+                                              className="whitespace-nowrap tabular-nums"
+                                            >
+                                              Total: {formatCurrency(totalAmount)} ({breakdown})
+                                            </span>,
+                                          );
+                                        }
 			                                return (
 			                                  <>
 				                                    {segments.map((segment, index) => (
@@ -23108,11 +23377,70 @@ function MainApp() {
 			                            });
 			                          };
 				                          if (role === "admin") {
-				                            const adminRow = adminCommissionRows.find(
-				                              (row) =>
-				                                String(row?.id || "") ===
-				                                String(salesDoctorDetail.doctorId || ""),
-				                            );
+				                            const modalUserId = String(salesDoctorDetail.doctorId || "").trim();
+				                            const modalAliasId = String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim();
+				                            const adminRow = adminCommissionRows.find((row) => {
+				                              const rowId = String(row?.id || "").trim();
+                                  const aliasIds = Array.isArray((row as any)?.aliasIds)
+                                    ? ((row as any).aliasIds as unknown[])
+                                        .map((value) => String(value || "").trim())
+                                        .filter((value) => value.length > 0)
+                                    : [];
+				                              if (!rowId) return false;
+				                              return (
+                                    rowId === modalUserId ||
+                                    (Boolean(modalAliasId) && rowId === modalAliasId) ||
+                                    aliasIds.includes(modalUserId) ||
+                                    (Boolean(modalAliasId) && aliasIds.includes(modalAliasId))
+                                  );
+				                            });
+                                const dateFilteredOrders = filterOrdersForRange(
+                                  salesDoctorDetail.orders as any[],
+                                  salesDoctorCommissionRange,
+                                );
+                                const commissionOrders = dateFilteredOrders.filter((order) =>
+                                  shouldCountRevenueForStatus(order?.status),
+                                );
+                                const totalsFromOrders =
+                                  hasCustomRange || commissionOrders.length > 0
+                                    ? commissionOrders.reduce(
+                                        (acc: { wholesale: number; retail: number }, order: any) => {
+                                          const amount = resolveOrderItemsSubtotal(order);
+                                          const pricingModeRaw =
+                                            order?.pricingMode ||
+                                            (order as any)?.pricing_mode ||
+                                            (order as any)?.pricing ||
+                                            (order as any)?.priceType ||
+                                            null;
+                                          const pricingMode = String(pricingModeRaw || "")
+                                            .toLowerCase()
+                                            .trim();
+                                          if (pricingMode === "wholesale") {
+                                            acc.wholesale += amount;
+                                          } else if (pricingMode === "retail") {
+                                            acc.retail += amount;
+                                          } else {
+                                            acc.retail += amount;
+                                          }
+                                          return acc;
+                                        },
+                                        { wholesale: 0, retail: 0 },
+                                      )
+                                    : null;
+                                const fallbackWholesale = Number(
+                                  totalsFromOrders?.wholesale ??
+                                    salesDoctorDetail.salesWholesaleRevenue ??
+                                    0,
+                                );
+                                const fallbackRetail = Number(
+                                  totalsFromOrders?.retail ??
+                                    salesDoctorDetail.salesRetailRevenue ??
+                                    0,
+                                );
+                                const fallbackFromOrders =
+                                  Number.isFinite(fallbackWholesale) || Number.isFinite(fallbackRetail)
+                                    ? fallbackWholesale * 0.1 + fallbackRetail * 0.2
+                                    : null;
 				                            const commissionValue = (() => {
 				                              if (
 				                                typeof salesDoctorCommissionFromReport === "number" &&
@@ -23120,7 +23448,19 @@ function MainApp() {
 				                              ) {
 				                                return salesDoctorCommissionFromReport;
 				                              }
-				                              return adminRow ? Number(adminRow.amount || 0) : null;
+                                      if (adminRow) {
+                                        const amount = Number(adminRow.amount || 0);
+                                        if (Number.isFinite(amount)) {
+				                                  return amount;
+                                        }
+                                      }
+                                      if (
+                                        typeof fallbackFromOrders === "number" &&
+                                        Number.isFinite(fallbackFromOrders)
+                                      ) {
+                                        return fallbackFromOrders;
+                                      }
+                                      return null;
 				                            })();
 				                            const periodLabel = formatPeriodLabel(
 				                              adminProductsCommissionMeta?.periodStart ??

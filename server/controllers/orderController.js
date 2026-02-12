@@ -3,6 +3,8 @@ const orderService = require('../services/orderService');
 const wooCommerceClient = require('../integration/wooCommerceClient');
 const axios = require('axios');
 const { env } = require('../config/env');
+const mysqlClient = require('../database/mysqlClient');
+const userRepository = require('../repositories/userRepository');
 const { buildInvoicePdf } = require('../services/invoicePdf');
 const {
   syncWooFromShipStation,
@@ -17,6 +19,18 @@ const normalizeRole = (role) => (role || '')
   .replace(/[\s-]+/g, '_');
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 const normalizeOrderToken = (value) => String(value || '').trim().replace(/^#/, '');
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'on';
+  }
+  return false;
+};
 
 const shouldServeFakeAdminReports = () => {
   if (env?.nodeEnv === 'production') return false;
@@ -25,7 +39,45 @@ const shouldServeFakeAdminReports = () => {
   return true;
 };
 
-const buildFakeProductsCommissionReport = ({ periodStart, periodEnd }) => {
+const WEB_DEV_COMMISSION_RATE = 0.03;
+
+const getDevCommissionUsers = async () => {
+  if (mysqlClient.isEnabled()) {
+    try {
+      const rows = await mysqlClient.fetchAll(
+        `
+          SELECT id, name, email, role, dev_commission
+          FROM users
+          WHERE dev_commission = 1
+        `,
+      );
+      return (rows || [])
+        .map((row) => ({
+          id: String(row?.id || '').trim(),
+          name: row?.name || null,
+          email: row?.email || null,
+          role: row?.role || null,
+          devCommission: normalizeBooleanFlag(row?.dev_commission),
+        }))
+        .filter((row) => row.id && row.devCommission);
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to load dev commission users from MySQL');
+    }
+  }
+  const users = Array.isArray(userRepository.getAll()) ? userRepository.getAll() : [];
+  return users
+    .filter((user) => normalizeBooleanFlag(user?.devCommission))
+    .map((user) => ({
+      id: String(user?.id || '').trim(),
+      name: user?.name || null,
+      email: user?.email || null,
+      role: user?.role || null,
+      devCommission: true,
+    }))
+    .filter((row) => row.id);
+};
+
+const buildFakeProductsCommissionReport = async ({ periodStart, periodEnd }) => {
   const safeDate = (value) => {
     if (!value) return null;
     const parsed = new Date(value);
@@ -85,6 +137,35 @@ const buildFakeProductsCommissionReport = ({ periodStart, periodEnd }) => {
     makePerson('1003', 'Rep: Taylor Reed', 'sales_rep'),
     makePerson('admin', 'Admin', 'admin'),
   ];
+  const devUsers = await getDevCommissionUsers();
+  const recipientsById = new Map();
+  recipients.forEach((recipient) => {
+    recipientsById.set(String(recipient.id), {
+      ...recipient,
+      devCommission: false,
+    });
+  });
+  devUsers.forEach((user) => {
+    const id = String(user.id || '').trim();
+    if (!id) return;
+    const existing = recipientsById.get(id);
+    if (existing) {
+      recipientsById.set(id, {
+        ...existing,
+        name: existing.name || user.name || user.email || existing.id,
+        role: existing.role || normalizeRole(user.role) || 'admin',
+        devCommission: true,
+      });
+      return;
+    }
+    recipientsById.set(id, {
+      id,
+      name: user.name || user.email || `User ${id}`,
+      role: normalizeRole(user.role) || 'admin',
+      devCommission: true,
+    });
+  });
+  const mergedRecipients = Array.from(recipientsById.values());
 
   const wholesaleBase = products.reduce((sum, p, idx) => {
     const price = Number(productsCatalog[idx]?.basePrice || 0);
@@ -95,14 +176,19 @@ const buildFakeProductsCommissionReport = ({ periodStart, periodEnd }) => {
     return sum + price * p.quantity * 0.85;
   }, 0);
 
-  const commissionRows = recipients.map((recipient, idx) => {
+  const commissionableBase = wholesaleBase + retailBase;
+  const commissionRows = mergedRecipients.map((recipient, idx) => {
     const retailShare = 0.12 + idx * 0.03;
     const wholesaleShare = 0.09 + idx * 0.02;
     const retailBasePart = retailBase * retailShare;
     const wholesaleBasePart = wholesaleBase * wholesaleShare;
     const retailOrders = Math.max(0, Math.round(6 + rand() * 10 - idx));
     const wholesaleOrders = Math.max(0, Math.round(4 + rand() * 8 - idx));
-    const amount = retailBasePart * 0.2 + wholesaleBasePart * 0.1;
+    const baseAmount = retailBasePart * 0.2 + wholesaleBasePart * 0.1;
+    const webDevBonus = recipient.devCommission
+      ? Math.round(commissionableBase * WEB_DEV_COMMISSION_RATE * 100) / 100
+      : 0;
+    const amount = baseAmount + webDevBonus;
     return {
       id: recipient.id,
       name: recipient.name,
@@ -118,16 +204,19 @@ const buildFakeProductsCommissionReport = ({ periodStart, periodEnd }) => {
       houseWholesaleBase: 0,
       houseRetailCommission: 0,
       houseWholesaleCommission: 0,
-      specialAdminBonus: recipient.role === 'admin' ? 125 : 0,
-      specialAdminBonusRate: recipient.role === 'admin' ? 0.02 : 0,
-      specialAdminBonusMonthlyCap: recipient.role === 'admin' ? 150 : 0,
-      specialAdminBonusByMonth: recipient.role === 'admin' ? { '2026-01': 125 } : undefined,
-      specialAdminBonusBaseByMonth: recipient.role === 'admin' ? { '2026-01': Math.round(retailBase * 0.02 * 100) / 100 } : undefined,
+      specialAdminBonus: webDevBonus,
+      specialAdminBonusRate: recipient.devCommission ? WEB_DEV_COMMISSION_RATE : 0,
+      specialAdminBonusMonthlyCap: 0,
+      specialAdminBonusByMonth: recipient.devCommission
+        ? { all_time: webDevBonus }
+        : undefined,
+      specialAdminBonusBaseByMonth: recipient.devCommission
+        ? { all_time: Math.round(commissionableBase * 100) / 100 }
+        : undefined,
     };
   });
 
   const commissionTotal = commissionRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const commissionableBase = wholesaleBase + retailBase;
 
   return {
     periodStart: from,
@@ -443,7 +532,7 @@ const getProductSalesCommissionForAdmin = async (req, res, next) => {
     }
     const periodStart = typeof req.query?.periodStart === 'string' ? req.query.periodStart.trim() : null;
     const periodEnd = typeof req.query?.periodEnd === 'string' ? req.query.periodEnd.trim() : null;
-    const payload = buildFakeProductsCommissionReport({ periodStart, periodEnd });
+    const payload = await buildFakeProductsCommissionReport({ periodStart, periodEnd });
     return res.json(payload);
   } catch (error) {
     return next(error);
