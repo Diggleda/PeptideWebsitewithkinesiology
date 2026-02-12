@@ -8916,16 +8916,43 @@ function MainApp() {
       if (!salesRepPeriodEnd) {
         setSalesRepPeriodEnd(periodEnd);
       }
-      const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
-        periodStart: periodStart || undefined,
-        periodEnd: periodEnd || undefined,
-        force: true,
-      });
-      const summaryArray = Array.isArray(salesSummaryResponse)
-        ? salesSummaryResponse
-        : Array.isArray((salesSummaryResponse as any)?.orders)
-          ? (salesSummaryResponse as any).orders
-          : [];
+	      const salesSummaryResponse = await ordersAPI.getSalesByRepForAdmin({
+	        periodStart: periodStart || undefined,
+	        periodEnd: periodEnd || undefined,
+	        force: true,
+	      });
+	      const parseReportNumber = (value: unknown): number => {
+	        if (typeof value === "number") {
+	          return Number.isFinite(value) ? value : 0;
+	        }
+	        if (typeof value === "string") {
+	          const trimmed = value.trim();
+	          if (!trimmed) return 0;
+	          const negativeParen =
+	            trimmed.startsWith("(") && trimmed.endsWith(")");
+	          const stripped = trimmed
+	            .replace(/[,$\s]/g, "")
+	            .replace(/[()]/g, "");
+	          const parsed = Number(stripped);
+	          if (!Number.isFinite(parsed)) return 0;
+	          return negativeParen ? -parsed : parsed;
+	        }
+	        if (typeof value === "boolean") {
+	          return value ? 1 : 0;
+	        }
+	        return 0;
+	      };
+	      const summaryArray = Array.isArray(salesSummaryResponse)
+	        ? salesSummaryResponse
+	        : Array.isArray((salesSummaryResponse as any)?.orders)
+	          ? (salesSummaryResponse as any).orders
+	          : Array.isArray((salesSummaryResponse as any)?.rows)
+	            ? (salesSummaryResponse as any).rows
+	            : Array.isArray((salesSummaryResponse as any)?.data?.orders)
+	              ? (salesSummaryResponse as any).data.orders
+	              : Array.isArray((salesSummaryResponse as any)?.data?.rows)
+	                ? (salesSummaryResponse as any).data.rows
+	          : [];
 	      const meta =
 	        salesSummaryResponse && typeof salesSummaryResponse === "object"
 	          ? {
@@ -8934,18 +8961,97 @@ function MainApp() {
 	              totals: (salesSummaryResponse as any)?.totals ?? null,
 	            }
 	          : null;
-		      const filteredSummary = summaryArray
-		        .filter((rep: any) => !isAdmin(user.role) || rep.salesRepId !== user.id)
-		        .filter((rep: any) => {
-		          const totalOrders = Number(rep?.totalOrders || 0);
-		          const totalRevenue = Number(rep?.totalRevenue || 0);
-		          const wholesaleRevenue = Number(rep?.wholesaleRevenue || 0);
-		          const retailRevenue = Number(rep?.retailRevenue || 0);
+	      const normalizedSummary = summaryArray.map((rep: any) => {
+	        const totalsObj =
+	          rep && typeof rep?.totals === "object" && rep.totals
+	            ? (rep.totals as any)
+	            : null;
+	        const salesRepId = String(
+	          rep?.salesRepId ??
+	            rep?.sales_rep_id ??
+	            rep?.id ??
+	            "",
+	        ).trim();
+	        const salesRepUserId = String(
+	          rep?.salesRepUserId ??
+	            rep?.sales_rep_user_id ??
+	            rep?.userId ??
+	            rep?.user_id ??
+	            salesRepId,
+	        ).trim();
+	        const totalOrders = parseReportNumber(
+	          rep?.totalOrders ??
+	            rep?.total_orders ??
+	            rep?.orderCount ??
+	            rep?.orders ??
+	            totalsObj?.totalOrders ??
+	            totalsObj?.total_orders ??
+	            totalsObj?.orderCount ??
+	            totalsObj?.orders ??
+	            0,
+	        );
+	        const wholesaleRevenue = parseReportNumber(
+	          rep?.wholesaleRevenue ??
+	            rep?.wholesale_revenue ??
+	            rep?.wholesale ??
+	            totalsObj?.wholesaleRevenue ??
+	            totalsObj?.wholesale_revenue ??
+	            totalsObj?.wholesale ??
+	            0,
+	        );
+	        const retailRevenue = parseReportNumber(
+	          rep?.retailRevenue ??
+	            rep?.retail_revenue ??
+	            rep?.retail ??
+	            totalsObj?.retailRevenue ??
+	            totalsObj?.retail_revenue ??
+	            totalsObj?.retail ??
+	            0,
+	        );
+	        const totalRevenue = parseReportNumber(
+	          rep?.totalRevenue ??
+	            rep?.total_revenue ??
+	            rep?.revenue ??
+	            totalsObj?.totalRevenue ??
+	            totalsObj?.total_revenue ??
+	            totalsObj?.revenue ??
+	            (Number.isFinite(wholesaleRevenue) ? wholesaleRevenue : 0) +
+	              (Number.isFinite(retailRevenue) ? retailRevenue : 0),
+	        );
+	        return {
+	          ...rep,
+	          salesRepId,
+	          salesRepUserId,
+	          salesRepName:
+	            rep?.salesRepName ??
+	            rep?.sales_rep_name ??
+	            rep?.name ??
+	            salesRepId,
+	          salesRepEmail:
+	            rep?.salesRepEmail ??
+	            rep?.sales_rep_email ??
+	            rep?.email ??
+	            null,
+	          totalOrders: Number.isFinite(totalOrders) ? totalOrders : 0,
+	          totalRevenue: Number.isFinite(totalRevenue) ? totalRevenue : 0,
+	          wholesaleRevenue: Number.isFinite(wholesaleRevenue) ? wholesaleRevenue : 0,
+	          retailRevenue: Number.isFinite(retailRevenue) ? retailRevenue : 0,
+	        };
+	      });
+	      const filteredSummary = normalizedSummary
+	        .filter((rep: any) => {
+	          if (!isAdmin(user.role)) return true;
+	          const rowId = String(rep?.salesRepId || "").trim();
+	          const rowUserId = String(rep?.salesRepUserId || "").trim();
+	          const currentUserId = String(user.id || "").trim();
+	          return rowId !== currentUserId && rowUserId !== currentUserId;
+	        })
+	        .filter((rep: any) => {
 	          return (
-	            totalOrders > 0 ||
-	            totalRevenue > 0 ||
-	            wholesaleRevenue > 0 ||
-	            retailRevenue > 0
+	            Number(rep?.totalOrders || 0) > 0 ||
+	            Number(rep?.totalRevenue || 0) > 0 ||
+	            Number(rep?.wholesaleRevenue || 0) > 0 ||
+	            Number(rep?.retailRevenue || 0) > 0
 	          );
 	        });
 	      setSalesRepSalesSummary(filteredSummary as any);

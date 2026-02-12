@@ -3173,7 +3173,6 @@ def get_sales_by_rep(
             subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
         except Exception:
             subtotal_lookup = {}
-        subtotal_lookup = order_repository.get_items_subtotal_lookup_by_woo(woo_ids, woo_numbers)
 
         def _resolve_pricing_mode(entry: Dict[str, object]) -> str:
             hint = str(entry.get("pricingModeHint") or "").strip().lower()
