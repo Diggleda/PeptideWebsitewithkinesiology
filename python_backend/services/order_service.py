@@ -2907,7 +2907,12 @@ def get_sales_by_rep(
         except Exception:
             contact_form_emails = set()
 
-        valid_rep_ids = {alias_to_rep_id[str(rep.get("id"))] for rep in reps if rep.get("id")}
+        valid_rep_ids: set[str] = set()
+        for rep in reps:
+            rep_id_raw = str(rep.get("id") or "").strip()
+            if not rep_id_raw:
+                continue
+            valid_rep_ids.add(alias_to_rep_id.get(rep_id_raw, rep_id_raw))
         for rep in rep_records_list:
             rep_id = rep.get("id")
             if rep_id:

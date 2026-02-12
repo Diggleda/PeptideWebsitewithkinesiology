@@ -8961,6 +8961,18 @@ function MainApp() {
 	              totals: (salesSummaryResponse as any)?.totals ?? null,
 	            }
 	          : null;
+	      const backendError =
+	        salesSummaryResponse &&
+	        typeof salesSummaryResponse === "object" &&
+	        typeof (salesSummaryResponse as any)?.error === "string" &&
+	        (salesSummaryResponse as any).error.trim().length > 0
+	          ? String((salesSummaryResponse as any).error).trim()
+	          : null;
+	      const backendStale = Boolean(
+	        salesSummaryResponse &&
+	          typeof salesSummaryResponse === "object" &&
+	          (salesSummaryResponse as any)?.stale,
+	      );
 	      const normalizedSummary = summaryArray.map((rep: any) => {
 	        const totalsObj =
 	          rep && typeof rep?.totals === "object" && rep.totals
@@ -9054,8 +9066,15 @@ function MainApp() {
 	            Number(rep?.retailRevenue || 0) > 0
 	          );
 	        });
-	      setSalesRepSalesSummary(filteredSummary as any);
+	      if (backendError && backendStale && filteredSummary.length === 0) {
+	        setSalesRepSalesSummary((previous) => previous);
+	      } else {
+	        setSalesRepSalesSummary(filteredSummary as any);
+	      }
 	      setSalesRepSalesSummaryMeta(meta);
+	      if (backendError) {
+	        setSalesRepSalesSummaryError(backendError);
+	      }
 	      setSalesRepSalesSummaryLastFetchedAt(Date.now());
     } catch (adminError: any) {
       const message =
