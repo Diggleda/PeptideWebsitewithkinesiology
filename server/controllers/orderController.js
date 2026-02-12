@@ -44,11 +44,24 @@ const WEB_DEV_COMMISSION_RATE = 0.03;
 const getDevCommissionUsers = async () => {
   if (mysqlClient.isEnabled()) {
     try {
+      const column = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = 'dev_commission'
+          LIMIT 1
+        `,
+      );
+      if (!column) {
+        return [];
+      }
       const rows = await mysqlClient.fetchAll(
         `
           SELECT id, name, email, role, dev_commission
           FROM users
-          WHERE dev_commission = 1
+          WHERE COALESCE(dev_commission, 0) = 1
         `,
       );
       return (rows || [])
