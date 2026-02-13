@@ -36,10 +36,6 @@ router.post('/', async (req, res) => {
     source: String(source).trim(),
   };
 
-  if (!trimmed.name || !trimmed.email) {
-    return res.status(400).json({ error: 'Name and email are required.' });
-  }
-
   if (!mysqlClient.isEnabled()) {
     return res.status(503).json({ error: 'Contact form storage requires MySQL to be enabled.' });
   }

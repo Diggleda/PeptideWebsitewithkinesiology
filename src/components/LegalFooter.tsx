@@ -214,10 +214,6 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     event.preventDefault();
     setContactError('');
     setContactSuccess('');
-    if (!contactForm.name.trim() || !contactForm.email.trim()) {
-      setContactError('Name and email are required.');
-      return;
-    }
     setContactSubmitting(true);
     try {
       const payload = new URLSearchParams();
@@ -276,12 +272,29 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     try {
       const payload = new URLSearchParams();
       payload.set('report', report);
-      const res = await fetch(`${API_BASE_URL}/bugs`, {
+      const res = await fetch('/api/bugs', {
         method: 'POST',
         body: payload,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 404) {
+          const fallbackPayload = new URLSearchParams();
+          fallbackPayload.set('name', 'Bug Report');
+          fallbackPayload.set('email', 'support@peppro.net');
+          fallbackPayload.set('source', `Bug report: ${report}`);
+          const fallbackRes = await fetch('/api/contact', {
+            method: 'POST',
+            body: fallbackPayload,
+          });
+          const fallbackData = await fallbackRes.json().catch(() => ({}));
+          if (!fallbackRes.ok) {
+            throw new Error(fallbackData?.error || data?.error || 'Unable to submit bug report.');
+          }
+          setBugSuccess('Thanks. Your bug report has been submitted.');
+          setBugReport('');
+          return;
+        }
         throw new Error(data?.error || 'Unable to submit bug report.');
       }
       setBugSuccess('Thanks. Your bug report has been submitted.');
