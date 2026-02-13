@@ -16,6 +16,7 @@ const shippingRoutes = require('./routes/shippingRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const passwordResetRoutes = require('./routes/passwordReset');
 const contactRoutes = require('./routes/contactRoutes');
+const bugRoutes = require('./routes/bugRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const moderationRoutes = require('./routes/moderationRoutes');
 const peptideForumRoutes = require('./routes/peptideForumRoutes');
@@ -253,6 +254,7 @@ const createApp = () => {
   app.use('/api/news', newsRoutes);
   app.use('/api/password-reset', passwordResetRoutes);
   app.use('/api/contact', contactRoutes);
+  app.use('/api/bugs', bugRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/moderation', moderationRoutes);
   app.use('/api/forum', peptideForumRoutes);

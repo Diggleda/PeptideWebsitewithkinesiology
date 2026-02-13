@@ -61,8 +61,15 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', source: '' });
+  const [bugOpen, setBugOpen] = useState(false);
+  const [bugVisible, setBugVisible] = useState(false);
+  const [bugSubmitting, setBugSubmitting] = useState(false);
+  const [bugSuccess, setBugSuccess] = useState('');
+  const [bugError, setBugError] = useState('');
+  const [bugReport, setBugReport] = useState('');
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
   const MODAL_FADE_MS = 80;
@@ -73,7 +80,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     const originalOverflow = body.style.overflow;
     const originalPaddingRight = body.style.paddingRight;
 
-    if ((activeDocument || contactOpen) && !isClosing) {
+    if ((activeDocument || contactOpen || bugOpen) && !isClosing) {
       const scrollbarWidth = window.innerWidth - docEl.clientWidth;
       if (!originalPaddingRight && scrollbarWidth > 0) {
         body.style.paddingRight = `${scrollbarWidth}px`;
@@ -88,7 +95,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     body.style.overflow = originalOverflow;
     body.style.paddingRight = originalPaddingRight;
     return undefined;
-  }, [activeDocument, contactOpen, isClosing]);
+  }, [activeDocument, contactOpen, bugOpen, isClosing]);
 
   const legalLinks = useMemo(
     () => [
@@ -176,6 +183,9 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     if (contactCloseTimerRef.current) {
       clearTimeout(contactCloseTimerRef.current);
     }
+    if (bugCloseTimerRef.current) {
+      clearTimeout(bugCloseTimerRef.current);
+    }
   }, []);
 
   const handleContactOpen = useCallback(() => {
@@ -232,7 +242,57 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     }
   };
 
-  const shouldBlurBackground = isVisible || isClosing || contactOpen;
+  const handleBugOpen = useCallback(() => {
+    if (bugCloseTimerRef.current) {
+      clearTimeout(bugCloseTimerRef.current);
+      bugCloseTimerRef.current = null;
+    }
+    setBugOpen(true);
+    requestAnimationFrame(() => setBugVisible(true));
+  }, []);
+
+  const handleBugClose = useCallback(() => {
+    if (!bugOpen) return;
+    setBugVisible(false);
+    if (bugCloseTimerRef.current) {
+      clearTimeout(bugCloseTimerRef.current);
+    }
+    bugCloseTimerRef.current = setTimeout(() => {
+      setBugOpen(false);
+      bugCloseTimerRef.current = null;
+    }, MODAL_FADE_MS);
+  }, [bugOpen, MODAL_FADE_MS]);
+
+  const handleBugSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBugError('');
+    setBugSuccess('');
+    const report = bugReport.trim();
+    if (!report) {
+      setBugError('Please describe the bug.');
+      return;
+    }
+    setBugSubmitting(true);
+    try {
+      const res = await fetch('/api/bugs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to submit bug report.');
+      }
+      setBugSuccess('Thanks. Your bug report has been submitted.');
+      setBugReport('');
+    } catch (error: any) {
+      setBugError(error?.message || 'Unable to submit bug report. Please try again.');
+    } finally {
+      setBugSubmitting(false);
+    }
+  };
+
+  const shouldBlurBackground = isVisible || isClosing || contactOpen || bugOpen;
 
   return (
     <>
@@ -254,7 +314,19 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                   >
                     Contact a Representative
                   </button>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new Event('peppro:close-dialogs'));
+                      handleBugOpen();
+                    }}
+                    className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] mb-6"
+                    style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                  >
+                    Report a bug
+                  </button>
+                )}
               </div>
 
               <div className="w-full max-w-5xl mx-auto flex flex-col items-center gap-3 text-center">
@@ -320,6 +392,22 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                   style={{ backgroundColor: 'rgb(95, 179, 249)' }}
                 >
                   Contact a Representative
+                </button>
+              </div>
+            )}
+            {!showContactCTA && (
+              <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
+                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Found an issue?</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new Event('peppro:close-dialogs'));
+                    handleBugOpen();
+                  }}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)]"
+                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                >
+                  Report a bug
                 </button>
               </div>
             )}
@@ -559,6 +647,91 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
                   style={{ backgroundColor: 'rgb(95, 179, 249)' }}
                 >
                   {contactSubmitting ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+      {!showContactCTA && bugOpen && createPortal(
+        <div
+          className={clsx(
+            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[55ms] ease-out backdrop-blur-[16px] pointer-events-auto',
+            bugVisible ? 'opacity-100' : 'opacity-0',
+          )}
+          style={{
+            zIndex: 2147483647,
+            willChange: 'opacity',
+            backdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+            WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+          }}
+          onClick={handleBugClose}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className={clsx(
+              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[55ms] ease-out',
+              bugVisible ? 'opacity-100' : 'opacity-0',
+            )}
+            aria-hidden="true"
+            style={{
+              willChange: 'opacity',
+              backdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+              WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+            }}
+          />
+          <div
+            className={clsx(
+              'relative w-full max-w-lg flex flex-col squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] overflow-hidden border-[3px] transition-[opacity,transform] duration-[55ms] ease-out',
+              bugVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
+            )}
+            style={{
+              backgroundColor: 'rgba(245, 251, 255, 0.94)',
+              borderColor: 'rgba(95, 179, 249, 0.65)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="legal-modal-header flex items-center justify-between gap-4 px-6 sm:px-7 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
+              <h2 className="flex-1 text-lg font-semibold text-[rgb(95,179,249)]">Report a Bug</h2>
+              <button
+                type="button"
+                onClick={handleBugClose}
+                className="dialog-close-btn inline-flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full p-0 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-[3px] focus-visible:ring-offset-[rgba(4,14,21,0.75)] transition-all duration-150"
+                style={{ backgroundColor: 'rgb(95, 179, 249)', borderRadius: '50%' }}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </button>
+            </div>
+            <form className="px-6 sm:px-7 py-6 pt-4 space-y-4" onSubmit={handleBugSubmit}>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700" htmlFor="bug-report">
+                  Bug report
+                </label>
+                <textarea
+                  id="bug-report"
+                  value={bugReport}
+                  onChange={(e) => setBugReport(e.target.value)}
+                  required
+                  rows={6}
+                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.25)]"
+                  placeholder="Describe what happened and how to reproduce it."
+                />
+              </div>
+              <div className="flex w-full items-center justify-between pt-3 mb-4">
+                <div className="text-sm">
+                  {bugError && <p className="text-red-600" role="alert">{bugError}</p>}
+                  {bugSuccess && <p className="text-emerald-600" role="status">{bugSuccess}</p>}
+                </div>
+                <button
+                  type="submit"
+                  disabled={bugSubmitting}
+                  className="inline-flex items-center justify-center squircle-sm px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-[rgba(95,179,249,0.4)] transition duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed mb-[3px]"
+                  style={{ backgroundColor: 'rgb(95, 179, 249)' }}
+                >
+                  {bugSubmitting ? 'Sending…' : 'Send'}
                 </button>
               </div>
             </form>

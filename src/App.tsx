@@ -10736,7 +10736,7 @@ function MainApp() {
   const [peptideNews, setPeptideNews] = useState<PeptideNewsItem[]>([]);
   const [peptideNewsLoading, setPeptideNewsLoading] = useState(false);
   const [peptideNewsError, setPeptideNewsError] = useState<string | null>(null);
-  const [peptideNewsUpdatedAt, setPeptideNewsUpdatedAt] = useState<Date | null>(
+  const [, setPeptideNewsUpdatedAt] = useState<Date | null>(
     null,
   );
   const newsLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -21465,44 +21465,30 @@ function MainApp() {
                     >
                       <div className="space-y-5">
                         <div className="flex items-center justify-between gap-3 mb-4">
+                          <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
+                            Peptide News
+                          </h2>
                           <div className="flex items-center gap-2">
-	                            <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
-	                              Peptide News
-	                            </h2>
-	                            <Button
-	                              type="button"
-	                              variant="outline"
-	                              size="sm"
-	                              className="header-home-button squircle-sm bg-white text-slate-900"
-	                              onClick={handleRefreshNews}
-	                              disabled={peptideNewsLoading}
-	                              title="Refresh news"
-	                            >
-	                              {peptideNewsLoading ? "Refreshing…" : "Refresh"}
-	                            </Button>
-	                            {peptideNewsUpdatedAt && (
-	                              <span className="text-xs text-gray-500">
-	                                Updated at:{" "}
-	                                {peptideNewsUpdatedAt.toLocaleTimeString(
-                                  "en-US",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    second: "2-digit",
-                                    hour12: false,
-                                  },
-                                )}
-                              </span>
-                            )}
+                            <a
+                              href="https://www.nature.com/subjects/peptides"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold uppercase tracking-wide text-[rgb(95,179,249)] hover:underline underline-offset-4"
+                            >
+                              View All
+                            </a>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="header-home-button squircle-sm bg-white text-slate-900"
+                              onClick={handleRefreshNews}
+                              disabled={peptideNewsLoading}
+                              title="Refresh news"
+                            >
+                              {peptideNewsLoading ? "Refreshing…" : "Refresh"}
+                            </Button>
                           </div>
-                          <a
-                            href="https://www.nature.com/subjects/peptides"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs font-semibold uppercase tracking-wide text-[rgb(95,179,249)] hover:underline underline-offset-4"
-                          >
-                            View All
-                          </a>
                         </div>
                         <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-sm text-gray-700 leading-relaxed">
                           {peptideNewsLoading && (

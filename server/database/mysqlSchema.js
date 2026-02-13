@@ -62,6 +62,13 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
   `
+    CREATE TABLE IF NOT EXISTS bugs_reported (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      report LONGTEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+  `,
+  `
     CREATE TABLE IF NOT EXISTS sales_prospects (
       id VARCHAR(64) PRIMARY KEY,
       sales_rep_id VARCHAR(32) NOT NULL,
