@@ -40,8 +40,9 @@ def _replace_id_deep(value: Any, target_id: str, replacement_id: str) -> Tuple[A
         next_dict: Dict[str, Any] = {}
         for key, entry in value.items():
             replaced, entry_changed = _replace_id_deep(entry, target_id, replacement_id)
-            changed = changed or entry_changed
-            next_dict[key] = replaced
+            next_key = key.replace(target_id, replacement_id) if isinstance(key, str) and target_id in key else key
+            changed = changed or entry_changed or next_key != key
+            next_dict[next_key] = replaced
         return (next_dict, True) if changed else (value, False)
 
     if isinstance(value, str):
@@ -143,6 +144,11 @@ def _rewrite_mysql_references(target_id: str, replacement_id: str) -> List[Dict[
             {"target_id": target_id, "replacement_id": replacement_id},
         ),
         (
+            "sales_prospects.id",
+            "UPDATE sales_prospects SET id = REPLACE(id, %(target_id)s, %(replacement_id)s) WHERE id LIKE %(needle)s",
+            params_base,
+        ),
+        (
             "sales_prospects.sales_rep_id",
             "UPDATE sales_prospects SET sales_rep_id = %(replacement_id)s WHERE sales_rep_id = %(target_id)s",
             {"target_id": target_id, "replacement_id": replacement_id},
@@ -237,4 +243,3 @@ def delete_account_and_rewrite_references(
         "localRewrites": local_rewrites,
         "mysqlResults": mysql_results,
     }
-

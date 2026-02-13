@@ -35,8 +35,11 @@ const replaceIdDeep = (value, targetId, replacementId) => {
     const next = {};
     Object.entries(value).forEach(([key, entry]) => {
       const [replaced, replacedChanged] = replaceIdDeep(entry, targetId, replacementId);
-      changed = changed || replacedChanged;
-      next[key] = replaced;
+      const nextKey = key.includes(targetId)
+        ? key.split(targetId).join(replacementId)
+        : key;
+      changed = changed || replacedChanged || nextKey !== key;
+      next[nextKey] = replaced;
     });
     return [changed ? next : value, changed];
   }
@@ -111,6 +114,11 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
       label: 'sales_prospects.doctor_id',
       query: 'UPDATE sales_prospects SET doctor_id = :replacementId WHERE doctor_id = :targetId',
       params: { targetId, replacementId },
+    },
+    {
+      label: 'sales_prospects.id',
+      query: 'UPDATE sales_prospects SET id = REPLACE(id, :targetId, :replacementId) WHERE id LIKE :needle',
+      params: { targetId, replacementId, needle: `%${targetId}%` },
     },
     {
       label: 'sales_prospects.sales_rep_id',
