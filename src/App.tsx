@@ -5614,6 +5614,9 @@ function MainApp() {
 	      if (currentUserId && leadAccountId && String(leadAccountId) === currentUserId) {
 	        return false;
 	      }
+	      if (isDeletedProspectLead(lead)) {
+	        return false;
+	      }
 
 	      const orders =
 	        coerceNumber(lead?.referredContactTotalOrders) ??

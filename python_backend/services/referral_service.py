@@ -1402,6 +1402,43 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         }
         return _apply_referred_contact_account_fields(base)
 
+    def _make_referral_prospect_lead(p: Dict, lead_id: Optional[str] = None) -> Dict:
+        resolved_id = str(lead_id if lead_id is not None else (p.get("referralId") or p.get("id") or "")).strip()
+        base = {
+            "id": resolved_id,
+            "referrerDoctorId": None,
+            "salesRepId": p.get("salesRepId"),
+            "referredContactName": p.get("contactName"),
+            "referredContactEmail": p.get("contactEmail"),
+            "referredContactPhone": p.get("contactPhone"),
+            "status": p.get("status") or "pending",
+            "salesRepNotes": p.get("notes") or None,
+            "notes": p.get("notes") or None,
+            "resellerPermitExempt": bool(p.get("resellerPermitExempt")),
+            "resellerPermitFilePath": p.get("resellerPermitFilePath") or None,
+            "resellerPermitFileName": p.get("resellerPermitFileName") or None,
+            "resellerPermitUploadedAt": p.get("resellerPermitUploadedAt") or None,
+            "officeAddressLine1": p.get("officeAddressLine1") or None,
+            "officeAddressLine2": p.get("officeAddressLine2") or None,
+            "officeCity": p.get("officeCity") or None,
+            "officeState": p.get("officeState") or None,
+            "officePostalCode": p.get("officePostalCode") or None,
+            "officeCountry": p.get("officeCountry") or None,
+            "createdAt": p.get("createdAt"),
+            "updatedAt": p.get("updatedAt"),
+            "convertedDoctorId": p.get("doctorId") or None,
+            "convertedAt": None,
+            "referredContactHasAccount": False,
+            "referredContactAccountId": None,
+            "referredContactAccountName": None,
+            "referredContactAccountEmail": None,
+            "referredContactAccountCreatedAt": None,
+            "referredContactTotalOrders": 0,
+            "referredContactEligibleForCredit": False,
+            "isManual": False,
+        }
+        return _apply_referred_contact_account_fields(base)
+
     prospects = (
         sales_prospect_repository.get_all()
         if (is_admin and scope_all)
@@ -1456,42 +1493,17 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         prospect = next((p for p in normalized_prospects if str(p.get("referralId") or "") == rid), None)
         if not prospect:
             continue
-        base = {
-            "id": rid,
-            "referrerDoctorId": None,
-            "salesRepId": prospect.get("salesRepId"),
-            "referredContactName": prospect.get("contactName"),
-            "referredContactEmail": prospect.get("contactEmail"),
-            "referredContactPhone": prospect.get("contactPhone"),
-            "status": prospect.get("status") or "pending",
-            "salesRepNotes": prospect.get("notes") or None,
-            "notes": prospect.get("notes") or None,
-            "resellerPermitExempt": bool(prospect.get("resellerPermitExempt")),
-            "resellerPermitFilePath": prospect.get("resellerPermitFilePath") or None,
-            "resellerPermitFileName": prospect.get("resellerPermitFileName") or None,
-            "resellerPermitUploadedAt": prospect.get("resellerPermitUploadedAt") or None,
-            "officeAddressLine1": prospect.get("officeAddressLine1") or None,
-            "officeAddressLine2": prospect.get("officeAddressLine2") or None,
-            "officeCity": prospect.get("officeCity") or None,
-            "officeState": prospect.get("officeState") or None,
-            "officePostalCode": prospect.get("officePostalCode") or None,
-            "officeCountry": prospect.get("officeCountry") or None,
-            "createdAt": prospect.get("createdAt"),
-            "updatedAt": prospect.get("updatedAt"),
-            "convertedDoctorId": prospect.get("doctorId") or None,
-            "convertedAt": None,
-            "referredContactHasAccount": False,
-            "referredContactAccountId": None,
-            "referredContactAccountName": None,
-            "referredContactAccountEmail": None,
-            "referredContactAccountCreatedAt": None,
-            "referredContactTotalOrders": 0,
-            "referredContactEligibleForCredit": False,
-            "isManual": False,
-        }
-        referral_leads.append(_apply_referred_contact_account_fields(base))
+        referral_leads.append(_make_referral_prospect_lead(prospect, rid))
 
-    combined = [*referral_leads, *contact_form_leads, *manual_leads]
+    prospect_only_leads = [
+        _make_referral_prospect_lead(p)
+        for p in normalized_prospects
+        if not _is_manual_prospect(p)
+        and not _is_contact_form_prospect(p)
+        and not str(p.get("referralId") or "").strip()
+    ]
+
+    combined = [*referral_leads, *prospect_only_leads, *contact_form_leads, *manual_leads]
     combined = [_apply_deleted_prospect_label(lead) for lead in combined]
     combined = [lead for lead in combined if not _is_blank_lead(lead)]
     combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
