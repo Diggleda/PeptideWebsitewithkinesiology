@@ -3965,11 +3965,28 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
         recipient_rows[supplier_row_id] = {"id": supplier_row_id, "name": supplier_name, "role": "supplier", "amount": 0.0}
 
         admin_ids = [str(a.get("id")) for a in admins if a.get("id")]
-        special_admin_email = "petergibbons7@icloud.com"
-        special_admin_rate = 0.03
-        special_admin_monthly_cap = 6000.0
-        special_admin_user = next((a for a in admins if _norm_email(a.get("email")) == special_admin_email), None)
-        special_admin_id = str(special_admin_user.get("id")) if isinstance(special_admin_user, dict) and special_admin_user.get("id") else None
+        web_dev_commission_rate = 0.03
+        web_dev_commission_monthly_cap = 6000.0
+        dev_commission_recipient_ids: List[str] = []
+        seen_dev_recipient_ids: set[str] = set()
+        for user in users:
+            user_id = str(user.get("id") or "").strip()
+            if not user_id:
+                continue
+            if not _is_truthy(user.get("devCommission") or user.get("dev_commission")):
+                continue
+            if user_id in seen_dev_recipient_ids:
+                continue
+            seen_dev_recipient_ids.add(user_id)
+            dev_commission_recipient_ids.append(user_id)
+            if user_id not in recipient_rows:
+                role = _norm_role(user.get("role")) or "user"
+                recipient_rows[user_id] = {
+                    "id": user_id,
+                    "name": user.get("name") or user.get("email") or "User",
+                    "role": role,
+                    "amount": 0.0,
+                }
 
         orders_seen = 0
         product_totals: Dict[str, Dict[str, object]] = {}
@@ -4476,8 +4493,8 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
         # Per-recipient math breakdown so the admin dashboard can show the calculation.
         per_recipient_stats: Dict[str, Dict[str, object]] = {}
-        # For the special admin 3% payout: track base by month (PST/PDT calendar month).
-        special_admin_month_base: Dict[str, float] = {}
+        # For dev commission recipients, track commission base by month (report timezone).
+        dev_commission_month_base: Dict[str, float] = {}
 
         def _ensure_stats(recipient_id: str) -> Dict[str, object]:
             row = per_recipient_stats.get(recipient_id)
@@ -4554,6 +4571,11 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             base = max(0.0, subtotal_value)
             if base <= 0:
                 continue
+            created_at = _parse_datetime_utc(entry.get("createdAt")) if entry.get("createdAt") else None
+            if created_at:
+                local_dt = created_at.astimezone(report_tz)
+                month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
+                dev_commission_month_base[month_key] = float(dev_commission_month_base.get(month_key) or 0.0) + float(base)
 
             pricing_mode = _resolve_pricing_mode(entry)
             rate = 0.2 if pricing_mode == "retail" else 0.1
@@ -4577,8 +4599,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
 
             commission = round(primary_commission_total + house_commission_total, 2)
             supplier_share = round(base - commission, 2)
-            created_at = _parse_datetime_utc(entry.get("createdAt")) if entry.get("createdAt") else None
-
             totals["ordersCounted"] += 1
             totals["commissionableBase"] = round(float(totals["commissionableBase"]) + base, 2)
             totals["commissionTotal"] = round(float(totals["commissionTotal"]) + commission, 2)
@@ -4587,11 +4607,6 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 totals["retailBase"] = round(float(totals["retailBase"]) + base, 2)
             else:
                 totals["wholesaleBase"] = round(float(totals["wholesaleBase"]) + base, 2)
-
-            if created_at:
-                local_dt = created_at.astimezone(report_tz)
-                month_key = f"{local_dt.year:04d}-{local_dt.month:02d}"
-                special_admin_month_base[month_key] = float(special_admin_month_base.get(month_key) or 0.0) + float(base)
 
             if recipient_id == "__house__":
                 for target_id, amount in primary_house_allocations.items():
@@ -4642,27 +4657,34 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 }
             )
 
-        # Special admin 3% payout with monthly cap.
-        if special_admin_id:
-            bonus_total = 0.0
-            bonus_by_month: Dict[str, float] = {}
-            for month_key, month_base in special_admin_month_base.items():
-                raw = round(float(month_base or 0.0) * special_admin_rate, 2)
-                capped = min(raw, special_admin_monthly_cap)
-                bonus_by_month[month_key] = capped
-                bonus_total = round(bonus_total + capped, 2)
-            if bonus_total > 0:
-                _add_commission(special_admin_id, bonus_total)
-                # Track separately for display.
-                stats = _ensure_stats(special_admin_id)
-                stats["specialAdminBonus"] = bonus_total
-                stats["specialAdminBonusRate"] = special_admin_rate
-                stats["specialAdminBonusMonthlyCap"] = special_admin_monthly_cap
-                stats["specialAdminBonusByMonth"] = bonus_by_month
-                stats["specialAdminBonusBaseByMonth"] = {
-                    month_key: round(float(month_base or 0.0), 2)
-                    for month_key, month_base in special_admin_month_base.items()
-                }
+        # Web developer commission: any user with dev_commission=1 earns 3% on all sales,
+        # capped at $6,000 per month (per recipient).
+        dev_bonus_by_month: Dict[str, float] = {}
+        dev_bonus_base_by_month: Dict[str, float] = {}
+        for month_key, month_base in dev_commission_month_base.items():
+            month_base_rounded = round(float(month_base or 0.0), 2)
+            raw_bonus = round(month_base_rounded * web_dev_commission_rate, 2)
+            capped_bonus = min(raw_bonus, web_dev_commission_monthly_cap)
+            dev_bonus_by_month[month_key] = capped_bonus
+            dev_bonus_base_by_month[month_key] = month_base_rounded
+        bonus_total_per_recipient = round(sum(dev_bonus_by_month.values()), 2)
+        for recipient_id in dev_commission_recipient_ids:
+            if bonus_total_per_recipient <= 0:
+                continue
+            _add_commission(recipient_id, bonus_total_per_recipient)
+            totals["commissionTotal"] = round(float(totals["commissionTotal"]) + bonus_total_per_recipient, 2)
+            stats = _ensure_stats(recipient_id)
+            stats["specialAdminBonus"] = bonus_total_per_recipient
+            stats["specialAdminBonusRate"] = web_dev_commission_rate
+            stats["specialAdminBonusMonthlyCap"] = web_dev_commission_monthly_cap
+            stats["specialAdminBonusByMonth"] = {
+                month_key: round(float(amount or 0.0), 2)
+                for month_key, amount in dev_bonus_by_month.items()
+            }
+            stats["specialAdminBonusBaseByMonth"] = {
+                month_key: round(float(amount or 0.0), 2)
+                for month_key, amount in dev_bonus_base_by_month.items()
+            }
 
         products = list(product_totals.values())
         products.sort(key=lambda p: int(p.get("quantity") or 0), reverse=True)

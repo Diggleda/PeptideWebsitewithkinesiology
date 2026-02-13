@@ -40,6 +40,7 @@ const shouldServeFakeAdminReports = () => {
 };
 
 const WEB_DEV_COMMISSION_RATE = 0.03;
+const WEB_DEV_COMMISSION_MONTHLY_CAP = 6000;
 
 const getDevCommissionUsers = async () => {
   if (mysqlClient.isEnabled()) {
@@ -190,6 +191,7 @@ const buildFakeProductsCommissionReport = async ({ periodStart, periodEnd }) => 
   }, 0);
 
   const commissionableBase = wholesaleBase + retailBase;
+  const monthKey = String(to || from || new Date().toISOString().slice(0, 10)).slice(0, 7);
   const commissionRows = mergedRecipients.map((recipient, idx) => {
     const retailShare = 0.12 + idx * 0.03;
     const wholesaleShare = 0.09 + idx * 0.02;
@@ -198,8 +200,9 @@ const buildFakeProductsCommissionReport = async ({ periodStart, periodEnd }) => 
     const retailOrders = Math.max(0, Math.round(6 + rand() * 10 - idx));
     const wholesaleOrders = Math.max(0, Math.round(4 + rand() * 8 - idx));
     const baseAmount = retailBasePart * 0.2 + wholesaleBasePart * 0.1;
+    const rawWebDevBonus = Math.round(commissionableBase * WEB_DEV_COMMISSION_RATE * 100) / 100;
     const webDevBonus = recipient.devCommission
-      ? Math.round(commissionableBase * WEB_DEV_COMMISSION_RATE * 100) / 100
+      ? Math.min(rawWebDevBonus, WEB_DEV_COMMISSION_MONTHLY_CAP)
       : 0;
     const amount = baseAmount + webDevBonus;
     return {
@@ -219,12 +222,12 @@ const buildFakeProductsCommissionReport = async ({ periodStart, periodEnd }) => 
       houseWholesaleCommission: 0,
       specialAdminBonus: webDevBonus,
       specialAdminBonusRate: recipient.devCommission ? WEB_DEV_COMMISSION_RATE : 0,
-      specialAdminBonusMonthlyCap: 0,
+      specialAdminBonusMonthlyCap: recipient.devCommission ? WEB_DEV_COMMISSION_MONTHLY_CAP : 0,
       specialAdminBonusByMonth: recipient.devCommission
-        ? { all_time: webDevBonus }
+        ? { [monthKey]: webDevBonus }
         : undefined,
       specialAdminBonusBaseByMonth: recipient.devCommission
-        ? { all_time: Math.round(commissionableBase * 100) / 100 }
+        ? { [monthKey]: Math.round(commissionableBase * 100) / 100 }
         : undefined,
     };
   });

@@ -22,6 +22,18 @@ def _normalize_npi(value: Optional[str]) -> str:
     return re.sub(r"[^0-9]", "", str(value or ""))[:10]
 
 
+def _normalize_bool(value) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _ensure_defaults(user: Dict) -> Dict:
     normalized = dict(user)
     normalized.setdefault("role", "doctor")
@@ -85,6 +97,10 @@ def _ensure_defaults(user: Dict) -> Dict:
     if verification is not None and not isinstance(verification, dict):
         verification = None
     normalized["npiVerification"] = verification
+    if "devCommission" in normalized:
+        normalized["devCommission"] = _normalize_bool(normalized.get("devCommission"))
+    else:
+        normalized["devCommission"] = _normalize_bool(normalized.get("dev_commission"))
     return normalized
 
 
@@ -498,6 +514,7 @@ def _row_to_user(row: Dict) -> Dict:
             "npiVerification": verification,
             "npiStatus": row.get("npi_status"),
             "npiCheckError": row.get("npi_check_error"),
+            "devCommission": row.get("dev_commission"),
         }
     )
 
