@@ -13,6 +13,8 @@ const normalizeEmail = (value) => {
   return String(value).trim().toLowerCase();
 };
 
+const isDoctorLinked = (record) => Boolean(normalizeId(record?.doctorId || record?.doctor_id));
+
 const nowIso = () => new Date().toISOString();
 
 const ensureDefaults = (record) => {
@@ -126,6 +128,41 @@ const findBySalesRepAndDoctorId = async (salesRepId, doctorId) => {
     .find((item) => item.salesRepId === rep && item.doctorId === doc) || null;
 };
 
+const findByDoctorId = async (doctorId) => {
+  const doc = normalizeId(doctorId);
+  if (!doc) return null;
+  const canonicalId = `doctor:${doc}`;
+  if (mysqlClient.isEnabled()) {
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT * FROM sales_prospects
+        WHERE doctor_id = :doctorId
+        ORDER BY (id = :canonicalId) DESC, COALESCE(updated_at, created_at) DESC
+        LIMIT 1
+      `,
+      { doctorId: doc, canonicalId },
+    );
+    return rowToRecord(row);
+  }
+  const records = salesProspectStore.read();
+  const list = Array.isArray(records) ? records : [];
+  const matches = list
+    .map(ensureDefaults)
+    .filter((item) => normalizeId(item.doctorId) === doc);
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => {
+    const aCanonical = normalizeId(a.id) === canonicalId ? 1 : 0;
+    const bCanonical = normalizeId(b.id) === canonicalId ? 1 : 0;
+    if (aCanonical !== bCanonical) {
+      return bCanonical - aCanonical;
+    }
+    const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
+    const bMs = Date.parse(String(b.updatedAt || b.createdAt || '')) || 0;
+    return bMs - aMs;
+  });
+  return matches[0] || null;
+};
+
 const findBySalesRepAndReferralId = async (salesRepId, referralId) => {
   const rep = normalizeId(salesRepId);
   const ref = normalizeId(referralId);
@@ -227,13 +264,17 @@ const upsert = async (prospect) => {
   const incoming = prospect && typeof prospect === 'object' ? prospect : {};
   const id = normalizeId(incoming.id);
   const salesRepId = normalizeId(incoming.salesRepId);
+  const doctorId = normalizeId(incoming.doctorId);
 
   let existing = null;
   if (id) {
     existing = await findById(id);
   }
-  if (!existing && salesRepId && normalizeId(incoming.doctorId)) {
-    existing = await findBySalesRepAndDoctorId(salesRepId, incoming.doctorId);
+  if (!existing && doctorId) {
+    existing = await findByDoctorId(doctorId);
+  }
+  if (!existing && salesRepId && doctorId) {
+    existing = await findBySalesRepAndDoctorId(salesRepId, doctorId);
   }
   if (!existing && salesRepId && normalizeId(incoming.referralId)) {
     existing = await findBySalesRepAndReferralId(salesRepId, incoming.referralId);
@@ -242,11 +283,24 @@ const upsert = async (prospect) => {
     existing = await findBySalesRepAndContactFormId(salesRepId, incoming.contactFormId);
   }
 
-  const resolvedSalesRepId = salesRepId || normalizeId(existing?.salesRepId);
+  const resolvedId = id || normalizeId(existing?.id);
+  const lockedDoctorSalesRepId = isDoctorLinked(existing) ? normalizeId(existing?.salesRepId) : null;
+  if (lockedDoctorSalesRepId && salesRepId && salesRepId !== lockedDoctorSalesRepId) {
+    logger.warn(
+      {
+        prospectId: resolvedId || null,
+        doctorId: normalizeId(existing?.doctorId),
+        attemptedSalesRepId: salesRepId,
+        retainedSalesRepId: lockedDoctorSalesRepId,
+      },
+      'Blocked doctor prospect salesRepId overwrite',
+    );
+  }
+  const resolvedSalesRepId = lockedDoctorSalesRepId || salesRepId || normalizeId(existing?.salesRepId);
   const normalized = ensureDefaults({
     ...(existing || {}),
     ...incoming,
-    id,
+    id: resolvedId,
     salesRepId: resolvedSalesRepId,
     updatedAt: nowIso(),
     createdAt: existing?.createdAt || incoming.createdAt || nowIso(),
@@ -308,7 +362,10 @@ const upsert = async (prospect) => {
 	          :updatedAt
 	        )
 	        ON DUPLICATE KEY UPDATE
-	          sales_rep_id = VALUES(sales_rep_id),
+	          sales_rep_id = CASE
+	            WHEN sales_prospects.doctor_id IS NOT NULL AND TRIM(sales_prospects.doctor_id) <> '' THEN sales_prospects.sales_rep_id
+	            ELSE VALUES(sales_rep_id)
+	          END,
 	          doctor_id = VALUES(doctor_id),
 	          referral_id = VALUES(referral_id),
 	          contact_form_id = VALUES(contact_form_id),
@@ -386,6 +443,7 @@ const removeByReferralId = async (referralId) => {
 module.exports = {
   getAll,
   findById,
+  findByDoctorId,
   findBySalesRepAndDoctorId,
   findBySalesRepAndReferralId,
   findBySalesRepAndContactFormId,

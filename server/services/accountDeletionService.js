@@ -64,6 +64,38 @@ const rewriteStoreReferences = (store, label, targetId, replacementId) => {
   return { label, changed };
 };
 
+const rewriteSalesProspectStoreReferences = (targetId, replacementId) => {
+  const current = salesProspectStore.read();
+  if (!Array.isArray(current)) {
+    return rewriteStoreReferences(salesProspectStore, 'sales-prospects.json', targetId, replacementId);
+  }
+
+  let changed = false;
+  const next = current.map((entry) => {
+    const [replaced, replacedChanged] = replaceIdDeep(entry, targetId, replacementId);
+    const hasDoctorId = Boolean(normalizeId(entry?.doctorId || entry?.doctor_id));
+    if (!hasDoctorId || !replaced || typeof replaced !== 'object') {
+      changed = changed || replacedChanged;
+      return replaced;
+    }
+
+    const restored = { ...replaced };
+    if (Object.prototype.hasOwnProperty.call(entry, 'salesRepId')) {
+      restored.salesRepId = entry.salesRepId;
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, 'sales_rep_id')) {
+      restored.sales_rep_id = entry.sales_rep_id;
+    }
+    changed = changed || replacedChanged;
+    return restored;
+  });
+
+  if (changed) {
+    salesProspectStore.write(next);
+  }
+  return { label: 'sales-prospects.json', changed };
+};
+
 const executeMysql = async (query, params, label) => {
   try {
     const result = await mysqlClient.execute(query, params);
@@ -122,7 +154,7 @@ const rewriteMysqlReferences = async (targetId, replacementId) => {
     },
     {
       label: 'sales_prospects.sales_rep_id',
-      query: 'UPDATE sales_prospects SET sales_rep_id = :replacementId WHERE sales_rep_id = :targetId',
+      query: 'UPDATE sales_prospects SET sales_rep_id = :replacementId WHERE sales_rep_id = :targetId AND (doctor_id IS NULL OR TRIM(doctor_id) = \'\')',
       params: { targetId, replacementId },
     },
     {
@@ -176,7 +208,7 @@ const deleteAccountAndRewriteReferences = async ({
     rewriteStoreReferences(referralStore, 'referrals.json', targetId, replacementId),
     rewriteStoreReferences(referralCodeStore, 'referral-codes.json', targetId, replacementId),
     rewriteStoreReferences(salesRepStore, 'sales-reps.json', targetId, replacementId),
-    rewriteStoreReferences(salesProspectStore, 'sales-prospects.json', targetId, replacementId),
+    rewriteSalesProspectStoreReferences(targetId, replacementId),
     rewriteStoreReferences(creditLedgerStore, 'credit-ledger.json', targetId, replacementId),
     rewriteStoreReferences(peptideForumStore, 'the-peptide-forum.json', targetId, replacementId),
   ];

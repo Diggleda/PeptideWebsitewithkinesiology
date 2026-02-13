@@ -1235,7 +1235,8 @@ const getSalesProspect = async (req, res, next) => {
       const contactFormId = extractContactFormId(identifier);
       prospect = contactFormId
         ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+        : await salesProspectRepository.findByDoctorId(identifier)
+          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
           || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
     }
 
@@ -1294,7 +1295,8 @@ const upsertSalesProspect = async (req, res, next) => {
       const contactFormId = extractContactFormId(identifier);
       existing = contactFormId
         ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+        : await salesProspectRepository.findByDoctorId(identifier)
+          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
           || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
     }
 
@@ -1391,7 +1393,8 @@ const uploadResellerPermit = async (req, res, next) => {
       const contactFormId = extractContactFormId(identifier);
       existing = contactFormId
         ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+        : await salesProspectRepository.findByDoctorId(identifier)
+          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
           || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
     }
 
@@ -1493,7 +1496,8 @@ const downloadResellerPermit = async (req, res, next) => {
       const contactFormId = extractContactFormId(identifier);
       existing = contactFormId
         ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
-        : await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+        : await salesProspectRepository.findByDoctorId(identifier)
+          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
           || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
     }
 
