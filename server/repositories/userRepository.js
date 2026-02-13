@@ -374,11 +374,23 @@ const replace = (predicate, updater) => {
   return updated;
 };
 
+const removeById = (id) => {
+  const users = loadUsers();
+  const index = users.findIndex((item) => item.id === id);
+  if (index === -1) {
+    return null;
+  }
+  const [removed] = users.splice(index, 1);
+  saveUsers(users);
+  return removed || null;
+};
+
 module.exports = {
   getAll,
   insert,
   update,
   replace,
+  removeById,
   findByEmail,
   findById,
   findByReferralCode,

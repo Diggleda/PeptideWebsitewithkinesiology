@@ -10,6 +10,7 @@ const { env } = require('../config/env');
 const { verifyDoctorNpi, normalizeNpiNumber } = require('./npiService');
 const { logger } = require('../config/logger');
 const mysqlClient = require('../database/mysqlClient');
+const { deleteAccountAndRewriteReferences, DELETED_USER_ID } = require('./accountDeletionService');
 
 const BCRYPT_REGEX = /^\$2[abxy]\$/;
 const SALES_CODE_PATTERN = /^[A-Z]{2}[A-Z0-9]{3}$/;
@@ -635,6 +636,27 @@ const resetPassword = async ({ token, password }) => {
   passwordResetTokens.delete(normalizedToken);
 };
 
+const deleteAccount = async (userId) => {
+  const normalizedUserId = normalizeId(userId);
+  if (!normalizedUserId) {
+    throw createError('USER_ID_REQUIRED', 400);
+  }
+  await deleteAccountAndRewriteReferences({
+    userId: normalizedUserId,
+    replacementUserId: DELETED_USER_ID,
+  });
+  for (const [token, tokenData] of passwordResetTokens.entries()) {
+    if (normalizeId(tokenData?.userId) === normalizedUserId) {
+      passwordResetTokens.delete(token);
+    }
+  }
+  return {
+    ok: true,
+    deletedUserId: normalizedUserId,
+    replacementUserId: DELETED_USER_ID,
+  };
+};
+
 module.exports = {
   register,
   login,
@@ -645,4 +667,5 @@ module.exports = {
   createAuthToken,
   requestPasswordReset,
   resetPassword,
+  deleteAccount,
 };

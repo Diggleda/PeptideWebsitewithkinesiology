@@ -71,6 +71,15 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+const deleteAccount = async (req, res, next) => {
+  try {
+    const result = await authService.deleteAccount(req.user.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const requestPasswordReset = async (req, res, next) => {
   try {
     const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
@@ -160,6 +169,7 @@ module.exports = {
   getProfile,
   verifyNpi,
   updateProfile,
+  deleteAccount,
   logout,
   requestPasswordReset,
   resetPassword,

@@ -14,6 +14,7 @@ const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
 const { logger } = require('../config/logger');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
+const { DELETED_USER_ID, DELETED_USER_NAME } = require('../constants/deletedUser');
 const crypto = require('crypto');
 const { resolvePacificDayWindowUtc } = require('../utils/timeZone');
 
@@ -83,6 +84,9 @@ const normalizeId = (value) => {
   const text = String(value).trim();
   return text.length ? text : null;
 };
+
+const getDoctorFallbackName = (doctorId) =>
+  (normalizeId(doctorId) === DELETED_USER_ID ? DELETED_USER_NAME : 'Doctor');
 
 const normalizeRole = (role) => (role || '')
   .toString()
@@ -1898,7 +1902,7 @@ const getOrdersForSalesRep = async (
         id,
         {
           id,
-          name: doctor.name || doctor.email || 'Doctor',
+          name: doctor.name || doctor.email || getDoctorFallbackName(id),
           email: doctor.email || null,
           profileImageUrl: doctor.profileImageUrl || null,
           salesRepId: repId || null,
@@ -1931,7 +1935,7 @@ const getOrdersForSalesRep = async (
           return;
         }
         const user = userRepository.findById ? userRepository.findById(doctorId) : null;
-        const name = user?.name || user?.email || 'Doctor';
+        const name = user?.name || user?.email || getDoctorFallbackName(doctorId);
         const email = user?.email || null;
         const profileImageUrl = user?.profileImageUrl || null;
         const rep = salesRepId ? repDirectory.get(salesRepId) : null;
@@ -2062,7 +2066,7 @@ const getOrdersForSalesRep = async (
       summaries.push({
         ...buildLocalOrderSummary(order),
         doctorId: order.userId,
-        doctorName: doctorMeta?.name || 'Doctor',
+        doctorName: doctorMeta?.name || getDoctorFallbackName(order.userId),
         doctorEmail: doctorMeta?.email || null,
         doctorProfileImageUrl: doctorMeta?.profileImageUrl || null,
         doctorSalesRepId: doctorMeta?.salesRepId || null,
@@ -2134,7 +2138,7 @@ const getOrdersForSalesRep = async (
 	          summaries.push({
 	            ...summary,
 	            doctorId: doctor.id,
-	            doctorName: doctorMeta?.name || doctor.name || 'Doctor',
+		            doctorName: doctorMeta?.name || doctor.name || getDoctorFallbackName(doctor.id),
 	            doctorEmail: doctorMeta?.email || doctor.email || null,
 	            doctorProfileImageUrl: doctorMeta?.profileImageUrl || doctor.profileImageUrl || null,
 	            doctorSalesRepId: doctorMeta?.salesRepId || null,
@@ -2174,7 +2178,7 @@ const getOrdersForSalesRep = async (
       summaries.push({
         ...summary,
         doctorId: rawOrder.userId,
-        doctorName: doctorMeta?.name || 'Doctor',
+        doctorName: doctorMeta?.name || getDoctorFallbackName(rawOrder.userId),
         doctorEmail: doctorMeta?.email || null,
         doctorProfileImageUrl: doctorMeta?.profileImageUrl || null,
         doctorSalesRepId: doctorMeta?.salesRepId || null,

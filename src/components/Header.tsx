@@ -968,6 +968,9 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
+  const [deleteAccountHoldCount, setDeleteAccountHoldCount] = useState(0);
+  const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
   const [accountTab, setAccountTab] = useState<AccountTabId>('details');
   const [patientLinksLoading, setPatientLinksLoading] = useState(false);
   const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
@@ -1009,6 +1012,8 @@ export function Header({
   const logoutThanksLogoutTriggeredRef = useRef(false);
   const logoutThanksPendingFadeOutRef = useRef(false);
   const logoutThanksLogoutPromiseRef = useRef<Promise<void> | null>(null);
+  const deleteAccountHoldTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const deleteAccountHoldTriggeredRef = useRef(false);
   const [trackingForm, setTrackingForm] = useState({ orderId: '', email: '' });
   const [trackingPending, setTrackingPending] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState<string | null>(null);
@@ -1107,6 +1112,7 @@ export function Header({
   useEffect(() => {
     if (!welcomeOpen) {
       collapseResearchOverlay(true);
+      setDeleteAccountModalOpen(false);
     }
   }, [welcomeOpen, collapseResearchOverlay]);
 
@@ -2265,6 +2271,86 @@ export function Header({
       }
     };
   }, []);
+
+  const clearDeleteAccountHoldTimers = useCallback(() => {
+    deleteAccountHoldTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    deleteAccountHoldTimeoutsRef.current = [];
+  }, []);
+
+  const resetDeleteAccountHold = useCallback(() => {
+    deleteAccountHoldTriggeredRef.current = false;
+    clearDeleteAccountHoldTimers();
+    setDeleteAccountHoldCount(0);
+  }, [clearDeleteAccountHoldTimers]);
+
+  useEffect(() => {
+    return () => {
+      clearDeleteAccountHoldTimers();
+    };
+  }, [clearDeleteAccountHoldTimers]);
+
+  const executeDeleteAccount = useCallback(async () => {
+    if (deleteAccountDeleting || deleteAccountHoldTriggeredRef.current) {
+      return;
+    }
+    deleteAccountHoldTriggeredRef.current = true;
+    setDeleteAccountDeleting(true);
+    try {
+      const api = await import('../services/api');
+      await api.authAPI.deleteMe();
+      if (onLogout) {
+        await Promise.resolve(onLogout());
+      } else {
+        api.authAPI.logout();
+      }
+      setWelcomeOpen(false);
+      setLoginOpen(false);
+      setDeleteAccountModalOpen(false);
+      toast.success('Account deleted');
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' && error.message.trim().length > 0
+        ? error.message.trim()
+        : 'Unable to delete account';
+      toast.error(message);
+      deleteAccountHoldTriggeredRef.current = false;
+    } finally {
+      setDeleteAccountDeleting(false);
+      resetDeleteAccountHold();
+    }
+  }, [deleteAccountDeleting, onLogout, resetDeleteAccountHold]);
+
+  const beginDeleteAccountHold = useCallback(() => {
+    if (deleteAccountDeleting) {
+      return;
+    }
+    clearDeleteAccountHoldTimers();
+    deleteAccountHoldTriggeredRef.current = false;
+    setDeleteAccountHoldCount(1);
+    deleteAccountHoldTimeoutsRef.current.push(
+      window.setTimeout(() => {
+        if (deleteAccountHoldTriggeredRef.current) return;
+        setDeleteAccountHoldCount(2);
+      }, 1000),
+    );
+    deleteAccountHoldTimeoutsRef.current.push(
+      window.setTimeout(() => {
+        if (deleteAccountHoldTriggeredRef.current) return;
+        setDeleteAccountHoldCount(3);
+      }, 2000),
+    );
+    deleteAccountHoldTimeoutsRef.current.push(
+      window.setTimeout(() => {
+        void executeDeleteAccount();
+      }, 3000),
+    );
+  }, [clearDeleteAccountHoldTimers, deleteAccountDeleting, executeDeleteAccount]);
+
+  const handleDeleteAccountModalOpenChange = useCallback((open: boolean) => {
+    setDeleteAccountModalOpen(open);
+    if (!open) {
+      resetDeleteAccountHold();
+    }
+  }, [resetDeleteAccountHold]);
 
   const clearLogoutThanksTimers = useCallback(() => {
     logoutThanksTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
@@ -3985,6 +4071,17 @@ export function Header({
           ))}
         </div>
       </div>
+
+	      <div className="pt-1">
+	        <button
+	          type="button"
+	          onClick={() => setDeleteAccountModalOpen(true)}
+	          className="text-sm font-medium !text-[rgb(95,179,249)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2"
+	          style={{ color: 'rgb(95, 179, 249)', marginLeft: '16px' }}
+	        >
+	          Need to delete your account?
+	        </button>
+	      </div>
     </div>
   ) : null;
 
@@ -5594,11 +5691,11 @@ export function Header({
             variant="default"
             size="sm"
             onClick={() => setWelcomeOpen(true)}
-            className="relative overflow-visible squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+            className="relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
             aria-haspopup="dialog"
             aria-expanded={welcomeOpen}
           >
-            <span className="hidden sm:inline text-white">{headerDisplayName}</span>
+            <span className="hidden sm:inline text-current">{headerDisplayName}</span>
             <span className="header-account-avatar-shell">
               {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
             </span>
@@ -5791,7 +5888,64 @@ export function Header({
 		          </div>
 	          </div>
 	        </DialogContent>
-	      </Dialog>
+      </Dialog>
+	      <Dialog open={deleteAccountModalOpen} onOpenChange={handleDeleteAccountModalOpenChange}>
+	        <DialogContent
+	          className="glass-card squircle-lg w-full !max-w-[min(468px,calc(100vw-3rem))] sm:!max-w-[min(468px,calc(100vw-3rem))] lg:!max-w-[min(468px,calc(100vw-3rem))] border border-[var(--brand-glass-border-2)] shadow-2xl p-0 overflow-hidden"
+	          overlayClassName="bg-slate-950/40"
+	          containerClassName="fixed inset-0 z-[10001] flex items-center justify-center p-4 sm:p-6"
+	          style={{
+	            backdropFilter: "blur(32px) saturate(1.45)",
+	            backgroundColor: "rgba(245, 251, 255, 0.98)",
+		            width: "min(468px, calc(100vw - 3rem))",
+		            maxWidth: "min(468px, calc(100vw - 3rem))",
+	          }}
+	        >
+          <DialogHeader className="border-b border-[var(--brand-glass-border-1)] px-6 py-4">
+            <DialogTitle className="text-lg font-semibold text-slate-900">Delete Account</DialogTitle>
+          </DialogHeader>
+	          <div className="space-y-4 px-6 py-5">
+	            <p className="text-sm leading-6 text-slate-700">
+	              By deleting your account, you understand that all of your data stored within PepPro databases will be lost except anything publically available to the network on PepPro&apos;s research services or otherwise. For those publications, it is your responsibility to fascilitate closure, and if you need further assistance after account suspension contact support@peppro.net.
+	            </p>
+	            <div className="flex justify-end gap-3">
+	              <Button
+	                type="button"
+	                variant="outline"
+	                size="sm"
+	                className="header-home-button squircle-sm bg-white text-slate-900"
+	                disabled={deleteAccountDeleting}
+	                onPointerDown={(event) => {
+	                  if (event.pointerType === 'mouse' && event.button !== 0) return;
+	                  event.preventDefault();
+	                  beginDeleteAccountHold();
+	                }}
+	                onPointerUp={resetDeleteAccountHold}
+	                onPointerLeave={resetDeleteAccountHold}
+	                onPointerCancel={resetDeleteAccountHold}
+	                onBlur={resetDeleteAccountHold}
+	                onContextMenu={(event) => event.preventDefault()}
+	                aria-label="Hold for 3 seconds to delete account"
+	              >
+	                {deleteAccountDeleting
+	                  ? 'Deleting account…'
+	                  : deleteAccountHoldCount > 0
+	                    ? `Hold to delete account ${deleteAccountHoldCount}`
+	                    : 'Hold to delete account'}
+	              </Button>
+	              <Button
+	                type="button"
+	                variant="outline"
+	                size="sm"
+	                className="squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgb(95,179,249)] hover:text-white"
+	                onClick={() => handleDeleteAccountModalOpenChange(false)}
+	              >
+	                Close
+	              </Button>
+	            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
         <DialogContent
           hideCloseButton
@@ -6380,8 +6534,8 @@ function EditableRow({
   }, [next, onSave, saving]);
 
   return (
-    <div className="editable-row group flex items-start gap-3 sm:items-center">
-      <div className="min-w-[7rem] text-sm font-medium text-slate-700">{label}</div>
+    <div className="editable-row group flex items-center gap-3">
+      <div className="min-w-[7rem] self-center text-sm font-medium text-slate-700">{label}</div>
       <div className="flex-1 flex items-center gap-2 flex-wrap">
         {editing ? (
           <input

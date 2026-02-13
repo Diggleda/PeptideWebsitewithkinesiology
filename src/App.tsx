@@ -5810,7 +5810,10 @@ function MainApp() {
 		    useState<number | null>(null);
 		  const [salesDoctorCommissionFromReportLoading, setSalesDoctorCommissionFromReportLoading] =
 		    useState(false);
+		  const [salesDoctorSalesRevenueFromReport, setSalesDoctorSalesRevenueFromReport] =
+		    useState<number | null>(null);
 		  const salesDoctorCommissionFromReportKeyRef = useRef<string>("");
+		  const salesDoctorCommissionRequestIdRef = useRef<number>(0);
 
 		  const [salesRepProspectsForModal, setSalesRepProspectsForModal] = useState<any[] | null>(
 		    null,
@@ -5819,13 +5822,15 @@ function MainApp() {
 		  const [salesRepProspectsError, setSalesRepProspectsError] = useState<string | null>(null);
 		  const salesRepProspectsKeyRef = useRef<string | null>(null);
 
-			  useEffect(() => {
-			    setSalesDoctorCommissionRange(undefined);
-			    setSalesDoctorCommissionPickerOpen(false);
-			    setSalesDoctorCommissionFromReport(null);
-			    setSalesDoctorCommissionFromReportLoading(false);
-			    salesDoctorCommissionFromReportKeyRef.current = "";
-			  }, [salesDoctorDetail?.doctorId]);
+				  useEffect(() => {
+				    setSalesDoctorCommissionRange(undefined);
+				    setSalesDoctorCommissionPickerOpen(false);
+				    setSalesDoctorCommissionFromReport(null);
+				    setSalesDoctorCommissionFromReportLoading(false);
+				    setSalesDoctorSalesRevenueFromReport(null);
+				    salesDoctorCommissionRequestIdRef.current = 0;
+				    salesDoctorCommissionFromReportKeyRef.current = "";
+				  }, [salesDoctorDetail?.doctorId]);
 
         const closeTopSalesDoctorDetailModal = useCallback(() => {
           const stack = salesDoctorDetailStackRef.current;
@@ -7026,6 +7031,90 @@ function MainApp() {
       "refunded",
       "delegation_draft",
     ].includes(normalized);
+  };
+
+  const filterOrdersForCommissionRange = (
+    orders: AccountOrderSummary[] | any[],
+    range?: DateRange,
+  ) => {
+    if (!Array.isArray(orders) || orders.length === 0) return [];
+    const toBoundDate = (
+      value: Date | string | null | undefined,
+      endOfDay: boolean,
+    ): Date | null => {
+      if (!value) return null;
+      const parsed =
+        value instanceof Date
+          ? new Date(value)
+          : parseDateInputValueLocal(String(value)) ?? new Date(String(value));
+      if (Number.isNaN(parsed.getTime())) return null;
+      if (endOfDay) {
+        parsed.setHours(23, 59, 59, 999);
+      } else {
+        parsed.setHours(0, 0, 0, 0);
+      }
+      return parsed;
+    };
+    const effectiveStart =
+      salesRepPeriodStart ||
+      salesRepSalesSummaryMeta?.periodStart ||
+      adminProductsCommissionMeta?.periodStart ||
+      null;
+    const effectiveEnd =
+      salesRepPeriodEnd ||
+      salesRepSalesSummaryMeta?.periodEnd ||
+      adminProductsCommissionMeta?.periodEnd ||
+      null;
+    const from =
+      range?.from && range?.to
+        ? toBoundDate(range.from, false)
+        : toBoundDate(effectiveStart, false);
+    const to =
+      range?.from && range?.to
+        ? toBoundDate(range.to, true)
+        : toBoundDate(effectiveEnd, true);
+    if (!from || !to) return orders;
+    const fromMs = from.getTime();
+    const toMs = to.getTime();
+    return orders.filter((order) => {
+      const raw =
+        (order as any)?.createdAt ||
+        (order as any)?.created_at ||
+        (order as any)?.dateCreated ||
+        (order as any)?.date_created ||
+        null;
+      if (!raw) return false;
+      const ts = new Date(raw).getTime();
+      if (!Number.isFinite(ts)) return false;
+      return ts >= fromMs && ts <= toMs;
+    });
+  };
+
+  const sumRevenueFromOrders = (orders: AccountOrderSummary[] | any[]) =>
+    (Array.isArray(orders) ? orders : []).reduce((sum, order) => {
+      if (!shouldCountRevenueForStatus((order as any)?.status)) {
+        return sum;
+      }
+      return sum + resolveOrderItemsSubtotal(order as any);
+    }, 0);
+
+  const getOrderIdentityKey = (order: any): string => {
+    if (!order || typeof order !== "object") return "";
+    const wooId = normalizeWooOrderId(
+      order?.wooOrderId || order?.woo_order_id || order?.wooId || order?.id,
+    );
+    if (wooId) return `woo:${wooId}`;
+    const wooNumber = normalizeWooOrderNumberKey(
+      order?.wooOrderNumber || order?.woo_order_number || order?.number,
+    );
+    if (wooNumber) return `num:${wooNumber}`;
+    const localId =
+      typeof order?.id === "string"
+        ? order.id.trim()
+        : order?.id != null
+          ? String(order.id).trim()
+          : "";
+    return localId ? `id:${localId}` : "";
   };
 
   const openSalesDoctorDetail = useCallback(
@@ -9165,19 +9254,23 @@ function MainApp() {
     };
   }, [user?.id, user?.role, normalizeReferralCodeValue]);
 
-  useEffect(() => {
-    if (!user || !(isAdmin(user.role) || isSalesLead(user.role))) {
-      setSalesDoctorCommissionFromReport(null);
-      setSalesDoctorCommissionFromReportLoading(false);
-      salesDoctorCommissionFromReportKeyRef.current = "";
-      return;
-    }
-    if (!salesDoctorDetail?.doctorId) {
-      setSalesDoctorCommissionFromReport(null);
-      setSalesDoctorCommissionFromReportLoading(false);
-      salesDoctorCommissionFromReportKeyRef.current = "";
-      return;
-    }
+	  useEffect(() => {
+	    if (!user || !(isAdmin(user.role) || isSalesLead(user.role))) {
+	      salesDoctorCommissionRequestIdRef.current += 1;
+	      setSalesDoctorCommissionFromReport(null);
+	      setSalesDoctorCommissionFromReportLoading(false);
+	      setSalesDoctorSalesRevenueFromReport(null);
+	      salesDoctorCommissionFromReportKeyRef.current = "";
+	      return;
+	    }
+	    if (!salesDoctorDetail?.doctorId) {
+	      salesDoctorCommissionRequestIdRef.current += 1;
+	      setSalesDoctorCommissionFromReport(null);
+	      setSalesDoctorCommissionFromReportLoading(false);
+	      setSalesDoctorSalesRevenueFromReport(null);
+	      salesDoctorCommissionFromReportKeyRef.current = "";
+	      return;
+	    }
 
     const resolvePeriod = () => {
       const rangeFrom = salesDoctorCommissionRange?.from ?? null;
@@ -9209,19 +9302,21 @@ function MainApp() {
       return { periodStart, periodEnd };
     };
 
-    const { periodStart, periodEnd } = resolvePeriod();
-    const key = `${salesDoctorDetail.doctorId}|${periodStart || "all"}|${periodEnd || "all"}`;
-    if (salesDoctorCommissionFromReportKeyRef.current === key) {
-      return;
-    }
+	    const { periodStart, periodEnd } = resolvePeriod();
+	    const key = `${salesDoctorDetail.doctorId}|${periodStart || "all"}|${periodEnd || "all"}`;
+	    if (salesDoctorCommissionFromReportKeyRef.current === key) {
+	      return;
+	    }
 
-    salesDoctorCommissionFromReportKeyRef.current = key;
-    setSalesDoctorCommissionFromReportLoading(true);
-    setSalesDoctorCommissionFromReport(null);
-    let cancelled = false;
+	    salesDoctorCommissionFromReportKeyRef.current = key;
+	    const requestId = salesDoctorCommissionRequestIdRef.current + 1;
+	    salesDoctorCommissionRequestIdRef.current = requestId;
+	    setSalesDoctorCommissionFromReportLoading(true);
+	    setSalesDoctorCommissionFromReport(null);
+	    setSalesDoctorSalesRevenueFromReport(null);
 
-    (async () => {
-      try {
+	    (async () => {
+	      try {
         const response = await ordersAPI.getProductSalesCommissionForAdmin({
           periodStart: periodStart || undefined,
           periodEnd: periodEnd || undefined,
@@ -9245,40 +9340,45 @@ function MainApp() {
             aliasIds.includes(targetId) ||
             (Boolean(targetAlias) && aliasIds.includes(targetAlias))
           );
-        });
-        const amount = match != null ? Number((match as any)?.amount || 0) : null;
-        if (!cancelled) {
-          setSalesDoctorCommissionFromReport(
-            typeof amount === "number" && Number.isFinite(amount) ? amount : null,
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setSalesDoctorCommissionFromReport(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setSalesDoctorCommissionFromReportLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    adminProductsCommissionMeta?.periodEnd,
-    adminProductsCommissionMeta?.periodStart,
+	        });
+	        const amount = match != null ? Number((match as any)?.amount || 0) : null;
+	        const regularWholesaleBase = Number((match as any)?.wholesaleBase || 0);
+	        const regularRetailBase = Number((match as any)?.retailBase || 0);
+	        const houseWholesaleBase = Number((match as any)?.houseWholesaleBase || 0);
+	        const houseRetailBase = Number((match as any)?.houseRetailBase || 0);
+	        const salesRevenueTotal =
+	          regularWholesaleBase + regularRetailBase + houseWholesaleBase + houseRetailBase;
+	        if (salesDoctorCommissionRequestIdRef.current === requestId) {
+	          setSalesDoctorCommissionFromReport(
+	            typeof amount === "number" && Number.isFinite(amount) ? amount : null,
+	          );
+	          setSalesDoctorSalesRevenueFromReport(
+	            Number.isFinite(salesRevenueTotal) ? salesRevenueTotal : null,
+	          );
+	        }
+	      } catch {
+	        if (salesDoctorCommissionRequestIdRef.current === requestId) {
+	          setSalesDoctorCommissionFromReport(null);
+	          setSalesDoctorSalesRevenueFromReport(null);
+	        }
+	      } finally {
+	        if (salesDoctorCommissionRequestIdRef.current === requestId) {
+	          setSalesDoctorCommissionFromReportLoading(false);
+	        }
+	      }
+	    })();
+	  }, [
+	    adminProductsCommissionMeta?.periodEnd,
+	    adminProductsCommissionMeta?.periodStart,
     salesDoctorCommissionRange?.from,
     salesDoctorCommissionRange?.to,
     salesDoctorDetail?.doctorId,
-    salesRepPeriodEnd,
-    salesRepPeriodStart,
-    salesRepSalesSummaryMeta?.periodEnd,
-    salesRepSalesSummaryMeta?.periodStart,
-    user,
-    user?.role,
-  ]);
+	    salesRepPeriodEnd,
+	    salesRepPeriodStart,
+	    salesRepSalesSummaryMeta?.periodEnd,
+	    salesRepSalesSummaryMeta?.periodStart,
+	    user?.role,
+	  ]);
   const [referralForm, setReferralForm] = useState({
     contactName: "",
     contactEmail: "",
@@ -9417,6 +9517,12 @@ function MainApp() {
     },
     [user?.id, user?.role, postLoginHold],
   );
+  useEffect(() => {
+    if (!user || !isAdmin(user.role) || postLoginHold) {
+      return;
+    }
+    void fetchServerHealth({ force: true });
+  }, [fetchServerHealth, postLoginHold, user?.id, user?.role]);
   const [userActivityNowTick, setUserActivityNowTick] = useState(0);
 	  const [isIdle, setIsIdle] = useState(false);
 	  const isIdleRef = useRef(false);
@@ -20972,10 +21078,10 @@ function MainApp() {
 		      variant="default"
 		      size="sm"
 		      onClick={openAccountDetailsTab}
-		      className="squircle-sm glass-brand btn-hover-lighter transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+			      className="squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
 		      aria-label="Open account"
 		    >
-		      <span className="hidden sm:inline text-white">{user.name}</span>
+			      <span className="hidden sm:inline text-current">{user.name}</span>
 		      <span className="header-account-avatar-shell">
 		        {user.profileImageUrl ? (
 		          <img
@@ -23431,21 +23537,107 @@ function MainApp() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-		                    {(isRep(salesDoctorDetail.role) ||
-	                        typeof salesDoctorDetail.personalRevenue === "number" ||
-	                        typeof salesDoctorDetail.salesRevenue === "number") ? (
-		                      <>
-		                        <p className="text-sm text-slate-600">
-		                          Personal Revenue:{" "}
-		                          {formatCurrency(
-		                            salesDoctorDetail.personalRevenue ?? salesDoctorDetail.revenue,
-		                          )}
-		                        </p>
-		                        <p className="text-sm text-slate-600">
-		                          Sales Revenue:{" "}
-		                          {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
-		                        </p>
-			                        {(() => {
+			                    {(isRep(salesDoctorDetail.role) ||
+		                        typeof salesDoctorDetail.personalRevenue === "number" ||
+		                        typeof salesDoctorDetail.salesRevenue === "number") ? (
+			                      <>
+				                        {(() => {
+				                          const role = normalizeRole(salesDoctorDetail.role || "");
+				                          const personalOrdersRaw = Array.isArray(
+				                            salesDoctorDetail.personalOrders,
+				                          )
+				                            ? (salesDoctorDetail.personalOrders as AccountOrderSummary[])
+				                            : [];
+				                          const salesOrdersRaw = Array.isArray(
+				                            salesDoctorDetail.salesOrders,
+				                          )
+				                            ? (salesDoctorDetail.salesOrders as AccountOrderSummary[])
+				                            : [];
+				                          const personalOrderKeys = new Set(
+				                            personalOrdersRaw
+				                              .map((order) => getOrderIdentityKey(order))
+				                              .filter((key) => key.length > 0),
+				                          );
+				                          const actorIdSet = new Set(
+				                            [
+				                              String(salesDoctorDetail.doctorId || "").trim(),
+				                              String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim(),
+				                            ].filter((value) => value.length > 0),
+				                          );
+				                          const actorEmail = String(salesDoctorDetail.email || "")
+				                            .trim()
+				                            .toLowerCase();
+				                          const actorName = String(salesDoctorDetail.name || "")
+				                            .trim()
+				                            .toLowerCase();
+				                          const isPersonalOrderForActor = (order: any) => {
+				                            const orderUserId = String(
+				                              resolveOrderDoctorId(order as any) ||
+				                                order?.doctorId ||
+				                                order?.doctor_id ||
+				                                order?.userId ||
+				                                order?.user_id ||
+				                                "",
+				                            ).trim();
+				                            if (orderUserId && actorIdSet.has(orderUserId)) return true;
+				                            const orderEmail = String(
+				                              order?.doctorEmail ||
+				                                order?.doctor_email ||
+				                                order?.billingAddress?.email ||
+				                                order?.billing?.email ||
+				                                order?.billing_email ||
+				                                order?.customerEmail ||
+				                                order?.customer_email ||
+				                                "",
+				                            )
+				                              .trim()
+				                              .toLowerCase();
+				                            if (actorEmail && orderEmail && actorEmail === orderEmail) return true;
+				                            const orderName = String(order?.doctorName || "")
+				                              .trim()
+				                              .toLowerCase();
+				                            if (actorName && orderName && actorName === orderName) return true;
+				                            return false;
+				                          };
+				                          const salesOrdersFiltered = salesOrdersRaw.filter((order) => {
+				                            const key = getOrderIdentityKey(order);
+				                            if (key && personalOrderKeys.has(key)) return false;
+				                            return !isPersonalOrderForActor(order);
+				                          });
+				                          const personalOrdersSource = personalOrdersRaw;
+				                          const salesOrdersSource = salesOrdersFiltered;
+				                          const personalOrdersInRange = filterOrdersForCommissionRange(
+				                            personalOrdersSource,
+				                            salesDoctorCommissionRange,
+				                          );
+				                          const salesOrdersInRange = filterOrdersForCommissionRange(
+				                            salesOrdersSource,
+				                            salesDoctorCommissionRange,
+				                          );
+				                          const personalRevenueValue =
+				                            personalOrdersSource.length > 0
+				                              ? sumRevenueFromOrders(personalOrdersInRange)
+				                              : (salesDoctorDetail.personalRevenue ?? 0);
+				                          const salesRevenueValue =
+				                            role === "admin" &&
+				                            typeof salesDoctorSalesRevenueFromReport === "number" &&
+				                            Number.isFinite(salesDoctorSalesRevenueFromReport)
+				                              ? salesDoctorSalesRevenueFromReport
+				                              : salesOrdersSource.length > 0
+				                                ? sumRevenueFromOrders(salesOrdersInRange)
+				                                : (salesDoctorDetail.salesRevenue ?? 0);
+			                          return (
+			                            <>
+			                              <p className="text-sm text-slate-600">
+			                                Personal Revenue: {formatCurrency(personalRevenueValue)}
+			                              </p>
+			                              <p className="text-sm text-slate-600">
+			                                Sales Revenue: {formatCurrency(salesRevenueValue)}
+			                              </p>
+			                            </>
+			                          );
+			                        })()}
+				                        {(() => {
 			                          const role = normalizeRole(salesDoctorDetail.role || "");
 			                          const formatPeriodLabel = (
 			                            periodStart?: string | null,
@@ -23476,32 +23668,7 @@ function MainApp() {
 			                                return start && end ? `${start} to ${end}` : null;
 			                              })()
 			                            : null;
-			                          const filterOrdersForRange = (
-			                            orders: any[],
-			                            range?: DateRange,
-			                          ) => {
-			                            if (!Array.isArray(orders) || orders.length === 0) return [];
-			                            const from = range?.from ? new Date(range.from) : null;
-			                            const to = range?.to ? new Date(range.to) : null;
-			                            if (!from || !to) return orders;
-			                            from.setHours(0, 0, 0, 0);
-			                            to.setHours(23, 59, 59, 999);
-			                            const fromMs = from.getTime();
-			                            const toMs = to.getTime();
-			                            return orders.filter((order) => {
-			                              const raw =
-			                                order?.createdAt ||
-			                                (order as any)?.created_at ||
-			                                (order as any)?.dateCreated ||
-			                                (order as any)?.date_created ||
-			                                null;
-			                              if (!raw) return false;
-			                              const ts = new Date(raw).getTime();
-			                              if (!Number.isFinite(ts)) return false;
-			                              return ts >= fromMs && ts <= toMs;
-			                            });
-			                          };
-				                          if (role === "admin") {
+					                          if (role === "admin") {
 				                            const modalUserId = String(salesDoctorDetail.doctorId || "").trim();
 				                            const modalAliasId = String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim();
 				                            const adminRow = adminCommissionRows.find((row) => {
@@ -23519,10 +23686,10 @@ function MainApp() {
                                     (Boolean(modalAliasId) && aliasIds.includes(modalAliasId))
                                   );
 				                            });
-                                const dateFilteredOrders = filterOrdersForRange(
-                                  salesDoctorDetail.orders as any[],
-                                  salesDoctorCommissionRange,
-                                );
+	                                const dateFilteredOrders = filterOrdersForCommissionRange(
+	                                  salesDoctorDetail.orders as any[],
+	                                  salesDoctorCommissionRange,
+	                                );
                                 const commissionOrders = dateFilteredOrders.filter((order) =>
                                   shouldCountRevenueForStatus(order?.status),
                                 );
@@ -23599,8 +23766,8 @@ function MainApp() {
 				                            );
 				                            return (
 				                              <div className="flex items-center gap-2 flex-wrap">
-				                                <p className="text-sm text-slate-600">
-				                                  Total Commission:{" "}
+					                                <p className="text-sm text-slate-600">
+					                                  Commission:{" "}
 			                                  {salesDoctorCommissionFromReportLoading
 			                                    ? "Loading..."
 			                                    : commissionValue == null
@@ -23708,10 +23875,10 @@ function MainApp() {
 		                              String(row?.salesRepId || "") ===
 		                              String(salesDoctorDetail.doctorId || ""),
 		                          );
-			                          const dateFilteredOrders = filterOrdersForRange(
-			                            salesDoctorDetail.orders as any[],
-			                            salesDoctorCommissionRange,
-			                          );
+				                          const dateFilteredOrders = filterOrdersForCommissionRange(
+				                            salesDoctorDetail.orders as any[],
+				                            salesDoctorCommissionRange,
+				                          );
 			                          const commissionOrders = dateFilteredOrders.filter((order) =>
 			                            shouldCountRevenueForStatus(order?.status),
 			                          );
@@ -23771,8 +23938,8 @@ function MainApp() {
 			                          );
 			                          return (
 			                            <div className="flex items-center gap-2 flex-wrap">
-			                              <p className="text-sm text-slate-600">
-			                                Total Commission:{" "}
+				                              <p className="text-sm text-slate-600">
+				                                Commission:{" "}
 			                                {salesDoctorCommissionFromReportLoading
 			                                  ? "Loading..."
 			                                  : formatCurrency(totalCommission)}
@@ -23860,7 +24027,7 @@ function MainApp() {
 			                          );
 			                        })()}
 		                        {(() => {
-		                          // (Total Commission line is rendered above)
+			                          // (Commission line is rendered above)
 		                          return null;
 		                        })()}
 		                      </>
@@ -24049,17 +24216,88 @@ function MainApp() {
 		                <p className="text-sm font-semibold text-slate-700">
 		                  Recent Orders
 		                </p>
-		                {(() => {
-	                  const personalOrders = Array.isArray(salesDoctorDetail.personalOrders)
-	                    ? salesDoctorDetail.personalOrders
-	                    : [];
-	                  const salesOrders = Array.isArray(salesDoctorDetail.salesOrders)
-	                    ? salesDoctorDetail.salesOrders
-	                    : salesDoctorDetail.orders;
-	                  const hasSplit =
-	                    (typeof salesDoctorDetail.personalRevenue === "number" ||
-	                      typeof salesDoctorDetail.salesRevenue === "number") &&
-	                    (personalOrders.length > 0 || salesOrders.length > 0);
+			                {(() => {
+			                  const personalOrders = Array.isArray(salesDoctorDetail.personalOrders)
+			                    ? salesDoctorDetail.personalOrders
+			                    : [];
+				                  const salesOrdersRaw = Array.isArray(salesDoctorDetail.salesOrders)
+				                    ? salesDoctorDetail.salesOrders
+				                    : [];
+			                  const personalOrderKeys = new Set(
+			                    personalOrders
+			                      .map((order) => getOrderIdentityKey(order))
+			                      .filter((key) => key.length > 0),
+			                  );
+			                  const actorIdSet = new Set(
+			                    [
+			                      String(salesDoctorDetail.doctorId || "").trim(),
+			                      String((salesDoctorDetail as any)?.ownerSalesRepId || "").trim(),
+			                    ].filter((value) => value.length > 0),
+			                  );
+			                  const actorEmail = String(salesDoctorDetail.email || "")
+			                    .trim()
+			                    .toLowerCase();
+			                  const actorName = String(salesDoctorDetail.name || "")
+			                    .trim()
+			                    .toLowerCase();
+			                  const isPersonalOrderForActor = (order: any) => {
+			                    const orderUserId = String(
+			                      resolveOrderDoctorId(order as any) ||
+			                        order?.doctorId ||
+			                        order?.doctor_id ||
+			                        order?.userId ||
+			                        order?.user_id ||
+			                        "",
+			                    ).trim();
+			                    if (orderUserId && actorIdSet.has(orderUserId)) return true;
+			                    const orderEmail = String(
+			                      order?.doctorEmail ||
+			                        order?.doctor_email ||
+			                        order?.billingAddress?.email ||
+			                        order?.billing?.email ||
+			                        order?.billing_email ||
+			                        order?.customerEmail ||
+			                        order?.customer_email ||
+			                        "",
+			                    )
+			                      .trim()
+			                      .toLowerCase();
+			                    if (actorEmail && orderEmail && actorEmail === orderEmail) return true;
+			                    const orderName = String(order?.doctorName || "")
+			                      .trim()
+			                      .toLowerCase();
+			                    if (actorName && orderName && actorName === orderName) return true;
+			                    return false;
+			                  };
+			                  const salesOrders = salesOrdersRaw.filter((order) => {
+			                    const key = getOrderIdentityKey(order);
+			                    if (key && personalOrderKeys.has(key)) return false;
+			                    return !isPersonalOrderForActor(order);
+			                  });
+		                  const allOrdersInRange = filterOrdersForCommissionRange(
+		                    salesDoctorDetail.orders,
+		                    salesDoctorCommissionRange,
+		                  );
+		                  const personalOrdersInRange = filterOrdersForCommissionRange(
+		                    personalOrders,
+		                    salesDoctorCommissionRange,
+		                  );
+		                  const salesOrdersInRange = filterOrdersForCommissionRange(
+		                    salesOrders,
+		                    salesDoctorCommissionRange,
+		                  );
+		                  const personalRevenueForDisplay =
+		                    personalOrders.length > 0
+		                      ? sumRevenueFromOrders(personalOrdersInRange)
+		                      : (salesDoctorDetail.personalRevenue ?? 0);
+		                  const salesRevenueForDisplay =
+		                    salesOrders.length > 0
+		                      ? sumRevenueFromOrders(salesOrdersInRange)
+		                      : (salesDoctorDetail.salesRevenue ?? 0);
+		                  const hasSplit =
+		                    (typeof salesDoctorDetail.personalRevenue === "number" ||
+		                      typeof salesDoctorDetail.salesRevenue === "number") &&
+		                    (personalOrders.length > 0 || salesOrders.length > 0);
 
 	                  const renderOrdersList = (orders: AccountOrderSummary[]) => (
 	                    <div className="space-y-2">
@@ -24091,24 +24329,24 @@ function MainApp() {
 	                    </div>
 	                  );
 
-	                  if (!hasSplit) {
-	                    return (
-	                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-	                        {salesDoctorDetail.orders.length > 0 ? (
-	                          renderOrdersList(salesDoctorDetail.orders)
-	                        ) : (
-	                          <p className="text-xs text-slate-500">No orders available.</p>
-	                        )}
-	                      </div>
-	                    );
-	                  }
+		                  if (!hasSplit) {
+		                    return (
+		                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+		                        {allOrdersInRange.length > 0 ? (
+		                          renderOrdersList(allOrdersInRange)
+		                        ) : (
+		                          <p className="text-xs text-slate-500">No orders available.</p>
+		                        )}
+		                      </div>
+		                    );
+		                  }
 
-	                  const personalCount = personalOrders.filter((order) =>
-	                    shouldCountRevenueForStatus(order.status),
-	                  ).length;
-	                  const salesCount = salesOrders.filter((order) =>
-	                    shouldCountRevenueForStatus(order.status),
-	                  ).length;
+		                  const personalCount = personalOrdersInRange.filter((order) =>
+		                    shouldCountRevenueForStatus(order.status),
+		                  ).length;
+		                  const salesCount = salesOrdersInRange.filter((order) =>
+		                    shouldCountRevenueForStatus(order.status),
+		                  ).length;
 
 	                  return (
 	                    <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
@@ -24117,15 +24355,15 @@ function MainApp() {
 	                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
 	                            Personal orders ({personalCount})
 	                          </p>
-	                          <p className="text-xs font-semibold text-slate-700">
-	                            {formatCurrency(salesDoctorDetail.personalRevenue ?? 0)}
-	                          </p>
-	                        </div>
-	                        {personalOrders.length > 0 ? (
-	                          renderOrdersList(personalOrders)
-	                        ) : (
-	                          <p className="text-xs text-slate-500">No personal orders.</p>
-	                        )}
+		                          <p className="text-xs font-semibold text-slate-700">
+		                            {formatCurrency(personalRevenueForDisplay)}
+		                          </p>
+		                        </div>
+		                        {personalOrdersInRange.length > 0 ? (
+		                          renderOrdersList(personalOrdersInRange)
+		                        ) : (
+		                          <p className="text-xs text-slate-500">No personal orders.</p>
+		                        )}
 	                      </div>
 
 	                      <div className="space-y-2">
@@ -24133,15 +24371,15 @@ function MainApp() {
 	                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
 	                            Sales orders ({salesCount})
 	                          </p>
-	                          <p className="text-xs font-semibold text-slate-700">
-	                            {formatCurrency(salesDoctorDetail.salesRevenue ?? 0)}
-	                          </p>
-	                        </div>
-	                        {salesOrders.length > 0 ? (
-	                          renderOrdersList(salesOrders)
-	                        ) : (
-	                          <p className="text-xs text-slate-500">No sales orders.</p>
-	                        )}
+		                          <p className="text-xs font-semibold text-slate-700">
+		                            {formatCurrency(salesRevenueForDisplay)}
+		                          </p>
+		                        </div>
+		                        {salesOrdersInRange.length > 0 ? (
+		                          renderOrdersList(salesOrdersInRange)
+		                        ) : (
+		                          <p className="text-xs text-slate-500">No sales orders.</p>
+		                        )}
 	                      </div>
 	                    </div>
 	                  );

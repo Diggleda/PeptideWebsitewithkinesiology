@@ -7,9 +7,9 @@
     "referralCode": "49110E",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 760,
+    "visits": 765,
     "createdAt": "2025-11-24T15:21:45.364Z",
-    "lastLoginAt": "2026-02-12T20:29:06.296Z",
+    "lastLoginAt": "2026-02-13T02:10:18.815Z",
     "role": "admin",
     "salesRepId": "rep1",
     "passkeys": [],
@@ -27,10 +27,10 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-02-12T20:31:25.911Z",
-    "isOnline": false,
-    "isIdle": false
+    "lastSeenAt": "2026-02-13T02:11:07.657Z",
+    "lastInteractionAt": "2026-02-13T02:10:18.983Z",
+    "isOnline": true,
+    "isIdle": true
   },
   {
     "id": "1763997887996",

@@ -948,6 +948,17 @@ export const authAPI = {
     });
   },
 
+  deleteMe: async () => {
+    const result = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
+      method: 'DELETE',
+    });
+    clearAuthToken();
+    clearSessionId();
+    setAuthUserId(null);
+    setAuthEmail(null);
+    return result;
+  },
+
   passkeys: {
     getRegistrationOptions: async (): Promise<{
       requestId: string;

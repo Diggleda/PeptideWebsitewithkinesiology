@@ -5837,20 +5837,21 @@ html {
   padding-right: 1.8rem;
   z-index: 1;
   margin-right: 1.5rem;
+  border-width: 2px;
+  border-color: rgb(95, 179, 249);
+  background-color: transparent;
+  color: rgb(95, 179, 249);
 }
 
 .header-account-button:hover,
-.header-account-button:focus-visible {
+.header-account-button:focus-visible,
+.header-account-button[data-state="open"],
+.header-account-button[aria-expanded="true"] {
   background: rgb(95, 179, 249);
-  border-color: transparent;
+  border-color: rgb(95, 179, 249);
   box-shadow: none;
   filter: none;
   color: #ffffff;
-  transform: none;
-}
-
-.header-account-button.btn-hover-lighter.glass-brand:hover,
-.header-account-button.btn-hover-lighter.glass-brand:active {
   transform: none;
 }
 
@@ -5929,9 +5930,9 @@ body.account-modal-open .info-focus-overlay {
   .header-account-button {
     padding: 0;
     border-radius: 9999px;
-    background: transparent !important;
+    background: transparent;
     box-shadow: none !important;
-    border: none !important;
+    border: 2px solid rgb(95, 179, 249);
     min-width: auto;
     width: 2.75rem;
     height: 2.75rem;
