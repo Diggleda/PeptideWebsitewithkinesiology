@@ -129,6 +129,67 @@ const buildCorsOptions = () => {
 
   const isDev = env.nodeEnv !== 'production';
 
+  const matchesAllowList = (origin) => {
+    if (!origin || typeof origin !== 'string') {
+      return false;
+    }
+    const trimmed = origin.trim();
+    if (!trimmed || trimmed === 'null') {
+      return isDev;
+    }
+
+    let parsed = null;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      parsed = null;
+    }
+
+    if (allowList.includes(trimmed)) {
+      return true;
+    }
+
+    const hostname = parsed?.hostname ? String(parsed.hostname).trim().toLowerCase() : null;
+    const normalizedOrigin = parsed?.origin ? String(parsed.origin).trim() : null;
+
+    for (const entry of allowList) {
+      const candidate = String(entry || '').trim();
+      if (!candidate) continue;
+
+      if (candidate === trimmed) return true;
+
+      // Allow specifying origins as full URLs (normalized to protocol + host + port).
+      if (candidate.includes('://') && normalizedOrigin) {
+        try {
+          if (new URL(candidate).origin === normalizedOrigin) {
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // Allow specifying hostnames (e.g. "peppro.net") or wildcard subdomains (e.g. "*.peppro.net").
+      if (hostname) {
+        const normalizedCandidate = candidate.toLowerCase();
+        if (normalizedCandidate === hostname) return true;
+        if (normalizedCandidate.startsWith('*.')) {
+          const suffix = normalizedCandidate.slice(1); // ".peppro.net"
+          if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
+            return true;
+          }
+        } else if (normalizedCandidate.startsWith('.')) {
+          const suffix = normalizedCandidate; // ".peppro.net"
+          if (hostname.endsWith(suffix) && hostname.length > suffix.length) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  };
+
   const isDevLocalOrigin = (origin) => {
     if (!origin || typeof origin !== 'string') {
       return false;
@@ -158,11 +219,7 @@ const buildCorsOptions = () => {
 
   return {
     origin: (origin, callback) => {
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      if (allowList.includes(origin)) {
+      if (!origin || matchesAllowList(origin)) {
         callback(null, true);
         return;
       }
@@ -219,7 +276,15 @@ const createApp = () => {
 
   // Handle CORS preflight for all API routes without redirecting.
   // Express 5 disallows plain "*" path strings; use a regex matcher instead.
-  app.options(/.*/, cors(corsOptions));
+  // Some deployments return a 404 for preflight when CORS rejects the origin;
+  // ensure we always send a response (and let CORS attach headers when allowed).
+  app.options(/.*/, (req, res, next) => cors(corsOptions)(req, res, (err) => {
+    if (err) return next(err);
+    if (!res.headersSent) {
+      res.sendStatus(204);
+    }
+    return undefined;
+  }));
 
   app.use((req, res, next) => {
     logger.debug({ method: req.method, path: req.path }, 'Incoming request');
