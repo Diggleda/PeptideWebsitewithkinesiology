@@ -11,6 +11,7 @@ router.post('/logout', authController.logout);
 router.get('/check-email', authController.checkEmail);
 router.get('/me', authenticate, authController.getProfile);
 router.put('/me', authenticate, authController.updateProfile);
+router.post('/me/delete', authenticate, authController.deleteAccount);
 router.delete('/me', authenticate, authController.deleteAccount);
 router.post('/verify-npi', authController.verifyNpi);
 

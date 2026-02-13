@@ -949,14 +949,40 @@ export const authAPI = {
   },
 
   deleteMe: async () => {
-    const result = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
-      method: 'DELETE',
-    });
-    clearAuthToken();
-    clearSessionId();
-    setAuthUserId(null);
-    setAuthEmail(null);
-    return result;
+    const clearDeletedSession = () => {
+      clearAuthToken();
+      clearSessionId();
+      setAuthUserId(null);
+      setAuthEmail(null);
+    };
+
+    try {
+      const result = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
+        method: 'DELETE',
+      });
+      clearDeletedSession();
+      return result;
+    } catch (error: any) {
+      const status = typeof error?.status === 'number' ? error.status : null;
+      const details = error?.details;
+      const code = details && typeof details === 'object' ? (details as any).code : null;
+      const message = typeof error?.message === 'string' ? error.message : '';
+      const shouldFallbackToPost = status === 405
+        || status === 404
+        || code === 'METHOD_NOT_ALLOWED'
+        || /method[_\s-]?not[_\s-]?allowed/i.test(message);
+
+      if (!shouldFallbackToPost) {
+        throw error;
+      }
+
+      const result = await fetchWithAuth(`${API_BASE_URL}/auth/me/delete`, {
+        method: 'POST',
+        body: '{}',
+      });
+      clearDeletedSession();
+      return result;
+    }
   },
 
   passkeys: {
