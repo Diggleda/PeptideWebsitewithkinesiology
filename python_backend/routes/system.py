@@ -619,6 +619,7 @@ def help_endpoint():
                 "/api/auth/login",
                 "/api/auth/register",
                 "/api/auth/me",
+                "/api/auth/me/delete",
                 "/api/auth/check-email",
                 "/api/orders",
                 "/api/shipping/rates",

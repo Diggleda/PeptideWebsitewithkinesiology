@@ -18,6 +18,7 @@ from ..repositories import sales_prospect_repository
 from ..repositories import referral_repository
 from ..utils import http_client
 from . import email_service, get_config, npi_service, referral_service, presence_service
+from . import account_deletion_service
 
 
 def _sanitize_name(value: str) -> str:
@@ -837,6 +838,28 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         },
     )
     return _sanitize_user(saved)
+
+
+def delete_account(user_id: str) -> Dict:
+    target_id = str(user_id or "").strip()
+    if not target_id:
+        raise _bad_request("USER_ID_REQUIRED")
+
+    account_deletion_service.delete_account_and_rewrite_references(
+        user_id=target_id,
+        replacement_user_id=account_deletion_service.DELETED_USER_ID,
+    )
+
+    for token, token_data in list(_PASSWORD_RESET_TOKENS.items()):
+        token_user_id = str((token_data or {}).get("account_id") or "").strip()
+        if token_user_id == target_id:
+            _PASSWORD_RESET_TOKENS.pop(token, None)
+
+    return {
+        "ok": True,
+        "deletedUserId": target_id,
+        "replacementUserId": account_deletion_service.DELETED_USER_ID,
+    }
 
 
 def _sanitize_user(user: Dict) -> Dict:

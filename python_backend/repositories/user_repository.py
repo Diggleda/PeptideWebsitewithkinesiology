@@ -289,6 +289,26 @@ def update(user: Dict) -> Optional[Dict]:
     return None
 
 
+def remove_by_id(user_id: str) -> bool:
+    target = str(user_id or "").strip()
+    if not target:
+        return False
+
+    if _using_mysql():
+        rows = mysql_client.execute(
+            "DELETE FROM users WHERE id = %(id)s",
+            {"id": target},
+        )
+        return int(rows or 0) > 0
+
+    users = _load()
+    next_users = [entry for entry in users if str(entry.get("id") or "") != target]
+    if len(next_users) == len(users):
+        return False
+    _save(next_users)
+    return True
+
+
 def replace(predicate: Callable[[Dict], bool], updater: Callable[[Dict], Dict]) -> Optional[Dict]:
     if _using_mysql():
         candidates = get_all()

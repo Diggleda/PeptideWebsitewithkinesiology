@@ -53,6 +53,20 @@ def me():
     return handle_action(lambda: auth_service.get_profile(user_id, role))
 
 
+@blueprint.delete("/me")
+@require_auth
+def delete_me():
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: auth_service.delete_account(user_id))
+
+
+@blueprint.post("/me/delete")
+@require_auth
+def delete_me_post():
+    user_id = g.current_user.get("id")
+    return handle_action(lambda: auth_service.delete_account(user_id))
+
+
 @blueprint.post("/logout")
 def logout():
     """
