@@ -10788,7 +10788,33 @@ function MainApp() {
       }
       const status = (referral.status || "").toLowerCase();
       const id = String(referral.id || "");
-      return status === "contact_form" || id.startsWith("contact_form:");
+      const source = String((referral as any).source || "").trim().toLowerCase();
+      const leadType = String(
+        (referral as any).leadType || (referral as any).lead_type || "",
+      )
+        .trim()
+        .toLowerCase();
+      const referrerName = String(referral.referrerDoctorName || "")
+        .trim()
+        .toLowerCase();
+      const hasContactFormId = Boolean(
+        (referral as any).contactFormId || (referral as any).contact_form_id,
+      );
+      const hasHouseReferrerName =
+        referrerName === "contact form / house" ||
+        referrerName === "house / contact form";
+      return (
+        status === "contact_form" ||
+        id.startsWith("contact_form:") ||
+        hasContactFormId ||
+        source === "contact_form" ||
+        source === "house" ||
+        source === "house_contact" ||
+        leadType === "contact_form" ||
+        leadType === "house" ||
+        leadType === "house_contact" ||
+        hasHouseReferrerName
+      );
     },
     [],
   );
@@ -12934,6 +12960,10 @@ function MainApp() {
 
   const handleReferralCredit = useCallback(
     async (referral: ReferralRecord) => {
+      if (isContactFormEntry(referral)) {
+        toast.error("House/contact-form leads are not eligible for referral credit.");
+        return;
+      }
       const doctorId = referral.referrerDoctorId;
       const doctorName = referral.referrerDoctorName || "User";
       if (!doctorId) {
@@ -12968,7 +12998,7 @@ function MainApp() {
         setCreditingReferralId(null);
       }
     },
-    [tracedRefreshReferralData],
+    [isContactFormEntry, tracedRefreshReferralData],
   );
 
   const formatDate = useCallback((value?: string | null) => {
@@ -19658,9 +19688,14 @@ function MainApp() {
 	                            typeof record.referredContactHasAccount === "boolean"
 	                              ? record.referredContactHasAccount
 	                              : false;
+	                          const hasReferrerDoctorId = Boolean(
+	                            String((record as any)?.referrerDoctorId || "").trim(),
+	                          );
 	                          const creditEligible =
 	                            kind === "referral"
-	                              ? Boolean(record.referredContactEligibleForCredit)
+	                              ? Boolean(record.referredContactEligibleForCredit) &&
+	                                hasReferrerDoctorId &&
+	                                !isContactFormEntry(record as ReferralRecord)
 	                              : false;
 		                          const awaitingFirstPurchase =
 		                            selectedStatusValue === "converted" &&
@@ -20355,12 +20390,14 @@ function MainApp() {
                             referral.referrerDoctorName || "User";
                           const referralCreditTimestamp =
                             referral.creditIssuedAt || null;
-                          const referralCreditAmount =
-                            referral.creditIssuedAmount != null
-                              ? referral.creditIssuedAmount
-                              : 50;
+	                          const referralCreditAmount =
+	                            referral.creditIssuedAmount != null
+	                              ? referral.creditIssuedAmount
+	                              : 50;
 	                          const referralEligibleForCredit = Boolean(
-	                            referral.referredContactEligibleForCredit,
+	                            referral.referredContactEligibleForCredit &&
+	                              !isContactFormEntry(referral) &&
+	                              String(referral.referrerDoctorId || "").trim(),
 	                          );
 	                          const isCollapsed = collapsedReferralIds.has(referral.id);
 	                          const capitalizeName = (value?: string | null) => {

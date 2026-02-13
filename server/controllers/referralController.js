@@ -140,6 +140,24 @@ const extractContactFormId = (identifier) => {
   return value ? String(value).trim() : null;
 };
 
+const isHouseContactReferral = (referral) => {
+  const id = String(referral?.id || '').trim().toLowerCase();
+  const status = String(referral?.status || '').trim().toLowerCase();
+  const source = String(referral?.source || '').trim().toLowerCase();
+  const leadType = String(referral?.leadType || referral?.lead_type || '').trim().toLowerCase();
+  const referrerName = String(referral?.referrerDoctorName || '').trim().toLowerCase();
+  const contactFormId = String(referral?.contactFormId || referral?.contact_form_id || '').trim();
+  const hasHouseReferrerName = referrerName === 'contact form / house' || referrerName === 'house / contact form';
+  const sourceLooksContact = source === 'contact_form' || source === 'house' || source === 'house_contact';
+  const leadTypeLooksContact = leadType === 'contact_form' || leadType === 'house' || leadType === 'house_contact';
+  return status === 'contact_form'
+    || id.startsWith('contact_form:')
+    || Boolean(contactFormId)
+    || sourceLooksContact
+    || leadTypeLooksContact
+    || hasHouseReferrerName;
+};
+
 const normalizeEmail = (value) => {
   if (value == null) return null;
   let normalized = String(value).trim().toLowerCase();
@@ -691,6 +709,21 @@ const getDoctorLedger = (req, res, next) => {
       logger.warn({ err: error }, 'Failed to enrich dashboard referrals with account detection');
     }
 
+    // House/contact-form leads are not doctor referrals and must never be credit-eligible.
+    referrals = (referrals || []).map((referral) => {
+      if (!isHouseContactReferral(referral)) {
+        return referral;
+      }
+      return {
+        ...referral,
+        referredContactEligibleForCredit: false,
+        creditIssuedAt: null,
+        creditIssuedAmount: null,
+        creditIssuedBy: null,
+        referrerDoctorId: null,
+      };
+    });
+
     res.json({
       referrals,
       codes,
@@ -970,15 +1003,21 @@ const updateReferral = (req, res, next) => {
 
     const referral = referralRepository.findById(referralId);
     const isAdmin = normalizeRole(req.user?.role) === 'admin';
-    const owner = referral ? referral.salesRepId : null;
-    const ownedByUser = owner && owner === req.user.id;
+    const owner = referral?.salesRepId ? String(referral.salesRepId) : null;
+    const ownerIds = normalizeOwnerIds(req.user);
+    const ownedByUser = Boolean(owner && ownerIds.includes(owner));
 
     // If the record is missing locally (e.g., contact form or remote source), create it on the fly
     if (!referral) {
       const now = new Date().toISOString();
+      const referrerDoctorId = req.body?.referrerDoctorId ? String(req.body.referrerDoctorId) : null;
+      const referrerDoctor = referrerDoctorId ? userRepository.findById(referrerDoctorId) : null;
+      const referrerSalesRepId = referrerDoctor?.salesRepId ? String(referrerDoctor.salesRepId) : null;
+      const fallbackOwner = isAdmin ? req.user?.salesRepId : (req.user?.salesRepId || req.user?.id);
+      const seededSalesRepId = referrerSalesRepId || (fallbackOwner ? String(fallbackOwner) : null);
       const seeded = referralRepository.insert({
         id: referralId,
-        salesRepId: req.user.id,
+        salesRepId: seededSalesRepId,
         status: updates.status || 'pending',
         notes: updates.notes || null,
         referrerDoctorId: req.body?.referrerDoctorId || null,
@@ -1015,32 +1054,42 @@ const updateReferral = (req, res, next) => {
           requestUser: req.user?.id || null,
           role: req.user?.role || null,
         },
-        'Referral update by non-owner; reassigning to requesting sales rep',
+        'Referral update denied for non-owner',
       );
-      updates.salesRepId = req.user.id;
+      const error = new Error('Referral not found for sales representative');
+      error.status = 404;
+      throw error;
     }
 
     const updated = referralRepository.update(referralId, updates);
-    const ownerId = updated?.salesRepId || req.user.salesRepId || req.user.id;
     const contactFormId = extractContactFormId(referralId);
     const isManual = String(referralId).startsWith('manual:');
     salesProspectRepository
       .findById(referralId)
       .catch(() => null)
-      .then((existingProspect) => salesProspectRepository.upsert({
-        id: String(referralId),
-        salesRepId: String(ownerId),
-        referralId: contactFormId ? null : (isManual ? null : String(referralId)),
-        contactFormId: contactFormId ? String(contactFormId) : null,
-        status: updates.status || updated?.status || existingProspect?.status || 'pending',
-        notes: Object.prototype.hasOwnProperty.call(updates, 'notes')
-          ? updates.notes
-          : (existingProspect?.notes ?? null),
-        isManual,
-        contactName: updated?.referredContactName || req.body?.referredContactName || existingProspect?.contactName || null,
-        contactEmail: updated?.referredContactEmail || req.body?.referredContactEmail || existingProspect?.contactEmail || null,
-        contactPhone: updated?.referredContactPhone || req.body?.referredContactPhone || existingProspect?.contactPhone || null,
-      }))
+      .then((existingProspect) => {
+        const resolvedOwnerId = updated?.salesRepId
+          ? String(updated.salesRepId)
+          : (owner || (existingProspect?.salesRepId ? String(existingProspect.salesRepId) : null));
+        if (!resolvedOwnerId) {
+          logger.warn({ referralId }, 'Skipping sales prospect sync for referral with no sales rep owner');
+          return null;
+        }
+        return salesProspectRepository.upsert({
+          id: String(referralId),
+          salesRepId: resolvedOwnerId,
+          referralId: contactFormId ? null : (isManual ? null : String(referralId)),
+          contactFormId: contactFormId ? String(contactFormId) : null,
+          status: updates.status || updated?.status || existingProspect?.status || 'pending',
+          notes: Object.prototype.hasOwnProperty.call(updates, 'notes')
+            ? updates.notes
+            : (existingProspect?.notes ?? null),
+          isManual,
+          contactName: updated?.referredContactName || req.body?.referredContactName || existingProspect?.contactName || null,
+          contactEmail: updated?.referredContactEmail || req.body?.referredContactEmail || existingProspect?.contactEmail || null,
+          contactPhone: updated?.referredContactPhone || req.body?.referredContactPhone || existingProspect?.contactPhone || null,
+        });
+      })
       .catch((error) => {
         logger.warn({ err: error, referralId }, 'Failed to sync sales prospect on referral update');
       })
