@@ -1794,6 +1794,7 @@ const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
 
 const MANUAL_PROSPECT_DELETE_VALUE = "__manual_delete__";
 const DELETED_USER_ID = "0000000000000";
+const DELETED_USER_LABEL = "DELETED";
 
 const isDeletedUserIdentifier = (value: unknown): boolean => {
   const text = String(value ?? "").trim();
@@ -1804,6 +1805,7 @@ const isDeletedUserIdentifier = (value: unknown): boolean => {
 
 const isDeletedProspectLead = (lead: any): boolean => {
   if (!lead || typeof lead !== "object") return false;
+  if (lead.isDeletedLead === true) return true;
   const candidates = [
     lead.referredContactAccountId,
     lead.referredContactId,
@@ -6029,7 +6031,7 @@ function MainApp() {
 				            });
 			            const name =
 			              deletedProspect
-			                ? "Deleted"
+			                ? DELETED_USER_LABEL
 			                : String(
 			                    account?.name ||
 			                      row?.referredContactAccountName ||
@@ -19800,7 +19802,7 @@ function MainApp() {
 	                          const deletedProspect = isDeletedProspectLead(record);
 	                          const leadDisplayName =
 	                            deletedProspect
-	                              ? "Deleted"
+	                              ? DELETED_USER_LABEL
 	                              : (hasContactAccount && leadAccountProfile?.name) ||
 	                                record.referredContactName ||
 	                                record.referredContactEmail ||

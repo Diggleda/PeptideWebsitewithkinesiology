@@ -140,6 +140,7 @@ def _apply_deleted_prospect_label(record: Dict) -> Dict:
     normalized["referredContactName"] = DELETED_USER_NAME
     normalized["referredContactAccountName"] = DELETED_USER_NAME
     normalized["referredContactHasAccount"] = False
+    normalized["isDeletedLead"] = True
     return normalized
 
 def _sanitize_address_field(value: Optional[str], max_length: int = 190) -> Optional[str]:
@@ -457,9 +458,16 @@ def _enrich_referral(referral: Dict) -> Dict:
             str(sales_rep_id),
             str(referral.get("id")),
         )
+    prospect_doctor_id = prospect.get("doctorId") if prospect else None
     enriched["salesRepNotes"] = (prospect.get("notes") if prospect else None) or None
     enriched["isManual"] = bool(prospect.get("isManual")) if prospect else False
     enriched["status"] = prospect.get("status") if prospect and prospect.get("status") else "pending"
+    enriched["convertedDoctorId"] = (
+        referral.get("convertedDoctorId")
+        or referral.get("converted_doctor_id")
+        or prospect_doctor_id
+        or None
+    )
     enriched["resellerPermitExempt"] = bool(prospect.get("resellerPermitExempt")) if prospect else False
     enriched["resellerPermitFilePath"] = prospect.get("resellerPermitFilePath") if prospect else None
     enriched["resellerPermitFileName"] = prospect.get("resellerPermitFileName") if prospect else None
@@ -473,7 +481,12 @@ def _enrich_referral(referral: Dict) -> Dict:
 
     contact_account, contact_order_count = _resolve_referred_contact_account(referral)
     enriched["referredContactHasAccount"] = bool(contact_account)
-    enriched["referredContactAccountId"] = contact_account.get("id") if contact_account else None
+    enriched["referredContactAccountId"] = (
+        (contact_account.get("id") if contact_account else None)
+        or enriched.get("convertedDoctorId")
+        or prospect_doctor_id
+        or None
+    )
     enriched["referredContactAccountName"] = contact_account.get("name") if contact_account else None
     enriched["referredContactAccountEmail"] = contact_account.get("email") if contact_account else None
     enriched["referredContactAccountCreatedAt"] = (
