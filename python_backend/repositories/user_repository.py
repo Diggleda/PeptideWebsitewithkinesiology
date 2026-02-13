@@ -22,6 +22,11 @@ def _normalize_npi(value: Optional[str]) -> str:
     return re.sub(r"[^0-9]", "", str(value or ""))[:10]
 
 
+def _normalize_identifier(value: Optional[str]) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
 def _normalize_bool(value) -> bool:
     if value is True or value is False:
         return value
@@ -283,6 +288,9 @@ def update(user: Dict) -> Optional[Dict]:
     for index, existing in enumerate(users):
         if existing.get("id") == user.get("id"):
             merged = _ensure_defaults({**existing, **user})
+            existing_sales_rep_id = _normalize_identifier(existing.get("salesRepId") or existing.get("sales_rep_id"))
+            if existing_sales_rep_id:
+                merged["salesRepId"] = existing_sales_rep_id
             users[index] = merged
             _save(users)
             return merged
@@ -321,6 +329,9 @@ def replace(predicate: Callable[[Dict], bool], updater: Callable[[Dict], Dict]) 
     for index, existing in enumerate(users):
         if predicate(existing):
             updated = _ensure_defaults(updater(existing))
+            existing_sales_rep_id = _normalize_identifier(existing.get("salesRepId") or existing.get("sales_rep_id"))
+            if existing_sales_rep_id:
+                updated["salesRepId"] = existing_sales_rep_id
             users[index] = updated
             _save(users)
             return updated
@@ -374,7 +385,10 @@ def _mysql_insert(user: Dict) -> Dict:
             role = VALUES(role),
             status = VALUES(status),
             is_online = VALUES(is_online),
-            sales_rep_id = VALUES(sales_rep_id),
+            sales_rep_id = CASE
+                WHEN sales_rep_id IS NULL OR TRIM(sales_rep_id) = '' THEN VALUES(sales_rep_id)
+                ELSE sales_rep_id
+            END,
             referrer_doctor_id = VALUES(referrer_doctor_id),
             session_id = VALUES(session_id),
             last_seen_at = VALUES(last_seen_at),
@@ -417,6 +431,9 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
     if not existing:
         return None
     merged = _ensure_defaults({**existing, **user})
+    existing_sales_rep_id = _normalize_identifier(existing.get("salesRepId") or existing.get("sales_rep_id"))
+    if existing_sales_rep_id:
+        merged["salesRepId"] = existing_sales_rep_id
     params = _to_db_params(merged)
     mysql_client.execute(
         """

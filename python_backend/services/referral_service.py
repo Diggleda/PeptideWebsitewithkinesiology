@@ -56,6 +56,8 @@ LEGACY_STATUS_ALIASES = {
 _WOO_ORDER_PRESENCE_TTL_SECONDS = 60
 _woo_order_presence_cache_lock = threading.Lock()
 _woo_order_presence_cache: Dict[str, Dict[str, object]] = {}
+DELETED_USER_ID = "0000000000000"
+DELETED_USER_NAME = "Deleted"
 
 
 def _has_woo_order_for_email(email: str) -> bool:
@@ -109,6 +111,36 @@ def _sanitize_phone(value: Optional[str]) -> Optional[str]:
         return None
     cleaned = re.sub(r"[^0-9+()\-\s]", "", str(value)).strip()
     return cleaned[:32] if cleaned else None
+
+
+def _is_deleted_user_identifier(value: Optional[str]) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text == DELETED_USER_ID:
+        return True
+    return text.endswith(f":{DELETED_USER_ID}")
+
+
+def _apply_deleted_prospect_label(record: Dict) -> Dict:
+    if not isinstance(record, dict):
+        return record
+    candidate_ids = [
+        record.get("referredContactAccountId"),
+        record.get("referredContactId"),
+        record.get("convertedDoctorId"),
+        record.get("doctorId"),
+        record.get("userId"),
+        record.get("id"),
+    ]
+    if not any(_is_deleted_user_identifier(value) for value in candidate_ids):
+        return record
+
+    normalized = dict(record)
+    normalized["referredContactName"] = DELETED_USER_NAME
+    normalized["referredContactAccountName"] = DELETED_USER_NAME
+    normalized["referredContactHasAccount"] = False
+    return normalized
 
 def _sanitize_address_field(value: Optional[str], max_length: int = 190) -> Optional[str]:
     return _sanitize_text(value, max_length=max_length)
@@ -1447,6 +1479,7 @@ def list_referrals_for_sales_rep(sales_rep_identifier: str, scope_all: bool = Fa
         referral_leads.append(_apply_referred_contact_account_fields(base))
 
     combined = [*referral_leads, *contact_form_leads, *manual_leads]
+    combined = [_apply_deleted_prospect_label(lead) for lead in combined]
     combined = [lead for lead in combined if not _is_blank_lead(lead)]
     combined.sort(key=lambda item: _normalize_timestamp(item.get("createdAt")), reverse=True)
 

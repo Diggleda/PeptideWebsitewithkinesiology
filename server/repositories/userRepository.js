@@ -28,6 +28,26 @@ const normalizeOptionalString = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeIdentifier = (value) => {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+};
+
+const lockSalesRepIdIfAssigned = (existingUser, candidateUser) => {
+  if (!existingUser || !candidateUser) {
+    return candidateUser;
+  }
+  const existingSalesRepId = normalizeIdentifier(existingUser.salesRepId);
+  if (!existingSalesRepId) {
+    return candidateUser;
+  }
+  return {
+    ...candidateUser,
+    salesRepId: existingSalesRepId,
+  };
+};
+
 const normalizeBooleanFlag = (value) => {
   if (value === true || value === false) return value;
   if (typeof value === 'number') return value !== 0;
@@ -355,7 +375,8 @@ const update = (user) => {
   if (index === -1) {
     return null;
   }
-  users[index] = ensureUserDefaults({ ...users[index], ...user });
+  const merged = ensureUserDefaults({ ...users[index], ...user });
+  users[index] = lockSalesRepIdIfAssigned(users[index], merged);
   saveUsers(users);
   syncDirectShippingToSql(users[index]);
   return users[index];
@@ -367,7 +388,10 @@ const replace = (predicate, updater) => {
   if (index === -1) {
     return null;
   }
-  const updated = ensureUserDefaults(updater(users[index]));
+  const updated = lockSalesRepIdIfAssigned(
+    users[index],
+    ensureUserDefaults(updater(users[index])),
+  );
   users[index] = updated;
   saveUsers(users);
   syncDirectShippingToSql(updated);

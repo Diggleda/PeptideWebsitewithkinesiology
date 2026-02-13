@@ -1793,6 +1793,27 @@ const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
 );
 
 const MANUAL_PROSPECT_DELETE_VALUE = "__manual_delete__";
+const DELETED_USER_ID = "0000000000000";
+
+const isDeletedUserIdentifier = (value: unknown): boolean => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  if (text === DELETED_USER_ID) return true;
+  return text.endsWith(`:${DELETED_USER_ID}`);
+};
+
+const isDeletedProspectLead = (lead: any): boolean => {
+  if (!lead || typeof lead !== "object") return false;
+  const candidates = [
+    lead.referredContactAccountId,
+    lead.referredContactId,
+    lead.convertedDoctorId,
+    lead.doctorId,
+    lead.userId,
+    lead.id,
+  ];
+  return candidates.some((value) => isDeletedUserIdentifier(value));
+};
 
 const wrapPipelineLabel = (label: string, maxLength = 12): string[] => {
   if (!label) return [];
@@ -5613,6 +5634,9 @@ function MainApp() {
 	  );
 			  const shouldRemoveFromActiveProspects = useCallback(
 			    (lead: any) => {
+			      if (isDeletedProspectLead(lead)) {
+			        return false;
+			      }
 			      if (lead?.creditIssuedAt) {
 			        return true;
 			      }
@@ -5999,16 +6023,22 @@ function MainApp() {
 				              }
 				            }
 				            const account = accountId ? userById.get(accountId) : null;
+				            const deletedProspect = isDeletedProspectLead({
+				              ...row,
+				              referredContactAccountId: accountId || row?.referredContactAccountId || row?.referred_contact_account_id,
+				            });
 			            const name =
-			              String(
-			                account?.name ||
-			                  row?.referredContactAccountName ||
-			                  row?.referred_contact_account_name ||
-			                  row?.referredContactName ||
-			                  row?.contactName ||
-			                  row?.name ||
-			                  "",
-			              ).trim() || "Prospect";
+			              deletedProspect
+			                ? "Deleted"
+			                : String(
+			                    account?.name ||
+			                      row?.referredContactAccountName ||
+			                      row?.referred_contact_account_name ||
+			                      row?.referredContactName ||
+			                      row?.contactName ||
+			                      row?.name ||
+			                      "",
+			                  ).trim() || "Prospect";
 			            const email =
 			              String(
 			                account?.email ||
@@ -11233,15 +11263,6 @@ function MainApp() {
 		      index: number,
 		    ) => {
 		      const record = entry.record ?? {};
-		      const id =
-		        record.id ??
-		        record.referralId ??
-		        record.leadId ??
-		        record.prospectId ??
-		        null;
-		      if (id) {
-		        return `${entry.kind}:${String(id)}`;
-		      }
 		      const accountId =
 		        record.referredContactAccountId ??
 		        record.accountId ??
@@ -11260,7 +11281,38 @@ function MainApp() {
 		        record.dateCreated ??
 		        record.date_created ??
 		        null;
-		      const composite = [accountId, email, phone, name, createdAt]
+		      const updatedAt =
+		        record.updatedAt ??
+		        record.updated_at ??
+		        record.dateUpdated ??
+		        record.date_updated ??
+		        null;
+		      const deletedProspect = isDeletedProspectLead(record);
+		      const id =
+		        record.id ??
+		        record.referralId ??
+		        record.leadId ??
+		        record.prospectId ??
+		        null;
+		      if (id) {
+		        if (deletedProspect) {
+		          const deletedSeed = [
+		            String(id),
+		            accountId,
+		            email,
+		            phone,
+		            name,
+		            createdAt,
+		            updatedAt,
+		            index,
+		          ]
+		            .filter(Boolean)
+		            .join("|");
+		          return `${entry.kind}:deleted:${deletedSeed}`.toLowerCase();
+		        }
+		        return `${entry.kind}:${String(id)}`;
+		      }
+		      const composite = [accountId, email, phone, name, createdAt, updatedAt]
 		        .filter(Boolean)
 		        .join("|");
 		      if (composite) {
@@ -19714,7 +19766,7 @@ function MainApp() {
 			                            },
 			                            ...(nextPromotion ? [nextPromotion] : []),
 			                          ];
-		                          const leadAccountProfile = (() => {
+	                          const leadAccountProfile = (() => {
 		                            if (!hasContactAccount) return null;
 		                            const accountId = (record as any).referredContactAccountId;
 	                            const accountEmail =
@@ -19745,11 +19797,14 @@ function MainApp() {
 	                            }
 	                            return null;
 	                          })();
+	                          const deletedProspect = isDeletedProspectLead(record);
 	                          const leadDisplayName =
-	                            (hasContactAccount && leadAccountProfile?.name) ||
-	                            record.referredContactName ||
-	                            record.referredContactEmail ||
-	                            "—";
+	                            deletedProspect
+	                              ? "Deleted"
+	                              : (hasContactAccount && leadAccountProfile?.name) ||
+	                                record.referredContactName ||
+	                                record.referredContactEmail ||
+	                                "—";
 	                          return (
 	                            <li
 	                              key={record.id}
