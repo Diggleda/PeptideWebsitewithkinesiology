@@ -64,6 +64,9 @@ const STATEMENTS = [
   `
     CREATE TABLE IF NOT EXISTS bugs_reported (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(64) NULL,
+      name VARCHAR(255) NULL,
+      email VARCHAR(255) NULL,
       report LONGTEXT NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4
@@ -315,6 +318,55 @@ const ensureSalesProspectColumns = async () => {
   }
 };
 
+const ensureBugReportColumns = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  const columns = [
+    {
+      name: 'user_id',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN user_id VARCHAR(64) NULL AFTER id
+      `,
+    },
+    {
+      name: 'name',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN name VARCHAR(255) NULL AFTER user_id
+      `,
+    },
+    {
+      name: 'email',
+      ddl: `
+        ALTER TABLE bugs_reported
+        ADD COLUMN email VARCHAR(255) NULL AFTER name
+      `,
+    },
+  ];
+  for (const column of columns) {
+    try {
+      const existing = await mysqlClient.fetchOne(
+        `
+          SELECT COLUMN_NAME
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'bugs_reported'
+            AND COLUMN_NAME = :columnName
+        `,
+        { columnName: column.name },
+      );
+      if (!existing) {
+        await mysqlClient.execute(column.ddl);
+        logger.info({ column: column.name }, 'MySQL bugs_reported column added');
+      }
+    } catch (error) {
+      logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL bugs_reported column');
+    }
+  }
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -325,6 +377,7 @@ const ensureSchema = async () => {
   await ensureUserColumns();
   await ensureOrderColumns();
   await ensureSalesProspectColumns();
+  await ensureBugReportColumns();
   logger.info('MySQL schema ensured');
 };
 

@@ -15,7 +15,7 @@ import shippingHtml from '../content/legal/shipping.html?raw';
 import returnsHtml from '../content/legal/returns.html?raw';
 import contactHtml from '../content/legal/contact.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
-import { API_BASE_URL } from '../services/api';
+import { API_BASE_URL, api } from '../services/api';
 
 type LegalDocumentKey = 'terms' | 'privacy' | 'shipping' | 'returns' | 'contact';
 
@@ -53,6 +53,10 @@ interface LegalFooterProps {
 }
 
 export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFooterProps) {
+  const FORM_URLENCODED_HEADERS = {
+    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+  } as const;
+
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -223,6 +227,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
       payload.set('source', contactForm.source.trim());
       const res = await fetch(`${API_BASE_URL}/contact`, {
         method: 'POST',
+        headers: FORM_URLENCODED_HEADERS,
         body: payload,
       });
       const data = await res.json().catch(() => ({}));
@@ -270,12 +275,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     }
     setBugSubmitting(true);
     try {
-      const payload = new URLSearchParams();
-      payload.set('report', report);
-      const res = await fetch('/api/bugs', {
-        method: 'POST',
-        body: payload,
-      });
+      const res = await api.post('/bugs', { report });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 404) {
@@ -283,8 +283,9 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
           fallbackPayload.set('name', 'Bug Report');
           fallbackPayload.set('email', 'support@peppro.net');
           fallbackPayload.set('source', `Bug report: ${report}`);
-          const fallbackRes = await fetch('/api/contact', {
+          const fallbackRes = await fetch(`${API_BASE_URL}/contact`, {
             method: 'POST',
+            headers: FORM_URLENCODED_HEADERS,
             body: fallbackPayload,
           });
           const fallbackData = await fallbackRes.json().catch(() => ({}));

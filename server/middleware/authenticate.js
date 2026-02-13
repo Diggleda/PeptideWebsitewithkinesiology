@@ -84,4 +84,17 @@ const authenticate = (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+const authenticateOptional = (req, _res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return next();
+  }
+
+  return authenticate(req, {
+    status: () => ({
+      json: () => next(),
+    }),
+  }, next);
+};
+
+module.exports = { authenticate, authenticateOptional };
