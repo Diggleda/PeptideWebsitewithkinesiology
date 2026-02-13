@@ -4,6 +4,10 @@ const { logger } = require('../config/logger');
 
 const router = express.Router();
 
+router.options('/', (_req, res) => {
+  res.sendStatus(204);
+});
+
 router.post('/', async (req, res) => {
   const report = String(req.body?.report || '').trim();
   if (!report) {
@@ -30,4 +34,3 @@ router.post('/', async (req, res) => {
 });
 
 module.exports = router;
-

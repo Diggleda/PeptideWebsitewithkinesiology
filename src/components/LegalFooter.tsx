@@ -15,6 +15,7 @@ import shippingHtml from '../content/legal/shipping.html?raw';
 import returnsHtml from '../content/legal/returns.html?raw';
 import contactHtml from '../content/legal/contact.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
+import { API_BASE_URL } from '../services/api';
 
 type LegalDocumentKey = 'terms' | 'privacy' | 'shipping' | 'returns' | 'contact';
 
@@ -219,17 +220,16 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     }
     setContactSubmitting(true);
     try {
-      const res = await fetch('/api/contact', {
+      const payload = new URLSearchParams();
+      payload.set('name', contactForm.name.trim());
+      payload.set('email', contactForm.email.trim());
+      payload.set('phone', contactForm.phone.trim());
+      payload.set('source', contactForm.source.trim());
+      const res = await fetch(`${API_BASE_URL}/contact`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: contactForm.name.trim(),
-          email: contactForm.email.trim(),
-          phone: contactForm.phone.trim(),
-          source: contactForm.source.trim(),
-        }),
+        body: payload,
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to send your message.');
       }
@@ -274,12 +274,13 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     }
     setBugSubmitting(true);
     try {
-      const res = await fetch('/api/bugs', {
+      const payload = new URLSearchParams();
+      payload.set('report', report);
+      const res = await fetch(`${API_BASE_URL}/bugs`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report }),
+        body: payload,
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to submit bug report.');
       }
