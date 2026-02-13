@@ -15,7 +15,7 @@ import shippingHtml from '../content/legal/shipping.html?raw';
 import returnsHtml from '../content/legal/returns.html?raw';
 import contactHtml from '../content/legal/contact.html?raw';
 import { MERCHANT_IDENTITY } from '../lib/merchantIdentity';
-import { API_BASE_URL, api } from '../services/api';
+import { api } from '../services/api';
 
 type LegalDocumentKey = 'terms' | 'privacy' | 'shipping' | 'returns' | 'contact';
 
@@ -53,10 +53,6 @@ interface LegalFooterProps {
 }
 
 export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFooterProps) {
-  const FORM_URLENCODED_HEADERS = {
-    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-  } as const;
-
   const [activeDocument, setActiveDocument] = useState<LegalDocumentKey | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -220,15 +216,11 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
     setContactSuccess('');
     setContactSubmitting(true);
     try {
-      const payload = new URLSearchParams();
-      payload.set('name', contactForm.name.trim());
-      payload.set('email', contactForm.email.trim());
-      payload.set('phone', contactForm.phone.trim());
-      payload.set('source', contactForm.source.trim());
-      const res = await fetch(`${API_BASE_URL}/contact`, {
-        method: 'POST',
-        headers: FORM_URLENCODED_HEADERS,
-        body: payload,
+      const res = await api.post('/contact', {
+        name: contactForm.name.trim(),
+        email: contactForm.email.trim(),
+        phone: contactForm.phone.trim(),
+        source: contactForm.source.trim(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -279,14 +271,11 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 404) {
-          const fallbackPayload = new URLSearchParams();
-          fallbackPayload.set('name', 'Bug Report');
-          fallbackPayload.set('email', 'support@peppro.net');
-          fallbackPayload.set('source', `Bug report: ${report}`);
-          const fallbackRes = await fetch(`${API_BASE_URL}/contact`, {
-            method: 'POST',
-            headers: FORM_URLENCODED_HEADERS,
-            body: fallbackPayload,
+          const fallbackRes = await api.post('/contact', {
+            name: 'Bug Report',
+            email: 'support@peppro.net',
+            phone: '',
+            source: `Bug report: ${report}`,
           });
           const fallbackData = await fallbackRes.json().catch(() => ({}));
           if (!fallbackRes.ok) {

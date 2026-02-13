@@ -13,7 +13,7 @@ from ..repositories import sales_rep_repository, sales_prospect_repository
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
 
 
-@blueprint.post("/")
+@blueprint.route("", methods=["POST"], strict_slashes=False)
 def submit_contact():
     def action() -> Dict[str, Any]:
         payload = request.get_json(silent=True) or {}
@@ -82,7 +82,7 @@ def submit_contact():
     return handle_action(action)
 
 
-@blueprint.get("/")
+@blueprint.route("", methods=["GET"], strict_slashes=False)
 def contact_info():
     def action() -> Dict[str, Any]:
         return {"status": "ok"}

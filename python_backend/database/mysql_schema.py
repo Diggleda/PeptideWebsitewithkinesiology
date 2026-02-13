@@ -191,6 +191,16 @@ CREATE_TABLE_STATEMENTS = [
     ) CHARACTER SET utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS bugs_reported (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NULL,
+        name VARCHAR(255) NULL,
+        email VARCHAR(255) NULL,
+        report LONGTEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS settings (
         `key` VARCHAR(64) NOT NULL PRIMARY KEY,
         value_json JSON NULL,
@@ -395,6 +405,9 @@ def ensure_schema() -> None:
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_status VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_reviewed_at DATETIME NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS delegate_review_order_id VARCHAR(32) NULL",
+        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) NULL",
+        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL",
+        "ALTER TABLE bugs_reported ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL",
     ]
     for stmt in migrations:
         try:
