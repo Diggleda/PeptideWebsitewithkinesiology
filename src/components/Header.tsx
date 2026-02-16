@@ -1814,7 +1814,9 @@ export function Header({
         ? `Rep: ${localUser.name}`
         : localUser.name
     : '';
-  const profileImageUrl = localUser?.profileImageUrl || user?.profileImageUrl || null;
+  const profileImageUrl = localUser
+    ? (localUser.profileImageUrl ?? null)
+    : (user?.profileImageUrl ?? null);
   const userInitials = getInitials(localUser?.name || user?.name || headerDisplayName);
   const normalizedReferralCodes = Array.isArray(referralCodes)
     ? referralCodes
@@ -6041,7 +6043,6 @@ export function Header({
                     {accountHeaderTabs.map((tab) => {
                       const isActive = accountTab === tab.id;
                       const indicatorCount = Number(accountTabIndicatorCounts[tab.id] || 0);
-                      const reserveIndicatorSpace = tab.id === 'patient_links';
                       const showIndicator = indicatorCount > 0;
 	                      return (
 	                        <button
@@ -6060,7 +6061,7 @@ export function Header({
 		                          </span>
                           <span className="inline-flex items-center">
                             {tab.label}
-                            {(reserveIndicatorSpace || showIndicator) && (
+                            {showIndicator && (
                               <Badge
                                 variant="outline"
                                 className={clsx(
