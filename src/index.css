@@ -359,10 +359,9 @@ body {
     box-shadow 160ms ease;
 }
 
-.patient-link-payment-toggle-button:not(:disabled):hover {
-  border-color: rgb(203, 213, 225) !important;
-  background-color: rgb(241, 245, 249) !important;
-  color: rgb(51, 65, 85) !important;
+.patient-link-payment-toggle-button:hover {
+  border-color: rgba(95, 179, 249, 0.45);
+  color: rgb(95, 179, 249);
 }
 
 @media (min-width: 640px) {
@@ -445,6 +444,12 @@ body {
     grid-row: 2;
     align-self: end;
     margin-bottom: 0 !important;
+  }
+
+  .patient-link-form--generate .patient-link-form__button {
+    grid-row: 10;
+    align-self: end;
+    margin-bottom: 0.55rem !important;
   }
 
   .patient-link-actions {
@@ -6098,6 +6103,14 @@ body.account-modal-open .info-focus-overlay {
   display: block;
 }
 
+.header-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
+}
+
 .avatar-inline-edge {
   margin-left: 10px;
   margin-right: -14px; /* pull avatar further over the button edge so the blue doesn’t peek through */
@@ -6511,7 +6524,9 @@ body.account-modal-open .info-focus-overlay {
 
 /* Keep patient-link action buttons on simple color hover without global dialog glow/filter */
 [data-radix-dialog-content] .patient-link-actions button.squircle-sm,
-[data-slot="dialog-content"] .patient-link-actions button.squircle-sm {
+[data-radix-dialog-content] .patient-link-payment-toggle-button,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm,
+[data-slot="dialog-content"] .patient-link-payment-toggle-button {
   box-shadow: 0 2px 8px -6px rgba(15, 23, 42, 0.2) !important;
   transition:
     background-color 160ms ease,
@@ -6521,17 +6536,26 @@ body.account-modal-open .info-focus-overlay {
 }
 
 [data-radix-dialog-content] .patient-link-actions button.squircle-sm:hover,
-[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:hover {
+[data-radix-dialog-content] .patient-link-payment-toggle-button:hover,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:hover,
+[data-slot="dialog-content"] .patient-link-payment-toggle-button:hover {
   box-shadow: 0 10px 18px -14px rgba(15, 23, 42, 0.35) !important;
 }
 
 [data-radix-dialog-content] .patient-link-actions button.squircle-sm:active,
-[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:active {
+[data-radix-dialog-content] .patient-link-payment-toggle-button:active,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:active,
+[data-slot="dialog-content"] .patient-link-payment-toggle-button:active {
   box-shadow: 0 2px 8px -6px rgba(15, 23, 42, 0.2) !important;
 }
 
 [data-radix-dialog-content] .patient-link-actions .btn-hover-lighter:hover,
+[data-radix-dialog-content] .patient-link-payment-toggle-button.btn-hover-lighter:hover,
 [data-slot="dialog-content"] .patient-link-actions .btn-hover-lighter:hover {
+  filter: none !important;
+}
+
+[data-slot="dialog-content"] .patient-link-payment-toggle-button.btn-hover-lighter:hover {
   filter: none !important;
 }
 

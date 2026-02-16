@@ -3,6 +3,8 @@ const { authenticate } = require('../middleware/authenticate');
 const {
   getShopEnabled,
   setShopEnabled,
+  getPatientLinksEnabled,
+  setPatientLinksEnabled,
   getPeptideForumEnabled,
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
@@ -133,6 +135,11 @@ router.get('/shop', async (_req, res) => {
   res.json({ shopEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
+router.get('/patient-links', async (_req, res) => {
+  const enabled = await getPatientLinksEnabled();
+  res.json({ patientLinksEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
 router.get('/forum', async (_req, res) => {
   const enabled = await getPeptideForumEnabled();
   res.json({ peptideForumEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
@@ -147,6 +154,12 @@ router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
   const confirmed = await setShopEnabled(enabled);
   res.json({ shopEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/patient-links', authenticate, requireAdmin, async (req, res) => {
+  const enabled = Boolean(req.body?.enabled);
+  const confirmed = await setPatientLinksEnabled(enabled);
+  res.json({ patientLinksEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.put('/forum', authenticate, requireAdmin, async (req, res) => {

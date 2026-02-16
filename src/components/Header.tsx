@@ -41,12 +41,14 @@ const patientLinkPaymentMethodOptions: Array<{ value: PatientLinkPaymentMethod; 
 const buildPatientLinkDefaultInstructions = (
   method: PatientLinkPaymentMethod,
   zelleContact?: string | null,
+  doctorName?: string | null,
 ) => {
   if (method !== 'zelle') return '';
   const contact = typeof zelleContact === 'string' ? zelleContact.trim() : '';
+  const doctor = typeof doctorName === 'string' ? doctorName.trim() : '';
   return contact
     ? `Please send payment to ${contact}.`
-    : 'Reach out to your doctor for Zelle payment details.';
+    : `Reach out to ${doctor || 'your doctor'} for Zelle payment details.`;
 };
 
 const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMethod => {
@@ -57,7 +59,7 @@ const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMe
   return 'none';
 };
 
-const createNodeDummyPatientLink = (zelleContact?: string | null) => {
+const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: string | null) => {
   const createdAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const expiresAt = new Date(Date.now() + 71 * 60 * 60 * 1000).toISOString();
   return {
@@ -68,7 +70,7 @@ const createNodeDummyPatientLink = (zelleContact?: string | null) => {
     expiresAt,
     markupPercent: 15,
     paymentMethod: 'zelle',
-    paymentInstructions: buildPatientLinkDefaultInstructions('zelle', zelleContact),
+    paymentInstructions: buildPatientLinkDefaultInstructions('zelle', zelleContact, doctorName),
     receivedPayment: false,
     lastUsedAt: null,
     revokedAt: null,
@@ -79,9 +81,6 @@ const isNodePatientLinkDummyMode = (() => {
   const env = (import.meta as any)?.env ?? {};
   const configuredApiUrl = String(env?.VITE_API_URL || '').trim();
   const forceDummy = String(env?.VITE_DUMMY_PATIENT_LINK || '').trim();
-  if (env?.PROD) {
-    return false;
-  }
   if (forceDummy === '1') {
     return true;
   }
@@ -1725,8 +1724,8 @@ export function Header({
     const prevZelleContact = typeof lastZelleContactRef.current === 'string' ? lastZelleContactRef.current : '';
 
     if (patientLinkPaymentMethodDraft === 'zelle') {
-      const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact);
-      const nextDefault = buildPatientLinkDefaultInstructions('zelle', nextZelleContact);
+      const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact, localUser?.name ?? user?.name ?? null);
+      const nextDefault = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
       const shouldReplace =
         !patientLinkInstructionsDraft.trim()
         || patientLinkInstructionsDraft.trim() === prevDefault.trim();
@@ -1745,10 +1744,10 @@ export function Header({
         );
         if (method !== 'zelle') continue;
         const existing = typeof prev[token] === 'string' ? prev[token] : '';
-        const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact);
+        const prevDefault = buildPatientLinkDefaultInstructions('zelle', prevZelleContact, localUser?.name ?? user?.name ?? null);
         const shouldReplace = !existing.trim() || existing.trim() === prevDefault.trim();
         if (shouldReplace) {
-          next[token] = buildPatientLinkDefaultInstructions('zelle', nextZelleContact);
+          next[token] = buildPatientLinkDefaultInstructions('zelle', nextZelleContact, localUser?.name ?? user?.name ?? null);
         }
       }
       return next;
@@ -1756,11 +1755,13 @@ export function Header({
 
     lastZelleContactRef.current = nextZelleContact || null;
   }, [
+    localUser?.name,
     localUser?.zelleContact,
     patientLinkInstructionsDraft,
     patientLinkPaymentMethodDraft,
     patientLinkPaymentMethodDraftByToken,
     patientLinks,
+    user?.name,
   ]);
   const accountDetailsRefreshSeqRef = useRef(0);
   useEffect(() => {
@@ -3302,7 +3303,10 @@ export function Header({
 
   const normalizedRole = String((localUser as any)?.role || '').toLowerCase();
   const showPatientLinksTab = Boolean(
-    localUser && (normalizedRole === 'test_doctor' || (normalizedRole === 'doctor' && patientLinksEnabled)),
+    localUser && (
+      normalizedRole === 'test_doctor'
+      || (normalizedRole === 'doctor' && (patientLinksEnabled || isNodePatientLinkDummyMode))
+    ),
   );
   const accountHeaderTabs = useMemo(() => {
     const tabs: Array<{ id: AccountTabId; label: string; Icon: any }> = [
@@ -3366,7 +3370,7 @@ export function Header({
       });
       if (isNodePatientLinkDummyMode) {
         setPatientLinks([
-          createNodeDummyPatientLink(localUser?.zelleContact ?? null),
+          createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
           ...sanitizedLinks,
         ]);
       } else {
@@ -3377,7 +3381,13 @@ export function Header({
       const status = typeof error?.status === 'number' ? error.status : null;
       const delegationRouteMissing = status === 404 || status === 405;
       if (delegationRouteMissing && isNodePatientLinkDummyMode) {
-        setPatientLinks([createNodeDummyPatientLink(localUser?.zelleContact ?? null)]);
+        setPatientLinks([createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null)]);
+        setPatientLinkMarkupDraft('15');
+        setPatientLinksError(null);
+        return;
+      }
+      if (isNodePatientLinkDummyMode) {
+        setPatientLinks([createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null)]);
         setPatientLinkMarkupDraft('15');
         setPatientLinksError(null);
         return;
@@ -3391,7 +3401,7 @@ export function Header({
       setPatientLinksLoading(false);
       patientLinksLoadInFlightRef.current = false;
     }
-  }, [localUser?.zelleContact, normalizeMarkupPercent, showPatientLinksTab]);
+  }, [localUser?.name, localUser?.zelleContact, normalizeMarkupPercent, showPatientLinksTab, user?.name]);
 
   useEffect(() => {
     if (!Array.isArray(patientLinks) || patientLinks.length === 0) {
@@ -3431,11 +3441,11 @@ export function Header({
         const text = typeof raw === 'string' ? raw : '';
         next[token] = text.trim()
           ? text
-          : buildPatientLinkDefaultInstructions(method, localUser?.zelleContact ?? null);
+          : buildPatientLinkDefaultInstructions(method, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null);
       }
       return next;
     });
-  }, [localUser?.zelleContact, patientLinks]);
+  }, [localUser?.name, localUser?.zelleContact, patientLinks, user?.name]);
 
   const handleSavePatientLinkPaymentSettings = useCallback(
     async (token: string) => {
@@ -3447,7 +3457,7 @@ export function Header({
       const paymentInstructionsDraft = (patientLinkInstructionsDraftByToken[normalized] ?? '').trim();
       const paymentMethod = paymentMethodDraft === 'zelle' ? 'zelle' : '';
       const paymentInstructions = paymentMethod === 'zelle'
-        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null))
+        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null))
         : '';
 
       setPatientLinksSavingPaymentToken(normalized);
@@ -3471,10 +3481,12 @@ export function Header({
     },
     [
       loadPatientLinks,
+      localUser?.name,
       localUser?.zelleContact,
       patientLinkInstructionsDraftByToken,
       patientLinkPaymentMethodDraftByToken,
       patientLinksSavingPaymentToken,
+      user?.name,
     ],
   );
 
@@ -3487,7 +3499,6 @@ export function Header({
             ? (link as any).revoked_at.trim()
             : '';
       if (revokedAtRaw) return count;
-
       const delegateSharedAt =
         (typeof (link as any)?.delegateSharedAt === 'string' && (link as any).delegateSharedAt.trim())
           ? (link as any).delegateSharedAt.trim()
@@ -3506,21 +3517,37 @@ export function Header({
           : (typeof (link as any)?.delegate_review_status === 'string' && (link as any).delegate_review_status.trim())
             ? (link as any).delegate_review_status.trim().toLowerCase()
             : '';
+      const proposalStatusRaw =
+        (typeof (link as any)?.proposalStatus === 'string' && (link as any).proposalStatus.trim())
+          ? (link as any).proposalStatus.trim().toLowerCase()
+          : (typeof (link as any)?.proposal_status === 'string' && (link as any).proposal_status.trim())
+            ? (link as any).proposal_status.trim().toLowerCase()
+            : '';
 
-      const hasProposal = Boolean(delegateReviewStatusRaw || delegateSharedAt || delegateOrderId);
-      const proposalStatus = delegateReviewStatusRaw || (hasProposal ? 'pending' : '');
-      const isOutstanding = hasProposal && proposalStatus === 'pending';
+      const reviewStatus = delegateReviewStatusRaw || proposalStatusRaw;
+      const hasSession = Boolean(
+        reviewStatus
+        || delegateSharedAt
+        || delegateOrderId
+        || (typeof (link as any)?.token === 'string' && (link as any).token.trim()),
+      );
+      const proposalStatus = reviewStatus || (hasSession ? 'pending' : '');
+      const isOutstanding =
+        hasSession
+        && proposalStatus !== 'approved'
+        && proposalStatus !== 'accepted'
+        && proposalStatus !== 'rejected';
       return count + (isOutstanding ? 1 : 0);
     }, 0);
   }, [patientLinks]);
 
   const accountTabIndicatorCounts = useMemo<Partial<Record<AccountTabId, number>>>(() => {
     const counts: Partial<Record<AccountTabId, number>> = {};
-    if (showPatientLinksTab && !patientLinksLoading && outstandingPatientProposalCount > 0) {
+    if (showPatientLinksTab && outstandingPatientProposalCount > 0) {
       counts.patient_links = outstandingPatientProposalCount;
     }
     return counts;
-  }, [outstandingPatientProposalCount, patientLinksLoading, showPatientLinksTab]);
+  }, [outstandingPatientProposalCount, showPatientLinksTab]);
 
   const accountButtonIndicatorTotal = useMemo(
     () => Object.values(accountTabIndicatorCounts).reduce((sum, count) => sum + (Number(count) || 0), 0),
@@ -3555,7 +3582,7 @@ export function Header({
       const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
       const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
       const paymentInstructions = paymentMethod === 'zelle'
-        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null))
+        ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null))
         : '';
       await api.delegationAPI.createLink({
         referenceLabel: referenceLabel ? referenceLabel : null,
@@ -3586,8 +3613,10 @@ export function Header({
     patientLinkInstructionsDraft,
     patientLinkPaymentMethodDraft,
     patientLinksCreating,
+    localUser?.name,
     localUser?.zelleContact,
     showPatientLinksTab,
+    user?.name,
   ]);
 
   const getPatientLinkUrl = useCallback((token: string): string => {
@@ -4008,6 +4037,27 @@ export function Header({
                     onClick={() => avatarInputRef.current?.click()}
                   >
                     {avatarUploading ? `Uploading… ${avatarUploadPercent}%` : 'Upload photo'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="squircle-sm"
+                    disabled={avatarUploading || !profileImageUrl}
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          await saveProfileField('Profile photo', { profileImageUrl: null });
+                          if (avatarInputRef.current) {
+                            avatarInputRef.current.value = '';
+                          }
+                        } catch {
+                          // Error toast is handled by saveProfileField.
+                        }
+                      })();
+                    }}
+                  >
+                    Remove
                   </Button>
                   <p className="text-xs text-slate-500">Photos must be 50MB or smaller in size.</p>
                 </div>
@@ -5317,7 +5367,7 @@ export function Header({
 			              variant="outline"
 			              onClick={() => void handleRemoveDelegateLogo()}
 			              disabled={delegateLogoUploading}
-			              className="h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+			              className="patient-link-payment-toggle-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:border-[rgba(95,179,249,0.45)] hover:text-[rgb(95,179,249)]"
 			            >
 			              Remove
 			            </Button>
@@ -5421,13 +5471,16 @@ export function Header({
 	              const currentDefault = buildPatientLinkDefaultInstructions(
 	                patientLinkPaymentMethodDraft,
 	                localUser?.zelleContact ?? null,
+	                localUser?.name ?? user?.name ?? null,
 	              );
 	              const shouldReplace =
 	                !patientLinkInstructionsDraft.trim()
 	                || patientLinkInstructionsDraft.trim() === currentDefault.trim();
 	              setPatientLinkPaymentMethodDraft(next);
 	              if (shouldReplace) {
-	                setPatientLinkInstructionsDraft(buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null));
+	                setPatientLinkInstructionsDraft(
+                    buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
+                  );
 	              }
 	            }}
 	            className="patient-link-form__select h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
@@ -5480,7 +5533,7 @@ export function Header({
           </Button>
         </div>
 	        <p className="text-sm leading-relaxed text-slate-700">
-	          Copy the link to share your configured session with your patient. Let your patient work as a delegate to build a proposal for your review. After 72 hours, the link will expire. Use “Revoke link” to disable a link prematurely.
+	          Copy the link to share your configured session with your patient. Let your patient work as a delegate to build a proposal for your review. After 72 hours, the link will expire. Use “Revoke link” to disable it prematurely.
 	        </p>
 
         {patientLinksError && (
@@ -5535,16 +5588,33 @@ export function Header({
 	              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
 	              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
 	              const delegateSharedAt =
-	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim() ? link.delegateSharedAt.trim() : '';
+	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim()
+	                  ? link.delegateSharedAt.trim()
+	                  : (typeof (link as any)?.delegate_shared_at === 'string' && (link as any).delegate_shared_at.trim())
+	                    ? (link as any).delegate_shared_at.trim()
+	                    : '';
 	              const delegateOrderId =
-	                typeof link?.delegateOrderId === 'string' && link.delegateOrderId.trim() ? link.delegateOrderId.trim() : '';
+	                typeof link?.delegateOrderId === 'string' && link.delegateOrderId.trim()
+	                  ? link.delegateOrderId.trim()
+	                  : (typeof (link as any)?.delegate_order_id === 'string' && (link as any).delegate_order_id.trim())
+	                    ? (link as any).delegate_order_id.trim()
+	                    : '';
 	              const delegateReviewStatusRaw =
 	                typeof link?.delegateReviewStatus === 'string' && link.delegateReviewStatus.trim()
 	                  ? link.delegateReviewStatus.trim().toLowerCase()
-	                  : '';
+	                  : (typeof (link as any)?.delegate_review_status === 'string' && (link as any).delegate_review_status.trim())
+	                    ? (link as any).delegate_review_status.trim().toLowerCase()
+	                    : '';
+	              const proposalStatusRaw =
+	                typeof (link as any)?.proposalStatus === 'string' && (link as any).proposalStatus.trim()
+	                  ? (link as any).proposalStatus.trim().toLowerCase()
+	                  : (typeof (link as any)?.proposal_status === 'string' && (link as any).proposal_status.trim())
+	                    ? (link as any).proposal_status.trim().toLowerCase()
+	                    : '';
+		              const reviewStatus = delegateReviewStatusRaw || proposalStatusRaw;
 		              const proposalStatus =
-		                delegateReviewStatusRaw || (delegateSharedAt || delegateOrderId ? 'pending' : '');
-		              const hasProposal = Boolean(delegateSharedAt || delegateOrderId);
+		                reviewStatus || (delegateSharedAt || delegateOrderId ? 'pending' : '');
+		              const hasProposal = Boolean(reviewStatus || delegateSharedAt || delegateOrderId);
 		              const isRevoked = Boolean(revokedAt);
 		              const isUpdating = patientLinksUpdatingToken === token;
 		              const isSavingPayment = patientLinksSavingPaymentToken === token;
@@ -5552,7 +5622,7 @@ export function Header({
 		              const isUpdatingReceivedPayment = patientLinksPaymentReceivedToken === token;
 		              const canRejectProposal = hasProposal && proposalStatus === 'pending';
 		              const proposalLabel =
-		                proposalStatus === 'accepted'
+		                proposalStatus === 'approved' || proposalStatus === 'accepted'
 		                  ? 'Accepted'
 	                  : proposalStatus === 'modified'
 	                    ? 'Modified'
@@ -5733,6 +5803,7 @@ export function Header({
 	                                const currentDefault = buildPatientLinkDefaultInstructions(
 	                                  paymentMethodDraft,
 	                                  localUser?.zelleContact ?? null,
+	                                  localUser?.name ?? user?.name ?? null,
 	                                );
 	                                const shouldReplace =
 	                                  !existing.trim()
@@ -5740,7 +5811,7 @@ export function Header({
 	                                if (!shouldReplace) return { ...prev, [token]: existing };
 	                                return {
 	                                  ...prev,
-	                                  [token]: buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null),
+	                                  [token]: buildPatientLinkDefaultInstructions(next, localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
 	                                };
 	                              });
 	                            }}
@@ -5777,7 +5848,7 @@ export function Header({
 	                            size="sm"
 	                            onClick={() => void handleSavePatientLinkPaymentSettings(token)}
 	                            disabled={!token || isSavingPayment}
-	                            className="squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+	                            className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:text-[rgb(95,179,249)]"
 	                          >
 	                            {isSavingPayment ? 'Saving…' : 'Save'}
 	                          </Button>
@@ -5970,6 +6041,8 @@ export function Header({
                     {accountHeaderTabs.map((tab) => {
                       const isActive = accountTab === tab.id;
                       const indicatorCount = Number(accountTabIndicatorCounts[tab.id] || 0);
+                      const reserveIndicatorSpace = tab.id === 'patient_links';
+                      const showIndicator = indicatorCount > 0;
 	                      return (
 	                        <button
 	                          key={tab.id}
@@ -5985,17 +6058,24 @@ export function Header({
 			                          <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-visible">
 			                            <tab.Icon className="h-3.5 w-3.5" aria-hidden="true" />
 		                          </span>
-	                          {tab.label}
-                            {indicatorCount > 0 && (
-                              <span
-                                className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1 text-[10px] font-semibold leading-none !text-white shadow-sm pointer-events-none"
+                          <span className="inline-flex items-center">
+                            {tab.label}
+                            {(reserveIndicatorSpace || showIndicator) && (
+                              <Badge
+                                variant="outline"
+                                className={clsx(
+                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !rounded-full !border-[rgb(95,179,249)] !bg-white !p-0 !text-[7.5px] font-semibold leading-none !text-[rgb(95,179,249)] shadow-sm pointer-events-none transition-opacity duration-150",
+                                  showIndicator ? "opacity-100" : "opacity-0",
+                                )}
                                 title={`${tab.label} notifications`}
-                                aria-label={`${tab.label} notifications: ${indicatorCount}`}
-                                style={{ backgroundColor: 'rgb(95,179,249)', color: '#fff' }}
+                                aria-label={showIndicator ? `${tab.label} notifications: ${indicatorCount}` : undefined}
+                                aria-hidden={showIndicator ? undefined : true}
+                                style={{ color: 'rgb(95,179,249)' }}
                               >
-                                {indicatorCount > 9 ? '9+' : indicatorCount}
-                              </span>
+                                {showIndicator ? (indicatorCount > 9 ? '9+' : indicatorCount) : ''}
+                              </Badge>
                             )}
+                          </span>
 	                        </button>
 	                      );
 	                    })}

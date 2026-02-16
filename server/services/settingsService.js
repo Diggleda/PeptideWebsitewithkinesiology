@@ -5,6 +5,7 @@ const { env } = require('../config/env');
 
 const DEFAULT_SETTINGS = {
   shopEnabled: true,
+  patientLinksEnabled: false,
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
   stripeMode: null, // null = follow env
@@ -35,6 +36,9 @@ const normalizeSettings = (settings = {}) => {
   const raw = settings && typeof settings === 'object' ? settings : {};
   const merged = { ...DEFAULT_SETTINGS };
   merged.shopEnabled = Boolean(raw.shopEnabled ?? DEFAULT_SETTINGS.shopEnabled);
+  merged.patientLinksEnabled = Boolean(
+    raw.patientLinksEnabled ?? DEFAULT_SETTINGS.patientLinksEnabled,
+  );
   merged.peptideForumEnabled = Boolean(
     raw.peptideForumEnabled ?? DEFAULT_SETTINGS.peptideForumEnabled,
   );
@@ -154,6 +158,11 @@ const getPeptideForumEnabled = async () => {
   return Boolean(settings.peptideForumEnabled);
 };
 
+const getPatientLinksEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.patientLinksEnabled);
+};
+
 const getResearchDashboardEnabled = async () => {
   const settings = await getSettings();
   return Boolean(settings.researchDashboardEnabled);
@@ -186,6 +195,22 @@ const setPeptideForumEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.peptideForumEnabled);
+};
+
+const setPatientLinksEnabled = async (enabled) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    patientLinksEnabled: Boolean(enabled),
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.patientLinksEnabled);
+  }
+  persistToStore(next);
+  return Boolean(next.patientLinksEnabled);
 };
 
 const setResearchDashboardEnabled = async (enabled) => {
@@ -327,6 +352,8 @@ module.exports = {
   getSettings,
   getShopEnabled,
   setShopEnabled,
+  getPatientLinksEnabled,
+  setPatientLinksEnabled,
   getPeptideForumEnabled,
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
