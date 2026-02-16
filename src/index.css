@@ -271,19 +271,108 @@ body {
 
 .patient-link-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
   width: 100%;
   min-width: 0;
 }
 
 .patient-link-actions > * {
-  flex: 1 1 140px;
-  min-width: min(140px, 100%);
+  width: 100%;
+  min-width: 0;
+}
+
+.patient-link-settings-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.patient-link-settings-details > summary {
+  list-style: none;
+}
+
+.patient-link-settings-summary {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 1rem;
+  font-weight: 400;
+  color: rgb(30, 41, 59);
+  line-height: 1.3;
+}
+
+.patient-link-settings-summary::before {
+  content: "";
+  display: inline-block;
+  width: 1.2rem;
+  height: 1.2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' aria-hidden='true'%3E%3Cpath d='M8 6l4 4-4 4' stroke='%235fb3f9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 1.2rem 1.2rem;
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  transition: transform 160ms ease;
+}
+
+.patient-link-settings-details[open] .patient-link-settings-summary::before {
+  transform: rotate(90deg);
+}
+
+.patient-link-payment-method-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-left: 0.75rem;
+  padding-right: 2.2rem;
+  background-color: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(95, 179, 249, 0.35);
+  color: rgb(15, 23, 42);
+  line-height: 1.25rem;
+  background-image:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' aria-hidden='true'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%235fb3f9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, right 0.72rem center;
+  background-size: 100% 100%, 1rem 1rem;
+}
+
+.patient-link-payment-method-select:focus,
+.patient-link-payment-method-select:focus-visible {
+  outline: none;
+  border-color: rgba(95, 179, 249, 0.7);
+  box-shadow: 0 0 0 3px rgba(95, 179, 249, 0.2);
+}
+
+.patient-link-payment-method-select option {
+  color: rgb(15, 23, 42);
+  background-color: #ffffff;
+}
+
+.patient-link-payment-toggle-button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.patient-link-payment-toggle-button:not(:disabled):hover {
+  border-color: rgb(203, 213, 225) !important;
+  background-color: rgb(241, 245, 249) !important;
+  color: rgb(51, 65, 85) !important;
 }
 
 @media (min-width: 640px) {
+  .patient-link-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+    align-items: flex-start;
+    column-gap: 1rem;
+  }
+
   .patient-link-form {
     grid-template-columns: minmax(0, 1fr) minmax(0, 20%);
     align-items: end;
@@ -353,19 +442,31 @@ body {
 
   .patient-link-form__button {
     grid-column: 2;
-    grid-row: 1 / span 10;
+    grid-row: 2;
     align-self: end;
     margin-bottom: 0 !important;
   }
 
   .patient-link-actions {
-    width: auto;
+    width: 100%;
+    align-self: flex-start;
     justify-content: flex-end;
   }
 
   .patient-link-actions > * {
-    flex: 0 0 auto;
+    width: 100%;
     min-width: 0;
+  }
+
+  .patient-link-action-buttons {
+    width: max-content;
+    max-width: 100%;
+    align-self: flex-start;
+  }
+
+  .patient-link-actions > :not(.patient-link-action-buttons) {
+    width: min(100%, 460px);
+    align-self: stretch;
   }
 }
 
@@ -5834,13 +5935,27 @@ html {
 .header-account-button {
   position: relative;
   overflow: visible;
-  padding-right: 1.8rem;
+  padding-right: 1.1rem;
   z-index: 1;
   margin-right: 1.5rem;
   border-width: 2px;
   border-color: rgb(95, 179, 249);
   background-color: transparent;
   color: rgb(95, 179, 249);
+  flex: 0 0 auto;
+  width: fit-content;
+  min-width: 0;
+  max-width: min(22rem, 48vw);
+}
+
+.header-account-name {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 1rem;
 }
 
 .header-account-button:hover,
@@ -5927,6 +6042,10 @@ body.account-modal-open .info-focus-overlay {
 }
 
 @media (max-width: 640px) {
+  .header-account-name {
+    display: none;
+  }
+
   .header-account-button {
     padding: 0;
     border-radius: 9999px;
@@ -6388,6 +6507,32 @@ body.account-modal-open .info-focus-overlay {
   box-shadow:
     0 16px 34px -20px rgba(95, 179, 249, 0.38),
     0 10px 22px -16px rgba(7, 27, 27, 0.3) !important;
+}
+
+/* Keep patient-link action buttons on simple color hover without global dialog glow/filter */
+[data-radix-dialog-content] .patient-link-actions button.squircle-sm,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm {
+  box-shadow: 0 2px 8px -6px rgba(15, 23, 42, 0.2) !important;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+[data-radix-dialog-content] .patient-link-actions button.squircle-sm:hover,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:hover {
+  box-shadow: 0 10px 18px -14px rgba(15, 23, 42, 0.35) !important;
+}
+
+[data-radix-dialog-content] .patient-link-actions button.squircle-sm:active,
+[data-slot="dialog-content"] .patient-link-actions button.squircle-sm:active {
+  box-shadow: 0 2px 8px -6px rgba(15, 23, 42, 0.2) !important;
+}
+
+[data-radix-dialog-content] .patient-link-actions .btn-hover-lighter:hover,
+[data-slot="dialog-content"] .patient-link-actions .btn-hover-lighter:hover {
+  filter: none !important;
 }
 
 

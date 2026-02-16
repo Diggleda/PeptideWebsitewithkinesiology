@@ -1658,17 +1658,18 @@ export const delegationAPI = {
     });
   },
 
-  updateLink: async (
-    token: string,
-    payload: {
-      referenceLabel?: string | null;
-      patientId?: string | null;
-      revoke?: boolean | null;
-      markupPercent?: number | null;
-      paymentMethod?: string | null;
-      paymentInstructions?: string | null;
-    },
-  ) => {
+	  updateLink: async (
+	    token: string,
+	    payload: {
+	      referenceLabel?: string | null;
+	      patientId?: string | null;
+	      revoke?: boolean | null;
+	      markupPercent?: number | null;
+	      paymentMethod?: string | null;
+	      paymentInstructions?: string | null;
+	      receivedPayment?: boolean | number | null;
+	    },
+	  ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {
       throw new Error('token is required');

@@ -431,6 +431,7 @@ def create_link(
         ),
         "createdAt": now,
         "markupPercent": float(markup_value or 0.0),
+        "receivedPayment": False,
         "lastUsedAt": None,
         "revokedAt": None,
     }
@@ -454,6 +455,7 @@ def update_link(
     markup_percent: Optional[object] = None,
     payment_method: Optional[str] = None,
     payment_instructions: Optional[str] = None,
+    received_payment: Optional[object] = None,
 ) -> Dict[str, Any]:
     doctor_id = str(doctor_id or "").strip()
     token = _normalize_token(token)
@@ -473,6 +475,7 @@ def update_link(
             markup_percent=markup_value,
             payment_method=payment_method,
             payment_instructions=payment_instructions,
+            received_payment=received_payment,
         )
         if updated is None:
             err = ValueError("Link not found")
@@ -496,6 +499,17 @@ def update_link(
             entry["patientId"] = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
         if markup_percent is not None:
             entry["markupPercent"] = float(_normalize_markup_percent(markup_percent) or 0.0)
+        if received_payment is not None:
+            if isinstance(received_payment, bool):
+                entry["receivedPayment"] = bool(received_payment)
+            elif isinstance(received_payment, (int, float)):
+                entry["receivedPayment"] = int(received_payment) == 1
+            elif isinstance(received_payment, str):
+                normalized = received_payment.strip().lower()
+                if normalized in ("1", "true", "yes", "y", "paid"):
+                    entry["receivedPayment"] = True
+                elif normalized in ("0", "false", "no", "n", "unpaid"):
+                    entry["receivedPayment"] = False
         if revoke is True:
             entry["revokedAt"] = entry.get("revokedAt") or now
         if revoke is False:

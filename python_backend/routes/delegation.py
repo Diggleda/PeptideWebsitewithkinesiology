@@ -123,10 +123,19 @@ def update_link(token: str):
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
-            payload.get("paymentInstructions")
-            if "paymentInstructions" in payload
-            else payload.get("payment_instructions")
-            if "payment_instructions" in payload
+          payload.get("paymentInstructions")
+          if "paymentInstructions" in payload
+          else payload.get("payment_instructions")
+          if "payment_instructions" in payload
+          else None
+        )
+        received_payment = (
+            payload.get("receivedPayment")
+            if "receivedPayment" in payload
+            else payload.get("received_payment")
+            if "received_payment" in payload
+            else payload.get("paymentReceived")
+            if "paymentReceived" in payload
             else None
         )
         updated = delegation_service.update_link(
@@ -138,6 +147,7 @@ def update_link(token: str):
             markup_percent=markup_percent if markup_percent is not None else None,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
+            received_payment=received_payment if received_payment is not None else None,
         )
         return {"success": True, "link": updated}
 

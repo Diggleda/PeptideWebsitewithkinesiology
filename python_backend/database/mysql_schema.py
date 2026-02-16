@@ -229,6 +229,7 @@ CREATE_TABLE_STATEMENTS = [
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
         payment_method VARCHAR(32) NULL,
         payment_instructions LONGTEXT NULL,
+        received_payment TINYINT(1) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
         revoked_at DATETIME NULL,
         delegate_cart_json LONGTEXT NULL,
@@ -399,6 +400,7 @@ def ensure_schema() -> None:
         "ALTER TABLE product_documents MODIFY COLUMN data LONGBLOB NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS payment_instructions LONGTEXT NULL",
+        "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS received_payment TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS patient_id VARCHAR(128) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS reference_label VARCHAR(190) NULL",
         "ALTER TABLE patient_links ADD COLUMN IF NOT EXISTS markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0",
@@ -513,6 +515,10 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id VARCHAR(128) NULL")
         if not _column_exists("patient_links", "reference_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label VARCHAR(190) NULL")
+        if not _column_exists("patient_links", "received_payment"):
+            mysql_client.execute(
+                "ALTER TABLE patient_links ADD COLUMN received_payment TINYINT(1) NOT NULL DEFAULT 0"
+            )
         # Backfill from legacy `label` column, then remove that column.
         if _column_exists("patient_links", "label"):
             mysql_client.execute(

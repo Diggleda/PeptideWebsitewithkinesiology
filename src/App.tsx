@@ -21169,21 +21169,24 @@ function MainApp() {
 			    );
 			  };
 		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
+		  const landingAccountLabel = (typeof user?.name === 'string' && user.name.trim()) ? user.name.trim() : 'Account';
 		  const landingAccountButton = user ? (
 		    <Button
 		      type="button"
 		      variant="default"
 		      size="sm"
 		      onClick={openAccountDetailsTab}
-			      className="squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button"
+				      className="squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start"
 		      aria-label="Open account"
 		    >
-			      <span className="hidden sm:inline text-current">{user.name}</span>
-		      <span className="header-account-avatar-shell">
-		        {user.profileImageUrl ? (
-		          <img
-		            src={user.profileImageUrl}
-	            alt={user.name}
+				      <span className="header-account-name text-current">
+                {landingAccountLabel}
+              </span>
+			      <span className="header-account-avatar-shell">
+			        {user.profileImageUrl ? (
+			          <img
+			            src={user.profileImageUrl}
+		            alt={user.name}
 	            className="header-account-avatar header-avatar-image"
 	            style={{ width: landingAvatarSize, height: landingAvatarSize }}
 	          />

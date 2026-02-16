@@ -124,6 +124,7 @@ def create_link(
                 "markupPercent": float(markup_percent or 0.0),
                 "paymentMethod": payment_method_value,
                 "paymentInstructions": payment_instructions_value,
+                "receivedPayment": False,
                 "lastUsedAt": None,
                 "revokedAt": None,
             }
@@ -146,6 +147,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         """
         SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
                payment_method, payment_instructions,
+               received_payment,
                last_used_at, revoked_at,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
@@ -169,6 +171,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                 "markupPercent": float(row.get("markup_percent") or 0.0),
                 "paymentMethod": row.get("payment_method") or None,
                 "paymentInstructions": row.get("payment_instructions") or None,
+                "receivedPayment": bool(int(row.get("received_payment") or 0)),
                 "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
                 "revokedAt": _fmt_datetime(row.get("revoked_at")),
                 "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
@@ -193,6 +196,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         SELECT token, doctor_id, patient_id, reference_label, created_at, expires_at, last_used_at, revoked_at,
                markup_percent,
                payment_method, payment_instructions,
+               received_payment,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
@@ -236,6 +240,7 @@ def find_by_token(token: str) -> Optional[Dict[str, Any]]:
         "markupPercent": float(row.get("markup_percent") or 0.0),
         "paymentMethod": row.get("payment_method") or None,
         "paymentInstructions": row.get("payment_instructions") or None,
+        "receivedPayment": bool(int(row.get("received_payment") or 0)),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
         "delegateCart": _parse_json(row.get("delegate_cart_json")),
@@ -274,6 +279,7 @@ def update_link(
     markup_percent: Optional[float] = None,
     payment_method: Optional[str] = None,
     payment_instructions: Optional[str] = None,
+    received_payment: Optional[object] = None,
 ) -> Optional[Dict[str, Any]]:
     if not _using_mysql():
         return None
@@ -326,6 +332,22 @@ def update_link(
         updates.append("payment_instructions = %(payment_instructions)s")
         params["payment_instructions"] = payment_instructions_value
 
+    if received_payment is not None:
+        value: Optional[int] = None
+        if isinstance(received_payment, bool):
+            value = 1 if received_payment else 0
+        elif isinstance(received_payment, (int, float)):
+            value = 1 if int(received_payment) == 1 else 0
+        elif isinstance(received_payment, str):
+            normalized = received_payment.strip().lower()
+            if normalized in ("1", "true", "yes", "y", "paid"):
+                value = 1
+            elif normalized in ("0", "false", "no", "n", "unpaid"):
+                value = 0
+        if value is not None:
+            updates.append("received_payment = %(received_payment)s")
+            params["received_payment"] = value
+
     if updates:
         delete_expired()
         mysql_client.execute(
@@ -343,6 +365,7 @@ def update_link(
         """
         SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
                payment_method, payment_instructions,
+               received_payment,
                last_used_at, revoked_at
         FROM patient_links
         WHERE token = %(token)s
@@ -363,6 +386,7 @@ def update_link(
         "markupPercent": float(row.get("markup_percent") or 0.0),
         "paymentMethod": row.get("payment_method") or None,
         "paymentInstructions": row.get("payment_instructions") or None,
+        "receivedPayment": bool(int(row.get("received_payment") or 0)),
         "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
         "revokedAt": _fmt_datetime(row.get("revoked_at")),
     }

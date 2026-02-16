@@ -7,9 +7,9 @@
     "referralCode": "49110E",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 765,
+    "visits": 768,
     "createdAt": "2025-11-24T15:21:45.364Z",
-    "lastLoginAt": "2026-02-13T02:10:18.815Z",
+    "lastLoginAt": "2026-02-16T21:17:17.291Z",
     "role": "admin",
     "salesRepId": "rep1",
     "passkeys": [],
@@ -27,10 +27,11 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "2026-02-13T02:12:36.384Z",
-    "lastInteractionAt": "2026-02-13T02:12:24.439Z",
+    "lastSeenAt": "2026-02-16T21:19:15.920Z",
+    "lastInteractionAt": "2026-02-16T21:19:15.920Z",
     "isOnline": true,
-    "isIdle": true
+    "isIdle": false,
+    "devCommission": false
   },
   {
     "id": "1763997887996",
@@ -40,9 +41,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 245,
+    "visits": 251,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-02-11T15:02:04.339Z",
+    "lastLoginAt": "2026-02-16T22:28:17.315Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -66,10 +67,11 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "2026-02-11T16:49:32.598Z",
-    "lastInteractionAt": "2026-02-11T16:49:21.767Z",
+    "lastSeenAt": "2026-02-16T22:34:25.341Z",
+    "lastInteractionAt": "2026-02-16T22:34:14.346Z",
     "isOnline": true,
-    "isIdle": true
+    "isIdle": true,
+    "devCommission": false
   },
   {
     "id": "1764556043938",
@@ -101,7 +103,8 @@
     "lastSeenAt": null,
     "lastInteractionAt": null,
     "isOnline": false,
-    "isIdle": null
+    "isIdle": null,
+    "devCommission": false
   },
   {
     "id": "1765228144842",
@@ -139,6 +142,7 @@
     "lastSeenAt": null,
     "lastInteractionAt": null,
     "isOnline": false,
-    "isIdle": null
+    "isIdle": null,
+    "devCommission": false
   }
 ]
