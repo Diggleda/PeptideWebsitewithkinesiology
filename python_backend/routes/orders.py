@@ -526,6 +526,7 @@ def delegate_share_order():
             shipping={
                 "shippingAddress": shipping_address or {},
                 "shippingEstimate": shipping_estimate or {},
+                "shippingRate": shipping_estimate or {},
                 "shippingTotal": shipping_total_value,
                 "taxTotal": tax_total_value,
                 "expectedShipmentWindow": expected_shipment_window,

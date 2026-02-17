@@ -161,20 +161,23 @@ const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
   );
 };
 
-const ClipboardDocumentIcon = ({ className }: { className?: string }) => (
+const ClipboardDocumentListIcon = ({ className }: { className?: string }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    fill="none"
+    fill="currentColor"
     viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
     className={className}
     aria-hidden="true"
   >
     <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0015 2.25h-1.5a2.251 2.251 0 00-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 00-9-9z"
+      fillRule="evenodd"
+      d="M7.502 6h7.128A3.375 3.375 0 0 1 18 9.375v9.375a3 3 0 0 0 3-3V6.108c0-1.505-1.125-2.811-2.664-2.94a48.972 48.972 0 0 0-.673-.05A3 3 0 0 0 15 1.5h-1.5a3 3 0 0 0-2.663 1.618c-.225.015-.45.032-.673.05C8.662 3.295 7.554 4.542 7.502 6ZM13.5 3A1.5 1.5 0 0 0 12 4.5h4.5A1.5 1.5 0 0 0 15 3h-1.5Z"
+      clipRule="evenodd"
+    />
+    <path
+      fillRule="evenodd"
+      d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 0 1 3 20.625V9.375ZM6 12a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V12Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 15a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V15Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 18a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V18Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75Z"
+      clipRule="evenodd"
     />
   </svg>
 );
@@ -3778,7 +3781,11 @@ export function Header({
           const shippingRate =
             shipping?.shippingEstimate ??
             shipping?.shipping_estimate ??
+            shipping?.shippingRate ??
+            shipping?.shipping_rate ??
             shipping?.rate ??
+            shipping?.selectedRate ??
+            shipping?.selected_rate ??
             cart?.shippingEstimate ??
             cart?.shipping_estimate ??
             cart?.shippingRate ??
@@ -5757,7 +5764,7 @@ export function Header({
 		                        disabled={!token || isProposalBusy}
 		                        className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
 		                      >
-		                        <ClipboardDocumentIcon className="h-4 w-4" />
+		                        <ClipboardDocumentListIcon className="h-4 w-4" />
 		                        {isProposalBusy ? 'Loading…' : 'Review Proposal'}
 		                      </Button>
 		                      )}

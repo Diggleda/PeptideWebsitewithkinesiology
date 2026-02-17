@@ -45,6 +45,43 @@ def find_by_id(order_id: str) -> Optional[Dict]:
     return next((order for order in _load() if order.get("id") == order_id), None)
 
 
+def find_by_order_identifier(identifier: str) -> Optional[Dict]:
+    normalized = str(identifier or "").strip()
+    if not normalized:
+        return None
+
+    if _using_mysql():
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT * FROM orders
+                WHERE id = %(value)s OR woo_order_id = %(value)s OR woo_order_number = %(value)s
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                {"value": normalized},
+            )
+            if row:
+                return _row_to_order(row)
+        except Exception:
+            row = mysql_client.fetch_one(
+                "SELECT * FROM orders WHERE id = %(value)s ORDER BY updated_at DESC LIMIT 1",
+                {"value": normalized},
+            )
+            if row:
+                return _row_to_order(row)
+        return None
+
+    for order in _load():
+        if str(order.get("id") or "").strip() == normalized:
+            return order
+        if str(order.get("wooOrderId") or order.get("woo_order_id") or "").strip() == normalized:
+            return order
+        if str(order.get("wooOrderNumber") or order.get("woo_order_number") or "").strip() == normalized:
+            return order
+    return None
+
+
 def find_by_user_id(user_id: str) -> List[Dict]:
     if _using_mysql():
         rows = mysql_client.fetch_all("SELECT * FROM orders WHERE user_id = %(user_id)s", {"user_id": user_id})

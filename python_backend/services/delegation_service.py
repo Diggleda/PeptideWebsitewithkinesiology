@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..database import mysql_client
+from ..repositories import order_repository
 from ..repositories import patient_links_repository
 from ..repositories import user_repository
 from ..services import get_config
@@ -771,6 +772,35 @@ def review_link_proposal(
         if isinstance(updated.get("delegateReviewStatus"), str)
         else None
     )
+    resolved_order_id = (
+        str(order_id or "").strip()
+        or str(updated.get("delegateReviewOrderId") or "").strip()
+    )
+    if resolved_order_id:
+        as_delegate_label = (
+            str(updated.get("referenceLabel") or "").strip()
+            or str(updated.get("reference_label") or "").strip()
+            or str(updated.get("label") or "").strip()
+            or "Delegate Order"
+        )
+        try:
+            linked_order = order_repository.find_by_order_identifier(resolved_order_id)
+            if isinstance(linked_order, dict):
+                existing_label = str(
+                    linked_order.get("asDelegate")
+                    or linked_order.get("as_delegate")
+                    or ""
+                ).strip()
+                if not existing_label and as_delegate_label:
+                    linked_order["asDelegate"] = as_delegate_label[:190]
+                    order_repository.update(linked_order)
+        except Exception:
+            logger.debug(
+                "[Delegation] Unable to backfill as_delegate label for order_id=%s token=%s",
+                resolved_order_id,
+                token,
+                exc_info=True,
+            )
     return {
         "token": token,
         "proposalStatus": review_status or status,

@@ -15065,10 +15065,35 @@ function MainApp() {
             const parsed = Number(value);
             return Number.isFinite(parsed) ? Math.floor(parsed) : null;
           };
-          const carrierId = normalizeField((candidate as any).carrierId ?? (candidate as any).carrier_id) || null;
-          const serviceCode = normalizeField((candidate as any).serviceCode ?? (candidate as any).service_code) || null;
-          const serviceType = normalizeField((candidate as any).serviceType ?? (candidate as any).service_type) || null;
-          const rate = toNumberOrNull((candidate as any).rate);
+          const carrierId =
+            normalizeField(
+              (candidate as any).carrierId
+              ?? (candidate as any).carrier_id
+              ?? (candidate as any).carrierCode
+              ?? (candidate as any).carrier_code
+              ?? (candidate as any).carrier,
+            ) || null;
+          const serviceCode =
+            normalizeField(
+              (candidate as any).serviceCode
+              ?? (candidate as any).service_code
+              ?? (candidate as any).service,
+            ) || null;
+          const serviceType =
+            normalizeField(
+              (candidate as any).serviceType
+              ?? (candidate as any).service_type
+              ?? (candidate as any).serviceName
+              ?? (candidate as any).service_name,
+            ) || null;
+          const rate = toNumberOrNull(
+            (candidate as any).rate
+            ?? (candidate as any).amount
+            ?? (candidate as any).cost
+            ?? (candidate as any).price
+            ?? (candidate as any).shippingTotal
+            ?? (candidate as any).shipping_total,
+          );
           if (!carrierId && !serviceCode && !serviceType && rate == null) return null;
           return {
             carrierId,
@@ -15430,7 +15455,11 @@ function MainApp() {
 			      if (delegationProposalReview) {
 			        try {
 			          const meta = postCheckoutOrderRef.current;
-			          const orderId = meta?.wooOrderId || meta?.wooOrderNumber || null;
+			          const orderId =
+			            meta?.wooOrderId
+			            || meta?.wooOrderNumber
+			            || meta?.pepproOrderId
+			            || null;
 			          await delegationAPI.reviewLinkProposal(delegationProposalReview.token, {
 			            status: delegationProposalReview.status,
 			            orderId,
