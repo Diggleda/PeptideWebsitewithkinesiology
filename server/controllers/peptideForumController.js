@@ -5,7 +5,7 @@ const list = (_req, res) => {
   res.json({ ok: true, ...payload });
 };
 
-const ingestWebhook = (req, res) => {
+const ingestWebhook = async (req, res, next) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const incoming = Array.isArray(body?.items) ? body.items : (Array.isArray(body?.posts) ? body.posts : null);
   if (!incoming) {
@@ -13,8 +13,12 @@ const ingestWebhook = (req, res) => {
     return;
   }
 
-  const result = peptideForumService.replaceFromWebhook(incoming);
-  res.json({ ok: true, ...result });
+  try {
+    const result = await peptideForumService.replaceFromWebhook(incoming);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = {

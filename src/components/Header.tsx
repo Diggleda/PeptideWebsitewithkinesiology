@@ -6759,9 +6759,9 @@ export function Header({
 			    >
       <div className="w-full px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
-          <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 justify-between">
+          <div className="flex w-full flex-nowrap items-end gap-3 sm:gap-4 justify-between">
 	            {/* Logo (same header layout for doctor + delegate) */}
-	            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+	            <div className="flex items-end gap-3 min-w-0 flex-shrink-0 self-end">
 	              <div className="flex items-center gap-3">
 		                <div
 		                  className="brand-logo relative flex items-center justify-center flex-shrink-0"
@@ -6790,6 +6790,19 @@ export function Header({
 	                  />
 	                </div>
 	              </div>
+                {!delegateMode && user && onShowInfo && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={onShowInfo}
+                    className="shop-home-button squircle-sm"
+                    aria-label="Home"
+                    title="Home"
+                  >
+                    <Home className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                )}
 	            </div>
 
             {/* Search Bar - Desktop (centered) */}

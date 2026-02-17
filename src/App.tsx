@@ -7244,6 +7244,14 @@ function MainApp() {
     ].includes(normalized);
   };
 
+  const isOrderOnHoldStatus = (status?: string | null) => {
+    const normalized = String(status || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[\s_]+/g, "-");
+    return normalized === "on-hold" || normalized === "onhold";
+  };
+
   const filterOrdersForCommissionRange = (
     orders: AccountOrderSummary[] | any[],
     range?: DateRange,
@@ -16737,24 +16745,9 @@ function MainApp() {
 	    const productSkeletons = Array.from({ length: 6 });
 
     return (
-      <div>
-        {user && !isDelegateMode && (
-          <div className="mb-4 mt-24 flex justify-start">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPostLoginHold(true)}
-              className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
-            >
-              <ArrowLeft className="h-4 w-4 text-[rgb(95,179,249)]" aria-hidden="true" />
-              Home
-            </Button>
-          </div>
-        )}
-        <div
-          className={`products-layout${showFilters ? "" : " products-layout--single"}`}
-        >
+      <div
+        className={`products-layout${showFilters ? "" : " products-layout--single"}`}
+      >
         {/* Filters Sidebar */}
         {showFilters && (
           <div
@@ -16880,7 +16873,6 @@ function MainApp() {
 	          )}
 	        </div>
 	      </div>
-      </div>
     );
   };
 
@@ -16918,6 +16910,17 @@ function MainApp() {
 	      salesRepSalesSummaryLoading ||
 	      adminTaxesByStateLoading ||
 	      adminProductsCommissionLoading;
+	    const adminOnHoldOrders = isAdmin(user?.role)
+	      ? filterOrdersForCommissionRange(salesTrackingOrders).filter((order) => {
+	          const statusSource =
+	            resolveSalesOrderStatusSource(order as AccountOrderSummary) || order?.status || null;
+	          return isOrderOnHoldStatus(statusSource);
+	        })
+	      : [];
+	    const adminOnHoldOrderTotal = adminOnHoldOrders.reduce((sum, order) => {
+	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
+	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
+	    }, 0);
 	
 		    return (
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
@@ -18659,6 +18662,112 @@ function MainApp() {
 						              </div>
 				
 					              <div className="mt-8 space-y-6">
+				                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+				                  <div className="flex flex-col gap-3 mb-4">
+				                    <div className="sales-rep-header-row flex w-full flex-col gap-3">
+				                      <div className="min-w-0">
+				                        <h3 className="text-lg font-semibold text-slate-900">
+				                          Order On-Hold
+				                        </h3>
+				                        <p className="text-sm text-slate-600">
+				                          Orders currently in on-hold status for the selected period.
+				                        </p>
+				                      </div>
+				                    </div>
+				                  </div>
+				                  <div
+				                    className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+				                    role="region"
+				                    aria-label="Order on-hold list"
+				                  >
+				                    {salesTrackingLoading && salesTrackingOrders.length === 0 ? (
+				                      <div className="px-4 py-3 text-sm text-slate-500">
+				                        Loading orders…
+				                      </div>
+				                    ) : salesTrackingError && adminOnHoldOrders.length === 0 ? (
+				                      <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+				                        {salesTrackingError}
+				                      </div>
+				                    ) : adminOnHoldOrders.length === 0 ? (
+				                      <div className="px-4 py-3 text-sm text-slate-500">
+				                        No on-hold orders for this period.
+				                      </div>
+				                    ) : (
+				                      <div className="w-full" style={{ minWidth: 920 }}>
+				                        <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+				                          <span>Orders: {adminOnHoldOrders.length}</span>
+				                          <span>Total: {formatCurrency(adminOnHoldOrderTotal)}</span>
+				                        </div>
+				                        <div className="w-max">
+				                          <div
+				                            className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+				                            style={{
+				                              gridTemplateColumns:
+				                                "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+				                            }}
+				                          >
+				                            <div className="whitespace-nowrap">Order</div>
+				                            <div className="whitespace-nowrap">Doctor</div>
+				                            <div className="whitespace-nowrap text-right">Placed</div>
+				                            <div className="whitespace-nowrap text-right">Total</div>
+				                          </div>
+				                          <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+				                            {adminOnHoldOrders.map((order, index) => {
+				                              const orderNumber = order.number || order.id || "Order";
+				                              const doctorLabel =
+				                                order.doctorName || order.doctorEmail || "Unknown doctor";
+				                              const orderPlacedAt =
+				                                order.createdAt ||
+				                                (order as any)?.dateCreated ||
+				                                (order as any)?.date_created ||
+				                                null;
+				                              const total = Number(
+				                                (order as any)?.grandTotal ?? order.total ?? 0,
+				                              );
+				                              const key =
+				                                String(order.id || "").trim() ||
+				                                String(order.number || "").trim() ||
+				                                `on-hold-${index}`;
+				                              return (
+				                                <li
+				                                  key={key}
+				                                  className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+				                                  style={{
+				                                    gridTemplateColumns:
+				                                      "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+				                                  }}
+				                                >
+				                                  <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
+				                                    <button
+				                                      type="button"
+				                                      className="min-w-0 text-left hover:underline"
+				                                      onClick={() => openSalesOrderDetails(order)}
+				                                      title="Open order details"
+				                                    >
+				                                      {`Order #${orderNumber}`}
+				                                    </button>
+				                                  </div>
+				                                  <div className="text-sm text-slate-700 min-w-0 truncate">
+				                                    {doctorLabel}
+				                                  </div>
+				                                  <div className="text-sm text-right text-slate-800 whitespace-nowrap">
+				                                    {orderPlacedAt
+				                                      ? formatDateTime(orderPlacedAt)
+				                                      : "Date unavailable"}
+				                                  </div>
+				                                  <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+				                                    {formatCurrency(total)}
+				                                  </div>
+				                                </li>
+				                              );
+				                            })}
+				                          </ul>
+				                        </div>
+				                      </div>
+				                    )}
+				                  </div>
+				                </div>
+
 				                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 				                  <div className="flex flex-col gap-3 mb-4">
 	                <div className="sales-rep-header-row flex w-full flex-col gap-3">

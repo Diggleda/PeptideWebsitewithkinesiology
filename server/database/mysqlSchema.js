@@ -95,6 +95,22 @@ const STATEMENTS = [
       UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id)
     ) CHARACTER SET utf8mb4
   `,
+  `
+    CREATE TABLE IF NOT EXISTS peptide_forum_items (
+      id VARCHAR(64) PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      event_date DATETIME NULL,
+      event_date_raw VARCHAR(96) NULL,
+      event_time_raw VARCHAR(48) NULL,
+      description LONGTEXT NULL,
+      link LONGTEXT NULL,
+      recording LONGTEXT NULL,
+      sync_token VARCHAR(32) NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_peptide_forum_event_date (event_date),
+      INDEX idx_peptide_forum_sync_token (sync_token)
+    ) CHARACTER SET utf8mb4
+  `,
 ];
 
 const ensureUserColumns = async () => {
