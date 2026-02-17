@@ -52,7 +52,8 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized.setdefault("phone", normalized.get("phone") or None)
     normalized.setdefault("territory", normalized.get("territory") or None)
     normalized["salesCode"] = _normalize_sales_code(normalized.get("salesCode") or normalized.get("sales_code"))
-    normalized["password"] = (normalized.get("password") or "").strip() or None
+    # Passwords are stored only in `users`; never persist them in `sales_reps`.
+    normalized["password"] = None
     normalized.setdefault("role", normalized.get("role") or "sales_rep")
     normalized["mustResetPassword"] = bool(normalized.get("mustResetPassword", False))
     normalized["referralCredits"] = float(normalized.get("referralCredits") or 0)

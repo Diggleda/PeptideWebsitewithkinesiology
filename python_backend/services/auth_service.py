@@ -401,13 +401,13 @@ def _register_sales_rep_account(
     if expected_code and expected_code != code:
         raise _conflict("SALES_REP_EMAIL_MISMATCH")
 
-    if sales_rep.get("password"):
-        raise _conflict("EMAIL_EXISTS")
-
     hashed_password = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     user_record = user_repository.find_by_email(email)
+    if user_record and user_record.get("password"):
+        raise _conflict("EMAIL_EXISTS")
+
     if user_record:
         new_session_id = _new_session_id()
         updated_user = user_repository.update(
@@ -458,7 +458,6 @@ def _register_sales_rep_account(
         "name": name,
         "email": email,
         "phone": phone or sales_rep.get("phone"),
-        "password": hashed_password,
         "role": "sales_rep",
         "legacyUserId": user_record.get("id") or sales_rep.get("legacyUserId"),
         "lastLoginAt": now,
@@ -551,81 +550,7 @@ def login(data: Dict) -> Dict:
     if not sales_rep:
         raise _not_found("EMAIL_NOT_FOUND")
 
-    hashed_password = (sales_rep.get("password") or "").strip()
-    if not hashed_password:
-        raise _conflict("SALES_REP_ACCOUNT_REQUIRED")
-
-    if not _safe_check_password(password, hashed_password):
-        raise _unauthorized("INVALID_PASSWORD")
-
-    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    new_session_id = _new_session_id()
-    linked_user = user_repository.find_by_email(email)
-    if linked_user:
-        updated_user = user_repository.update(
-            {
-                **linked_user,
-                "role": "sales_rep",
-                "status": linked_user.get("status") or "active",
-                "salesRepId": sales_rep.get("id") or linked_user.get("salesRepId"),
-                "visits": int(linked_user.get("visits") or 0) + 1,
-                "lastLoginAt": now_iso,
-                "lastSeenAt": now_iso,
-                "lastInteractionAt": now_iso,
-                "isOnline": True,
-                "mustResetPassword": False,
-                "sessionId": new_session_id,
-            }
-        ) or linked_user
-    else:
-        updated_user = user_repository.insert(
-            {
-                "name": sales_rep.get("name"),
-                "email": email,
-                "phone": sales_rep.get("phone"),
-                "password": hashed_password,
-                "role": "sales_rep",
-                "status": "active",
-                "salesRepId": sales_rep.get("id"),
-                "referralCredits": sales_rep.get("referralCredits") or 0,
-                "totalReferrals": sales_rep.get("totalReferrals") or 0,
-                "visits": 1,
-                "createdAt": now_iso,
-                "lastLoginAt": now_iso,
-                "lastSeenAt": now_iso,
-                "lastInteractionAt": now_iso,
-                "isOnline": True,
-                "mustResetPassword": False,
-                "sessionId": new_session_id,
-            }
-        )
-
-    updated_rep = sales_rep_repository.update(
-        {
-            **sales_rep,
-            "legacyUserId": updated_user.get("id") or sales_rep.get("legacyUserId"),
-            "visits": int(sales_rep.get("visits") or 0) + 1,
-            "lastLoginAt": now_iso,
-            "mustResetPassword": False,
-            "updatedAt": now_iso,
-        }
-    ) or sales_rep
-
-    token = _create_auth_token(
-        {"id": updated_user["id"], "email": updated_user.get("email"), "role": "sales_rep", "sid": updated_user.get("sessionId")}
-    )
-    _audit(
-        "LOGIN_SALES_REP_SUCCESS",
-        {
-            "salesRepId": updated_rep.get("id"),
-            "userId": updated_user.get("id"),
-            "role": "sales_rep",
-            "email": updated_user.get("email"),
-            "sessionId": updated_user.get("sessionId"),
-            "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        },
-    )
-    return {"token": token, "user": _sanitize_user(updated_user)}
+    raise _conflict("SALES_REP_ACCOUNT_REQUIRED")
 
 
 def logout(user_id: str, role: Optional[str] = None) -> Dict:
@@ -1354,9 +1279,7 @@ def reset_password(data: Dict) -> Dict:
             if not rep:
                 raise _not_found("USER_NOT_FOUND")
             new_session_id = _new_session_id()
-            sales_rep_repository.update(
-                {**rep, "password": hashed_password, "mustResetPassword": False}
-            )
+            sales_rep_repository.update({**rep, "mustResetPassword": False})
             legacy_id = rep.get("legacyUserId")
             linked_user = None
             if legacy_id:
