@@ -1789,28 +1789,32 @@ const getOrdersForUser = async (userId) => {
           const sqlOrderByWoo = !localOrder && !sqlOrder && order?.id
             ? await orderSqlRepository.fetchByWooOrderId(order.id)
             : null;
+          const sqlOrderByWooNumber = !localOrder && !sqlOrder && !sqlOrderByWoo && order?.number
+            ? await orderSqlRepository.fetchByWooOrderNumber(order.number)
+            : null;
           const hydratedLocalOrder = localOrder || sqlOrder;
           const hydrated = hydratedLocalOrder || sqlOrderByWoo;
-          if (!hydrated) {
+          const hydratedAny = hydrated || sqlOrderByWooNumber;
+          if (!hydratedAny) {
             enriched.push(order);
             // eslint-disable-next-line no-continue
             continue;
           }
-          const stripeMeta = hydrated.integrationDetails?.stripe || null;
+          const stripeMeta = hydratedAny.integrationDetails?.stripe || null;
           const asDelegate =
-            (typeof hydrated.asDelegate === 'string' && hydrated.asDelegate.trim())
-              ? hydrated.asDelegate.trim()
-              : (typeof hydrated.as_delegate === 'string' && hydrated.as_delegate.trim())
-                ? hydrated.as_delegate.trim()
+            (typeof hydratedAny.asDelegate === 'string' && hydratedAny.asDelegate.trim())
+              ? hydratedAny.asDelegate.trim()
+              : (typeof hydratedAny.as_delegate === 'string' && hydratedAny.as_delegate.trim())
+                ? hydratedAny.as_delegate.trim()
                 : null;
           enriched.push({
             ...order,
             asDelegate,
             as_delegate: asDelegate,
-            paymentMethod: hydrated.paymentMethod || order.paymentMethod,
+            paymentMethod: hydratedAny.paymentMethod || order.paymentMethod,
             paymentDetails:
-              hydrated.paymentDetails
-              || hydrated.paymentMethod
+              hydratedAny.paymentDetails
+              || hydratedAny.paymentMethod
               || order.paymentDetails
               || order.paymentMethod
               || null,

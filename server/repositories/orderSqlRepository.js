@@ -409,6 +409,69 @@ const fetchByWooOrderId = async (wooOrderId) => {
   return dedupeOrders(candidates)[0] || null;
 };
 
+const fetchByWooOrderNumber = async (wooOrderNumber) => {
+  if (!mysqlClient.isEnabled() || !wooOrderNumber) {
+    return null;
+  }
+  const value = String(wooOrderNumber).trim();
+  if (!value) return null;
+
+  const safeFetchOneCompat = async (query, params) => {
+    try {
+      return await mysqlClient.fetchOne(query, params);
+    } catch (error) {
+      const code = error && typeof error === 'object' ? error.code : null;
+      if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  const jsonMatchPepPro = `
+    SELECT *
+    FROM peppro_orders
+    WHERE JSON_VALID(payload)
+      AND (
+        JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.woo_order_number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.response.number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.response.number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.wooOrderNumber')) = :value
+      )
+    LIMIT 1
+  `;
+
+  const jsonMatchLegacy = `
+    SELECT *
+    FROM orders
+    WHERE JSON_VALID(payload)
+      AND (
+        JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.order.woo_order_number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.response.number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.wooCommerce.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.response.number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.integrations.woocommerce.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.wooOrderNumber')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.woo_order_number')) = :value
+        OR JSON_UNQUOTE(JSON_EXTRACT(CAST(payload AS JSON), '$.number')) = :value
+      )
+    LIMIT 1
+  `;
+
+  const [pepproRow, legacyRow] = await Promise.all([
+    safeFetchOneCompat(jsonMatchPepPro, { value }),
+    safeFetchOneCompat(jsonMatchLegacy, { value }),
+  ]);
+
+  const candidates = [];
+  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
+  if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
+  return dedupeOrders(candidates)[0] || null;
+};
+
 const fetchByUserIds = async (userIds = []) => {
   if (!mysqlClient.isEnabled()) return [];
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
@@ -532,5 +595,6 @@ module.exports = {
   fetchByBillingEmails,
   fetchById,
   fetchByWooOrderId,
+  fetchByWooOrderNumber,
   fetchByShipStationOrderId,
 };
