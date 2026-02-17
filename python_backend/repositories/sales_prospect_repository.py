@@ -9,6 +9,7 @@ from ..database import mysql_client
 from .. import storage
 
 HOUSE_SALES_REP_ID = "house"
+DELETED_USER_ID = "0000000000000"
 
 _supports_office_address_columns: Optional[bool] = None
 
@@ -601,16 +602,21 @@ def sync_contact_for_doctor(
                 mysql_client.execute(
                     """
                     UPDATE sales_prospects
-                    SET doctor_id = %(doctor_id)s,
+                    SET id = CASE
+                            WHEN id LIKE 'doctor:%%' THEN CONCAT('doctor:', %(doctor_id)s)
+                            ELSE id
+                        END,
+                        doctor_id = %(doctor_id)s,
                         contact_name = %(contact_name)s,
                         contact_email = %(contact_email)s,
                         contact_phone = %(contact_phone)s,
                         updated_at = UTC_TIMESTAMP()
-                    WHERE (doctor_id IS NULL OR doctor_id = '')
+                    WHERE (doctor_id IS NULL OR doctor_id = '' OR doctor_id = %(deleted_doctor_id)s)
                       AND LOWER(TRIM(contact_email)) = %(email)s
                     """,
                     {
                         "doctor_id": normalized_doctor_id,
+                        "deleted_doctor_id": DELETED_USER_ID,
                         "email": candidate_email,
                         "contact_name": next_name,
                         "contact_email": next_email or candidate_email,
@@ -630,11 +636,18 @@ def sync_contact_for_doctor(
 
         match_doctor = bool(record_doctor_id and record_doctor_id == normalized_doctor_id)
         match_email_unclaimed = bool((not record_doctor_id) and record_email and record_email in email_candidates)
-        if not match_doctor and not match_email_unclaimed:
+        match_email_deleted = bool(
+            record_doctor_id == DELETED_USER_ID
+            and record_email
+            and record_email in email_candidates
+        )
+        if not match_doctor and not match_email_unclaimed and not match_email_deleted:
             next_records.append(record)
             continue
 
         merged = dict(record)
+        if str(merged.get("id") or "").startswith("doctor:") and (match_email_unclaimed or match_email_deleted):
+            merged["id"] = f"doctor:{normalized_doctor_id}"
         merged["doctorId"] = normalized_doctor_id
         merged["contactName"] = next_name or merged.get("contactName") or None
         merged["contactEmail"] = (next_email or merged.get("contactEmail") or record_email or None)

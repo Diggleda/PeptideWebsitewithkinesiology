@@ -177,20 +177,30 @@ def _ensure_converted_sales_prospect_for_doctor(user: Dict) -> None:
         preserve_status = existing_status in ("nuture", "nurturing")
 
         is_doctor_prospect = False
+        should_rekey_deleted_doctor_prospect = False
         if existing:
             existing_id = str(existing.get("id") or "")
+            existing_doctor_id = str(existing.get("doctorId") or "").strip()
             is_doctor_prospect = (
                 existing_id.startswith("doctor:")
                 and bool(existing.get("doctorId"))
                 and not existing.get("referralId")
                 and not existing.get("contactFormId")
             )
+            should_rekey_deleted_doctor_prospect = (
+                existing_id == "doctor:0000000000000"
+                or existing_doctor_id == "0000000000000"
+            )
 
         is_manual = True if (not existing or is_doctor_prospect) else bool(existing.get("isManual"))
 
         payload = {
             **(existing or {}),
-            "id": str(existing.get("id")) if existing and existing.get("id") else f"doctor:{doctor_id}",
+            "id": (
+                f"doctor:{doctor_id}"
+                if should_rekey_deleted_doctor_prospect
+                else (str(existing.get("id")) if existing and existing.get("id") else f"doctor:{doctor_id}")
+            ),
             "salesRepId": sales_rep_id,
             "doctorId": doctor_id,
             "status": (existing.get("status") if existing else None) if preserve_status else "converted",
