@@ -460,9 +460,6 @@ def _register_sales_rep_account(
         "phone": phone or sales_rep.get("phone"),
         "role": "sales_rep",
         "legacyUserId": user_record.get("id") or sales_rep.get("legacyUserId"),
-        "lastLoginAt": now,
-        "visits": int(sales_rep.get("visits") or 0) + 1,
-        "mustResetPassword": False,
         "status": "active",
         "updatedAt": now,
     }
@@ -1279,7 +1276,6 @@ def reset_password(data: Dict) -> Dict:
             if not rep:
                 raise _not_found("USER_NOT_FOUND")
             new_session_id = _new_session_id()
-            sales_rep_repository.update({**rep, "mustResetPassword": False})
             legacy_id = rep.get("legacyUserId")
             linked_user = None
             if legacy_id:

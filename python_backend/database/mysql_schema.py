@@ -52,15 +52,10 @@ CREATE_TABLE_STATEMENTS = [
         territory VARCHAR(120) NULL,
         initials VARCHAR(10) NULL,
         sales_code VARCHAR(8) NULL UNIQUE,
-        password VARCHAR(255) NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'sales_rep',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
-        session_id VARCHAR(64) NULL,
         referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_referrals INT NOT NULL DEFAULT 0,
-        visits INT NOT NULL DEFAULT 0,
-        last_login_at DATETIME NULL,
-        must_reset_password TINYINT(1) NOT NULL DEFAULT 0,
         first_order_bonus_granted_at DATETIME NULL,
         total_revenue_to_date DECIMAL(12,2) NOT NULL DEFAULT 0,
         total_revenue_updated_at DATETIME NULL,
@@ -324,15 +319,10 @@ def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_interaction_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS visits INT NOT NULL DEFAULT 0",
-        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS session_id VARCHAR(64) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS legacy_user_id VARCHAR(32) NULL",
-        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS password VARCHAR(255) NULL",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'sales_rep'",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS referral_credits DECIMAL(12,2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS total_referrals INT NOT NULL DEFAULT 0",
-        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS visits INT NOT NULL DEFAULT 0",
-        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS last_login_at DATETIME NULL",
-        "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS must_reset_password TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_reps ADD COLUMN IF NOT EXISTS first_order_bonus_granted_at DATETIME NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_mode VARCHAR(16) NOT NULL DEFAULT 'wholesale'",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS items_subtotal DECIMAL(12,2) NULL",
@@ -457,12 +447,6 @@ def ensure_schema() -> None:
     except Exception:
         pass
 
-    try:
-        if not _column_exists("sales_reps", "session_id"):
-            mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN session_id VARCHAR(64) NULL")
-    except Exception:
-        pass
-
     # Ensure order notes exist (may be missing on older MySQL variants without `ADD COLUMN IF NOT EXISTS`).
     try:
         if not _column_exists("orders", "notes"):
@@ -485,14 +469,6 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_postal_code VARCHAR(32) NULL")
         if not _column_exists("sales_prospects", "office_country"):
             mysql_client.execute("ALTER TABLE sales_prospects ADD COLUMN office_country VARCHAR(64) NULL")
-    except Exception:
-        pass
-
-    # Ensure sales rep visit tracking exists (used during login/account creation flows).
-    try:
-        if not _column_exists("sales_reps", "visits"):
-            mysql_client.execute("ALTER TABLE sales_reps ADD COLUMN visits INT NOT NULL DEFAULT 0")
-        mysql_client.execute("ALTER TABLE sales_reps MODIFY COLUMN visits INT NOT NULL DEFAULT 0")
     except Exception:
         pass
 
