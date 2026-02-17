@@ -232,6 +232,8 @@ const mapRowToOrder = (row, options = {}) => {
     id: sanitizeString(coalesce(payloadOrder.id, row.id)),
     userId: sanitizeString(coalesce(payloadOrder.userId, row.user_id)),
     pricingMode: sanitizeString(coalesce(payloadOrder.pricingMode, row.pricing_mode)) || 'wholesale',
+    asDelegate: sanitizeString(coalesce(payloadOrder.asDelegate, payloadOrder.as_delegate, row.as_delegate)),
+    as_delegate: sanitizeString(coalesce(payloadOrder.as_delegate, payloadOrder.asDelegate, row.as_delegate)),
     wooOrderId: sanitizeString(coalesce(payloadOrder.wooOrderId, row.woo_order_id)),
     wooOrderNumber: sanitizeString(coalesce(
       payloadOrder.wooOrderNumber,

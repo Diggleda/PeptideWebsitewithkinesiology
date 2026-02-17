@@ -1790,26 +1790,28 @@ const getOrdersForUser = async (userId) => {
             continue;
           }
           const localOrder = orderRepository.findById(pepproOrderId);
-          if (!localOrder) {
+          const sqlOrder = !localOrder ? await orderSqlRepository.fetchById(pepproOrderId) : null;
+          const hydratedLocalOrder = localOrder || sqlOrder;
+          if (!hydratedLocalOrder) {
             enriched.push(order);
             // eslint-disable-next-line no-continue
             continue;
           }
-          const stripeMeta = localOrder.integrationDetails?.stripe || null;
+          const stripeMeta = hydratedLocalOrder.integrationDetails?.stripe || null;
           const asDelegate =
-            (typeof localOrder.asDelegate === 'string' && localOrder.asDelegate.trim())
-              ? localOrder.asDelegate.trim()
-              : (typeof localOrder.as_delegate === 'string' && localOrder.as_delegate.trim())
-                ? localOrder.as_delegate.trim()
+            (typeof hydratedLocalOrder.asDelegate === 'string' && hydratedLocalOrder.asDelegate.trim())
+              ? hydratedLocalOrder.asDelegate.trim()
+              : (typeof hydratedLocalOrder.as_delegate === 'string' && hydratedLocalOrder.as_delegate.trim())
+                ? hydratedLocalOrder.as_delegate.trim()
                 : null;
           enriched.push({
             ...order,
             asDelegate,
             as_delegate: asDelegate,
-            paymentMethod: localOrder.paymentMethod || order.paymentMethod,
+            paymentMethod: hydratedLocalOrder.paymentMethod || order.paymentMethod,
             paymentDetails:
-              localOrder.paymentDetails
-              || localOrder.paymentMethod
+              hydratedLocalOrder.paymentDetails
+              || hydratedLocalOrder.paymentMethod
               || order.paymentDetails
               || order.paymentMethod
               || null,
