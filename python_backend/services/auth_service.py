@@ -466,7 +466,6 @@ def _register_sales_rep_account(
         "mustResetPassword": False,
         "status": "active",
         "updatedAt": now,
-        "sessionId": new_session_id,
     }
 
     updated_sales_rep = sales_rep_repository.update(sales_rep_update)
@@ -480,10 +479,10 @@ def _register_sales_rep_account(
 
     token = _create_auth_token(
         {
-            "id": updated_sales_rep["id"],
-            "email": updated_sales_rep.get("email"),
+            "id": user_record["id"],
+            "email": user_record.get("email"),
             "role": "sales_rep",
-            "sid": updated_sales_rep.get("sessionId"),
+            "sid": user_record.get("sessionId"),
         }
     )
 
@@ -498,7 +497,7 @@ def _register_sales_rep_account(
         },
     )
 
-    return {"token": token, "user": _sanitize_sales_rep(updated_sales_rep)}
+    return {"token": token, "user": _sanitize_user(user_record)}
 
 
 def login(data: Dict) -> Dict:
@@ -559,31 +558,74 @@ def login(data: Dict) -> Dict:
     if not _safe_check_password(password, hashed_password):
         raise _unauthorized("INVALID_PASSWORD")
 
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     new_session_id = _new_session_id()
+    linked_user = user_repository.find_by_email(email)
+    if linked_user:
+        updated_user = user_repository.update(
+            {
+                **linked_user,
+                "role": "sales_rep",
+                "status": linked_user.get("status") or "active",
+                "salesRepId": sales_rep.get("id") or linked_user.get("salesRepId"),
+                "visits": int(linked_user.get("visits") or 0) + 1,
+                "lastLoginAt": now_iso,
+                "lastSeenAt": now_iso,
+                "lastInteractionAt": now_iso,
+                "isOnline": True,
+                "mustResetPassword": False,
+                "sessionId": new_session_id,
+            }
+        ) or linked_user
+    else:
+        updated_user = user_repository.insert(
+            {
+                "name": sales_rep.get("name"),
+                "email": email,
+                "phone": sales_rep.get("phone"),
+                "password": hashed_password,
+                "role": "sales_rep",
+                "status": "active",
+                "salesRepId": sales_rep.get("id"),
+                "referralCredits": sales_rep.get("referralCredits") or 0,
+                "totalReferrals": sales_rep.get("totalReferrals") or 0,
+                "visits": 1,
+                "createdAt": now_iso,
+                "lastLoginAt": now_iso,
+                "lastSeenAt": now_iso,
+                "lastInteractionAt": now_iso,
+                "isOnline": True,
+                "mustResetPassword": False,
+                "sessionId": new_session_id,
+            }
+        )
+
     updated_rep = sales_rep_repository.update(
         {
             **sales_rep,
-            "visits": int(sales_rep.get("visits") or 1) + 1,
-            "lastLoginAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "legacyUserId": updated_user.get("id") or sales_rep.get("legacyUserId"),
+            "visits": int(sales_rep.get("visits") or 0) + 1,
+            "lastLoginAt": now_iso,
             "mustResetPassword": False,
-            "sessionId": new_session_id,
+            "updatedAt": now_iso,
         }
     ) or sales_rep
 
     token = _create_auth_token(
-        {"id": updated_rep["id"], "email": updated_rep.get("email"), "role": "sales_rep", "sid": updated_rep.get("sessionId")}
+        {"id": updated_user["id"], "email": updated_user.get("email"), "role": "sales_rep", "sid": updated_user.get("sessionId")}
     )
     _audit(
         "LOGIN_SALES_REP_SUCCESS",
         {
             "salesRepId": updated_rep.get("id"),
+            "userId": updated_user.get("id"),
             "role": "sales_rep",
-            "email": updated_rep.get("email"),
-            "sessionId": updated_rep.get("sessionId"),
+            "email": updated_user.get("email"),
+            "sessionId": updated_user.get("sessionId"),
             "at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
     )
-    return {"token": token, "user": _sanitize_sales_rep(updated_rep)}
+    return {"token": token, "user": _sanitize_user(updated_user)}
 
 
 def logout(user_id: str, role: Optional[str] = None) -> Dict:
@@ -592,9 +634,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     if normalized_role == "sales_rep":
-        rep = sales_rep_repository.find_by_id(user_id) if user_id else None
-        if rep:
-            sales_rep_repository.update({**rep, "sessionId": new_session_id})
         user = user_repository.find_by_id(user_id) if user_id else None
         if user:
             user_repository.update(
@@ -612,7 +651,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
                 "userId": user_id,
                 "role": normalized_role,
                 "updatedUser": bool(user),
-                "updatedSalesRep": bool(rep),
                 "newSessionId": new_session_id,
                 "at": now_iso,
             },
@@ -662,24 +700,6 @@ def logout(user_id: str, role: Optional[str] = None) -> Dict:
         )
         return {"ok": True}
 
-    rep = sales_rep_repository.find_by_id(user_id) if user_id else None
-    if rep:
-        sales_rep_repository.update(
-            {
-                **rep,
-                "sessionId": new_session_id,
-            }
-        )
-        _audit(
-            "LOGOUT",
-            {
-                "userId": user_id,
-                "role": normalized_role or "sales_rep",
-                "updatedSalesRep": True,
-                "newSessionId": new_session_id,
-                "at": now_iso,
-            },
-        )
     return {"ok": True}
 
 
@@ -1335,20 +1355,44 @@ def reset_password(data: Dict) -> Dict:
                 raise _not_found("USER_NOT_FOUND")
             new_session_id = _new_session_id()
             sales_rep_repository.update(
-                {**rep, "password": hashed_password, "mustResetPassword": False, "sessionId": new_session_id}
+                {**rep, "password": hashed_password, "mustResetPassword": False}
             )
             legacy_id = rep.get("legacyUserId")
+            linked_user = None
             if legacy_id:
                 linked_user = user_repository.find_by_id(str(legacy_id))
-                if linked_user:
-                    user_repository.update(
-                        {
-                            **linked_user,
-                            "password": hashed_password,
-                            "mustResetPassword": False,
-                            "sessionId": new_session_id,
-                        }
-                    )
+            if not linked_user:
+                rep_email = _normalize_email(rep.get("email"))
+                if rep_email:
+                    linked_user = user_repository.find_by_email(rep_email)
+            if linked_user:
+                user_repository.update(
+                    {
+                        **linked_user,
+                        "password": hashed_password,
+                        "mustResetPassword": False,
+                        "role": "sales_rep",
+                        "salesRepId": rep.get("id") or linked_user.get("salesRepId"),
+                        "sessionId": new_session_id,
+                    }
+                )
+            else:
+                rep_email = _normalize_email(rep.get("email"))
+                if not rep_email:
+                    raise _not_found("USER_NOT_FOUND")
+                user_repository.insert(
+                    {
+                        "name": rep.get("name") or "Sales Rep",
+                        "email": rep_email,
+                        "phone": rep.get("phone"),
+                        "password": hashed_password,
+                        "role": "sales_rep",
+                        "status": "active",
+                        "salesRepId": rep.get("id"),
+                        "mustResetPassword": False,
+                        "sessionId": new_session_id,
+                    }
+                )
         else:
             user = user_repository.find_by_id(str(account_id))
             if not user:

@@ -11,7 +11,7 @@ from flask import Response, jsonify, request, g
 
 from ..services import get_config
 from ..services import auth_service, presence_service
-from ..repositories import user_repository, sales_rep_repository
+from ..repositories import user_repository
 
 F = TypeVar("F", bound=Callable)
 
@@ -100,19 +100,8 @@ def require_auth(func: F) -> F:
 
         exempt_multi_session = (payload.get("email") or "").strip().lower() == "test@doctor.com"
 
-        user = None
-        rep = None
-        if role == "sales_rep":
-            rep = sales_rep_repository.find_by_id(str(user_id))
-            if rep and rep.get("sessionId"):
-                stored_session_id = rep.get("sessionId")
-            else:
-                # Some sales reps authenticate via the `users` table (role=sales_rep) rather than `sales_reps`.
-                user = user_repository.find_by_id(str(user_id))
-                stored_session_id = user.get("sessionId") if user else None
-        else:
-            user = user_repository.find_by_id(str(user_id))
-            stored_session_id = user.get("sessionId") if user else None
+        user = user_repository.find_by_id(str(user_id))
+        stored_session_id = user.get("sessionId") if user else None
 
         if not stored_session_id or not isinstance(stored_session_id, str):
             return _forbidden("Token revoked", code="TOKEN_REVOKED")

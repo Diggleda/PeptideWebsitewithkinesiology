@@ -5,7 +5,7 @@ from flask import Blueprint, g, request
 import jwt
 
 from ..middleware.auth import require_auth
-from ..repositories import sales_rep_repository, user_repository
+from ..repositories import user_repository
 from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
@@ -123,17 +123,9 @@ def logout():
             )
             return {"ok": True}
 
-        # Only revoke the token if it matches the currently stored session id.
-        if role == "sales_rep":
-            rep = sales_rep_repository.find_by_id(str(user_id))
-            if rep and rep.get("sessionId"):
-                stored_session_id = rep.get("sessionId")
-            else:
-                user = user_repository.find_by_id(str(user_id))
-                stored_session_id = user.get("sessionId") if user else None
-        else:
-            user = user_repository.find_by_id(str(user_id))
-            stored_session_id = user.get("sessionId") if user else None
+        # Only revoke the token if it matches the currently stored users.session_id.
+        user = user_repository.find_by_id(str(user_id))
+        stored_session_id = user.get("sessionId") if user else None
 
         if not stored_session_id or str(stored_session_id) != str(token_session_id):
             # Best-effort: mark the user offline even if the session id doesn't match.
