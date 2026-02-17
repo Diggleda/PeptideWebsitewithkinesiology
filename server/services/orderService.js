@@ -1796,8 +1796,16 @@ const getOrdersForUser = async (userId) => {
             continue;
           }
           const stripeMeta = localOrder.integrationDetails?.stripe || null;
+          const asDelegate =
+            (typeof localOrder.asDelegate === 'string' && localOrder.asDelegate.trim())
+              ? localOrder.asDelegate.trim()
+              : (typeof localOrder.as_delegate === 'string' && localOrder.as_delegate.trim())
+                ? localOrder.as_delegate.trim()
+                : null;
           enriched.push({
             ...order,
+            asDelegate,
+            as_delegate: asDelegate,
             paymentMethod: localOrder.paymentMethod || order.paymentMethod,
             paymentDetails:
               localOrder.paymentDetails

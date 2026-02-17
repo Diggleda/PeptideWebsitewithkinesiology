@@ -113,6 +113,27 @@ import {
   storePasswordCredential,
 } from "./lib/passwordCredential";
 
+const ClipboardDocumentListIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="currentColor"
+    viewBox="0 0 24 24"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      fillRule="evenodd"
+      d="M7.502 6h7.128A3.375 3.375 0 0 1 18 9.375v9.375a3 3 0 0 0 3-3V6.108c0-1.505-1.125-2.811-2.664-2.94a48.972 48.972 0 0 0-.673-.05A3 3 0 0 0 15 1.5h-1.5a3 3 0 0 0-2.663 1.618c-.225.015-.45.032-.673.05C8.662 3.295 7.554 4.542 7.502 6ZM13.5 3A1.5 1.5 0 0 0 12 4.5h4.5A1.5 1.5 0 0 0 15 3h-1.5Z"
+      clipRule="evenodd"
+    />
+    <path
+      fillRule="evenodd"
+      d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 0 1 3 20.625V9.375ZM6 12a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V12Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 15a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V15Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 18a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V18Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75Z"
+      clipRule="evenodd"
+    />
+  </svg>
+);
+
 interface User {
   id: string;
   name: string;
@@ -1023,6 +1044,52 @@ const normalizeStringField = (value: unknown) => {
   return null;
 };
 
+const resolveOrderAsDelegateLabel = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+
+  const direct =
+    normalizeStringField(order?.asDelegate) ||
+    normalizeStringField(order?.as_delegate) ||
+    normalizeStringField(order?.delegateOrderLabel) ||
+    normalizeStringField(order?.delegate_order_label);
+  if (direct) return direct;
+
+  const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
+  const wooIntegration = parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
+  const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+  const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+
+  const nestedDirect =
+    normalizeStringField(wooIntegration?.asDelegate) ||
+    normalizeStringField(wooIntegration?.as_delegate) ||
+    normalizeStringField(wooResponse?.asDelegate) ||
+    normalizeStringField(wooResponse?.as_delegate) ||
+    normalizeStringField(wooPayload?.asDelegate) ||
+    normalizeStringField(wooPayload?.as_delegate);
+  if (nestedDirect) return nestedDirect;
+
+  const readMeta = (meta: any) => {
+    if (!Array.isArray(meta)) return null;
+    const found = meta.find((entry: any) => {
+      const key = String(entry?.key || "").trim().toLowerCase();
+      return (
+        key === "as_delegate" ||
+        key === "asdelegate" ||
+        key === "delegate_order_label" ||
+        key === "delegateorderlabel" ||
+        key === "peppro_as_delegate"
+      );
+    });
+    return normalizeStringField(found?.value);
+  };
+
+  return (
+    readMeta(wooResponse?.meta_data) ||
+    readMeta(wooPayload?.meta_data) ||
+    null
+  );
+};
+
 const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
   if (!address || typeof address !== "object") {
     return null;
@@ -1258,6 +1325,9 @@ const mergeWooSummaryIntoLocal = (
       : null;
 
   localOrder.status = wooOrder.status || localOrder.status;
+  if (!normalizeStringField(localOrder.asDelegate)) {
+    localOrder.asDelegate = resolveOrderAsDelegateLabel(wooOrder);
+  }
   // Prefer PepPro's computed grand total when present; don't overwrite with Woo totals
   // (Woo totals can omit PepPro-side discounts).
   if (!localTotalCandidate && wooTotalCandidate) {
@@ -1374,7 +1444,74 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         registerLocalEntry({
           id: identifier,
-          asDelegate: normalizeStringField(order?.asDelegate ?? order?.as_delegate) || null,
+          asDelegate: resolveOrderAsDelegateLabel(order),
+          number: order?.number || identifier,
+          trackingNumber: resolveTrackingNumber(order),
+          status:
+            order?.status === "trash" ? "canceled" : order?.status || "pending",
+          currency: order?.currency || "USD",
+          total: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          grandTotal: coerceNumber(order?.grandTotal ?? order?.total) ?? null,
+          itemsSubtotal: coerceNumber(order?.itemsSubtotal ?? order?.items_subtotal) ?? null,
+          originalItemsSubtotal: coerceNumber(order?.originalItemsSubtotal ?? order?.original_items_subtotal) ?? null,
+          discountCode: normalizeStringField(order?.discountCode ?? order?.discount_code) || null,
+          discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
+          appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
+          notes: typeof order?.notes === "string" ? order.notes : null,
+          createdAt: order?.createdAt || null,
+          updatedAt: order?.updatedAt || null,
+          source: "peppro",
+          lineItems: toOrderLineItems(
+            order?.items || order?.lineItems || order?.line_items,
+          ),
+          integrations: order?.integrations || null,
+          paymentMethod: order?.paymentMethod || null,
+          paymentDetails:
+            order?.paymentDetails ||
+            (order?.integrationDetails?.stripe?.cardLast4
+              ? `${order.integrationDetails?.stripe?.cardBrand || "Card"} •••• ${order.integrationDetails.stripe.cardLast4}`
+              : order?.paymentMethod || null),
+          integrationDetails: order?.integrationDetails || null,
+          shippingAddress: sanitizeOrderAddress(
+            order?.shippingAddress || order?.shipping_address || order?.shipping,
+          ),
+          billingAddress: sanitizeOrderAddress(
+            order?.billingAddress || order?.billing_address || order?.billing,
+          ),
+          shippingEstimate: normalizeShippingEstimateField(
+            order?.shippingEstimate || order?.shipping_estimate,
+            { fallbackDate: order?.createdAt || null },
+          ),
+          shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
+          taxTotal: coerceNumber(order?.taxTotal) ?? null,
+          physicianCertified: order?.physicianCertified === true,
+          wooOrderNumber:
+            normalizeStringField(
+              order?.wooOrderNumber ||
+                order?.integrationDetails?.wooCommerce?.response?.number ||
+                order?.integrationDetails?.wooCommerce?.wooOrderNumber,
+            ) || null,
+          wooOrderId: wooOrderId || null,
+          cancellationId,
+        });
+      });
+  }
+
+  if (payload && !Array.isArray(payload.local) && Array.isArray((payload as any).orders)) {
+    (payload as any).orders
+      .filter((order: any) => shouldIncludeStatus(order?.status))
+      .forEach((order: any) => {
+        const identifier = order?.id
+          ? String(order.id)
+          : `local-${Math.random().toString(36).slice(2, 10)}`;
+        const wooOrderId =
+          normalizeWooOrderId(order?.wooOrderId) ||
+          normalizeWooOrderId(order?.woo_order_id) ||
+          resolveWooOrderIdFromIntegrations(order);
+        const cancellationId = wooOrderId || identifier;
+        registerLocalEntry({
+          id: identifier,
+          asDelegate: resolveOrderAsDelegateLabel(order),
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -1438,7 +1575,7 @@ const normalizeAccountOrdersResponse = (
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
         const wooEntry: AccountOrderSummary = {
           id: identifier,
-          asDelegate: normalizeStringField(order?.asDelegate ?? order?.as_delegate) || null,
+          asDelegate: resolveOrderAsDelegateLabel(order),
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           wooOrderNumber: normalizeStringField(order?.number),
@@ -15055,7 +15192,18 @@ function MainApp() {
         })();
 
         const nextShippingRate = (() => {
-          const candidate = payload.shippingRate;
+          const rawCandidate = payload.shippingRate;
+          if (!rawCandidate || typeof rawCandidate !== 'object') return null;
+          const candidate =
+            ((rawCandidate as any).shippingEstimate && typeof (rawCandidate as any).shippingEstimate === 'object')
+              ? (rawCandidate as any).shippingEstimate
+              : ((rawCandidate as any).shipping_estimate && typeof (rawCandidate as any).shipping_estimate === 'object')
+                ? (rawCandidate as any).shipping_estimate
+                : ((rawCandidate as any).shippingRate && typeof (rawCandidate as any).shippingRate === 'object')
+                  ? (rawCandidate as any).shippingRate
+                  : ((rawCandidate as any).shipping_rate && typeof (rawCandidate as any).shipping_rate === 'object')
+                    ? (rawCandidate as any).shipping_rate
+                    : rawCandidate;
           if (!candidate || typeof candidate !== 'object') return null;
           const toNumberOrNull = (value: unknown) => {
             const parsed = Number(value);
@@ -16649,7 +16797,11 @@ function MainApp() {
 	                  ref={checkoutButtonRef}
 	                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
 	                >
-	                  <ShoppingCart className="w-4 h-4 mr-2" />
+	                  {isDelegateMode || isProposalReviewMode ? (
+	                    <ClipboardDocumentListIcon className="w-4 h-4 mr-2" />
+	                  ) : (
+	                    <ShoppingCart className="w-4 h-4 mr-2" />
+	                  )}
 	                  {isDelegateMode || isProposalReviewMode ? `Proposal (${totalCartItems})` : `Checkout (${totalCartItems})`}
 	                </Button>
 	              )}
@@ -16669,7 +16821,7 @@ function MainApp() {
 			                  key={product.id}
 			                  product={product}
 	                      pricingMarkupPercent={delegatePricingMarkupPercent}
-	                      proposalMode={isDelegateMode || isProposalReviewMode}
+	                      proposalMode={isDelegateMode}
 			                  onEnsureVariants={ensureCatalogProductHasVariants}
 			                  onAddToCart={(productId, variationId, qty) =>
 			                    handleAddToCart(productId, qty, undefined, variationId)
@@ -25517,7 +25669,7 @@ function MainApp() {
         onClose={handleCloseProductDetail}
         onAddToCart={handleAddToCart}
         pricingMarkupPercent={delegatePricingMarkupPercent}
-        proposalMode={isDelegateMode || isProposalReviewMode}
+        proposalMode={isDelegateMode}
       />
     </div>
   );

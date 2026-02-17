@@ -6,7 +6,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { Search, User, Gift, ShoppingCart, List, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
+import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
@@ -3275,7 +3275,7 @@ export function Header({
       }}
     >
       {delegateMode ? (
-        <List className="h-4 w-4" style={{ color: secondaryColor }} />
+        <ClipboardDocumentListIcon className="h-4 w-4" />
       ) : (
         <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
       )}
@@ -3778,19 +3778,34 @@ export function Header({
 	          cart?.shippingAddress ??
 	          cart?.shipping_address ??
 	          null;
+          const shippingRateCandidates = [
+            shipping?.shippingEstimate,
+            shipping?.shipping_estimate,
+            shipping?.shippingRate,
+            shipping?.shipping_rate,
+            shipping?.rate,
+            shipping?.selectedRate,
+            shipping?.selected_rate,
+            cart?.shippingEstimate,
+            cart?.shipping_estimate,
+            cart?.shippingRate,
+            cart?.shipping_rate,
+          ];
           const shippingRate =
-            shipping?.shippingEstimate ??
-            shipping?.shipping_estimate ??
-            shipping?.shippingRate ??
-            shipping?.shipping_rate ??
-            shipping?.rate ??
-            shipping?.selectedRate ??
-            shipping?.selected_rate ??
-            cart?.shippingEstimate ??
-            cart?.shipping_estimate ??
-            cart?.shippingRate ??
-            cart?.shipping_rate ??
-            null;
+            shippingRateCandidates.find((candidate) => {
+              if (!candidate || typeof candidate !== 'object') return false;
+              const raw = candidate as Record<string, unknown>;
+              const keys = Object.keys(raw);
+              if (!keys.length) return false;
+              const carrier = raw.carrierId ?? raw.carrier_id ?? raw.carrierCode ?? raw.carrier_code ?? raw.carrier;
+              const service = raw.serviceCode ?? raw.service_code ?? raw.serviceType ?? raw.service_type ?? raw.service;
+              const amount = raw.rate ?? raw.amount ?? raw.cost ?? raw.price ?? raw.shippingTotal ?? raw.shipping_total;
+              return Boolean(
+                (typeof carrier === 'string' && carrier.trim())
+                || (typeof service === 'string' && service.trim())
+                || (amount != null && Number.isFinite(Number(amount))),
+              );
+            }) ?? null;
 		        if (typeof onLoadDelegateProposal === 'function') {
 		          const markupPercentRaw =
 		            typeof proposal?.markupPercent === 'number'
@@ -4354,10 +4369,38 @@ export function Header({
     || (researchDashboardEnabled === true && (isDoctorRole(effectiveRole) || isRep(effectiveRole)));
 
   const researchPanel = canSeeResearchWip ? researchWipPanel : researchPlaceholderPanel;
+  const delegateOrderLabelByOrderLookup = useMemo(() => {
+    const normalizeLookupKey = (value: unknown) => {
+      if (typeof value !== 'string' && typeof value !== 'number') return '';
+      return String(value).trim().toLowerCase();
+    };
+    const map = new Map<string, string>();
+    for (const link of patientLinks || []) {
+      const delegateOrderIdRaw =
+        (typeof (link as any)?.delegateOrderId === 'string' && (link as any).delegateOrderId.trim())
+          ? (link as any).delegateOrderId.trim()
+          : (typeof (link as any)?.delegate_order_id === 'string' && (link as any).delegate_order_id.trim())
+            ? (link as any).delegate_order_id.trim()
+            : '';
+      const referenceLabelRaw =
+        (typeof (link as any)?.referenceLabel === 'string' && (link as any).referenceLabel.trim())
+          ? (link as any).referenceLabel.trim()
+          : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
+            ? (link as any).reference_label.trim()
+            : '';
+      const delegateOrderLookupKey = normalizeLookupKey(delegateOrderIdRaw);
+      if (!delegateOrderLookupKey) continue;
+      const displayLabel = `Delegate Order / (${referenceLabelRaw || 'Patient link'})`;
+      if (!map.has(delegateOrderLookupKey)) {
+        map.set(delegateOrderLookupKey, displayLabel);
+      }
+    }
+    return map;
+  }, [patientLinks]);
 
 		  const renderOrdersList = () => {
 		    const repView = false;
-		    const doctorView = Boolean(localUser && isDoctorRole(localUser.role));
+		    const doctorView = Boolean(isDoctorRole(accountRole));
 		    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
         const normalizedQuery = ordersSearchQuery.trim().toLowerCase();
 		    const visibleOrders = cachedAccountOrders
@@ -4454,18 +4497,75 @@ export function Header({
               null;
             const orderNumberValue = wooOrderNumber || order.number || order.id || 'Order';
             const orderNumberLabel = `Order #${orderNumberValue}`;
-            const delegateOrderLabel =
-              (typeof order.asDelegate === 'string' && order.asDelegate.trim())
-                ? order.asDelegate.trim()
-                : (typeof (order as any)?.as_delegate === 'string' && (order as any).as_delegate.trim())
-                  ? (order as any).as_delegate.trim()
-                  : '';
             const itemCount = order.lineItems?.length ?? 0;
             const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
             const integrationDetails = parseMaybeJson((order as any).integrationDetails);
             const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
             const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
             const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+            const readDelegateLabelFromMeta = (meta: any) => {
+              if (!Array.isArray(meta)) return '';
+              const hit = meta.find((entry: any) => {
+                const key = String(entry?.key || '').trim().toLowerCase();
+                return (
+                  key === 'as_delegate' ||
+                  key === 'asdelegate' ||
+                  key === 'delegate_order_label' ||
+                  key === 'delegateorderlabel' ||
+                  key === 'peppro_as_delegate'
+                );
+              });
+              return typeof hit?.value === 'string' ? hit.value.trim() : '';
+            };
+            const rawDelegateOrderLabel =
+              (typeof order.asDelegate === 'string' && order.asDelegate.trim())
+                ? order.asDelegate.trim()
+                : (typeof (order as any)?.as_delegate === 'string' && (order as any).as_delegate.trim())
+                  ? (order as any).as_delegate.trim()
+                  : (typeof (wooIntegration as any)?.asDelegate === 'string' && (wooIntegration as any).asDelegate.trim())
+                    ? (wooIntegration as any).asDelegate.trim()
+                    : (typeof (wooIntegration as any)?.as_delegate === 'string' && (wooIntegration as any).as_delegate.trim())
+                      ? (wooIntegration as any).as_delegate.trim()
+                      : (typeof (wooResponse as any)?.asDelegate === 'string' && (wooResponse as any).asDelegate.trim())
+                        ? (wooResponse as any).asDelegate.trim()
+                        : (typeof (wooResponse as any)?.as_delegate === 'string' && (wooResponse as any).as_delegate.trim())
+                          ? (wooResponse as any).as_delegate.trim()
+                          : (typeof (wooPayload as any)?.asDelegate === 'string' && (wooPayload as any).asDelegate.trim())
+                            ? (wooPayload as any).asDelegate.trim()
+                            : (typeof (wooPayload as any)?.as_delegate === 'string' && (wooPayload as any).as_delegate.trim())
+                              ? (wooPayload as any).as_delegate.trim()
+                              : readDelegateLabelFromMeta((wooResponse as any)?.meta_data)
+                                || readDelegateLabelFromMeta((wooPayload as any)?.meta_data)
+                                || '';
+            const normalizeOrderLookupKey = (value: unknown) => {
+              if (typeof value !== 'string' && typeof value !== 'number') return '';
+              return String(value).trim().toLowerCase();
+            };
+            const fallbackDelegateOrderLabel = (() => {
+              const candidateKeys = [
+                order.wooOrderId,
+                order.wooOrderNumber,
+                order.number,
+                order.id,
+                (wooResponse as any)?.id,
+                (wooResponse as any)?.number,
+                (wooPayload as any)?.id,
+                (wooPayload as any)?.number,
+                (integrationDetails as any)?.wooCommerce?.wooOrderId,
+                (integrationDetails as any)?.wooCommerce?.wooOrderNumber,
+                (integrationDetails as any)?.woocommerce?.wooOrderId,
+                (integrationDetails as any)?.woocommerce?.wooOrderNumber,
+              ];
+              for (const key of candidateKeys) {
+                const normalizedKey = normalizeOrderLookupKey(key);
+                if (!normalizedKey) continue;
+                const match = delegateOrderLabelByOrderLookup.get(normalizedKey);
+                if (match) return match;
+              }
+              return '';
+            })();
+            const delegateOrderLabel = rawDelegateOrderLabel || fallbackDelegateOrderLabel;
+            const showDelegateOrderLabel = Boolean(delegateOrderLabel);
             const wooShippingLine =
               (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
               (wooPayload?.shipping_lines && wooPayload.shipping_lines[0]);
@@ -4582,7 +4682,14 @@ export function Header({
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
-                      <p className="text-sm font-semibold text-slate-900">{statusDisplay}</p>
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                        <span>{statusDisplay}</span>
+                        {showDelegateOrderLabel && (
+                          <span className="inline-flex w-fit rounded-full border border-[rgba(95,179,249,0.4)] bg-[rgba(95,179,249,0.12)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(38,101,178)]">
+                            {delegateOrderLabel}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     {showExpectedDelivery && (
                       <div className="space-y-1">
@@ -4654,11 +4761,6 @@ export function Header({
 		                            </span>
 		                          )}
 		                        </p>
-                          {doctorView && delegateOrderLabel && (
-                            <p className="inline-flex w-fit rounded-full border border-[rgba(95,179,249,0.4)] bg-[rgba(95,179,249,0.12)] px-2.5 py-1 text-xs font-semibold text-[rgb(38,101,178)]">
-                              {delegateOrderLabel}
-                            </p>
-                          )}
 	                          {repView && (order.doctorName || order.doctorEmail) && (
 	                            <p className="text-sm text-slate-700 break-words">
 	                              <span className="font-semibold">
@@ -5707,6 +5809,10 @@ export function Header({
 	                      : proposalStatus === 'pending'
 		                        ? 'Pending review'
 		                        : '';
+		              const proposalActionLabel =
+		                proposalStatus === 'approved' || proposalStatus === 'accepted' || proposalStatus === 'rejected'
+		                  ? 'Proposal'
+		                  : 'Review Proposal';
 		              const paymentMethodDraft =
 		                patientLinkPaymentMethodDraftByToken[token]
 		                  ?? normalizePatientLinkPaymentMethod((link as any)?.paymentMethod ?? (link as any)?.payment_method ?? null);
@@ -5765,7 +5871,7 @@ export function Header({
 		                        className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
 		                      >
 		                        <ClipboardDocumentListIcon className="h-4 w-4" />
-		                        {isProposalBusy ? 'Loading…' : 'Review Proposal'}
+		                        {isProposalBusy ? 'Loading…' : proposalActionLabel}
 		                      </Button>
 		                      )}
 		                      <Button
@@ -5993,7 +6099,7 @@ export function Header({
 		          color: 'rgb(95,179,249)',
 		        }}
 		      >
-		        <User className={delegateUserIconClassName} aria-hidden="true" />
+		        <ClipboardDocumentListIcon className={delegateUserIconClassName} />
 		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}

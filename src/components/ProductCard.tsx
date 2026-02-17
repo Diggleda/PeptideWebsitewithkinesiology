@@ -697,7 +697,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 	      ) : (
 	        <ShoppingCart className="w-4 h-4 mr-2" />
 	      )}
-	      {proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	      {proposalMode ? 'Add to Proposal' : 'Add to cart'}
 	    </Button>
 	  );
 

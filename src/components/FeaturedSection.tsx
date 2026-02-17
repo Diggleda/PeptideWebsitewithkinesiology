@@ -76,7 +76,7 @@ export function FeaturedSection({ featuredProducts, onAddToCart, proposalMode = 
 	                    onClick={() => onAddToCart(mainFeatured.id)}
 	                    className="glass-brand squircle-sm btn-hover-lighter"
 	                  >
-	                    {proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	                    {proposalMode ? 'Add to Proposal' : 'Add to cart'}
 	                    <ArrowRight className="w-4 h-4 ml-2" />
 	                  </Button>
                 </div>

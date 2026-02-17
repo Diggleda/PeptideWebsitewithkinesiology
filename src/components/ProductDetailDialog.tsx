@@ -465,7 +465,7 @@ export function ProductDetailDialog({
                     />
                   </div>
 
-	                  {/* Add to Cart Button */}
+	                  {/* Add to cart button */}
 	                  <Button
 	                    onClick={handleAddToCart}
 	                    disabled={isVariantSelectionLoading}
@@ -478,7 +478,7 @@ export function ProductDetailDialog({
 	                    )}
 	                    {isVariantSelectionLoading
 	                      ? 'Loading options…'
-	                      : proposalMode ? 'Add to Proposal' : 'Add to Cart'}
+	                      : proposalMode ? 'Add to Proposal' : 'Add to cart'}
 	                  </Button>
                 </div>
               </div>
