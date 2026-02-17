@@ -1343,6 +1343,7 @@ const buildOrderFingerprint = (payload: {
   paymentMethod?: string | null;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
+  delegateProposalToken?: string | null;
 }) => {
   const normalizedItems = Array.isArray(payload.items)
     ? payload.items
@@ -1367,6 +1368,10 @@ const buildOrderFingerprint = (payload: {
     discountCode: payload.discountCode || null,
     paymentMethod: payload.paymentMethod || null,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
+    delegateProposalToken:
+      typeof payload.delegateProposalToken === 'string' && payload.delegateProposalToken.trim()
+        ? payload.delegateProposalToken.trim()
+        : null,
     shipping: {
       postalCode: shippingPostalCode,
       country: shippingCountry,
@@ -1435,6 +1440,7 @@ export const ordersAPI = {
       shipping,
       paymentMethod,
       taxTotal,
+      delegateProposalToken: options?.delegateProposalToken ?? null,
     });
     const idempotencyKey = getOrCreateCheckoutIdempotencyKey(fingerprint);
 

@@ -15328,10 +15328,18 @@ function MainApp() {
 
 		    const delegationProposalReview = (() => {
 		      if (isDelegateMode) return null;
-		      if (!activeDelegationProposal?.token || !activeDelegationProposal.signature) return null;
+		      const token = typeof activeDelegationProposal?.token === 'string' ? activeDelegationProposal.token.trim() : '';
+		      if (!token) return null;
+		      const baseSignature =
+		        typeof activeDelegationProposal?.signature === 'string'
+		          ? activeDelegationProposal.signature.trim()
+		          : '';
+		      if (!baseSignature) {
+		        return { token, status: 'accepted' as const };
+		      }
 		      const checkoutSignature = buildDelegationCartSignature(items);
-		      const status = checkoutSignature === activeDelegationProposal.signature ? 'accepted' : 'modified';
-		      return { token: activeDelegationProposal.token, status };
+		      const status = checkoutSignature === baseSignature ? 'accepted' : 'modified';
+		      return { token, status };
 		    })();
 
 		    try {
