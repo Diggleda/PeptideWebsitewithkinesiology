@@ -375,6 +375,7 @@ interface HeaderProps {
     shippingRate?: any | null;
   }) => void;
   patientLinksRefreshToken?: number;
+  onAccountIndicatorTotalChange?: (count: number) => void;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -1037,8 +1038,9 @@ export function Header({
 	  onCancelOrder,
 	  referralCodes = [],
 	  catalogLoading = false,
-	  onLoadDelegateProposal,
+  onLoadDelegateProposal,
   patientLinksRefreshToken = 0,
+  onAccountIndicatorTotalChange,
 	}: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -1718,7 +1720,7 @@ export function Header({
     }
     credentialAutofillRequestInFlight.current = true;
     try {
-      const credential = await requestStoredPasswordCredential();
+      const credential = await requestStoredPasswordCredential({ mediation: 'required' });
       if (credential) {
         queueLoginPrefill({
           email: credential.id,
@@ -1731,6 +1733,11 @@ export function Header({
   }, [queueLoginPrefill]);
   const handleLoginCredentialFocus = useCallback(() => {
     if (!loginOpen || authMode !== 'login') {
+      return;
+    }
+    const emailValue = (loginEmailRef.current?.value ?? '').trim();
+    const passwordValue = (loginPasswordRef.current?.value ?? '').trim();
+    if (emailValue || passwordValue) {
       return;
     }
     void triggerCredentialAutofill();
@@ -2190,7 +2197,6 @@ export function Header({
     setSignupPassword('');
     setSignupConfirmPassword('');
     setSignupCode('');
-    queueLoginPrefill({ email: '', password: '' });
     setShowLoginPassword(false);
     setShowSignupPassword(false);
     setShowSignupConfirmPassword(false);
@@ -3601,6 +3607,10 @@ export function Header({
   );
 
   useEffect(() => {
+    onAccountIndicatorTotalChange?.(accountButtonIndicatorTotal);
+  }, [accountButtonIndicatorTotal, onAccountIndicatorTotalChange]);
+
+  useEffect(() => {
     if (!welcomeOpen) {
       patientLinksPrefetchedRef.current = false;
       return;
@@ -4369,34 +4379,11 @@ export function Header({
     || (researchDashboardEnabled === true && (isDoctorRole(effectiveRole) || isRep(effectiveRole)));
 
   const researchPanel = canSeeResearchWip ? researchWipPanel : researchPlaceholderPanel;
-  const delegateOrderLabelByOrderLookup = useMemo(() => {
-    const normalizeLookupKey = (value: unknown) => {
-      if (typeof value !== 'string' && typeof value !== 'number') return '';
-      return String(value).trim().toLowerCase();
-    };
-    const map = new Map<string, string>();
-    for (const link of patientLinks || []) {
-      const delegateOrderIdRaw =
-        (typeof (link as any)?.delegateOrderId === 'string' && (link as any).delegateOrderId.trim())
-          ? (link as any).delegateOrderId.trim()
-          : (typeof (link as any)?.delegate_order_id === 'string' && (link as any).delegate_order_id.trim())
-            ? (link as any).delegate_order_id.trim()
-            : '';
-      const referenceLabelRaw =
-        (typeof (link as any)?.referenceLabel === 'string' && (link as any).referenceLabel.trim())
-          ? (link as any).referenceLabel.trim()
-          : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
-            ? (link as any).reference_label.trim()
-            : '';
-      const delegateOrderLookupKey = normalizeLookupKey(delegateOrderIdRaw);
-      if (!delegateOrderLookupKey) continue;
-      const displayLabel = `Delegate Order / (${referenceLabelRaw || 'Patient link'})`;
-      if (!map.has(delegateOrderLookupKey)) {
-        map.set(delegateOrderLookupKey, displayLabel);
-      }
-    }
-    return map;
-  }, [patientLinks]);
+  const normalizeDelegateLabel = (value: unknown) => {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : '';
+  };
 
 		  const renderOrdersList = () => {
 		    const repView = false;
@@ -4503,68 +4490,9 @@ export function Header({
             const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
             const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
             const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
-            const readDelegateLabelFromMeta = (meta: any) => {
-              if (!Array.isArray(meta)) return '';
-              const hit = meta.find((entry: any) => {
-                const key = String(entry?.key || '').trim().toLowerCase();
-                return (
-                  key === 'as_delegate' ||
-                  key === 'asdelegate' ||
-                  key === 'delegate_order_label' ||
-                  key === 'delegateorderlabel' ||
-                  key === 'peppro_as_delegate'
-                );
-              });
-              return typeof hit?.value === 'string' ? hit.value.trim() : '';
-            };
-            const rawDelegateOrderLabel =
-              (typeof order.asDelegate === 'string' && order.asDelegate.trim())
-                ? order.asDelegate.trim()
-                : (typeof (order as any)?.as_delegate === 'string' && (order as any).as_delegate.trim())
-                  ? (order as any).as_delegate.trim()
-                  : (typeof (wooIntegration as any)?.asDelegate === 'string' && (wooIntegration as any).asDelegate.trim())
-                    ? (wooIntegration as any).asDelegate.trim()
-                    : (typeof (wooIntegration as any)?.as_delegate === 'string' && (wooIntegration as any).as_delegate.trim())
-                      ? (wooIntegration as any).as_delegate.trim()
-                      : (typeof (wooResponse as any)?.asDelegate === 'string' && (wooResponse as any).asDelegate.trim())
-                        ? (wooResponse as any).asDelegate.trim()
-                        : (typeof (wooResponse as any)?.as_delegate === 'string' && (wooResponse as any).as_delegate.trim())
-                          ? (wooResponse as any).as_delegate.trim()
-                          : (typeof (wooPayload as any)?.asDelegate === 'string' && (wooPayload as any).asDelegate.trim())
-                            ? (wooPayload as any).asDelegate.trim()
-                            : (typeof (wooPayload as any)?.as_delegate === 'string' && (wooPayload as any).as_delegate.trim())
-                              ? (wooPayload as any).as_delegate.trim()
-                              : readDelegateLabelFromMeta((wooResponse as any)?.meta_data)
-                                || readDelegateLabelFromMeta((wooPayload as any)?.meta_data)
-                                || '';
-            const normalizeOrderLookupKey = (value: unknown) => {
-              if (typeof value !== 'string' && typeof value !== 'number') return '';
-              return String(value).trim().toLowerCase();
-            };
-            const fallbackDelegateOrderLabel = (() => {
-              const candidateKeys = [
-                order.wooOrderId,
-                order.wooOrderNumber,
-                order.number,
-                order.id,
-                (wooResponse as any)?.id,
-                (wooResponse as any)?.number,
-                (wooPayload as any)?.id,
-                (wooPayload as any)?.number,
-                (integrationDetails as any)?.wooCommerce?.wooOrderId,
-                (integrationDetails as any)?.wooCommerce?.wooOrderNumber,
-                (integrationDetails as any)?.woocommerce?.wooOrderId,
-                (integrationDetails as any)?.woocommerce?.wooOrderNumber,
-              ];
-              for (const key of candidateKeys) {
-                const normalizedKey = normalizeOrderLookupKey(key);
-                if (!normalizedKey) continue;
-                const match = delegateOrderLabelByOrderLookup.get(normalizedKey);
-                if (match) return match;
-              }
-              return '';
-            })();
-            const delegateOrderLabel = rawDelegateOrderLabel || fallbackDelegateOrderLabel;
+            const delegateOrderLabel =
+              normalizeDelegateLabel((order as any)?.as_delegate)
+              || normalizeDelegateLabel((order as any)?.asDelegate);
             const showDelegateOrderLabel = Boolean(delegateOrderLabel);
             const wooShippingLine =
               (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
@@ -6125,17 +6053,17 @@ export function Header({
               </span>
 	            <span className="header-account-avatar-shell">
 	              {renderAvatar(isLargeScreen ? 48 : 53, 'header-account-avatar')}
+                {accountButtonIndicatorTotal > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="account-indicator-badge"
+                    aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
+                    title={`Notifications: ${accountButtonIndicatorTotal}`}
+                  >
+                    {accountButtonIndicatorTotal > 9 ? '9+' : accountButtonIndicatorTotal}
+                  </Badge>
+                )}
 	            </span>
-	            {accountButtonIndicatorTotal > 0 && (
-	              <span
-                className="absolute -left-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full !bg-[rgb(95,179,249)] px-1.5 text-[10px] font-semibold leading-none !text-white shadow-sm pointer-events-none"
-                aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
-                title={`Notifications: ${accountButtonIndicatorTotal}`}
-                style={{ backgroundColor: 'rgb(95,179,249)', color: '#fff' }}
-              >
-                {accountButtonIndicatorTotal > 99 ? '99+' : accountButtonIndicatorTotal}
-              </span>
-            )}
           </Button>
 			        </DialogTrigger>
 					        <DialogContent
@@ -6436,6 +6364,7 @@ export function Header({
           </Button>
         </DialogTrigger>
         <DialogContent
+          forceMount
           className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl !p-4 sm:!p-6"
           style={{
             backdropFilter: 'blur(38px) saturate(1.6)',
@@ -6493,6 +6422,7 @@ export function Header({
                     autoCorrect="off"
                     spellCheck={false}
                     onFocus={handleLoginCredentialFocus}
+                    onPointerDown={handleLoginCredentialFocus}
                     className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
@@ -6511,6 +6441,7 @@ export function Header({
                       autoCorrect="off"
                       spellCheck={false}
                       onFocus={handleLoginCredentialFocus}
+                      onPointerDown={handleLoginCredentialFocus}
                       className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required

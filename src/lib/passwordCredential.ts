@@ -5,6 +5,7 @@ interface StoredPasswordCredential {
 }
 
 type PasswordCredentialWithPassword = Credential & { password?: string };
+type PasswordCredentialMediation = 'optional' | 'required' | 'silent';
 
 const isCredentialContext = (): boolean => {
   if (typeof window === 'undefined') {
@@ -28,24 +29,20 @@ const getCredentialsContainer = (): CredentialsContainer | null => {
   return container;
 };
 
-export const requestStoredPasswordCredential = async (): Promise<StoredPasswordCredential | null> => {
+export const requestStoredPasswordCredential = async (options?: {
+  mediation?: PasswordCredentialMediation;
+}): Promise<StoredPasswordCredential | null> => {
   const container = getCredentialsContainer();
   if (!container) {
     return null;
   }
 
-  // Safari/WebKit often throws NotSupportedError when the PasswordCredential API
-  // isn't fully implemented. Avoid calling get({ password: true }) unless the
-  // constructor exists, which is a reliable support signal.
-  const passwordCtor = (window as typeof window & { PasswordCredential?: typeof PasswordCredential }).PasswordCredential;
-  if (typeof passwordCtor !== 'function') {
-    return null;
-  }
+  const mediation = options?.mediation ?? 'optional';
 
   try {
     const credential = await container.get({
       password: true,
-      mediation: 'optional',
+      mediation,
     } as CredentialRequestOptions);
 
     if (credential && credential.type === 'password') {

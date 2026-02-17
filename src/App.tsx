@@ -1090,6 +1090,12 @@ const resolveOrderAsDelegateLabel = (order: any): string | null => {
   );
 };
 
+const normalizeDelegateOrderLabel = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
   if (!address || typeof address !== "object") {
     return null;
@@ -4169,7 +4175,7 @@ function MainApp() {
     }
     landingCredentialAutofillInFlight.current = true;
     try {
-      const credential = await requestStoredPasswordCredential();
+      const credential = await requestStoredPasswordCredential({ mediation: "required" });
       if (credential) {
         if (landingLoginEmailRef.current) {
           landingLoginEmailRef.current.value = credential.id;
@@ -4699,6 +4705,11 @@ function MainApp() {
 
   const handleLandingCredentialFocus = useCallback(() => {
     // Only try to autofill saved username/password; do not auto-trigger passkey UI.
+    const emailValue = (landingLoginEmailRef.current?.value ?? "").trim();
+    const passwordValue = (landingLoginPasswordRef.current?.value ?? "").trim();
+    if (emailValue || passwordValue) {
+      return;
+    }
     void triggerLandingCredentialAutofill();
   }, [triggerLandingCredentialAutofill]);
 
@@ -9625,7 +9636,8 @@ function MainApp() {
 	  const [referralDataLoading, setReferralDataLoading] = useState(false);
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
-	  const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [accountIndicatorTotal, setAccountIndicatorTotal] = useState(0);
 	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
 	  const [settingsSupport, setSettingsSupport] = useState<{
@@ -16725,9 +16737,24 @@ function MainApp() {
 	    const productSkeletons = Array.from({ length: 6 });
 
     return (
-      <div
-        className={`products-layout mt-24${showFilters ? "" : " products-layout--single"}`}
-      >
+      <div>
+        {user && !isDelegateMode && (
+          <div className="mb-4 mt-24 flex justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPostLoginHold(true)}
+              className="header-home-button squircle-sm bg-white text-slate-900 gap-2"
+            >
+              <ArrowLeft className="h-4 w-4 text-[rgb(95,179,249)]" aria-hidden="true" />
+              Home
+            </Button>
+          </div>
+        )}
+        <div
+          className={`products-layout${showFilters ? "" : " products-layout--single"}`}
+        >
         {/* Filters Sidebar */}
         {showFilters && (
           <div
@@ -16853,6 +16880,7 @@ function MainApp() {
 	          )}
 	        </div>
 	      </div>
+      </div>
     );
   };
 
@@ -19773,6 +19801,9 @@ function MainApp() {
 	                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
 	                              : "Expected delivery unavailable";
 	                            const statusLabel = describeSalesOrderStatus(order as any);
+                              const delegateOrderLabel =
+                                normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
+                                normalizeDelegateOrderLabel((order as any)?.as_delegate);
 		                            const orderNotesRaw =
 		                              typeof (order as any)?.notes === "string"
 		                                ? String((order as any).notes)
@@ -19805,6 +19836,11 @@ function MainApp() {
                                         <span className="sales-tracking-row-status">
                                           {statusLabel}
                                         </span>
+                                        {delegateOrderLabel ? (
+                                          <span className="sales-account-indicator-badge">
+                                            {delegateOrderLabel}
+                                          </span>
+                                        ) : null}
                                       </div>
                                     )}
                                   </div>
@@ -21467,7 +21503,7 @@ function MainApp() {
 				      <span className="header-account-name text-current">
                 {landingAccountLabel}
               </span>
-			      <span className="header-account-avatar-shell">
+		      <span className="header-account-avatar-shell">
 			        {user.profileImageUrl ? (
 			          <img
 			            src={user.profileImageUrl}
@@ -21484,6 +21520,16 @@ function MainApp() {
 	            {getInitials(user.name)}
 	          </span>
 	        )}
+          {accountIndicatorTotal > 0 && (
+            <Badge
+              variant="outline"
+              className="account-indicator-badge"
+              aria-label={`Notifications: ${accountIndicatorTotal}`}
+              title={`Notifications: ${accountIndicatorTotal}`}
+            >
+              {accountIndicatorTotal > 9 ? "9+" : accountIndicatorTotal}
+            </Badge>
+          )}
 	      </span>
 	    </Button>
 	  ) : null;
@@ -21564,6 +21610,7 @@ function MainApp() {
 				              catalogLoading={catalogLoading}
 				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
                       patientLinksRefreshToken={patientLinksRefreshToken}
+                      onAccountIndicatorTotalChange={setAccountIndicatorTotal}
 					            />
 			          </div>
 			        )}
@@ -22397,7 +22444,7 @@ function MainApp() {
                                   ref={landingLoginEmailRef}
                                   id="landing-username"
                                   name="username"
-                                  type="text"
+                                  type="email"
                                   autoComplete="username"
                                   inputMode="email"
                                   autoCapitalize="none"
@@ -22405,6 +22452,7 @@ function MainApp() {
                                   spellCheck={false}
                                   required
                                   onFocus={handleLandingCredentialFocus}
+                                  onPointerDown={handleLandingCredentialFocus}
                                   className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 />
                               </div>
@@ -22446,6 +22494,7 @@ function MainApp() {
                                   spellCheck={false}
                                   required
                                   onFocus={handleLandingCredentialFocus}
+                                  onPointerDown={handleLandingCredentialFocus}
                                   className="w-full h-10 px-3 pr-12 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 />
                                 <button
@@ -24678,7 +24727,11 @@ function MainApp() {
 
 	                  const renderOrdersList = (orders: AccountOrderSummary[]) => (
 	                    <div className="space-y-2">
-	                      {orders.map((order) => (
+	                      {orders.map((order) => {
+                          const delegateOrderLabel =
+                            normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
+                            normalizeDelegateOrderLabel((order as any)?.as_delegate);
+                          return (
 	                        <button
 	                          key={order.id}
 	                          type="button"
@@ -24686,13 +24739,18 @@ function MainApp() {
 	                          className="w-full text-left flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer transition hover:shadow-sm hover:border-[rgb(95,179,249)]"
 	                        >
 	                          <div className="min-w-0 text-sm text-slate-700">
-	                            <div className="flex items-center gap-2 min-w-0">
+	                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
 	                              <span className="font-semibold text-slate-800 truncate">
 	                                {`Order #${order.number ?? order.id}`}
 	                              </span>
 	                              <span className="sales-tracking-row-status shrink-0">
 	                                {describeSalesOrderStatus(order as any)}
 	                              </span>
+                                {delegateOrderLabel ? (
+                                  <span className="sales-account-indicator-badge">
+                                    {delegateOrderLabel}
+                                  </span>
+                                ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
 	                              {order.createdAt ? formatDateTime(order.createdAt) : "Date unavailable"}
@@ -24702,7 +24760,8 @@ function MainApp() {
 	                            {formatCurrency(((order as any).grandTotal ?? order.total) || 0)}
 	                          </div>
 	                        </button>
-	                      ))}
+	                        );
+                        })}
 	                    </div>
 	                  );
 
@@ -25223,6 +25282,9 @@ function MainApp() {
                         : null,
                     )
                   : null;
+                const delegateOrderLabel =
+                  normalizeDelegateOrderLabel((salesOrderDetail as any)?.asDelegate) ||
+                  normalizeDelegateOrderLabel((salesOrderDetail as any)?.as_delegate);
 
                 return (
               <div className="space-y-6">
@@ -25252,9 +25314,16 @@ function MainApp() {
 	                        <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
 	                          Status
 	                        </p>
-	                        <Badge variant="secondary" className="uppercase">
-	                          {describeSalesOrderStatus(salesOrderDetail as any)}
-	                        </Badge>
+                          <div className="flex items-center gap-2 flex-wrap">
+	                          <Badge variant="secondary" className="uppercase">
+	                            {describeSalesOrderStatus(salesOrderDetail as any)}
+	                          </Badge>
+                            {delegateOrderLabel ? (
+                              <span className="sales-account-indicator-badge">
+                                {delegateOrderLabel}
+                              </span>
+                            ) : null}
+                          </div>
 	                      </div>
                       <div>
                         <p className="uppercase text-[11px] tracking-[0.08em] text-slate-500">
