@@ -70,6 +70,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             """
             SELECT
                 id,
+                as_delegate,
                 pricing_mode,
                 items,
                 items_subtotal,
@@ -154,6 +155,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "discountCode": payload.get("discountCode") or None,
                 "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
                 "pricingMode": row.get("pricing_mode") or "wholesale",
+                "asDelegate": row.get("as_delegate") if row.get("as_delegate") is not None else payload.get("asDelegate"),
                 "shippingTotal": float(row.get("shipping_total") or 0),
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
@@ -652,13 +654,13 @@ def insert(order: Dict) -> Dict:
             mysql_client.execute(
                 """
                 INSERT INTO orders (
-                    id, user_id, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
+                    id, user_id, as_delegate, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
                     tracking_number,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
-                    %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(tracking_number)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
@@ -666,6 +668,7 @@ def insert(order: Dict) -> Dict:
                 )
                 ON DUPLICATE KEY UPDATE
                     user_id = VALUES(user_id),
+                    as_delegate = VALUES(as_delegate),
                     pricing_mode = VALUES(pricing_mode),
                     items = VALUES(items),
                     items_subtotal = VALUES(items_subtotal),
@@ -695,13 +698,13 @@ def insert(order: Dict) -> Dict:
             mysql_client.execute(
                 """
                 INSERT INTO orders (
-                    id, user_id, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
+                    id, user_id, as_delegate, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
                     tracking_number,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
-                    %(id)s, %(user_id)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(tracking_number)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
@@ -709,6 +712,7 @@ def insert(order: Dict) -> Dict:
                 )
                 ON DUPLICATE KEY UPDATE
                     user_id = VALUES(user_id),
+                    as_delegate = VALUES(as_delegate),
                     pricing_mode = VALUES(pricing_mode),
                     items = VALUES(items),
                     total = VALUES(total),
@@ -749,6 +753,7 @@ def update(order: Dict) -> Optional[Dict]:
                 UPDATE orders
                 SET
                     user_id = %(user_id)s,
+                    as_delegate = %(as_delegate)s,
                     pricing_mode = %(pricing_mode)s,
                     items = %(items)s,
                     items_subtotal = %(items_subtotal)s,
@@ -778,6 +783,7 @@ def update(order: Dict) -> Optional[Dict]:
                 UPDATE orders
                 SET
                     user_id = %(user_id)s,
+                    as_delegate = %(as_delegate)s,
                     pricing_mode = %(pricing_mode)s,
                     items = %(items)s,
                     total = %(total)s,
@@ -878,6 +884,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
     order: Dict = {
         "id": row.get("id"),
         "userId": row.get("user_id"),
+        "asDelegate": row.get("as_delegate"),
         "pricingMode": row.get("pricing_mode") or "wholesale",
         "items": parse_json(row.get("items"), []),
         "total": float(row.get("total") or 0),
@@ -1033,6 +1040,11 @@ def _to_db_params(order: Dict) -> Dict:
     return {
         "id": order.get("id"),
         "user_id": order.get("userId"),
+        "as_delegate": (
+            str(order.get("asDelegate") or order.get("as_delegate")).strip()
+            if str(order.get("asDelegate") or order.get("as_delegate") or "").strip()
+            else None
+        ),
         "pricing_mode": (str(order.get("pricingMode") or "").strip().lower() or "wholesale")
         if str(order.get("pricingMode") or "").strip().lower() in ("wholesale", "retail")
         else "wholesale",

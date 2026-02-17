@@ -90,6 +90,38 @@ type ShippingRate = {
   addressFingerprint?: string | null;
 };
 
+const normalizeShippingRate = (value: any): ShippingRate | null => {
+  if (!value || typeof value !== 'object') return null;
+  const normalizeText = (input: unknown) =>
+    typeof input === 'string' ? input.trim() : input == null ? '' : String(input).trim();
+  const toNumberOrNull = (input: unknown) => {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const toIntOrNull = (input: unknown) => {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+  };
+
+  const carrierId = normalizeText(value.carrierId ?? value.carrier_id) || null;
+  const serviceCode = normalizeText(value.serviceCode ?? value.service_code) || null;
+  const serviceType = normalizeText(value.serviceType ?? value.service_type) || null;
+  const rate = toNumberOrNull(value.rate);
+  if (!carrierId && !serviceCode && !serviceType && rate == null) return null;
+
+  return {
+    carrierId,
+    serviceCode,
+    serviceType,
+    estimatedDeliveryDays: toIntOrNull(value.estimatedDeliveryDays ?? value.estimated_delivery_days),
+    deliveryDateGuaranteed:
+      normalizeText(value.deliveryDateGuaranteed ?? value.delivery_date_guaranteed) || null,
+    rate,
+    currency: normalizeText(value.currency) || null,
+    addressFingerprint: normalizeText(value.addressFingerprint ?? value.address_fingerprint) || null,
+  };
+};
+
 const normalizeAddressField = (value?: string | null) => {
   if (typeof value === 'string') {
     return value.trim();
@@ -175,6 +207,7 @@ interface CheckoutModalProps {
   customerEmail?: string | null;
   customerName?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
+  defaultShippingRate?: ShippingRate | null;
   availableCredits?: number;
   pricingMode?: PricingMode;
   onPricingModeChange?: (mode: PricingMode) => void;
@@ -245,6 +278,7 @@ export function CheckoutModal({
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
+  defaultShippingRate,
   availableCredits = 0,
   pricingMode,
   onPricingModeChange,
@@ -307,6 +341,7 @@ export function CheckoutModal({
   const [isRejectingProposal, setIsRejectingProposal] = useState(false);
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
   const activeTaxRequestRef = useRef<AbortController | null>(null);
+  const initialDefaultRateAppliedRef = useRef(false);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -956,6 +991,7 @@ export function CheckoutModal({
       setTaxEstimateError(null);
       setTaxEstimatePending(false);
       lastTaxQuoteRef.current = null;
+      initialDefaultRateAppliedRef.current = false;
       if (activeTaxRequestRef.current) {
         activeTaxRequestRef.current.abort();
         activeTaxRequestRef.current = null;
@@ -975,6 +1011,21 @@ export function CheckoutModal({
       }
     }
   }, [defaultShippingAddress, customerName, isOpen, physicianName]);
+
+  useEffect(() => {
+    if (!isOpen || initialDefaultRateAppliedRef.current) {
+      return;
+    }
+    const normalizedRate = normalizeShippingRate(defaultShippingRate);
+    if (!normalizedRate) {
+      initialDefaultRateAppliedRef.current = true;
+      return;
+    }
+    setShippingRates([normalizedRate]);
+    setSelectedRateIndex(0);
+    setShippingRateError(null);
+    initialDefaultRateAppliedRef.current = true;
+  }, [defaultShippingRate, isOpen]);
 
   useEffect(() => {
     setShippingAddress((prev) => ({
@@ -1767,7 +1818,7 @@ export function CheckoutModal({
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
 	                  {isDelegateFlow ? (
 	                    <>
-	                      I understand I am shopping as a delegate and will share this cart with {delegateDoctorDisplayName || 'Doctor'}, and I agree to PepPro&apos;s{' '}
+	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Doctor'}), and I agree to PepPro&apos;s{' '}
 	                    </>
 	                  ) : (
 	                    <>

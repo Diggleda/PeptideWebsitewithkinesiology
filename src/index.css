@@ -283,6 +283,22 @@ body {
   min-width: 0;
 }
 
+.patient-link-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.patient-link-action-buttons .patient-link-payment-toggle-button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+
 .patient-link-settings-details > summary::-webkit-details-marker {
   display: none;
 }

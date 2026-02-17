@@ -652,6 +652,7 @@ def create_order(
     shipping_rate: Optional[Dict] = None,
     expected_shipment_window: Optional[str] = None,
     physician_certified: bool = False,
+    as_delegate_label: Optional[str] = None,
 ) -> Dict:
     if not _validate_items(items):
         raise _service_error("Order requires at least one item", 400)
@@ -722,6 +723,7 @@ def create_order(
     order = {
         "id": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
         "userId": user_id,
+        "asDelegate": (str(as_delegate_label).strip() if isinstance(as_delegate_label, str) and str(as_delegate_label).strip() else None),
         "items": items,
         "pricingMode": normalized_pricing_mode,
         # `total` is the items subtotal; shipping/tax are tracked separately.

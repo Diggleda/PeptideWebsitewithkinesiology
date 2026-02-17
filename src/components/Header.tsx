@@ -301,6 +301,7 @@ interface AccountShippingEstimate {
 
 interface AccountOrderSummary {
   id: string;
+  asDelegate?: string | null;
   number?: string | null;
   trackingNumber?: string | null;
   status?: string | null;
@@ -368,7 +369,9 @@ interface HeaderProps {
     delegateOrderId?: string | null;
     sharedAt?: string | null;
     shippingAddress?: any | null;
+    shippingRate?: any | null;
   }) => void;
+  patientLinksRefreshToken?: number;
 }
 
 const formatOrderDate = (value?: string | null) => {
@@ -1032,6 +1035,7 @@ export function Header({
 	  referralCodes = [],
 	  catalogLoading = false,
 	  onLoadDelegateProposal,
+  patientLinksRefreshToken = 0,
 	}: HeaderProps) {
   const secondaryColor = 'rgb(95, 179, 249)';
   const translucentSecondary = 'rgba(95, 179, 249, 0.18)';
@@ -3608,6 +3612,19 @@ export function Header({
     void loadPatientLinks();
   }, [loadPatientLinks, showPatientLinksTab, welcomeOpen]);
 
+  const lastPatientLinksRefreshTokenRef = useRef(patientLinksRefreshToken);
+
+  useEffect(() => {
+    if (!showPatientLinksTab) {
+      return;
+    }
+    if (patientLinksRefreshToken === lastPatientLinksRefreshTokenRef.current) {
+      return;
+    }
+    lastPatientLinksRefreshTokenRef.current = patientLinksRefreshToken;
+    void loadPatientLinks();
+  }, [loadPatientLinks, patientLinksRefreshToken, showPatientLinksTab]);
+
   const handleCreatePatientLink = useCallback(async () => {
     if (!showPatientLinksTab || patientLinksCreating) {
       return;
@@ -3758,6 +3775,15 @@ export function Header({
 	          cart?.shippingAddress ??
 	          cart?.shipping_address ??
 	          null;
+          const shippingRate =
+            shipping?.shippingEstimate ??
+            shipping?.shipping_estimate ??
+            shipping?.rate ??
+            cart?.shippingEstimate ??
+            cart?.shipping_estimate ??
+            cart?.shippingRate ??
+            cart?.shipping_rate ??
+            null;
 		        if (typeof onLoadDelegateProposal === 'function') {
 		          const markupPercentRaw =
 		            typeof proposal?.markupPercent === 'number'
@@ -3789,6 +3815,7 @@ export function Header({
 	                  ? proposal.delegate_shared_at
 	                  : null,
 	            shippingAddress,
+              shippingRate,
 	          });
 		        }
 		        toast.success('Proposal loaded into your cart.');
@@ -4420,6 +4447,12 @@ export function Header({
               null;
             const orderNumberValue = wooOrderNumber || order.number || order.id || 'Order';
             const orderNumberLabel = `Order #${orderNumberValue}`;
+            const delegateOrderLabel =
+              (typeof order.asDelegate === 'string' && order.asDelegate.trim())
+                ? order.asDelegate.trim()
+                : (typeof (order as any)?.as_delegate === 'string' && (order as any).as_delegate.trim())
+                  ? (order as any).as_delegate.trim()
+                  : '';
             const itemCount = order.lineItems?.length ?? 0;
             const showItemCount = itemCount > 0 && (isProcessing || !isCanceled);
             const integrationDetails = parseMaybeJson((order as any).integrationDetails);
@@ -4614,6 +4647,11 @@ export function Header({
 		                            </span>
 		                          )}
 		                        </p>
+                          {doctorView && delegateOrderLabel && (
+                            <p className="inline-flex w-fit rounded-full border border-[rgba(95,179,249,0.4)] bg-[rgba(95,179,249,0.12)] px-2.5 py-1 text-xs font-semibold text-[rgb(38,101,178)]">
+                              {delegateOrderLabel}
+                            </p>
+                          )}
 	                          {repView && (order.doctorName || order.doctorEmail) && (
 	                            <p className="text-sm text-slate-700 break-words">
 	                              <span className="font-semibold">
@@ -5709,7 +5747,7 @@ export function Header({
 		                    </div>
 	                  </div>
 			                  <div className="patient-link-actions sm:self-start">
-			                    <div className="patient-link-action-buttons flex flex-wrap items-center justify-end gap-2">
+		                    <div className="patient-link-action-buttons flex flex-wrap items-center justify-start sm:justify-end gap-2">
 			                      {hasProposal && (
 			                        <Button
 			                        type="button"
@@ -5757,19 +5795,19 @@ export function Header({
 			                    </Button>
 			                    </div>
 			                    {hasProposal && (
-			                      <div
-			                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2"
-			                        aria-label="Received payment tracker"
-			                      >
-				                        <div className="flex flex-col">
-				                          <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
-				                            Payment Tracker
-				                          </span>
-				                          <span className="text-xs font-normal text-slate-700 whitespace-nowrap">
-				                            Have you received payment yet?
-				                          </span>
-				                        </div>
-			                        <div className="flex items-center gap-2">
+		                      <div
+		                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2"
+		                        aria-label="Received payment tracker"
+		                      >
+		                        <div className="min-w-0 flex-1 flex flex-col">
+		                          <span className="text-xs font-semibold text-slate-700 whitespace-normal break-words">
+		                            Payment Tracker
+		                          </span>
+		                          <span className="text-xs font-normal text-slate-700 whitespace-normal break-words">
+		                            Have you received payment yet?
+		                          </span>
+		                        </div>
+		                        <div className="flex shrink-0 items-center gap-2">
 			                          <Button
 			                            type="button"
 			                            variant="outline"

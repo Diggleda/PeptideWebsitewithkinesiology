@@ -11,7 +11,7 @@ from flask import Blueprint, Response, g, make_response, request
 from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
-from ..repositories import order_repository
+from ..repositories import order_repository, patient_links_repository
 from ..services import order_service, delegation_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action
@@ -136,6 +136,32 @@ def create_order():
     shipping_address = payload.get("shippingAddress")
     # Support both keys from frontend/backends
     shipping_rate = payload.get("shippingRate") or payload.get("shippingEstimate")
+    delegate_proposal_token = (
+        payload.get("delegateProposalToken")
+        or payload.get("delegate_proposal_token")
+        or payload.get("delegationToken")
+        or payload.get("delegation_token")
+        or payload.get("proposalToken")
+        or payload.get("proposal_token")
+        or None
+    )
+    as_delegate_label = payload.get("asDelegate") or payload.get("as_delegate") or None
+    normalized_delegate_token = str(delegate_proposal_token or "").strip()
+    if normalized_delegate_token:
+        as_delegate_label = "Delegate Order"
+        try:
+            link = patient_links_repository.find_by_token(normalized_delegate_token) or {}
+            reference_label = (
+                str(link.get("referenceLabel") or "").strip()
+                or str(link.get("reference_label") or "").strip()
+                or str(link.get("label") or "").strip()
+            )
+            if reference_label:
+                as_delegate_label = reference_label
+        except Exception:
+            as_delegate_label = "Delegate Order"
+    if isinstance(as_delegate_label, str):
+        as_delegate_label = as_delegate_label.strip()[:190] or None
     expected_shipment_window = payload.get("expectedShipmentWindow") or None
     physician_certified = bool(
         payload.get("physicianCertificationAccepted")
@@ -157,6 +183,7 @@ def create_order():
             shipping_rate=shipping_rate,
             expected_shipment_window=expected_shipment_window,
             physician_certified=physician_certified,
+            as_delegate_label=as_delegate_label,
         )
     )
 

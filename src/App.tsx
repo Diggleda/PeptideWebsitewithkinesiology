@@ -349,6 +349,7 @@ interface CarrierTrackingInfo {
 
 interface AccountOrderSummary {
   id: string;
+  asDelegate?: string | null;
   number?: string | null;
   trackingNumber?: string | null;
   shippingCarrier?: string | null;
@@ -1373,6 +1374,7 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         registerLocalEntry({
           id: identifier,
+          asDelegate: normalizeStringField(order?.asDelegate ?? order?.as_delegate) || null,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -1436,6 +1438,7 @@ const normalizeAccountOrdersResponse = (
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
         const wooEntry: AccountOrderSummary = {
           id: identifier,
+          asDelegate: normalizeStringField(order?.asDelegate ?? order?.as_delegate) || null,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           wooOrderNumber: normalizeStringField(order?.number),
@@ -2950,6 +2953,8 @@ function MainApp() {
   const prevUserIdRef = useRef<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [patientLinksRefreshToken, setPatientLinksRefreshToken] = useState(0);
+  const proposalCheckoutWasOpenRef = useRef(false);
   const [activeDelegationProposal, setActiveDelegationProposal] = useState<{
     token: string;
     signature: string;
@@ -2959,6 +2964,7 @@ function MainApp() {
   } | null>(null);
   const isProposalReviewMode = Boolean(activeDelegationProposal);
   const [proposalShippingAddress, setProposalShippingAddress] = useState<CheckoutShippingAddress | null>(null);
+  const [proposalShippingRate, setProposalShippingRate] = useState<AccountShippingEstimate | null>(null);
   const [checkoutPricingMode, setCheckoutPricingMode] =
     useState<PricingMode>("wholesale");
   const initialDelegateToken = (() => {
@@ -3038,8 +3044,20 @@ function MainApp() {
   useEffect(() => {
     if (!activeDelegationProposal) {
       setProposalShippingAddress(null);
+      setProposalShippingRate(null);
     }
   }, [activeDelegationProposal]);
+
+  useEffect(() => {
+    if (checkoutOpen && activeDelegationProposal?.token) {
+      proposalCheckoutWasOpenRef.current = true;
+      return;
+    }
+    if (!checkoutOpen && proposalCheckoutWasOpenRef.current) {
+      proposalCheckoutWasOpenRef.current = false;
+      setPatientLinksRefreshToken((prev) => prev + 1);
+    }
+  }, [activeDelegationProposal?.token, checkoutOpen]);
 
   useEffect(() => {
     if (!canUseRetailPricing && checkoutPricingMode === "retail") {
@@ -15005,6 +15023,7 @@ function MainApp() {
 	      delegateOrderId?: string | null;
 	      sharedAt?: string | null;
 	      shippingAddress?: any | null;
+        shippingRate?: any | null;
 	    }) => {
       if (!payload?.token || !Array.isArray(payload.items) || payload.items.length === 0) {
         toast.error('Proposal is missing items.');
@@ -15033,6 +15052,49 @@ function MainApp() {
             postalCode,
             country,
           } satisfies CheckoutShippingAddress;
+        })();
+
+        const nextShippingRate = (() => {
+          const candidate = payload.shippingRate;
+          if (!candidate || typeof candidate !== 'object') return null;
+          const toNumberOrNull = (value: unknown) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+          const toIntOrNull = (value: unknown) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+          };
+          const carrierId = normalizeField((candidate as any).carrierId ?? (candidate as any).carrier_id) || null;
+          const serviceCode = normalizeField((candidate as any).serviceCode ?? (candidate as any).service_code) || null;
+          const serviceType = normalizeField((candidate as any).serviceType ?? (candidate as any).service_type) || null;
+          const rate = toNumberOrNull((candidate as any).rate);
+          if (!carrierId && !serviceCode && !serviceType && rate == null) return null;
+          return {
+            carrierId,
+            serviceCode,
+            serviceType,
+            estimatedDeliveryDays: toIntOrNull(
+              (candidate as any).estimatedDeliveryDays ?? (candidate as any).estimated_delivery_days,
+            ),
+            deliveryDateGuaranteed:
+              normalizeField((candidate as any).deliveryDateGuaranteed ?? (candidate as any).delivery_date_guaranteed)
+              || null,
+            rate,
+            currency: normalizeField((candidate as any).currency) || null,
+            packageCode: normalizeField((candidate as any).packageCode ?? (candidate as any).package_code) || null,
+            packageDimensions:
+              ((candidate as any).packageDimensions ?? (candidate as any).package_dimensions ?? null)
+              || null,
+            weightOz: toNumberOrNull((candidate as any).weightOz ?? (candidate as any).weight_oz),
+            estimatedArrivalDate:
+              normalizeField((candidate as any).estimatedArrivalDate ?? (candidate as any).estimated_arrival_date)
+              || null,
+            meta:
+              ((candidate as any).meta && typeof (candidate as any).meta === 'object')
+                ? (candidate as any).meta
+                : null,
+          } satisfies AccountShippingEstimate;
         })();
 
         const nextCart: CartItem[] = [];
@@ -15110,6 +15172,7 @@ function MainApp() {
 	          sharedAt: payload.sharedAt ?? null,
 	        });
         setProposalShippingAddress(nextShippingAddress);
+        setProposalShippingRate(nextShippingRate);
         setCartItems(nextCart);
         setCheckoutOpen(true);
         toast.info(
@@ -15131,6 +15194,7 @@ function MainApp() {
     await delegationAPI.reviewLinkProposal(token, { status: 'rejected' });
     setActiveDelegationProposal(null);
     setProposalShippingAddress(null);
+    setProposalShippingRate(null);
     setCheckoutOpen(false);
     toast.success('Proposal rejected.');
   }, [activeDelegationProposal?.token]);
@@ -15315,6 +15379,7 @@ function MainApp() {
 	        {
 	          physicianCertification:
 	            options?.physicianCertificationAccepted === true,
+            delegateProposalToken: delegationProposalReview?.token ?? null,
 	        },
 	        taxTotal,
 	        options?.paymentMethod ?? null,
@@ -15430,6 +15495,12 @@ function MainApp() {
 	          }
 	          const optimisticOrder: AccountOrderSummary = {
 	            id: wooId ? String(wooId) : String(wooNumber),
+              asDelegate:
+                (typeof created?.asDelegate === "string" && created.asDelegate.trim())
+                  ? created.asDelegate.trim()
+                  : (typeof created?.as_delegate === "string" && created.as_delegate.trim())
+                    ? created.as_delegate.trim()
+                    : null,
 	            number: wooNumber ? String(wooNumber) : null,
 	            status: String(created?.status || "on-hold"),
 	            currency: "usd",
@@ -21303,6 +21374,7 @@ function MainApp() {
 				              referralCodes={referralCodesForHeader}
 				              catalogLoading={catalogLoading}
 				              onLoadDelegateProposal={handleLoadDelegateProposalIntoCart}
+                      patientLinksRefreshToken={patientLinksRefreshToken}
 					            />
 			          </div>
 			        )}
@@ -23029,7 +23101,9 @@ function MainApp() {
 		          )}
 		        </div>
 
-	      {isDelegateMode && (!delegateIsValidated || delegateError) ? null : user ? (
+	      {isDelegateMode && (!delegateIsValidated || delegateError) ? null : isDelegateMode ? (
+	        <LegalFooter showContactCTA variant="ctaOnly" />
+	      ) : user ? (
 	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : (
 	        <LegalFooter showContactCTA variant="full" />
@@ -23047,6 +23121,7 @@ function MainApp() {
 	          setCartItems([]);
 	          setActiveDelegationProposal(null);
 	          setProposalShippingAddress(null);
+            setProposalShippingRate(null);
 	        }}
 	        onPaymentSuccess={
           isDelegateMode
@@ -23088,6 +23163,7 @@ function MainApp() {
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
 	        }
+          defaultShippingRate={isDelegateMode ? null : proposalShippingRate}
         availableCredits={isDelegateMode ? 0 : availableReferralCredits}
         pricingMode={checkoutPricingMode}
         onPricingModeChange={setCheckoutPricingMode}

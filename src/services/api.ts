@@ -1421,6 +1421,7 @@ export const ordersAPI = {
     expectedShipmentWindow?: string | null,
     options?: {
       physicianCertification?: boolean;
+      delegateProposalToken?: string | null;
     },
     taxTotal?: number | null,
     paymentMethod?: string | null,
@@ -1454,6 +1455,7 @@ export const ordersAPI = {
         shippingTotal: shipping?.shippingTotal ?? null,
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
+        delegateProposalToken: options?.delegateProposalToken ?? null,
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),
     });
