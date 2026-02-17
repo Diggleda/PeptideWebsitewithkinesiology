@@ -77,6 +77,25 @@ const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: s
   };
 };
 
+const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: string | null) => {
+  const base = createNodeDummyPatientLink(zelleContact, doctorName);
+  const proposalCreatedAt = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+  return [
+    base,
+    {
+      ...base,
+      token: 'node-ui-dummy-link-2',
+      referenceLabel: 'UI Dummy Proposal',
+      patientId: 'NODE-UI-002',
+      createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString(),
+      lastUsedAt: proposalCreatedAt,
+      delegateSharedAt: proposalCreatedAt,
+      delegateReviewStatus: 'pending',
+      receivedPayment: false,
+    },
+  ];
+};
+
 const isNodePatientLinkDummyMode = (() => {
   const env = (import.meta as any)?.env ?? {};
   const configuredApiUrl = String(env?.VITE_API_URL || '').trim();
@@ -141,6 +160,24 @@ const NetworkBarsIcon = ({ activeBars }: { activeBars: number }) => {
     </svg>
   );
 };
+
+const ClipboardDocumentIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0015 2.25h-1.5a2.251 2.251 0 00-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 00-9-9z"
+    />
+  </svg>
+);
 
 const triggerBrowserDownload = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
@@ -3368,11 +3405,11 @@ export function Header({
       const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
       const sanitizedLinks = links.filter((link: any) => {
         const token = typeof (link as any)?.token === 'string' ? (link as any).token.trim() : '';
-        return token !== 'node-ui-dummy-link';
+        return !token.startsWith('node-ui-dummy-link');
       });
       if (isNodePatientLinkDummyMode) {
         setPatientLinks([
-          createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
+          ...createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null),
           ...sanitizedLinks,
         ]);
       } else {
@@ -3383,13 +3420,13 @@ export function Header({
       const status = typeof error?.status === 'number' ? error.status : null;
       const delegationRouteMissing = status === 404 || status === 405;
       if (delegationRouteMissing && isNodePatientLinkDummyMode) {
-        setPatientLinks([createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null)]);
+        setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
         setPatientLinksError(null);
         return;
       }
       if (isNodePatientLinkDummyMode) {
-        setPatientLinks([createNodeDummyPatientLink(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null)]);
+        setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
         setPatientLinksError(null);
         return;
@@ -3978,13 +4015,6 @@ export function Header({
       setAccountTab('details');
     }
   }, [accountTab, showPatientLinksTab]);
-
-  useEffect(() => {
-    if (!welcomeOpen) return;
-    if (accountTab !== 'patient_links') return;
-    if (!showPatientLinksTab) return;
-    void loadPatientLinks();
-  }, [accountTab, loadPatientLinks, showPatientLinksTab, welcomeOpen]);
 
   const identityFields: Array<{ key: 'name' | 'email' | 'phone'; label: string; type?: string; autoComplete?: string }> = [
     { key: 'name', label: 'Full Name', autoComplete: 'name' },
@@ -5444,7 +5474,7 @@ export function Header({
 	          >
 	            <span className="block">Patient Catelogue Markup %</span>
 	            <span className="label-paren mt-0.5 block">
-	              (The percent difference between what your patient pays you and what you pay us.)
+	              (The percent difference between what your patient pays you and what you pay us)
 	            </span>
 	          </Label>
 	          <div className="patient-link-form__markup relative w-full mb-0">
@@ -5622,7 +5652,6 @@ export function Header({
 		              const isSavingPayment = patientLinksSavingPaymentToken === token;
 		              const isProposalBusy = patientLinksProposalToken === token;
 		              const isUpdatingReceivedPayment = patientLinksPaymentReceivedToken === token;
-		              const canRejectProposal = hasProposal && proposalStatus === 'pending';
 		              const proposalLabel =
 		                proposalStatus === 'approved' || proposalStatus === 'accepted'
 		                  ? 'Accepted'
@@ -5680,7 +5709,7 @@ export function Header({
 		                    </div>
 	                  </div>
 			                  <div className="patient-link-actions sm:self-start">
-			                    <div className="patient-link-action-buttons flex flex-wrap items-center gap-2">
+			                    <div className="patient-link-action-buttons flex flex-wrap items-center justify-end gap-2">
 			                      {hasProposal && (
 			                        <Button
 			                        type="button"
@@ -5690,21 +5719,8 @@ export function Header({
 		                        disabled={!token || isProposalBusy}
 		                        className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
 		                      >
-		                        <Eye className="h-4 w-4" aria-hidden="true" />
-		                        {isProposalBusy ? 'Loading…' : 'View Proposal'}
-		                      </Button>
-		                      )}
-		                      {canRejectProposal && (
-		                        <Button
-		                        type="button"
-		                        variant="outline"
-		                        size="sm"
-		                        onClick={() => void handleRejectPatientProposal(token)}
-		                        disabled={!token || isProposalBusy}
-		                        className="patient-link-payment-toggle-button squircle-sm gap-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
-		                      >
-		                        <X className="h-4 w-4" aria-hidden="true" />
-		                        {isProposalBusy ? 'Working…' : 'Reject'}
+		                        <ClipboardDocumentIcon className="h-4 w-4" />
+		                        {isProposalBusy ? 'Loading…' : 'Review Proposal'}
 		                      </Button>
 		                      )}
 		                      <Button
@@ -5740,48 +5756,66 @@ export function Header({
 			                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
 			                    </Button>
 			                    </div>
-			                    <div
-			                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2"
-			                      aria-label="Received payment tracker"
-			                    >
-			                      <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
-			                        Received payment yet?
-			                      </span>
-			                      <div className="flex items-center gap-2">
-			                        <Button
-			                          type="button"
-			                          variant="outline"
-			                          size="icon"
-			                          onClick={() => void handleSetPatientLinkPaymentReceived(token, false)}
-			                          disabled={!token || isUpdatingReceivedPayment || !receivedPayment}
-			                          className={
-			                            receivedPayment
-			                              ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                              : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-red-200 bg-red-50 text-red-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                          }
-			                          title="Mark unpaid"
-			                          aria-label="Mark unpaid"
-			                        >
-			                          <X className="h-4 w-4" aria-hidden="true" />
-			                        </Button>
-			                        <Button
-			                          type="button"
-			                          variant="outline"
-			                          size="icon"
-			                          onClick={() => void handleSetPatientLinkPaymentReceived(token, true)}
-			                          disabled={!token || isUpdatingReceivedPayment || receivedPayment}
-			                          className={
-			                            receivedPayment
-			                              ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                              : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                          }
-			                          title="Mark paid"
-			                          aria-label="Mark paid"
-			                        >
-			                          <Check className="h-4 w-4" aria-hidden="true" />
-			                        </Button>
+			                    {hasProposal && (
+			                      <div
+			                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3 py-2"
+			                        aria-label="Received payment tracker"
+			                      >
+				                        <div className="flex flex-col">
+				                          <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+				                            Payment Tracker
+				                          </span>
+				                          <span className="text-xs font-normal text-slate-700 whitespace-nowrap">
+				                            Have you received payment yet?
+				                          </span>
+				                        </div>
+			                        <div className="flex items-center gap-2">
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="icon"
+			                            onClick={() => void handleSetPatientLinkPaymentReceived(token, false)}
+			                            disabled={!token || isUpdatingReceivedPayment || !receivedPayment}
+			                            className={
+			                              receivedPayment
+			                                ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                                : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-red-200 bg-red-50 text-red-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                            }
+			                            title="Mark unpaid"
+			                            aria-label="Mark unpaid"
+			                          >
+			                            <X className="h-4 w-4" aria-hidden="true" />
+			                          </Button>
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="icon"
+			                            onClick={() => void handleSetPatientLinkPaymentReceived(token, true)}
+			                            disabled={!token || isUpdatingReceivedPayment || receivedPayment}
+			                            className={
+			                              receivedPayment
+			                                ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                                : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                            }
+			                            title="Mark paid"
+			                            aria-label="Mark paid"
+			                          >
+			                            <Check className="h-4 w-4" aria-hidden="true" />
+			                          </Button>
+			                        </div>
 			                      </div>
-			                    </div>
+			                    )}
+			                    {!hasProposal && (
+			                      <div
+			                        aria-hidden="true"
+			                        className="my-1 w-full block"
+			                        style={{
+			                          height: '1px',
+			                          backgroundColor: 'rgb(226,232,240)',
+			                          borderRadius: '999px',
+			                        }}
+			                      />
+			                    )}
 			                    <details className="patient-link-settings-details mt-0 w-full rounded-xl bg-white/70 px-3 py-2">
 			                      <summary className="patient-link-settings-summary">
 			                        Payment settings (delegate)

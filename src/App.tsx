@@ -1679,6 +1679,16 @@ const REFERRAL_BACKGROUND_MIN_INTERVAL_MS = (() => {
   return 30_000;
 })();
 
+const REFERRAL_TRACE_DEBUG_ENABLED =
+  String((import.meta as any).env?.VITE_REFERRAL_TRACE_DEBUG || "")
+    .toLowerCase()
+    .trim() === "1";
+const REFERRAL_TRACE_STACK_ENABLED =
+  REFERRAL_TRACE_DEBUG_ENABLED &&
+  String((import.meta as any).env?.VITE_REFERRAL_TRACE_STACK || "")
+    .toLowerCase()
+    .trim() === "1";
+
 const IMAGE_PREFETCH_ENABLED =
   String((import.meta as any).env?.VITE_IMAGE_PREFETCH_ENABLED || "")
     .toLowerCase()
@@ -12597,23 +12607,25 @@ function MainApp() {
 
   const tracedRefreshReferralData = useCallback(
     async (trigger: string, options?: { showLoading?: boolean; force?: boolean }) => {
-      const userSnapshot = user
-        ? { id: user.id, role: user.role }
-        : { id: null, role: null };
-      const showLoading = options?.showLoading ?? true;
-      console.debug("[Referral] refreshReferralData invoke", {
-        trigger,
-        showLoading,
-        force: options?.force === true,
-        user: userSnapshot,
-        suppressed: referralPollingSuppressed,
-        postLoginHold,
-        ts: Date.now(),
-        stack:
-          typeof Error !== "undefined"
-            ? new Error("refreshReferralData stack").stack
-            : undefined,
-      });
+      if (REFERRAL_TRACE_DEBUG_ENABLED) {
+        const userSnapshot = user
+          ? { id: user.id, role: user.role }
+          : { id: null, role: null };
+        const showLoading = options?.showLoading ?? true;
+        console.debug("[Referral] refreshReferralData invoke", {
+          trigger,
+          showLoading,
+          force: options?.force === true,
+          user: userSnapshot,
+          suppressed: referralPollingSuppressed,
+          postLoginHold,
+          ts: Date.now(),
+          stack:
+            REFERRAL_TRACE_STACK_ENABLED && typeof Error !== "undefined"
+              ? new Error("refreshReferralData stack").stack
+              : undefined,
+        });
+      }
       return refreshReferralData(options);
     },
     [user, referralPollingSuppressed, postLoginHold, refreshReferralData],
@@ -15109,6 +15121,19 @@ function MainApp() {
     },
     [buildDelegationCartSignature, catalogProducts, ensureCatalogProductHasVariants],
   );
+
+  const handleRejectActiveDelegationProposal = useCallback(async () => {
+    if (!activeDelegationProposal?.token) {
+      toast.error('No active proposal to reject.');
+      return;
+    }
+    const token = activeDelegationProposal.token;
+    await delegationAPI.reviewLinkProposal(token, { status: 'rejected' });
+    setActiveDelegationProposal(null);
+    setProposalShippingAddress(null);
+    setCheckoutOpen(false);
+    toast.success('Proposal rejected.');
+  }, [activeDelegationProposal?.token]);
 
   const handleRefreshNews = async () => {
     beginNewsLoading();
@@ -23056,6 +23081,7 @@ function MainApp() {
 	        estimateTotals={isDelegateMode ? estimateTotalsForDelegateCheckout : undefined}
 	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
+	        onRejectProposal={isProposalReviewMode ? handleRejectActiveDelegationProposal : null}
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}

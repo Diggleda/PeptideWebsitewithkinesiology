@@ -305,7 +305,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
           {variant === 'ctaOnly' ? (
             <div className="flex flex-col items-center justify-center gap-6 pt-10 pb-10">
               <div className="flex flex-col items-center justify-center gap-3">
-                <p className="mt-7 pt-4 text-m font-medium text-slate-900">Interested in joining the network?</p>
+                <p className="mt-7 pt-4 text-m font-medium text-slate-900">Want to join the physician network?</p>
                 {showContactCTA ? (
                   <button
                     type="button"
@@ -385,7 +385,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
             {/* Contact CTA - top on mobile, right on desktop */}
             {showContactCTA && (
               <div className="legal-contact flex flex-col items-center justify-center lg:items-end lg:justify-center gap-2 text-center lg:text-right w-full pt-4 lg:pt-0">
-                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Want to join the Network?</p>
+                <p className="text-sm lg:pt-6 pb-2 font-medium text-slate-900">Want to join the physician network?</p>
                 <button
                   type="button"
                   onClick={() => {

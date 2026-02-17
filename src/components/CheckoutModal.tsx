@@ -195,6 +195,7 @@ interface CheckoutModalProps {
   delegatePaymentInstructions?: string | null;
   pricingMarkupPercent?: number | null;
   proposalMarkupPercent?: number | null;
+  onRejectProposal?: (() => Promise<void> | void) | null;
 }
 
 const formatCardNumber = (value: string) =>
@@ -255,6 +256,7 @@ export function CheckoutModal({
   delegatePaymentInstructions,
   pricingMarkupPercent,
   proposalMarkupPercent,
+  onRejectProposal,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [discountCodeDraft, setDiscountCodeDraft] = useState('');
@@ -302,6 +304,7 @@ export function CheckoutModal({
   } | null>(null);
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
+  const [isRejectingProposal, setIsRejectingProposal] = useState(false);
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
   const activeTaxRequestRef = useRef<AbortController | null>(null);
 
@@ -570,6 +573,25 @@ export function CheckoutModal({
   } else if (isProcessing) {
     checkoutButtonLabel = 'Processing order...';
   }
+
+  const canRejectProposalInCheckout =
+    Boolean(!isDelegateFlow && proposalMode && typeof onRejectProposal === 'function');
+
+  const handleRejectProposalFromCheckout = useCallback(async () => {
+    if (!canRejectProposalInCheckout || !onRejectProposal || isRejectingProposal) return;
+    setIsRejectingProposal(true);
+    try {
+      await Promise.resolve(onRejectProposal());
+    } catch (error: any) {
+      toast.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'Unable to reject proposal right now.',
+      );
+    } finally {
+      setIsRejectingProposal(false);
+    }
+  }, [canRejectProposalInCheckout, isRejectingProposal, onRejectProposal]);
 
   // No-op referral handling removed
 
@@ -1861,7 +1883,7 @@ export function CheckoutModal({
 			                </div>
 		                {showDualPricing && delegateTotal != null && (
 		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
-		                    <span>Delegate pays:</span>
+		                    <span>Delegate pays you:</span>
 		                    <span className="tabular-nums">
 		                      ${delegateTotal.toFixed(2)}
 		                    </span>
@@ -1878,12 +1900,22 @@ export function CheckoutModal({
 	              </div>
 
               {/* Checkout Button */}
-              <div className="pt-4">
+              <div className="pt-4 flex items-center gap-2">
+                {canRejectProposalInCheckout && (
+                  <Button
+                    variant="outline"
+                    onClick={handleRejectProposalFromCheckout}
+                    disabled={isProcessing || checkoutStatus === 'success' || isRejectingProposal}
+                    className="squircle-sm border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800"
+                  >
+                    {isRejectingProposal ? 'Rejecting…' : 'Reject'}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   onClick={handlePrimaryAction}
                   disabled={!meetsCheckoutRequirements || isProcessing || checkoutStatus === 'success'}
-                  className="w-full glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                  className="flex-1 glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                 >
                   {canCheckout ? (
                     <ShoppingCart className="w-4 h-4 mr-2" />

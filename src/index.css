@@ -367,7 +367,7 @@ body {
 @media (min-width: 640px) {
   .patient-link-item {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+    grid-template-columns: minmax(0, 35%) minmax(0, 65%);
     align-items: flex-start;
     column-gap: 1rem;
   }
@@ -453,9 +453,11 @@ body {
   }
 
   .patient-link-actions {
-    width: 100%;
+    width: max-content;
+    max-width: 100%;
     align-self: flex-start;
     justify-content: flex-end;
+    margin-left: auto;
   }
 
   .patient-link-actions > * {
@@ -466,12 +468,15 @@ body {
   .patient-link-action-buttons {
     width: max-content;
     max-width: 100%;
-    align-self: flex-start;
+    align-self: flex-end;
+    justify-content: flex-end;
   }
 
   .patient-link-actions > :not(.patient-link-action-buttons) {
-    width: min(100%, 460px);
+    width: 100%;
+    max-width: 100%;
     align-self: stretch;
+    margin-left: 0;
   }
 }
 

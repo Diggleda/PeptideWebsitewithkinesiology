@@ -14,6 +14,10 @@ store.init();
 
 const DEFAULT_MARKUP_PERCENT = 15;
 const LINK_EXPIRY_HOURS = 72;
+const RESOLVE_LAST_USED_WRITE_THROTTLE_MS = Math.max(
+  5_000,
+  Number(process.env.DELEGATION_RESOLVE_WRITE_THROTTLE_MS || 60_000),
+);
 
 const normalizeOptionalString = (value) => {
   if (typeof value !== 'string') return null;
@@ -186,6 +190,7 @@ router.get('/resolve', authenticateOptional, (req, res) => {
   const token = String(req.query?.token || '').trim();
   if (!token) return res.status(400).json({ error: 'token is required' });
   const state = getState();
+  const nowMs = Date.now();
   const doctorIds = Object.keys(state.byDoctorId || {});
   for (const doctorId of doctorIds) {
     const bucket = ensureDoctorBucket(state, doctorId);
@@ -196,8 +201,13 @@ router.get('/resolve', authenticateOptional, (req, res) => {
     if (Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs) {
       return res.status(404).json({ error: 'Invalid or expired delegation link.' });
     }
-    link.lastUsedAt = new Date().toISOString();
-    saveState(state);
+    const lastUsedAtMs = Date.parse(link.lastUsedAt || '');
+    const shouldPersistLastUsedAt = !Number.isFinite(lastUsedAtMs)
+      || (nowMs - lastUsedAtMs) >= RESOLVE_LAST_USED_WRITE_THROTTLE_MS;
+    if (shouldPersistLastUsedAt) {
+      link.lastUsedAt = new Date(nowMs).toISOString();
+      saveState(state);
+    }
     const doctor = userRepository.findById(doctorId);
     return res.json({
       token: link.token,
