@@ -1784,34 +1784,33 @@ const getOrdersForUser = async (userId) => {
           const pepproOrderId = order?.integrationDetails?.wooCommerce?.pepproOrderId
             || order?.integrationDetails?.wooCommerce?.peppro_order_id
             || null;
-          if (!pepproOrderId) {
-            enriched.push(order);
-            // eslint-disable-next-line no-continue
-            continue;
-          }
-          const localOrder = orderRepository.findById(pepproOrderId);
-          const sqlOrder = !localOrder ? await orderSqlRepository.fetchById(pepproOrderId) : null;
+          const localOrder = pepproOrderId ? orderRepository.findById(pepproOrderId) : null;
+          const sqlOrder = !localOrder && pepproOrderId ? await orderSqlRepository.fetchById(pepproOrderId) : null;
+          const sqlOrderByWoo = !localOrder && !sqlOrder && order?.id
+            ? await orderSqlRepository.fetchByWooOrderId(order.id)
+            : null;
           const hydratedLocalOrder = localOrder || sqlOrder;
-          if (!hydratedLocalOrder) {
+          const hydrated = hydratedLocalOrder || sqlOrderByWoo;
+          if (!hydrated) {
             enriched.push(order);
             // eslint-disable-next-line no-continue
             continue;
           }
-          const stripeMeta = hydratedLocalOrder.integrationDetails?.stripe || null;
+          const stripeMeta = hydrated.integrationDetails?.stripe || null;
           const asDelegate =
-            (typeof hydratedLocalOrder.asDelegate === 'string' && hydratedLocalOrder.asDelegate.trim())
-              ? hydratedLocalOrder.asDelegate.trim()
-              : (typeof hydratedLocalOrder.as_delegate === 'string' && hydratedLocalOrder.as_delegate.trim())
-                ? hydratedLocalOrder.as_delegate.trim()
+            (typeof hydrated.asDelegate === 'string' && hydrated.asDelegate.trim())
+              ? hydrated.asDelegate.trim()
+              : (typeof hydrated.as_delegate === 'string' && hydrated.as_delegate.trim())
+                ? hydrated.as_delegate.trim()
                 : null;
           enriched.push({
             ...order,
             asDelegate,
             as_delegate: asDelegate,
-            paymentMethod: hydratedLocalOrder.paymentMethod || order.paymentMethod,
+            paymentMethod: hydrated.paymentMethod || order.paymentMethod,
             paymentDetails:
-              hydratedLocalOrder.paymentDetails
-              || hydratedLocalOrder.paymentMethod
+              hydrated.paymentDetails
+              || hydrated.paymentMethod
               || order.paymentDetails
               || order.paymentMethod
               || null,

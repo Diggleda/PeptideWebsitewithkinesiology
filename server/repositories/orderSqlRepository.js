@@ -379,6 +379,36 @@ const fetchByShipStationOrderId = async (shipStationOrderId) => {
   return mapRowToOrder(row);
 };
 
+const fetchByWooOrderId = async (wooOrderId) => {
+  if (!mysqlClient.isEnabled() || !wooOrderId) {
+    return null;
+  }
+  const value = String(wooOrderId).trim();
+  if (!value) return null;
+
+  const safeFetchOneCompat = async (query, params) => {
+    try {
+      return await mysqlClient.fetchOne(query, params);
+    } catch (error) {
+      const code = error && typeof error === 'object' ? error.code : null;
+      if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  const [pepproRow, legacyRow] = await Promise.all([
+    safeFetchOneCompat('SELECT * FROM peppro_orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: value }),
+    safeFetchOneCompat('SELECT * FROM orders WHERE woo_order_id = :wooOrderId LIMIT 1', { wooOrderId: value }),
+  ]);
+
+  const candidates = [];
+  if (pepproRow) candidates.push(mapRowToOrder(pepproRow, { source: 'mysql:peppro_orders' }));
+  if (legacyRow) candidates.push(mapRowToOrder(legacyRow, { source: 'mysql:orders' }));
+  return dedupeOrders(candidates)[0] || null;
+};
+
 const fetchByUserIds = async (userIds = []) => {
   if (!mysqlClient.isEnabled()) return [];
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
@@ -501,5 +531,6 @@ module.exports = {
   fetchByUserIds,
   fetchByBillingEmails,
   fetchById,
+  fetchByWooOrderId,
   fetchByShipStationOrderId,
 };
