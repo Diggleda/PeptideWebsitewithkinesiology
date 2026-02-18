@@ -17197,15 +17197,28 @@ function MainApp() {
 	                  }}
 	                >
 	                  <div className="whitespace-nowrap">Order</div>
-	                  <div className="whitespace-nowrap">Doctor</div>
+	                  <div className="whitespace-nowrap text-center">Doctor</div>
 	                  <div className="whitespace-nowrap text-right">Placed</div>
 	                  <div className="whitespace-nowrap text-right">Total</div>
 	                </div>
 	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
 	                  {adminOnHoldOrders.map((order, index) => {
 	                    const orderNumber = order.number || order.id || "Order";
+	                    const orderAny = order as any;
+	                    const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
+	                    const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
+	                    const shippingName = `${String(shippingAddress?.firstName ?? shippingAddress?.first_name ?? "").trim()} ${String(shippingAddress?.lastName ?? shippingAddress?.last_name ?? "").trim()}`.trim();
+	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
 	                    const doctorLabel =
-	                      order.doctorName || order.doctorEmail || "Unknown doctor";
+	                      order.doctorName ||
+	                      shippingName ||
+	                      billingName ||
+	                      shippingAddress?.name ||
+	                      billingAddress?.name ||
+	                      order.doctorEmail ||
+	                      shippingAddress?.email ||
+	                      billingAddress?.email ||
+	                      "Unknown doctor";
 	                    const orderPlacedAt =
 	                      order.createdAt ||
 	                      (order as any)?.dateCreated ||
@@ -17237,7 +17250,7 @@ function MainApp() {
 	                            {`Order #${orderNumber}`}
 	                          </button>
 	                        </div>
-	                        <div className="text-sm text-slate-700 min-w-0 truncate">
+	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
 	                          {doctorLabel}
 	                        </div>
 	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">

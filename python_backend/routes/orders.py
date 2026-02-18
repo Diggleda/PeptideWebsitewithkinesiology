@@ -313,6 +313,22 @@ def admin_on_hold_orders():
         def _normalized_status(value) -> str:
             return str(value or "").strip().lower().replace("_", "-")
 
+        def _as_dict(value):
+            return value if isinstance(value, dict) else {}
+
+        def _first_text(*values) -> str | None:
+            for value in values:
+                text = str(value or "").strip()
+                if text:
+                    return text
+            return None
+
+        def _combined_name(first_name, last_name) -> str | None:
+            first = str(first_name or "").strip()
+            last = str(last_name or "").strip()
+            full = f"{first} {last}".strip()
+            return full or None
+
         summaries = []
         for local in local_orders:
             if not isinstance(local, dict):
@@ -322,6 +338,35 @@ def admin_on_hold_orders():
 
             local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
             doctor = user_lookup.get(local_user_id) or {}
+            shipping = _as_dict(local.get("shippingAddress") or local.get("shipping_address"))
+            billing = _as_dict(local.get("billingAddress") or local.get("billing_address"))
+            customer = _as_dict(local.get("customer"))
+            shipping_name = _combined_name(
+                shipping.get("firstName") or shipping.get("first_name"),
+                shipping.get("lastName") or shipping.get("last_name"),
+            ) or _first_text(shipping.get("name"), shipping.get("company"))
+            billing_name = _combined_name(
+                billing.get("firstName") or billing.get("first_name"),
+                billing.get("lastName") or billing.get("last_name"),
+            ) or _first_text(billing.get("name"), billing.get("company"))
+            doctor_email = _first_text(
+                doctor.get("email"),
+                local.get("doctorEmail"),
+                local.get("doctor_email"),
+                local.get("email"),
+                customer.get("email"),
+                billing.get("email"),
+                shipping.get("email"),
+            )
+            doctor_name = _first_text(
+                doctor.get("name"),
+                local.get("doctorName"),
+                local.get("doctor_name"),
+                customer.get("name"),
+                shipping_name,
+                billing_name,
+                doctor_email,
+            ) or "Unknown doctor"
             summary = {
                 "id": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
                 "wooOrderId": local.get("wooOrderId") or local.get("woo_order_id") or None,
@@ -336,8 +381,8 @@ def admin_on_hold_orders():
                 "createdAt": local.get("createdAt") or local.get("dateCreated") or local.get("date_created") or None,
                 "updatedAt": local.get("updatedAt") or None,
                 "doctorId": doctor.get("id") or local_user_id or None,
-                "doctorName": doctor.get("name") or doctor.get("email") or "Unknown doctor",
-                "doctorEmail": doctor.get("email") or None,
+                "doctorName": doctor_name,
+                "doctorEmail": doctor_email,
                 "userId": doctor.get("id") or local_user_id or None,
                 "lineItems": local.get("items") or [],
                 "source": "peppro",
