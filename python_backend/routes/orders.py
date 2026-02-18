@@ -11,7 +11,7 @@ from flask import Blueprint, Response, g, make_response, request
 from ..middleware.auth import require_auth
 from ..integrations import ship_station
 from ..integrations import woo_commerce
-from ..repositories import order_repository, patient_links_repository
+from ..repositories import order_repository, patient_links_repository, user_repository
 from ..services import order_service, delegation_service
 from ..services.invoice_service import build_invoice_pdf
 from ..utils.http import handle_action
@@ -276,6 +276,76 @@ def sales_by_rep_summary():
             force=force,
             debug=debug,
         )
+
+    return handle_action(action)
+
+
+@blueprint.get("/admin/on-hold")
+@blueprint.get("/on-hold")
+@require_auth
+def admin_on_hold_orders():
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role != "admin":
+            err = ValueError("Admin access required")
+            setattr(err, "status", 403)
+            raise err
+
+        raw_limit = request.args.get("limit")
+        try:
+            limit = int(raw_limit) if raw_limit is not None else 1200
+        except Exception:
+            limit = 1200
+        limit = max(1, min(limit, 5000))
+
+        # Pull a wider recent window so filtering can still return up to `limit`.
+        scan_limit = max(limit * 4, 1500)
+        scan_limit = min(scan_limit, 10000)
+        local_orders = order_repository.list_recent(scan_limit) or []
+
+        users = user_repository.get_all() or []
+        user_lookup = {
+            str(user.get("id")): user
+            for user in users
+            if isinstance(user, dict) and user.get("id") is not None
+        }
+
+        def _normalized_status(value) -> str:
+            return str(value or "").strip().lower().replace("_", "-")
+
+        summaries = []
+        for local in local_orders:
+            if not isinstance(local, dict):
+                continue
+            if _normalized_status(local.get("status")) not in ("on-hold", "onhold"):
+                continue
+
+            local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
+            doctor = user_lookup.get(local_user_id) or {}
+            summary = {
+                "id": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "wooOrderId": local.get("wooOrderId") or local.get("woo_order_id") or None,
+                "wooOrderNumber": local.get("wooOrderNumber") or local.get("woo_order_number") or None,
+                "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "status": local.get("status") or "on-hold",
+                "total": float(local.get("grandTotal") or local.get("total") or 0),
+                "grandTotal": float(local.get("grandTotal") or local.get("total") or 0),
+                "taxTotal": float(local.get("taxTotal") or 0),
+                "shippingTotal": float(local.get("shippingTotal") or 0),
+                "currency": local.get("currency") or "USD",
+                "createdAt": local.get("createdAt") or local.get("dateCreated") or local.get("date_created") or None,
+                "updatedAt": local.get("updatedAt") or None,
+                "doctorId": doctor.get("id") or local_user_id or None,
+                "doctorName": doctor.get("name") or doctor.get("email") or "Unknown doctor",
+                "doctorEmail": doctor.get("email") or None,
+                "userId": doctor.get("id") or local_user_id or None,
+                "lineItems": local.get("items") or [],
+                "source": "peppro",
+            }
+            summaries.append(summary)
+
+        summaries.sort(key=lambda order: str(order.get("createdAt") or order.get("updatedAt") or ""), reverse=True)
+        return {"orders": summaries[:limit]}
 
     return handle_action(action)
 
