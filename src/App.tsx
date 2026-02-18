@@ -1467,6 +1467,18 @@ const normalizeAccountOrdersResponse = (
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
           source: "peppro",
+          doctorId:
+            normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
+            null,
+          doctorName:
+            normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
+            null,
+          doctorEmail:
+            normalizeStringField(order?.doctorEmail ?? order?.doctor_email ?? order?.billing?.email ?? order?.billing_email) ||
+            null,
+          doctorProfileImageUrl:
+            normalizeStringField(order?.doctorProfileImageUrl ?? order?.doctor_profile_image_url) ||
+            null,
           lineItems: toOrderLineItems(
             order?.items || order?.lineItems || order?.line_items,
           ),
@@ -1534,6 +1546,18 @@ const normalizeAccountOrdersResponse = (
           createdAt: order?.createdAt || null,
           updatedAt: order?.updatedAt || null,
           source: "peppro",
+          doctorId:
+            normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
+            null,
+          doctorName:
+            normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
+            null,
+          doctorEmail:
+            normalizeStringField(order?.doctorEmail ?? order?.doctor_email ?? order?.billing?.email ?? order?.billing_email) ||
+            null,
+          doctorProfileImageUrl:
+            normalizeStringField(order?.doctorProfileImageUrl ?? order?.doctor_profile_image_url) ||
+            null,
           lineItems: toOrderLineItems(
             order?.items || order?.lineItems || order?.line_items,
           ),
@@ -1611,6 +1635,18 @@ const normalizeAccountOrdersResponse = (
             order?.date_modified ||
             null,
           source: "woocommerce",
+          doctorId:
+            normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
+            null,
+          doctorName:
+            normalizeStringField(order?.doctorName ?? order?.doctor_name ?? order?.billing_name) ||
+            null,
+          doctorEmail:
+            normalizeStringField(order?.doctorEmail ?? order?.doctor_email ?? order?.billing?.email ?? order?.billing_email) ||
+            null,
+          doctorProfileImageUrl:
+            normalizeStringField(order?.doctorProfileImageUrl ?? order?.doctor_profile_image_url) ||
+            null,
           lineItems: toOrderLineItems(
             order?.lineItems || order?.line_items || order?.items,
           ),
@@ -9360,7 +9396,6 @@ function MainApp() {
 	          salesRepEmail:
 	            rep?.salesRepEmail ??
 	            rep?.sales_rep_email ??
-	            rep?.email ??
 	            null,
 	          totalOrders: Number.isFinite(totalOrders) ? totalOrders : 0,
 	          totalRevenue: Number.isFinite(totalRevenue) ? totalRevenue : 0,
@@ -17183,17 +17218,17 @@ function MainApp() {
 	              No on-hold orders found.
 	            </div>
 	          ) : (
-	            <div className="w-full" style={{ minWidth: 920 }}>
+	            <div className="w-full" style={{ minWidth: 980 }}>
 	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 	                <span>Orders: {adminOnHoldOrders.length}</span>
 	                <span>Total: {formatCurrency(adminOnHoldOrderTotal)}</span>
 	              </div>
-	              <div className="w-max">
+	              <div className="w-full">
 	                <div
-	                  className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                  className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
 	                  style={{
 	                    gridTemplateColumns:
-	                      "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+	                      "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
 	                  }}
 	                >
 	                  <div className="whitespace-nowrap">Order</div>
@@ -17209,13 +17244,29 @@ function MainApp() {
 	                    const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
 	                    const shippingName = `${String(shippingAddress?.firstName ?? shippingAddress?.first_name ?? "").trim()} ${String(shippingAddress?.lastName ?? shippingAddress?.last_name ?? "").trim()}`.trim();
 	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
+	                    const rawDoctorName = String(order.doctorName ?? "").trim();
+	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
+	                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
+	                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
+	                    const doctorNameFromApi =
+	                      (rawDoctorName &&
+	                      normalizedDoctorName !== "unknown doctor" &&
+	                      normalizedDoctorName !== "unknown"
+	                        ? rawDoctorName
+	                        : "") ||
+	                      (rawDoctorNameSnake &&
+	                      normalizedDoctorNameSnake !== "unknown doctor" &&
+	                      normalizedDoctorNameSnake !== "unknown"
+	                        ? rawDoctorNameSnake
+	                        : "");
 	                    const doctorLabel =
-	                      order.doctorName ||
+	                      doctorNameFromApi ||
 	                      shippingName ||
 	                      billingName ||
 	                      shippingAddress?.name ||
 	                      billingAddress?.name ||
 	                      order.doctorEmail ||
+	                      orderAny?.doctor_email ||
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
@@ -17234,10 +17285,10 @@ function MainApp() {
 	                    return (
 	                      <li
 	                        key={key}
-	                        className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+	                        className="grid w-full items-center gap-3 px-3 py-1.5 border-b border-slate-200/70 last:border-b-0"
 	                        style={{
 	                          gridTemplateColumns:
-	                            "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+	                            "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
 	                        }}
 	                      >
 	                        <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">

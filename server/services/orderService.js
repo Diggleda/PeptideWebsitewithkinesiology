@@ -96,6 +96,68 @@ const normalizeRole = (role) => (role || '')
 
 const normalizeEmail = (value) => (value ? String(value).trim().toLowerCase() : '');
 
+const fetchSalesRepEmailsFromTable = async (repIds) => {
+  const ids = Array.from(new Set((repIds || []).map(normalizeId).filter(Boolean)));
+  const lookup = new Map();
+  if (ids.length === 0) {
+    return lookup;
+  }
+
+  const addRow = (row) => {
+    const emailRaw = typeof row?.email === 'string' ? row.email.trim() : '';
+    if (!emailRaw) return;
+    const email = emailRaw;
+    const repId = normalizeId(row?.id);
+    const legacyId = normalizeId(row?.legacy_user_id ?? row?.legacyUserId ?? null);
+    if (repId) lookup.set(repId, email);
+    if (legacyId) lookup.set(legacyId, email);
+  };
+
+  if (mysqlClient.isEnabled()) {
+    const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
+    const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+    try {
+      const rows = await mysqlClient.fetchAll(
+        `
+          SELECT id, email, legacy_user_id
+          FROM sales_reps
+          WHERE id IN (${placeholders})
+             OR legacy_user_id IN (${placeholders})
+        `,
+        params,
+      );
+      (rows || []).forEach(addRow);
+      return lookup;
+    } catch (error) {
+      logger.warn({ err: error, ids: ids.length }, 'Failed to query sales_reps for sales rep emails');
+      try {
+        const rows = await mysqlClient.fetchAll(
+          `
+            SELECT id, email, legacy_user_id
+            FROM sales_rep
+            WHERE id IN (${placeholders})
+               OR legacy_user_id IN (${placeholders})
+          `,
+          params,
+        );
+        (rows || []).forEach(addRow);
+        return lookup;
+      } catch (fallbackError) {
+        logger.warn({ err: fallbackError, ids: ids.length }, 'Failed to query sales_rep for sales rep emails');
+      }
+    }
+  }
+
+  ids.forEach((id) => {
+    const stored = salesRepRepository.findById ? salesRepRepository.findById(id) : null;
+    const emailRaw = typeof stored?.email === 'string' ? stored.email.trim() : '';
+    if (emailRaw) {
+      lookup.set(id, emailRaw);
+    }
+  });
+  return lookup;
+};
+
 const fetchSalesRepDirectory = async (repIds) => {
   const ids = Array.from(new Set((repIds || []).map(normalizeId).filter(Boolean)));
   const lookup = new Map();
@@ -2252,6 +2314,7 @@ const getSalesByRep = async ({
     ? salesRepRepository.getAll()
     : [];
   const repLookup = new Map();
+  const repEmailFromTableById = new Map();
 
   // Canonicalize rep identity: in many deployments, `users.sales_rep_id` is used as an external rep key
   // referenced by doctors/orders, while reps themselves have their own `users.id` (uuid or numeric).
@@ -2286,6 +2349,14 @@ const getSalesByRep = async ({
       name: rep?.name || rep?.email || 'Sales Rep',
       email: rep?.email || null,
     });
+    const tableEmailRaw = typeof rep?.email === 'string' ? rep.email.trim() : '';
+    if (tableEmailRaw) {
+      repEmailFromTableById.set(repId, tableEmailRaw);
+      const canonicalRepId = canonicalRepIdByAlias.get(repId);
+      if (canonicalRepId) {
+        repEmailFromTableById.set(canonicalRepId, tableEmailRaw);
+      }
+    }
   }
 
   // Overlay any matching app users (more authoritative for name/email).
@@ -2586,6 +2657,15 @@ const getSalesByRep = async ({
   } catch (error) {
     logger.warn({ err: error }, 'Sales-by-rep summary: failed to resolve sales rep directory');
   }
+  try {
+    const tableEmailLookup = await fetchSalesRepEmailsFromTable(Array.from(repLookup.keys()));
+    tableEmailLookup.forEach((email, repId) => {
+      if (!email) return;
+      repEmailFromTableById.set(repId, email);
+    });
+  } catch (error) {
+    logger.warn({ err: error }, 'Sales-by-rep summary: failed to resolve sales rep emails from table');
+  }
 
   const repIdByEmail = new Map();
   users.forEach((user) => {
@@ -2716,7 +2796,7 @@ const getSalesByRep = async ({
       return {
         salesRepId: repId,
         salesRepName: rep.name || rep.email || 'Sales Rep',
-        salesRepEmail: rep.email || null,
+        salesRepEmail: repEmailFromTableById.get(repId) || null,
         totalOrders: totals.totalOrders,
         totalRevenue: totals.totalRevenue,
         wholesaleRevenue: totals.wholesaleRevenue || 0,
