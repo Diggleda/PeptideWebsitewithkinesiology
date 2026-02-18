@@ -6126,7 +6126,6 @@ export function Header({
                         className="h-5 w-5 text-[rgb(95,179,249)]"
                         aria-hidden="true"
                       />
-                      Home
                     </Button>
                   </>
                 )}

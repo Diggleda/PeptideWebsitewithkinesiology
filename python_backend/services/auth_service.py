@@ -688,7 +688,15 @@ def update_profile(user_id: str, data: Dict) -> Dict:
     name = _sanitize_name(data.get("name") or user.get("name") or "")
     phone = (data.get("phone") or user.get("phone") or None)
     email = _normalize_email(data.get("email") or user.get("email") or "")
-    profile_image_url = data.get("profileImageUrl") or user.get("profileImageUrl") or None
+    # Respect explicit null so "Remove photo" actually clears the saved image.
+    if "profileImageUrl" in data:
+        profile_image_url = data.get("profileImageUrl")
+    else:
+        profile_image_url = user.get("profileImageUrl") or None
+    if profile_image_url is not None and not isinstance(profile_image_url, str):
+        profile_image_url = None
+    if isinstance(profile_image_url, str):
+        profile_image_url = profile_image_url.strip() or None
     delegate_logo_url = data.get("delegateLogoUrl") if "delegateLogoUrl" in data else user.get("delegateLogoUrl") or None
     zelle_contact = data.get("zelleContact") if "zelleContact" in data else user.get("zelleContact") or None
 

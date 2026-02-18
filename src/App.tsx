@@ -22011,7 +22011,7 @@ function MainApp() {
                         return prev.token === token ? null : prev;
                       });
 	                    }}
-	                    suppressAccountHomeButton={postLoginHold}
+	                    suppressAccountHomeButton={false}
 				              onBuyOrderAgain={handleBuyOrderAgain}
 				              onCancelOrder={handleCancelOrder}
 				              referralCodes={referralCodesForHeader}
