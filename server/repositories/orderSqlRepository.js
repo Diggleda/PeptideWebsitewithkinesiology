@@ -587,6 +587,66 @@ const fetchByUserId = async (userId) => {
   return dedupeOrders(orders).sort((a, b) => (Date.parse(String(b.createdAt || '')) || 0) - (Date.parse(String(a.createdAt || '')) || 0));
 };
 
+const fetchByStatuses = async (statuses = [], options = {}) => {
+  if (!mysqlClient.isEnabled()) return [];
+  if (!Array.isArray(statuses) || statuses.length === 0) return [];
+
+  const normalizedStatuses = Array.from(
+    new Set(
+      statuses
+        .map((value) => (value == null ? '' : String(value).trim().toLowerCase()))
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedStatuses.length === 0) return [];
+
+  const placeholders = normalizedStatuses.map((_, idx) => `:status${idx}`).join(', ');
+  const params = normalizedStatuses.reduce(
+    (acc, status, idx) => ({ ...acc, [`status${idx}`]: status }),
+    {},
+  );
+
+  const limitRaw = Number(options?.limit);
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000)
+    : 500;
+
+  const statusExpr = "LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-'))";
+  const [pepproRows, legacyRows] = await Promise.all([
+    safeFetchAll(
+      `
+        SELECT *
+        FROM peppro_orders
+        WHERE ${statusExpr} IN (${placeholders})
+        ORDER BY COALESCE(created_at, updated_at) DESC
+        LIMIT ${limit}
+      `,
+      params,
+    ),
+    safeFetchAll(
+      `
+        SELECT *
+        FROM orders
+        WHERE ${statusExpr} IN (${placeholders})
+        ORDER BY COALESCE(created_at, updated_at) DESC
+        LIMIT ${limit}
+      `,
+      params,
+    ),
+  ]);
+
+  const orders = []
+    .concat(Array.isArray(pepproRows) ? pepproRows.map((row) => mapRowToOrder(row, { source: 'mysql:peppro_orders' })) : [])
+    .concat(Array.isArray(legacyRows) ? legacyRows.map((row) => mapRowToOrder(row, { source: 'mysql:orders' })) : [])
+    .filter(Boolean);
+
+  return dedupeOrders(orders).sort(
+    (a, b) =>
+      (Date.parse(String(b.createdAt || b.updatedAt || '')) || 0)
+      - (Date.parse(String(a.createdAt || a.updatedAt || '')) || 0),
+  );
+};
+
 module.exports = {
   persistOrder,
   fetchAll,
@@ -597,4 +657,5 @@ module.exports = {
   fetchByWooOrderId,
   fetchByWooOrderNumber,
   fetchByShipStationOrderId,
+  fetchByStatuses,
 };

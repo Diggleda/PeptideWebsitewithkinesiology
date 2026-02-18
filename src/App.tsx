@@ -3499,9 +3499,10 @@ function MainApp() {
       description?: string | null;
       link?: string | null;
       recording?: string | null;
-    }>
-  >([]);
-  const [expandedPeptideForumDescriptions, setExpandedPeptideForumDescriptions] = useState<Record<string, boolean>>({});
+	    }>
+	  >([]);
+	  const [peptideForumExpanded, setPeptideForumExpanded] = useState(false);
+	  const [expandedPeptideForumDescriptions, setExpandedPeptideForumDescriptions] = useState<Record<string, boolean>>({});
   const [referralPollingSuppressed, setReferralPollingSuppressed] =
     useState(false);
   const variationCacheRef = useRef<Map<number, WooVariation[]>>(new Map());
@@ -3607,14 +3608,16 @@ function MainApp() {
 	            ] as typeof items)
 	          : items;
 	      setPeptideForumItems(normalizedItems);
+	      setPeptideForumExpanded(false);
 	      setPeptideForumUpdatedAt(
 	        typeof (response as any)?.updatedAt === "string" ? (response as any).updatedAt : null,
 	      );
 	    } catch (error: any) {
 	      setPeptideForumItems([]);
-      setPeptideForumUpdatedAt(null);
-      setPeptideForumError(
-        typeof error?.message === "string" && error.message
+	      setPeptideForumExpanded(false);
+	      setPeptideForumUpdatedAt(null);
+	      setPeptideForumError(
+	        typeof error?.message === "string" && error.message
           ? error.message
           : "Unable to load The Peptide Forum right now.",
 	      );
@@ -6887,6 +6890,13 @@ function MainApp() {
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(
     null,
   );
+  const [adminOnHoldOrders, setAdminOnHoldOrders] = useState<AccountOrderSummary[]>([]);
+  const [adminOnHoldLoading, setAdminOnHoldLoading] = useState(false);
+  const [adminOnHoldRefreshing, setAdminOnHoldRefreshing] = useState(false);
+  const [adminOnHoldError, setAdminOnHoldError] = useState<string | null>(null);
+  const adminOnHoldLastFetchAtRef = useRef(0);
+  const adminOnHoldInFlightRef = useRef(false);
+  const adminOnHoldEndpointUnavailableRef = useRef(false);
   const [salesTrackingLastUpdated, setSalesTrackingLastUpdated] = useState<
     number | null
   >(null);
@@ -11880,6 +11890,7 @@ function MainApp() {
 
 	  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
 	    const role = userRole;
+	    const scope: "mine" | "all" = "mine";
 	    const salesRepId = userSalesRepId || userId;
 	    const salesRepIdParam = salesRepId;
 	    const currentUserId = userId != null ? String(userId).trim() : "";
@@ -11901,7 +11912,7 @@ function MainApp() {
 
     const now = Date.now();
     const cacheTtlMs = 25_000;
-    const fetchKey = `${String(role || "").toLowerCase()}:${String(salesRepIdParam || "")}`;
+	    const fetchKey = `${String(role || "").toLowerCase()}:${scope}:${String(salesRepIdParam || "")}`;
     const isKeyChanged = salesTrackingFetchKeyRef.current !== fetchKey;
     const hasExistingOrders = salesTrackingOrdersRef.current.length > 0;
     if (isKeyChanged) {
@@ -11956,7 +11967,7 @@ function MainApp() {
 
 	      const response = await ordersAPI.getForSalesRep({
 	        salesRepId: salesRepIdParam || undefined,
-	        scope: "mine",
+	        scope,
 	      });
       if (
         response &&
@@ -12372,9 +12383,140 @@ function MainApp() {
 	    refreshSalesBySalesRepSummary,
 	  ]);
 
-  const refreshSalesRepOrdersForHeader = useCallback(async () => {
-    await fetchSalesTrackingOrders({ force: true });
-  }, [fetchSalesTrackingOrders]);
+	  const refreshSalesRepOrdersForHeader = useCallback(async () => {
+	    await fetchSalesTrackingOrders({ force: true });
+	  }, [fetchSalesTrackingOrders]);
+
+	  const refreshAdminOnHoldOrders = useCallback(
+	    async (options?: { force?: boolean }) => {
+	      const buildLocalFallbackOrders = () => {
+	        return salesTrackingOrders
+	          .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
+	          .sort((a, b) => {
+	            const aTime = Date.parse(
+	              String(
+	                (a as any)?.createdAt ||
+	                  (a as any)?.dateCreated ||
+	                  (a as any)?.date_created ||
+	                  (a as any)?.updatedAt ||
+	                  "",
+	              ),
+	            );
+	            const bTime = Date.parse(
+	              String(
+	                (b as any)?.createdAt ||
+	                  (b as any)?.dateCreated ||
+	                  (b as any)?.date_created ||
+	                  (b as any)?.updatedAt ||
+	                  "",
+	              ),
+	            );
+	            const safeA = Number.isFinite(aTime) ? aTime : 0;
+	            const safeB = Number.isFinite(bTime) ? bTime : 0;
+	            return safeB - safeA;
+	          });
+	      };
+	      const role = user?.role || null;
+	      if (!role || !isAdmin(role)) {
+	        setAdminOnHoldOrders([]);
+	        setAdminOnHoldError(null);
+	        setAdminOnHoldLoading(false);
+	        setAdminOnHoldRefreshing(false);
+	        return;
+	      }
+	      if (postLoginHold) {
+	        return;
+	      }
+	      const now = Date.now();
+	      const ttlMs = 25_000;
+	      if (!options?.force && now - adminOnHoldLastFetchAtRef.current < ttlMs) {
+	        return;
+	      }
+	      if (adminOnHoldInFlightRef.current) {
+	        return;
+	      }
+	      adminOnHoldInFlightRef.current = true;
+	      adminOnHoldLastFetchAtRef.current = now;
+	      const hasExisting = adminOnHoldOrders.length > 0;
+	      setAdminOnHoldLoading(!hasExisting);
+	      setAdminOnHoldRefreshing(Boolean(options?.force && hasExisting));
+	      setAdminOnHoldError(null);
+	      try {
+	        if (adminOnHoldEndpointUnavailableRef.current) {
+	          setAdminOnHoldOrders(buildLocalFallbackOrders());
+	          setAdminOnHoldError(null);
+	          return;
+	        }
+	        const response = await ordersAPI.getAdminOnHoldOrders({ limit: 1200 });
+	        const rawOrders = Array.isArray((response as any)?.orders)
+	          ? ((response as any).orders as any[])
+	          : Array.isArray(response)
+	            ? (response as any[])
+	            : [];
+	        const normalized = normalizeAccountOrdersResponse(
+	          { woo: rawOrders },
+	          { includeCanceled: true },
+	        );
+	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
+	        const sorted = sourceOrders
+	          .sort((a, b) => {
+	            const aTime = Date.parse(
+	              String(
+	                (a as any)?.createdAt ||
+	                  (a as any)?.dateCreated ||
+	                  (a as any)?.date_created ||
+	                  (a as any)?.updatedAt ||
+	                  "",
+	              ),
+	            );
+	            const bTime = Date.parse(
+	              String(
+	                (b as any)?.createdAt ||
+	                  (b as any)?.dateCreated ||
+	                  (b as any)?.date_created ||
+	                  (b as any)?.updatedAt ||
+	                  "",
+	              ),
+	            );
+	            const safeA = Number.isFinite(aTime) ? aTime : 0;
+	            const safeB = Number.isFinite(bTime) ? bTime : 0;
+	            return safeB - safeA;
+	          });
+	        setAdminOnHoldOrders(sorted as AccountOrderSummary[]);
+	        setAdminOnHoldError(null);
+	      } catch (error: any) {
+	        const status = typeof error?.status === "number" ? error.status : null;
+	        const messageText = typeof error?.message === "string" ? error.message : "";
+	        const lower = messageText.toLowerCase();
+	        const isEndpointUnavailable =
+	          status === 404 ||
+	          lower.includes("load failed") ||
+	          lower.includes("failed to fetch") ||
+	          lower.includes("networkerror") ||
+	          lower.includes("preflight") ||
+	          lower.includes("cors");
+	        if (isEndpointUnavailable) {
+	          adminOnHoldEndpointUnavailableRef.current = true;
+	          setAdminOnHoldOrders(buildLocalFallbackOrders());
+	          setAdminOnHoldError(null);
+	          return;
+	        }
+	        const message =
+	          typeof error?.message === "string" && error.message
+	            ? error.message
+	            : "Unable to load on-hold orders.";
+	        setAdminOnHoldError(message);
+	        if (!hasExisting) {
+	          setAdminOnHoldOrders([]);
+	        }
+	      } finally {
+	        setAdminOnHoldLoading(false);
+	        setAdminOnHoldRefreshing(false);
+	        adminOnHoldInFlightRef.current = false;
+	      }
+	    },
+	    [adminOnHoldOrders.length, postLoginHold, salesTrackingOrders, user?.role],
+	  );
 
   useEffect(() => {
     if (postLoginHold || !userRole || (!isRep(userRole) && !isAdmin(userRole))) {
@@ -12399,11 +12541,90 @@ function MainApp() {
     };
   }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
 
+	  useEffect(() => {
+	    if (postLoginHold || !user || !isAdmin(user.role)) {
+	      return;
+	    }
+	    void refreshAdminOnHoldOrders();
+	    const leaderKey = "admin-on-hold-poll";
+	    const pollIntervalMs = 25_000;
+	    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
+	    const pollHandle = window.setInterval(() => {
+	      if (!isPageVisible()) {
+	        return;
+	      }
+	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+	        return;
+	      }
+	      void refreshAdminOnHoldOrders();
+	    }, pollIntervalMs);
+	    return () => {
+	      releaseTabLeadership(leaderKey);
+	      window.clearInterval(pollHandle);
+	    };
+	  }, [postLoginHold, refreshAdminOnHoldOrders, user?.id, user?.role]);
+
+	  const scopedSalesTrackingOrders = useMemo(() => {
+	    if (!isAdmin(user?.role)) {
+	      return salesTrackingOrders;
+	    }
+	    const normalizeId = (value: unknown) => {
+	      if (value == null) return "";
+	      return String(value).trim();
+	    };
+	    const allowedOwnerIds = new Set(
+	      [userSalesRepId, userId]
+	        .map((value) => normalizeId(value))
+	        .filter((value) => value.length > 0),
+	    );
+	    if (allowedOwnerIds.size === 0) {
+	      return salesTrackingOrders;
+	    }
+	    return salesTrackingOrders.filter((order) => {
+	      const orderAny = order as any;
+	      const orderOwnerCandidates = [
+	        orderAny?.doctorSalesRepId,
+	        orderAny?.doctor_sales_rep_id,
+	        orderAny?.salesRepId,
+	        orderAny?.sales_rep_id,
+	        orderAny?.ownerSalesRepId,
+	        orderAny?.owner_sales_rep_id,
+	      ]
+	        .map((value) => normalizeId(value))
+	        .filter((value) => value.length > 0);
+	      if (orderOwnerCandidates.some((value) => allowedOwnerIds.has(value))) {
+	        return true;
+	      }
+	      const doctorId = normalizeId(
+	        resolveOrderDoctorIdForBucket(order) ||
+	          orderAny?.doctorId ||
+	          orderAny?.doctor_id ||
+	          orderAny?.userId ||
+	          orderAny?.user_id ||
+	          "",
+	      );
+	      if (!doctorId) return false;
+	      const doctorInfo = salesTrackingDoctors.get(doctorId);
+	      const doctorOwnerId = normalizeId(doctorInfo?.salesRepId);
+	      if (doctorOwnerId && allowedOwnerIds.has(doctorOwnerId)) {
+	        return true;
+	      }
+	      return false;
+	    });
+	  }, [
+	    resolveOrderDoctorIdForBucket,
+	    salesTrackingDoctors,
+	    salesTrackingOrders,
+	    user?.role,
+	    userId,
+	    userSalesRepId,
+	  ]);
+
   const salesTrackingSummary = useMemo(() => {
-    if (salesTrackingOrders.length === 0) {
+    if (scopedSalesTrackingOrders.length === 0) {
       return null;
     }
-    const activeOrders = salesTrackingOrders.filter((order) => {
+    const activeOrders = scopedSalesTrackingOrders.filter((order) => {
       return shouldCountRevenueForStatus(order.status);
     });
     const revenue = activeOrders.reduce(
@@ -12413,9 +12634,9 @@ function MainApp() {
     return {
       totalOrders: activeOrders.length,
       totalRevenue: revenue,
-      latestOrder: activeOrders[0] || salesTrackingOrders[0],
+      latestOrder: activeOrders[0] || scopedSalesTrackingOrders[0],
     };
-	  }, [salesTrackingOrders]);
+	  }, [scopedSalesTrackingOrders]);
 
 	  const referralIdLookupForDoctorNotes = useMemo(() => {
 	    const map = new Map<string, { referralId: string; updatedAtMs: number }>();
@@ -12456,10 +12677,10 @@ function MainApp() {
 	    [referralIdLookupForDoctorNotes],
 	  );
 
-  const salesTrackingOrdersByDoctor = useMemo(() => {
-		    const buckets = new Map<
-		      string,
-		      {
+	  const salesTrackingOrdersByDoctor = useMemo(() => {
+			    const buckets = new Map<
+			      string,
+			      {
 	        doctorId: string;
 	        doctorName: string;
 	        doctorEmail?: string | null;
@@ -12476,7 +12697,7 @@ function MainApp() {
         total: number;
       }
     >();
-    for (const order of salesTrackingOrders) {
+	    for (const order of scopedSalesTrackingOrders) {
       const doctorId =
         resolveOrderDoctorIdForBucket(order) || order.userId || `anon:${order.id}`;
       const doctorInfo = doctorId ? salesTrackingDoctors.get(doctorId) : null;
@@ -12588,12 +12809,12 @@ function MainApp() {
       }
     }
     return Array.from(buckets.values()).sort((a, b) => b.total - a.total);
-  }, [
-    salesTrackingOrders,
-    resolveOrderDoctorIdForBucket,
-    salesTrackingDoctors,
-    salesRepDoctorsById,
-  ]);
+	  }, [
+	    scopedSalesTrackingOrders,
+	    resolveOrderDoctorIdForBucket,
+	    salesTrackingDoctors,
+	    salesRepDoctorsById,
+	  ]);
 
   const hasAuthToken = useCallback(() => {
     try {
@@ -16910,18 +17131,134 @@ function MainApp() {
 	      salesRepSalesSummaryLoading ||
 	      adminTaxesByStateLoading ||
 	      adminProductsCommissionLoading;
-	    const adminOnHoldOrders = isAdmin(user?.role)
-	      ? filterOrdersForCommissionRange(salesTrackingOrders).filter((order) => {
-	          const statusSource =
-	            resolveSalesOrderStatusSource(order as AccountOrderSummary) || order?.status || null;
-	          return isOrderOnHoldStatus(statusSource);
-	        })
-	      : [];
 	    const adminOnHoldOrderTotal = adminOnHoldOrders.reduce((sum, order) => {
 	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
 	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
 	    }, 0);
-	
+	    const renderAdminOnHoldOrdersCard = () => (
+	      <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+	        <div className="flex flex-col gap-3 mb-4">
+	          <div className="sales-rep-header-row flex w-full flex-col gap-3">
+	            <div className="min-w-0">
+	              <h3 className="text-lg font-semibold text-slate-900">
+	                Order On-Hold
+	              </h3>
+	              <p className="text-sm text-slate-600">
+	                All orders currently on-hold.
+	              </p>
+	            </div>
+	            <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+	              <div className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+	                <Button
+	                  type="button"
+	                  variant="outline"
+	                  size="sm"
+	                  className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
+	                  onClick={() => void refreshAdminOnHoldOrders({ force: true })}
+	                  disabled={adminOnHoldLoading || adminOnHoldRefreshing}
+	                  aria-busy={adminOnHoldLoading || adminOnHoldRefreshing}
+	                  title="Refresh on-hold orders"
+	                >
+	                  {adminOnHoldLoading || adminOnHoldRefreshing ? "Refreshing..." : "Refresh"}
+	                </Button>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+	        <div
+	          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+	          role="region"
+	          aria-label="Order on-hold list"
+	        >
+	          {adminOnHoldLoading && adminOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              Loading orders…
+	            </div>
+	          ) : adminOnHoldError && adminOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+	              {adminOnHoldError}
+	            </div>
+	          ) : adminOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              No on-hold orders found.
+	            </div>
+	          ) : (
+	            <div className="w-full" style={{ minWidth: 920 }}>
+	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+	                <span>Orders: {adminOnHoldOrders.length}</span>
+	                <span>Total: {formatCurrency(adminOnHoldOrderTotal)}</span>
+	              </div>
+	              <div className="w-max">
+	                <div
+	                  className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                  style={{
+	                    gridTemplateColumns:
+	                      "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+	                  }}
+	                >
+	                  <div className="whitespace-nowrap">Order</div>
+	                  <div className="whitespace-nowrap">Doctor</div>
+	                  <div className="whitespace-nowrap text-right">Placed</div>
+	                  <div className="whitespace-nowrap text-right">Total</div>
+	                </div>
+	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+	                  {adminOnHoldOrders.map((order, index) => {
+	                    const orderNumber = order.number || order.id || "Order";
+	                    const doctorLabel =
+	                      order.doctorName || order.doctorEmail || "Unknown doctor";
+	                    const orderPlacedAt =
+	                      order.createdAt ||
+	                      (order as any)?.dateCreated ||
+	                      (order as any)?.date_created ||
+	                      null;
+	                    const total = Number(
+	                      (order as any)?.grandTotal ?? order.total ?? 0,
+	                    );
+	                    const key =
+	                      String(order.id || "").trim() ||
+	                      String(order.number || "").trim() ||
+	                      `on-hold-${index}`;
+	                    return (
+	                      <li
+	                        key={key}
+	                        className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+	                        style={{
+	                          gridTemplateColumns:
+	                            "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
+	                        }}
+	                      >
+	                        <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
+	                          <button
+	                            type="button"
+	                            className="min-w-0 text-left hover:underline"
+	                            onClick={() => openSalesOrderDetails(order)}
+	                            title="Open order details"
+	                          >
+	                            {`Order #${orderNumber}`}
+	                          </button>
+	                        </div>
+	                        <div className="text-sm text-slate-700 min-w-0 truncate">
+	                          {doctorLabel}
+	                        </div>
+	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
+	                          {orderPlacedAt
+	                            ? formatDateTime(orderPlacedAt)
+	                            : "Date unavailable"}
+	                        </div>
+	                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+	                          {formatCurrency(total)}
+	                        </div>
+	                      </li>
+	                    );
+	                  })}
+	                </ul>
+	              </div>
+	            </div>
+	          )}
+	        </div>
+	      </div>
+	    );
+		
 		    return (
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-6">
@@ -17587,8 +17924,10 @@ function MainApp() {
 		            </p>
 	          )}
 
-	          {isAdmin(user?.role) && (
-	            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+				          {isAdmin(user?.role) && renderAdminOnHoldOrdersCard()}
+
+				          {isAdmin(user?.role) && (
+					            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
                 <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -18662,111 +19001,6 @@ function MainApp() {
 						              </div>
 				
 					              <div className="mt-8 space-y-6">
-				                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
-				                  <div className="flex flex-col gap-3 mb-4">
-				                    <div className="sales-rep-header-row flex w-full flex-col gap-3">
-				                      <div className="min-w-0">
-				                        <h3 className="text-lg font-semibold text-slate-900">
-				                          Order On-Hold
-				                        </h3>
-				                        <p className="text-sm text-slate-600">
-				                          Orders currently in on-hold status for the selected period.
-				                        </p>
-				                      </div>
-				                    </div>
-				                  </div>
-				                  <div
-				                    className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-				                    role="region"
-				                    aria-label="Order on-hold list"
-				                  >
-				                    {salesTrackingLoading && salesTrackingOrders.length === 0 ? (
-				                      <div className="px-4 py-3 text-sm text-slate-500">
-				                        Loading orders…
-				                      </div>
-				                    ) : salesTrackingError && adminOnHoldOrders.length === 0 ? (
-				                      <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-				                        {salesTrackingError}
-				                      </div>
-				                    ) : adminOnHoldOrders.length === 0 ? (
-				                      <div className="px-4 py-3 text-sm text-slate-500">
-				                        No on-hold orders for this period.
-				                      </div>
-				                    ) : (
-				                      <div className="w-full" style={{ minWidth: 920 }}>
-				                        <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-				                          <span>Orders: {adminOnHoldOrders.length}</span>
-				                          <span>Total: {formatCurrency(adminOnHoldOrderTotal)}</span>
-				                        </div>
-				                        <div className="w-max">
-				                          <div
-				                            className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
-				                            style={{
-				                              gridTemplateColumns:
-				                                "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
-				                            }}
-				                          >
-				                            <div className="whitespace-nowrap">Order</div>
-				                            <div className="whitespace-nowrap">Doctor</div>
-				                            <div className="whitespace-nowrap text-right">Placed</div>
-				                            <div className="whitespace-nowrap text-right">Total</div>
-				                          </div>
-				                          <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-				                            {adminOnHoldOrders.map((order, index) => {
-				                              const orderNumber = order.number || order.id || "Order";
-				                              const doctorLabel =
-				                                order.doctorName || order.doctorEmail || "Unknown doctor";
-				                              const orderPlacedAt =
-				                                order.createdAt ||
-				                                (order as any)?.dateCreated ||
-				                                (order as any)?.date_created ||
-				                                null;
-				                              const total = Number(
-				                                (order as any)?.grandTotal ?? order.total ?? 0,
-				                              );
-				                              const key =
-				                                String(order.id || "").trim() ||
-				                                String(order.number || "").trim() ||
-				                                `on-hold-${index}`;
-				                              return (
-				                                <li
-				                                  key={key}
-				                                  className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
-				                                  style={{
-				                                    gridTemplateColumns:
-				                                      "minmax(140px,1fr) minmax(180px,1fr) max-content max-content",
-				                                  }}
-				                                >
-				                                  <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
-				                                    <button
-				                                      type="button"
-				                                      className="min-w-0 text-left hover:underline"
-				                                      onClick={() => openSalesOrderDetails(order)}
-				                                      title="Open order details"
-				                                    >
-				                                      {`Order #${orderNumber}`}
-				                                    </button>
-				                                  </div>
-				                                  <div className="text-sm text-slate-700 min-w-0 truncate">
-				                                    {doctorLabel}
-				                                  </div>
-				                                  <div className="text-sm text-right text-slate-800 whitespace-nowrap">
-				                                    {orderPlacedAt
-				                                      ? formatDateTime(orderPlacedAt)
-				                                      : "Date unavailable"}
-				                                  </div>
-				                                  <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-				                                    {formatCurrency(total)}
-				                                  </div>
-				                                </li>
-				                              );
-				                            })}
-				                          </ul>
-				                        </div>
-				                      </div>
-				                    )}
-				                  </div>
-				                </div>
 
 				                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 				                  <div className="flex flex-col gap-3 mb-4">
@@ -22188,9 +22422,9 @@ function MainApp() {
                               {peptideForumError}
                             </p>
                           )}
-                          {!peptideForumLoading && !peptideForumError && (() => {
-                            const visibleItems = (peptideForumItems || [])
-                              .slice()
+	                          {!peptideForumLoading && !peptideForumError && (() => {
+	                            const visibleItems = (peptideForumItems || [])
+	                              .slice()
                               .sort((a, b) => {
                                 const toTime = (value?: string | null) => {
                                   if (!value) return Number.NEGATIVE_INFINITY;
@@ -22255,13 +22489,18 @@ function MainApp() {
                                 const nowMs = Date.now();
                                 const isPast = nowMs > endMs;
                                 if (isPast) return hasRecording;
-                                // Show upcoming and in-progress lectures if there is any link/recording.
-                                return hasWebinarLink || hasRecording;
-                              });
+	                                // Show upcoming and in-progress lectures if there is any link/recording.
+	                                return hasWebinarLink || hasRecording;
+	                              });
+	                            const forumDisplayLimit = 5;
+	                            const hasOverflowForumItems = visibleItems.length > forumDisplayLimit;
+	                            const forumItemsToRender = peptideForumExpanded
+	                              ? visibleItems
+	                              : visibleItems.slice(0, forumDisplayLimit);
 
-	                            if (visibleItems.length === 0) {
-	                              return (
-	                                <p className="text-xs text-slate-500">
+		                            if (visibleItems.length === 0) {
+		                              return (
+		                                <p className="text-xs text-slate-500">
 	                                  Stay tuned! New classes will be scheduled here and on our{" "}
 	                                  <a
 	                                    href="https://www.linkedin.com/company/peppro/posts/?feedView=all"
@@ -22276,12 +22515,13 @@ function MainApp() {
 	                              );
 	                            }
 
-                            return (
-                              <ul className="space-y-3">
-                                {visibleItems.map((item) => (
-                                    <li
-                                      key={item.id}
-                                      className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm"
+	                            return (
+	                              <div className="space-y-3">
+	                              <ul className="space-y-3">
+	                                {forumItemsToRender.map((item) => (
+	                                    <li
+	                                      key={item.id}
+	                                      className="rounded-lg border border-white/40 bg-white/70 px-3 py-2 shadow-sm"
                                     >
                                       <div className="space-y-1.5">
                                         <p className="text-sm font-semibold text-slate-800">
@@ -22381,12 +22621,29 @@ function MainApp() {
 	                                          );
 	                                        })()}
                                       </div>
-                                    </li>
-                                  ))}
-                              </ul>
-                            );
-                          })()}
-                        </div>
+	                                    </li>
+	                                  ))}
+	                              </ul>
+	                              {hasOverflowForumItems && (
+	                                <div>
+	                                  <Button
+	                                    type="button"
+	                                    variant="outline"
+	                                    size="sm"
+	                                    className="header-home-button squircle-sm bg-white text-slate-900"
+	                                    onClick={() => setPeptideForumExpanded((prev) => !prev)}
+	                                    aria-expanded={peptideForumExpanded}
+	                                  >
+	                                    {peptideForumExpanded
+	                                      ? "Show less"
+	                                      : `Show more (${visibleItems.length - forumDisplayLimit})`}
+	                                  </Button>
+	                                </div>
+	                              )}
+	                              </div>
+	                            );
+	                          })()}
+	                        </div>
                         )}
                         {/* Regional contact info for doctors */}
                         {!(isRep(user.role) || isAdmin(user.role)) && (

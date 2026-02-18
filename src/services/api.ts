@@ -1541,6 +1541,19 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  getAdminOnHoldOrders: async (options?: { limit?: number }) => {
+    const params = new URLSearchParams();
+    if (typeof options?.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+      params.set('limit', String(Math.trunc(options.limit)));
+    }
+    const query = params.toString();
+    // Use non-admin path to avoid infra path-based restrictions; backend supports both.
+    const url = query
+      ? `${API_BASE_URL}/orders/on-hold?${query}`
+      : `${API_BASE_URL}/orders/on-hold`;
+    return fetchWithAuth(url);
+  },
+
   getTaxesByStateForAdmin: async (options?: { periodStart?: string; periodEnd?: string }) => {
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);

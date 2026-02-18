@@ -2753,26 +2753,109 @@ const getSalesByRep = async ({
   };
 };
 
+const getOnHoldOrdersForAdmin = async ({ limit = 500 } = {}) => {
+  const normalizeStatus = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+  const isOnHoldStatus = (value) => {
+    const normalized = normalizeStatus(value);
+    return normalized === 'on-hold' || normalized === 'onhold';
+  };
+  const normalizeDateMs = (value) => {
+    if (!value) return 0;
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const toSafeLimit = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 500;
+    return Math.min(Math.max(Math.trunc(numeric), 1), 5000);
+  };
+
+  const effectiveLimit = toSafeLimit(limit);
+
+  const userMap = new Map(
+    (Array.isArray(userRepository.getAll()) ? userRepository.getAll() : [])
+      .map((user) => [normalizeId(user?.id), user]),
+  );
+
+  let sourceOrders = [];
+  if (mysqlClient.isEnabled() && typeof orderSqlRepository.fetchByStatuses === 'function') {
+    sourceOrders = await orderSqlRepository.fetchByStatuses(['on-hold', 'onhold'], {
+      limit: effectiveLimit,
+    });
+  } else {
+    sourceOrders = (Array.isArray(orderRepository.getAll()) ? orderRepository.getAll() : [])
+      .map((order) => buildLocalOrderSummary(order))
+      .filter(Boolean);
+  }
+
+  const normalized = (Array.isArray(sourceOrders) ? sourceOrders : [])
+    .filter((order) => isOnHoldStatus(order?.status))
+    .map((order) => {
+      const doctorId = normalizeId(
+        order?.doctorId
+        || order?.doctor_id
+        || order?.userId
+        || order?.user_id,
+      );
+      const doctorUser = doctorId ? userMap.get(doctorId) : null;
+      const billing = order?.billingAddress && typeof order.billingAddress === 'object'
+        ? order.billingAddress
+        : {};
+      const doctorEmail = normalizeEmail(
+        order?.doctorEmail
+        || order?.doctor_email
+        || doctorUser?.email
+        || billing?.email,
+      ) || null;
+      const doctorNameCandidate = order?.doctorName
+        || order?.doctor_name
+        || doctorUser?.name
+        || doctorEmail
+        || 'Unknown doctor';
+      const doctorName = String(doctorNameCandidate || '').trim() || 'Unknown doctor';
+
+      return {
+        ...order,
+        doctorId: doctorId || null,
+        doctorEmail,
+        doctorName,
+      };
+    })
+    .sort((a, b) => {
+      const aTime = normalizeDateMs(a?.createdAt || a?.updatedAt);
+      const bTime = normalizeDateMs(b?.createdAt || b?.updatedAt);
+      return bTime - aTime;
+    })
+    .slice(0, effectiveLimit);
+
+  return normalized;
+};
+
 const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
-  if (!orderId || !wooCommerceClient?.fetchOrderById) {
+  if (!orderId) {
     return null;
   }
   const numericId = normalizeWooOrderId(orderId) || orderId;
-  try {
-    const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
-    const baseSummary = buildWooOrderSummary(wooOrder);
-    const summary = await enrichOrderWithShipStation(baseSummary);
-    logger.debug(
-      {
-        orderId: numericId,
-        hasLineItems: Array.isArray(summary?.lineItems) ? summary.lineItems.length : 0,
-        hasShippingEstimate: Boolean(summary?.shippingEstimate),
-      },
-      'Sales rep detail fetched from WooCommerce',
-    );
-    return summary;
-  } catch (error) {
-    logger.warn({ err: error, orderId: numericId }, 'WooCommerce detail fetch by ID failed; attempting fallback');
+  if (wooCommerceClient?.fetchOrderById) {
+    try {
+      const wooOrder = await wooCommerceClient.fetchOrderById(numericId);
+      const baseSummary = buildWooOrderSummary(wooOrder);
+      const summary = await enrichOrderWithShipStation(baseSummary);
+      logger.debug(
+        {
+          orderId: numericId,
+          hasLineItems: Array.isArray(summary?.lineItems) ? summary.lineItems.length : 0,
+          hasShippingEstimate: Boolean(summary?.shippingEstimate),
+        },
+        'Sales rep detail fetched from WooCommerce',
+      );
+      return summary;
+    } catch (error) {
+      logger.warn({ err: error, orderId: numericId }, 'WooCommerce detail fetch by ID failed; attempting fallback');
+    }
   }
 
   if (doctorEmail && typeof wooCommerceClient.fetchOrdersByEmail === 'function') {
@@ -2798,6 +2881,19 @@ const getWooOrderDetail = async ({ orderId, doctorEmail = null }) => {
       }
     } catch (error) {
       logger.error({ err: error, orderId, doctorEmail }, 'WooCommerce email fallback failed');
+    }
+  }
+
+  // Fallback for non-Woo IDs (e.g. local/MySQL PepPro order IDs).
+  const localOrder = orderRepository.findById(orderId);
+  if (localOrder) {
+    return buildLocalOrderSummary(localOrder);
+  }
+
+  if (typeof orderSqlRepository.fetchById === 'function') {
+    const sqlOrder = await orderSqlRepository.fetchById(orderId);
+    if (sqlOrder) {
+      return sqlOrder;
     }
   }
 
@@ -2870,6 +2966,7 @@ module.exports = {
   estimateOrderTotals,
   getOrdersForUser,
   getOrdersForSalesRep,
+  getOnHoldOrdersForAdmin,
   getSalesByRep,
   cancelOrder,
   startOrderSyncJob,

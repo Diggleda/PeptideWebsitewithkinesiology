@@ -541,6 +541,26 @@ const getSalesByRepForAdmin = async (req, res, next) => {
   }
 };
 
+const getOnHoldOrdersForAdmin = async (req, res, next) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const limitRaw = Number(req.query?.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000)
+      : 500;
+    const orders = await orderService.getOnHoldOrdersForAdmin({ limit });
+    return res.json({
+      orders: Array.isArray(orders) ? orders : [],
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getProductSalesCommissionForAdmin = async (req, res, next) => {
   try {
     if (!shouldServeFakeAdminReports()) {
@@ -682,6 +702,7 @@ module.exports = {
   getOrdersForSalesRep,
   getSalesRepOrderDetail,
   getSalesByRepForAdmin,
+  getOnHoldOrdersForAdmin,
   getProductSalesCommissionForAdmin,
   cancelOrder,
   syncShipStationToWoo,
