@@ -3291,11 +3291,7 @@ def get_sales_by_rep(
                     or hinted_name
                     or rep.get("name")
                     or rep_record.get("name")
-                    or rep.get("email")
-                    or rep_record.get("email")
-                    or hinted_email
-                    or rep_id
-                    or "Sales Rep",
+                    or (f"Sales Rep {rep_id}" if rep_id else "Sales Rep"),
                     # Keep Sales by Rep email strict: only use the sales_rep table value.
                     "salesRepEmail": (
                         str(rep_record.get("email") or "").strip() or None
