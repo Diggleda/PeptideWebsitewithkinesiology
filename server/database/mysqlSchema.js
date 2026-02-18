@@ -42,6 +42,9 @@ const STATEMENTS = [
       shipping_carrier VARCHAR(120) NULL,
       shipping_service VARCHAR(120) NULL,
       facility_pickup TINYINT(1) NOT NULL DEFAULT 0,
+      fulfillment_method VARCHAR(32) NULL,
+      pickup_location VARCHAR(255) NULL,
+      pickup_ready_notice VARCHAR(255) NULL,
       physician_certified TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(50) NOT NULL DEFAULT 'pending',
       payload LONGTEXT NULL,
@@ -261,6 +264,27 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0 AFTER shipping_service
+      `,
+    },
+    {
+      name: 'fulfillment_method',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN fulfillment_method VARCHAR(32) NULL AFTER facility_pickup
+      `,
+    },
+    {
+      name: 'pickup_location',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN pickup_location VARCHAR(255) NULL AFTER fulfillment_method
+      `,
+    },
+    {
+      name: 'pickup_ready_notice',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN pickup_ready_notice VARCHAR(255) NULL AFTER pickup_location
       `,
     },
   ];

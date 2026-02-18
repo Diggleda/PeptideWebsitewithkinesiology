@@ -24486,7 +24486,9 @@ function MainApp() {
 				                              ? salesDoctorSalesRevenueFromReport
 				                              : salesOrdersSource.length > 0
 				                                ? sumRevenueFromOrders(salesOrdersInRange)
-				                                : (salesDoctorDetail.salesRevenue ?? 0);
+				                                : personalOrdersSource.length > 0
+				                                  ? 0
+				                                  : (salesDoctorDetail.salesRevenue ?? 0);
 			                          return (
 			                            <>
 			                              <p className="text-sm text-slate-600">
@@ -25154,7 +25156,9 @@ function MainApp() {
 		                  const salesRevenueForDisplay =
 		                    salesOrders.length > 0
 		                      ? sumRevenueFromOrders(salesOrdersInRange)
-		                      : (salesDoctorDetail.salesRevenue ?? 0);
+		                      : personalOrders.length > 0
+		                        ? 0
+		                        : (salesDoctorDetail.salesRevenue ?? 0);
 		                  const hasSplit =
 		                    (typeof salesDoctorDetail.personalRevenue === "number" ||
 		                      typeof salesDoctorDetail.salesRevenue === "number") &&

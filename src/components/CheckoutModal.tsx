@@ -234,7 +234,7 @@ interface CheckoutModalProps {
 }
 
 const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
-const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup';
+const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup.  Please allow 1-3 business days for processing.';
 
 const formatCardNumber = (value: string) =>
   value
@@ -1586,23 +1586,41 @@ export function CheckoutModal({
 
               {/* Shipping */}
               <div className="space-y-4">
-                <h3>{enableFacilityPickup ? 'Shipping / Pickup' : 'Shipping Address'}</h3>
-                {enableFacilityPickup && !isDelegateFlow && (
-                  <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-3">
-                    <label htmlFor="facility-pickup-option" className="flex cursor-pointer items-start gap-3">
-                      <input
-                        id="facility-pickup-option"
-                        type="checkbox"
-                        className="brand-checkbox mt-0.5"
-                        checked={facilityPickup}
-                        onChange={(event) => setFacilityPickup(event.target.checked)}
-                      />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-slate-900">{FACILITY_PICKUP_LABEL}</p>
-                        <p className="text-xs text-slate-600">{FACILITY_PICKUP_NOTICE}</p>
-                      </div>
-                    </label>
-                  </div>
+                {enableFacilityPickup ? (
+                  <>
+                    {!isDelegateFlow && (
+                      <>
+                        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-6 py-5">
+                          <label htmlFor="facility-pickup-option" className="flex cursor-pointer items-start gap-3 py-1">
+                            <input
+                              id="facility-pickup-option"
+                              type="checkbox"
+                              className="brand-checkbox mt-0.5"
+                              checked={facilityPickup}
+                              onChange={(event) => setFacilityPickup(event.target.checked)}
+                            />
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-slate-900">{FACILITY_PICKUP_LABEL}</p>
+                              <p className="text-xs text-slate-600">You will receive an email when your order is ready for pickup.</p>
+                              {facilityPickup && (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-medium text-slate-700">
+                                    Pickup location: 640 S Grand Ave, Santa Ana, Ca 92705, Unit #107
+                                  </p>
+                                  <p className="text-xs text-slate-600">
+                                    Please allow 1-3 business days for processing.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        </div>
+                      </>
+                    )}
+                    {!facilityPickup && <h3>Shipping</h3>}
+                  </>
+                ) : (
+                  <h3>Shipping Address</h3>
                 )}
                 {!facilityPickup && (
                   <>
@@ -1731,11 +1749,6 @@ export function CheckoutModal({
                     )}
                   </>
                 )}
-                {facilityPickup && (
-                  <div className="rounded-md border border-[rgba(95,179,249,0.28)] bg-[rgba(95,179,249,0.06)] px-3 py-2 text-xs text-slate-700">
-                    Pickup location: Santa Ana, CA
-                  </div>
-                )}
               </div>
 
 	              {/* Payment Form */}
@@ -1746,13 +1759,13 @@ export function CheckoutModal({
 	                    {paymentMethod === "zelle" ? (
 	                      <ArrowLeftRight
 	                        size={20}
-	                        className="text-slate-600 shrink-0"
+	                        className="text-slate-600 shrink-0 mb-1"
 	                        aria-hidden="true"
 	                      />
 	                    ) : (
 	                      <Landmark
 	                        size={20}
-	                        className="text-slate-600 shrink-0"
+	                        className="text-slate-600 shrink-0 mb-1"
 	                        aria-hidden="true"
 	                      />
 	                    )}
@@ -1777,22 +1790,19 @@ export function CheckoutModal({
 	                  ) : (
 	                    <>
 	                      {paymentMethod === 'zelle' ? (
-	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
-	                          <p className="text-xs font-semibold text-slate-700">Zelle recipient</p>
-	                          <p className="mt-1 text-[13px] text-slate-700">
-	                            Send Zelle to <span className="font-mono">support@peppro.net</span> with memo:{' '}
-	                            <span className="font-mono">({placedOrderNumber ? `Order #${placedOrderNumber}` : '#order number'})</span>. We will resend Zelle
-	                            instructions to{' '}
-	                            {typeof customerEmail === 'string' && customerEmail.trim().length > 0 ? (
-	                              <>
-	                                your <span>{customerEmail.trim()}</span> email
-	                              </>
-	                            ) : (
-	                              'your email address'
-	                            )}{' '}
-	                            after you place your order.
-	                          </p>
-	                        </div>
+	                        <p className="mt-2 text-[13px] text-slate-700">
+	                          Send Zelle to <span className="font-mono">support@peppro.net</span> with memo:{' '}
+	                          <span className="font-mono">({placedOrderNumber ? `Order #${placedOrderNumber}` : '#order number'})</span>. We will resend Zelle
+	                          instructions to{' '}
+	                          {typeof customerEmail === 'string' && customerEmail.trim().length > 0 ? (
+	                            <>
+	                              your <span>{customerEmail.trim()}</span> email
+	                            </>
+	                          ) : (
+	                            'your email address'
+	                          )}{' '}
+	                          after you place your order.
+	                        </p>
 	                      ) : null}
 	                      {paymentMethod !== 'zelle' ? (
 	                        <p className="mt-2">
@@ -1803,10 +1813,8 @@ export function CheckoutModal({
 	                        <span className="font-semibold">Important:</span>{' '}
 	                        {paymentMethod === 'zelle'
 	                          ? 'Ensure your bank supports Zelle and that your Zelle account is set up and ready.'
-	                          : 'Include your order number in the payment memo/notes (we’ll show it here after you place the order).'}
-	                      </p>
-                        <p className="mt-2 text-[13px] text-slate-600">
-                          <span className="font-semibold">Note:</span> Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t find it, contact us at <span className="font-mono">support@peppro.net.</span>
+	                          : 'Include your order number in the payment memo/notes (we’ll show it here after you place the order).'}{' '}
+                          Expect an email to arrive in your inbox within a minute. If you don’t see it, please check your spam/junk folder. If you still can’t find it, contact us at <span className="font-mono">support@peppro.net.</span>
                         </p>
 	                    </>
 	                  )}
