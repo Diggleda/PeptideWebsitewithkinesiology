@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, EyeOff, Pencil, Loader2, Info, Package, Box, Users, RefreshCw, WifiOff, Maximize2, Minimize2, Link2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
 import { requestStoredPasswordCredential } from '../lib/passwordCredential';
@@ -3891,6 +3891,7 @@ export function Header({
 
   const saveProfileField = useCallback(
     async (label: string, payload: Record<string, string | null>) => {
+      const toastId = `profile-field:${label.toLowerCase().replace(/\s+/g, '-')}`;
       try {
         const api = await import('../services/api');
         const updated = await api.authAPI.updateMe(payload);
@@ -3924,14 +3925,14 @@ export function Header({
 
         setLocalUser(nextUserState);
         onUserUpdated?.(nextUserState);
-        toast.success(`${label} updated`);
+        toast.success(`${label} updated`, { id: toastId });
       } catch (error: any) {
         if (error?.status === 413) {
-          toast.error('Upload too large. Please choose a smaller image.');
+          toast.error('Upload too large. Please choose a smaller image.', { id: toastId });
         } else if (error?.message === 'EMAIL_EXISTS') {
-          toast.error('That email is already in use.');
+          toast.error('That email is already in use.', { id: toastId });
         } else {
-          toast.error('Update failed');
+          toast.error('Update failed', { id: toastId });
         }
         throw error;
       }
@@ -4235,10 +4236,9 @@ export function Header({
                   await saveProfileField('Profile photo', { profileImageUrl: dataUrl });
                   setAvatarUploadPercent(100);
                   setShowAvatarControls(false);
-                  toast.success('Profile photo updated');
                 } catch (error: any) {
+                  // saveProfileField already emits canonical upload/update toasts.
                   const message = typeof error?.message === 'string' ? error.message : 'Upload failed';
-                  toast.error(message);
                   console.error('[Profile] Upload failed', { message, error });
                 } finally {
                   if (uploadTicker) {

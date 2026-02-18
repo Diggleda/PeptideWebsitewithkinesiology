@@ -6428,6 +6428,46 @@ body.account-modal-open .info-focus-overlay {
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.2));
 }
 
+/* Shop filters: force brand-blue checkbox border and checkmark. */
+.shop-filter-checkbox {
+  border-color: rgb(95, 179, 249) !important;
+  border-width: 0.8px !important;
+  box-shadow: inset 0 0 0 1px rgb(95, 179, 249) !important;
+  transition: none !important;
+}
+
+.shop-filter-checkbox:hover {
+  border-color: rgb(95, 179, 249) !important;
+}
+
+.shop-filter-checkbox[data-state='checked'] {
+  background: #ffffff !important;
+  border-color: rgb(95, 179, 249) !important;
+  border-width: 0.8px !important;
+  box-shadow: inset 0 0 0 1px rgb(95, 179, 249) !important;
+  color: rgb(95, 179, 249) !important;
+  transition: none !important;
+}
+
+.shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'],
+.shop-filter-checkbox[data-state='checked'] [data-slot='checkbox-indicator'] svg {
+  color: rgb(95, 179, 249) !important;
+  stroke: currentColor !important;
+  transition: none !important;
+}
+
+.shop-filter-count-badge {
+  color: rgb(95, 179, 249) !important;
+  border-color: transparent !important;
+  min-width: 2rem;
+  justify-content: flex-end !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  margin-left: -0.5rem;
+  padding-left: 0 !important;
+  padding-right: 0rem !important;
+}
+
 /* Enhanced pricing and status text */
 .pricing-badge {
   background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%);

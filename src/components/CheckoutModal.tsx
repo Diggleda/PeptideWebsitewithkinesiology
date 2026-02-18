@@ -14,7 +14,7 @@ import { Separator } from './ui/separator';
 import { Card, CardContent } from './ui/card';
 import { Minus, Plus, Trash2, LogIn, ShoppingCart, X, Landmark, ArrowLeftRight } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
-import { toast } from 'sonner@2.0.3';
+import { toast } from '../lib/toast';
 import { discountCodesAPI, ordersAPI, shippingAPI } from '../services/api';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import type { CSSProperties } from 'react';

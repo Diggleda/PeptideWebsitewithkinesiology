@@ -294,19 +294,19 @@ export function CategoryFilter({
     >
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex items-center gap-2 truncate">
+          <div className="flex items-center min-w-0">
+            <div className="flex items-center gap-0 truncate">
               <Filter className="w-5 h-5 flex-shrink-0" />
               <span className="font-semibold truncate">Filters</span>
+              <Badge
+                variant="outline"
+                className={`shop-filter-count-badge !-ml-1 !min-w-0 !justify-center !px-0 squircle-sm inline-flex items-center justify-center w-5 h-5 flex-shrink-0 ${
+                  activeFiltersCount > 0 ? '' : 'invisible'
+                }`}
+              >
+                {activeFiltersCount || 0}
+              </Badge>
             </div>
-            <Badge
-              variant="outline"
-              className={`squircle-sm inline-flex items-center justify-center w-7 h-5 flex-shrink-0 ${
-                activeFiltersCount > 0 ? '' : 'invisible'
-              }`}
-            >
-              {activeFiltersCount || 0}
-            </Badge>
           </div>
           <Button
             variant="ghost"
@@ -324,20 +324,21 @@ export function CategoryFilter({
           <Label>Dosage Form</Label>
           <div className="space-y-2">
             {categories.map((category) => (
-              <div key={category} className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center space-x-2 min-w-0">
+              <div key={category} className="flex flex-wrap items-center gap-2">
+                <div className="-ml-1 flex items-center space-x-2 min-w-0">
+                  <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm">
+                    {productCounts[category] || 0}
+                  </Badge>
                   <Checkbox
                     id={`category-${category}`}
                     checked={filters.categories.includes(category)}
                     onCheckedChange={() => toggleCategory(category)}
+                    className="shop-filter-checkbox"
                   />
                   <Label htmlFor={`category-${category}`} className="text-sm cursor-pointer break-words">
                     {category}
                   </Label>
                 </div>
-                <Badge variant="outline" className="text-xs squircle-sm">
-                  {productCounts[category] || 0}
-                </Badge>
               </div>
             ))}
           </div>
@@ -352,13 +353,17 @@ export function CategoryFilter({
                   {section.tags.map((tag) => (
                     <div
                       key={tag.slug}
-                      className="flex flex-wrap items-center justify-between gap-2"
+                      className="flex flex-wrap items-center gap-2"
                     >
-                      <div className="flex items-center space-x-2 min-w-0">
+                      <div className="-ml-1 flex items-center space-x-2 min-w-0">
+                        <Badge variant="outline" className="shop-filter-count-badge text-xs squircle-sm">
+                          {tag.count || 0}
+                        </Badge>
                         <Checkbox
                           id={`tag-${section.key}-${tag.slug}`}
                           checked={filters.tags.includes(tag.slug)}
                           onCheckedChange={() => toggleTag(tag.slug)}
+                          className="shop-filter-checkbox"
                         />
                         <Label
                           htmlFor={`tag-${section.key}-${tag.slug}`}
@@ -367,9 +372,6 @@ export function CategoryFilter({
                           {tag.name}
                         </Label>
                       </div>
-                      <Badge variant="outline" className="text-xs squircle-sm">
-                        {tag.count || 0}
-                      </Badge>
                     </div>
                   ))}
                 </div>

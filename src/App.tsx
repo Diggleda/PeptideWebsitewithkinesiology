@@ -32,7 +32,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { TimestampedNotesField } from "./components/TimestampedNotesField";
-import { toast } from "sonner@2.0.3";
+import { toast } from "./lib/toast";
 import {
 	  ShoppingCart,
 	  Eye,
