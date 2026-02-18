@@ -12,6 +12,10 @@ const shouldServeFakeAdminReports = () => {
 
 const router = Router();
 
+// Explicit preflight handlers for infrastructure that does not honor global OPTIONS routing.
+router.options('/on-hold', (req, res) => res.sendStatus(204));
+router.options('/admin/on-hold', (req, res) => res.sendStatus(204));
+
 router.post('/estimate', authenticate, orderController.estimateOrderTotals);
 router.post('/', authenticate, orderController.createOrder);
 router.get('/', authenticate, orderController.getOrders);
