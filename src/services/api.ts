@@ -411,8 +411,13 @@ const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: numb
 
 const _inflightGetRequests = new Map<string, Promise<any>>();
 
+const rewriteBlockedAdminPaths = (url: string) => {
+  return String(url || '').replace(/\/orders\/admin\/on-hold(?=[/?#]|$)/i, '/orders/on-hold');
+};
+
 // Helper function to make authenticated requests
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const rewrittenUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const method = (options.method || 'GET').toUpperCase();
   const headers: Record<string, string> = {
@@ -430,7 +435,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   }
 
   const run = async () => {
-    let requestUrl = url;
+    let requestUrl = rewrittenUrl;
 
     if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
       const normalized = requestUrl.toLowerCase();
@@ -504,7 +509,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       }
 
       if (htmlLikePayload) {
-        const normalizedUrl = url.toLowerCase();
+        const normalizedUrl = rewrittenUrl.toLowerCase();
         if (normalizedUrl.includes('/shipping/')) {
           errorMessage = 'Address cannot be identified.';
         } else {
@@ -570,7 +575,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     return response.text();
   };
 
-  const dedupeKey = method === 'GET' && !options.signal ? `${token || ''}|${url}` : null;
+  const dedupeKey = method === 'GET' && !options.signal ? `${token || ''}|${rewrittenUrl}` : null;
   if (!dedupeKey) {
     return run();
   }
@@ -589,6 +594,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
 };
 
 const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
+  const requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const headers: HeadersInit = {
     ...(options.headers || {}),
@@ -601,7 +607,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
   let response: Response;
   const method = (options.method || 'GET').toUpperCase();
   try {
-    response = await _fetchWithTimeout(url, {
+    response = await _fetchWithTimeout(requestUrl, {
       cache: options.cache ?? 'no-store',
       ...options,
       headers: {
@@ -609,7 +615,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
         Pragma: 'no-cache',
         ...headers,
       },
-    }, _timeoutMsForRequest(url, method));
+    }, _timeoutMsForRequest(requestUrl, method));
   } catch (error: any) {
     const isAbort = error?.name === 'AbortError';
     const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
@@ -712,6 +718,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
 };
 
 const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
+  const requestUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const headers: HeadersInit = {
     ...(options.headers || {}),
@@ -724,7 +731,7 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
   let response: Response;
   const method = (options.method || 'GET').toUpperCase();
   try {
-    response = await _fetchWithTimeout(url, {
+    response = await _fetchWithTimeout(requestUrl, {
       cache: options.cache ?? 'no-store',
       ...options,
       headers: {
@@ -732,7 +739,7 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
         Pragma: 'no-cache',
         ...headers,
       },
-    }, _timeoutMsForRequest(url, method));
+    }, _timeoutMsForRequest(requestUrl, method));
   } catch (error: any) {
     const isAbort = error?.name === 'AbortError';
     const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
