@@ -9420,7 +9420,7 @@ function MainApp() {
 	          );
 	        });
 	      if (backendError && backendStale && filteredSummary.length === 0) {
-	        setSalesRepSalesSummary((previous) => previous);
+	        setSalesRepSalesSummary([]);
 	      } else {
 	        setSalesRepSalesSummary(filteredSummary as any);
 	      }
@@ -9435,6 +9435,7 @@ function MainApp() {
           ? adminError.message
           : "Unable to load sales summary";
       setSalesRepSalesSummaryError(message);
+      setSalesRepSalesSummary([]);
       setSalesRepSalesSummaryMeta(null);
     } finally {
       setSalesRepSalesSummaryLoading(false);

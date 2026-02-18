@@ -3296,11 +3296,10 @@ def get_sales_by_rep(
                     or hinted_email
                     or rep_id
                     or "Sales Rep",
-                    "salesRepEmail": rep.get("email")
-                    or rep_record.get("email")
-                    or (legacy_email or None)
-                    or (hinted_user_email or None)
-                    or (hinted_email or None),
+                    # Keep Sales by Rep email strict: only use the sales_rep table value.
+                    "salesRepEmail": (
+                        str(rep_record.get("email") or "").strip() or None
+                    ),
                     "salesRepPhone": rep.get("phone") or rep_record.get("phone"),
                     "totalOrders": int(totals["totalOrders"]),
                     "totalRevenue": float(totals["totalRevenue"]),

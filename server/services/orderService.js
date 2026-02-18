@@ -113,14 +113,31 @@ const fetchSalesRepEmailsFromTable = async (repIds) => {
     if (legacyId) lookup.set(legacyId, email);
   };
 
-  if (mysqlClient.isEnabled()) {
-    const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
-    const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+  if (!mysqlClient.isEnabled()) {
+    return lookup;
+  }
+
+  const placeholders = ids.map((_, idx) => `:id${idx}`).join(', ');
+  const params = ids.reduce((acc, id, idx) => ({ ...acc, [`id${idx}`]: id }), {});
+  try {
+    const rows = await mysqlClient.fetchAll(
+      `
+        SELECT id, email, legacy_user_id
+        FROM sales_reps
+        WHERE id IN (${placeholders})
+           OR legacy_user_id IN (${placeholders})
+      `,
+      params,
+    );
+    (rows || []).forEach(addRow);
+    return lookup;
+  } catch (error) {
+    logger.warn({ err: error, ids: ids.length }, 'Failed to query sales_reps for sales rep emails');
     try {
       const rows = await mysqlClient.fetchAll(
         `
           SELECT id, email, legacy_user_id
-          FROM sales_reps
+          FROM sales_rep
           WHERE id IN (${placeholders})
              OR legacy_user_id IN (${placeholders})
         `,
@@ -128,33 +145,10 @@ const fetchSalesRepEmailsFromTable = async (repIds) => {
       );
       (rows || []).forEach(addRow);
       return lookup;
-    } catch (error) {
-      logger.warn({ err: error, ids: ids.length }, 'Failed to query sales_reps for sales rep emails');
-      try {
-        const rows = await mysqlClient.fetchAll(
-          `
-            SELECT id, email, legacy_user_id
-            FROM sales_rep
-            WHERE id IN (${placeholders})
-               OR legacy_user_id IN (${placeholders})
-          `,
-          params,
-        );
-        (rows || []).forEach(addRow);
-        return lookup;
-      } catch (fallbackError) {
-        logger.warn({ err: fallbackError, ids: ids.length }, 'Failed to query sales_rep for sales rep emails');
-      }
+    } catch (fallbackError) {
+      logger.warn({ err: fallbackError, ids: ids.length }, 'Failed to query sales_rep for sales rep emails');
     }
   }
-
-  ids.forEach((id) => {
-    const stored = salesRepRepository.findById ? salesRepRepository.findById(id) : null;
-    const emailRaw = typeof stored?.email === 'string' ? stored.email.trim() : '';
-    if (emailRaw) {
-      lookup.set(id, emailRaw);
-    }
-  });
   return lookup;
 };
 
@@ -2349,14 +2343,6 @@ const getSalesByRep = async ({
       name: rep?.name || rep?.email || 'Sales Rep',
       email: rep?.email || null,
     });
-    const tableEmailRaw = typeof rep?.email === 'string' ? rep.email.trim() : '';
-    if (tableEmailRaw) {
-      repEmailFromTableById.set(repId, tableEmailRaw);
-      const canonicalRepId = canonicalRepIdByAlias.get(repId);
-      if (canonicalRepId) {
-        repEmailFromTableById.set(canonicalRepId, tableEmailRaw);
-      }
-    }
   }
 
   // Overlay any matching app users (more authoritative for name/email).
