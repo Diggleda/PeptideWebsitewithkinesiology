@@ -348,7 +348,11 @@ const normalizePricingMode = (value) => {
 
 const canSelectRetailPricing = (role) => {
   const normalized = normalizeRole(role);
-  return normalized === 'admin' || normalized === 'sales_rep' || normalized === 'rep';
+  return normalized === 'admin'
+    || normalized === 'sales_rep'
+    || normalized === 'rep'
+    || normalized === 'sales_lead'
+    || normalized === 'saleslead';
 };
 
 const hasResellerPermitOnFile = async (user) => {
@@ -711,6 +715,10 @@ const buildLocalOrderSummary = (order) => {
     billingAddress: buildAddressSummary(order.billingAddress),
     shippingEstimate: order.shippingEstimate || null,
     shippingTotal: order.shippingTotal ?? null,
+    facilityPickup: order.facilityPickup === true,
+    fulfillmentMethod: order.fulfillmentMethod || (order.facilityPickup === true ? 'facility_pickup' : 'shipping'),
+    pickupLocation: order.pickupLocation || null,
+    pickupReadyNotice: order.pickupReadyNotice || null,
     taxTotal: order.taxTotal ?? null,
     wooOrderId: order.wooOrderId || order.integrationDetails?.wooCommerce?.orderId || null,
     wooOrderNumber: wooOrderNumber,
@@ -927,6 +935,63 @@ const normalizeTaxAmount = (value) => {
 };
 
 const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
+const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
+const FACILITY_PICKUP_LOCATION = 'Santa Ana, CA';
+const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup';
+const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup_santa_ana';
+
+const normalizeBooleanish = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'on';
+  }
+  return false;
+};
+
+const resolveCheckoutShippingData = ({
+  facilityPickup,
+  shippingAddress,
+  shippingEstimate,
+  shippingTotal,
+}) => {
+  const isFacilityPickup = normalizeBooleanish(facilityPickup);
+  if (isFacilityPickup) {
+    return {
+      facilityPickup: true,
+      shippingAddress: null,
+      shippingEstimate: {
+        carrierId: 'facility_pickup',
+        serviceCode: FACILITY_PICKUP_SERVICE_CODE,
+        serviceType: FACILITY_PICKUP_LABEL,
+        estimatedDeliveryDays: null,
+        deliveryDateGuaranteed: null,
+        estimatedArrivalDate: null,
+        rate: 0,
+        currency: 'USD',
+        addressFingerprint: 'facility_pickup',
+        meta: {
+          location: FACILITY_PICKUP_LOCATION,
+          readyNotice: FACILITY_PICKUP_NOTICE,
+        },
+      },
+      shippingTotal: 0,
+    };
+  }
+
+  return {
+    facilityPickup: false,
+    ...ensureShippingData({
+      shippingAddress,
+      shippingEstimate,
+      shippingTotal,
+    }),
+  };
+};
 
 const isCaliforniaDestination = (shippingAddress) => {
   const state = normalizeStateCode(shippingAddress?.state || shippingAddress?.stateCode);
@@ -976,6 +1041,7 @@ const createOrderInternal = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
   physicianCertification,
   taxTotal,
   paymentMethod,
@@ -1004,7 +1070,8 @@ const createOrderInternal = async ({
   const effectivePricingMode = canSelectRetailPricing(user.role) ? requestedPricingMode : 'wholesale';
 
   const taxExempt = await isUserTaxExemptForCheckout(user);
-  const shippingData = ensureShippingData({
+  const shippingData = resolveCheckoutShippingData({
+    facilityPickup,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
@@ -1012,7 +1079,7 @@ const createOrderInternal = async ({
   const itemsSubtotal = calculateItemsSubtotal(items);
   const normalizedTaxTotal = taxExempt
     ? 0
-    : isCaliforniaDestination(shippingData.shippingAddress)
+    : (!shippingData.facilityPickup && isCaliforniaDestination(shippingData.shippingAddress))
       ? calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingData.shippingTotal })
       : 0;
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
@@ -1049,6 +1116,10 @@ const createOrderInternal = async ({
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress),
+    facilityPickup: shippingData.facilityPickup,
+    fulfillmentMethod: shippingData.facilityPickup ? 'facility_pickup' : 'shipping',
+    pickupLocation: shippingData.facilityPickup ? FACILITY_PICKUP_LOCATION : null,
+    pickupReadyNotice: shippingData.facilityPickup ? FACILITY_PICKUP_NOTICE : null,
     referralCode: referralCode || null,
     status: 'pending',
     paymentMethod: manualPaymentLabel,
@@ -1221,6 +1292,7 @@ const createOrder = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
   physicianCertification,
   taxTotal,
   paymentMethod,
@@ -1245,6 +1317,7 @@ const createOrder = async ({
       shippingAddress,
       shippingEstimate,
       shippingTotal,
+      facilityPickup,
       physicianCertification,
       taxTotal,
       paymentMethod,
@@ -1280,6 +1353,7 @@ const createOrder = async ({
     shippingAddress,
     shippingEstimate,
     shippingTotal,
+    facilityPickup,
     physicianCertification,
     taxTotal,
     paymentMethod,
@@ -1302,6 +1376,7 @@ const estimateOrderTotals = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
+  facilityPickup,
 }) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
@@ -1315,7 +1390,8 @@ const estimateOrderTotals = async ({
     throw error;
   }
 
-  const shippingData = ensureShippingData({
+  const shippingData = resolveCheckoutShippingData({
+    facilityPickup,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
@@ -1356,14 +1432,15 @@ const estimateOrderTotals = async ({
   let shippingTotalFromPreview = shippingData.shippingTotal;
   let wooTaxResponse = null;
   let taxSource = 'none';
+  const shippingAddressForTax = provisionalOrder.shippingAddress || {};
   const shippingLocation = {
-    country: provisionalOrder.shippingAddress.country || 'US',
-    state: provisionalOrder.shippingAddress.state || '',
-    postcode: provisionalOrder.shippingAddress.postalCode || provisionalOrder.shippingAddress.postcode || '',
-    city: provisionalOrder.shippingAddress.city || '',
+    country: shippingAddressForTax.country || 'US',
+    state: shippingAddressForTax.state || '',
+    postcode: shippingAddressForTax.postalCode || shippingAddressForTax.postcode || '',
+    city: shippingAddressForTax.city || '',
   };
 
-  if (isCaliforniaDestination(provisionalOrder.shippingAddress)) {
+  if (!shippingData.facilityPickup && isCaliforniaDestination(provisionalOrder.shippingAddress)) {
     taxTotal = calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingTotalFromPreview });
     taxSource = 'ca_flat_7_7';
   }

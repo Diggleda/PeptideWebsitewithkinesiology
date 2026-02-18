@@ -298,14 +298,6 @@ export function CategoryFilter({
             <div className="flex items-center gap-0 truncate">
               <Filter className="w-5 h-5 flex-shrink-0" />
               <span className="font-semibold truncate">Filters</span>
-              <Badge
-                variant="outline"
-                className={`shop-filter-count-badge !-ml-1 !min-w-0 !justify-center !px-0 squircle-sm inline-flex items-center justify-center w-5 h-5 flex-shrink-0 ${
-                  activeFiltersCount > 0 ? '' : 'invisible'
-                }`}
-              >
-                {activeFiltersCount || 0}
-              </Badge>
             </div>
           </div>
           <Button

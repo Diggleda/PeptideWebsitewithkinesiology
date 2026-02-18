@@ -701,7 +701,7 @@ def create_order(
     normalized_pricing_mode = str(pricing_mode or "").strip().lower()
     if normalized_pricing_mode not in ("retail", "wholesale"):
         normalized_pricing_mode = "wholesale"
-    if role not in ("admin", "sales_rep", "rep"):
+    if role not in ("admin", "sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
         normalized_pricing_mode = "wholesale"
 
     test_override_enabled = bool(settings.get("testPaymentsOverrideEnabled", False))

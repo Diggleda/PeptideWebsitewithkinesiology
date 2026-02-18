@@ -41,6 +41,7 @@ const STATEMENTS = [
       shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
       shipping_carrier VARCHAR(120) NULL,
       shipping_service VARCHAR(120) NULL,
+      facility_pickup TINYINT(1) NOT NULL DEFAULT 0,
       physician_certified TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(50) NOT NULL DEFAULT 'pending',
       payload LONGTEXT NULL,
@@ -253,6 +254,13 @@ const ensureOrderColumns = async () => {
       ddl: `
         ALTER TABLE peppro_orders
         ADD COLUMN items_subtotal DECIMAL(12,2) NULL AFTER shipstation_order_id
+      `,
+    },
+    {
+      name: 'facility_pickup',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0 AFTER shipping_service
       `,
     },
   ];

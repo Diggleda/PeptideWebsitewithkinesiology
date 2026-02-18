@@ -93,6 +93,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     shippingTotal: toNumber(order.shippingTotal ?? order.shipping_total, 0),
     shippingCarrier: order.shippingEstimate?.carrierId || order.shippingEstimate?.serviceCode || null,
     shippingService: order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || null,
+    facilityPickup: order.facilityPickup === true ? 1 : 0,
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
     status: order.status || 'pending',
     paymentDetails: sanitizeString(order.paymentDetails || order.paymentMethod || null),
@@ -122,6 +123,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipping_total,
           shipping_carrier,
           shipping_service,
+          facility_pickup,
           physician_certified,
           status,
           \`Payment Details\`,
@@ -139,6 +141,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :shippingTotal,
           :shippingCarrier,
           :shippingService,
+          :facilityPickup,
           :physicianCertified,
           :status,
           :paymentDetails,
@@ -154,6 +157,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           shipping_total = VALUES(shipping_total),
           shipping_carrier = VALUES(shipping_carrier),
           shipping_service = VALUES(shipping_service),
+          facility_pickup = VALUES(facility_pickup),
           physician_certified = VALUES(physician_certified),
           status = VALUES(status),
           \`Payment Details\` = VALUES(\`Payment Details\`),
@@ -263,6 +267,17 @@ const mapRowToOrder = (row, options = {}) => {
     physicianCertificationAccepted: typeof payloadOrder.physicianCertificationAccepted === 'boolean'
       ? payloadOrder.physicianCertificationAccepted
       : Boolean(row.physician_certified),
+    facilityPickup: typeof payloadOrder.facilityPickup === 'boolean'
+      ? payloadOrder.facilityPickup
+      : Boolean(row.facility_pickup),
+    fulfillmentMethod: sanitizeString(payloadOrder.fulfillmentMethod)
+      || (Boolean(
+        typeof payloadOrder.facilityPickup === 'boolean'
+          ? payloadOrder.facilityPickup
+          : row.facility_pickup,
+      ) ? 'facility_pickup' : 'shipping'),
+    pickupLocation: sanitizeString(payloadOrder.pickupLocation),
+    pickupReadyNotice: sanitizeString(payloadOrder.pickupReadyNotice),
     status: payloadOrder.status || row.status || 'pending',
     createdAt: toIso(payloadOrder.createdAt || payloadOrder.created_at || row.created_at || row.updated_at || payloadOrder.updatedAt || payloadOrder.updated_at),
     updatedAt: toIso(payloadOrder.updatedAt || payloadOrder.updated_at || row.updated_at || row.created_at || payloadOrder.createdAt || payloadOrder.created_at),

@@ -188,7 +188,7 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   forceProposalMode?: boolean;
   onCheckout: (payload: {
-    shippingAddress: ShippingAddress;
+    shippingAddress: ShippingAddress | null;
     shippingRate: ShippingRate | null;
     shippingTotal: number;
     expectedShipmentWindow?: string | null;
@@ -196,6 +196,7 @@ interface CheckoutModalProps {
     taxTotal?: number | null;
     paymentMethod?: 'bacs' | string | null;
     discountCode?: string | null;
+    facilityPickup?: boolean;
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -229,7 +230,11 @@ interface CheckoutModalProps {
   pricingMarkupPercent?: number | null;
   proposalMarkupPercent?: number | null;
   onRejectProposal?: (() => Promise<void> | void) | null;
+  enableFacilityPickup?: boolean;
 }
+
+const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
+const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup';
 
 const formatCardNumber = (value: string) =>
   value
@@ -291,6 +296,7 @@ export function CheckoutModal({
   pricingMarkupPercent,
   proposalMarkupPercent,
   onRejectProposal,
+  enableFacilityPickup = false,
 }: CheckoutModalProps) {
   // Referral codes are no longer collected at checkout.
   const [discountCodeDraft, setDiscountCodeDraft] = useState('');
@@ -339,6 +345,7 @@ export function CheckoutModal({
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
   const [isRejectingProposal, setIsRejectingProposal] = useState(false);
+  const [facilityPickup, setFacilityPickup] = useState(false);
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
   const activeTaxRequestRef = useRef<AbortController | null>(null);
   const initialDefaultRateAppliedRef = useRef(false);
@@ -437,9 +444,11 @@ export function CheckoutModal({
   const selectedShippingRate = selectedRateIndex != null && shippingRates
     ? shippingRates[selectedRateIndex]
     : null;
-  const shippingCost = selectedShippingRate?.rate
-    ? Number(selectedShippingRate.rate) || 0
-    : 0;
+  const shippingCost = facilityPickup
+    ? 0
+    : (selectedShippingRate?.rate
+      ? Number(selectedShippingRate.rate) || 0
+      : 0);
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
   const discountedSubtotal = Math.max(0, subtotal - discountCodeAmount);
@@ -465,10 +474,12 @@ export function CheckoutModal({
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = true;
-  const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
+  const hasSelectedShippingRate = facilityPickup
+    || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
+    && !facilityPickup
     && hasSelectedShippingRate
     && shippingAddressComplete
     && checkoutLineItems.length > 0,
@@ -538,6 +549,12 @@ export function CheckoutModal({
     setDiscountCodeApplied(null);
     setDiscountCodeMessage(null);
   }, [cartLineItemSignature]);
+
+  useEffect(() => {
+    if (!enableFacilityPickup && facilityPickup) {
+      setFacilityPickup(false);
+    }
+  }, [enableFacilityPickup, facilityPickup]);
 
   const handleApplyDiscountCode = useCallback(async () => {
     const code = discountCodeDraft.trim().toUpperCase();
@@ -719,6 +736,9 @@ export function CheckoutModal({
   }, [delegateSubtotal, displayShippingCost, displayTaxAmount]);
 
   const handleGetRates = async () => {
+    if (facilityPickup) {
+      return;
+    }
     if (!shippingAddressComplete) {
       const message = 'Enter the full shipping address before requesting shipping rates.';
       setShippingRateError(message);
@@ -779,14 +799,15 @@ export function CheckoutModal({
     setIsProcessing(true);
 	    try {
 	      const result = await onCheckout({
-	        shippingAddress,
-	        shippingRate: selectedShippingRate,
-	        shippingTotal: shippingCost,
-	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
+	        shippingAddress: facilityPickup ? null : shippingAddress,
+	        shippingRate: facilityPickup ? null : selectedShippingRate,
+	        shippingTotal: facilityPickup ? 0 : shippingCost,
+	        expectedShipmentWindow: facilityPickup ? null : (deliveryEstimate?.shipWindowLabel ?? null),
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
 	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
 	        discountCode: discountCodeApplied?.code ?? null,
+          facilityPickup,
 	      });
 	      if (isDelegateFlow) {
 	        const candidateMessage =
@@ -908,7 +929,7 @@ export function CheckoutModal({
       return;
     }
     if (!hasSelectedShippingRate) {
-      toast.error('Select a shipping option before completing your purchase.');
+      toast.error(facilityPickup ? 'Select a fulfillment option before completing your purchase.' : 'Select a shipping option before completing your purchase.');
       return;
     }
     if (shouldFetchTax && (!taxEstimate || taxEstimatePending)) {
@@ -983,6 +1004,7 @@ export function CheckoutModal({
       setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
+      setFacilityPickup(false);
       setShippingRates(null);
       setSelectedRateIndex(null);
       setShippingRateError(null);
@@ -1013,7 +1035,7 @@ export function CheckoutModal({
   }, [defaultShippingAddress, customerName, isOpen, physicianName]);
 
   useEffect(() => {
-    if (!isOpen || initialDefaultRateAppliedRef.current) {
+    if (!isOpen || initialDefaultRateAppliedRef.current || facilityPickup) {
       return;
     }
     const normalizedRate = normalizeShippingRate(defaultShippingRate);
@@ -1025,9 +1047,40 @@ export function CheckoutModal({
     setSelectedRateIndex(0);
     setShippingRateError(null);
     initialDefaultRateAppliedRef.current = true;
-  }, [defaultShippingRate, isOpen]);
+  }, [defaultShippingRate, facilityPickup, isOpen]);
 
   useEffect(() => {
+    if (!facilityPickup) {
+      return;
+    }
+    if (activeTaxRequestRef.current) {
+      activeTaxRequestRef.current.abort();
+      activeTaxRequestRef.current = null;
+    }
+    setShippingAddress({
+      name: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      postalCode: '',
+      country: '',
+    });
+    setShippingRates(null);
+    setSelectedRateIndex(null);
+    setShippingRateError(null);
+    setTaxEstimate(null);
+    setTaxEstimateError(null);
+    setTaxEstimatePending(false);
+    lastQuotedAddressRef.current = null;
+    lastQuotedCartRef.current = null;
+    lastTaxQuoteRef.current = null;
+  }, [facilityPickup]);
+
+  useEffect(() => {
+    if (facilityPickup) {
+      return;
+    }
     setShippingAddress((prev) => ({
       ...prev,
       name: defaultShippingAddress?.name || physicianName || customerName || prev.name || '',
@@ -1038,7 +1091,7 @@ export function CheckoutModal({
       postalCode: defaultShippingAddress?.postalCode ?? prev.postalCode ?? '',
       country: defaultShippingAddress?.country ?? prev.country ?? 'US',
     }));
-  }, [defaultShippingAddress, physicianName, customerName]);
+  }, [defaultShippingAddress, physicianName, customerName, facilityPickup]);
 
   useEffect(() => {
     if (cartItems.length === 0) {
@@ -1061,6 +1114,9 @@ export function CheckoutModal({
   }, [cartItems]);
 
   useEffect(() => {
+    if (facilityPickup) {
+      return;
+    }
     if (!shippingRates || shippingRates.length === 0) {
       lastQuotedAddressRef.current = null;
       return;
@@ -1072,9 +1128,12 @@ export function CheckoutModal({
     setShippingRates(null);
     setSelectedRateIndex(null);
     setShippingRateError('Shipping address changed. Please fetch shipping rates again.');
-  }, [shippingAddressSignature, shippingRates]);
+  }, [facilityPickup, shippingAddressSignature, shippingRates]);
 
   useEffect(() => {
+    if (facilityPickup) {
+      return;
+    }
     if (!shippingRates || shippingRates.length === 0) {
       lastQuotedCartRef.current = null;
       return;
@@ -1090,7 +1149,7 @@ export function CheckoutModal({
         ? 'Proposal updated. Please fetch shipping rates again.'
         : 'Cart updated. Please fetch shipping rates again.',
     );
-  }, [cartLineItemSignature, shippingRates]);
+  }, [cartLineItemSignature, facilityPickup, shippingRates]);
 
   const requestTaxEstimate = useCallback(async (options?: { force?: boolean }) => {
     if (!shouldFetchTax || !taxQuoteKey) {
@@ -1527,128 +1586,154 @@ export function CheckoutModal({
 
               {/* Shipping */}
               <div className="space-y-4">
-                <h3>Shipping Address</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-name">Recipient Name</Label>
-                    <Input
-                      id="ship-name"
-                      placeholder="Full name"
-                      value={shippingAddress.name || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, name: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
+                <h3>{enableFacilityPickup ? 'Shipping / Pickup' : 'Shipping Address'}</h3>
+                {enableFacilityPickup && !isDelegateFlow && (
+                  <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-3">
+                    <label htmlFor="facility-pickup-option" className="flex cursor-pointer items-start gap-3">
+                      <input
+                        id="facility-pickup-option"
+                        type="checkbox"
+                        className="brand-checkbox mt-0.5"
+                        checked={facilityPickup}
+                        onChange={(event) => setFacilityPickup(event.target.checked)}
+                      />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-900">{FACILITY_PICKUP_LABEL}</p>
+                        <p className="text-xs text-slate-600">{FACILITY_PICKUP_NOTICE}</p>
+                      </div>
+                    </label>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-line1">Address Line 1</Label>
-                    <Input
-                      id="ship-line1"
-                      placeholder="Street address"
-                      value={shippingAddress.addressLine1 || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-line2">Address Line 2</Label>
-                    <Input
-                      id="ship-line2"
-                      placeholder="Apt, suite, etc. (optional)"
-                      value={shippingAddress.addressLine2 || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine2: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-city">City</Label>
-                    <Input
-                      id="ship-city"
-                      placeholder="City"
-                      value={shippingAddress.city || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, city: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-state">State</Label>
-                    <Input
-                      id="ship-state"
-                      placeholder="State"
-                      value={shippingAddress.state || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, state: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-postal">Postal Code</Label>
-                    <Input
-                      id="ship-postal"
-                      placeholder="ZIP / Postal code"
-                      value={shippingAddress.postalCode || ''}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, postalCode: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ship-country">Country</Label>
-                    <Input
-                      id="ship-country"
-                      placeholder="Country"
-                      value={shippingAddress.country || 'US'}
-                      onChange={(e) => setShippingAddress((prev) => ({ ...prev, country: e.target.value }))}
-                      className="squircle-sm bg-slate-50 border-2"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleGetRates}
-                    disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
-                    className="squircle-sm"
-                  >
-                    {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
-                  </Button>
-                  {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
-                </div>
-                {shippingRates && shippingRates.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
-                    <select
-                      className="shipping-rate-select"
-                      value={selectedRateIndex != null ? String(selectedRateIndex) : ''}
-                      onChange={(event) => {
-                        const idx = event.target.value ? Number(event.target.value) : null;
-                        setSelectedRateIndex(idx);
-                      }}
-                    >
-                      <option value="" disabled>
-                        Choose a shipping option
-                      </option>
-                      {shippingRates.map((rate, index) => (
-                        <option key={`${rate.serviceCode}-${index}`} value={index}>
-                          {formatShippingServiceLabel(rate)} — ${Number(rate.rate || 0).toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
-                      <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                        {deliveryEstimate && (
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-slate-800">
-                              Estimated Shipping window: {deliveryEstimate.shipWindowLabel}
-                            </p>
-                            <p className="text-xs text-slate-600">
-                              {deliveryEstimate.mathText}
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              {deliveryEstimate.disclaimer}
-                            </p>
+                )}
+                {!facilityPickup && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-name">Recipient Name</Label>
+                        <Input
+                          id="ship-name"
+                          placeholder="Full name"
+                          value={shippingAddress.name || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, name: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-line1">Address Line 1</Label>
+                        <Input
+                          id="ship-line1"
+                          placeholder="Street address"
+                          value={shippingAddress.addressLine1 || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-line2">Address Line 2</Label>
+                        <Input
+                          id="ship-line2"
+                          placeholder="Apt, suite, etc. (optional)"
+                          value={shippingAddress.addressLine2 || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, addressLine2: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-city">City</Label>
+                        <Input
+                          id="ship-city"
+                          placeholder="City"
+                          value={shippingAddress.city || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, city: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-state">State</Label>
+                        <Input
+                          id="ship-state"
+                          placeholder="State"
+                          value={shippingAddress.state || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, state: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-postal">Postal Code</Label>
+                        <Input
+                          id="ship-postal"
+                          placeholder="ZIP / Postal code"
+                          value={shippingAddress.postalCode || ''}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, postalCode: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="ship-country">Country</Label>
+                        <Input
+                          id="ship-country"
+                          placeholder="Country"
+                          value={shippingAddress.country || 'US'}
+                          onChange={(e) => setShippingAddress((prev) => ({ ...prev, country: e.target.value }))}
+                          className="squircle-sm bg-slate-50 border-2"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleGetRates}
+                        disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
+                        className="squircle-sm"
+                      >
+                        {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
+                      </Button>
+                      {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
+                    </div>
+                    {shippingRates && shippingRates.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
+                        <select
+                          className="shipping-rate-select"
+                          value={selectedRateIndex != null ? String(selectedRateIndex) : ''}
+                          onChange={(event) => {
+                            const idx = event.target.value ? Number(event.target.value) : null;
+                            setSelectedRateIndex(idx);
+                          }}
+                        >
+                          <option value="" disabled>
+                            Choose a shipping option
+                          </option>
+                          {shippingRates.map((rate, index) => (
+                            <option key={`${rate.serviceCode}-${index}`} value={index}>
+                              {formatShippingServiceLabel(rate)} — ${Number(rate.rate || 0).toFixed(2)}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedRateIndex != null && shippingRates[selectedRateIndex] && (
+                          <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            {deliveryEstimate && (
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-slate-800">
+                                  Estimated Shipping window: {deliveryEstimate.shipWindowLabel}
+                                </p>
+                                <p className="text-xs text-slate-600">
+                                  {deliveryEstimate.mathText}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {deliveryEstimate.disclaimer}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
+                  </>
+                )}
+                {facilityPickup && (
+                  <div className="rounded-md border border-[rgba(95,179,249,0.28)] bg-[rgba(95,179,249,0.06)] px-3 py-2 text-xs text-slate-700">
+                    Pickup location: Santa Ana, CA
                   </div>
                 )}
               </div>

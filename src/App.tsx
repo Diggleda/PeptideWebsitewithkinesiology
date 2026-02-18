@@ -15715,14 +15715,15 @@ function MainApp() {
   );
 
   const handleCheckout = async (options?: {
-    shippingAddress: any;
+    shippingAddress?: any | null;
     shippingRate: any;
-    shippingTotal: number;
+    shippingTotal?: number | null;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
     paymentMethod?: string | null;
     discountCode?: string | null;
+    facilityPickup?: boolean;
   }) => {
     console.debug("[Checkout] Attempt", {
       items: cartItems.length,
@@ -15764,12 +15765,13 @@ function MainApp() {
 	      (sum, item) => sum + item.price * item.quantity,
 	      0,
 	    );
+	    const facilityPickup = options?.facilityPickup === true;
 	    const taxTotal =
 	      typeof options?.taxTotal === "number" && options.taxTotal >= 0
 	        ? options.taxTotal
 	        : 0;
 	    const shippingTotal =
-	      typeof options?.shippingTotal === "number" && options.shippingTotal >= 0
+	      !facilityPickup && typeof options?.shippingTotal === "number" && options.shippingTotal >= 0
 	        ? options.shippingTotal
 	        : 0;
 		    const total = Math.round(
@@ -15829,15 +15831,16 @@ function MainApp() {
 	        undefined,
 	        options?.discountCode ?? undefined,
 	        {
-	          address: options?.shippingAddress,
-	          estimate: options?.shippingRate,
-	          shippingTotal: options?.shippingTotal ?? null,
+	          address: facilityPickup ? null : (options?.shippingAddress ?? null),
+	          estimate: facilityPickup ? null : (options?.shippingRate ?? null),
+	          shippingTotal: facilityPickup ? 0 : (options?.shippingTotal ?? null),
 	        },
 	        options?.expectedShipmentWindow ?? null,
 	        {
 	          physicianCertification:
 	            options?.physicianCertificationAccepted === true,
             delegateProposalToken: delegationProposalReview?.token ?? null,
+            facilityPickup,
 	        },
 	        taxTotal,
 	        options?.paymentMethod ?? null,
@@ -23826,6 +23829,7 @@ function MainApp() {
 	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
 	        onRejectProposal={isProposalReviewMode ? handleRejectActiveDelegationProposal : null}
+          enableFacilityPickup={Boolean(!isDelegateMode && isDoctorRole(user?.role || null))}
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
