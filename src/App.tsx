@@ -22821,8 +22821,12 @@ function MainApp() {
 	                              setLandingLoginPending(true);
 	                              try {
 	                                const fd = new FormData(e.currentTarget);
+                                const loginEmail =
+                                  (fd.get("email") as string) ||
+                                  (fd.get("username") as string) ||
+                                  "";
 	                                const res = await handleLogin(
-	                                  fd.get("username") as string,
+	                                  loginEmail,
 	                                  fd.get("password") as string,
 	                                );
 	                                if (res.status !== "success") {
@@ -22868,7 +22872,7 @@ function MainApp() {
                           >
                             <div className="space-y-2">
                               <label
-                                htmlFor="landing-username"
+                                htmlFor="landing-email"
                                 className="text-sm font-medium"
                               >
                                 Email
@@ -22876,8 +22880,8 @@ function MainApp() {
                               <div className="flex items-center gap-2">
                                 <input
                                   ref={landingLoginEmailRef}
-                                  id="landing-username"
-                                  name="username"
+                                  id="landing-email"
+                                  name="email"
                                   type="email"
                                   autoComplete="username"
                                   inputMode="email"
@@ -23384,6 +23388,7 @@ function MainApp() {
                               }
                             }}
                             className="space-y-4"
+                            autoComplete="on"
                           >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                               <div className="space-y-2 sm:w-36">
@@ -23452,6 +23457,11 @@ function MainApp() {
                                 id="landing-email2"
                                 name="email"
                                 type="email"
+                                autoComplete="email"
+                                inputMode="email"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
                                 required
                                 className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                               />
@@ -23829,7 +23839,15 @@ function MainApp() {
 	        pricingMarkupPercent={isDelegateMode ? delegatePricingMarkupPercent : null}
 	        proposalMarkupPercent={isProposalReviewMode ? (activeDelegationProposal?.markupPercent ?? null) : null}
 	        onRejectProposal={isProposalReviewMode ? handleRejectActiveDelegationProposal : null}
-          enableFacilityPickup={Boolean(!isDelegateMode && isDoctorRole(user?.role || null))}
+          enableFacilityPickup={Boolean(
+            !isDelegateMode
+            && (
+              isDoctorRole(user?.role || null)
+              || isRep(user?.role || null)
+              || isSalesLead(user?.role || null)
+              || isAdmin(user?.role || null)
+            )
+          )}
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}

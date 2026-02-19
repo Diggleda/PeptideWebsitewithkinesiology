@@ -27,6 +27,10 @@ from . import discount_code_service
 logger = logging.getLogger(__name__)
 
 _PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
+FACILITY_PICKUP_LOCATION = "640 S Grand Ave, Santa Ana, CA 92705, Unit #107"
+FACILITY_PICKUP_LABEL = "Facility pick-up (Santa Ana, CA)"
+FACILITY_PICKUP_NOTICE = "You will receive an email when your order is ready for pickup."
+FACILITY_PICKUP_SERVICE_CODE = "facility_pickup_santa_ana"
 
 
 def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
@@ -448,6 +452,7 @@ def estimate_order_totals(
     shipping_address: Dict,
     shipping_estimate: Optional[Dict] = None,
     shipping_total: float | int | str = 0,
+    facility_pickup: bool = False,
     payment_method: Optional[str] = None,
     discount_code: Optional[str] = None,
 ) -> Dict:
@@ -456,11 +461,12 @@ def estimate_order_totals(
         setattr(err, "status", 400)
         raise err
 
+    is_facility_pickup = bool(facility_pickup)
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
         shipping_total_value = 0.0
-    shipping_total_value = max(0.0, shipping_total_value)
+    shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
 
     items_total = 0.0
     normalized_items: List[Dict] = []
@@ -562,7 +568,7 @@ def estimate_order_totals(
     country = str(address.get("country") or "US").strip().upper()
     state = _normalize_address_field(address.get("state")) or ""
     postal = _normalize_address_field(address.get("postalCode") or address.get("postcode") or address.get("zip")) or ""
-    if country == "US" and (not state or not postal):
+    if not is_facility_pickup and country == "US" and (not state or not postal):
         err = ValueError("Shipping address must include state and postal code")
         setattr(err, "status", 400)
         raise err
@@ -571,7 +577,10 @@ def estimate_order_totals(
     is_ca = normalized_state in ("ca", "california")
     tax_total = 0.0
     source = "flat_zero"
-    if is_ca:
+    if is_facility_pickup:
+        tax_total = 0.0
+        source = "facility_pickup"
+    elif is_ca:
         base = float(items_total_effective + shipping_total_value)
         tax_total = round(max(0.0, base * 0.077), 2)
         source = "ca_flat_7_7"
@@ -649,6 +658,7 @@ def create_order(
     tax_total: Optional[float] = None,
     shipping_total: Optional[float] = None,
     shipping_address: Optional[Dict] = None,
+    facility_pickup: bool = False,
     shipping_rate: Optional[Dict] = None,
     expected_shipment_window: Optional[str] = None,
     physician_certified: bool = False,
@@ -680,15 +690,27 @@ def create_order(
         normalized_payment_method = "stripe"
 
     now = _now_order_iso()
+    is_facility_pickup = bool(facility_pickup)
     shipping_address = shipping_address or {}
+    if is_facility_pickup:
+        shipping_address = {}
+        shipping_rate = {
+            "carrierId": "facility_pickup",
+            "serviceType": FACILITY_PICKUP_LABEL,
+            "serviceCode": FACILITY_PICKUP_SERVICE_CODE,
+            "rate": 0,
+        }
+        expected_shipment_window = None
     try:
         shipping_total_value = float(shipping_total or 0)
     except Exception:
         shipping_total_value = 0.0
-    shipping_total_value = max(0.0, shipping_total_value)
+    shipping_total_value = 0.0 if is_facility_pickup else max(0.0, shipping_total_value)
     normalized_state = str((shipping_address or {}).get("state") or "").strip().lower()
     is_ca = normalized_state in ("ca", "california")
     if tax_exempt:
+        tax_total_value = 0.0
+    elif is_facility_pickup:
         tax_total_value = 0.0
     elif is_ca:
         tax_total_value = round(max(0.0, (items_subtotal + shipping_total_value) * 0.077), 2)
@@ -709,11 +731,12 @@ def create_order(
     test_override_payment = normalized_payment_method == "bacs"
     test_override = bool(test_override_enabled and test_override_allowed and test_override_payment)
 
-    address_updates = _extract_user_address_fields(shipping_address)
-    if any(address_updates.values()):
-        updated_user = user_repository.update({**user, **address_updates})
-        if updated_user:
-            user = updated_user
+    if not is_facility_pickup:
+        address_updates = _extract_user_address_fields(shipping_address)
+        if any(address_updates.values()):
+            updated_user = user_repository.update({**user, **address_updates})
+            if updated_user:
+                user = updated_user
 
     normalized_referral = (referral_code or "").strip().upper() or None
     if test_override:
@@ -733,6 +756,10 @@ def create_order(
         "taxTotal": float(tax_total_value),
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
+        "facilityPickup": is_facility_pickup,
+        "fulfillmentMethod": "facility_pickup" if is_facility_pickup else "shipping",
+        "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
+        "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,
         "referralCode": normalized_referral,
         "discountCode": normalized_discount_code,
         "status": "pending",
@@ -783,6 +810,8 @@ def create_order(
         # Recompute taxes based on discounted subtotal (where applicable).
         tax_total_value_effective = 0.0
         if tax_exempt:
+            tax_total_value_effective = 0.0
+        elif is_facility_pickup:
             tax_total_value_effective = 0.0
         elif is_ca:
             tax_total_value_effective = round(

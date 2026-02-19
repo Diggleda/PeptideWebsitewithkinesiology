@@ -134,6 +134,7 @@ def create_order():
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
+    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
     # Support both keys from frontend/backends
     shipping_rate = payload.get("shippingRate") or payload.get("shippingEstimate")
     delegate_proposal_token = (
@@ -180,6 +181,7 @@ def create_order():
             tax_total=tax_total,
             shipping_total=shipping_total,
             shipping_address=shipping_address,
+            facility_pickup=facility_pickup,
             shipping_rate=shipping_rate,
             expected_shipment_window=expected_shipment_window,
             physician_certified=physician_certified,
@@ -506,6 +508,7 @@ def estimate_order_totals():
     shipping_address = payload.get("shippingAddress") or {}
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
+    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     discount_code = payload.get("discountCode") or payload.get("discount_code") or None
     user_id = g.current_user.get("id")
@@ -516,6 +519,7 @@ def estimate_order_totals():
             shipping_address=shipping_address,
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
+            facility_pickup=facility_pickup,
             payment_method=payment_method,
             discount_code=discount_code,
         )
@@ -529,6 +533,7 @@ def delegate_estimate_order_totals():
     shipping_address = payload.get("shippingAddress") or {}
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
+    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
     discount_code = payload.get("discountCode") or payload.get("discount_code") or None
@@ -546,6 +551,7 @@ def delegate_estimate_order_totals():
             shipping_address=shipping_address,
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
+            facility_pickup=facility_pickup,
             payment_method=payment_method,
             discount_code=discount_code,
         )

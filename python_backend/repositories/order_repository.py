@@ -113,6 +113,10 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 items_subtotal,
                 total,
                 shipping_total,
+                facility_pickup,
+                fulfillment_method,
+                pickup_location,
+                pickup_ready_notice,
                 status,
                 notes,
                 shipping_address,
@@ -194,6 +198,24 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "pricingMode": row.get("pricing_mode") or "wholesale",
                 "asDelegate": row.get("as_delegate") if row.get("as_delegate") is not None else payload.get("asDelegate"),
                 "shippingTotal": float(row.get("shipping_total") or 0),
+                "facilityPickup": bool(
+                    row.get("facility_pickup")
+                    if row.get("facility_pickup") is not None
+                    else payload.get("facilityPickup")
+                ),
+                "fulfillmentMethod": row.get("fulfillment_method")
+                or payload.get("fulfillmentMethod")
+                or (
+                    "facility_pickup"
+                    if bool(
+                        row.get("facility_pickup")
+                        if row.get("facility_pickup") is not None
+                        else payload.get("facilityPickup")
+                    )
+                    else "shipping"
+                ),
+                "pickupLocation": row.get("pickup_location") or payload.get("pickupLocation") or None,
+                "pickupReadyNotice": row.get("pickup_ready_notice") or payload.get("pickupReadyNotice") or None,
                 "status": row.get("status"),
                 "notes": row.get("notes") if row.get("notes") is not None else None,
                 "shippingAddress": parse_json(row.get("shipping_address")),
@@ -692,12 +714,14 @@ def insert(order: Dict) -> Dict:
                 """
                 INSERT INTO orders (
                     id, user_id, as_delegate, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
+                    facility_pickup, fulfillment_method, pickup_location, pickup_ready_notice,
                     tracking_number,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
                     %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
+                    %(facility_pickup)s, %(fulfillment_method)s, %(pickup_location)s, %(pickup_ready_notice)s,
                     %(tracking_number)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
@@ -713,6 +737,10 @@ def insert(order: Dict) -> Dict:
                     shipping_total = VALUES(shipping_total),
                     shipping_carrier = VALUES(shipping_carrier),
                     shipping_service = VALUES(shipping_service),
+                    facility_pickup = VALUES(facility_pickup),
+                    fulfillment_method = VALUES(fulfillment_method),
+                    pickup_location = VALUES(pickup_location),
+                    pickup_ready_notice = VALUES(pickup_ready_notice),
                     tracking_number = VALUES(tracking_number),
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
@@ -798,6 +826,10 @@ def update(order: Dict) -> Optional[Dict]:
                     shipping_total = %(shipping_total)s,
                     shipping_carrier = %(shipping_carrier)s,
                     shipping_service = %(shipping_service)s,
+                    facility_pickup = %(facility_pickup)s,
+                    fulfillment_method = %(fulfillment_method)s,
+                    pickup_location = %(pickup_location)s,
+                    pickup_ready_notice = %(pickup_ready_notice)s,
                     tracking_number = %(tracking_number)s,
                     referral_code = %(referral_code)s,
                     status = %(status)s,
@@ -929,6 +961,10 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
         "shippingAddress": parse_json(row.get("shipping_address"), None),
+        "facilityPickup": bool(row.get("facility_pickup")) if row.get("facility_pickup") is not None else False,
+        "fulfillmentMethod": row.get("fulfillment_method"),
+        "pickupLocation": row.get("pickup_location") or None,
+        "pickupReadyNotice": row.get("pickup_ready_notice") or None,
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
@@ -947,6 +983,14 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     if isinstance(payload, dict) and payload:
+        if row.get("facility_pickup") is None and payload.get("facilityPickup") is not None:
+            order["facilityPickup"] = bool(payload.get("facilityPickup"))
+        if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
+            order["fulfillmentMethod"] = payload.get("fulfillmentMethod")
+        if not order.get("pickupLocation") and payload.get("pickupLocation"):
+            order["pickupLocation"] = payload.get("pickupLocation")
+        if not order.get("pickupReadyNotice") and payload.get("pickupReadyNotice"):
+            order["pickupReadyNotice"] = payload.get("pickupReadyNotice")
         payload_items = None
         if isinstance(payload_order, dict):
             payload_items = payload_order.get("items")
@@ -984,6 +1028,8 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         for key, value in payload.items():
             if key not in order:
                 order[key] = value
+    if not order.get("fulfillmentMethod"):
+        order["fulfillmentMethod"] = "facility_pickup" if bool(order.get("facilityPickup")) else "shipping"
     return order
 
 
@@ -1073,6 +1119,20 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
+    facility_pickup = bool(order.get("facilityPickup") is True or order.get("facility_pickup") is True)
+    fulfillment_method = (
+        "facility_pickup"
+        if facility_pickup
+        else (str(order.get("fulfillmentMethod") or order.get("fulfillment_method") or "").strip().lower() or "shipping")
+    )
+    if fulfillment_method not in ("shipping", "facility_pickup"):
+        fulfillment_method = "facility_pickup" if facility_pickup else "shipping"
+    pickup_location = None
+    if facility_pickup:
+        pickup_location = str(order.get("pickupLocation") or order.get("pickup_location") or "").strip() or None
+    pickup_ready_notice = None
+    if facility_pickup:
+        pickup_ready_notice = str(order.get("pickupReadyNotice") or order.get("pickup_ready_notice") or "").strip() or None
 
     return {
         "id": order.get("id"),
@@ -1089,7 +1149,11 @@ def _to_db_params(order: Dict) -> Dict:
         "items_subtotal": float(max(0.0, items_subtotal)),
         # `orders.total` should reflect the full amount paid (subtotal - discounts + shipping + tax).
         "total": float(grand_total),
-        "shipping_total": float(order.get("shippingTotal") or 0),
+        "shipping_total": 0.0 if facility_pickup else float(order.get("shippingTotal") or 0),
+        "facility_pickup": 1 if facility_pickup else 0,
+        "fulfillment_method": fulfillment_method,
+        "pickup_location": pickup_location,
+        "pickup_ready_notice": pickup_ready_notice,
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")
         or order.get("shippingEstimate", {}).get("carrier_id"),

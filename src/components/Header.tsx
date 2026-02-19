@@ -6409,11 +6409,11 @@ export function Header({
             <div className="space-y-5">
               <form ref={loginFormRef} autoComplete="on" onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-3">
-                  <Label htmlFor="login-username">Email</Label>
+                  <Label htmlFor="login-email">Email</Label>
                   <Input
                     ref={loginEmailRef}
-                    id="login-username"
-                    name="username"
+                    id="login-email"
+                    name="email"
                     type="email"
                     autoComplete="username"
                     inputMode="email"
@@ -6499,7 +6499,7 @@ export function Header({
             </div>
           ) : (
             <div className="space-y-5">
-              <form onSubmit={handleSignup} className="space-y-4">
+              <form onSubmit={handleSignup} autoComplete="on" className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                   <div className="space-y-2 sm:w-36 sm:pb-0">
                     <Label htmlFor="suffix">
@@ -6560,6 +6560,10 @@ export function Header({
                     name="email"
                     autoComplete="email"
                     type="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
                     className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"

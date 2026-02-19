@@ -234,7 +234,7 @@ interface CheckoutModalProps {
 }
 
 const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
-const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup.  Please allow 1-3 business days for processing.';
+const FACILITY_PICKUP_NOTICE = 'You will receive an email when your order is ready for pickup.';
 
 const formatCardNumber = (value: string) =>
   value
@@ -1589,33 +1589,31 @@ export function CheckoutModal({
                 {enableFacilityPickup ? (
                   <>
                     {!isDelegateFlow && (
-                      <>
-                        <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-6 py-5">
-                          <label htmlFor="facility-pickup-option" className="flex cursor-pointer items-start gap-3 py-1">
-                            <input
-                              id="facility-pickup-option"
-                              type="checkbox"
-                              className="brand-checkbox mt-0.5"
-                              checked={facilityPickup}
-                              onChange={(event) => setFacilityPickup(event.target.checked)}
-                            />
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-slate-900">{FACILITY_PICKUP_LABEL}</p>
-                              <p className="text-xs text-slate-600">You will receive an email when your order is ready for pickup.</p>
-                              {facilityPickup && (
-                                <div className="space-y-1">
-                                  <p className="text-xs font-medium text-slate-700">
-                                    Pickup location: 640 S Grand Ave, Santa Ana, Ca 92705, Unit #107
-                                  </p>
-                                  <p className="text-xs text-slate-600">
-                                    Please allow 1-3 business days for processing.
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </label>
-                        </div>
-                      </>
+                      <div className="glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-6 py-5">
+                        <label htmlFor="facility-pickup-option" className="flex cursor-pointer items-start gap-3 py-1">
+                          <input
+                            id="facility-pickup-option"
+                            type="checkbox"
+                            className="brand-checkbox mt-0.5"
+                            checked={facilityPickup}
+                            onChange={(event) => setFacilityPickup(event.target.checked)}
+                          />
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">{FACILITY_PICKUP_LABEL}</p>
+                            <p className="text-xs text-slate-600">{FACILITY_PICKUP_NOTICE}</p>
+                            {facilityPickup && (
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-slate-700">
+                                  Pickup location: 640 S Grand Ave, Santa Ana, Ca 92705, Unit #107
+                                </p>
+                                <p className="text-xs text-slate-600">
+                                  Please allow 1-3 business days for processing.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      </div>
                     )}
                     {!facilityPickup && <h3>Shipping</h3>}
                   </>

@@ -159,6 +159,10 @@ CREATE_TABLE_STATEMENTS = [
         items_subtotal DECIMAL(12,2) NULL,
         total DECIMAL(12,2) NOT NULL DEFAULT 0,
         shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+        facility_pickup TINYINT(1) NOT NULL DEFAULT 0,
+        fulfillment_method VARCHAR(32) NULL,
+        pickup_location VARCHAR(255) NULL,
+        pickup_ready_notice VARCHAR(255) NULL,
         shipping_carrier VARCHAR(64) NULL,
         shipping_service VARCHAR(128) NULL,
         tracking_number VARCHAR(64) NULL,
@@ -329,6 +333,10 @@ def ensure_schema() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS as_delegate VARCHAR(190) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS items_subtotal DECIMAL(12,2) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS facility_pickup TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment_method VARCHAR(32) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_location VARCHAR(255) NULL",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_ready_notice VARCHAR(255) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_carrier VARCHAR(64) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_service VARCHAR(128) NULL",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(64) NULL",
@@ -454,6 +462,19 @@ def ensure_schema() -> None:
         if not _column_exists("orders", "notes"):
             mysql_client.execute("ALTER TABLE orders ADD COLUMN notes LONGTEXT NULL")
         mysql_client.execute("ALTER TABLE orders MODIFY COLUMN notes LONGTEXT NULL")
+    except Exception:
+        pass
+
+    # Ensure pickup fulfillment markers exist for checkout persistence/reporting.
+    try:
+        if not _column_exists("orders", "facility_pickup"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN facility_pickup TINYINT(1) NOT NULL DEFAULT 0")
+        if not _column_exists("orders", "fulfillment_method"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN fulfillment_method VARCHAR(32) NULL")
+        if not _column_exists("orders", "pickup_location"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN pickup_location VARCHAR(255) NULL")
+        if not _column_exists("orders", "pickup_ready_notice"):
+            mysql_client.execute("ALTER TABLE orders ADD COLUMN pickup_ready_notice VARCHAR(255) NULL")
     except Exception:
         pass
 
