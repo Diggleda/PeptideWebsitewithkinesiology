@@ -189,6 +189,24 @@ const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const UserGroupIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"
+    />
+  </svg>
+);
+
 interface User {
   id: string;
   name: string;
@@ -9512,7 +9530,7 @@ function MainApp() {
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
-  type AdminDashboardTabId = "here_now" | "admin_report" | "maintenance";
+  type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "maintenance";
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
   const adminDashboardTabs = useMemo(
@@ -9523,6 +9541,11 @@ function MainApp() {
           id: "admin_report" as const,
           label: "Admin Report",
           Icon: BuildingStorefrontIcon,
+        },
+        {
+          id: "structure" as const,
+          label: "Structure",
+          Icon: UserGroupIcon,
         },
         {
           id: "maintenance" as const,
@@ -9944,6 +9967,167 @@ function MainApp() {
 	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(false);
 	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
 	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
+	  type HandDeliveryEntry = {
+	    userId: string;
+	    salesRepId?: string | null;
+	    name: string;
+	    role: string;
+	    jurisdiction?: string | null;
+	    isLocal: boolean;
+	  };
+	  const [adminHandDeliveryUsers, setAdminHandDeliveryUsers] = useState<
+	    HandDeliveryEntry[]
+	  >([]);
+	  const [adminHandDeliveryLoading, setAdminHandDeliveryLoading] = useState(false);
+	  const [adminHandDeliveryError, setAdminHandDeliveryError] = useState<string | null>(null);
+	  const [adminHandDeliverySavingByUserId, setAdminHandDeliverySavingByUserId] = useState<
+	    Record<string, boolean>
+	  >({});
+	  const adminHandDeliveryInFlightRef = useRef(false);
+	  const adminHandDeliveryLastFetchedAtRef = useRef<number>(0);
+
+	  const normalizeHandDeliveryEntry = useCallback(
+	    (entry: any): HandDeliveryEntry | null => {
+	      const userId = String(entry?.userId ?? entry?.id ?? "").trim();
+	      if (!userId) return null;
+	      const name =
+	        String(entry?.name ?? entry?.email ?? `User ${userId}`).trim() || `User ${userId}`;
+	      const role = normalizeRole(entry?.role || "") || "unknown";
+	      const salesRepIdRaw = String(entry?.salesRepId ?? "").trim();
+	      const jurisdictionRaw =
+	        typeof entry?.jurisdiction === "string"
+	          ? String(entry.jurisdiction).trim().toLowerCase()
+	          : null;
+	      const isLocal =
+	        typeof entry?.isLocal === "boolean"
+	          ? entry.isLocal
+	          : jurisdictionRaw === "local";
+	      return {
+	        userId,
+	        salesRepId: salesRepIdRaw.length > 0 ? salesRepIdRaw : null,
+	        name,
+	        role,
+	        jurisdiction: isLocal ? "local" : jurisdictionRaw || null,
+	        isLocal,
+	      };
+	    },
+	    [],
+	  );
+
+	  const fetchAdminHandDeliveryUsers = useCallback(
+	    async (options?: { force?: boolean }) => {
+	      if (!user || !isAdmin(user.role) || postLoginHold) {
+	        return;
+	      }
+	      const now = Date.now();
+	      const ttlMs = 30_000;
+	      if (!options?.force && now - adminHandDeliveryLastFetchedAtRef.current < ttlMs) {
+	        return;
+	      }
+	      if (adminHandDeliveryInFlightRef.current) {
+	        return;
+	      }
+	      adminHandDeliveryInFlightRef.current = true;
+	      adminHandDeliveryLastFetchedAtRef.current = now;
+	      setAdminHandDeliveryLoading(true);
+	      setAdminHandDeliveryError(null);
+	      try {
+	        const payload = (await settingsAPI.getHandDeliveryStructure()) as any;
+	        const rows = Array.isArray(payload?.users)
+	          ? payload.users
+	          : Array.isArray(payload)
+	            ? payload
+	            : [];
+	        const normalized = rows
+	          .map((row: any) => normalizeHandDeliveryEntry(row))
+	          .filter((row: HandDeliveryEntry | null): row is HandDeliveryEntry => Boolean(row))
+	          .sort((a, b) => {
+	            const byName = a.name.localeCompare(b.name);
+	            if (byName !== 0) return byName;
+	            return a.role.localeCompare(b.role);
+	          });
+	        setAdminHandDeliveryUsers(normalized);
+	      } catch (error: any) {
+	        setAdminHandDeliveryUsers([]);
+	        setAdminHandDeliveryError(
+	          typeof error?.message === "string"
+	            ? error.message
+	            : "Unable to load hand delivery users.",
+	        );
+	      } finally {
+	        setAdminHandDeliveryLoading(false);
+	        adminHandDeliveryInFlightRef.current = false;
+	      }
+	    },
+	    [normalizeHandDeliveryEntry, postLoginHold, user?.id, user?.role],
+	  );
+
+	  const handleAdminHandDeliveryToggle = useCallback(
+	    async (entry: HandDeliveryEntry, nextChecked: boolean) => {
+	      const userId = String(entry?.userId || "").trim();
+	      if (!userId) return;
+	      if (adminHandDeliverySavingByUserId[userId]) return;
+	      const previous = adminHandDeliveryUsers;
+	      setAdminHandDeliveryUsers((current) =>
+	        current.map((row) =>
+	          row.userId === userId
+	            ? {
+	                ...row,
+	                isLocal: nextChecked,
+	                jurisdiction: nextChecked ? "local" : null,
+	              }
+	            : row,
+	        ),
+	      );
+	      setAdminHandDeliverySavingByUserId((current) => ({ ...current, [userId]: true }));
+	      try {
+	        const payload = (await settingsAPI.updateHandDeliveryJurisdiction(
+	          userId,
+	          nextChecked ? "local" : null,
+	        )) as any;
+	        const normalized = normalizeHandDeliveryEntry(payload?.entry);
+	        if (normalized) {
+	          setAdminHandDeliveryUsers((current) =>
+	            current.map((row) => (row.userId === userId ? normalized : row)),
+	          );
+	        }
+	      } catch (error: any) {
+	        setAdminHandDeliveryUsers(previous);
+	        toast.error(
+	          typeof error?.message === "string"
+	            ? error.message
+	            : "Unable to update hand delivery jurisdiction.",
+	        );
+	      } finally {
+	        setAdminHandDeliverySavingByUserId((current) => ({ ...current, [userId]: false }));
+	      }
+	    },
+	    [
+	      adminHandDeliverySavingByUserId,
+	      adminHandDeliveryUsers,
+	      normalizeHandDeliveryEntry,
+	    ],
+	  );
+
+	  useEffect(() => {
+	    if (!user || !isAdmin(user.role) || postLoginHold) {
+	      setAdminHandDeliveryUsers([]);
+	      setAdminHandDeliveryLoading(false);
+	      setAdminHandDeliveryError(null);
+	      setAdminHandDeliverySavingByUserId({});
+	      return;
+	    }
+	    if (adminDashboardTab !== "structure") {
+	      return;
+	    }
+	    void fetchAdminHandDeliveryUsers();
+	  }, [
+	    adminDashboardTab,
+	    fetchAdminHandDeliveryUsers,
+	    postLoginHold,
+	    user?.id,
+	    user?.role,
+	  ]);
 
 	  useEffect(() => {
 	    liveClientsRef.current = liveClients;
@@ -18144,12 +18328,17 @@ function MainApp() {
                       </div>
                     )}
 
-				          {isAdmin(user?.role) &&
-                    adminDashboardTab !== "admin_report" && (
-				            <div
-                    key={`admin-panel-${adminDashboardTab}`}
-                    className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 admin-tab-panel-enter"
-                  >
+			          {isAdmin(user?.role) &&
+	                    adminDashboardTab !== "admin_report" && (
+					            <div
+	                    key={`admin-panel-${adminDashboardTab}`}
+	                    className={clsx(
+	                      "admin-tab-panel-enter",
+	                      adminDashboardTab === "here_now"
+	                        ? "space-y-6"
+	                        : "glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70",
+	                    )}
+	                  >
                 {adminDashboardTab === "maintenance" && (
                 <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -18325,185 +18514,6 @@ function MainApp() {
 		                  </div>
 		                </div>
                 )}
-
-		                {adminDashboardTab === "here_now" && !certificateUploadsVisible && (
-		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
-		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-		                      <div>
-		                        <h4 className="text-base font-semibold text-slate-900">
-		                          Certificates of Analysis
-		                        </h4>
-		                        <p className="text-sm text-slate-600">
-		                          {missingCertificatesLoading
-		                            ? "Checking certificates…"
-		                            : missingCertificatesError
-		                              ? "Unable to load certificate status."
-		                              : "All products have a certificate. (You can still view/delete/upload replacements.)"}
-		                        </p>
-		                      </div>
-		                      <div className="flex-shrink-0">
-		                        <Button
-		                          type="button"
-		                          variant="outline"
-		                          onClick={() => setCertificateUploadsVisible(true)}
-		                          className="gap-2"
-		                        >
-		                          Show certificate uploads
-		                        </Button>
-		                      </div>
-		                    </div>
-		                  </div>
-		                )}
-
-		                {adminDashboardTab === "here_now" && certificateUploadsVisible && (
-		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
-		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-		                      <div>
-		                        <h4 className="text-base font-semibold text-slate-900">
-		                          Certificates of Analysis
-		                        </h4>
-		                        <p className="text-sm text-slate-600">
-		                          {missingCertificatesError
-		                            ? "Unable to load missing certificate count."
-		                            : missingCertificates.length > 0
-		                              ? `${missingCertificates.length} product${missingCertificates.length === 1 ? "" : "s"} missing a certificate.`
-		                              : "All products currently have a certificate."}
-		                        </p>
-		                      </div>
-		                      <div className="flex-shrink-0">
-			                        <Button
-			                          type="button"
-			                          variant="outline"
-			                          size="sm"
-			                          onClick={() => {
-			                            void fetchMissingCertificates({ force: true });
-			                            void fetchCertificateProducts({ force: true });
-			                          }}
-			                          disabled={missingCertificatesLoading || certificateProductsLoading}
-			                          className="header-home-button squircle-sm bg-white text-slate-900"
-			                          title="Refresh certificates"
-			                        >
-			                          {missingCertificatesLoading || certificateProductsLoading ? "Refreshing…" : "Refresh"}
-			                        </Button>
-		                      </div>
-		                    </div>
-		
-		                    {(missingCertificatesError || certificateProductsError) && (
-		                      <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
-		                        {certificateProductsError || missingCertificatesError}
-		                      </div>
-		                    )}
-
-		                    {certificateProductsLoading && certificateProducts.length === 0 && (
-		                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
-		                        Loading products…
-		                      </div>
-		                    )}
-		
-		                    {(certificateProducts.length > 0 || missingCertificates.length > 0) && (
-		                      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
-		                        <div className="flex flex-col gap-1">
-		                          <label className="text-xs font-medium text-slate-600">
-		                            Product
-		                          </label>
-		                          <select
-		                            value={missingCertificatesSelectedId}
-		                            onChange={(e) => {
-		                              setMissingCertificatesSelectedId(e.target.value);
-		                              setMissingCertificatesSelectedFile(null);
-		                            }}
-		                            disabled={certificateProductsLoading}
-		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
-		                          >
-		                            {(certificateProducts.length > 0
-		                              ? certificateProducts
-		                              : (missingCertificates as any)
-		                            ).map((product: any) => {
-		                              const id = String(product.wooProductId);
-		                              const labelParts = [
-		                                product.name && String(product.name).trim().length > 0
-		                                  ? String(product.name).trim()
-		                                  : `Product ${id}`,
-		                                product.sku ? `SKU ${product.sku}` : null,
-		                                product.hasCertificate ? "Has certificate" : "Missing",
-		                              ].filter(
-		                                (part): part is string =>
-		                                  typeof part === "string" &&
-		                                  part.trim().length > 0,
-		                              );
-		                              return (
-		                                <option key={id} value={id}>
-		                                  {labelParts.join(" · ")}
-		                                </option>
-		                              );
-		                            })}
-		                          </select>
-		                        </div>
-		
-		                        <div className="flex flex-col gap-1">
-		                          <div className="flex items-center justify-between gap-2">
-		                            <label className="text-xs font-medium text-slate-600">
-		                              PNG certificate
-		                            </label>
-		                            <Button
-		                              type="button"
-		                              variant="ghost"
-		                              size="icon"
-		                              onClick={() => void handleDeleteSelectedCertificate()}
-		                              disabled={
-		                                missingCertificatesDeleting ||
-		                                missingCertificatesUploading ||
-		                                missingCertificatesInfoLoading ||
-		                                !missingCertificatesInfo?.exists
-		                              }
-		                              title="Delete current certificate"
-		                              className="h-8 w-8"
-		                            >
-		                              <Trash2 className="h-4 w-4 text-slate-700" />
-		                            </Button>
-		                          </div>
-		                          <div className="text-xs text-slate-500">
-		                            {missingCertificatesInfoLoading
-		                              ? "Current: Loading…"
-		                              : missingCertificatesInfoError
-		                                ? "Current: —"
-		                                : missingCertificatesInfo?.exists
-		                                  ? `Current: ${missingCertificatesInfo.filename || "certificate-of-analysis.png"}`
-		                                  : "Current: None"}
-		                          </div>
-		                          <input
-		                            type="file"
-		                            accept="image/png"
-		                            onChange={(e) => {
-		                              const file = e.target.files?.[0] ?? null;
-		                              setMissingCertificatesSelectedFile(file);
-		                            }}
-		                            disabled={missingCertificatesUploading}
-		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
-		                          />
-		                        </div>
-		
-		                        <Button
-		                          type="button"
-		                          onClick={() => void handleUploadMissingCertificate()}
-		                          disabled={
-		                            missingCertificatesUploading ||
-		                            !missingCertificatesSelectedId ||
-		                            !missingCertificatesSelectedFile
-		                          }
-		                          className="gap-2"
-		                        >
-		                          {missingCertificatesUploading ? (
-		                            <Loader2 className="h-4 w-4 animate-spin" />
-		                          ) : (
-		                            <Upload className="h-4 w-4" />
-		                          )}
-		                          Upload
-		                        </Button>
-		                      </div>
-		                    )}
-		                  </div>
-		                )}
 
 		              {adminDashboardTab === "maintenance" && (
                     <>
@@ -18691,11 +18701,83 @@ function MainApp() {
 		                        </label>
 		                      </div>
 		                </div>
-                    </>
-                  )}
+	                    </>
+	                  )}
 
-                {adminDashboardTab === "here_now" && (
-                <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4 space-y-6">
+	                {adminDashboardTab === "structure" && (
+	                  <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4">
+	                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	                      <div>
+	                        <h4 className="text-base font-semibold text-slate-900">
+	                          Hand Delivery
+	                        </h4>
+	                        <p className="text-sm text-slate-600">
+	                          Sales reps who have a local jurisdiction to the PepPro facility.
+	                        </p>
+	                      </div>
+	                      <div className="flex-shrink-0">
+	                        <Button
+	                          type="button"
+	                          variant="outline"
+	                          size="sm"
+	                          onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
+	                          disabled={adminHandDeliveryLoading}
+	                          className="header-home-button squircle-sm bg-white text-slate-900"
+	                          title="Refresh hand delivery users"
+	                        >
+	                          {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
+	                        </Button>
+	                      </div>
+	                    </div>
+
+	                    {adminHandDeliveryError && (
+	                      <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+	                        {adminHandDeliveryError}
+	                      </div>
+	                    )}
+
+	                    {adminHandDeliveryLoading ? (
+	                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+	                        Loading users…
+	                      </div>
+	                    ) : adminHandDeliveryUsers.length === 0 ? (
+	                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+	                        No sales reps, sales leads, or admins found.
+	                      </div>
+	                    ) : (
+	                      <div className="mt-3 sales-rep-table-wrapper admin-dashboard-list">
+	                        <div className="flex w-full min-w-0 flex-col gap-2">
+	                          {adminHandDeliveryUsers.map((entry) => {
+	                            const saving = Boolean(adminHandDeliverySavingByUserId[entry.userId]);
+	                            return (
+	                              <label
+	                                key={entry.userId}
+	                                className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
+	                              >
+	                                <span className="truncate">{entry.name}</span>
+	                                <input
+	                                  type="checkbox"
+	                                  className="brand-checkbox"
+	                                  checked={entry.isLocal}
+	                                  disabled={saving}
+	                                  onChange={(event) =>
+	                                    void handleAdminHandDeliveryToggle(
+	                                      entry,
+	                                      event.target.checked,
+	                                    )
+	                                  }
+	                                />
+	                              </label>
+	                            );
+	                          })}
+	                        </div>
+	                      </div>
+	                    )}
+	                  </div>
+	                )}
+
+	                {adminDashboardTab === "here_now" && (
+	                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 space-y-6">
                   <div>
                     <h4 className="text-base font-semibold text-slate-900">
                       Live users
@@ -19127,6 +19209,184 @@ function MainApp() {
                     
                 </div>
                 )}
+		                {adminDashboardTab === "here_now" && !certificateUploadsVisible && (
+		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+		                      <div>
+		                        <h4 className="text-base font-semibold text-slate-900">
+		                          Certificates of Analysis
+		                        </h4>
+		                        <p className="text-sm text-slate-600">
+		                          {missingCertificatesLoading
+		                            ? "Checking certificates…"
+		                            : missingCertificatesError
+		                              ? "Unable to load certificate status."
+		                              : "All products have a certificate. (You can still view/delete/upload replacements.)"}
+		                        </p>
+		                      </div>
+		                      <div className="flex-shrink-0">
+		                        <Button
+		                          type="button"
+		                          variant="outline"
+		                          onClick={() => setCertificateUploadsVisible(true)}
+		                          className="gap-2"
+		                        >
+		                          Show certificate uploads
+		                        </Button>
+		                      </div>
+		                    </div>
+		                  </div>
+		                )}
+
+		                {adminDashboardTab === "here_now" && certificateUploadsVisible && (
+		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+		                      <div>
+		                        <h4 className="text-base font-semibold text-slate-900">
+		                          Certificates of Analysis
+		                        </h4>
+		                        <p className="text-sm text-slate-600">
+		                          {missingCertificatesError
+		                            ? "Unable to load missing certificate count."
+		                            : missingCertificates.length > 0
+		                              ? `${missingCertificates.length} product${missingCertificates.length === 1 ? "" : "s"} missing a certificate.`
+		                              : "All products currently have a certificate."}
+		                        </p>
+		                      </div>
+		                      <div className="flex-shrink-0">
+			                        <Button
+			                          type="button"
+			                          variant="outline"
+			                          size="sm"
+			                          onClick={() => {
+			                            void fetchMissingCertificates({ force: true });
+			                            void fetchCertificateProducts({ force: true });
+			                          }}
+			                          disabled={missingCertificatesLoading || certificateProductsLoading}
+			                          className="header-home-button squircle-sm bg-white text-slate-900"
+			                          title="Refresh certificates"
+			                        >
+			                          {missingCertificatesLoading || certificateProductsLoading ? "Refreshing…" : "Refresh"}
+			                        </Button>
+		                      </div>
+		                    </div>
+		
+		                    {(missingCertificatesError || certificateProductsError) && (
+		                      <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+		                        {certificateProductsError || missingCertificatesError}
+		                      </div>
+		                    )}
+
+		                    {certificateProductsLoading && certificateProducts.length === 0 && (
+		                      <div className="mt-3 px-4 py-3 text-sm text-slate-500">
+		                        Loading products…
+		                      </div>
+		                    )}
+		
+		                    {(certificateProducts.length > 0 || missingCertificates.length > 0) && (
+		                      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+		                        <div className="flex flex-col gap-1">
+		                          <label className="text-xs font-medium text-slate-600">
+		                            Product
+		                          </label>
+		                          <select
+		                            value={missingCertificatesSelectedId}
+		                            onChange={(e) => {
+		                              setMissingCertificatesSelectedId(e.target.value);
+		                              setMissingCertificatesSelectedFile(null);
+		                            }}
+		                            disabled={certificateProductsLoading}
+		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
+		                          >
+		                            {(certificateProducts.length > 0
+		                              ? certificateProducts
+		                              : (missingCertificates as any)
+		                            ).map((product: any) => {
+		                              const id = String(product.wooProductId);
+		                              const labelParts = [
+		                                product.name && String(product.name).trim().length > 0
+		                                  ? String(product.name).trim()
+		                                  : `Product ${id}`,
+		                                product.sku ? `SKU ${product.sku}` : null,
+		                                product.hasCertificate ? "Has certificate" : "Missing",
+		                              ].filter(
+		                                (part): part is string =>
+		                                  typeof part === "string" &&
+		                                  part.trim().length > 0,
+		                              );
+		                              return (
+		                                <option key={id} value={id}>
+		                                  {labelParts.join(" · ")}
+		                                </option>
+		                              );
+		                            })}
+		                          </select>
+		                        </div>
+		
+		                        <div className="flex flex-col gap-1">
+		                          <div className="flex items-center justify-between gap-2">
+		                            <label className="text-xs font-medium text-slate-600">
+		                              PNG certificate
+		                            </label>
+		                            <Button
+		                              type="button"
+		                              variant="ghost"
+		                              size="icon"
+		                              onClick={() => void handleDeleteSelectedCertificate()}
+		                              disabled={
+		                                missingCertificatesDeleting ||
+		                                missingCertificatesUploading ||
+		                                missingCertificatesInfoLoading ||
+		                                !missingCertificatesInfo?.exists
+		                              }
+		                              title="Delete current certificate"
+		                              className="h-8 w-8"
+		                            >
+		                              <Trash2 className="h-4 w-4 text-slate-700" />
+		                            </Button>
+		                          </div>
+		                          <div className="text-xs text-slate-500">
+		                            {missingCertificatesInfoLoading
+		                              ? "Current: Loading…"
+		                              : missingCertificatesInfoError
+		                                ? "Current: —"
+		                                : missingCertificatesInfo?.exists
+		                                  ? `Current: ${missingCertificatesInfo.filename || "certificate-of-analysis.png"}`
+		                                  : "Current: None"}
+		                          </div>
+		                          <input
+		                            type="file"
+		                            accept="image/png"
+		                            onChange={(e) => {
+		                              const file = e.target.files?.[0] ?? null;
+		                              setMissingCertificatesSelectedFile(file);
+		                            }}
+		                            disabled={missingCertificatesUploading}
+		                            className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+		                          />
+		                        </div>
+		
+		                        <Button
+		                          type="button"
+		                          onClick={() => void handleUploadMissingCertificate()}
+		                          disabled={
+		                            missingCertificatesUploading ||
+		                            !missingCertificatesSelectedId ||
+		                            !missingCertificatesSelectedFile
+		                          }
+		                          className="gap-2"
+		                        >
+		                          {missingCertificatesUploading ? (
+		                            <Loader2 className="h-4 w-4 animate-spin" />
+		                          ) : (
+		                            <Upload className="h-4 w-4" />
+		                          )}
+		                          Upload
+		                        </Button>
+		                      </div>
+		                    )}
+		                  </div>
+		                )}
 	            </div>
 	          )}
 

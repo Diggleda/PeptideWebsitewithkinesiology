@@ -1239,6 +1239,26 @@ export const settingsAPI = {
       { method: 'GET' },
     );
   },
+  getHandDeliveryStructure: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/structure/hand-delivery`, {
+      method: 'GET',
+    });
+  },
+  updateHandDeliveryJurisdiction: async (
+    userId: string | number,
+    jurisdiction: 'local' | null,
+  ) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/settings/structure/hand-delivery/${encodeURIComponent(String(userId))}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ jurisdiction }),
+      },
+    );
+  },
   updateUserProfile: async (userId: string | number, payload: Record<string, any>) => {
     if (!userId) {
       throw new Error('userId is required');

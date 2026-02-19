@@ -39,6 +39,15 @@ def _normalize_sales_code(code: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def _normalize_jurisdiction(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    return normalized
+
+
 def _ensure_defaults(rep: Dict) -> Dict:
     normalized = dict(rep)
     normalized.setdefault("id", rep.get("id") or _generate_id())
@@ -51,6 +60,9 @@ def _ensure_defaults(rep: Dict) -> Dict:
     normalized.setdefault("phone", normalized.get("phone") or None)
     normalized.setdefault("territory", normalized.get("territory") or None)
     normalized["salesCode"] = _normalize_sales_code(normalized.get("salesCode") or normalized.get("sales_code"))
+    normalized["jurisdiction"] = _normalize_jurisdiction(
+        normalized.get("jurisdiction") or normalized.get("Jurisdiction")
+    )
     # Passwords are stored only in `users`; never persist them in `sales_reps`.
     normalized["password"] = None
     normalized.setdefault("role", normalized.get("role") or "sales_rep")
@@ -167,6 +179,7 @@ def insert(rep: Dict) -> Dict:
                 initials,
                 sales_code,
                 role,
+                jurisdiction,
                 status,
                 referral_credits,
                 total_referrals,
@@ -183,6 +196,7 @@ def insert(rep: Dict) -> Dict:
                 %(initials)s,
                 %(sales_code)s,
                 %(role)s,
+                %(jurisdiction)s,
                 %(status)s,
                 %(referral_credits)s,
                 %(total_referrals)s,
@@ -198,6 +212,7 @@ def insert(rep: Dict) -> Dict:
                 initials = VALUES(initials),
                 sales_code = VALUES(sales_code),
                 role = VALUES(role),
+                jurisdiction = VALUES(jurisdiction),
                 status = VALUES(status),
                 referral_credits = VALUES(referral_credits),
                 total_referrals = VALUES(total_referrals),
@@ -235,6 +250,7 @@ def update(rep: Dict) -> Optional[Dict]:
                 initials = %(initials)s,
                 sales_code = %(sales_code)s,
                 role = %(role)s,
+                jurisdiction = %(jurisdiction)s,
                 status = %(status)s,
                 referral_credits = %(referral_credits)s,
                 total_referrals = %(total_referrals)s,
@@ -279,6 +295,7 @@ def _row_to_rep(row: Optional[Dict]) -> Optional[Dict]:
             "salesCode": row.get("sales_code") or row.get("salesCode"),
             "status": row.get("status"),
             "role": row.get("role"),
+            "jurisdiction": row.get("jurisdiction"),
             "referralCredits": row.get("referral_credits"),
             "totalReferrals": row.get("total_referrals"),
             "totalRevenueToDate": row.get("total_revenue_to_date"),
@@ -312,6 +329,7 @@ def _to_db_params(rep: Dict) -> Dict:
         "initials": rep.get("initials"),
         "sales_code": rep.get("salesCode"),
         "role": rep.get("role"),
+        "jurisdiction": _normalize_jurisdiction(rep.get("jurisdiction")),
         "status": rep.get("status"),
         "referral_credits": float(rep.get("referralCredits") or 0),
         "total_referrals": int(rep.get("totalReferrals") or 0),

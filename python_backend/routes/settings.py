@@ -107,6 +107,83 @@ def _is_sales_lead_role(role: str) -> bool:
     normalized = _normalize_role(role)
     return normalized in ("sales_lead", "saleslead", "sales-lead")
 
+
+def _normalize_hand_delivery_role(role: object) -> str:
+    normalized = _normalize_role(role)
+    if normalized in ("saleslead", "sales-lead"):
+        return "sales_lead"
+    if normalized == "rep":
+        return "sales_rep"
+    return normalized
+
+
+def _is_hand_delivery_role(role: str) -> bool:
+    normalized = _normalize_hand_delivery_role(role)
+    return normalized in ("sales_rep", "sales_lead", "admin")
+
+
+def _build_sales_rep_indexes(reps: list[dict]) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+    by_id: dict[str, dict] = {}
+    by_legacy_user_id: dict[str, dict] = {}
+    by_email: dict[str, dict] = {}
+    for rep in reps or []:
+        if not isinstance(rep, dict):
+            continue
+        rep_id = str(rep.get("id") or "").strip()
+        if rep_id:
+            by_id[rep_id] = rep
+        legacy_user_id = str(rep.get("legacyUserId") or rep.get("legacy_user_id") or "").strip()
+        if legacy_user_id and legacy_user_id not in by_legacy_user_id:
+            by_legacy_user_id[legacy_user_id] = rep
+        email = str(rep.get("email") or "").strip().lower()
+        if email and email not in by_email:
+            by_email[email] = rep
+    return by_id, by_legacy_user_id, by_email
+
+
+def _resolve_sales_rep_for_user(
+    user: dict,
+    *,
+    by_id: dict[str, dict],
+    by_legacy_user_id: dict[str, dict],
+    by_email: dict[str, dict],
+) -> dict | None:
+    if not isinstance(user, dict):
+        return None
+    user_id = str(user.get("id") or "").strip()
+    user_sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+    user_email = str(user.get("email") or "").strip().lower()
+
+    for candidate_id in (user_sales_rep_id, user_id):
+        if candidate_id and candidate_id in by_id:
+            return by_id[candidate_id]
+
+    if user_id and user_id in by_legacy_user_id:
+        return by_legacy_user_id[user_id]
+
+    if user_email and user_email in by_email:
+        return by_email[user_email]
+
+    return None
+
+
+def _serialize_hand_delivery_entry(user: dict, rep: dict | None) -> dict:
+    user_id = str(user.get("id") or "").strip()
+    role = _normalize_hand_delivery_role(user.get("role"))
+    jurisdiction_raw = None
+    if isinstance(rep, dict):
+        jurisdiction_raw = rep.get("jurisdiction")
+    jurisdiction = str(jurisdiction_raw or "").strip().lower() or None
+    is_local = jurisdiction == "local"
+    return {
+        "userId": user_id or None,
+        "salesRepId": str(rep.get("id") or "").strip() if isinstance(rep, dict) else None,
+        "name": str(user.get("name") or "").strip() or str(user.get("email") or "").strip() or (user_id or "User"),
+        "role": role or "unknown",
+        "jurisdiction": "local" if is_local else jurisdiction,
+        "isLocal": is_local,
+    }
+
 def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
     """
     Sales-rep references can be stored under multiple ids over time:
@@ -912,8 +989,129 @@ def get_sales_rep_profile(sales_rep_id: str):
                 "salesCode": rep.get("salesCode"),
                 "status": rep.get("status"),
                 "role": rep.get("role"),
+                "jurisdiction": rep.get("jurisdiction"),
                 "userId": resolved_user_id,
             }
+        }
+
+    return handle_action(action)
+
+
+@blueprint.get("/structure/hand-delivery")
+@require_auth
+def get_hand_delivery_structure():
+    def action():
+        _require_admin()
+        users = user_repository.get_all() or []
+        reps = sales_rep_repository.get_all() or []
+        by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+
+        entries: list[dict] = []
+        for user in users:
+            if not isinstance(user, dict):
+                continue
+            role = _normalize_hand_delivery_role(user.get("role"))
+            if not _is_hand_delivery_role(role):
+                continue
+            rep = _resolve_sales_rep_for_user(
+                user,
+                by_id=by_id,
+                by_legacy_user_id=by_legacy_user_id,
+                by_email=by_email,
+            )
+            entries.append(_serialize_hand_delivery_entry(user, rep))
+
+        entries.sort(
+            key=lambda entry: (
+                str(entry.get("name") or "").lower(),
+                str(entry.get("role") or ""),
+                str(entry.get("userId") or ""),
+            )
+        )
+        return {
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "users": entries,
+            "total": len(entries),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.patch("/structure/hand-delivery/<user_id>")
+@require_auth
+def update_hand_delivery_jurisdiction(user_id: str):
+    def action():
+        _require_admin()
+        target_id = str(user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        user = user_repository.find_by_id(target_id)
+        if not user:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+
+        role = _normalize_hand_delivery_role(user.get("role"))
+        if not _is_hand_delivery_role(role):
+            err = RuntimeError("Only sales reps, sales leads, and admins are supported")
+            setattr(err, "status", 400)
+            raise err
+
+        payload = request.get_json(silent=True) or {}
+        raw_jurisdiction = payload.get("jurisdiction")
+        jurisdiction = None if raw_jurisdiction is None else str(raw_jurisdiction).strip().lower()
+        if jurisdiction in ("", "null", "none"):
+            jurisdiction = None
+        if jurisdiction not in (None, "local"):
+            err = RuntimeError("jurisdiction must be 'local' or null")
+            setattr(err, "status", 400)
+            raise err
+
+        reps = sales_rep_repository.get_all() or []
+        by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+        rep = _resolve_sales_rep_for_user(
+            user,
+            by_id=by_id,
+            by_legacy_user_id=by_legacy_user_id,
+            by_email=by_email,
+        )
+
+        if rep is None and jurisdiction == "local":
+            user_id_value = str(user.get("id") or "").strip()
+            rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or user_id_value).strip()
+            if not rep_id:
+                err = RuntimeError("Unable to resolve sales rep id")
+                setattr(err, "status", 400)
+                raise err
+            insert_payload = {
+                "id": rep_id,
+                "legacyUserId": user_id_value if user_id_value and user_id_value != rep_id else None,
+                "name": str(user.get("name") or "").strip() or str(user.get("email") or "").strip() or rep_id,
+                "email": str(user.get("email") or "").strip() or None,
+                "phone": str(user.get("phone") or "").strip() or None,
+                "role": role,
+                "status": "active",
+                "jurisdiction": jurisdiction,
+            }
+            rep = sales_rep_repository.insert(insert_payload)
+
+        updated_rep = rep
+        if isinstance(rep, dict):
+            updated_rep = sales_rep_repository.update(
+                {
+                    "id": rep.get("id"),
+                    "jurisdiction": jurisdiction,
+                }
+            ) or {
+                **rep,
+                "jurisdiction": jurisdiction,
+            }
+
+        return {
+            "entry": _serialize_hand_delivery_entry(user, updated_rep),
         }
 
     return handle_action(action)
