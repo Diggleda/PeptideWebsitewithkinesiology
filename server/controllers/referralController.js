@@ -459,6 +459,11 @@ const getDoctorLedger = (req, res, next) => {
 			    const isViewingOwnDashboard =
 			      !req.query.salesRepId || String(req.query.salesRepId) === String(viewerSalesRepId);
 			    const requestContext = String(req.query.context || '').trim().toLowerCase();
+			    const isAdminViewingOtherRepInModal =
+			      isAdmin &&
+			      requestContext === 'modal' &&
+			      Boolean(req.query.salesRepId) &&
+			      String(req.query.salesRepId) !== String(viewerSalesRepId);
 			    const includeContactForms =
 			      isAdmin &&
 			      mysqlClient.isEnabled() &&
@@ -479,6 +484,11 @@ const getDoctorLedger = (req, res, next) => {
 	    let referrals = scopeAll
 	      ? allReferrals
 	      : referralRepository.findBySalesRepId(salesRepId);
+    // House/contact-form leads are admin-only. Prevent them from showing up for
+    // sales reps or sales leads anywhere this dashboard payload is reused (including modals).
+    if (!isAdmin || isAdminViewingOtherRepInModal) {
+      referrals = (referrals || []).filter((referral) => !isHouseContactReferral(referral));
+    }
     // Include users/accounts to help UI detect account creation
     const rawUsers = userRepository.getAll();
     const users = scopeAll

@@ -10,7 +10,6 @@ import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, Ey
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
-import { requestStoredPasswordCredential } from '../lib/passwordCredential';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
@@ -1228,7 +1227,6 @@ export function Header({
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadPercent, setAvatarUploadPercent] = useState(0);
   const [showAvatarControls, setShowAvatarControls] = useState(false);
-  const credentialAutofillRequestInFlight = useRef(false);
   const accountModalRequestTokenRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -1714,35 +1712,6 @@ export function Header({
     },
     [applyPendingLoginPrefill]
   );
-  const triggerCredentialAutofill = useCallback(async () => {
-    if (credentialAutofillRequestInFlight.current) {
-      return;
-    }
-    credentialAutofillRequestInFlight.current = true;
-    try {
-      const credential = await requestStoredPasswordCredential({ mediation: 'required' });
-      if (credential) {
-        queueLoginPrefill({
-          email: credential.id,
-          password: credential.password,
-        });
-      }
-    } finally {
-      credentialAutofillRequestInFlight.current = false;
-    }
-  }, [queueLoginPrefill]);
-  const handleLoginCredentialFocus = useCallback(() => {
-    if (!loginOpen || authMode !== 'login') {
-      return;
-    }
-    const emailValue = (loginEmailRef.current?.value ?? '').trim();
-    const passwordValue = (loginPasswordRef.current?.value ?? '').trim();
-    if (emailValue || passwordValue) {
-      return;
-    }
-    void triggerCredentialAutofill();
-  }, [triggerCredentialAutofill, loginOpen, authMode]);
-
   useEffect(() => {
     if (!accountModalRequest) {
       return;
@@ -6363,6 +6332,7 @@ export function Header({
           </Button>
         </DialogTrigger>
         <DialogContent
+          forceMount
           className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl !p-4 sm:!p-6"
           style={{
             backdropFilter: 'blur(38px) saturate(1.6)',
@@ -6410,6 +6380,7 @@ export function Header({
                 id="login-form"
                 name="login"
                 method="post"
+                action="/auth/login"
                 ref={loginFormRef}
                 autoComplete="on"
                 onSubmit={handleLogin}
@@ -6427,8 +6398,6 @@ export function Header({
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    onFocus={handleLoginCredentialFocus}
-                    onPointerDown={handleLoginCredentialFocus}
                     className="glass squircle-sm mt-1 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                     style={{ borderColor: translucentSecondary }}
                     required
@@ -6446,8 +6415,6 @@ export function Header({
                       type={showLoginPassword ? 'text' : 'password'}
                       autoCorrect="off"
                       spellCheck={false}
-                      onFocus={handleLoginCredentialFocus}
-                      onPointerDown={handleLoginCredentialFocus}
                       className="glass squircle-sm pr-20 focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.3)]"
                       style={{ borderColor: translucentSecondary }}
                       required

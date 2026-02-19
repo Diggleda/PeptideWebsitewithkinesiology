@@ -9,6 +9,7 @@ import {
   Fragment,
   forwardRef,
 } from "react";
+import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
@@ -130,6 +131,60 @@ const ClipboardDocumentListIcon = ({ className }: { className?: string }) => (
       fillRule="evenodd"
       d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 0 1 3 20.625V9.375ZM6 12a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V12Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 15a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V15Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 18a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V18Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75Z"
       clipRule="evenodd"
+    />
+  </svg>
+);
+
+const GlobeAmericasIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M6.11507 5.19043L6.4339 7.10337C6.63948 8.33689 7.22535 9.47535 8.10962 10.3596L9.75 12L9.36262 12.7747C9.14607 13.2079 9.23096 13.731 9.57336 14.0734L10.9205 15.4205C11.1315 15.6315 11.25 15.9176 11.25 16.216V17.3047C11.25 17.7308 11.4908 18.1204 11.8719 18.3109L12.0247 18.3874C12.4579 18.6039 12.981 18.519 13.3234 18.1766L14.0461 17.4539C15.161 16.339 15.952 14.9419 16.3344 13.4122C16.4357 13.0073 16.2962 12.5802 15.9756 12.313L14.6463 11.2053C14.3947 10.9956 14.0642 10.906 13.7411 10.9598L12.5711 11.1548C12.2127 11.2146 11.8475 11.0975 11.5906 10.8406L11.2955 10.5455C10.8562 10.1062 10.8562 9.39384 11.2955 8.9545L11.4266 8.82336C11.769 8.48095 12.2921 8.39607 12.7253 8.61263L13.3292 8.91459C13.4415 8.97076 13.5654 9 13.691 9C14.2924 9 14.6835 8.3671 14.4146 7.82918L14.25 7.5L15.5057 6.66289C16.1573 6.22849 16.6842 5.63157 17.0344 4.93112L17.1803 4.63942M6.11507 5.19043C4.20716 6.84073 3 9.27939 3 12C3 16.9706 7.02944 21 12 21C16.9706 21 21 16.9706 21 12C21 8.95801 19.4908 6.26851 17.1803 4.63942M6.11507 5.19043C7.69292 3.82562 9.75004 3 12 3C13.9286 3 15.7155 3.6066 17.1803 4.63942"
+    />
+  </svg>
+);
+
+const BuildingStorefrontIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M13.5 21V13.5C13.5 13.0858 13.8358 12.75 14.25 12.75H17.25C17.6642 12.75 18 13.0858 18 13.5V21M13.5 21H2.36088M13.5 21H18M18 21H21.6391M20.25 21V9.34876M3.75 21V9.349M3.75 9.349C4.89729 10.0121 6.38977 9.85293 7.37132 8.87139C7.41594 8.82677 7.45886 8.78109 7.50008 8.73444C8.04979 9.3572 8.85402 9.74998 9.75 9.74998C10.646 9.74998 11.4503 9.35717 12 8.73435C12.5497 9.35717 13.354 9.74998 14.25 9.74998C15.1459 9.74998 15.9501 9.35725 16.4998 8.73456C16.541 8.78114 16.5838 8.82675 16.6284 8.8713C17.61 9.85293 19.1027 10.0121 20.25 9.34876M3.75 9.349C3.52788 9.22062 3.31871 9.06142 3.12868 8.87139C1.95711 7.69982 1.95711 5.80032 3.12868 4.62875L4.31797 3.43946C4.59927 3.15816 4.9808 3.00012 5.37863 3.00012H18.6212C19.019 3.00012 19.4005 3.15816 19.6818 3.43946L20.871 4.62866C22.0426 5.80023 22.0426 7.69973 20.871 8.8713C20.6811 9.06125 20.472 9.2204 20.25 9.34876M6.75 18H10.5C10.9142 18 11.25 17.6642 11.25 17.25V13.5C11.25 13.0858 10.9142 12.75 10.5 12.75H6.75C6.33579 12.75 6 13.0858 6 13.5V17.25C6 17.6642 6.33579 18 6.75 18Z"
+    />
+  </svg>
+);
+
+const AdjustmentsHorizontalIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M10.5 6L20.25 6M10.5 6C10.5 6.82843 9.82843 7.5 9 7.5C8.17157 7.5 7.5 6.82843 7.5 6M10.5 6C10.5 5.17157 9.82843 4.5 9 4.5C8.17157 4.5 7.5 5.17157 7.5 6M3.75 6H7.5M10.5 18H20.25M10.5 18C10.5 18.8284 9.82843 19.5 9 19.5C8.17157 19.5 7.5 18.8284 7.5 18M10.5 18C10.5 17.1716 9.82843 16.5 9 16.5C8.17157 16.5 7.5 17.1716 7.5 18M3.75 18L7.5 18M16.5 12L20.25 12M16.5 12C16.5 12.8284 15.8284 13.5 15 13.5C14.1716 13.5 13.5 12.8284 13.5 12M16.5 12C16.5 11.1716 15.8284 10.5 15 10.5C14.1716 10.5 13.5 11.1716 13.5 12M3.75 12H13.5"
     />
   </svg>
 );
@@ -9457,25 +9512,85 @@ function MainApp() {
     void refreshAdminProductsCommission({ force: true });
   }, [refreshAdminProductsCommission, refreshAdminTaxesByState, refreshSalesBySalesRepSummary]);
 
+  type AdminDashboardTabId = "here_now" | "admin_report" | "maintenance";
+  const [adminDashboardTab, setAdminDashboardTab] =
+    useState<AdminDashboardTabId>("here_now");
+  const adminDashboardTabs = useMemo(
+    () =>
+      [
+        { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
+        {
+          id: "admin_report" as const,
+          label: "Admin Report",
+          Icon: BuildingStorefrontIcon,
+        },
+        {
+          id: "maintenance" as const,
+          label: "Maintenance",
+          Icon: AdjustmentsHorizontalIcon,
+        },
+      ] satisfies Array<{
+        id: AdminDashboardTabId;
+        label: string;
+        Icon: ({ className }: { className?: string }) => ReactNode;
+      }>,
+    [],
+  );
+  const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
+    left: number;
+    width: number;
+    opacity: number;
+  }>({ left: 0, width: 112, opacity: 1 });
+  const updateAdminDashboardTabIndicator = useCallback(() => {
+    const container = adminDashboardTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector<HTMLButtonElement>(
+      `button[data-admin-dashboard-tab="${adminDashboardTab}"]`,
+    );
+    if (!activeBtn) return;
+    const content = activeBtn.querySelector<HTMLElement>("[data-admin-dashboard-tab-content]");
+    const extraUnderlineWidth = 8;
+    const left =
+      (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
+      container.scrollLeft -
+      extraUnderlineWidth / 2;
+    const width = (content ? content.offsetWidth : activeBtn.offsetWidth) + extraUnderlineWidth;
+    setAdminDashboardTabIndicator({ left, width, opacity: 1 });
+  }, [adminDashboardTab]);
+  useEffect(() => {
+    updateAdminDashboardTabIndicator();
+    const onResize = () => updateAdminDashboardTabIndicator();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [updateAdminDashboardTabIndicator]);
+
 	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
 	  useEffect(() => {
 	    if (!user || (!isAdmin(user.role) && !isSalesLead(user.role))) {
 	      salesByRepAutoLoadedKeyRef.current = "";
 	      return;
 	    }
-	    const key = `${user.id}|${user.role}`;
+	    const key = `${user.id}|${user.role}|${isAdmin(user.role) ? adminDashboardTab : "sales"}`;
 	    if (salesByRepAutoLoadedKeyRef.current === key) {
 	      return;
 	    }
-	    salesByRepAutoLoadedKeyRef.current = key;
 	    if (isAdmin(user.role)) {
+        if (adminDashboardTab !== "admin_report") {
+          return;
+        }
+	      salesByRepAutoLoadedKeyRef.current = key;
 	      void refreshSalesBySalesRepSummary();
 	      void refreshAdminTaxesByState();
 	      void refreshAdminProductsCommission({ force: true });
 	    } else {
+	      salesByRepAutoLoadedKeyRef.current = key;
 	      void refreshSalesBySalesRepSummary();
 	    }
 	  }, [
+      adminDashboardTab,
 	    refreshAdminProductsCommission,
 	    refreshAdminTaxesByState,
 	    refreshSalesBySalesRepSummary,
@@ -9697,14 +9812,14 @@ function MainApp() {
 	  const [settingsSupport, setSettingsSupport] = useState<{
 	    research: boolean;
 	  }>({ research: true });
-	  const [settingsSaving, setSettingsSaving] = useState<{
-	    shop: boolean;
-	    patientLinks: boolean;
-	    forum: boolean;
-	    research: boolean;
+  const [settingsSaving, setSettingsSaving] = useState<{
+    shop: boolean;
+    patientLinks: boolean;
+    forum: boolean;
+    research: boolean;
       testPaymentsOverride: boolean;
-	  }>({ shop: false, patientLinks: false, forum: false, research: false, testPaymentsOverride: false });
-	  type ServerHealthPayload = {
+  }>({ shop: false, patientLinks: false, forum: false, research: false, testPaymentsOverride: false });
+  type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
 	    build?: string;
@@ -9823,6 +9938,7 @@ function MainApp() {
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
 	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
 	  const [adminLiveUsersError, setAdminLiveUsersError] = useState<string | null>(null);
+  const adminLiveUsersInitialLoadDoneRef = useRef(false);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
 	  const adminLiveUsersLongPollDisabledRef = useRef(false);
 	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(false);
@@ -9894,31 +10010,23 @@ function MainApp() {
 
 	    let cancelled = false;
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
+      liveClientsLongPollDisabledRef.current = true;
 
 		    const fetchOnce = async () => {
 		      try {
 		        setLiveClientsLoading(true);
 		        setLiveClientsError(null);
-		        const payload = (await (isSalesLeadRole
-		          ? settingsAPI.getLiveUsers()
-		          : settingsAPI.getLiveClients())) as any;
+		        const payload = (await settingsAPI.getLiveClients()) as any;
 		        if (cancelled) return;
 		        liveClientsEtagRef.current =
 		          typeof payload?.etag === "string" ? payload.etag : null;
-		        const raw = isSalesLeadRole
-		          ? Array.isArray(payload?.users)
-		            ? payload.users
-		            : []
-		          : Array.isArray(payload?.clients)
-		            ? payload.clients
-		            : [];
-		        const clients = isSalesLeadRole
-		          ? raw.filter((entry: any) => {
-		              const role = normalizeRole(entry?.role || "");
-		              if (role === "admin") return false;
-		              return isDoctorRole(role) || isRep(role);
-		            })
-		          : raw;
+		        const raw = Array.isArray(payload?.clients) ? payload.clients : [];
+		        const clients = raw.filter((entry: any) => {
+              if (!isSalesLeadRole) return true;
+		          const role = normalizeRole(entry?.role || "");
+		          if (role === "admin") return false;
+		          return isDoctorRole(role) || isRep(role);
+		        });
 		        setLiveClients(clients);
 		      } catch (error: any) {
 		        if (cancelled) return;
@@ -9958,18 +10066,12 @@ function MainApp() {
 			        }
 			        try {
 			          const requestStartedAt = Date.now();
-			          const payload = (await (isSalesLeadRole
-			            ? settingsAPI.getLiveUsersLongPoll(
-			                liveClientsEtagRef.current,
-			                25000,
-			                controller.signal,
-			              )
-			            : settingsAPI.getLiveClientsLongPoll(
-			                null,
-			                liveClientsEtagRef.current,
-			                25000,
-			                controller.signal,
-			              ))) as any;
+			          const payload = (await settingsAPI.getLiveClientsLongPoll(
+                null,
+                liveClientsEtagRef.current,
+                25000,
+                controller.signal,
+              )) as any;
 			          if (cancelled) break;
 			          const elapsedMs = Date.now() - requestStartedAt;
 			          // If the server can't hold the request open (or concurrency is exceeded),
@@ -9981,20 +10083,13 @@ function MainApp() {
 			          }
 			          liveClientsEtagRef.current =
 			            typeof payload?.etag === "string" ? payload.etag : null;
-			          const raw = isSalesLeadRole
-			            ? Array.isArray(payload?.users)
-			              ? payload.users
-		              : []
-		            : Array.isArray(payload?.clients)
-		              ? payload.clients
-		              : [];
-		          const clients = isSalesLeadRole
-		            ? raw.filter((entry: any) => {
-		                const role = normalizeRole(entry?.role || "");
-		                if (role === "admin") return false;
-		                return isDoctorRole(role) || isRep(role);
-		              })
-		            : raw;
+			          const raw = Array.isArray(payload?.clients) ? payload.clients : [];
+		          const clients = raw.filter((entry: any) => {
+                if (!isSalesLeadRole) return true;
+		            const role = normalizeRole(entry?.role || "");
+		            if (role === "admin") return false;
+		            return isDoctorRole(role) || isRep(role);
+		          });
 		          setLiveClients(clients);
 	        } catch (error: any) {
 	          if (cancelled) break;
@@ -10021,8 +10116,9 @@ function MainApp() {
 	    };
 	  }, [user?.role, user?.id]);
 
-	  useEffect(() => {
-	    if (!isAdmin(user?.role)) {
+		  useEffect(() => {
+		    if (!isAdmin(user?.role)) {
+          adminLiveUsersInitialLoadDoneRef.current = false;
 	      setAdminLiveUsers([]);
 	      setAdminLiveUsersLoading(false);
 	      setAdminLiveUsersError(null);
@@ -10033,12 +10129,15 @@ function MainApp() {
 
 	    let cancelled = false;
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
+      adminLiveUsersLongPollDisabledRef.current = true;
 
 	    const fetchOnce = async () => {
 	      try {
-	        setAdminLiveUsersLoading(true);
+          if (!adminLiveUsersInitialLoadDoneRef.current) {
+            setAdminLiveUsersLoading(true);
+          }
 	        setAdminLiveUsersError(null);
-	        const payload = (await settingsAPI.getLiveUsers()) as any;
+	        const payload = (await settingsAPI.getUserActivity("day")) as any;
 	        if (cancelled) return;
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
@@ -10050,6 +10149,7 @@ function MainApp() {
 	          typeof error?.message === "string" ? error.message : "Unable to load users.",
 	        );
 	      } finally {
+          adminLiveUsersInitialLoadDoneRef.current = true;
 	        if (!cancelled) setAdminLiveUsersLoading(false);
 	      }
 	    };
@@ -10079,7 +10179,8 @@ function MainApp() {
 		        }
 		        try {
 		          const requestStartedAt = Date.now();
-		          const payload = (await settingsAPI.getLiveUsersLongPoll(
+		          const payload = (await settingsAPI.getUserActivityLongPoll(
+                "day",
 		            adminLiveUsersEtagRef.current,
 		            25000,
 		            controller.signal,
@@ -14402,9 +14503,7 @@ function MainApp() {
     try {
       const user = await authAPI.login(email, password);
       applyLoginSuccessState(user);
-      if (loginContextAtStart !== "checkout") {
-        void storePasswordCredential(email, password, user.name || email);
-      }
+      void storePasswordCredential(email, password, user.name || email);
       console.debug("[Auth] Login success", {
         userId: user.id,
         visits: user.visits,
@@ -17380,10 +17479,58 @@ function MainApp() {
                   </a>
 	              </div>
 		            )}
-		          </div>
+			          </div>
 
-		          {(isRep(user?.role) || isSalesLead(user?.role)) && (
-		            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+                {isAdmin(user?.role) && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={adminDashboardTabsContainerRef}
+                      onScroll={updateAdminDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {adminDashboardTabs.map((tab) => {
+                          const isActive = adminDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-admin-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setAdminDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-admin-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">{tab.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: adminDashboardTabIndicator.left,
+                        width: adminDashboardTabIndicator.width,
+                        opacity: 1,
+                      }}
+                    />
+                  </div>
+                )}
+
+			          {(isRep(user?.role) || isSalesLead(user?.role)) && (
+			            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		              <div className="flex flex-col gap-2">
 		                <div>
 		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
@@ -17989,10 +18136,21 @@ function MainApp() {
 		            </p>
 	          )}
 
-				          {isAdmin(user?.role) && renderAdminOnHoldOrdersCard()}
+				          {isAdmin(user?.role) &&
+                    adminDashboardTab === "here_now" &&
+                    (
+                      <div className="admin-tab-panel-enter">
+                        {renderAdminOnHoldOrdersCard()}
+                      </div>
+                    )}
 
-				          {isAdmin(user?.role) && (
-					            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+				          {isAdmin(user?.role) &&
+                    adminDashboardTab !== "admin_report" && (
+				            <div
+                    key={`admin-panel-${adminDashboardTab}`}
+                    className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 admin-tab-panel-enter"
+                  >
+                {adminDashboardTab === "maintenance" && (
                 <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -18161,13 +18319,14 @@ function MainApp() {
                         >
                           {label}
                         </span>
-                      ));
-	                      })()}
-	                    </div>
-	                  </div>
-	                </div>
+		                      ));
+		                      })()}
+		                    </div>
+		                  </div>
+		                </div>
+                )}
 
-		                {!certificateUploadsVisible && (
+		                {adminDashboardTab === "here_now" && !certificateUploadsVisible && (
 		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		                      <div>
@@ -18196,7 +18355,7 @@ function MainApp() {
 		                  </div>
 		                )}
 
-		                {certificateUploadsVisible && (
+		                {adminDashboardTab === "here_now" && certificateUploadsVisible && (
 		                  <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		                      <div>
@@ -18346,6 +18505,8 @@ function MainApp() {
 		                  </div>
 		                )}
 
+		              {adminDashboardTab === "maintenance" && (
+                    <>
 		              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
 		                <div>
 		                  <h3 className="text-lg font-semibold text-slate-900">
@@ -18527,11 +18688,14 @@ function MainApp() {
                               When enabled, admin + test_doctor checkouts using Zelle/bank transfer are forced to $0.01.
                             </span>
                           </span>
-                        </label>
-                      </div>
+		                        </label>
+		                      </div>
 		                </div>
+                    </>
+                  )}
 
-                <div className="mt-6 pt-6 border-t border-slate-200/70 space-y-6">
+                {adminDashboardTab === "here_now" && (
+                <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4 space-y-6">
                   <div>
                     <h4 className="text-base font-semibold text-slate-900">
                       Live users
@@ -18962,11 +19126,12 @@ function MainApp() {
 
                     
                 </div>
+                )}
 	            </div>
 	          )}
 
-					          {isAdmin(user?.role) && (
-						            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+					          {isAdmin(user?.role) && adminDashboardTab === "admin_report" && (
+						            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 admin-tab-panel-enter">
 						              <div className="flex flex-col gap-3 mb-4">
 						                <div className="sales-rep-header-row flex w-full flex-col gap-3">
 						                  <div className="min-w-0">
@@ -22773,8 +22938,12 @@ function MainApp() {
                     >
                       {landingAuthMode === "login" && (
                         <>
-	                          <form
-	                            onSubmit={async (e) => {
+                          <form
+                            id="landing-login-form"
+                            name="login"
+                            method="post"
+                            action="/auth/login"
+                            onSubmit={async (e) => {
 	                              e.preventDefault();
 	                              if (landingLoginPending) {
 	                                return;
@@ -22878,9 +23047,9 @@ function MainApp() {
                                 <input
                                   ref={landingLoginEmailRef}
                                   id="landing-email"
-                                  name="email"
+                                  name="username"
                                   type="email"
-                                  autoComplete="username"
+                                  autoComplete="username webauthn"
                                   inputMode="email"
                                   autoCapitalize="none"
                                   autoCorrect="off"
@@ -22891,21 +23060,6 @@ function MainApp() {
                                   className="w-full h-10 px-3 squircle-sm border border-slate-200/70 bg-white/96 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 />
                               </div>
-                              {/* Hidden field to hint WebAuthn conditional UI to the browser */}
-                              <input
-                                type="text"
-                                autoComplete="webauthn"
-                                aria-hidden="true"
-                                tabIndex={-1}
-                                style={{
-                                  position: "absolute",
-                                  left: "-9999px",
-                                  top: "auto",
-                                  width: "1px",
-                                  height: "1px",
-                                  opacity: 0,
-                                }}
-                              />
                             </div>
                             <div className="space-y-2">
                               <label
@@ -23674,12 +23828,14 @@ function MainApp() {
 	                paddingTop: "calc(var(--app-header-height, 0px) + 1rem)",
 	              }}
 	            >
-	              {isRep(user.role) || isAdmin(user.role)
-	                ? renderSalesRepDashboard()
-	                : renderDoctorDashboard()}
-	              {renderProductSection()}
-            </main>
-          )}
+		              {isRep(user.role) || isAdmin(user.role)
+		                ? renderSalesRepDashboard()
+		                : renderDoctorDashboard()}
+                  <div className="product-section-scroll-stable">
+		                {renderProductSection()}
+                  </div>
+	            </main>
+	          )}
 
 			          {isDelegateMode && (
 			            !delegateIsValidated || delegateLoading ? (
