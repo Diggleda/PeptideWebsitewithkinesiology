@@ -1348,7 +1348,6 @@ const buildOrderFingerprint = (payload: {
   referralCode?: string;
   discountCode?: string;
   paymentMethod?: string | null;
-  facilityPickup?: boolean;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
   delegateProposalToken?: string | null;
@@ -1375,7 +1374,6 @@ const buildOrderFingerprint = (payload: {
     referralCode: payload.referralCode || null,
     discountCode: payload.discountCode || null,
     paymentMethod: payload.paymentMethod || null,
-    facilityPickup: payload.facilityPickup === true,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     delegateProposalToken:
       typeof payload.delegateProposalToken === 'string' && payload.delegateProposalToken.trim()
@@ -1436,7 +1434,6 @@ export const ordersAPI = {
     options?: {
       physicianCertification?: boolean;
       delegateProposalToken?: string | null;
-      facilityPickup?: boolean;
     },
     taxTotal?: number | null,
     paymentMethod?: string | null,
@@ -1449,7 +1446,6 @@ export const ordersAPI = {
       discountCode,
       shipping,
       paymentMethod,
-      facilityPickup: options?.facilityPickup === true,
       taxTotal,
       delegateProposalToken: options?.delegateProposalToken ?? null,
     });
@@ -1473,7 +1469,6 @@ export const ordersAPI = {
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
         delegateProposalToken: options?.delegateProposalToken ?? null,
-        facilityPickup: options?.facilityPickup === true,
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),
     });
@@ -1492,7 +1487,6 @@ export const ordersAPI = {
       shippingTotal: number;
       paymentMethod?: string | null;
       discountCode?: string | null;
-      facilityPickup?: boolean;
     },
     options?: { signal?: AbortSignal },
   ) => {

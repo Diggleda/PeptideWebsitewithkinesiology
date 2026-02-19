@@ -6363,7 +6363,6 @@ export function Header({
           </Button>
         </DialogTrigger>
         <DialogContent
-          forceMount
           className="glass-card squircle-xl w-auto border border-[var(--brand-glass-border-2)] shadow-2xl !p-4 sm:!p-6"
           style={{
             backdropFilter: 'blur(38px) saturate(1.6)',
@@ -6407,13 +6406,21 @@ export function Header({
           </DialogHeader>
           {authMode === 'login' ? (
             <div className="space-y-5">
-              <form ref={loginFormRef} autoComplete="on" onSubmit={handleLogin} className="space-y-4">
+              <form
+                id="login-form"
+                name="login"
+                method="post"
+                ref={loginFormRef}
+                autoComplete="on"
+                onSubmit={handleLogin}
+                className="space-y-4"
+              >
                 <div className="space-y-3">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
                     ref={loginEmailRef}
                     id="login-email"
-                    name="email"
+                    name="username"
                     type="email"
                     autoComplete="username"
                     inputMode="email"
@@ -6692,13 +6699,15 @@ export function Header({
                 Enter your PepPro order ID and email. We&apos;ll email you the latest fulfillment update.
               </p>
             </div>
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleTrackOrder}>
+            <form autoComplete="off" className="grid gap-3 sm:grid-cols-2" onSubmit={handleTrackOrder}>
               <div>
                 <Label htmlFor="account-track-id">Order ID</Label>
-                <Input
-                  id="account-track-id"
-                  value={trackingForm.orderId}
-                  onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
+                  <Input
+                    id="account-track-id"
+                    name="tracking-order-id"
+                    autoComplete="off"
+                    value={trackingForm.orderId}
+                    onChange={(event) => setTrackingForm((prev) => ({ ...prev, orderId: event.target.value }))}
                   className="mt-1"
                   placeholder="ORD-12345"
                   required
@@ -6706,10 +6715,12 @@ export function Header({
               </div>
               <div>
                 <Label htmlFor="account-track-email">Email</Label>
-                <Input
-                  id="account-track-email"
-                  type="email"
-                  value={trackingForm.email}
+                  <Input
+                    id="account-track-email"
+                    name="tracking-email"
+                    type="email"
+                    autoComplete="off"
+                    value={trackingForm.email}
                   onChange={(event) => setTrackingForm((prev) => ({ ...prev, email: event.target.value }))}
                   className="mt-1"
                   placeholder="you@example.com"
