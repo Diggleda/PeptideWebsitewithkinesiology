@@ -501,24 +501,65 @@ const buildLineItems = (items, { taxTotal = 0, taxRateId = null } = {}) => {
   return prepared;
 };
 
-const buildShippingLines = ({ shippingTotal, shippingEstimate }) => {
+const normalizeDeliveryAddress = (shippingAddress) => {
+  if (!shippingAddress || typeof shippingAddress !== 'object') return '';
+  const parts = [
+    shippingAddress.addressLine1,
+    shippingAddress.addressLine2,
+    shippingAddress.city,
+    shippingAddress.state,
+    shippingAddress.postalCode,
+    shippingAddress.country,
+  ]
+    .map((value) => (value == null ? '' : String(value).trim()))
+    .filter(Boolean);
+  return parts.join(', ');
+};
+
+const isHandDeliveryEstimate = (shippingEstimate) => {
+  if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
+  const candidates = [
+    shippingEstimate.serviceType,
+    shippingEstimate.serviceCode,
+    shippingEstimate.carrierId,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return candidates.some((value) =>
+    value === 'hand delivery'
+    || value === 'hand_delivery'
+    || value === 'local hand delivery'
+    || value === 'local_hand_delivery'
+    || value === 'local_delivery'
+    || value === 'hand-delivery');
+};
+
+const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }) => {
   if (shippingEstimate) {
     const total = Number.isFinite(shippingTotal) ? Number(shippingTotal) : 0;
+    const handDelivery = isHandDeliveryEstimate(shippingEstimate);
     const rawMethodId = shippingEstimate.serviceCode
       || shippingEstimate.serviceType
       || shippingEstimate.carrierId
       || null;
-    const normalizedMethodId = rawMethodId
-      ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
-      : 'peppro_shipstation';
-    const methodTitle = shippingEstimate.serviceType
-      || shippingEstimate.serviceCode
-      || shippingEstimate.carrierId
-      || 'PepPro Shipping';
+    const normalizedMethodId = handDelivery
+      ? 'peppro_hand_delivery'
+      : (rawMethodId
+        ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+        : 'peppro_shipstation');
+    const methodTitle = handDelivery
+      ? 'Hand delivery'
+      : (shippingEstimate.serviceType
+        || shippingEstimate.serviceCode
+        || shippingEstimate.carrierId
+        || 'PepPro Shipping');
+    const deliveryAddress = normalizeDeliveryAddress(shippingAddress);
     const metaData = [
       shippingEstimate.carrierId ? { key: 'peppro_carrier_id', value: shippingEstimate.carrierId } : null,
       shippingEstimate.serviceCode ? { key: 'peppro_service_code', value: shippingEstimate.serviceCode } : null,
       shippingEstimate.serviceType ? { key: 'peppro_service_type', value: shippingEstimate.serviceType } : null,
+      handDelivery ? { key: 'peppro_delivery_method', value: 'hand_delivery' } : null,
+      handDelivery && deliveryAddress ? { key: 'peppro_hand_delivery_address', value: deliveryAddress } : null,
       Number.isFinite(shippingEstimate.estimatedDeliveryDays)
         ? { key: 'peppro_estimated_delivery_days', value: shippingEstimate.estimatedDeliveryDays }
         : null,
@@ -658,6 +699,7 @@ const buildOrderPayload = async ({ order, customer }) => {
   const shippingLines = buildShippingLines({
     shippingTotal,
     shippingEstimate: order.shippingEstimate,
+    shippingAddress,
   });
   if (shippingLines.length > 0) {
     payload.shipping_lines = shippingLines;
