@@ -853,6 +853,7 @@ def _sanitize_user(user: Dict) -> Dict:
             "name": sales_rep.get("name"),
             "email": sales_rep.get("email"),
             "phone": sales_rep.get("phone"),
+            "jurisdiction": sales_rep.get("jurisdiction"),
         }
         if not sanitized.get("referralCode"):
             sales_code = sales_rep.get("salesCode")

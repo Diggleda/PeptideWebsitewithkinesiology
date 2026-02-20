@@ -35,7 +35,6 @@ import { Textarea } from "./components/ui/textarea";
 import { TimestampedNotesField } from "./components/TimestampedNotesField";
 import { toast } from "./lib/toast";
 import {
-	  ShoppingCart,
 	  Eye,
 	  EyeOff,
 	  ArrowRight,
@@ -110,30 +109,9 @@ import {
   detectPlatformPasskeySupport,
 } from "./lib/passkeys";
 import {
-  requestStoredPasswordCredential,
-  storePasswordCredential,
+	requestStoredPasswordCredential,
+	storePasswordCredential,
 } from "./lib/passwordCredential";
-
-const ClipboardDocumentListIcon = ({ className }: { className?: string }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    fill="currentColor"
-    viewBox="0 0 24 24"
-    className={className}
-    aria-hidden="true"
-  >
-    <path
-      fillRule="evenodd"
-      d="M7.502 6h7.128A3.375 3.375 0 0 1 18 9.375v9.375a3 3 0 0 0 3-3V6.108c0-1.505-1.125-2.811-2.664-2.94a48.972 48.972 0 0 0-.673-.05A3 3 0 0 0 15 1.5h-1.5a3 3 0 0 0-2.663 1.618c-.225.015-.45.032-.673.05C8.662 3.295 7.554 4.542 7.502 6ZM13.5 3A1.5 1.5 0 0 0 12 4.5h4.5A1.5 1.5 0 0 0 15 3h-1.5Z"
-      clipRule="evenodd"
-    />
-    <path
-      fillRule="evenodd"
-      d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 0 1 3 20.625V9.375ZM6 12a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V12Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 15a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V15Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75ZM6 18a.75.75 0 0 1 .75-.75h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75.75H6.75a.75.75 0 0 1-.75-.75V18Zm2.25 0a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75Z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
 
 const GlobeAmericasIcon = ({ className }: { className?: string }) => (
   <svg
@@ -231,6 +209,7 @@ interface User {
     name?: string | null;
     email?: string | null;
     phone?: string | null;
+    jurisdiction?: string | null;
   } | null;
   referrerDoctorId?: string | null;
   phone?: string | null;
@@ -4192,8 +4171,6 @@ function MainApp() {
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [showResetPasswordConfirm, setShowResetPasswordConfirm] =
     useState(false);
-  const checkoutButtonObserverRef = useRef<IntersectionObserver | null>(null);
-  const [isCheckoutButtonVisible, setIsCheckoutButtonVisible] = useState(false);
   const filterSidebarRef = useRef<HTMLDivElement | null>(null);
   const landingLoginEmailRef = useRef<HTMLInputElement | null>(null);
   const landingLoginPasswordRef = useRef<HTMLInputElement | null>(null);
@@ -7012,6 +6989,8 @@ function MainApp() {
   const salesTrackingFetchKeyRef = useRef<string | null>(null);
   const salesTrackingLastFetchAtRef = useRef<number>(0);
   const salesTrackingInFlightRef = useRef<boolean>(false);
+  const salesTrackingNextAllowedAtRef = useRef<number>(0);
+  const salesTrackingFailureCountRef = useRef<number>(0);
   const salesTrackingOrderSignatureRef = useRef<Map<string, string>>(new Map());
   const salesOrderDetailFetchedAtRef = useRef<Map<string, number>>(new Map());
   const liveClientsRef = useRef<any[]>([]);
@@ -9952,6 +9931,7 @@ function MainApp() {
 		  const [liveClients, setLiveClients] = useState<any[]>([]);
 		  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
 		  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
+		  const liveClientsInitialLoadDoneRef = useRef(false);
 		  const liveClientsEtagRef = useRef<string | null>(null);
 		  const liveClientsLongPollDisabledRef = useRef(false);
 		  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
@@ -10184,6 +10164,7 @@ function MainApp() {
 		    const isSalesLeadRole = isSalesLead(userRole);
 		    const isSalesRepRole = isRep(userRole);
 		    if (!isSalesLeadRole && !isSalesRepRole) {
+		      liveClientsInitialLoadDoneRef.current = false;
 		      setLiveClients([]);
 		      setLiveClientsLoading(false);
 		      setLiveClientsError(null);
@@ -10198,7 +10179,9 @@ function MainApp() {
 
 		    const fetchOnce = async () => {
 		      try {
-		        setLiveClientsLoading(true);
+		        if (!liveClientsInitialLoadDoneRef.current) {
+		          setLiveClientsLoading(true);
+		        }
 		        setLiveClientsError(null);
 		        const payload = (await settingsAPI.getLiveClients()) as any;
 		        if (cancelled) return;
@@ -10221,6 +10204,7 @@ function MainApp() {
 	            : "Unable to load clients.",
 	        );
 	      } finally {
+	          liveClientsInitialLoadDoneRef.current = true;
 	        if (!cancelled) setLiveClientsLoading(false);
 	      }
 	    };
@@ -12241,26 +12225,45 @@ function MainApp() {
       salesTrackingLastFetchAtRef.current = 0;
     }
 
-    const shouldForce = options?.force === true || isKeyChanged;
-    const elapsedMs = now - salesTrackingLastFetchAtRef.current;
-    if (!shouldForce && elapsedMs > 0 && elapsedMs < cacheTtlMs) {
-      return;
-    }
-    if (salesTrackingInFlightRef.current) {
-      return;
-    }
+	    const shouldForce = options?.force === true || isKeyChanged;
+	    const elapsedMs = now - salesTrackingLastFetchAtRef.current;
+	    if (!shouldForce && elapsedMs > 0 && elapsedMs < cacheTtlMs) {
+	      return;
+	    }
+	    if (!shouldForce && now < salesTrackingNextAllowedAtRef.current) {
+	      return;
+	    }
+	    if (salesTrackingInFlightRef.current) {
+	      return;
+	    }
     salesTrackingInFlightRef.current = true;
     salesTrackingLastFetchAtRef.current = now;
 
     const shouldShowInitialLoading = !hasExistingOrders || isKeyChanged;
     setSalesTrackingLoading(shouldShowInitialLoading);
-    setSalesTrackingRefreshing(options?.force === true && !shouldShowInitialLoading);
-    setSalesTrackingError(null);
-    setSalesRepSalesSummaryError(null);
+	    setSalesTrackingRefreshing(options?.force === true && !shouldShowInitialLoading);
+	    setSalesTrackingError(null);
+	    setSalesRepSalesSummaryError(null);
+	    const isTransientSalesError = (error: any) => {
+	      const status = typeof error?.status === "number" ? error.status : null;
+	      const message =
+	        typeof error?.message === "string" ? error.message.toLowerCase() : "";
+	      return (
+	        status === 429 ||
+	        status === 500 ||
+	        status === 502 ||
+	        status === 503 ||
+	        status === 504 ||
+	        message.includes("busy") ||
+	        message.includes("retry") ||
+	        message.includes("failed to fetch") ||
+	        message.includes("load failed")
+	      );
+	    };
 
-    try {
-      console.log("[Sales Tracking] Fetch start", {
-        role: role || null,
+	    try {
+	      console.log("[Sales Tracking] Fetch start", {
+	        role: role || null,
         salesRepId: salesRepId || null,
       });
       let orders: AccountOrderSummary[] = [];
@@ -12286,13 +12289,24 @@ function MainApp() {
         }
       >();
 
-	      const response = await ordersAPI.getForSalesRep({
-	        salesRepId: salesRepIdParam || undefined,
-	        scope,
-	      });
-      if (
-        response &&
-        typeof response === "object" &&
+	      let response: any = null;
+	      for (let attempt = 0; attempt < 2; attempt += 1) {
+	        try {
+	          response = await ordersAPI.getForSalesRep({
+	            salesRepId: salesRepIdParam || undefined,
+	            scope,
+	          });
+	          break;
+	        } catch (error: any) {
+	          if (!isTransientSalesError(error) || attempt > 0) {
+	            throw error;
+	          }
+	          await new Promise((resolve) => window.setTimeout(resolve, 700));
+	        }
+	      }
+	      if (
+	        response &&
+	        typeof response === "object" &&
         !Array.isArray(response)
       ) {
         const respObj = response as any;
@@ -12660,12 +12674,14 @@ function MainApp() {
         newlySeenDoctorIds.forEach((id) => next.add(id));
         setCollapsedSalesDoctorIds(next);
       }
-      if (shouldUpdateOrders) {
-        setSalesTrackingLastUpdated(Date.now());
-      }
-      console.log("[Sales Tracking] Orders loaded", {
-        count: normalizedOrders.length,
-        doctors: doctorLookup.size,
+	      if (shouldUpdateOrders) {
+	        setSalesTrackingLastUpdated(Date.now());
+	      }
+	      salesTrackingFailureCountRef.current = 0;
+	      salesTrackingNextAllowedAtRef.current = 0;
+	      console.log("[Sales Tracking] Orders loaded", {
+	        count: normalizedOrders.length,
+	        doctors: doctorLookup.size,
         sample:
           normalizedOrders[0] && {
             id: normalizedOrders[0].id,
@@ -12676,19 +12692,37 @@ function MainApp() {
             arrival: normalizedOrders[0].shippingEstimate?.estimatedArrivalDate,
           },
       });
-      void enrichMissingOrderDetails(normalizedOrders, {
-        onlyIds:
-          shouldShowInitialLoading || options?.force === true ? undefined : changedIds,
-        force: options?.force === true,
-      });
-    } catch (error: any) {
-      const message =
-        typeof error?.message === "string"
-          ? error.message
-          : "Unable to load sales tracking data at the moment.";
-      console.error("[Sales Tracking] Unable to fetch orders", error);
-      setSalesTrackingError(message);
-    } finally {
+	      void enrichMissingOrderDetails(normalizedOrders, {
+	        onlyIds:
+	          shouldShowInitialLoading || options?.force === true ? undefined : changedIds,
+	        force: options?.force === true,
+	      }).catch((error) => {
+	        console.debug("[Sales Tracking] Detail hydration task skipped", error);
+	      });
+	    } catch (error: any) {
+	      const message =
+	        typeof error?.message === "string"
+	          ? error.message
+	          : "Unable to load sales tracking data at the moment.";
+	      const transientFailure = isTransientSalesError(error);
+	      if (transientFailure) {
+	        salesTrackingFailureCountRef.current += 1;
+	        const attempt = Math.min(6, salesTrackingFailureCountRef.current);
+	        const delayMs = Math.min(120_000, 1_500 * Math.pow(2, attempt - 1));
+	        salesTrackingNextAllowedAtRef.current = Date.now() + delayMs;
+	      } else {
+	        salesTrackingFailureCountRef.current = 0;
+	        salesTrackingNextAllowedAtRef.current = 0;
+	      }
+	      console.error("[Sales Tracking] Unable to fetch orders", error);
+	      if (transientFailure && hasExistingOrders) {
+	        setSalesTrackingError(
+	          "Store is temporarily busy. Showing last synced sales data and retrying automatically.",
+	        );
+	      } else {
+	        setSalesTrackingError(message);
+	      }
+	    } finally {
       setSalesTrackingLoading(false);
       setSalesTrackingRefreshing(false);
       salesTrackingInFlightRef.current = false;
@@ -12704,9 +12738,13 @@ function MainApp() {
 	    refreshSalesBySalesRepSummary,
 	  ]);
 
-	  const refreshSalesRepOrdersForHeader = useCallback(async () => {
-	    await fetchSalesTrackingOrders({ force: true });
-	  }, [fetchSalesTrackingOrders]);
+		  const refreshSalesRepOrdersForHeader = useCallback(async () => {
+		    try {
+		      await fetchSalesTrackingOrders({ force: true });
+		    } catch (error) {
+		      console.debug("[Sales Tracking] Header refresh skipped", error);
+		    }
+		  }, [fetchSalesTrackingOrders]);
 
 	  const refreshAdminOnHoldOrders = useCallback(
 	    async (options?: { force?: boolean }) => {
@@ -12843,7 +12881,9 @@ function MainApp() {
     if (postLoginHold || !userRole || (!isRep(userRole) && !isAdmin(userRole))) {
       return;
     }
-    fetchSalesTrackingOrders();
+	    void fetchSalesTrackingOrders().catch((error) => {
+	      console.debug("[Sales Tracking] Initial refresh skipped", error);
+	    });
     const leaderKey = "sales-tracking-poll";
     const pollIntervalMs = 25000;
     const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
@@ -12854,7 +12894,9 @@ function MainApp() {
       if (!isTabLeader(leaderKey, leaderTtlMs)) {
         return;
       }
-      void fetchSalesTrackingOrders();
+	      void fetchSalesTrackingOrders().catch((error) => {
+	        console.debug("[Sales Tracking] Poll refresh skipped", error);
+	      });
     }, pollIntervalMs);
     return () => {
       releaseTabLeadership(leaderKey);
@@ -13247,11 +13289,37 @@ function MainApp() {
             if (!previous) {
               return previous;
             }
+            const responseSalesRep = response?.salesRep && typeof response.salesRep === "object"
+              ? {
+                  id: String((response.salesRep as any)?.id || response?.salesRepId || previous?.salesRepId || "").trim(),
+                  name:
+                    typeof (response.salesRep as any)?.name === "string"
+                      ? (response.salesRep as any).name
+                      : previous?.salesRep?.name || null,
+                  email:
+                    typeof (response.salesRep as any)?.email === "string"
+                      ? (response.salesRep as any).email
+                      : previous?.salesRep?.email || null,
+                  phone:
+                    typeof (response.salesRep as any)?.phone === "string"
+                      ? (response.salesRep as any).phone
+                      : previous?.salesRep?.phone || null,
+                  jurisdiction:
+                    typeof (response.salesRep as any)?.jurisdiction === "string"
+                      ? (response.salesRep as any).jurisdiction
+                      : typeof response?.salesRepJurisdiction === "string"
+                        ? response.salesRepJurisdiction
+                        : previous?.salesRep?.jurisdiction || null,
+                }
+              : previous?.salesRep || null;
             const nextCredits = normalizedCredits.availableCredits;
             const nextTotalReferrals = normalizedReferrals.length;
+            const prevRepJurisdiction = String(previous?.salesRep?.jurisdiction || "").trim().toLowerCase();
+            const nextRepJurisdiction = String(responseSalesRep?.jurisdiction || "").trim().toLowerCase();
             const unchanged =
               Number(previous.referralCredits ?? 0) === nextCredits &&
-              Number(previous.totalReferrals ?? 0) === nextTotalReferrals;
+              Number(previous.totalReferrals ?? 0) === nextTotalReferrals &&
+              prevRepJurisdiction === nextRepJurisdiction;
             if (unchanged) {
               return previous;
             }
@@ -13259,6 +13327,9 @@ function MainApp() {
               ...previous,
               referralCredits: nextCredits,
               totalReferrals: nextTotalReferrals,
+              salesRepId:
+                String(response?.salesRepId || previous?.salesRepId || "").trim() || previous?.salesRepId || null,
+              salesRep: responseSalesRep,
             };
           });
           console.debug("[Referral] Doctor summary loaded", {
@@ -13779,30 +13850,6 @@ function MainApp() {
     },
     [],
   );
-
-  const checkoutButtonRef = useCallback((node: HTMLButtonElement | null) => {
-    if (checkoutButtonObserverRef.current) {
-      checkoutButtonObserverRef.current.disconnect();
-      checkoutButtonObserverRef.current = null;
-    }
-
-    if (!node || typeof IntersectionObserver === "undefined") {
-      setIsCheckoutButtonVisible(false);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsCheckoutButtonVisible(entry.isIntersecting);
-      },
-      {
-        rootMargin: "-10% 0px 0px 0px",
-      },
-    );
-
-    observer.observe(node);
-    checkoutButtonObserverRef.current = observer;
-  }, []);
 
   // Always start with a clean auth slate on fresh loads
   useEffect(() => {
@@ -14621,16 +14668,6 @@ function MainApp() {
     tracedRefreshReferralData,
   ]);
 
-  useEffect(
-    () => () => {
-      if (checkoutButtonObserverRef.current) {
-        checkoutButtonObserverRef.current.disconnect();
-        checkoutButtonObserverRef.current = null;
-      }
-    },
-    [],
-  );
-
   // Add springy scroll effect to sidebar - DISABLED to allow normal scrolling
   // useEffect(() => {
   //   let lastScrollY = window.scrollY;
@@ -15381,6 +15418,30 @@ function MainApp() {
 	        const current = await authAPI.getCurrentUser();
 	        if (!current && !cancelled) {
 	          handleLogout();
+	          return;
+	        }
+	        if (current && !cancelled) {
+	          setUser((previous) => {
+	            if (!previous) {
+	              return current as User;
+	            }
+	            const prevRepJurisdiction = String(previous?.salesRep?.jurisdiction || "").trim().toLowerCase();
+	            const nextRepJurisdiction = String((current as any)?.salesRep?.jurisdiction || "").trim().toLowerCase();
+	            const prevRepId = String(previous?.salesRepId || "").trim();
+	            const nextRepId = String((current as any)?.salesRepId || "").trim();
+	            if (
+	              prevRepJurisdiction === nextRepJurisdiction &&
+	              prevRepId === nextRepId &&
+	              previous.email === (current as any)?.email &&
+	              previous.role === (current as any)?.role
+	            ) {
+	              return previous;
+	            }
+	            return {
+	              ...previous,
+	              ...(current as User),
+	            };
+	          });
 	        }
       } catch {
         // Ignore transient network/server failures; keep the user signed in.
@@ -15468,6 +15529,8 @@ function MainApp() {
 
     const cartItemId = buildCartItemId(productId, resolvedVariant?.id ?? null);
 
+    // Never auto-open checkout from add-to-cart actions.
+    setCheckoutOpen(false);
     setCartItems((prev) => {
       const existingItem = prev.find((item) => item.id === cartItemId);
       if (existingItem) {
@@ -15686,8 +15749,7 @@ function MainApp() {
       items: nextCart.length,
     });
     setCartItems(nextCart);
-    setCheckoutOpen(true);
-    toast.info("Order loaded into a new cart.");
+    toast.info("Order loaded into cart. Click the cart to review.");
     })();
   };
 
@@ -15907,11 +15969,10 @@ function MainApp() {
         setProposalShippingAddress(nextShippingAddress);
         setProposalShippingRate(nextShippingRate);
         setCartItems(nextCart);
-        setCheckoutOpen(true);
         toast.info(
           skipped > 0
-            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped).`
-            : 'Proposal loaded.',
+            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped). Click the cart to review.`
+            : 'Proposal loaded. Click the cart to review.',
         );
       })();
     },
@@ -16334,6 +16395,13 @@ function MainApp() {
       setShouldReopenCheckout(false);
     }
   };
+
+  const handleHeaderCartClick = useCallback((source?: "cart_button") => {
+    if (source !== "cart_button") {
+      return;
+    }
+    setCheckoutOpen(true);
+  }, []);
 
   const handleUpdateCartItemQuantity = (
     cartItemId: string,
@@ -17349,23 +17417,6 @@ function MainApp() {
               </div>
             </div>
 
-	            <div className="flex flex-wrap items-center gap-2 sm:gap-3 ml-auto min-w-[min(100%,220px)] justify-start order-1 lg:order-2 lg:justify-end">
-	              {totalCartItems > 0 && (
-	                <Button
-	                  variant="ghost"
-	                  onClick={() => setCheckoutOpen(true)}
-	                  ref={checkoutButtonRef}
-	                  className="squircle-sm glass-brand shadow-lg shadow-[rgba(95,179,249,0.4)] transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 px-5 py-2 min-w-[8.5rem] justify-center w-full sm:w-auto"
-	                >
-	                  {isDelegateMode || isProposalReviewMode ? (
-	                    <ClipboardDocumentListIcon className="w-4 h-4 mr-2" />
-	                  ) : (
-	                    <ShoppingCart className="w-4 h-4 mr-2" />
-	                  )}
-	                  {isDelegateMode || isProposalReviewMode ? `Proposal (${totalCartItems})` : `Checkout (${totalCartItems})`}
-	                </Button>
-	              )}
-	            </div>
           </div>
 
           {showSkeletonGrid ? (
@@ -18350,7 +18401,7 @@ function MainApp() {
                         Quick usage snapshot (load, memory, disk).
                       </p>
                     </div>
-                    <div className="flex-shrink-0">
+                      <div className="flex-shrink-0">
 	                      <Button
 	                        type="button"
 	                        variant="outline"
@@ -18715,7 +18766,7 @@ function MainApp() {
 	                          Sales reps who have a local jurisdiction to the PepPro facility.
 	                        </p>
 	                      </div>
-	                      <div className="flex-shrink-0">
+	                      <div className="flex-shrink-0 self-end sm:self-auto">
 	                        <Button
 	                          type="button"
 	                          variant="outline"
@@ -20382,7 +20433,9 @@ function MainApp() {
 		                        size="sm"
 		                        onClick={(e) => {
 		                          e.stopPropagation();
-		                          void fetchSalesTrackingOrders({ force: true });
+		                          void fetchSalesTrackingOrders({ force: true }).catch((error) => {
+		                            console.debug("[Sales Tracking] Manual refresh skipped", error);
+		                          });
 		                        }}
 		                        disabled={salesTrackingLoading || salesTrackingRefreshing}
 		                        className="header-home-button squircle-sm bg-white text-slate-900"
@@ -22261,8 +22314,6 @@ function MainApp() {
     (sum, item) => sum + item.quantity,
     0,
   );
-		  const shouldShowHeaderCartIcon =
-		    totalCartItems > 0 && !isCheckoutButtonVisible;
 		  const newsLoadingPlaceholders = Array.from({ length: 5 });
 		  const forumLoadingPlaceholders = Array.from({ length: 1 });
 		  const PEPTIDE_FORUM_DESCRIPTION_MAX_CHARS = 180;
@@ -22407,14 +22458,13 @@ function MainApp() {
 				              researchDashboardEnabled={researchDashboardEnabled}
                       patientLinksEnabled={patientLinksEnabled}
 				              onLogin={handleLogin}
-				              onLogout={handleLogout}
-				              cartItems={totalCartItems}
+		              onLogout={handleLogout}
+		              cartItems={totalCartItems}
 		              onSearch={handleSearch}
 		              onCreateAccount={handleCreateAccount}
-		              onCartClick={() => setCheckoutOpen(true)}
+		              onCartClick={handleHeaderCartClick}
 		              loginPromptToken={loginPromptToken}
 		              loginContext={loginContext}
-		              showCartIconFallback={shouldShowHeaderCartIcon}
 		              onShowInfo={() => {
 		                console.log(
 		                  "[App] onShowInfo called, setting postLoginHold to true",
@@ -22458,8 +22508,7 @@ function MainApp() {
 	                    patientLinksEnabled={false}
 	                    cartItems={totalCartItems}
 	                    onSearch={handleSearch}
-	                    onCartClick={() => setCheckoutOpen(true)}
-	                    showCartIconFallback={shouldShowHeaderCartIcon}
+	                    onCartClick={handleHeaderCartClick}
 	                    catalogLoading={catalogLoading}
 	                  />
 	                </div>
@@ -24255,6 +24304,8 @@ function MainApp() {
 	        physicianName={isDelegateMode ? null : user?.npiVerification?.name || user?.name || null}
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
+	        salesRepName={isDelegateMode ? null : user?.salesRep?.name || null}
+	        salesRepJurisdiction={isDelegateMode ? null : user?.salesRep?.jurisdiction || null}
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
 	        }

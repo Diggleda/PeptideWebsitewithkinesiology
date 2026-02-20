@@ -391,9 +391,28 @@ const getDoctorSummary = (req, res, next) => {
     if (role === 'doctor' || role === 'test_doctor') {
       const referrals = referralRepository.findByDoctorId(req.user.id);
       const credits = buildDoctorCredits(req.user.id);
+      const normalizeId = (value) => {
+        if (value == null) return '';
+        const text = String(value).trim();
+        return text;
+      };
+      const doctorSalesRepId = normalizeId(req.user?.salesRepId || req.user?.sales_rep_id);
+      const salesRepRecord = doctorSalesRepId ? salesRepRepository.findById(doctorSalesRepId) : null;
+      const salesRep = salesRepRecord
+        ? {
+          id: normalizeId(salesRepRecord.id || salesRepRecord.salesRepId) || doctorSalesRepId || null,
+          name: salesRepRecord.name || null,
+          email: salesRepRecord.email || null,
+          phone: salesRepRecord.phone || null,
+          jurisdiction: salesRepRecord.jurisdiction || null,
+        }
+        : null;
       res.json({
         credits,
         referrals,
+        salesRepId: doctorSalesRepId || null,
+        salesRepJurisdiction: salesRep?.jurisdiction || null,
+        salesRep,
         scope: 'doctor',
       });
       return;

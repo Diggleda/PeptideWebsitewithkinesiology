@@ -206,6 +206,8 @@ interface CheckoutModalProps {
   physicianName?: string | null;
   customerEmail?: string | null;
   customerName?: string | null;
+  salesRepName?: string | null;
+  salesRepJurisdiction?: string | null;
   defaultShippingAddress?: ShippingAddress | null;
   defaultShippingRate?: ShippingRate | null;
   availableCredits?: number;
@@ -275,6 +277,8 @@ export function CheckoutModal({
   physicianName,
   customerEmail,
   customerName,
+  salesRepName,
+  salesRepJurisdiction,
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
@@ -437,20 +441,25 @@ export function CheckoutModal({
   const selectedShippingRate = selectedRateIndex != null && shippingRates
     ? shippingRates[selectedRateIndex]
     : null;
+  const isDelegateCheckoutFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
   const shippingCost = selectedShippingRate?.rate
     ? Number(selectedShippingRate.rate) || 0
     : 0;
+  const normalizedSalesRepJurisdiction = String(salesRepJurisdiction || '').trim().toLowerCase();
+  const isLocalSalesRepJurisdiction = !isDelegateCheckoutFlow && normalizedSalesRepJurisdiction === 'local';
+  const effectiveShippingCost = isLocalSalesRepJurisdiction ? 0 : shippingCost;
+  const localSalesRepDisplayName = String(salesRepName || '').trim() || 'Your sales rep';
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
   const discountedSubtotal = Math.max(0, subtotal - discountCodeAmount);
   const appliedCredits = Math.min(discountedSubtotal, normalizedCredits);
-  const total = Math.max(0, discountedSubtotal - appliedCredits + shippingCost + taxAmount);
+  const total = Math.max(0, discountedSubtotal - appliedCredits + effectiveShippingCost + taxAmount);
   const testOverrideApplied = taxEstimate?.testPaymentOverrideApplied === true;
   const originalGrandTotal = typeof taxEstimate?.originalGrandTotal === 'number' && Number.isFinite(taxEstimate.originalGrandTotal)
     ? Math.max(0, taxEstimate.originalGrandTotal)
     : null;
   const displayAppliedCredits = testOverrideApplied ? 0 : appliedCredits;
-  const displayShippingCost = testOverrideApplied ? 0 : shippingCost;
+  const displayShippingCost = testOverrideApplied ? 0 : effectiveShippingCost;
   const displayTaxAmount = testOverrideApplied ? 0 : taxAmount;
   const displayTotal = testOverrideApplied ? 0.01 : total;
   const shippingAddressSignature = [
@@ -465,16 +474,22 @@ export function CheckoutModal({
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = true;
-  const hasSelectedShippingRate = Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
+  const hasSelectedShippingRate = isLocalSalesRepJurisdiction
+    || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
     && hasSelectedShippingRate
+    && !isLocalSalesRepJurisdiction
     && shippingAddressComplete
     && checkoutLineItems.length > 0,
   );
   const taxReady = !shouldFetchTax || (!!taxEstimate && !taxEstimatePending);
-  const meetsCheckoutRequirements = termsAccepted && isPaymentValid && hasSelectedShippingRate && taxReady;
+  const meetsCheckoutRequirements = termsAccepted
+    && isPaymentValid
+    && shippingAddressComplete
+    && hasSelectedShippingRate
+    && taxReady;
   const taxQuoteKey = useMemo(() => {
     if (!shouldFetchTax) {
       return null;
@@ -485,7 +500,7 @@ export function CheckoutModal({
       cartLineItemSignature || 'items',
       shippingAddressSignature || 'address',
       rateFingerprint,
-      shippingCost.toFixed(2),
+      effectiveShippingCost.toFixed(2),
       paymentMethod || 'payment',
       discountCodeApplied?.code || 'no-discount',
       discountCodeAmount.toFixed(2),
@@ -495,13 +510,13 @@ export function CheckoutModal({
     cartLineItemSignature,
     shippingAddressSignature,
     selectedShippingRate,
-    shippingCost,
+    effectiveShippingCost,
     paymentMethod,
     discountCodeApplied?.code,
     discountCodeAmount,
   ]);
   const canCheckout = meetsCheckoutRequirements && (isAuthenticated || allowUnauthenticatedCheckout);
-  const isDelegateFlow = Boolean(allowUnauthenticatedCheckout && delegateDoctorName);
+  const isDelegateFlow = isDelegateCheckoutFlow;
   const proposalMode = isDelegateFlow || Boolean(forceProposalMode);
   const showDualPricing = proposalMode && !isDelegateFlow && proposalMarkupPercentValue != null;
   const delegateComparisonPricingMode: PricingMode = 'wholesale';
@@ -781,7 +796,7 @@ export function CheckoutModal({
 	      const result = await onCheckout({
 	        shippingAddress,
 	        shippingRate: selectedShippingRate,
-	        shippingTotal: shippingCost,
+	        shippingTotal: effectiveShippingCost,
 	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
@@ -905,6 +920,10 @@ export function CheckoutModal({
   const handlePrimaryAction = async () => {
     if (!termsAccepted || !isPaymentValid) {
       toast.error('Accept the terms to continue.');
+      return;
+    }
+    if (!shippingAddressComplete) {
+      toast.error('Enter the full shipping address before placing your order.');
       return;
     }
     if (!hasSelectedShippingRate) {
@@ -1121,7 +1140,7 @@ export function CheckoutModal({
           })),
           shippingAddress,
           shippingEstimate: selectedShippingRate,
-          shippingTotal: shippingCost,
+          shippingTotal: effectiveShippingCost,
           paymentMethod,
           discountCode: discountCodeApplied?.code ?? null,
         },
@@ -1133,7 +1152,7 @@ export function CheckoutModal({
       const totals = response?.totals || null;
       const amount = Math.max(0, Number(totals?.taxTotal) || 0);
       const grandTotalFromApi = Number(totals?.grandTotal);
-      const fallbackGrandTotal = Math.max(0, discountedSubtotal - appliedCredits + shippingCost + amount);
+      const fallbackGrandTotal = Math.max(0, discountedSubtotal - appliedCredits + effectiveShippingCost + amount);
       const testPaymentOverrideApplied = totals?.testPaymentOverrideApplied === true;
       const originalGrandTotalCandidate = Number(totals?.originalGrandTotal);
       setTaxEstimate({
@@ -1171,7 +1190,7 @@ export function CheckoutModal({
     paymentMethod,
     selectedShippingRate,
     shippingAddress,
-    shippingCost,
+    effectiveShippingCost,
     shouldFetchTax,
     taxQuoteKey,
     discountCodeApplied?.code,
@@ -1528,6 +1547,33 @@ export function CheckoutModal({
               {/* Shipping */}
               <div className="space-y-4">
                 <h3>Shipping Address</h3>
+                {isLocalSalesRepJurisdiction && (
+                  <div className="glass-card squircle-md border border-[rgba(95,179,249,0.45)] bg-gradient-to-r from-[rgba(95,179,249,0.16)] via-[rgba(95,179,249,0.10)] to-[rgba(255,255,255,0.75)] px-6 py-5 shadow-[0_14px_30px_-24px_rgba(95,179,249,0.9)]">
+                    <p className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-[rgb(58,142,214)]">
+                      <span>Local Hand Delivery</span>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        width="15"
+                        height="15"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0"
+                        style={{ width: 18, height: 18, minWidth: 18, minHeight: 18, maxWidth: 18, maxHeight: 18, display: 'inline-block' }}
+                        aria-hidden="true"
+                      >
+                        <path d="M6.63257 10.25C7.43892 10.25 8.16648 9.80416 8.6641 9.16967C9.43726 8.18384 10.4117 7.3634 11.5255 6.77021C12.2477 6.38563 12.8743 5.81428 13.1781 5.05464C13.3908 4.5231 13.5 3.95587 13.5 3.38338V2.75C13.5 2.33579 13.8358 2 14.25 2C15.4926 2 16.5 3.00736 16.5 4.25C16.5 5.40163 16.2404 6.49263 15.7766 7.46771C15.511 8.02604 15.8836 8.75 16.5019 8.75M16.5019 8.75H19.6277C20.6544 8.75 21.5733 9.44399 21.682 10.4649C21.7269 10.8871 21.75 11.3158 21.75 11.75C21.75 14.5976 20.7581 17.2136 19.101 19.2712C18.7134 19.7525 18.1142 20 17.4962 20H13.4802C12.9966 20 12.5161 19.922 12.0572 19.7691L8.94278 18.7309C8.48393 18.578 8.00342 18.5 7.51975 18.5H5.90421M16.5019 8.75H14.25M5.90421 18.5C5.98702 18.7046 6.07713 18.9054 6.17423 19.1022C6.37137 19.5017 6.0962 20 5.65067 20H4.74289C3.85418 20 3.02991 19.482 2.77056 18.632C2.43208 17.5226 2.25 16.3451 2.25 15.125C2.25 13.5725 2.54481 12.0889 3.08149 10.7271C3.38655 9.95303 4.16733 9.5 4.99936 9.5H6.05212C6.52404 9.5 6.7973 10.0559 6.5523 10.4593C5.72588 11.8198 5.25 13.4168 5.25 15.125C5.25 16.3185 5.48232 17.4578 5.90421 18.5Z" />
+                      </svg>
+                    </p>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-800">
+                      Your order will be delivered by {localSalesRepDisplayName}.
+                      If unable to be delivered, we will ship your order to the address below (free of charge).
+                    </p>
+                  </div>
+                )}
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-2">
@@ -1601,19 +1647,21 @@ export function CheckoutModal({
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleGetRates}
-                      disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
-                      className="squircle-sm"
-                    >
-                      {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
-                    </Button>
-                    {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
-                  </div>
-                  {shippingRates && shippingRates.length > 0 && (
+                  {!isLocalSalesRepJurisdiction && (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleGetRates}
+                        disabled={isFetchingRates || cartItems.length === 0 || !shippingAddressComplete}
+                        className="squircle-sm"
+                      >
+                        {isFetchingRates ? 'Fetching rates...' : 'Get shipping rates'}
+                      </Button>
+                      {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
+                    </div>
+                  )}
+                  {!isLocalSalesRepJurisdiction && shippingRates && shippingRates.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
                       <select
@@ -1894,7 +1942,9 @@ export function CheckoutModal({
 	                )}
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Shipping:</span>
-	                  <span>${displayShippingCost.toFixed(2)}</span>
+	                  <span>
+                      {isLocalSalesRepJurisdiction ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
+                    </span>
 	                </div>
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Estimated tax:</span>

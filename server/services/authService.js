@@ -108,6 +108,40 @@ const normalizeRole = (role) => {
 };
 
 const sanitizeUser = (user) => {
+  const normalizeRepSummary = (rep) => {
+    if (!rep || typeof rep !== 'object') return null;
+    const repId = normalizeId(rep.id || rep.salesRepId || rep.legacyUserId);
+    if (!repId) return null;
+    return {
+      id: repId,
+      name: normalizeOptionalString(rep.name),
+      email: normalizeOptionalString(rep.email),
+      phone: normalizeOptionalString(rep.phone),
+      jurisdiction: normalizeOptionalString(rep.jurisdiction),
+    };
+  };
+
+  const resolveSalesRepSummary = (rawUser) => {
+    if (!rawUser || typeof rawUser !== 'object') return null;
+    const embedded = normalizeRepSummary(rawUser.salesRep);
+    if (embedded) return embedded;
+
+    const repId = normalizeId(rawUser.salesRepId || rawUser.sales_rep_id);
+    const userRole = normalizeRole(rawUser.role);
+    const repEmailCandidate = normalizeEmail(rawUser.email);
+    let repRecord = null;
+
+    if (repId) {
+      repRecord = salesRepRepository.findById(repId);
+    }
+
+    if (!repRecord && (userRole === 'sales_rep' || userRole === 'rep' || userRole === 'sales_lead')) {
+      repRecord = salesRepRepository.findByEmail(repEmailCandidate);
+    }
+
+    return normalizeRepSummary(repRecord);
+  };
+
   const {
     password,
     passkeys,
@@ -118,6 +152,7 @@ const sanitizeUser = (user) => {
     profileImageUrl: normalizeOptionalString(user.profileImageUrl),
     role: normalizeRole(user.role),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
+    salesRep: resolveSalesRepSummary(user),
   };
 };
 

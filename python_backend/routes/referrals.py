@@ -113,7 +113,26 @@ def doctor_summary():
         _require_doctor(user)
         credits = referral_service.calculate_doctor_credit_summary(user["id"])
         referrals = referral_service.list_referrals_for_doctor(user["id"])
-        return {"credits": credits, "referrals": referrals}
+        sales_rep_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip() or None
+        sales_rep = sales_rep_repository.find_by_id(sales_rep_id) if sales_rep_id else None
+        sales_rep_payload = (
+            {
+                "id": str(sales_rep.get("id") or sales_rep_id or "").strip() or None,
+                "name": sales_rep.get("name"),
+                "email": sales_rep.get("email"),
+                "phone": sales_rep.get("phone"),
+                "jurisdiction": sales_rep.get("jurisdiction"),
+            }
+            if sales_rep
+            else None
+        )
+        return {
+            "credits": credits,
+            "referrals": referrals,
+            "salesRepId": sales_rep_id,
+            "salesRepJurisdiction": sales_rep_payload.get("jurisdiction") if sales_rep_payload else None,
+            "salesRep": sales_rep_payload,
+        }
 
     return handle_action(action)
 

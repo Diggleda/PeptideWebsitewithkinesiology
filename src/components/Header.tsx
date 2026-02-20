@@ -344,10 +344,9 @@ interface HeaderProps {
     confirmPassword: string;
     code: string;
   }) => Promise<AuthActionResult> | AuthActionResult;
-  onCartClick?: () => void;
+  onCartClick?: (source?: 'cart_button') => void;
   loginPromptToken?: number;
   loginContext?: 'checkout' | null;
-  showCartIconFallback?: boolean;
   onShowInfo?: () => void;
   onUserUpdated?: (user: HeaderUser) => void;
   accountOrders?: AccountOrderSummary[];
@@ -1020,7 +1019,6 @@ export function Header({
   onCartClick,
   loginPromptToken,
   loginContext = null,
-  showCartIconFallback = false,
   onShowInfo,
   onUserUpdated,
   accountOrders = [],
@@ -2867,7 +2865,7 @@ export function Header({
 
   const handleCartClick = () => {
     if (onCartClick) {
-      onCartClick();
+      onCartClick('cart_button');
     }
   };
 
@@ -3235,35 +3233,36 @@ export function Header({
     }
   }, [primaryReferralCode]);
 
-  const renderCartButton = () => (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={handleCartClick}
-      className={clsx(
-        'relative hidden md:inline-flex glass squircle-sm transition-all duration-300 flex-shrink-0',
-        showCartIconFallback && 'inline-flex'
-      )}
-      style={{
-        color: secondaryColor,
-        borderColor: translucentSecondary,
-      }}
-    >
-      {delegateMode ? (
-        <ClipboardDocumentListIcon className="h-4 w-4" />
-      ) : (
-        <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
-      )}
-      {cartItems > 0 && (
+  const renderCartButton = () => {
+    if (!(Number(cartItems) > 0)) {
+      return null;
+    }
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleCartClick}
+        className="relative inline-flex glass squircle-sm transition-all duration-300 flex-shrink-0"
+        style={{
+          color: secondaryColor,
+          borderColor: translucentSecondary,
+        }}
+      >
+        {delegateMode ? (
+          <ClipboardDocumentListIcon className="h-4 w-4" />
+        ) : (
+          <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
+        )}
         <Badge
           variant="outline"
           className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
         >
           {cartItems}
         </Badge>
-      )}
-    </Button>
-  );
+      </Button>
+    );
+  };
 
   const renderSearchField = (
     inputClassName = '',
