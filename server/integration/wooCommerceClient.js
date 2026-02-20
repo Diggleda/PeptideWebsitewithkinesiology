@@ -550,7 +550,7 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
         ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
         : 'peppro_shipstation');
     const methodTitle = handDelivery
-      ? 'Hand Delivered'
+      ? 'Hand delivered'
       : (shippingEstimate.serviceType
         || shippingEstimate.serviceCode
         || shippingEstimate.carrierId

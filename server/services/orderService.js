@@ -940,7 +940,7 @@ const normalizeTaxAmount = (value) => {
 };
 
 const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
-const HAND_DELIVERY_LABEL = 'Hand Delivered';
+const HAND_DELIVERY_LABEL = 'Hand delivered';
 const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
 
 const normalizeBooleanish = (value) => {

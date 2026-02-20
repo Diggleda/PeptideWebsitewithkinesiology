@@ -10,9 +10,50 @@ from ..services import get_config
 from ..database import mysql_client
 from .. import storage
 
+HAND_DELIVERY_SERVICE_LABEL = "Hand delivered"
+
 
 def _using_mysql() -> bool:
     return bool(get_config().mysql.get("enabled"))
+
+
+def _is_hand_delivery_order(order: Dict) -> bool:
+    if not isinstance(order, dict):
+        return False
+
+    if order.get("handDelivery") is True or order.get("facility_pickup") is True:
+        return True
+
+    candidates = [
+        order.get("shippingService"),
+        order.get("fulfillmentMethod"),
+        order.get("fulfillment_method"),
+    ]
+    shipping_estimate = order.get("shippingEstimate")
+    if isinstance(shipping_estimate, dict):
+        candidates.extend(
+            [
+                shipping_estimate.get("serviceType"),
+                shipping_estimate.get("serviceCode"),
+                shipping_estimate.get("carrierId"),
+            ]
+        )
+
+    normalized = {str(value or "").strip().lower() for value in candidates if str(value or "").strip()}
+    return bool(
+        {
+            "hand delivery",
+            "hand delivered",
+            "hand_delivery",
+            "hand-delivery",
+            "hand-delivered",
+            "local hand delivery",
+            "local_hand_delivery",
+            "local_delivery",
+            "facility_pickup",
+        }
+        & normalized
+    )
 
 
 def _get_store():
@@ -1157,9 +1198,13 @@ def _to_db_params(order: Dict) -> Dict:
         "shipping_carrier": order.get("shippingCarrier")
         or order.get("shippingEstimate", {}).get("carrierId")
         or order.get("shippingEstimate", {}).get("carrier_id"),
-        "shipping_service": order.get("shippingService")
-        or order.get("shippingEstimate", {}).get("serviceType")
-        or order.get("shippingEstimate", {}).get("serviceCode"),
+        "shipping_service": HAND_DELIVERY_SERVICE_LABEL
+        if _is_hand_delivery_order(order)
+        else (
+            order.get("shippingService")
+            or order.get("shippingEstimate", {}).get("serviceType")
+            or order.get("shippingEstimate", {}).get("serviceCode")
+        ),
         "tracking_number": tracking_number,
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),

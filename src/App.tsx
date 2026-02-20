@@ -15749,7 +15749,8 @@ function MainApp() {
       items: nextCart.length,
     });
     setCartItems(nextCart);
-    toast.info("Order loaded into cart. Click the cart to review.");
+    setCheckoutOpen(true);
+    toast.info("Order loaded into cart.");
     })();
   };
 

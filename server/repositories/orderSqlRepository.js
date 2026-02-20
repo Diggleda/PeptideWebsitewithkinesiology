@@ -18,6 +18,37 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
+const HAND_DELIVERY_SERVICE_LABEL = 'Hand delivered';
+
+const isHandDeliveryOrder = (order) => {
+  if (!order || typeof order !== 'object') {
+    return false;
+  }
+  const estimate = order.shippingEstimate;
+  const estimateCandidates = estimate && typeof estimate === 'object'
+    ? [estimate.serviceType, estimate.serviceCode, estimate.carrierId]
+    : [];
+  const orderCandidates = [
+    order.shippingService,
+    order.fulfillmentMethod,
+    order.fulfillment_method,
+    order.handDelivery === true ? 'hand_delivery' : '',
+  ];
+  const normalized = estimateCandidates
+    .concat(orderCandidates)
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return normalized.some((value) =>
+    value === 'hand delivery'
+    || value === 'hand delivered'
+    || value === 'hand_delivery'
+    || value === 'local hand delivery'
+    || value === 'local_hand_delivery'
+    || value === 'local_delivery'
+    || value === 'hand-delivery'
+    || value === 'hand-delivered'
+    || value === 'facility_pickup');
+};
 
 const computeItemsSubtotal = (order) => {
   if (!order || typeof order !== 'object') {
@@ -92,7 +123,9 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     total: computeGrandTotal(order),
     shippingTotal: toNumber(order.shippingTotal ?? order.shipping_total, 0),
     shippingCarrier: order.shippingEstimate?.carrierId || order.shippingEstimate?.serviceCode || null,
-    shippingService: order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || null,
+    shippingService: isHandDeliveryOrder(order)
+      ? HAND_DELIVERY_SERVICE_LABEL
+      : (order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || order.shippingService || null),
     handDelivery: order.handDelivery === true ? 1 : 0,
     fulfillmentMethod: sanitizeString(order.fulfillmentMethod || null),
     pickupLocation: sanitizeString(order.pickupLocation || null),
