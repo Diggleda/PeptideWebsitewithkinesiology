@@ -1954,6 +1954,56 @@ const getOrdersForUser = async (userId) => {
   }
 
   let localSummaries = [];
+  const normalizeLookupToken = (value) => {
+    if (value === undefined || value === null) return '';
+    const token = String(value).trim().toLowerCase();
+    return token || '';
+  };
+  const localByWooId = new Map();
+  const localByWooNumber = new Map();
+  try {
+    const localOrders = Array.isArray(orderRepository.findByUserId(userId))
+      ? orderRepository.findByUserId(userId)
+      : [];
+    const sqlOrders = typeof orderSqlRepository.fetchByUserId === 'function'
+      ? await orderSqlRepository.fetchByUserId(userId)
+      : [];
+    const combined = []
+      .concat(localOrders || [])
+      .concat(Array.isArray(sqlOrders) ? sqlOrders : [])
+      .filter((order) => order && typeof order === 'object');
+    const dedupedById = new Map();
+    combined.forEach((order) => {
+      const id = normalizeLookupToken(order?.id);
+      if (!id) return;
+      const existing = dedupedById.get(id);
+      if (!existing) {
+        dedupedById.set(id, order);
+        return;
+      }
+      const existingHasDelegate = Boolean(
+        (typeof existing?.asDelegate === 'string' && existing.asDelegate.trim())
+        || (typeof existing?.as_delegate === 'string' && existing.as_delegate.trim()),
+      );
+      const nextHasDelegate = Boolean(
+        (typeof order?.asDelegate === 'string' && order.asDelegate.trim())
+        || (typeof order?.as_delegate === 'string' && order.as_delegate.trim()),
+      );
+      if (!existingHasDelegate && nextHasDelegate) {
+        dedupedById.set(id, order);
+      }
+    });
+    localSummaries = Array.from(dedupedById.values()).map((order) => buildLocalOrderSummary(order));
+    localSummaries.forEach((summary) => {
+      const wooIdKey = normalizeLookupToken(summary?.wooOrderId);
+      if (wooIdKey) localByWooId.set(wooIdKey, summary);
+      const wooNumberKey = normalizeLookupToken(summary?.wooOrderNumber || summary?.number);
+      if (wooNumberKey) localByWooNumber.set(wooNumberKey, summary);
+    });
+  } catch (error) {
+    logger.warn({ err: error, userId }, 'Failed to preload local/sql order summaries for user');
+    localSummaries = [];
+  }
 
   let wooOrders = [];
   let wooError = null;
@@ -1982,7 +2032,31 @@ const getOrdersForUser = async (userId) => {
             .filter((candidate) => candidate && typeof candidate === 'object');
           const hydratedAny = hydratedCandidates[0] || null;
           if (!hydratedAny) {
-            enriched.push(order);
+            const fallbackLocal =
+              localByWooId.get(normalizeLookupToken(order?.id))
+              || localByWooNumber.get(normalizeLookupToken(order?.number));
+            if (fallbackLocal) {
+              const fallbackLabel =
+                (typeof fallbackLocal?.asDelegate === 'string' && fallbackLocal.asDelegate.trim())
+                  ? fallbackLocal.asDelegate.trim()
+                  : (typeof fallbackLocal?.as_delegate === 'string' && fallbackLocal.as_delegate.trim())
+                    ? fallbackLocal.as_delegate.trim()
+                    : null;
+              enriched.push({
+                ...order,
+                asDelegate: fallbackLabel,
+                as_delegate: fallbackLabel,
+                paymentMethod: fallbackLocal?.paymentMethod || order.paymentMethod,
+                paymentDetails:
+                  fallbackLocal?.paymentDetails
+                  || fallbackLocal?.paymentMethod
+                  || order.paymentDetails
+                  || order.paymentMethod
+                  || null,
+              });
+            } else {
+              enriched.push(order);
+            }
             // eslint-disable-next-line no-continue
             continue;
           }

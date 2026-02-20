@@ -4353,6 +4353,36 @@ export function Header({
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : '';
   };
+  const resolveDelegateOrderLabel = (order: any): string => {
+    const direct =
+      normalizeDelegateLabel(order?.as_delegate)
+      || normalizeDelegateLabel(order?.asDelegate);
+    if (direct) return direct;
+
+    const integrationDetails = parseMaybeJson(order?.integrationDetails);
+    const integrations = parseMaybeJson(order?.integrations);
+    const wooIntegration =
+      parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce)
+      || parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce)
+      || {};
+    const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+    const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+
+    const nested =
+      normalizeDelegateLabel(wooIntegration?.as_delegate)
+      || normalizeDelegateLabel(wooIntegration?.asDelegate)
+      || normalizeDelegateLabel(wooResponse?.as_delegate)
+      || normalizeDelegateLabel(wooResponse?.asDelegate)
+      || normalizeDelegateLabel(wooPayload?.as_delegate)
+      || normalizeDelegateLabel(wooPayload?.asDelegate)
+      // SQL persistence can surface in integration details depending on hydration path.
+      || normalizeDelegateLabel(integrationDetails?.mysql?.order?.as_delegate)
+      || normalizeDelegateLabel(integrationDetails?.mysql?.order?.asDelegate)
+      || normalizeDelegateLabel(integrations?.mysql?.order?.as_delegate)
+      || normalizeDelegateLabel(integrations?.mysql?.order?.asDelegate);
+
+    return nested || '';
+  };
 
 		  const renderOrdersList = () => {
 		    const repView = false;
@@ -4459,9 +4489,7 @@ export function Header({
             const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
             const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
             const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
-            const delegateOrderLabel =
-              normalizeDelegateLabel((order as any)?.as_delegate)
-              || normalizeDelegateLabel((order as any)?.asDelegate);
+            const delegateOrderLabel = resolveDelegateOrderLabel(order as any);
             const showDelegateOrderLabel = Boolean(delegateOrderLabel);
             const wooShippingLine =
               (wooResponse?.shipping_lines && wooResponse.shipping_lines[0]) ||
