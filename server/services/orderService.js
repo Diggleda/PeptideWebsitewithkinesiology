@@ -1971,28 +1971,36 @@ const getOrdersForUser = async (userId) => {
             || order?.integrationDetails?.wooCommerce?.peppro_order_id
             || null;
           const localOrder = pepproOrderId ? orderRepository.findById(pepproOrderId) : null;
-          const sqlOrder = !localOrder && pepproOrderId ? await orderSqlRepository.fetchById(pepproOrderId) : null;
+          const sqlOrder = pepproOrderId ? await orderSqlRepository.fetchById(pepproOrderId) : null;
           const sqlOrderByWoo = !localOrder && !sqlOrder && order?.id
             ? await orderSqlRepository.fetchByWooOrderId(order.id)
             : null;
           const sqlOrderByWooNumber = !localOrder && !sqlOrder && !sqlOrderByWoo && order?.number
             ? await orderSqlRepository.fetchByWooOrderNumber(order.number)
             : null;
-          const hydratedLocalOrder = localOrder || sqlOrder;
-          const hydrated = hydratedLocalOrder || sqlOrderByWoo;
-          const hydratedAny = hydrated || sqlOrderByWooNumber;
+          const hydratedCandidates = [localOrder, sqlOrder, sqlOrderByWoo, sqlOrderByWooNumber]
+            .filter((candidate) => candidate && typeof candidate === 'object');
+          const hydratedAny = hydratedCandidates[0] || null;
           if (!hydratedAny) {
             enriched.push(order);
             // eslint-disable-next-line no-continue
             continue;
           }
-          const stripeMeta = hydratedAny.integrationDetails?.stripe || null;
-          const asDelegate =
-            (typeof hydratedAny.asDelegate === 'string' && hydratedAny.asDelegate.trim())
-              ? hydratedAny.asDelegate.trim()
-              : (typeof hydratedAny.as_delegate === 'string' && hydratedAny.as_delegate.trim())
-                ? hydratedAny.as_delegate.trim()
-                : null;
+          const stripeMeta =
+            hydratedCandidates.find((candidate) => candidate?.integrationDetails?.stripe)?.integrationDetails?.stripe
+            || null;
+          const asDelegate = (() => {
+            for (const candidate of hydratedCandidates) {
+              const label =
+                (typeof candidate?.asDelegate === 'string' && candidate.asDelegate.trim())
+                  ? candidate.asDelegate.trim()
+                  : (typeof candidate?.as_delegate === 'string' && candidate.as_delegate.trim())
+                    ? candidate.as_delegate.trim()
+                    : null;
+              if (label) return label;
+            }
+            return null;
+          })();
           enriched.push({
             ...order,
             asDelegate,
