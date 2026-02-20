@@ -958,15 +958,65 @@ const parseShippingEstimateMeta = (metaData = [], order = {}) => {
   return estimate;
 };
 
+const parseDelegateLabelMeta = (metaData = []) => {
+  if (!Array.isArray(metaData) || metaData.length === 0) return null;
+  const normalize = (value) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    return text || null;
+  };
+  const normalizeKey = (key) => String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const labelKeys = new Set([
+    'asdelegate',
+    'as_delegate',
+    'delegateorderlabel',
+    'delegate_order_label',
+    'pepproasdelegate',
+    'peppro_as_delegate',
+  ].map((key) => normalizeKey(key)));
+  const tokenKeys = new Set([
+    'delegateproposaltoken',
+    'delegate_proposal_token',
+    'proposaltoken',
+    'proposal_token',
+    'delegationtoken',
+    'delegation_token',
+    'pepprodelegateproposaltoken',
+    'peppro_delegate_proposal_token',
+  ].map((key) => normalizeKey(key)));
+
+  for (const entry of metaData) {
+    const key = normalizeKey(entry?.key);
+    if (!key || !labelKeys.has(key)) continue;
+    const value = normalize(entry?.value);
+    if (value) return value;
+  }
+  for (const entry of metaData) {
+    const key = normalizeKey(entry?.key);
+    if (!key || !tokenKeys.has(key)) continue;
+    const value = normalize(entry?.value);
+    if (value) return 'Delegate Order';
+  }
+  return null;
+};
+
 const mapWooOrderSummary = (order) => {
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
   const pepproOrderId = pepproMeta?.value ? String(pepproMeta.value) : null;
   const wooNumber = typeof order?.number === 'string' ? order.number : (order?.id ? String(order.id) : null);
   const shippingEstimate = parseShippingEstimateMeta(metaData, order);
+  const asDelegateLabel =
+    (typeof order?.as_delegate === 'string' && order.as_delegate.trim())
+      ? order.as_delegate.trim()
+      : (typeof order?.asDelegate === 'string' && order.asDelegate.trim())
+        ? order.asDelegate.trim()
+        : parseDelegateLabelMeta(metaData);
 
   return {
     id: order?.id ? String(order.id) : crypto.randomUUID(),
+    asDelegate: asDelegateLabel,
+    as_delegate: asDelegateLabel,
     number: wooNumber || pepproOrderId,
     status: order?.status || 'pending',
     currency: order?.currency || 'USD',

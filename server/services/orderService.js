@@ -2073,6 +2073,13 @@ const getOrdersForUser = async (userId) => {
                     : null;
               if (label) return label;
             }
+            const orderLevelLabel =
+              (typeof order?.asDelegate === 'string' && order.asDelegate.trim())
+                ? order.asDelegate.trim()
+                : (typeof order?.as_delegate === 'string' && order.as_delegate.trim())
+                  ? order.as_delegate.trim()
+                  : null;
+            if (orderLevelLabel) return orderLevelLabel;
             return null;
           })();
           enriched.push({
