@@ -1433,6 +1433,16 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
                 "id": identifier,
                 "wooOrderId": local.get("wooOrderId") or None,
                 "wooOrderNumber": local.get("wooOrderNumber") or None,
+                "asDelegate": (
+                    local.get("asDelegate")
+                    if local.get("asDelegate") is not None
+                    else local.get("as_delegate")
+                ),
+                "as_delegate": (
+                    local.get("as_delegate")
+                    if local.get("as_delegate") is not None
+                    else local.get("asDelegate")
+                ),
                 "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
                 "status": local.get("status") or "pending",
                 # For UI display, expose `grandTotal` so the order card "Total" is correct.
@@ -1562,6 +1572,15 @@ def _merge_local_details_into_woo_orders(woo_orders: List[Dict], local_orders: L
 
         if local_order.get("notes") is not None:
             order["notes"] = local_order.get("notes")
+
+        delegate_label = (
+            local_order.get("asDelegate")
+            if local_order.get("asDelegate") is not None
+            else local_order.get("as_delegate")
+        )
+        if delegate_label is not None:
+            order["asDelegate"] = delegate_label
+            order["as_delegate"] = delegate_label
 
         if local_order.get("trackingNumber") is not None:
             order["trackingNumber"] = local_order.get("trackingNumber")

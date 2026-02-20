@@ -181,6 +181,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
             """
             SELECT
                 id,
+                as_delegate,
                 pricing_mode,
                 items,
                 total,
@@ -237,7 +238,15 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "discountCode": payload.get("discountCode") or None,
                 "discountCodeAmount": float(payload.get("discountCodeAmount") or 0),
                 "pricingMode": row.get("pricing_mode") or "wholesale",
-                "asDelegate": row.get("as_delegate") if row.get("as_delegate") is not None else payload.get("asDelegate"),
+                "asDelegate": (
+                    row.get("as_delegate")
+                    if row.get("as_delegate") is not None
+                    else (
+                        payload.get("asDelegate")
+                        if payload.get("asDelegate") is not None
+                        else payload.get("as_delegate")
+                    )
+                ),
                 "shippingTotal": float(row.get("shipping_total") or 0),
                 "handDelivery": bool(
                     row.get("facility_pickup")
