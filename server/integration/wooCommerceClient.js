@@ -527,11 +527,13 @@ const isHandDeliveryEstimate = (shippingEstimate) => {
     .filter(Boolean);
   return candidates.some((value) =>
     value === 'hand delivery'
+    || value === 'hand delivered'
     || value === 'hand_delivery'
     || value === 'local hand delivery'
     || value === 'local_hand_delivery'
     || value === 'local_delivery'
-    || value === 'hand-delivery');
+    || value === 'hand-delivery'
+    || value === 'hand-delivered');
 };
 
 const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }) => {
@@ -548,7 +550,7 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
         ? `peppro_${String(rawMethodId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
         : 'peppro_shipstation');
     const methodTitle = handDelivery
-      ? 'Hand delivery'
+      ? 'Hand delivered'
       : (shippingEstimate.serviceType
         || shippingEstimate.serviceCode
         || shippingEstimate.carrierId

@@ -797,7 +797,7 @@ export function CheckoutModal({
           ? {
               carrierId: 'hand_delivery',
               serviceCode: 'hand_delivery',
-              serviceType: 'Hand delivery',
+              serviceType: 'Hand delivered',
               estimatedDeliveryDays: null,
               deliveryDateGuaranteed: null,
               rate: 0,

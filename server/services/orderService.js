@@ -10,7 +10,12 @@ const shipEngineClient = require('../integration/shipEngineClient');
 const shipStationClient = require('../integration/shipStationClient');
 const paymentService = require('./paymentService');
 const stripeClient = require('../integration/stripeClient');
-const { ensureShippingData, normalizeAmount } = require('./shippingValidation');
+const {
+  ensureShippingData,
+  ensureShippingAddress,
+  createAddressFingerprint,
+  normalizeAmount,
+} = require('./shippingValidation');
 const { logger } = require('../config/logger');
 const orderSqlRepository = require('../repositories/orderSqlRepository');
 const mysqlClient = require('../database/mysqlClient');
@@ -939,6 +944,8 @@ const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
 const FACILITY_PICKUP_LOCATION = 'Santa Ana, CA';
 const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup';
 const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup_santa_ana';
+const HAND_DELIVERY_LABEL = 'Hand Delivered';
+const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
 
 const normalizeBooleanish = (value) => {
   if (value === true || value === false) return value;
@@ -951,6 +958,26 @@ const normalizeBooleanish = (value) => {
       || normalized === 'on';
   }
   return false;
+};
+
+const isHandDeliverySelection = (shippingEstimate) => {
+  if (!shippingEstimate || typeof shippingEstimate !== 'object') return false;
+  const candidates = [
+    shippingEstimate.serviceType,
+    shippingEstimate.serviceCode,
+    shippingEstimate.carrierId,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return candidates.some((value) =>
+    value === 'hand delivery'
+    || value === 'hand delivered'
+    || value === 'hand_delivery'
+    || value === 'local hand delivery'
+    || value === 'local_hand_delivery'
+    || value === 'local_delivery'
+    || value === 'hand-delivery'
+    || value === 'hand-delivered');
 };
 
 const resolveCheckoutShippingData = ({
@@ -977,6 +1004,29 @@ const resolveCheckoutShippingData = ({
         meta: {
           location: FACILITY_PICKUP_LOCATION,
           readyNotice: FACILITY_PICKUP_NOTICE,
+        },
+      },
+      shippingTotal: 0,
+    };
+  }
+
+  if (isHandDeliverySelection(shippingEstimate)) {
+    const normalizedAddress = ensureShippingAddress(shippingAddress);
+    return {
+      facilityPickup: false,
+      shippingAddress: normalizedAddress,
+      shippingEstimate: {
+        carrierId: HAND_DELIVERY_SERVICE_CODE,
+        serviceCode: HAND_DELIVERY_SERVICE_CODE,
+        serviceType: HAND_DELIVERY_LABEL,
+        estimatedDeliveryDays: null,
+        deliveryDateGuaranteed: null,
+        estimatedArrivalDate: null,
+        rate: 0,
+        currency: 'USD',
+        addressFingerprint: createAddressFingerprint(normalizedAddress),
+        meta: {
+          deliveryMethod: HAND_DELIVERY_SERVICE_CODE,
         },
       },
       shippingTotal: 0,
