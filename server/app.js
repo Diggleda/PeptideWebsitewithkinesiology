@@ -122,7 +122,30 @@ const resolveFrontendRoot = () => {
 };
 
 const buildCorsOptions = () => {
-  const allowList = Array.isArray(env.cors?.allowList) ? env.cors.allowList : [];
+  const configuredAllowList = Array.isArray(env.cors?.allowList) ? env.cors.allowList : [];
+  const derivedAllowList = [];
+  const frontendBase = String(env.frontendBaseUrl || '').trim();
+  if (frontendBase) {
+    try {
+      derivedAllowList.push(new URL(frontendBase).origin);
+    } catch {
+      // ignore invalid FRONTEND_BASE_URL values
+    }
+  }
+  // Production safety net: keep core web origins allowed even if env allow-list drifts.
+  const productionFallbackAllowList = env.nodeEnv === 'production'
+    ? [
+      'https://peppro.net',
+      'https://www.peppro.net',
+      'https://port.peppro.net',
+      'https://www.port.peppro.net',
+    ]
+    : [];
+  const allowList = Array.from(new Set([
+    ...configuredAllowList,
+    ...derivedAllowList,
+    ...productionFallbackAllowList,
+  ]));
   const allowAll = allowList.includes('*');
   if (allowAll) {
     return { origin: true, credentials: true };
@@ -228,6 +251,13 @@ const buildCorsOptions = () => {
         callback(null, true);
         return;
       }
+      logger.warn(
+        {
+          origin: origin || null,
+          allowList,
+        },
+        'CORS origin rejected',
+      );
       callback(null, false);
     },
     credentials: true,

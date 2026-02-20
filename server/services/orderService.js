@@ -680,9 +680,20 @@ const buildLocalOrderSummary = (order) => {
     || order.wooOrderId
     || order.integrationDetails?.wooCommerce?.orderId
     || null;
+  const asDelegateLabel = (() => {
+    const direct =
+      (typeof order?.asDelegate === 'string' && order.asDelegate.trim())
+        ? order.asDelegate.trim()
+        : (typeof order?.as_delegate === 'string' && order.as_delegate.trim())
+          ? order.as_delegate.trim()
+          : '';
+    return direct || null;
+  })();
 
   return {
     id: order.id,
+    asDelegate: asDelegateLabel,
+    as_delegate: asDelegateLabel,
     number: wooOrderNumber || order.id,
     status: order.status,
     total: order.total,
@@ -1069,6 +1080,8 @@ const createOrderInternal = async ({
   taxTotal,
   paymentMethod,
   pricingMode,
+  delegateProposalToken,
+  asDelegate,
 }) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
@@ -1119,6 +1132,15 @@ const createOrderInternal = async ({
   }
 
   const now = new Date().toISOString();
+  const normalizedDelegateToken =
+    typeof delegateProposalToken === 'string' && delegateProposalToken.trim()
+      ? delegateProposalToken.trim()
+      : null;
+  const normalizedAsDelegate =
+    typeof asDelegate === 'string' && asDelegate.trim()
+      ? asDelegate.trim()
+      : null;
+  const asDelegateLabel = normalizedAsDelegate || (normalizedDelegateToken ? 'Delegate Order' : null);
   const resolveManualPaymentLabel = (raw) => {
     const normalized = String(raw || '').toLowerCase().trim();
     if (normalized === 'zelle') return 'Zelle';
@@ -1130,6 +1152,8 @@ const createOrderInternal = async ({
   const order = {
     id: orderId || generateOrderId(),
     userId,
+    asDelegate: asDelegateLabel,
+    as_delegate: asDelegateLabel,
     items,
     total: computedTotal,
     pricingMode: effectivePricingMode,
@@ -1320,6 +1344,8 @@ const createOrder = async ({
   taxTotal,
   paymentMethod,
   pricingMode,
+  delegateProposalToken,
+  asDelegate,
 }) => {
   const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
   if (idempotencyKey && !normalizedIdempotencyKey) {
@@ -1345,6 +1371,8 @@ const createOrder = async ({
       taxTotal,
       paymentMethod,
       pricingMode,
+      delegateProposalToken,
+      asDelegate,
     });
   }
 
@@ -1381,6 +1409,8 @@ const createOrder = async ({
     taxTotal,
     paymentMethod,
     pricingMode,
+    delegateProposalToken,
+    asDelegate,
   });
 
   inFlightOrders.set(inFlightKey, promise);

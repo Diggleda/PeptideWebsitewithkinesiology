@@ -423,6 +423,7 @@ interface CarrierTrackingInfo {
 interface AccountOrderSummary {
   id: string;
   asDelegate?: string | null;
+  as_delegate?: string | null;
   number?: string | null;
   trackingNumber?: string | null;
   shippingCarrier?: string | null;
@@ -1099,12 +1100,25 @@ const normalizeStringField = (value: unknown) => {
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
+  const hasDelegateProposalToken = (value: any): boolean => {
+    if (!value || typeof value !== "object") return false;
+    return Boolean(
+      normalizeStringField(value?.delegateProposalToken) ||
+      normalizeStringField(value?.delegate_proposal_token) ||
+      normalizeStringField(value?.delegationToken) ||
+      normalizeStringField(value?.delegation_token) ||
+      normalizeStringField(value?.proposalToken) ||
+      normalizeStringField(value?.proposal_token),
+    );
+  };
+
   const direct =
     normalizeStringField(order?.asDelegate) ||
     normalizeStringField(order?.as_delegate) ||
     normalizeStringField(order?.delegateOrderLabel) ||
     normalizeStringField(order?.delegate_order_label);
   if (direct) return direct;
+  if (hasDelegateProposalToken(order)) return "Delegate Order";
 
   const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
   const wooIntegration = parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
@@ -1119,27 +1133,82 @@ const resolveOrderAsDelegateLabel = (order: any): string | null => {
     normalizeStringField(wooPayload?.asDelegate) ||
     normalizeStringField(wooPayload?.as_delegate);
   if (nestedDirect) return nestedDirect;
+  if (
+    hasDelegateProposalToken(integrations) ||
+    hasDelegateProposalToken(wooIntegration) ||
+    hasDelegateProposalToken(wooResponse) ||
+    hasDelegateProposalToken(wooPayload)
+  ) {
+    return "Delegate Order";
+  }
 
-  const readMeta = (meta: any) => {
+  const readMeta = (meta: any, keys: string[]) => {
     if (!Array.isArray(meta)) return null;
+    const normalizedKeys = new Set(
+      keys.map((key) => String(key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
+    );
     const found = meta.find((entry: any) => {
-      const key = String(entry?.key || "").trim().toLowerCase();
-      return (
-        key === "as_delegate" ||
-        key === "asdelegate" ||
-        key === "delegate_order_label" ||
-        key === "delegateorderlabel" ||
-        key === "peppro_as_delegate"
-      );
+      const key = String(entry?.key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      return normalizedKeys.has(key);
     });
     return normalizeStringField(found?.value);
   };
 
-  return (
-    readMeta(wooResponse?.meta_data) ||
-    readMeta(wooPayload?.meta_data) ||
-    null
-  );
+  const metaLabel =
+    readMeta(wooResponse?.meta_data, [
+      "as_delegate",
+      "asdelegate",
+      "delegate_order_label",
+      "delegateorderlabel",
+      "peppro_as_delegate",
+    ]) ||
+    readMeta(wooPayload?.meta_data, [
+      "as_delegate",
+      "asdelegate",
+      "delegate_order_label",
+      "delegateorderlabel",
+      "peppro_as_delegate",
+    ]);
+  if (metaLabel) return metaLabel;
+
+  const metaHasDelegateToken =
+    readMeta(wooResponse?.meta_data, [
+      "delegate_proposal_token",
+      "delegateproposaltoken",
+      "proposal_token",
+      "proposaltoken",
+      "delegation_token",
+      "delegationtoken",
+      "peppro_delegate_proposal_token",
+      "pepprodelegateproposaltoken",
+    ]) ||
+    readMeta(wooPayload?.meta_data, [
+      "delegate_proposal_token",
+      "delegateproposaltoken",
+      "proposal_token",
+      "proposaltoken",
+      "delegation_token",
+      "delegationtoken",
+      "peppro_delegate_proposal_token",
+      "pepprodelegateproposaltoken",
+    ]);
+  if (metaHasDelegateToken) return "Delegate Order";
+
+  return null;
+};
+
+const resolveOrderAsDelegateFields = (
+  order: any,
+): { asDelegate: string | null; as_delegate: string | null } => {
+  const resolved = resolveOrderAsDelegateLabel(order);
+  const snakeCase =
+    normalizeStringField(order?.as_delegate) ||
+    normalizeStringField(order?.asDelegate) ||
+    resolved;
+  return {
+    asDelegate: resolved,
+    as_delegate: snakeCase,
+  };
 };
 
 const normalizeDelegateOrderLabel = (value: unknown): string | null => {
@@ -1384,7 +1453,15 @@ const mergeWooSummaryIntoLocal = (
 
   localOrder.status = wooOrder.status || localOrder.status;
   if (!normalizeStringField(localOrder.asDelegate)) {
-    localOrder.asDelegate = resolveOrderAsDelegateLabel(wooOrder);
+    localOrder.asDelegate =
+      normalizeStringField((localOrder as any).as_delegate) ||
+      resolveOrderAsDelegateLabel(wooOrder);
+  }
+  if (!normalizeStringField((localOrder as any).as_delegate)) {
+    (localOrder as any).as_delegate =
+      normalizeStringField((wooOrder as any).as_delegate) ||
+      normalizeStringField(wooOrder.asDelegate) ||
+      normalizeStringField(localOrder.asDelegate);
   }
   // Prefer PepPro's computed grand total when present; don't overwrite with Woo totals
   // (Woo totals can omit PepPro-side discounts).
@@ -1492,6 +1569,7 @@ const normalizeAccountOrdersResponse = (
     payload.local
       .filter((order: any) => shouldIncludeStatus(order?.status))
       .forEach((order: any) => {
+        const delegateFields = resolveOrderAsDelegateFields(order);
         const identifier = order?.id
           ? String(order.id)
           : `local-${Math.random().toString(36).slice(2, 10)}`;
@@ -1502,7 +1580,8 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         registerLocalEntry({
           id: identifier,
-          asDelegate: resolveOrderAsDelegateLabel(order),
+          asDelegate: delegateFields.asDelegate,
+          as_delegate: delegateFields.as_delegate,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -1571,6 +1650,7 @@ const normalizeAccountOrdersResponse = (
     (payload as any).orders
       .filter((order: any) => shouldIncludeStatus(order?.status))
       .forEach((order: any) => {
+        const delegateFields = resolveOrderAsDelegateFields(order);
         const identifier = order?.id
           ? String(order.id)
           : `local-${Math.random().toString(36).slice(2, 10)}`;
@@ -1581,7 +1661,8 @@ const normalizeAccountOrdersResponse = (
         const cancellationId = wooOrderId || identifier;
         registerLocalEntry({
           id: identifier,
-          asDelegate: resolveOrderAsDelegateLabel(order),
+          asDelegate: delegateFields.asDelegate,
+          as_delegate: delegateFields.as_delegate,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           status:
@@ -1650,6 +1731,7 @@ const normalizeAccountOrdersResponse = (
     payload.woo
       .filter((order: any) => shouldIncludeStatus(order?.status))
       .forEach((order: any) => {
+        const delegateFields = resolveOrderAsDelegateFields(order);
         const identifier = order?.id
           ? String(order.id)
           : order?.number
@@ -1657,7 +1739,8 @@ const normalizeAccountOrdersResponse = (
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
         const wooEntry: AccountOrderSummary = {
           id: identifier,
-          asDelegate: resolveOrderAsDelegateLabel(order),
+          asDelegate: delegateFields.asDelegate,
+          as_delegate: delegateFields.as_delegate,
           number: order?.number || identifier,
           trackingNumber: resolveTrackingNumber(order),
           wooOrderNumber: normalizeStringField(order?.number),
@@ -9966,6 +10049,52 @@ function MainApp() {
 	  const adminHandDeliveryInFlightRef = useRef(false);
 	  const adminHandDeliveryLastFetchedAtRef = useRef<number>(0);
 
+  const shouldShowLocalHandDeliveryNotice = useMemo(() => {
+    const role = normalizeRole(user?.role);
+    if (!["sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"].includes(role)) {
+      return false;
+    }
+
+    const fromUser = String(
+      ((user as any)?.jurisdiction ??
+        (user as any)?.salesRepJurisdiction ??
+        user?.salesRep?.jurisdiction ??
+        ""),
+    )
+      .trim()
+      .toLowerCase();
+    if (fromUser === "local") {
+      return true;
+    }
+
+    const userId = String(user?.id || "").trim();
+    const userEmail = String(user?.email || "").trim().toLowerCase();
+    const isLocalEntry = (entry: any) =>
+      String(entry?.jurisdiction || "").trim().toLowerCase() === "local";
+
+    const matchesCurrentUser = (entry: any) => {
+      const entryId = String(entry?.id ?? entry?.userId ?? "").trim();
+      const entryEmail = String(entry?.email || "").trim().toLowerCase();
+      return (userId && entryId && userId === entryId) || (userEmail && entryEmail && userEmail === entryEmail);
+    };
+
+    if ((liveClients || []).some((entry: any) => matchesCurrentUser(entry) && isLocalEntry(entry))) {
+      return true;
+    }
+    if ((adminLiveUsers || []).some((entry: any) => matchesCurrentUser(entry) && isLocalEntry(entry))) {
+      return true;
+    }
+    if (
+      (adminHandDeliveryUsers || []).some(
+        (entry) => String(entry?.userId || "").trim() === userId && entry?.isLocal === true,
+      )
+    ) {
+      return true;
+    }
+
+    return false;
+  }, [adminHandDeliveryUsers, adminLiveUsers, liveClients, user]);
+
 	  const normalizeHandDeliveryEntry = useCallback(
 	    (entry: any): HandDeliveryEntry | null => {
 	      const userId = String(entry?.userId ?? entry?.id ?? "").trim();
@@ -15970,10 +16099,11 @@ function MainApp() {
         setProposalShippingAddress(nextShippingAddress);
         setProposalShippingRate(nextShippingRate);
         setCartItems(nextCart);
+        setCheckoutOpen(true);
         toast.info(
           skipped > 0
-            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped). Click the cart to review.`
-            : 'Proposal loaded. Click the cart to review.',
+            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped).`
+            : 'Proposal loaded.',
         );
       })();
     },
@@ -16241,9 +16371,9 @@ function MainApp() {
 			        }
 			      }
 
-		        try {
-		          const created = response?.order as any;
-		          const meta = postCheckoutOrderRef.current;
+	        try {
+	          const created = response?.order as any;
+	          const meta = postCheckoutOrderRef.current;
 	          const wooId = meta?.wooOrderId || null;
 	          const wooNumber = meta?.wooOrderNumber || null;
 	          const createdAt =
@@ -16296,18 +16426,21 @@ function MainApp() {
               image: null,
             };
           });
+          const delegateOrderLabel =
+            resolveOrderAsDelegateLabel(created) ||
+            (delegationProposalReview ? "Delegate Order" : null);
+          const delegateOrderField =
+            normalizeStringField(created?.as_delegate) ||
+            normalizeStringField(created?.asDelegate) ||
+            delegateOrderLabel;
 	          if (!wooId && !wooNumber) {
 	            postCheckoutOptimisticOrderRef.current = null;
 	            throw new Error("checkout_woo_id_missing");
 	          }
 	          const optimisticOrder: AccountOrderSummary = {
 	            id: wooId ? String(wooId) : String(wooNumber),
-              asDelegate:
-                (typeof created?.asDelegate === "string" && created.asDelegate.trim())
-                  ? created.asDelegate.trim()
-                  : (typeof created?.as_delegate === "string" && created.as_delegate.trim())
-                    ? created.as_delegate.trim()
-                    : null,
+              asDelegate: delegateOrderLabel,
+              as_delegate: delegateOrderField,
 	            number: wooNumber ? String(wooNumber) : null,
 	            status: String(created?.status || "on-hold"),
 	            currency: "usd",
@@ -17776,6 +17909,18 @@ function MainApp() {
 		                      : "Your doctors (online, idle, and offline)."}
 		                  </p>
 		                </div>
+
+                        {shouldShowLocalHandDeliveryNotice && (
+                          <div
+                            className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-[10px] leading-[1.55] text-slate-800"
+                            style={{
+                              border: "1.5px solid rgb(95,179,249)",
+                              boxShadow: "inset 0 0 0 1.5px rgb(95,179,249), 0 1px 2px rgba(15,23,42,0.08)",
+                            }}
+                          >
+                            Hand delivery is communicated to your clients during checkout. Ensure to deliver their order when it is ready. Coordinate the shipment of their order if you are unable to hand deliver (we will ship free of charge for local clients).
+                          </div>
+                        )}
 	
 	                {liveClientsError && (
 	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
@@ -18758,8 +18903,8 @@ function MainApp() {
 
 	                {adminDashboardTab === "structure" && (
 	                  <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4">
-	                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-	                      <div>
+	                    <div className="flex items-start gap-3">
+	                      <div className="min-w-0 flex-1 pr-2">
 	                        <h4 className="text-base font-semibold text-slate-900">
 	                          Hand Delivery
 	                        </h4>
@@ -18767,19 +18912,17 @@ function MainApp() {
 	                          Sales reps who have a local jurisdiction to the PepPro facility.
 	                        </p>
 	                      </div>
-	                      <div className="flex-shrink-0 self-end sm:self-auto">
-	                        <Button
-	                          type="button"
-	                          variant="outline"
-	                          size="sm"
-	                          onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
-	                          disabled={adminHandDeliveryLoading}
-	                          className="header-home-button squircle-sm bg-white text-slate-900"
-	                          title="Refresh hand delivery users"
-	                        >
-	                          {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
-	                        </Button>
-	                      </div>
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => void fetchAdminHandDeliveryUsers({ force: true })}
+	                        disabled={adminHandDeliveryLoading}
+	                        className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+	                        title="Refresh hand delivery users"
+	                      >
+	                        {adminHandDeliveryLoading ? "Refreshing…" : "Refresh"}
+	                      </Button>
 	                    </div>
 
 	                    {adminHandDeliveryError && (
@@ -18829,7 +18972,7 @@ function MainApp() {
 	                )}
 
 	                {adminDashboardTab === "here_now" && (
-	                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 space-y-6">
+	                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 space-y-4">
                   <div>
                     <h4 className="text-base font-semibold text-slate-900">
                       Live users
@@ -18838,6 +18981,18 @@ function MainApp() {
                       Users currently online or idle.
                     </p>
                   </div>
+
+                  {shouldShowLocalHandDeliveryNotice && (
+                    <div
+                      className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-[10px] leading-[1.55] text-slate-800"
+                      style={{
+                        border: "1.5px solid rgb(95,179,249)",
+                        boxShadow: "inset 0 0 0 1.5px rgb(95,179,249), 0 1px 2px rgba(15,23,42,0.08)",
+                      }}
+                    >
+                      Hand delivery is communicated to your clients during checkout. Ensure to deliver their order when it is ready. Coordinate the shipment of their order if you are unable to hand deliver (we will ship free of charge for local clients).
+                    </div>
+                  )}
 
                   {adminLiveUsersError && (
                     <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">

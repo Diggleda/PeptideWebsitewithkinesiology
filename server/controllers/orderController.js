@@ -345,6 +345,15 @@ const createOrder = async (req, res, next) => {
       paymentMethod: req.body.paymentMethod,
       pricingMode: req.body.pricingMode,
       handDelivery: req.body.handDelivery === true,
+      delegateProposalToken:
+        req.body.delegateProposalToken
+        || req.body.delegate_proposal_token
+        || req.body.delegationToken
+        || req.body.delegation_token
+        || req.body.proposalToken
+        || req.body.proposal_token
+        || null,
+      asDelegate: req.body.asDelegate || req.body.as_delegate || null,
     });
     res.json(result);
   } catch (error) {

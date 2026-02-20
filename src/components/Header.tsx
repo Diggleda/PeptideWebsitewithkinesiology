@@ -304,6 +304,7 @@ interface AccountShippingEstimate {
 interface AccountOrderSummary {
   id: string;
   asDelegate?: string | null;
+  as_delegate?: string | null;
   number?: string | null;
   trackingNumber?: string | null;
   status?: string | null;
@@ -5995,7 +5996,7 @@ export function Header({
 		          color: 'rgb(95,179,249)',
 		        }}
 		      >
-		        <ClipboardDocumentListIcon className={delegateUserIconClassName} />
+		        <User className={delegateUserIconClassName} aria-hidden="true" />
 		        <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${delegateDoctorLabel}`}</span>
       </div>
       {renderCartButton()}
