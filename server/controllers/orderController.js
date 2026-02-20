@@ -344,7 +344,7 @@ const createOrder = async (req, res, next) => {
       taxTotal: req.body.taxTotal,
       paymentMethod: req.body.paymentMethod,
       pricingMode: req.body.pricingMode,
-      facilityPickup: req.body.facilityPickup === true,
+      handDelivery: req.body.handDelivery === true,
     });
     res.json(result);
   } catch (error) {
@@ -510,7 +510,7 @@ const estimateOrderTotals = async (req, res, next) => {
       shippingAddress: req.body.shippingAddress,
       shippingEstimate: req.body.shippingEstimate,
       shippingTotal: req.body.shippingTotal,
-      facilityPickup: req.body.facilityPickup === true,
+      handDelivery: req.body.handDelivery === true,
     });
     res.json(result);
   } catch (error) {

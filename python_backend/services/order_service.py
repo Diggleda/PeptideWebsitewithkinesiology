@@ -756,7 +756,7 @@ def create_order(
         "taxTotal": float(tax_total_value),
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
-        "facilityPickup": is_facility_pickup,
+        "handDelivery": is_facility_pickup,
         "fulfillmentMethod": "facility_pickup" if is_facility_pickup else "shipping",
         "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
         "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,

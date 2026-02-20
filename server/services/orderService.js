@@ -720,10 +720,10 @@ const buildLocalOrderSummary = (order) => {
     billingAddress: buildAddressSummary(order.billingAddress),
     shippingEstimate: order.shippingEstimate || null,
     shippingTotal: order.shippingTotal ?? null,
-    facilityPickup: order.facilityPickup === true,
-    fulfillmentMethod: order.fulfillmentMethod || (order.facilityPickup === true ? 'facility_pickup' : 'shipping'),
-    pickupLocation: order.pickupLocation || null,
-    pickupReadyNotice: order.pickupReadyNotice || null,
+    handDelivery: false,
+    fulfillmentMethod: isHandDeliverySelection(order.shippingEstimate) ? 'hand_delivery' : 'shipping',
+    pickupLocation: null,
+    pickupReadyNotice: null,
     taxTotal: order.taxTotal ?? null,
     wooOrderId: order.wooOrderId || order.integrationDetails?.wooCommerce?.orderId || null,
     wooOrderNumber: wooOrderNumber,
@@ -940,10 +940,6 @@ const normalizeTaxAmount = (value) => {
 };
 
 const normalizeStateCode = (value) => String(value || '').trim().toLowerCase();
-const FACILITY_PICKUP_LABEL = 'Facility pick-up (Santa Ana, CA)';
-const FACILITY_PICKUP_LOCATION = 'Santa Ana, CA';
-const FACILITY_PICKUP_NOTICE = 'You will be emailed when your order is ready for pickup';
-const FACILITY_PICKUP_SERVICE_CODE = 'facility_pickup_santa_ana';
 const HAND_DELIVERY_LABEL = 'Hand Delivered';
 const HAND_DELIVERY_SERVICE_CODE = 'hand_delivery';
 
@@ -981,39 +977,16 @@ const isHandDeliverySelection = (shippingEstimate) => {
 };
 
 const resolveCheckoutShippingData = ({
-  facilityPickup,
+  handDelivery: _handDelivery,
   shippingAddress,
   shippingEstimate,
   shippingTotal,
 }) => {
-  const isFacilityPickup = normalizeBooleanish(facilityPickup);
-  if (isFacilityPickup) {
-    return {
-      facilityPickup: true,
-      shippingAddress: null,
-      shippingEstimate: {
-        carrierId: 'facility_pickup',
-        serviceCode: FACILITY_PICKUP_SERVICE_CODE,
-        serviceType: FACILITY_PICKUP_LABEL,
-        estimatedDeliveryDays: null,
-        deliveryDateGuaranteed: null,
-        estimatedArrivalDate: null,
-        rate: 0,
-        currency: 'USD',
-        addressFingerprint: 'facility_pickup',
-        meta: {
-          location: FACILITY_PICKUP_LOCATION,
-          readyNotice: FACILITY_PICKUP_NOTICE,
-        },
-      },
-      shippingTotal: 0,
-    };
-  }
 
   if (isHandDeliverySelection(shippingEstimate)) {
     const normalizedAddress = ensureShippingAddress(shippingAddress);
     return {
-      facilityPickup: false,
+      handDelivery: false,
       shippingAddress: normalizedAddress,
       shippingEstimate: {
         carrierId: HAND_DELIVERY_SERVICE_CODE,
@@ -1034,7 +1007,7 @@ const resolveCheckoutShippingData = ({
   }
 
   return {
-    facilityPickup: false,
+    handDelivery: false,
     ...ensureShippingData({
       shippingAddress,
       shippingEstimate,
@@ -1091,7 +1064,7 @@ const createOrderInternal = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
-  facilityPickup,
+  handDelivery,
   physicianCertification,
   taxTotal,
   paymentMethod,
@@ -1121,7 +1094,7 @@ const createOrderInternal = async ({
 
   const taxExempt = await isUserTaxExemptForCheckout(user);
   const shippingData = resolveCheckoutShippingData({
-    facilityPickup,
+    handDelivery,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
@@ -1129,7 +1102,7 @@ const createOrderInternal = async ({
   const itemsSubtotal = calculateItemsSubtotal(items);
   const normalizedTaxTotal = taxExempt
     ? 0
-    : (!shippingData.facilityPickup && isCaliforniaDestination(shippingData.shippingAddress))
+    : (!shippingData.handDelivery && isCaliforniaDestination(shippingData.shippingAddress))
       ? calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingData.shippingTotal })
       : 0;
   const computedTotal = roundCurrency(itemsSubtotal + shippingData.shippingTotal + normalizedTaxTotal);
@@ -1166,10 +1139,10 @@ const createOrderInternal = async ({
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress),
-    facilityPickup: shippingData.facilityPickup,
-    fulfillmentMethod: shippingData.facilityPickup ? 'facility_pickup' : 'shipping',
-    pickupLocation: shippingData.facilityPickup ? FACILITY_PICKUP_LOCATION : null,
-    pickupReadyNotice: shippingData.facilityPickup ? FACILITY_PICKUP_NOTICE : null,
+    handDelivery: false,
+    fulfillmentMethod: isHandDeliverySelection(shippingData.shippingEstimate) ? 'hand_delivery' : 'shipping',
+    pickupLocation: null,
+    pickupReadyNotice: null,
     referralCode: referralCode || null,
     status: 'pending',
     paymentMethod: manualPaymentLabel,
@@ -1342,7 +1315,7 @@ const createOrder = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
-  facilityPickup,
+  handDelivery,
   physicianCertification,
   taxTotal,
   paymentMethod,
@@ -1367,7 +1340,7 @@ const createOrder = async ({
       shippingAddress,
       shippingEstimate,
       shippingTotal,
-      facilityPickup,
+      handDelivery,
       physicianCertification,
       taxTotal,
       paymentMethod,
@@ -1403,7 +1376,7 @@ const createOrder = async ({
     shippingAddress,
     shippingEstimate,
     shippingTotal,
-    facilityPickup,
+    handDelivery,
     physicianCertification,
     taxTotal,
     paymentMethod,
@@ -1426,7 +1399,7 @@ const estimateOrderTotals = async ({
   shippingAddress,
   shippingEstimate,
   shippingTotal,
-  facilityPickup,
+  handDelivery,
 }) => {
   if (!validateItems(items)) {
     const error = new Error('Order requires at least one item');
@@ -1441,7 +1414,7 @@ const estimateOrderTotals = async ({
   }
 
   const shippingData = resolveCheckoutShippingData({
-    facilityPickup,
+    handDelivery,
     shippingAddress,
     shippingEstimate,
     shippingTotal,
@@ -1490,7 +1463,7 @@ const estimateOrderTotals = async ({
     city: shippingAddressForTax.city || '',
   };
 
-  if (!shippingData.facilityPickup && isCaliforniaDestination(provisionalOrder.shippingAddress)) {
+  if (isCaliforniaDestination(provisionalOrder.shippingAddress)) {
     taxTotal = calculateCaliforniaTax({ itemsSubtotal, shippingTotal: shippingTotalFromPreview });
     taxSource = 'ca_flat_7_7';
   }

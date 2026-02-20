@@ -93,7 +93,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     shippingTotal: toNumber(order.shippingTotal ?? order.shipping_total, 0),
     shippingCarrier: order.shippingEstimate?.carrierId || order.shippingEstimate?.serviceCode || null,
     shippingService: order.shippingEstimate?.serviceType || order.shippingEstimate?.serviceCode || null,
-    facilityPickup: order.facilityPickup === true ? 1 : 0,
+    handDelivery: order.handDelivery === true ? 1 : 0,
     fulfillmentMethod: sanitizeString(order.fulfillmentMethod || null),
     pickupLocation: sanitizeString(order.pickupLocation || null),
     pickupReadyNotice: sanitizeString(order.pickupReadyNotice || null),
@@ -147,7 +147,7 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :shippingTotal,
           :shippingCarrier,
           :shippingService,
-          :facilityPickup,
+          :handDelivery,
           :fulfillmentMethod,
           :pickupLocation,
           :pickupReadyNotice,
@@ -279,14 +279,14 @@ const mapRowToOrder = (row, options = {}) => {
     physicianCertificationAccepted: typeof payloadOrder.physicianCertificationAccepted === 'boolean'
       ? payloadOrder.physicianCertificationAccepted
       : Boolean(row.physician_certified),
-    facilityPickup: typeof payloadOrder.facilityPickup === 'boolean'
-      ? payloadOrder.facilityPickup
+    handDelivery: typeof payloadOrder.handDelivery === 'boolean'
+      ? payloadOrder.handDelivery
       : Boolean(row.facility_pickup),
     fulfillmentMethod: sanitizeString(payloadOrder.fulfillmentMethod)
       || sanitizeString(row.fulfillment_method)
       || (Boolean(
-        typeof payloadOrder.facilityPickup === 'boolean'
-          ? payloadOrder.facilityPickup
+        typeof payloadOrder.handDelivery === 'boolean'
+          ? payloadOrder.handDelivery
           : row.facility_pickup,
       ) ? 'facility_pickup' : 'shipping'),
     pickupLocation: sanitizeString(payloadOrder.pickupLocation)

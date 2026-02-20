@@ -87,14 +87,51 @@ _ORDERS_BY_EMAIL_MAX_STALE_MS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_MAX_STAL
 _ORDERS_BY_EMAIL_MAX_STALE_MS = _ORDERS_BY_EMAIL_MAX_STALE_MS if _ORDERS_BY_EMAIL_MAX_STALE_MS > 0 else 15 * 60 * 1000
 _ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS = int(os.environ.get("WOO_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS", "60000").strip() or 60000)
 
-FACILITY_PICKUP_LOCATION = "640 S Grand Ave, Santa Ana, CA 92705, Unit #107"
-FACILITY_PICKUP_LABEL = "Facility pick-up (Santa Ana, CA)"
-FACILITY_PICKUP_NOTICE = "You will receive an email when your order is ready for pickup."
+HAND_DELIVERY_LABEL = "Hand Delivered"
+HAND_DELIVERY_CODE = "hand_delivery"
 _ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS = max(5_000, min(_ORDERS_BY_EMAIL_CACHED_WARN_COOLDOWN_MS, 10 * 60 * 1000))
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _is_hand_delivery_shipping_estimate(estimate: object) -> bool:
+    if not isinstance(estimate, dict):
+        return False
+    candidates = [
+        estimate.get("serviceType"),
+        estimate.get("serviceCode"),
+        estimate.get("carrierId"),
+    ]
+    normalized = {str(value or "").strip().lower() for value in candidates if str(value or "").strip()}
+    return bool(
+        {
+            "hand delivery",
+            "hand delivered",
+            "hand_delivery",
+            "hand-delivery",
+            "hand-delivered",
+            "local hand delivery",
+            "local_hand_delivery",
+            "local_delivery",
+        }
+        & normalized
+    )
+
+
+def _format_shipping_address_line(address: object) -> str:
+    if not isinstance(address, dict):
+        return ""
+    parts = [
+        address.get("addressLine1") or address.get("address_1"),
+        address.get("addressLine2") or address.get("address_2"),
+        address.get("city"),
+        address.get("state"),
+        address.get("postalCode") or address.get("postcode"),
+        address.get("country"),
+    ]
+    return ", ".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
 def _should_trip_proxy_breaker(status: Optional[int]) -> bool:
@@ -962,10 +999,10 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
             {"name": "Estimated tax", "total": f"{tax_total:.2f}", "tax_status": "none"}
         )
 
-    is_facility_pickup = bool(order.get("facilityPickup") is True or order.get("facility_pickup") is True)
-    shipping_total = 0.0 if is_facility_pickup else (float(order.get("shippingTotal") or 0) or 0.0)
+    shipping_total = float(order.get("shippingTotal") or 0) or 0.0
     shipping_lines = []
     shipping_estimate = order.get("shippingEstimate") or {}
+    is_hand_delivery = _is_hand_delivery_shipping_estimate(shipping_estimate)
     sales_rep_id = (
         order.get("doctorSalesRepId")
         or order.get("salesRepId")
@@ -975,16 +1012,8 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
     sales_rep_name = order.get("doctorSalesRepName") or order.get("salesRepName")
     sales_rep_email = order.get("doctorSalesRepEmail") or order.get("salesRepEmail")
     sales_rep_code = order.get("doctorSalesRepCode") or order.get("salesRepCode")
-    method_code = (
-        "facility_pickup_santa_ana"
-        if is_facility_pickup
-        else (shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate")
-    )
-    method_title = (
-        FACILITY_PICKUP_LABEL
-        if is_facility_pickup
-        else (shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping")
-    )
+    method_code = HAND_DELIVERY_CODE if is_hand_delivery else (shipping_estimate.get("serviceCode") or shipping_estimate.get("serviceType") or "flat_rate")
+    method_title = HAND_DELIVERY_LABEL if is_hand_delivery else (shipping_estimate.get("serviceType") or shipping_estimate.get("serviceCode") or "Shipping")
     shipping_lines.append(
         {
             "method_id": method_code,
@@ -1040,13 +1069,9 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         {"key": "peppro_shipping_total", "value": shipping_total},
         {"key": "peppro_shipping_service", "value": method_title},
         {"key": "peppro_shipping_carrier", "value": shipping_estimate.get("carrierId") or method_code},
-        {"key": "peppro_facility_pickup", "value": bool(is_facility_pickup)},
-        {"key": "peppro_fulfillment_method", "value": "facility_pickup" if is_facility_pickup else "shipping"},
+        {"key": "peppro_fulfillment_method", "value": "hand_delivery" if is_hand_delivery else "shipping"},
         {"key": "peppro_physician_certified", "value": order.get("physicianCertificationAccepted")},
     ]
-    if is_facility_pickup:
-        meta_data.append({"key": "peppro_pickup_location", "value": order.get("pickupLocation") or FACILITY_PICKUP_LOCATION})
-        meta_data.append({"key": "peppro_pickup_ready_notice", "value": order.get("pickupReadyNotice") or FACILITY_PICKUP_NOTICE})
     if order.get("discountCode"):
         meta_data.append({"key": "peppro_discount_code", "value": order.get("discountCode")})
     if order.get("discountCodeAmount"):
@@ -1059,6 +1084,11 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         meta_data.append({"key": "peppro_sales_rep_email", "value": sales_rep_email})
     if sales_rep_code:
         meta_data.append({"key": "peppro_sales_rep_code", "value": sales_rep_code})
+    if is_hand_delivery:
+        meta_data.append({"key": "peppro_delivery_method", "value": HAND_DELIVERY_CODE})
+        hand_delivery_address = _format_shipping_address_line(address)
+        if hand_delivery_address:
+            meta_data.append({"key": "peppro_hand_delivery_address", "value": hand_delivery_address})
 
     payment_method = str(order.get("paymentMethod") or "").strip().lower()
     if payment_method in ("bacs", "bank", "bank_transfer", "direct_bank_transfer"):
@@ -2002,10 +2032,7 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
             return fallback
 
     meta_data = order.get("meta_data") or []
-    facility_pickup = _is_truthy(_meta_value(meta_data, "peppro_facility_pickup"))
-    fulfillment_method = _meta_value(meta_data, "peppro_fulfillment_method") or ("facility_pickup" if facility_pickup else "shipping")
-    pickup_location = _meta_value(meta_data, "peppro_pickup_location")
-    pickup_ready_notice = _meta_value(meta_data, "peppro_pickup_ready_notice")
+    fulfillment_method = _meta_value(meta_data, "peppro_fulfillment_method") or "shipping"
     peppro_order_id_raw = _meta_value(meta_data, "peppro_order_id")
     peppro_order_id = str(peppro_order_id_raw).strip() if peppro_order_id_raw is not None else None
     shipping_estimate = _map_shipping_estimate(order, meta_data)
@@ -2068,10 +2095,10 @@ def _map_woo_order_summary(order: Dict[str, Any]) -> Dict[str, Any]:
         "paymentMethod": payment_label,
         "paymentDetails": payment_label,
         "shippingTotal": shipping_total,
-        "facilityPickup": bool(facility_pickup),
+        "handDelivery": False,
         "fulfillmentMethod": fulfillment_method,
-        "pickupLocation": pickup_location or None,
-        "pickupReadyNotice": pickup_ready_notice or None,
+        "pickupLocation": None,
+        "pickupReadyNotice": None,
         "createdAt": order.get("date_created") or order.get("date_created_gmt"),
         "updatedAt": order.get("date_modified") or order.get("date_modified_gmt"),
         "billingEmail": (order.get("billing") or {}).get("email"),

@@ -134,7 +134,7 @@ def create_order():
     tax_total = payload.get("taxTotal")
     shipping_total = payload.get("shippingTotal")
     shipping_address = payload.get("shippingAddress")
-    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
+    facility_pickup = bool(payload.get("handDelivery") is True or payload.get("facility_pickup") is True)
     # Support both keys from frontend/backends
     shipping_rate = payload.get("shippingRate") or payload.get("shippingEstimate")
     delegate_proposal_token = (
@@ -508,7 +508,7 @@ def estimate_order_totals():
     shipping_address = payload.get("shippingAddress") or {}
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
-    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
+    facility_pickup = bool(payload.get("handDelivery") is True or payload.get("facility_pickup") is True)
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     discount_code = payload.get("discountCode") or payload.get("discount_code") or None
     user_id = g.current_user.get("id")
@@ -533,7 +533,7 @@ def delegate_estimate_order_totals():
     shipping_address = payload.get("shippingAddress") or {}
     shipping_estimate = payload.get("shippingEstimate") or {}
     shipping_total = payload.get("shippingTotal") or 0
-    facility_pickup = bool(payload.get("facilityPickup") is True or payload.get("facility_pickup") is True)
+    facility_pickup = bool(payload.get("handDelivery") is True or payload.get("facility_pickup") is True)
     payment_method = payload.get("paymentMethod") or payload.get("payment_method") or None
     delegate_token = payload.get("delegateToken") or payload.get("delegate_token") or payload.get("token") or None
     discount_code = payload.get("discountCode") or payload.get("discount_code") or None

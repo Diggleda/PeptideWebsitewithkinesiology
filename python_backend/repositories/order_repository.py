@@ -198,10 +198,10 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                 "pricingMode": row.get("pricing_mode") or "wholesale",
                 "asDelegate": row.get("as_delegate") if row.get("as_delegate") is not None else payload.get("asDelegate"),
                 "shippingTotal": float(row.get("shipping_total") or 0),
-                "facilityPickup": bool(
+                "handDelivery": bool(
                     row.get("facility_pickup")
                     if row.get("facility_pickup") is not None
-                    else payload.get("facilityPickup")
+                    else payload.get("handDelivery")
                 ),
                 "fulfillmentMethod": row.get("fulfillment_method")
                 or payload.get("fulfillmentMethod")
@@ -210,7 +210,7 @@ def list_user_overlay_fields(user_id: str) -> List[Dict]:
                     if bool(
                         row.get("facility_pickup")
                         if row.get("facility_pickup") is not None
-                        else payload.get("facilityPickup")
+                        else payload.get("handDelivery")
                     )
                     else "shipping"
                 ),
@@ -961,7 +961,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingTotal": float(row.get("shipping_total") or 0),
         "shippingEstimate": parse_json(row.get("shipping_rate"), parse_json(row.get("integrations"), {}).get("shippingRate", {})),
         "shippingAddress": parse_json(row.get("shipping_address"), None),
-        "facilityPickup": bool(row.get("facility_pickup")) if row.get("facility_pickup") is not None else False,
+        "handDelivery": bool(row.get("facility_pickup")) if row.get("facility_pickup") is not None else False,
         "fulfillmentMethod": row.get("fulfillment_method"),
         "pickupLocation": row.get("pickup_location") or None,
         "pickupReadyNotice": row.get("pickup_ready_notice") or None,
@@ -983,8 +983,8 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "updatedAt": fmt_datetime(row.get("updated_at")),
     }
     if isinstance(payload, dict) and payload:
-        if row.get("facility_pickup") is None and payload.get("facilityPickup") is not None:
-            order["facilityPickup"] = bool(payload.get("facilityPickup"))
+        if row.get("facility_pickup") is None and payload.get("handDelivery") is not None:
+            order["handDelivery"] = bool(payload.get("handDelivery"))
         if not order.get("fulfillmentMethod") and payload.get("fulfillmentMethod"):
             order["fulfillmentMethod"] = payload.get("fulfillmentMethod")
         if not order.get("pickupLocation") and payload.get("pickupLocation"):
@@ -1029,7 +1029,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
             if key not in order:
                 order[key] = value
     if not order.get("fulfillmentMethod"):
-        order["fulfillmentMethod"] = "facility_pickup" if bool(order.get("facilityPickup")) else "shipping"
+        order["fulfillmentMethod"] = "facility_pickup" if bool(order.get("handDelivery")) else "shipping"
     return order
 
 
@@ -1119,7 +1119,7 @@ def _to_db_params(order: Dict) -> Dict:
     grand_total = _num(order.get("grandTotal"), items_subtotal - discount_total + shipping_total + tax_total)
     grand_total = max(0.0, grand_total)
     tracking_number = _resolve_tracking_number(order)
-    facility_pickup = bool(order.get("facilityPickup") is True or order.get("facility_pickup") is True)
+    facility_pickup = bool(order.get("handDelivery") is True or order.get("facility_pickup") is True)
     fulfillment_method = (
         "facility_pickup"
         if facility_pickup
