@@ -3019,6 +3019,11 @@ body {
   border-color: rgb(95, 179, 249) !important;
 }
 
+.patient-link-item--highlight {
+  border-color: rgb(95, 179, 249) !important;
+  box-shadow: 0 0 0 2px rgba(95, 179, 249, 0.28) !important;
+}
+
 .glass-strong {
   -webkit-backdrop-filter: blur(48px) saturate(1.8);
   backdrop-filter: blur(48px) saturate(1.8);
@@ -6057,40 +6062,73 @@ html {
 
 .account-indicator-badge {
   position: absolute;
-  top: -0.375rem;
-  left: -0.375rem;
-  margin-left: 0 !important;
-  display: inline-flex;
-  height: 1.25rem !important;
-  width: 1.25rem !important;
+  top: -0.5rem;
+  right: -0.5rem;
+  left: auto;
   min-width: 1.25rem !important;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px !important;
-  border: 1px solid rgb(95,179,249) !important;
-  background: #ffffff !important;
-  padding: 0 !important;
   color: rgb(95,179,249) !important;
-  font-size: 0.46875rem !important;
+  font-size: 0.75rem !important;
   font-weight: 600;
   line-height: 1;
-  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.15);
   pointer-events: none;
   z-index: 8;
+}
+
+.header-count-indicator {
+  background: #ffffff !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: rgb(95, 179, 249) !important;
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.15) !important;
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+.header-cart-button:hover .header-count-indicator,
+.header-cart-button:focus-visible .header-count-indicator,
+.header-cart-button[data-state="open"] .header-count-indicator,
+.header-cart-button[aria-expanded="true"] .header-count-indicator {
+  background: #ffffff !important;
+  color: rgb(95, 179, 249) !important;
+  opacity: 1 !important;
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.15) !important;
 }
 
 .sales-account-indicator-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgba(95,179,249,0.55);
-  background: rgba(95,179,249,0.12);
-  padding: 0.125rem 0.5rem;
-  font-size: 0.6875rem;
+  min-height: 2.25rem;
+  height: 2.25rem;
+  appearance: none;
+  cursor: pointer;
+  box-shadow: none;
+  border: 2px solid rgb(95,179,249) !important;
+  background: transparent;
+  padding: 0 1.5rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.2;
-  color: rgb(38,101,178);
+  line-height: 1;
+  color: rgb(95,179,249) !important;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.sales-account-indicator-badge:hover,
+.sales-account-indicator-badge:focus-visible {
+  background-color: rgb(95, 179, 249) !important;
+  border-color: rgb(95, 179, 249) !important;
+  color: #ffffff !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.sales-account-indicator-badge:focus-visible {
+  outline: 2px solid rgba(95, 179, 249, 0.3);
+  outline-offset: 2px;
+}
+
+.order-status-row .sales-account-indicator-badge {
+  margin-top: -2px;
 }
 
 .app-header-blur {
@@ -6532,8 +6570,28 @@ body.account-modal-open .info-focus-overlay {
                 inset 0 1px 2px rgba(255, 255, 255, 0.5),
                 inset 0 -1px 2px rgba(0, 0, 0, 0.04);
     transform: translateY(-1px);
-    color: #ffffff !important;
-  }
+  color: #ffffff !important;
+}
+
+.header-cart-button {
+  border-width: 2px !important;
+  border-color: rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+  color: rgb(95, 179, 249) !important;
+  box-shadow: none !important;
+}
+
+.header-cart-button:hover,
+.header-cart-button:focus-visible,
+.header-cart-button[data-state="open"],
+.header-cart-button[aria-expanded="true"] {
+  background-color: rgb(95, 179, 249) !important;
+  border-color: rgb(95, 179, 249) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+}
 
   .legal-modal-close-btn:hover,
   .dialog-close-btn:hover {

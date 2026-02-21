@@ -76,6 +76,7 @@ export interface DoctorCreditSummary {
   availableCredits: number;
   netCredits?: number;
   firstOrderBonuses: number;
+  referralCreditAmount?: number;
   ledger: CreditLedgerEntry[];
 }
 
@@ -83,4 +84,5 @@ export interface SalesRepDashboard {
   referrals: ReferralRecord[];
   codes: ReferralCodeRecord[];
   statuses?: string[];
+  referralCreditAmount?: number;
 }

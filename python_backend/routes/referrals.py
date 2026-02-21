@@ -238,6 +238,7 @@ def admin_dashboard():
             "users": users,
             "salesReps": sales_reps,
             "statuses": referral_service.get_referral_status_choices(),
+            "referralCreditAmount": referral_service.get_referral_credit_amount(),
         }
 
     return handle_action(action)

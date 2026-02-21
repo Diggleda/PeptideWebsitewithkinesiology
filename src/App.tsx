@@ -1214,7 +1214,28 @@ const resolveOrderAsDelegateFields = (
 const normalizeDelegateOrderLabel = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (!trimmed) return null;
+
+  const normalized = trimmed.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const isGenericLabel =
+    normalized === "label" ||
+    normalized === "delegate" ||
+    normalized === "delegate order";
+  if (isGenericLabel) {
+    return "Delegate order";
+  }
+
+  const delegatePrefix = trimmed.match(/^delegate\s*:\s*(.+)$/i);
+  if (delegatePrefix && delegatePrefix[1]?.trim()) {
+    return `Delegate: ${delegatePrefix[1].trim()}`;
+  }
+
+  const delegateOf = trimmed.match(/^delegate\s+of\s+(.+)$/i);
+  if (delegateOf && delegateOf[1]?.trim()) {
+    return `Delegate: ${delegateOf[1].trim()}`;
+  }
+
+  return `Delegate: ${trimmed}`;
 };
 
 const sanitizeOrderAddress = (address: any): AccountOrderAddress | null => {
@@ -5516,6 +5537,17 @@ function MainApp() {
   const [doctorReferrals, setDoctorReferrals] = useState<ReferralRecord[]>([]);
   const [salesRepDashboard, setSalesRepDashboard] =
     useState<SalesRepDashboard | null>(null);
+  const referralCreditAmount = useMemo(() => {
+    const doctorConfigured = Number(doctorSummary?.referralCreditAmount);
+    if (Number.isFinite(doctorConfigured) && doctorConfigured > 0) {
+      return doctorConfigured;
+    }
+    const salesConfigured = Number(salesRepDashboard?.referralCreditAmount);
+    if (Number.isFinite(salesConfigured) && salesConfigured > 0) {
+      return salesConfigured;
+    }
+    return 250;
+  }, [doctorSummary?.referralCreditAmount, salesRepDashboard?.referralCreditAmount]);
 
   const normalizeEmailIdentity = useCallback((value: unknown): string | null => {
     if (value === null || value === undefined) return null;
@@ -13406,6 +13438,9 @@ function MainApp() {
                 ? Number(credits.netCredits)
                 : undefined,
             firstOrderBonuses: Number(credits.firstOrderBonuses ?? 0),
+            referralCreditAmount: Number(
+              credits.referralCreditAmount ?? response?.referralCreditAmount ?? 250,
+            ),
             ledger: Array.isArray(credits.ledger) ? credits.ledger : [],
           };
 
@@ -13908,11 +13943,11 @@ function MainApp() {
         setCreditingReferralId(referral.id);
         await referralAPI.addManualCredit({
           doctorId,
-          amount: 50,
+          amount: referralCreditAmount,
           reason: `Manual credit for referral ${referral.id}`,
           referralId: referral.id,
         });
-        toast.success(`Credited ${doctorName} $50`);
+        toast.success(`Credited ${doctorName} ${formatCurrency(referralCreditAmount)}`);
         await tracedRefreshReferralData("manual-credit", {
           showLoading: true,
         });
@@ -13927,7 +13962,7 @@ function MainApp() {
         setCreditingReferralId(null);
       }
     },
-    [isContactFormEntry, tracedRefreshReferralData],
+    [formatCurrency, isContactFormEntry, referralCreditAmount, tracedRefreshReferralData],
   );
 
   const formatDate = useCallback((value?: string | null) => {
@@ -16100,11 +16135,6 @@ function MainApp() {
         setProposalShippingRate(nextShippingRate);
         setCartItems(nextCart);
         setCheckoutOpen(true);
-        toast.info(
-          skipped > 0
-            ? `Proposal loaded (${skipped} item${skipped === 1 ? '' : 's'} skipped).`
-            : 'Proposal loaded.',
-        );
       })();
     },
     [buildDelegationCartSignature, catalogProducts, ensureCatalogProductHasVariants],
@@ -17014,13 +17044,13 @@ function MainApp() {
               </div>
               <div className="pt-1 flex w-full flex-col items-start justify-end gap-3 text-left sm:flex-row sm:flex-nowrap sm:items-center sm:justify-end sm:text-right">
                 <p className="text-sm text-slate-600 max-w-[28ch] sm:max-w-[26ch]">
-                  Your representative will credit you $50 each time
+                  Your representative will credit you {formatCurrency(referralCreditAmount)} each time
                   your new referee has completed their first checkout.
                 </p>
                 <Button
                   type="submit"
                   disabled={referralSubmitting}
-                  className="glass-brand squircle-sm transition-all duration-300 hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                  className="header-cart-button squircle-sm btn-hover-lighter"
                 >
                   {referralSubmitting ? "Submitting…" : "Submit Referral"}
                 </Button>
@@ -19416,7 +19446,7 @@ function MainApp() {
                     
                 </div>
                 )}
-		                {adminDashboardTab === "here_now" && !certificateUploadsVisible && (
+		                {adminDashboardTab === "maintenance" && !certificateUploadsVisible && (
 		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		                      <div>
@@ -19445,7 +19475,7 @@ function MainApp() {
 		                  </div>
 		                )}
 
-		                {adminDashboardTab === "here_now" && certificateUploadsVisible && (
+		                {adminDashboardTab === "maintenance" && certificateUploadsVisible && (
 		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		                      <div>
@@ -21028,11 +21058,11 @@ function MainApp() {
                             kind === "referral" && record.creditIssuedAt
                               ? record.creditIssuedAt
                               : null;
-                          const referralCreditAmount =
+                          const referralCreditAmountForLead =
                             kind === "referral" &&
                             record.creditIssuedAmount != null
                               ? record.creditIssuedAmount
-                              : 50;
+                              : referralCreditAmount;
                           const isManualLead =
                             kind === "referral" && isManualEntry(record);
                           const sourceClass =
@@ -21539,7 +21569,7 @@ function MainApp() {
 	                                    >
 	                                      {isCrediting
 	                                        ? "Crediting…"
-	                                        : `Credit ${referralDisplayName} $50`}
+	                                        : `Credit ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)}`}
 	                                    </Button>
 	                                  )}
 			                                {kind === "referral" &&
@@ -21678,7 +21708,7 @@ function MainApp() {
 		                                    {kind === "referral" &&
 		                                      referralCreditTimestamp && (
 		                                        <div className="text-xs font-semibold text-emerald-600 text-right break-words">
-		                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
+		                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)} at ${formatDateTime(referralCreditTimestamp)}`}
 		                                        </div>
 		                                      )}
 		                                    <div className="lead-updated text-right">
@@ -21753,10 +21783,10 @@ function MainApp() {
                             referral.referrerDoctorName || "User";
                           const referralCreditTimestamp =
                             referral.creditIssuedAt || null;
-	                          const referralCreditAmount =
+	                          const referralCreditAmountForLead =
 	                            referral.creditIssuedAmount != null
 	                              ? referral.creditIssuedAmount
-	                              : 50;
+	                              : referralCreditAmount;
 	                          const referralEligibleForCredit = Boolean(
 	                            referral.referredContactEligibleForCredit &&
 	                              !isContactFormEntry(referral) &&
@@ -21958,7 +21988,7 @@ function MainApp() {
                                           >
                                             {isCrediting
                                               ? "Crediting…"
-                                              : `Credit ${referralDisplayName} $50`}
+                                              : `Credit ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)}`}
                                           </Button>
                                         )}
 	                                      {normalizedStatus === "converted" &&
@@ -21971,7 +22001,7 @@ function MainApp() {
 	                                        )}
                                       {referralCreditTimestamp && (
                                         <div className="text-xs font-semibold text-emerald-600 text-right break-words">
-                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmount)} at ${formatDateTime(referralCreditTimestamp)}`}
+                                          {`Credited ${referralDisplayName} ${formatCurrency(referralCreditAmountForLead)} at ${formatDateTime(referralCreditTimestamp)}`}
                                         </div>
                                       )}
                                       <div className="text-[11px] text-slate-500 text-right">

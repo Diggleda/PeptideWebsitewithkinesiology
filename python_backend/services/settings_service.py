@@ -29,6 +29,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "taxesByStateCsvDownloadedAt": None,
     # ISO timestamp (admin report)
     "productsCommissionCsvDownloadedAt": None,
+    # Default credit amount awarded for referral first-order bonuses.
+    "referralCreditAmount": 250,
 }
 
 _STRIPE_SECRET_PREFIXES = {
@@ -103,6 +105,19 @@ def _normalize_iso_timestamp(value: Any) -> Optional[str]:
         return None
 
 
+def _normalize_referral_credit_amount(value: Any) -> float:
+    default_amount = 250.0
+    if value is None:
+        return default_amount
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default_amount
+    if parsed <= 0:
+        return default_amount
+    return round(parsed, 2)
+
+
 def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
@@ -122,6 +137,9 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     )
     merged["productsCommissionCsvDownloadedAt"] = _normalize_iso_timestamp(
         merged.get("productsCommissionCsvDownloadedAt")
+    )
+    merged["referralCreditAmount"] = _normalize_referral_credit_amount(
+        merged.get("referralCreditAmount")
     )
     return merged
 
@@ -150,12 +168,16 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
             f"SELECT `key`, value_json FROM settings WHERE `key` IN ({placeholders})",
             params,
         )
-        if not rows or not isinstance(rows, list):
+        if rows is None:
+            return None
+        if not isinstance(rows, list):
             return None
         merged = dict(DEFAULT_SETTINGS)
+        found_keys = set()
         for row in rows:
             key = (row or {}).get("key")
             if key in DEFAULT_SETTINGS and "value_json" in row:
+                found_keys.add(key)
                 raw = row.get("value_json")
                 if isinstance(raw, (bytes, bytearray)):
                     try:
@@ -169,6 +191,23 @@ def _load_from_sql() -> Optional[Dict[str, Any]]:
                         merged[key] = raw
                 else:
                     merged[key] = raw
+        missing_defaults = [key for key in DEFAULT_SETTINGS.keys() if key not in found_keys]
+        if missing_defaults:
+            normalized_defaults = normalize_settings(DEFAULT_SETTINGS)
+            for key in missing_defaults:
+                try:
+                    mysql_client.execute(
+                        """
+                        INSERT INTO settings (`key`, value_json, updated_at)
+                        VALUES (%(key)s, %(value)s, NOW())
+                        ON DUPLICATE KEY UPDATE
+                          updated_at = IF(value_json <=> VALUES(value_json), updated_at, NOW()),
+                          value_json = VALUES(value_json)
+                        """,
+                        {"key": key, "value": json.dumps(normalized_defaults.get(key))},
+                    )
+                except Exception:
+                    logger.debug("settings SQL default sync failed", exc_info=True, extra={"key": key})
         return normalize_settings(merged)
     except Exception:
         logger.warning("settings SQL read failed", exc_info=True)

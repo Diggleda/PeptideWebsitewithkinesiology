@@ -2208,6 +2208,21 @@ def handle_order_referral_effects(purchaser_id: str, referral_code: Optional[str
     return {"checkoutBonus": checkout_bonus, "firstOrderBonus": first_order_bonus}
 
 
+def get_referral_credit_amount() -> float:
+    fallback = round(float((get_config().referral or {}).get("fixed_credit_amount", 250.0)), 2)
+    try:
+        from . import settings_service  # Local import avoids eager module coupling.
+
+        settings = settings_service.get_settings() or {}
+        raw_value = settings.get("referralCreditAmount")
+        if raw_value is None:
+            return fallback
+        amount = round(float(raw_value), 2)
+        return amount if amount > 0 else fallback
+    except Exception:
+        return fallback
+
+
 def award_checkout_referral_commission(referral_code: Optional[str], total: float, purchaser_id: str, order_id: str):
     if not referral_code:
         return None
@@ -2262,7 +2277,7 @@ def award_first_order_credit(purchasing_doctor_id: str, order_id: str, order_tot
         None,
     )
 
-    amount = round(float(get_config().referral["fixed_credit_amount"]), 2)
+    amount = get_referral_credit_amount()
     ledger_entry = credit_ledger_repository.insert(
         {
             "doctorId": referrer["id"],
@@ -2375,6 +2390,7 @@ def calculate_doctor_credit_summary(doctor_id: str):
         "availableCredits": round(available_balance, 2),
         "netCredits": round(net_credits, 2),
         "firstOrderBonuses": round(float(summary["firstOrderBonuses"]), 2),
+        "referralCreditAmount": get_referral_credit_amount(),
         "ledger": credit_ledger_repository.find_by_doctor(doctor_id),
     }
 

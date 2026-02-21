@@ -1065,8 +1065,15 @@ export function Header({
   const [patientLinksLoading, setPatientLinksLoading] = useState(false);
   const [patientLinksError, setPatientLinksError] = useState<string | null>(null);
   const [patientLinks, setPatientLinks] = useState<any[]>([]);
+  const [pendingPatientLinkScrollTarget, setPendingPatientLinkScrollTarget] = useState<{
+    delegateTokens: string[];
+    orderIds: string[];
+    referenceLabels: string[];
+  } | null>(null);
   const patientLinksPrefetchedRef = useRef(false);
   const patientLinksLoadInFlightRef = useRef(false);
+  const patientLinkRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const patientLinkHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
   const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
   const [patientLinkPatientIdDraft, setPatientLinkPatientIdDraft] = useState('');
@@ -3239,29 +3246,27 @@ export function Header({
       return null;
     }
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleCartClick}
-        className="relative inline-flex glass squircle-sm transition-all duration-300 flex-shrink-0"
-        style={{
-          color: secondaryColor,
-          borderColor: translucentSecondary,
-        }}
-      >
-        {delegateMode ? (
-          <ClipboardDocumentListIcon className="h-4 w-4" />
-        ) : (
-          <ShoppingCart className="h-4 w-4" style={{ color: secondaryColor }} />
-        )}
+      <div className="relative inline-flex flex-shrink-0">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleCartClick}
+          className="header-cart-button inline-flex glass squircle-sm transition-all duration-300"
+        >
+          {delegateMode ? (
+            <ClipboardDocumentListIcon className="h-4 w-4" />
+          ) : (
+            <ShoppingCart className="h-4 w-4" />
+          )}
+        </Button>
         <Badge
           variant="outline"
-          className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
+          className="absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
         >
           {cartItems}
         </Badge>
-      </Button>
+      </div>
     );
   };
 
@@ -4353,11 +4358,38 @@ export function Header({
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : '';
   };
+  const formatDelegateOrderLabel = (value: unknown): string => {
+    const trimmed = normalizeDelegateLabel(value);
+    if (!trimmed) return '';
+
+    const normalized = trimmed
+      .toLowerCase()
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const isGenericLabel =
+      normalized === 'label'
+      || normalized === 'delegate'
+      || normalized === 'delegate order';
+    if (isGenericLabel) return 'Delegate order';
+
+    const delegatePrefix = trimmed.match(/^delegate\s*:\s*(.+)$/i);
+    if (delegatePrefix && delegatePrefix[1]?.trim()) {
+      return `Delegate: ${delegatePrefix[1].trim()}`;
+    }
+
+    const delegateOf = trimmed.match(/^delegate\s+of\s+(.+)$/i);
+    if (delegateOf && delegateOf[1]?.trim()) {
+      return `Delegate: ${delegateOf[1].trim()}`;
+    }
+
+    return `Delegate: ${trimmed}`;
+  };
   const resolveDelegateOrderLabel = (order: any): string => {
     const direct =
       normalizeDelegateLabel(order?.as_delegate)
       || normalizeDelegateLabel(order?.asDelegate);
-    if (direct) return direct;
+    if (direct) return formatDelegateOrderLabel(direct);
 
     const integrationDetails = parseMaybeJson(order?.integrationDetails);
     const integrations = parseMaybeJson(order?.integrations);
@@ -4381,8 +4413,235 @@ export function Header({
       || normalizeDelegateLabel(integrations?.mysql?.order?.as_delegate)
       || normalizeDelegateLabel(integrations?.mysql?.order?.asDelegate);
 
-    return nested || '';
+    return formatDelegateOrderLabel(nested);
   };
+  const normalizeOrderIdentifierToken = (value: unknown): string => {
+    const raw = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+    if (!raw) return '';
+    let normalized = raw;
+    if (normalized.startsWith('#')) normalized = normalized.slice(1).trim();
+    if (normalized.toLowerCase().startsWith('woo-')) {
+      const parts = normalized.split('-', 2);
+      normalized = parts.length === 2 ? parts[1].trim() : normalized;
+    }
+    return normalized.toLowerCase();
+  };
+  const normalizeReferenceLabel = (value: unknown): string => {
+    const raw = normalizeDelegateLabel(value);
+    if (!raw) return '';
+    return raw
+      .replace(/^delegate\s*:\s*/i, '')
+      .replace(/^delegate\s+of\s+/i, '')
+      .trim()
+      .toLowerCase();
+  };
+  const buildOrderToPatientLinkTarget = useCallback((order: any) => {
+    const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
+    const wooIntegration = parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
+    const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+    const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+
+    const readMetaValue = (meta: any, keys: string[]) => {
+      if (!Array.isArray(meta)) return '';
+      const normalizedKeys = new Set(
+        keys.map((key) => String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')),
+      );
+      const match = meta.find((entry: any) => {
+        const key = String(entry?.key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        return normalizedKeys.has(key);
+      });
+      return normalizeDelegateLabel(match?.value);
+    };
+
+    const rawDelegateTokenCandidates = [
+      order?.delegateProposalToken,
+      order?.delegate_proposal_token,
+      order?.delegationToken,
+      order?.delegation_token,
+      order?.proposalToken,
+      order?.proposal_token,
+      integrations?.delegateProposalToken,
+      integrations?.delegate_proposal_token,
+      wooIntegration?.delegateProposalToken,
+      wooIntegration?.delegate_proposal_token,
+      wooResponse?.delegateProposalToken,
+      wooResponse?.delegate_proposal_token,
+      wooPayload?.delegateProposalToken,
+      wooPayload?.delegate_proposal_token,
+      readMetaValue(wooResponse?.meta_data, [
+        'delegate_proposal_token',
+        'proposal_token',
+        'delegation_token',
+        'peppro_delegate_proposal_token',
+      ]),
+      readMetaValue(wooPayload?.meta_data, [
+        'delegate_proposal_token',
+        'proposal_token',
+        'delegation_token',
+        'peppro_delegate_proposal_token',
+      ]),
+    ];
+    const delegateTokens = Array.from(
+      new Set(
+        rawDelegateTokenCandidates
+          .map((value) => normalizeDelegateLabel(value))
+          .filter(Boolean),
+      ),
+    );
+
+    const orderIds = Array.from(
+      new Set(
+        [
+          order?.wooOrderId,
+          order?.woo_order_id,
+          order?.wooOrderNumber,
+          order?.woo_order_number,
+          order?.number,
+          order?.id,
+          wooIntegration?.wooOrderId,
+          wooIntegration?.wooOrderNumber,
+          wooResponse?.id,
+          wooResponse?.number,
+          wooPayload?.id,
+          wooPayload?.number,
+        ]
+          .map((value) => normalizeOrderIdentifierToken(value))
+          .filter(Boolean),
+      ),
+    );
+
+    const referenceLabels = Array.from(
+      new Set(
+        [
+          resolveDelegateOrderLabel(order),
+          order?.asDelegate,
+          order?.as_delegate,
+          order?.delegateOrderLabel,
+          order?.delegate_order_label,
+        ]
+          .map((value) => normalizeReferenceLabel(value))
+          .filter(Boolean),
+      ),
+    );
+
+    return { delegateTokens, orderIds, referenceLabels };
+  }, []);
+  const findMatchingPatientLinkToken = useCallback(
+    (
+      target: { delegateTokens: string[]; orderIds: string[]; referenceLabels: string[] } | null,
+      links: any[],
+    ): string | null => {
+      if (!target || !Array.isArray(links) || links.length === 0) return null;
+
+      const normalizedLinkTokenEntries = links
+        .map((link) => {
+          const token = normalizeDelegateLabel((link as any)?.token);
+          return { token, link };
+        })
+        .filter((entry) => entry.token);
+
+      for (const token of target.delegateTokens) {
+        const matched = normalizedLinkTokenEntries.find((entry) => entry.token === token);
+        if (matched) return matched.token;
+      }
+
+      for (const entry of normalizedLinkTokenEntries) {
+        const delegateOrderId = normalizeOrderIdentifierToken(
+          (entry.link as any)?.delegateOrderId ?? (entry.link as any)?.delegate_order_id,
+        );
+        if (delegateOrderId && target.orderIds.includes(delegateOrderId)) {
+          return entry.token;
+        }
+      }
+
+      for (const entry of normalizedLinkTokenEntries) {
+        const referenceLabel = normalizeReferenceLabel(
+          (entry.link as any)?.referenceLabel
+          ?? (entry.link as any)?.reference_label
+          ?? (entry.link as any)?.label,
+        );
+        if (referenceLabel && target.referenceLabels.includes(referenceLabel)) {
+          return entry.token;
+        }
+      }
+
+      return null;
+    },
+    [],
+  );
+  const handleDelegateLabelNavigateToPatientLink = useCallback((order: any) => {
+    if (!showPatientLinksTab) return;
+    const target = buildOrderToPatientLinkTarget(order);
+    if (
+      target.delegateTokens.length === 0
+      && target.orderIds.length === 0
+      && target.referenceLabels.length === 0
+    ) {
+      toast.message('No associated patient link was found for this order.');
+      return;
+    }
+    setAccountTab('patient_links');
+    setPendingPatientLinkScrollTarget(target);
+    if (!patientLinksLoadInFlightRef.current) {
+      void loadPatientLinks();
+    }
+  }, [buildOrderToPatientLinkTarget, loadPatientLinks, showPatientLinksTab]);
+
+  useEffect(() => {
+    return () => {
+      if (patientLinkHighlightTimeoutRef.current) {
+        clearTimeout(patientLinkHighlightTimeoutRef.current);
+        patientLinkHighlightTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!welcomeOpen) {
+      setPendingPatientLinkScrollTarget(null);
+    }
+  }, [welcomeOpen]);
+
+  useEffect(() => {
+    if (!welcomeOpen || accountTab !== 'patient_links' || !pendingPatientLinkScrollTarget) {
+      return;
+    }
+    if (patientLinksLoading || patientLinksLoadInFlightRef.current) {
+      return;
+    }
+
+    const matchedToken = findMatchingPatientLinkToken(pendingPatientLinkScrollTarget, patientLinks);
+    if (!matchedToken) {
+      if (!Array.isArray(patientLinks) || patientLinks.length === 0) {
+        return;
+      }
+      setPendingPatientLinkScrollTarget(null);
+      toast.message('Associated patient link was not found in your current links.');
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const targetEl = patientLinkRowRefs.current[matchedToken];
+      if (!targetEl) return;
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      targetEl.classList.add('patient-link-item--highlight');
+      if (patientLinkHighlightTimeoutRef.current) {
+        clearTimeout(patientLinkHighlightTimeoutRef.current);
+      }
+      patientLinkHighlightTimeoutRef.current = setTimeout(() => {
+        targetEl.classList.remove('patient-link-item--highlight');
+      }, 1600);
+    });
+
+    setPendingPatientLinkScrollTarget(null);
+  }, [
+    accountTab,
+    findMatchingPatientLinkToken,
+    patientLinks,
+    patientLinksLoading,
+    pendingPatientLinkScrollTarget,
+    welcomeOpen,
+  ]);
 
 		  const renderOrdersList = () => {
 		    const repView = false;
@@ -4607,12 +4866,17 @@ export function Header({
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Status</p>
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                      <p className="order-status-row flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                         <span>{statusDisplay}</span>
                         {showDelegateOrderLabel && (
-                          <span className="inline-flex w-fit rounded-full border border-[rgba(95,179,249,0.4)] bg-[rgba(95,179,249,0.12)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(38,101,178)]">
+                          <button
+                            type="button"
+                            className="sales-account-indicator-badge squircle-sm"
+                            onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
+                            title="Open associated patient link"
+                          >
                             {delegateOrderLabel}
-                          </span>
+                          </button>
                         )}
                       </p>
                     </div>
@@ -5762,6 +6026,15 @@ export function Header({
 				              return (
 				                <div
 				                  key={token || label}
+                          ref={(node) => {
+                            if (!token) return;
+                            if (node) {
+                              patientLinkRowRefs.current[token] = node;
+                            } else {
+                              delete patientLinkRowRefs.current[token];
+                            }
+                          }}
+                          data-patient-link-token={token || undefined}
 				                  className="patient-link-item glass-liquid squircle-lg border border-[rgba(95,179,249,0.35)] transition-colors hover:border-[rgba(95,179,249,0.55)] p-4 sm:p-5 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between"
 				                >
 			                  <div className="min-w-0 flex-1">
@@ -6053,7 +6326,7 @@ export function Header({
                 {accountButtonIndicatorTotal > 0 && (
                   <Badge
                     variant="outline"
-                    className="account-indicator-badge"
+                    className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
                     aria-label={`Notifications: ${accountButtonIndicatorTotal}`}
                     title={`Notifications: ${accountButtonIndicatorTotal}`}
                   >
@@ -6174,7 +6447,7 @@ export function Header({
                               <Badge
                                 variant="outline"
                                 className={clsx(
-                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !rounded-full !border-[rgb(95,179,249)] !bg-white !p-0 !text-[7.5px] font-semibold leading-none !text-[rgb(95,179,249)] shadow-sm pointer-events-none transition-opacity duration-150",
+                                  "ml-2 inline-flex !h-5 !w-5 shrink-0 items-center justify-center !p-0 glass-strong squircle-sm border border-[var(--brand-glass-border-2)] !text-[rgb(95,179,249)] font-semibold leading-none shadow-sm pointer-events-none transition-opacity duration-150",
                                   showIndicator ? "opacity-100" : "opacity-0",
                                 )}
                                 title={`${tab.label} notifications`}
