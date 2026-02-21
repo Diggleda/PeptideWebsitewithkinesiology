@@ -686,13 +686,20 @@ def get_onboarding_code(code: str) -> Optional[Dict]:
 
 
 def record_referral_submission(data: Dict) -> Dict:
+    contact_email = _sanitize_email(data.get("contactEmail"))
+    if contact_email:
+        if user_repository.find_by_email(contact_email):
+            raise _service_error("REFERRAL_CONTACT_ALREADY_HAS_ACCOUNT", 400)
+        if sales_rep_repository.find_by_email(contact_email):
+            raise _service_error("REFERRAL_CONTACT_ALREADY_HAS_ACCOUNT", 400)
+
     timestamp = _now()
     referral = referral_repository.insert(
         {
             "referrerDoctorId": data.get("referrerDoctorId"),
             "salesRepId": data.get("salesRepId"),
             "referredContactName": data.get("contactName"),
-            "referredContactEmail": data.get("contactEmail"),
+            "referredContactEmail": contact_email,
             "referredContactPhone": data.get("contactPhone"),
             "notes": data.get("notes"),
             "createdAt": timestamp,

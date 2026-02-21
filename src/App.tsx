@@ -9887,6 +9887,17 @@ function MainApp() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  useEffect(() => {
+    if (!referralStatusMessage) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setReferralStatusMessage(null);
+    }, 4000);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [referralStatusMessage]);
   const [doctorDeletingReferralId, setDoctorDeletingReferralId] = useState<
     string | null
   >(null);
@@ -13947,7 +13958,7 @@ function MainApp() {
           reason: `Manual credit for referral ${referral.id}`,
           referralId: referral.id,
         });
-        toast.success(`Credited ${doctorName} ${formatCurrency(referralCreditAmount)}`);
+        toast.success(`Credited ${doctorName} $${referralCreditAmount.toFixed(2)}`);
         await tracedRefreshReferralData("manual-credit", {
           showLoading: true,
         });
@@ -13962,7 +13973,7 @@ function MainApp() {
         setCreditingReferralId(null);
       }
     },
-    [formatCurrency, isContactFormEntry, referralCreditAmount, tracedRefreshReferralData],
+    [isContactFormEntry, referralCreditAmount, tracedRefreshReferralData],
   );
 
   const formatDate = useCallback((value?: string | null) => {
@@ -16672,9 +16683,18 @@ function MainApp() {
       });
     } catch (error: any) {
       console.warn("[Referral] Submission failed", error);
+      const statusCode = typeof error?.status === "number" ? error.status : null;
+      const message = typeof error?.message === "string" ? error.message : "";
+      const normalizedMessage = message.toUpperCase();
+      const existingUserBlocked =
+        statusCode === 400 &&
+        (normalizedMessage.includes("REFERRAL_CONTACT_ALREADY_HAS_ACCOUNT") ||
+          normalizedMessage.includes("EMAIL_ALREADY_EXISTS"));
       setReferralStatusMessage({
         type: "error",
-        message: "Unable to submit referral. Please try again.",
+        message: existingUserBlocked
+          ? "That email already belongs to an existing account and cannot be referred."
+          : "Unable to submit referral. Please try again.",
       });
     } finally {
       setReferralSubmitting(false);
@@ -17054,14 +17074,18 @@ function MainApp() {
                 >
                   {referralSubmitting ? "Submitting…" : "Submit Referral"}
                 </Button>
-                {referralStatusMessage && (
-                  <span
-                    className={`text-sm ${referralStatusMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}
-                  >
-                    {referralStatusMessage.message}
-                  </span>
-                )}
               </div>
+              {referralStatusMessage && (
+                <div
+                  className={`mt-3 w-full rounded-md border px-3 py-2 text-sm text-center ${
+                    referralStatusMessage.type === "success"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                  }`}
+                >
+                  {referralStatusMessage.message}
+                </div>
+              )}
           </form>
 
           <div className="mt-8 grid gap-6 md:grid-cols-2 w-full max-w-none px-1 sm:px-5">
@@ -22567,7 +22591,7 @@ function MainApp() {
 		      variant="default"
 		      size="sm"
 		      onClick={openAccountDetailsTab}
-				      className="squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start"
+				      className="relative overflow-visible squircle-sm header-home-button transition-all duration-300 whitespace-nowrap pl-1 pr-0 header-account-button justify-start"
 		      aria-label="Open account"
 		    >
 				      <span className="header-account-name text-current">
@@ -22593,7 +22617,7 @@ function MainApp() {
           {accountIndicatorTotal > 0 && (
             <Badge
               variant="outline"
-              className="account-indicator-badge"
+              className="account-indicator-badge absolute -top-2 -right-2 header-count-indicator flex h-5 w-5 items-center justify-center p-0 squircle-sm border border-[var(--brand-glass-border-2)] text-[rgb(95,179,249)]"
               aria-label={`Notifications: ${accountIndicatorTotal}`}
               title={`Notifications: ${accountIndicatorTotal}`}
             >

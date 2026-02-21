@@ -3585,11 +3585,8 @@ export function Header({
   }, [accountButtonIndicatorTotal, onAccountIndicatorTotalChange]);
 
   useEffect(() => {
-    if (!welcomeOpen) {
-      patientLinksPrefetchedRef.current = false;
-      return;
-    }
     if (!showPatientLinksTab) {
+      patientLinksPrefetchedRef.current = false;
       return;
     }
     if (patientLinksPrefetchedRef.current) {
@@ -3597,7 +3594,7 @@ export function Header({
     }
     patientLinksPrefetchedRef.current = true;
     void loadPatientLinks();
-  }, [loadPatientLinks, showPatientLinksTab, welcomeOpen]);
+  }, [loadPatientLinks, showPatientLinksTab]);
 
   const lastPatientLinksRefreshTokenRef = useRef(patientLinksRefreshToken);
 
@@ -7137,16 +7134,12 @@ export function Header({
                   size="icon"
                   onClick={toggleMobileSearch}
                   aria-expanded={mobileSearchOpen}
-                  className="glass squircle-sm transition-all duration-300"
-                  style={{
-                    color: secondaryColor,
-                    borderColor: translucentSecondary,
-                  }}
+                  className="header-cart-button squircle-sm transition-all duration-300"
                 >
                   {mobileSearchOpen ? (
-                    <X className="h-4 w-4" style={{ color: secondaryColor }} />
+                    <X className="h-4 w-4" />
                   ) : (
-                    <Search className="h-4 w-4" style={{ color: secondaryColor }} />
+                    <Search className="h-4 w-4" />
                   )}
                   <span className="sr-only">{mobileSearchOpen ? 'Close search' : 'Open search'}</span>
                 </Button>
