@@ -184,7 +184,11 @@ def _serialize_hand_delivery_entry(user: dict, rep: dict | None) -> dict:
         "isLocal": is_local,
     }
 
-def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
+def _compute_allowed_sales_rep_ids(
+    sales_rep_id: str,
+    *,
+    include_user_role_email_matches: bool = True,
+) -> set[str]:
     """
     Sales-rep references can be stored under multiple ids over time:
     - sales_reps.id
@@ -254,7 +258,7 @@ def _compute_allowed_sales_rep_ids(sales_rep_id: str) -> set[str]:
             if email:
                 rep_email_candidates.add(email)
 
-    if rep_email_candidates:
+    if include_user_role_email_matches and rep_email_candidates:
         for user in users:
             if not isinstance(user, dict):
                 continue
@@ -336,10 +340,14 @@ def _compute_presence_snapshot(user: dict, *, now_epoch: float, online_threshold
 def _compute_live_clients_payload(
     *,
     target_sales_rep_id: str,
+    strict_assignment: bool = False,
 ) -> dict:
     all_users = user_repository.get_all()
 
-    allowed_rep_ids = _compute_allowed_sales_rep_ids(target_sales_rep_id)
+    allowed_rep_ids = _compute_allowed_sales_rep_ids(
+        target_sales_rep_id,
+        include_user_role_email_matches=not strict_assignment,
+    )
     prospects = sales_prospect_repository.find_by_sales_rep(target_sales_rep_id)
     doctor_ids = {
         str(p.get("doctorId")).strip()
@@ -739,7 +747,11 @@ def get_live_clients():
             setattr(err, "status", 400)
             raise err
 
-        return _compute_live_clients_payload(target_sales_rep_id=target_sales_rep_id)
+        strict_assignment = _is_sales_rep_role(role) and not _is_sales_lead_role(role)
+        return _compute_live_clients_payload(
+            target_sales_rep_id=target_sales_rep_id,
+            strict_assignment=strict_assignment,
+        )
 
     return handle_action(action)
 
@@ -762,6 +774,7 @@ def longpoll_live_clients():
             raise err
 
         client_etag = str(request.args.get("etag") or "").strip() or None
+        strict_assignment = _is_sales_rep_role(role) and not _is_sales_lead_role(role)
         try:
             timeout_ms = int(request.args.get("timeoutMs") or 25000)
         except Exception:
@@ -770,11 +783,23 @@ def longpoll_live_clients():
 
         acquired = _LIVE_CLIENTS_LONGPOLL_SEMAPHORE.acquire(blocking=False)
         if not acquired:
+            if strict_assignment:
+                return _compute_live_clients_payload(
+                    target_sales_rep_id=target_sales_rep_id,
+                    strict_assignment=True,
+                )
             return _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
 
         try:
             started = time.monotonic()
-            payload = _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+            payload = (
+                _compute_live_clients_payload(
+                    target_sales_rep_id=target_sales_rep_id,
+                    strict_assignment=True,
+                )
+                if strict_assignment
+                else _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+            )
             etag = str(payload.get("etag") or "").strip() or None
             if not etag or etag != client_etag:
                 return payload
@@ -783,7 +808,14 @@ def longpoll_live_clients():
             poll_interval_s = max(0.25, min(poll_interval_s, 2.0))
             while (time.monotonic() - started) * 1000 < timeout_ms:
                 time.sleep(poll_interval_s)
-                payload = _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+                payload = (
+                    _compute_live_clients_payload(
+                        target_sales_rep_id=target_sales_rep_id,
+                        strict_assignment=True,
+                    )
+                    if strict_assignment
+                    else _compute_live_clients_cached(target_sales_rep_id=target_sales_rep_id)
+                )
                 etag = str(payload.get("etag") or "").strip() or None
                 if not etag or etag != client_etag:
                     return payload

@@ -53,9 +53,9 @@ import {
 				  NotebookPen,
 				  CheckSquare,
 				  Trash2,
-				  Clock,
-				  CheckCircle2,
-				  XCircle,
+				Clock,
+				CheckCircle2,
+				XCircle,
 				} from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -3361,6 +3361,7 @@ function MainApp() {
   );
   const delegateHasSubmittedProposal = Boolean(isDelegateMode && (delegateContext?.delegateSharedAt || delegateContext?.delegateOrderId));
   const [searchQuery, setSearchQuery] = useState("");
+  const productSectionRef = useRef<HTMLDivElement | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
   const [loginPromptToken, setLoginPromptToken] = useState(0);
@@ -10070,7 +10071,7 @@ function MainApp() {
   const adminLiveUsersInitialLoadDoneRef = useRef(false);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
 	  const adminLiveUsersLongPollDisabledRef = useRef(false);
-	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(false);
+	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(true);
 	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
 	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
 	  type HandDeliveryEntry = {
@@ -10349,20 +10350,24 @@ function MainApp() {
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
       liveClientsLongPollDisabledRef.current = true;
 
-		    const fetchOnce = async () => {
+	    const fetchOnce = async () => {
 		      try {
 		        if (!liveClientsInitialLoadDoneRef.current) {
 		          setLiveClientsLoading(true);
 		        }
 		        setLiveClientsError(null);
-		        const payload = (await settingsAPI.getLiveClients()) as any;
+		        const payload = (isSalesLeadRole
+              ? ((await settingsAPI.getLiveUsers()) as any)
+              : ((await settingsAPI.getLiveClients()) as any));
 		        if (cancelled) return;
 		        liveClientsEtagRef.current =
 		          typeof payload?.etag === "string" ? payload.etag : null;
-		        const raw = Array.isArray(payload?.clients) ? payload.clients : [];
+		        const raw = isSalesLeadRole
+              ? (Array.isArray(payload?.users) ? payload.users : [])
+              : (Array.isArray(payload?.clients) ? payload.clients : []);
 		        const clients = raw.filter((entry: any) => {
-              if (!isSalesLeadRole) return true;
 		          const role = normalizeRole(entry?.role || "");
+              if (!isSalesLeadRole) return isDoctorRole(role);
 		          if (role === "admin") return false;
 		          return isDoctorRole(role) || isRep(role);
 		        });
@@ -10406,12 +10411,18 @@ function MainApp() {
 			        }
 			        try {
 			          const requestStartedAt = Date.now();
-			          const payload = (await settingsAPI.getLiveClientsLongPoll(
-                null,
-                liveClientsEtagRef.current,
-                25000,
-                controller.signal,
-              )) as any;
+			          const payload = (isSalesLeadRole
+                  ? ((await settingsAPI.getLiveUsersLongPoll(
+                    liveClientsEtagRef.current,
+                    25000,
+                    controller.signal,
+                  )) as any)
+                  : ((await settingsAPI.getLiveClientsLongPoll(
+                    null,
+                    liveClientsEtagRef.current,
+                    25000,
+                    controller.signal,
+                  )) as any));
 			          if (cancelled) break;
 			          const elapsedMs = Date.now() - requestStartedAt;
 			          // If the server can't hold the request open (or concurrency is exceeded),
@@ -10423,10 +10434,12 @@ function MainApp() {
 			          }
 			          liveClientsEtagRef.current =
 			            typeof payload?.etag === "string" ? payload.etag : null;
-			          const raw = Array.isArray(payload?.clients) ? payload.clients : [];
+			          const raw = isSalesLeadRole
+                  ? (Array.isArray(payload?.users) ? payload.users : [])
+                  : (Array.isArray(payload?.clients) ? payload.clients : []);
 		          const clients = raw.filter((entry: any) => {
-                if (!isSalesLeadRole) return true;
 		            const role = normalizeRole(entry?.role || "");
+                if (!isSalesLeadRole) return isDoctorRole(role);
 		            if (role === "admin") return false;
 		            return isDoctorRole(role) || isRep(role);
 		          });
@@ -10477,7 +10490,7 @@ function MainApp() {
             setAdminLiveUsersLoading(true);
           }
 	        setAdminLiveUsersError(null);
-	        const payload = (await settingsAPI.getUserActivity("day")) as any;
+	        const payload = (await settingsAPI.getLiveUsers()) as any;
 	        if (cancelled) return;
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
@@ -10519,8 +10532,7 @@ function MainApp() {
 		        }
 		        try {
 		          const requestStartedAt = Date.now();
-		          const payload = (await settingsAPI.getUserActivityLongPoll(
-                "day",
+		          const payload = (await settingsAPI.getLiveUsersLongPoll(
 		            adminLiveUsersEtagRef.current,
 		            25000,
 		            controller.signal,
@@ -16210,9 +16222,66 @@ function MainApp() {
     }
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = (query: string, options?: { submitted?: boolean }) => {
     setSearchQuery(query);
+    const isSubmitted = options?.submitted === true;
+    const hasQuery = query.trim().length > 0;
+    const shouldScrollToProducts =
+      isSubmitted &&
+      hasQuery &&
+      !isDelegateMode &&
+      !postLoginHold &&
+      Boolean(user && (isAdmin(user.role) || isSalesLead(user.role) || isRep(user.role)));
+
+    if (!shouldScrollToProducts) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const target = productSectionRef.current;
+      if (!target) return;
+
+      let headerOffset = 0;
+      try {
+        const appHeader = document.querySelector("[data-app-header]") as HTMLElement | null;
+        headerOffset = appHeader ? appHeader.getBoundingClientRect().height : 0;
+      } catch {
+        headerOffset = 0;
+      }
+
+      const targetTop = target.getBoundingClientRect().top + window.scrollY;
+      const top = Math.max(0, targetTop - headerOffset - 12);
+      window.scrollTo({ top, behavior: "smooth" });
+    });
   };
+
+  const scrollViewportToTop = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    if (typeof document !== "undefined") {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }, []);
+
+  const pageViewKey = useMemo(() => {
+    if (isDelegateMode) {
+      return delegateHasSubmittedProposal ? "delegate:submitted" : "delegate:shop";
+    }
+    if (!user) return "public:landing";
+    if (postLoginHold) return "auth:home";
+    return isAdmin(user.role) || isRep(user.role) ? "auth:sales" : "auth:doctor";
+  }, [delegateHasSubmittedProposal, isDelegateMode, postLoginHold, user]);
+
+  const previousPageViewKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousPageViewKeyRef.current;
+    previousPageViewKeyRef.current = pageViewKey;
+    if (!previous) return;
+    if (previous !== pageViewKey) {
+      scrollViewportToTop();
+    }
+  }, [pageViewKey, scrollViewportToTop]);
 
   const estimateTotalsForDelegateCheckout = useCallback(
     (payload: any, options?: { signal?: AbortSignal }) => {
@@ -16565,6 +16634,7 @@ function MainApp() {
   const handleAdvanceFromWelcome = () => {
     console.debug("[Intro] Advance from welcome", { shouldReopenCheckout });
     setPostLoginHold(false);
+    scrollViewportToTop();
     if (shouldReopenCheckout) {
       setCheckoutOpen(true);
       setShouldReopenCheckout(false);
@@ -17695,33 +17765,27 @@ function MainApp() {
 	    }, 0);
 	    const renderAdminOnHoldOrdersCard = () => (
 	      <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
-	        <div className="flex flex-col gap-3 mb-4">
-	          <div className="sales-rep-header-row flex w-full flex-col gap-3">
-	            <div className="min-w-0">
-	              <h3 className="text-lg font-semibold text-slate-900">
-	                Order On-Hold
-	              </h3>
-	              <p className="text-sm text-slate-600">
-	                All orders currently on-hold.
-	              </p>
-	            </div>
-	            <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-	              <div className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
-	                <Button
-	                  type="button"
-	                  variant="outline"
-	                  size="sm"
-	                  className="header-home-button squircle-sm bg-white text-slate-900 order-2 sm:order-1"
-	                  onClick={() => void refreshAdminOnHoldOrders({ force: true })}
-	                  disabled={adminOnHoldLoading || adminOnHoldRefreshing}
-	                  aria-busy={adminOnHoldLoading || adminOnHoldRefreshing}
-	                  title="Refresh on-hold orders"
-	                >
-	                  {adminOnHoldLoading || adminOnHoldRefreshing ? "Refreshing..." : "Refresh"}
-	                </Button>
-	              </div>
-	            </div>
+	        <div className="mb-4 flex w-full items-start justify-between gap-3">
+	          <div className="min-w-0">
+	            <h3 className="text-lg font-semibold text-slate-900">
+	              Order On-Hold
+	            </h3>
+	            <p className="text-sm text-slate-600">
+	              All orders currently on-hold.
+	            </p>
 	          </div>
+	          <Button
+	            type="button"
+	            variant="outline"
+	            size="sm"
+	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+	            onClick={() => void refreshAdminOnHoldOrders({ force: true })}
+	            disabled={adminOnHoldLoading || adminOnHoldRefreshing}
+	            aria-busy={adminOnHoldLoading || adminOnHoldRefreshing}
+	            title="Refresh on-hold orders"
+	          >
+	            {adminOnHoldLoading || adminOnHoldRefreshing ? "Refreshing..." : "Refresh"}
+	          </Button>
 	        </div>
 	        <div
 	          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -17966,13 +18030,28 @@ function MainApp() {
 
                         {shouldShowLocalHandDeliveryNotice && (
                           <div
-                            className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-[10px] leading-[1.55] text-slate-800"
-                            style={{
-                              border: "1.5px solid rgb(95,179,249)",
-                              boxShadow: "inset 0 0 0 1.5px rgb(95,179,249), 0 1px 2px rgba(15,23,42,0.08)",
-                            }}
+                            className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-slate-800"
                           >
-                            Hand delivery is communicated to your clients during checkout. Ensure to deliver their order when it is ready. Coordinate the shipment of their order if you are unable to hand deliver (we will ship free of charge for local clients).
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={withStaticAssetStamp("/icons/handshake_4233584.png")}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-8 w-8 shrink-0"
+                                style={{
+                                  filter:
+                                    "brightness(0) saturate(100%) invert(68%) sepia(40%) saturate(1478%) hue-rotate(178deg) brightness(101%) contrast(95%)",
+                                }}
+                                loading="lazy"
+                                decoding="async"
+                              />
+                              <p className="text-slate-800 hand-delivery-note-text">
+                                Hand delivery is communicated to your clients during checkout.
+                                Ensure to deliver their order when it is ready. Coordinate the
+                                shipment of their order if you are unable to hand deliver (we
+                                will ship free of charge for local clients).
+                              </p>
+                            </div>
                           </div>
                         )}
 	
@@ -19038,13 +19117,28 @@ function MainApp() {
 
                   {shouldShowLocalHandDeliveryNotice && (
                     <div
-                      className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-[10px] leading-[1.55] text-slate-800"
-                      style={{
-                        border: "1.5px solid rgb(95,179,249)",
-                        boxShadow: "inset 0 0 0 1.5px rgb(95,179,249), 0 1px 2px rgba(15,23,42,0.08)",
-                      }}
+                      className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 p-3 text-slate-800"
                     >
-                      Hand delivery is communicated to your clients during checkout. Ensure to deliver their order when it is ready. Coordinate the shipment of their order if you are unable to hand deliver (we will ship free of charge for local clients).
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={withStaticAssetStamp("/icons/handshake_4233584.png")}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-8 w-8 shrink-0"
+                          style={{
+                            filter:
+                              "brightness(0) saturate(100%) invert(68%) sepia(40%) saturate(1478%) hue-rotate(178deg) brightness(101%) contrast(95%)",
+                          }}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <p className="text-slate-800 hand-delivery-note-text">
+                          Hand delivery is communicated to your clients during checkout.
+                          Ensure to deliver their order when it is ready. Coordinate the
+                          shipment of their order if you are unable to hand deliver (we
+                          will ship free of charge for local clients).
+                        </p>
+                      </div>
                     </div>
                   )}
 
@@ -22680,6 +22774,7 @@ function MainApp() {
 		                  "[App] onShowInfo called, setting postLoginHold to true",
 		                );
 		                setPostLoginHold(true);
+                    scrollViewportToTop();
 		              }}
 		              onUserUpdated={(next) => setUser(next as User)}
 		              accountOrders={accountOrders}
@@ -24350,7 +24445,7 @@ function MainApp() {
 		              {isRep(user.role) || isAdmin(user.role)
 		                ? renderSalesRepDashboard()
 		                : renderDoctorDashboard()}
-                  <div className="product-section-scroll-stable">
+                  <div ref={productSectionRef} className="product-section-scroll-stable">
 		                {renderProductSection()}
                   </div>
 	            </main>
@@ -26404,9 +26499,12 @@ function MainApp() {
                         : null,
                     )
                   : null;
+                const delegateFields = resolveOrderAsDelegateFields(
+                  salesOrderDetail as any,
+                );
                 const delegateOrderLabel =
-                  normalizeDelegateOrderLabel((salesOrderDetail as any)?.asDelegate) ||
-                  normalizeDelegateOrderLabel((salesOrderDetail as any)?.as_delegate);
+                  normalizeDelegateOrderLabel(delegateFields.asDelegate) ||
+                  normalizeDelegateOrderLabel(delegateFields.as_delegate);
 
                 return (
               <div className="space-y-6">

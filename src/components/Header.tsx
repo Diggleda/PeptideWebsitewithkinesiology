@@ -337,7 +337,7 @@ interface HeaderProps {
   onLogin?: (email: string, password: string) => Promise<AuthActionResult> | AuthActionResult;
   onLogout?: () => void;
   cartItems: number;
-  onSearch: (query: string) => void;
+  onSearch: (query: string, options?: { submitted?: boolean }) => void;
   onCreateAccount?: (details: {
     name: string;
     email: string;
@@ -2596,7 +2596,7 @@ export function Header({
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSearch(searchQuery);
+    onSearch(searchQuery, { submitted: true });
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setMobileSearchOpen(false);
     }
@@ -2606,7 +2606,7 @@ export function Header({
   const handleSearchChange = (value: string) => {
     console.debug('[Header] Search change', { value });
     setSearchQuery(value);
-    onSearch(value);
+    onSearch(value, { submitted: false });
   };
 
   useEffect(() => {
@@ -3281,7 +3281,8 @@ export function Header({
   ) => (
     <div className="relative">
       <Search
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-500"
+        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform !text-slate-500"
+        style={{ color: "rgb(100, 116, 139)" }}
       />
       <Input
         type="text"
@@ -3294,16 +3295,8 @@ export function Header({
           handleSearchChange(e.target.value);
         }}
         ref={options?.readOnly ? undefined : searchInputRef}
-        className={`glass squircle-sm pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[rgba(255,255,255,0.3)] ${inputClassName}`.trim()}
+        className={`header-search-input squircle-sm !h-[2.4rem] !min-h-[2.4rem] !max-h-[2.4rem] box-border pl-10 pr-12 placeholder:text-slate-500 focus-visible:outline-none focus-visible:!ring-0 ${inputClassName}`.trim()}
         style={{
-          ...(options?.borderColor === null
-            ? {}
-            : {
-                borderColor:
-                  typeof options?.borderColor === 'string'
-                    ? options.borderColor
-                    : translucentSecondary,
-              }),
           minWidth: '100%',
         }}
         readOnly={Boolean(options?.readOnly)}
@@ -7038,9 +7031,9 @@ export function Header({
 			    >
       <div className="w-full px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3 md:gap-4">
-          <div className="flex w-full flex-nowrap items-end gap-3 sm:gap-4 justify-between">
+          <div className="flex w-full flex-nowrap items-center gap-3 sm:gap-4 justify-between">
 	            {/* Logo (same header layout for doctor + delegate) */}
-	            <div className="flex items-end gap-3 min-w-0 flex-shrink-0 self-end">
+	            <div className="flex items-center gap-3 min-w-0 flex-shrink-0 self-center">
 	              <div className="flex items-center gap-3">
 		                <div
 		                  className="brand-logo relative flex items-center justify-center flex-shrink-0"
@@ -7088,7 +7081,7 @@ export function Header({
             {isLargeScreen && (
               <form
                 onSubmit={handleSearch}
-                className="flex flex-1 justify-center"
+                className="flex flex-1 items-center justify-center self-center"
               >
                 <div className="w-full max-w-md">
                   {renderSearchField()}
@@ -7128,18 +7121,20 @@ export function Header({
 		              )}
 	              {authControls}
 	              {!isLargeScreen && (
-	                <Button
-	                  type="button"
-	                  variant="outline"
+                <Button
+                  type="button"
+                  variant="outline"
                   size="icon"
                   onClick={toggleMobileSearch}
                   aria-expanded={mobileSearchOpen}
-                  className="header-cart-button squircle-sm transition-all duration-300"
+                  disabled={Boolean(catalogLoading)}
+                  aria-disabled={Boolean(catalogLoading)}
+                  className="header-cart-button mobile-search-toggle-button squircle-sm transition-all duration-300"
                 >
                   {mobileSearchOpen ? (
                     <X className="h-4 w-4" />
                   ) : (
-                    <Search className="h-4 w-4" />
+                    <Search className="h-4 w-4 mobile-search-icon" />
                   )}
                   <span className="sr-only">{mobileSearchOpen ? 'Close search' : 'Open search'}</span>
                 </Button>

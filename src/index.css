@@ -5958,6 +5958,17 @@ html {
   height: 1.25rem;
 }
 
+.header-search-input {
+  border: 2px solid rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.header-search-input:focus-visible {
+  border-color: rgb(95, 179, 249) !important;
+  box-shadow: none !important;
+}
+
 .shop-home-button {
   border: 2px solid rgb(95, 179, 249) !important;
   background-color: transparent !important;
@@ -5990,6 +6001,25 @@ html {
   color: #ffffff !important;
   box-shadow: none !important;
   filter: none !important;
+}
+
+.hand-delivery-note-text {
+  font-size: 8px !important;
+  line-height: 1.35 !important;
+}
+
+@media (max-width: 639px) {
+  .hand-delivery-note-text {
+    font-size: 10px !important;
+    line-height: 1.35 !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .hand-delivery-note-text {
+    font-size: 15px !important;
+    line-height: 1.6 !important;
+  }
 }
 
 /* Header user name brand color */
@@ -6572,7 +6602,8 @@ body.account-modal-open .info-focus-overlay {
                 inset 0 1px 2px rgba(255, 255, 255, 0.5),
                 inset 0 -1px 2px rgba(0, 0, 0, 0.04);
     transform: translateY(-1px);
-  color: #ffffff !important;
+    color: #ffffff !important;
+  }
 }
 
 .header-cart-button {
@@ -6585,13 +6616,73 @@ body.account-modal-open .info-focus-overlay {
   min-height: 2.4rem !important;
 }
 
-.header-cart-button:hover,
-.header-cart-button:focus-visible,
-.header-cart-button[data-state="open"],
-.header-cart-button[aria-expanded="true"] {
+.header-cart-button:not(.mobile-search-toggle-button):hover,
+.header-cart-button:not(.mobile-search-toggle-button):focus-visible,
+.header-cart-button:not(.mobile-search-toggle-button)[data-state="open"],
+.header-cart-button:not(.mobile-search-toggle-button)[aria-expanded="true"] {
   background-color: rgb(95, 179, 249) !important;
   border-color: rgb(95, 179, 249) !important;
   color: #ffffff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.mobile-search-toggle-button {
+  border: 2px solid rgb(95, 179, 249) !important;
+  color: rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+}
+
+.mobile-search-toggle-button .mobile-search-icon {
+  color: rgb(100, 116, 139) !important;
+}
+
+.mobile-search-toggle-button:hover,
+.mobile-search-toggle-button:focus-visible,
+.mobile-search-toggle-button[data-state="open"],
+.mobile-search-toggle-button[aria-expanded="true"] {
+  border-color: rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+  color: rgb(95, 179, 249) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+@media (hover: hover) {
+  .mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover {
+    border-color: rgb(95, 179, 249) !important;
+    background-color: rgb(95, 179, 249) !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+
+  .mobile-search-toggle-button:not(:disabled):not([aria-disabled="true"]):hover .mobile-search-icon {
+    color: #ffffff !important;
+  }
+}
+
+.mobile-search-toggle-button:disabled,
+.mobile-search-toggle-button[aria-disabled="true"] {
+  border-color: rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+  color: rgb(95, 179, 249) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+  opacity: 0.6;
+}
+
+.mobile-search-toggle-button:disabled:hover,
+.mobile-search-toggle-button:disabled:focus-visible,
+.mobile-search-toggle-button[aria-disabled="true"]:hover,
+.mobile-search-toggle-button[aria-disabled="true"]:focus-visible {
+  border-color: rgb(95, 179, 249) !important;
+  background-color: transparent !important;
+  color: rgb(95, 179, 249) !important;
   box-shadow: none !important;
   filter: none !important;
   transform: none !important;
@@ -6601,7 +6692,6 @@ body.account-modal-open .info-focus-overlay {
   .dialog-close-btn:hover {
     background-color: rgb(147, 206, 253) !important;
   }
-}
 
 .dialog-close-btn {
   width: calc(var(--spacing) * 9);
