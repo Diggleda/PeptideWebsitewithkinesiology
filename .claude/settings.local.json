@@ -10,7 +10,8 @@
       "Bash(grep:*)",
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
-      "Bash(npm run server:*)"
+      "Bash(npm run server:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

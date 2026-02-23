@@ -14,16 +14,9 @@ from ..integrations import woo_commerce
 from ..repositories import order_repository, patient_links_repository, user_repository
 from ..services import order_service, delegation_service
 from ..services.invoice_service import build_invoice_pdf
-from ..utils.http import handle_action
+from ..utils.http import handle_action, require_admin as _require_admin_user
 
 blueprint = Blueprint("orders", __name__, url_prefix="/api/orders")
-
-def _require_admin_user() -> None:
-    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
-    if role != "admin":
-        err = RuntimeError("Admin access required")
-        setattr(err, "status", 403)
-        raise err
 
 def _round_money(value) -> float:
     try:

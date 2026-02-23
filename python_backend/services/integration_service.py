@@ -4,6 +4,7 @@ import re
 from typing import Dict, List, Tuple
 
 from ..repositories import sales_rep_repository, user_repository
+from ..utils.http import service_error as _service_error
 from . import get_config
 from . import peptide_forum_service
 
@@ -122,7 +123,3 @@ def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
     return {"success": True, **result}
 
 
-def _service_error(message: str, status: int) -> Exception:
-    err = ValueError(message)
-    setattr(err, "status", status)
-    return err

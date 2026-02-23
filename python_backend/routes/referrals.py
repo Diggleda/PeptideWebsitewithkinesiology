@@ -617,7 +617,3 @@ def _error(message, status):
     return err
 
 
-def _now():
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()

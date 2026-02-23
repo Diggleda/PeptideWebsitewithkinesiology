@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from . import sales_rep_repository
+from ..utils.http import utc_now_iso as _now
 
 
 def _normalize_code(code: str) -> str:
@@ -193,5 +194,3 @@ def _generate_id() -> str:
     return str(int(time() * 1000))
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()

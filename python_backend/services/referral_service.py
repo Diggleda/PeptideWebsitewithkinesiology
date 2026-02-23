@@ -10,6 +10,7 @@ from pathlib import Path
 from time import time
 from typing import Dict, List, Optional
 
+from ..utils.http import service_error as _service_error, utc_now_iso as _now
 from ..repositories import (
     contact_form_status_repository,
     credit_ledger_repository,
@@ -2592,16 +2593,6 @@ def count_orders_for_doctor(doctor_id: str) -> int:
     return 1 if _has_woo_order_for_email(email) else 0
 
 
-def _service_error(message: str, status: int) -> Exception:
-    err = ValueError(message)
-    setattr(err, "status", status)
-    return err
-
-
-def _now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _generate_manual_id() -> str:

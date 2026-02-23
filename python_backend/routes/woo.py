@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, request, abort, Response, stream_with_context, jsonify, g
+from flask import Blueprint, request, abort, Response, stream_with_context, jsonify
 import base64
 import hashlib
 import json
@@ -19,7 +19,7 @@ from ..middleware.auth import require_auth
 from ..config import get_config
 from ..integrations import woo_commerce, woo_commerce_webhook
 from ..repositories import product_document_repository
-from ..utils.http import handle_action, json_error
+from ..utils.http import handle_action, json_error, require_admin as _require_admin
 from ..utils.security import verify_woocommerce_webhook_signature
 
 
@@ -454,16 +454,6 @@ def list_certificate_products():
     return handle_action(action)
 
 
-def _is_admin() -> bool:
-    role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
-    return role == "admin"
-
-
-def _require_admin():
-    if not _is_admin():
-        err = RuntimeError("Admin access required")
-        setattr(err, "status", 403)
-        raise err
 
 
 def _parse_data_url_or_base64(value: str) -> tuple[bytes, str | None]:

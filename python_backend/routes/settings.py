@@ -18,7 +18,7 @@ from ..services import get_config
 from ..services import auth_service
 from ..services import presence_service
 from ..services import settings_service  # type: ignore[attr-defined]
-from ..utils.http import handle_action
+from ..utils.http import handle_action, is_admin as _is_admin, require_admin as _require_admin
 
 blueprint = Blueprint("settings", __name__, url_prefix="/api/settings")
 
@@ -40,26 +40,14 @@ _LIVE_USERS_LONGPOLL_CONCURRENCY = int(os.environ.get("LIVE_USERS_LONGPOLL_CONCU
 _LIVE_USERS_LONGPOLL_CONCURRENCY = max(1, min(_LIVE_USERS_LONGPOLL_CONCURRENCY, 20))
 _LIVE_USERS_LONGPOLL_SEMAPHORE = threading.BoundedSemaphore(_LIVE_USERS_LONGPOLL_CONCURRENCY)
 
-def _is_admin() -> bool:
-    role = str((getattr(g, "current_user", None) or {}).get("role") or "").lower()
-    return role == "admin"
-
 def _is_sales_lead() -> bool:
     role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
     return role in ("sales_lead", "saleslead", "sales-lead")
 
-
-def _require_admin():
-    if not _is_admin():
-        err = RuntimeError("Admin access required")
-        setattr(err, "status", 403)
-        raise err
-
 def _require_admin_or_sales_lead():
     if not (_is_admin() or _is_sales_lead()):
-        err = RuntimeError("Admin access required")
-        setattr(err, "status", 403)
-        raise err
+        from ..utils.http import service_error
+        raise service_error("Admin access required", 403)
 
 
 def _public_user_profile(user: dict) -> dict:

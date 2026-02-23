@@ -35,6 +35,37 @@ def _sanitize_public_message(message: str) -> str:
     return cleaned
 
 
+def service_error(message: str, status: int) -> Exception:
+    """Create a ValueError with an HTTP status code for handle_action to catch."""
+    err = ValueError(message)
+    setattr(err, "status", status)
+    return err
+
+
+def require_admin() -> None:
+    """Raise 403 if the current Flask request user is not an admin."""
+    from flask import g
+
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    if role != "admin":
+        raise service_error("Admin access required", 403)
+
+
+def is_admin() -> bool:
+    """Return True if the current Flask request user is an admin."""
+    from flask import g
+
+    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
+    return role == "admin"
+
+
+def utc_now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 def json_success(data: Any, status: int = 200) -> Response:
     return jsonify(data), status
 

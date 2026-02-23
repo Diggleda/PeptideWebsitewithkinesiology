@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from ..services import get_config
 from ..database import mysql_client
 from .. import storage
+from ..utils.http import utc_now_iso as _now
 
 
 def _using_mysql() -> bool:
@@ -405,7 +406,3 @@ def _generate_id() -> str:
     return str(int(time() * 1000))
 
 
-def _now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()

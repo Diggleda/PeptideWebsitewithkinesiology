@@ -10,6 +10,7 @@ import re
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+from ..utils.http import service_error as _service_error
 from ..repositories import (
     order_repository,
     user_repository,
@@ -4818,7 +4819,3 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
             _admin_products_commission_inflight = None
 
 
-def _service_error(message: str, status: int) -> Exception:
-    err = ValueError(message)
-    setattr(err, "status", status)
-    return err

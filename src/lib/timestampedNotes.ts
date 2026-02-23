@@ -16,7 +16,7 @@ const monthIndexFromLabel = (raw: string) => {
   return index >= 0 ? index : null;
 };
 
-const parseTimestampLabel = (raw: string) => {
+export const parseTimestampLabel = (raw: string) => {
   const match = raw
     .trim()
     .match(
@@ -44,7 +44,7 @@ const parseTimestampLabel = (raw: string) => {
   return parsed;
 };
 
-const isValidDate = (value: Date) => Number.isFinite(value.getTime());
+export const isValidDate = (value: Date) => Number.isFinite(value.getTime());
 
 export const formatTimestampedNotesLabel = (value: Date) => {
   const time = value

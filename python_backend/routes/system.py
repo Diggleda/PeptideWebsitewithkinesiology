@@ -20,19 +20,9 @@ from ..queue import get_queue as get_rq_queue
 from ..queue import enqueue as queue_enqueue
 from ..jobs.product_docs import sync_product_documents
 from ..jobs.catalog_snapshot import sync_catalog_snapshot_job
-from ..utils.http import handle_action
+from ..utils.http import handle_action, require_admin as _require_admin_user, utc_now_iso as _now
 
 blueprint = Blueprint("system", __name__, url_prefix="/api")
-
-
-def _require_admin_user() -> None:
-    from flask import g
-
-    role = str((getattr(g, "current_user", None) or {}).get("role") or "").strip().lower()
-    if role != "admin":
-        err = RuntimeError("Admin access required")
-        setattr(err, "status", 403)
-        raise err
 
 
 def _read_linux_meminfo() -> dict | None:
@@ -682,12 +672,6 @@ def network_test_upload():
         }
 
     return handle_action(action)
-
-
-def _now():
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 @blueprint.get("/news/peptides")

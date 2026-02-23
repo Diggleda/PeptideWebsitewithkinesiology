@@ -9,6 +9,7 @@ from .. import storage
 import re
 
 from . import user_repository, referral_code_repository, sales_rep_repository
+from ..utils.http import utc_now_iso as _now
 
 
 _POSSIBLE_PREFIXES = (
@@ -405,10 +406,6 @@ def _generate_id() -> str:
     from time import time
 
     return str(int(time() * 1000))
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def sync_referred_contact_for_account(

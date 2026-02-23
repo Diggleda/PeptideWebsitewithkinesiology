@@ -7,6 +7,7 @@ import uuid
 from ..services import get_config
 from ..database import mysql_client
 from .. import storage
+from ..utils.http import utc_now_iso as _now
 
 HOUSE_SALES_REP_ID = "house"
 DELETED_USER_ID = "0000000000000"
@@ -23,10 +24,6 @@ def _get_store():
     if store is None:
         raise RuntimeError("sales_prospect_store is not initialised")
     return store
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _generate_id() -> str:
