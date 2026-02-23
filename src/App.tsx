@@ -218,6 +218,7 @@ interface User {
   officeCity?: string | null;
   officeState?: string | null;
   officePostalCode?: string | null;
+  receiveClientOrderUpdateEmails?: boolean;
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
@@ -3825,7 +3826,11 @@ function MainApp() {
 	      setPeptideForumLoading(false);
 	      peptideForumInFlightRef.current = false;
 	    }
-	  }, [user?.id]);
+		  }, [user?.id]);
+
+  useEffect(() => {
+    setReceiveClientOrderUpdateEmails(Boolean(user?.receiveClientOrderUpdateEmails));
+  }, [user?.id, user?.receiveClientOrderUpdateEmails]);
 
   const shouldShowPeptideForumCard =
     peptideForumEnabled || isAdmin(user?.role);
@@ -5459,7 +5464,7 @@ function MainApp() {
 	    [user?.role],
 	  );
 
-	  const handleTestPaymentsOverrideToggle = useCallback(
+		  const handleTestPaymentsOverrideToggle = useCallback(
 	    async (value: boolean) => {
 	      if (!isAdmin(user?.role)) {
 	        return;
@@ -6228,6 +6233,42 @@ function MainApp() {
 		  const [salesRepProspectsForModal, setSalesRepProspectsForModal] = useState<any[] | null>(
 		    null,
 		  );
+
+  const handleReceiveClientOrderUpdateEmailsToggle = useCallback(
+    async (value: boolean) => {
+      if (!user?.id) {
+        return;
+      }
+      setSettingsSaving((prev) => ({ ...prev, receiveClientOrderUpdateEmails: true }));
+      let previousValue = false;
+      setReceiveClientOrderUpdateEmails((prev) => {
+        previousValue = prev;
+        return value;
+      });
+      try {
+        const updated = await authAPI.updateMe({
+          receiveClientOrderUpdateEmails: value,
+        });
+        const confirmed = Boolean((updated as any)?.receiveClientOrderUpdateEmails);
+        setReceiveClientOrderUpdateEmails(confirmed);
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                receiveClientOrderUpdateEmails: confirmed,
+              }
+            : prev,
+        );
+      } catch (error) {
+        console.warn("[Settings] Failed to update email controls setting", error);
+        toast.error("Unable to update email controls right now.");
+        setReceiveClientOrderUpdateEmails(previousValue);
+      } finally {
+        setSettingsSaving((prev) => ({ ...prev, receiveClientOrderUpdateEmails: false }));
+      }
+    },
+    [user?.id],
+  );
 		  const [salesRepProspectsLoading, setSalesRepProspectsLoading] = useState(false);
 		  const [salesRepProspectsError, setSalesRepProspectsError] = useState<string | null>(null);
 		  const salesRepProspectsKeyRef = useRef<string | null>(null);
@@ -9628,6 +9669,51 @@ function MainApp() {
   type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "maintenance";
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
+  type SalesDashboardTabId = "here_now" | "settings";
+  const [salesDashboardTab, setSalesDashboardTab] =
+    useState<SalesDashboardTabId>("here_now");
+  const salesDashboardTabs = useMemo(
+    () =>
+      [
+        { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
+        { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
+      ] satisfies Array<{
+        id: SalesDashboardTabId;
+        label: string;
+        Icon: ({ className }: { className?: string }) => ReactNode;
+      }>,
+    [],
+  );
+  const salesDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [salesDashboardTabIndicator, setSalesDashboardTabIndicator] = useState<{
+    left: number;
+    width: number;
+    opacity: number;
+  }>({ left: 0, width: 112, opacity: 1 });
+  const updateSalesDashboardTabIndicator = useCallback(() => {
+    const container = salesDashboardTabsContainerRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector<HTMLButtonElement>(
+      `button[data-sales-dashboard-tab="${salesDashboardTab}"]`,
+    );
+    if (!activeBtn) return;
+    const content = activeBtn.querySelector<HTMLElement>("[data-sales-dashboard-tab-content]");
+    const extraUnderlineWidth = 8;
+    const left =
+      (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
+      container.scrollLeft -
+      extraUnderlineWidth / 2;
+    const width = (content ? content.offsetWidth : activeBtn.offsetWidth) + extraUnderlineWidth;
+    setSalesDashboardTabIndicator({ left, width, opacity: 1 });
+  }, [salesDashboardTab]);
+  useEffect(() => {
+    updateSalesDashboardTabIndicator();
+    const onResize = () => updateSalesDashboardTabIndicator();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [updateSalesDashboardTabIndicator]);
   const adminDashboardTabs = useMemo(
     () =>
       [
@@ -9644,7 +9730,7 @@ function MainApp() {
         },
         {
           id: "maintenance" as const,
-          label: "Maintenance",
+          label: "Settings",
           Icon: AdjustmentsHorizontalIcon,
         },
       ] satisfies Array<{
@@ -9935,6 +10021,8 @@ function MainApp() {
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
+    useState(false);
   const [accountIndicatorTotal, setAccountIndicatorTotal] = useState(0);
 	  const [testPaymentsOverrideEnabled, setTestPaymentsOverrideEnabled] = useState(false);
 	  const [researchDashboardEnabled, setResearchDashboardEnabled] = useState(false);
@@ -9946,8 +10034,16 @@ function MainApp() {
     patientLinks: boolean;
     forum: boolean;
     research: boolean;
-      testPaymentsOverride: boolean;
-  }>({ shop: false, patientLinks: false, forum: false, research: false, testPaymentsOverride: false });
+    testPaymentsOverride: boolean;
+    receiveClientOrderUpdateEmails: boolean;
+  }>({
+    shop: false,
+    patientLinks: false,
+    forum: false,
+    research: false,
+    testPaymentsOverride: false,
+    receiveClientOrderUpdateEmails: false,
+  });
   type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
@@ -17740,6 +17836,7 @@ function MainApp() {
 	    const convertedReferrals = referrals.filter(
 	      (ref) => (ref.status || "").toLowerCase() === "converted",
 	    ).length;
+	    const isSalesRoleDashboard = isRep(user?.role) || isSalesLead(user?.role);
 	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
 	    const adminDashboardPeriodLabel = (() => {
 	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
@@ -17909,6 +18006,44 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
+	    const renderEmailControlsCard = () => (
+	      <div className="mb-4 glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+	        <div className="border-b border-slate-200/60 pb-3">
+	          <h4 className="text-base font-semibold text-slate-900">Email Controls</h4>
+	          <p className="text-sm text-slate-600">
+	            Set your preferences for receiving email updates.
+	          </p>
+	        </div>
+	        <div className="pt-4">
+	          <label className="flex items-start gap-3 cursor-pointer">
+	            <input
+	              type="checkbox"
+	              aria-label="Recieve client order update emails"
+	              checked={receiveClientOrderUpdateEmails}
+	              onChange={(e) =>
+                  void handleReceiveClientOrderUpdateEmailsToggle(e.target.checked)
+                }
+	              className="brand-checkbox mt-0.5"
+                disabled={!user?.id || settingsSaving.receiveClientOrderUpdateEmails}
+	            />
+	            <span className="min-w-0">
+	              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+		                <span>Recieve client order update emails{" "}</span>
+                  <span className="text-xs font-semibold text-slate-500">
+                    {"\u00A0"}(
+                    {settingsSaving.receiveClientOrderUpdateEmails
+                      ? "Saving…"
+                      : receiveClientOrderUpdateEmails
+                        ? "Enabled"
+                        : "Disabled"}
+                    )
+                  </span>
+	              </span>
+	            </span>
+	          </label>
+	        </div>
+	      </div>
+	    );
 		
 		    return (
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
@@ -18016,7 +18151,55 @@ function MainApp() {
                   </div>
                 )}
 
-			          {(isRep(user?.role) || isSalesLead(user?.role)) && (
+			          {isSalesRoleDashboard && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={salesDashboardTabsContainerRef}
+                      onScroll={updateSalesDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {salesDashboardTabs.map((tab) => {
+                          const isActive = salesDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-sales-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setSalesDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-sales-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">{tab.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: salesDashboardTabIndicator.left,
+                        width: salesDashboardTabIndicator.width,
+                        opacity: 1,
+                      }}
+                    />
+                  </div>
+                )}
+
+			          {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
 			            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		              <div className="flex flex-col gap-2">
 		                <div>
@@ -18374,7 +18557,7 @@ function MainApp() {
 		            </div>
 		          )}
 
-		          {isSalesLead(user?.role) && (
+		          {isSalesLead(user?.role) && salesDashboardTab === "here_now" && (
 		            <div className="mt-6">
 		              <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 		                <div className="flex flex-col gap-3 mb-4">
@@ -18854,9 +19037,10 @@ function MainApp() {
 		                  </h3>
 			                  <p className="text-sm text-slate-600">
 			                    Configure storefront availability.
-			                  </p>
+		                  </p>
 		                </div>
 	                </div>
+	                {renderEmailControlsCard()}
 
 		                <div className="mb-4 overflow-hidden rounded-lg border border-slate-200/70 bg-white/70">
 		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
@@ -18875,7 +19059,7 @@ function MainApp() {
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
 		                          <span>Shop button for users</span>
 		                          <span className="text-xs font-semibold text-slate-500">
-		                            (Status:{" "}
+		                            {"\u00A0"}(
 		                            {settingsSaving.shop
 		                              ? "Saving…"
 		                              : shopEnabled
@@ -18907,7 +19091,7 @@ function MainApp() {
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
                               <span>Patient Links tab (doctors)</span>
                               <span className="text-xs font-semibold text-slate-500">
-                                (Status:{" "}
+                                {"\u00A0"}(
                                 {settingsSaving.patientLinks
                                   ? "Saving…"
                                   : patientLinksEnabled
@@ -18941,7 +19125,7 @@ function MainApp() {
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
 		                          <span>The Peptide Forum card</span>
 		                          <span className="text-xs font-semibold text-slate-500">
-		                            (Status:{" "}
+		                            {"\u00A0"}(
 		                            {settingsSaving.forum
 		                              ? "Saving…"
 		                              : peptideForumEnabled
@@ -18979,7 +19163,7 @@ function MainApp() {
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
 		                          <span>Research dashboard access (doctors/reps)</span>
 		                          <span className="text-xs font-semibold text-slate-500">
-		                            (Status:{" "}
+		                            {"\u00A0"}(
 		                            {settingsSaving.research
 		                              ? "Saving…"
 		                              : !settingsSupport.research
@@ -19015,7 +19199,7 @@ function MainApp() {
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
                               <span>Test payments override ($0.01)</span>
                               <span className="text-xs font-semibold text-slate-500">
-                                (Status:{" "}
+                                {"\u00A0"}(
                                 {settingsSaving.testPaymentsOverride
                                   ? "Saving…"
                                   : testPaymentsOverrideEnabled
@@ -20605,7 +20789,7 @@ function MainApp() {
 			            </div>
 			          )}
 	
-		          {hasChartData && (
+		          {isSalesRoleDashboard && salesDashboardTab === "here_now" && hasChartData && (
 	            <div className="sales-rep-combined-chart">
 	              <div className="sales-rep-chart-header">
 	                <div>
@@ -20719,6 +20903,7 @@ function MainApp() {
             </div>
           )}
 
+          {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
           <div className="sales-rep-dashboard-grid">
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
@@ -22310,19 +22495,27 @@ function MainApp() {
                 )}
               </div>
               {/* Historic prospects removed; credited referrals appear in Sales */}
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
+	            </div>
+	          </div>
+	          )}
+	          {isSalesRoleDashboard && salesDashboardTab === "settings" && (
+	            <div>
+	              {renderEmailControlsCard()}
+	            </div>
+	          )}
+	        </div>
+	        {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
+	        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
           Send dashboard recommendations and ideas to{" "}
           <a
             className="text-[rgb(95,179,249)] underline-offset-2 hover:underline"
-            href="mailto:petergibbons7@icloud.com?subject=Dashboard%20Recommendation%20(PepPro)"
+            href="mailto:pgibbons@peppro.net?subject=Dashboard%20Recommendation%20(PepPro)"
           >
-            petergibbons7@icloud.com
+            pgibbons@peppro.net
           </a>
           .
         </p>
+        )}
       </section>
     );
   };

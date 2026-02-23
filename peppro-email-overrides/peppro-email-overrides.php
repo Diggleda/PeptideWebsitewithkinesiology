@@ -105,6 +105,85 @@ function peppro_is_zelle_order($order) {
   return (strpos($title, 'zelle') !== false) || (strpos($meta, 'zelle') !== false);
 }
 
+function peppro_email_overrides_shared_users_table() {
+  // Override in wp-config.php if needed:
+  // define('PEPPR_SHARED_USERS_TABLE', 'users');
+  $value = defined('PEPPR_SHARED_USERS_TABLE') ? (string) PEPPR_SHARED_USERS_TABLE : 'users';
+  $value = trim($value);
+  return $value !== '' ? $value : 'users';
+}
+
+function peppro_email_overrides_boolish($value) {
+  if (is_bool($value)) return $value;
+  if (is_numeric($value)) return ((int) $value) === 1;
+  $normalized = strtolower(trim((string) $value));
+  return in_array($normalized, array('1', 'true', 'yes', 'on'), true);
+}
+
+function peppro_email_overrides_rep_cc_enabled($rep_email) {
+  $rep_email = strtolower(trim((string) $rep_email));
+  if ($rep_email === '' || strpos($rep_email, '@') === false) return false;
+
+  global $wpdb;
+  if (!isset($wpdb) || !is_object($wpdb) || !method_exists($wpdb, 'get_var')) {
+    return false;
+  }
+
+  $table = peppro_email_overrides_shared_users_table();
+  $query = $wpdb->prepare(
+    "SELECT receive_client_order_update_emails
+     FROM `{$table}`
+     WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+     LIMIT 1",
+    $rep_email
+  );
+  $raw = $wpdb->get_var($query);
+  if ($raw === null) return false;
+  return peppro_email_overrides_boolish($raw);
+}
+
+function peppro_email_overrides_add_sales_rep_cc($headers, $email_id, $order, $email) {
+  if (!$order instanceof WC_Order) return $headers;
+
+  // Only apply to customer-facing Woo emails.
+  $resolved_email_id = '';
+  if (is_string($email_id) && $email_id !== '') {
+    $resolved_email_id = $email_id;
+  } elseif (is_object($email) && isset($email->id)) {
+    $resolved_email_id = (string) $email->id;
+  }
+  if ($resolved_email_id === '' || strpos($resolved_email_id, 'customer_') !== 0) {
+    return $headers;
+  }
+
+  $rep_email = sanitize_email((string) $order->get_meta('peppro_sales_rep_email'));
+  if ($rep_email === '') return $headers;
+
+  $customer_email = strtolower(trim((string) $order->get_billing_email()));
+  if ($customer_email !== '' && strtolower($rep_email) === $customer_email) {
+    return $headers;
+  }
+
+  if (!peppro_email_overrides_rep_cc_enabled($rep_email)) {
+    return $headers;
+  }
+
+  // Avoid duplicate CC if another plugin already added it.
+  if (is_array($headers)) {
+    $joined = implode("\n", $headers);
+    if (stripos($joined, $rep_email) !== false) return $headers;
+    $headers[] = 'Cc: ' . $rep_email;
+    return $headers;
+  }
+
+  $header_str = (string) $headers;
+  if (stripos($header_str, $rep_email) !== false) return $headers;
+  $header_str .= "Cc: {$rep_email}\r\n";
+  return $header_str;
+}
+
+add_filter('woocommerce_email_headers', 'peppro_email_overrides_add_sales_rep_cc', 20, 4);
+
 function peppro_bacs_email_instructions($order, $sent_to_admin, $plain_text, $email) {
   if ($sent_to_admin || !$order instanceof WC_Order) return;
   if ($order->get_payment_method() !== 'bacs') return;

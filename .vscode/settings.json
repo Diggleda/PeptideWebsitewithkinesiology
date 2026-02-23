@@ -1,4 +1,12 @@
 {
     "git.ignoreLimitWarning": true,
-    "chatgpt.openOnStartup": true
+    "chatgpt.openOnStartup": true,
+    "claudeCode.initialPermissionMode": "autoAcceptEdits",
+    "auto-run-command.rules": [
+        {
+            "condition": "always",
+            "command": "claude-vscode.sidebar.open",
+            "message": "Opening Claude Code"
+        }
+    ]
 }

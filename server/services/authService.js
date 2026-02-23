@@ -107,6 +107,19 @@ const normalizeRole = (role) => {
   return 'doctor';
 };
 
+const normalizeBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1'
+      || normalized === 'true'
+      || normalized === 'yes'
+      || normalized === 'on';
+  }
+  return false;
+};
+
 const sanitizeUser = (user) => {
   const normalizeRepSummary = (rep) => {
     if (!rep || typeof rep !== 'object') return null;
@@ -151,6 +164,7 @@ const sanitizeUser = (user) => {
     ...rest,
     profileImageUrl: normalizeOptionalString(user.profileImageUrl),
     role: normalizeRole(user.role),
+    receiveClientOrderUpdateEmails: normalizeBooleanFlag(user.receiveClientOrderUpdateEmails),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
     salesRep: resolveSalesRepSummary(user),
   };
@@ -576,6 +590,11 @@ const updateProfile = async (userId, data) => {
           : 0,
       },
       'Profile image value saved to user record',
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'receiveClientOrderUpdateEmails')) {
+    next.receiveClientOrderUpdateEmails = normalizeBooleanFlag(
+      data.receiveClientOrderUpdateEmails,
     );
   }
 

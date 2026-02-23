@@ -106,6 +106,14 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["devCommission"] = _normalize_bool(normalized.get("devCommission"))
     else:
         normalized["devCommission"] = _normalize_bool(normalized.get("dev_commission"))
+    if "receiveClientOrderUpdateEmails" in normalized:
+        normalized["receiveClientOrderUpdateEmails"] = _normalize_bool(
+            normalized.get("receiveClientOrderUpdateEmails")
+        )
+    else:
+        normalized["receiveClientOrderUpdateEmails"] = _normalize_bool(
+            normalized.get("receive_client_order_update_emails")
+        )
     return normalized
 
 
@@ -365,6 +373,7 @@ def _mysql_insert(user: Dict) -> Dict:
             phone, office_address_line1, office_address_line2, office_city, office_state,
             office_postal_code, office_country, profile_image_url, delegate_logo_url, zelle_contact, downloads,
             referral_credits, total_referrals, visits,
+            receive_client_order_update_emails,
             markup_percent,
             created_at, last_login_at, must_reset_password, first_order_bonus_granted_at,
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
@@ -375,7 +384,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
             %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(downloads)s, %(referral_credits)s,
-            %(total_referrals)s, %(visits)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
+            %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
         )
@@ -410,6 +419,7 @@ def _mysql_insert(user: Dict) -> Dict:
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
             visits = VALUES(visits),
+            receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
             markup_percent = VALUES(markup_percent),
             created_at = VALUES(created_at),
             last_login_at = VALUES(last_login_at),
@@ -467,6 +477,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
             visits = %(visits)s,
+            receive_client_order_update_emails = %(receive_client_order_update_emails)s,
             markup_percent = %(markup_percent)s,
             created_at = %(created_at)s,
             last_login_at = %(last_login_at)s,
@@ -552,6 +563,7 @@ def _row_to_user(row: Dict) -> Dict:
             "npiStatus": row.get("npi_status"),
             "npiCheckError": row.get("npi_check_error"),
             "devCommission": row.get("dev_commission"),
+            "receiveClientOrderUpdateEmails": row.get("receive_client_order_update_emails"),
         }
     )
 
@@ -598,6 +610,7 @@ def _to_db_params(user: Dict) -> Dict:
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),
         "visits": int(user.get("visits") or 0),
+        "receive_client_order_update_emails": 1 if _normalize_bool(user.get("receiveClientOrderUpdateEmails")) else 0,
         "markup_percent": float(user.get("markupPercent") or 0.0),
         "created_at": parse_dt(user.get("createdAt")),
         "last_login_at": parse_dt(user.get("lastLoginAt")),

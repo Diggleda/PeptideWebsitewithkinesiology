@@ -98,6 +98,7 @@ const syncDirectShippingToSql = (user) => {
     taxExemptSource: user.taxExemptSource || null,
     taxExemptReason: user.taxExemptReason || null,
     devCommission: user.devCommission ? 1 : 0,
+    receiveClientOrderUpdateEmails: user.receiveClientOrderUpdateEmails ? 1 : 0,
   };
   logger.info(
     {
@@ -137,7 +138,8 @@ const syncDirectShippingToSql = (user) => {
           is_tax_exempt,
           tax_exempt_source,
           tax_exempt_reason,
-          dev_commission
+          dev_commission,
+          receive_client_order_update_emails
         ) VALUES (
           :id,
           :email,
@@ -159,7 +161,8 @@ const syncDirectShippingToSql = (user) => {
           :isTaxExempt,
           :taxExemptSource,
           :taxExemptReason,
-          :devCommission
+          :devCommission,
+          :receiveClientOrderUpdateEmails
         )
         ON DUPLICATE KEY UPDATE
           email = COALESCE(VALUES(email), email),
@@ -181,7 +184,8 @@ const syncDirectShippingToSql = (user) => {
           is_tax_exempt = VALUES(is_tax_exempt),
           tax_exempt_source = VALUES(tax_exempt_source),
           tax_exempt_reason = VALUES(tax_exempt_reason),
-          dev_commission = VALUES(dev_commission)
+          dev_commission = VALUES(dev_commission),
+          receive_client_order_update_emails = VALUES(receive_client_order_update_emails)
       `,
       params,
     )
@@ -297,6 +301,13 @@ const ensureUserDefaults = (user) => {
     normalized.devCommission = false;
   } else {
     normalized.devCommission = normalizeBooleanFlag(normalized.devCommission);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'receiveClientOrderUpdateEmails')) {
+    normalized.receiveClientOrderUpdateEmails = false;
+  } else {
+    normalized.receiveClientOrderUpdateEmails = normalizeBooleanFlag(
+      normalized.receiveClientOrderUpdateEmails,
+    );
   }
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {

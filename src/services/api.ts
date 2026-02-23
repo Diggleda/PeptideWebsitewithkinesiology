@@ -830,6 +830,7 @@ export type UpdateProfilePayload = {
   officeCity?: string | null;
   officeState?: string | null;
   officePostalCode?: string | null;
+  receiveClientOrderUpdateEmails?: boolean;
 };
 
 // Auth API

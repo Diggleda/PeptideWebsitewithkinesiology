@@ -33,6 +33,18 @@ def _normalize_email(value: str) -> str:
     return str(value).strip().lower()
 
 
+def _normalize_bool(value: Any) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) != 0.0
+        except Exception:
+            return False
+    text = str(value or "").strip().lower()
+    return text in ("1", "true", "yes", "y", "on")
+
+
 def _build_reset_url(token: str) -> str:
     config = get_config()
     base = (config.password_reset_public_base_url or config.frontend_base_url or "http://localhost:3000").rstrip("/")
@@ -731,6 +743,11 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "officePostalCode": data.get("officePostalCode") or user.get("officePostalCode"),
         "officeCountry": data.get("officeCountry") or user.get("officeCountry"),
     }
+    receive_client_order_update_emails = (
+        _normalize_bool(data.get("receiveClientOrderUpdateEmails"))
+        if "receiveClientOrderUpdateEmails" in data
+        else _normalize_bool(user.get("receiveClientOrderUpdateEmails"))
+    )
 
     if email and email != user.get("email"):
         existing = user_repository.find_by_email(email)
@@ -745,6 +762,7 @@ def update_profile(user_id: str, data: Dict) -> Dict:
         "profileImageUrl": profile_image_url,
         "delegateLogoUrl": delegate_logo_url,
         "zelleContact": zelle_contact,
+        "receiveClientOrderUpdateEmails": receive_client_order_update_emails,
         **shipping_fields,
     }
 
