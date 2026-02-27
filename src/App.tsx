@@ -17836,7 +17836,13 @@ function MainApp() {
 	    const convertedReferrals = referrals.filter(
 	      (ref) => (ref.status || "").toLowerCase() === "converted",
 	    ).length;
-	    const isSalesRoleDashboard = isRep(user?.role) || isSalesLead(user?.role);
+	    const showSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
+	    const isSalesRoleDashboard = showSalesDashboardTabs || isAdmin(user?.role);
+	    const isSalesHereNowActive = salesDashboardTab === "here_now" || isAdmin(user?.role);
+	    const shouldShowLiveClientsCard =
+	      showSalesDashboardTabs &&
+	      salesDashboardTab === "here_now" &&
+	      (!isAdmin(user?.role) || adminDashboardTab === "here_now");
 	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
 	    const adminDashboardPeriodLabel = (() => {
 	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
@@ -18010,7 +18016,7 @@ function MainApp() {
 	      <div className="mb-4 glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
 	        <div className="border-b border-slate-200/60 pb-3">
 	          <h4 className="text-base font-semibold text-slate-900">Email Controls</h4>
-	          <p className="text-sm text-slate-600">
+	          <p className="text-sm text-slate-600 mb-1">
 	            Set your preferences for receiving email updates.
 	          </p>
 	        </div>
@@ -18069,7 +18075,7 @@ function MainApp() {
 		                  href="https://shop.peppro.net/wp-admin/"
 		                  target="_blank"
 		                  rel="noopener noreferrer"
-		                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
+		                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
 		                  title="Open Woocommerce dashboard"
 		                >
 	                    <img
@@ -18077,6 +18083,7 @@ function MainApp() {
 	                      alt=""
 	                      aria-hidden="true"
 	                      className="h-5 w-5"
+                        style={{ width: "50px", height: "50px" }}
 	                      loading="lazy"
 	                      decoding="async"
 	                    />
@@ -18086,7 +18093,7 @@ function MainApp() {
                     href={shipStationDashboardUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
                     title="Open ShipStation Dashboard"
                   >
                     <img
@@ -18094,10 +18101,29 @@ function MainApp() {
                       alt=""
                       aria-hidden="true"
                       className="h-5 w-5"
+                      style={{ width: "22.36px", height: "22.36px" }}
                       loading="lazy"
                       decoding="async"
                     />
                     <span>ShipStation Dashboard</span>
+                  </a>
+                  <a
+                    href="https://admin.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white/80 px-4 py-[2px] text-sm font-semibold leading-none text-slate-900 transition-colors hover:border-[rgba(95,179,249,0.65)] hover:bg-white sm:w-auto sm:min-w-[220px]"
+                    title="Open Google Workspace Admin"
+                  >
+                    <img
+                      src="https://www.gstatic.com/images/branding/product/1x/admin_2020q4_48dp.png"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                      style={{ width: "22.36px", height: "22.36px" }}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span>Google Workspace</span>
                   </a>
 	              </div>
 		            )}
@@ -18151,7 +18177,7 @@ function MainApp() {
                   </div>
                 )}
 
-			          {isSalesRoleDashboard && (
+			          {showSalesDashboardTabs && (
                   <div className="relative w-full">
                     <div
                       className="w-full account-tab-scroll-container"
@@ -18199,13 +18225,18 @@ function MainApp() {
                   </div>
                 )}
 
-			          {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
-			            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+			          {shouldShowLiveClientsCard && (
+			            <div
+                    className={clsx(
+                      "glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70",
+                      isAdmin(user?.role) && "order-last",
+                    )}
+                  >
 		              <div className="flex flex-col gap-2">
 		                <div>
 		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
 		                  <p className="text-sm text-slate-600">
-		                    {isSalesLead(user?.role)
+		                    {isSalesLead(user?.role) || isAdmin(user?.role)
 		                      ? "All doctors and sales reps (online, idle, and offline)."
 		                      : "Your doctors (online, idle, and offline)."}
 		                  </p>
@@ -18847,13 +18878,14 @@ function MainApp() {
 	                    key={`admin-panel-${adminDashboardTab}`}
 	                    className={clsx(
 	                      "admin-tab-panel-enter",
-	                      adminDashboardTab === "here_now"
+	                      adminDashboardTab === "here_now" ||
+	                        adminDashboardTab === "maintenance"
 	                        ? "space-y-6"
 	                        : "glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70",
 	                    )}
 	                  >
                 {adminDashboardTab === "maintenance" && (
-                <div className="mb-6 rounded-xl border border-slate-200/70 bg-white/70 p-4">
+                <div className="mb-6 squircle-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h4 className="text-base font-semibold text-slate-900">
@@ -19030,20 +19062,17 @@ function MainApp() {
 
 		              {adminDashboardTab === "maintenance" && (
                     <>
-		              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-		                <div>
-		                  <h3 className="text-lg font-semibold text-slate-900">
-		                    Settings
-		                  </h3>
-			                  <p className="text-sm text-slate-600">
-			                    Configure storefront availability.
-		                  </p>
-		                </div>
-	                </div>
 	                {renderEmailControlsCard()}
 
-		                <div className="mb-4 overflow-hidden rounded-lg border border-slate-200/70 bg-white/70">
-		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                <div className="mb-4 glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+                      <div className="border-b border-slate-200/60 pb-3">
+                        <h4 className="text-base font-semibold text-slate-900">Portal Controls</h4>
+                        <p className="text-sm text-slate-600 mb-1">
+                          Enable systems accessible to the physician network.
+                        </p>
+                      </div>
+                      <div className="pt-2">
+		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 		                    <label
 		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
 		                    >
@@ -19075,7 +19104,7 @@ function MainApp() {
 		                    </label>
 		                  </div>
 
-                      <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
                         <label
                           className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
                         >
@@ -19107,7 +19136,7 @@ function MainApp() {
                         </label>
                       </div>
 		
-		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 		                    <label
 		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
 		                    >
@@ -19141,7 +19170,7 @@ function MainApp() {
 		                    </label>
 		                  </div>
 		
-		                  <div className="border-b border-slate-200/60 px-4 py-4 last:border-b-0">
+		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 		                    <label
 		                      className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
 		                    >
@@ -19181,7 +19210,7 @@ function MainApp() {
 		                    </label>
 		                  </div>
 
-                      <div className="px-4 py-4">
+                      <div className="py-4">
                         <label
                           className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
                         >
@@ -19214,6 +19243,7 @@ function MainApp() {
                           </span>
 		                        </label>
 		                      </div>
+                      </div>
 		                </div>
 	                    </>
 	                  )}
@@ -20789,8 +20819,8 @@ function MainApp() {
 			            </div>
 			          )}
 	
-		          {isSalesRoleDashboard && salesDashboardTab === "here_now" && hasChartData && (
-	            <div className="sales-rep-combined-chart">
+		          {isSalesRoleDashboard && isSalesHereNowActive && hasChartData && (
+	            <div className={clsx("sales-rep-combined-chart", isAdmin(user?.role) && "order-last")}>
 	              <div className="sales-rep-chart-header">
 	                <div>
 	                  <h3>Your Pipeline</h3>
@@ -20903,8 +20933,8 @@ function MainApp() {
             </div>
           )}
 
-          {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
-          <div className="sales-rep-dashboard-grid">
+          {isSalesRoleDashboard && isSalesHereNowActive && (
+          <div className={clsx("sales-rep-dashboard-grid", isAdmin(user?.role) && "order-last")}>
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
                 <div className="sales-rep-leads-title">
@@ -22498,13 +22528,13 @@ function MainApp() {
 	            </div>
 	          </div>
 	          )}
-	          {isSalesRoleDashboard && salesDashboardTab === "settings" && (
+	          {showSalesDashboardTabs && salesDashboardTab === "settings" && (
 	            <div>
 	              {renderEmailControlsCard()}
 	            </div>
 	          )}
 	        </div>
-	        {isSalesRoleDashboard && salesDashboardTab === "here_now" && (
+	        {isSalesRoleDashboard && isSalesHereNowActive && (
 	        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
           Send dashboard recommendations and ideas to{" "}
           <a

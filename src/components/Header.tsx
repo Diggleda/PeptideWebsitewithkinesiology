@@ -5015,7 +5015,9 @@ export function Header({
 	                      className="header-home-button squircle-sm bg-white text-slate-900 px-6 justify-center font-semibold gap-2 w-full lg:w-full"
 	                      onClick={() => {
 	                        if (onBuyOrderAgain) {
-	                          onBuyOrderAgain(order);
+	                          // Close account modal before opening checkout to avoid stacked modal blur.
+	                          setWelcomeOpen(false);
+	                          setTimeout(() => onBuyOrderAgain(order), 0);
 	                        } else {
 	                          setSelectedOrder(order);
 	                        }
