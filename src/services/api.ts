@@ -2134,6 +2134,16 @@ export const referralAPI = {
   },
 };
 
+export const seamlessAPI = {
+  getRawPayloads: async (limit: number = 20) => {
+    const normalizedLimit = Math.max(1, Math.min(Number(limit) || 20, 200));
+    return fetchWithAuth(
+      `${API_BASE_URL}/integrations/seamless/raw?limit=${encodeURIComponent(String(normalizedLimit))}`,
+      { method: 'GET' },
+    );
+  },
+};
+
 // Health check
 export const checkServerHealth = async () => {
   try {

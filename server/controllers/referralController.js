@@ -8,6 +8,7 @@ const adminRepository = require('../repositories/adminRepository');
 const salesRepRepository = require('../repositories/salesRepRepository');
 const userRepository = require('../repositories/userRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
+const crmRepository = require('../repositories/crmRepository');
 const orderRepository = require('../repositories/orderRepository');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
@@ -19,8 +20,11 @@ const REFERRAL_STATUSES = ['pending', 'contacted', 'verified', 'account_created'
 const normalizeReferralStatus = (value) => {
   const normalized = (value || '').toString().trim().toLowerCase();
   if (!normalized) return null;
+  if (normalized === 'new') return 'pending';
+  if (normalized === 'qualified') return 'verified';
   if (normalized === 'verifying') return 'verified';
   if (normalized === 'nurture') return 'nuture';
+  if (normalized === 'nurturing') return 'nuture';
   if (normalized === 'nuturing') return 'nuture';
   if (normalized === 'account created') return 'account_created';
   if (normalized === 'account-created') return 'account_created';
@@ -177,6 +181,93 @@ const normalizePhoneDigits = (value) => {
   if (typeof value !== 'string') return null;
   const digits = value.replace(/[^0-9]/g, '');
   return digits ? digits : null;
+};
+
+const normalizeSourceSystem = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'referral';
+  if (normalized === 'house' || normalized === 'house_contact' || normalized === 'contact_form') {
+    return 'contact_form';
+  }
+  if (normalized === 'manual') return 'manual';
+  if (normalized === 'seamless') return 'seamless';
+  if (normalized === 'referral') return 'referral';
+  if (normalized === 'account') return 'account';
+  return normalized;
+};
+
+const parseSourcePayloadObject = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const collectNormalizedEmails = (value, intoSet) => {
+  if (!value || !intoSet) return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectNormalizedEmails(item, intoSet));
+    return;
+  }
+  if (typeof value === 'object') {
+    collectNormalizedEmails(value.email, intoSet);
+    collectNormalizedEmails(value.workEmail, intoSet);
+    collectNormalizedEmails(value.address, intoSet);
+    collectNormalizedEmails(value.value, intoSet);
+    return;
+  }
+  const email = normalizeEmail(value);
+  if (email) {
+    intoSet.add(email);
+  }
+};
+
+const extractProspectAssigneeEmails = (prospect) => {
+  const payload = parseSourcePayloadObject(
+    prospect?.sourcePayloadJson || prospect?.source_payload_json || null,
+  );
+  const emails = new Set();
+
+  const candidates = [
+    prospect?.assignedRepEmail,
+    prospect?.assigned_rep_email,
+    prospect?.assignedEmail,
+    prospect?.assigned_email,
+    prospect?.assignedToEmail,
+    prospect?.assigned_to_email,
+    prospect?.ownerEmail,
+    prospect?.owner_email,
+    prospect?.assigneeEmail,
+    prospect?.assignee_email,
+    payload?.assignedRepEmail,
+    payload?.assigned_rep_email,
+    payload?.assignedEmail,
+    payload?.assigned_email,
+    payload?.assignedToEmail,
+    payload?.assigned_to_email,
+    payload?.ownerEmail,
+    payload?.owner_email,
+    payload?.assigneeEmail,
+    payload?.assignee_email,
+    payload?.owner,
+    payload?.owners,
+    payload?.assignee,
+    payload?.assignees,
+    payload?.assignedTo,
+    payload?.assigned_to,
+    payload?.assignedUser,
+    payload?.assigned_user,
+    payload?.salesRep,
+    payload?.sales_rep,
+    payload?.user,
+  ];
+  candidates.forEach((candidate) => collectNormalizedEmails(candidate, emails));
+  return Array.from(emails);
 };
 
 const buildAccountIndex = () => {
@@ -488,6 +579,28 @@ const getDoctorLedger = (req, res, next) => {
 			      mysqlClient.isEnabled() &&
 			      (scopeAll || isViewingOwnDashboard) &&
 			      requestContext !== 'modal';
+    const ownerIds = normalizeOwnerIds(req.user);
+    const useOwnerId = !scopeAll ? String(salesRepId || '') : null;
+    const allowedOwners = scopeAll && isAdmin
+      ? null
+      : new Set(ownerIds.concat(useOwnerId ? [useOwnerId] : []));
+    const viewerEmail = normalizeEmail(req.user?.email);
+    const isProspectVisibleToViewer = (prospect) => {
+      if (!prospect || (scopeAll && isAdmin)) {
+        return true;
+      }
+      const source = normalizeSourceSystem(prospect?.sourceSystem || prospect?.source_system);
+      const owner = String(prospect?.salesRepId || prospect?.sales_rep_id || '').trim();
+      if (owner && owner !== 'unassigned') {
+        return allowedOwners ? allowedOwners.has(owner) : true;
+      }
+      if (source !== 'seamless') {
+        return owner === 'unassigned';
+      }
+      if (!viewerEmail) return false;
+      const assigneeEmails = extractProspectAssigneeEmails(prospect);
+      return assigneeEmails.includes(viewerEmail);
+    };
 		    logger.info(
 		      {
 		        userId: req.user.id,
@@ -503,6 +616,13 @@ const getDoctorLedger = (req, res, next) => {
 	    let referrals = scopeAll
 	      ? allReferrals
 	      : referralRepository.findBySalesRepId(salesRepId);
+    let dashboardProspects = [];
+    try {
+      dashboardProspects = await salesProspectRepository.getAll();
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to load sales prospects for dashboard');
+      dashboardProspects = [];
+    }
     // House/contact-form leads are admin-only. Prevent them from showing up for
     // sales reps or sales leads anywhere this dashboard payload is reused (including modals).
     if (!isAdmin || isAdminViewingOtherRepInModal) {
@@ -658,10 +778,6 @@ const getDoctorLedger = (req, res, next) => {
     // Overlay prospect-owned fields (status/notes/isManual) onto the referral list.
     // This allows the UI to remain backward compatible while we migrate the source of truth.
     try {
-      const ownerIds = normalizeOwnerIds(req.user);
-      const useOwnerId = !scopeAll ? String(salesRepId || '') : null;
-      const allowedOwners = scopeAll && isAdmin ? null : new Set(ownerIds.concat(useOwnerId ? [useOwnerId] : []));
-
       const merged = await Promise.all(
         (referrals || []).map(async (referral) => {
           const id = String(referral?.id || '');
@@ -681,7 +797,11 @@ const getDoctorLedger = (req, res, next) => {
             return referral;
           }
 
-          if (allowedOwners && prospect.salesRepId && !allowedOwners.has(String(prospect.salesRepId))) {
+          const source = normalizeSourceSystem(prospect.sourceSystem || prospect.source_system);
+          if (!isProspectVisibleToViewer(prospect)) {
+            if (source === 'seamless') {
+              return null;
+            }
             return referral;
           }
 
@@ -690,6 +810,16 @@ const getDoctorLedger = (req, res, next) => {
             status: prospect.status || referral.status,
             notes: prospect.notes ?? referral.notes ?? null,
             salesRepNotes: prospect.notes ?? null,
+            sourceSystem: normalizeSourceSystem(
+              prospect.sourceSystem
+              || referral.sourceSystem
+              || referral.source
+              || (isHouseContactReferral(referral) ? 'contact_form' : null),
+            ),
+            sourceExternalId: prospect.sourceExternalId || null,
+            assignedByRuleId: prospect.assignedByRuleId || null,
+            assignedAt: prospect.assignedAt || null,
+            lastSyncedAt: prospect.lastSyncedAt || null,
             isManual: Boolean(prospect.isManual) || String(id).startsWith('manual:'),
             resellerPermitExempt: Boolean(prospect.resellerPermitExempt),
             resellerPermitFilePath: prospect.resellerPermitFilePath || null,
@@ -699,7 +829,66 @@ const getDoctorLedger = (req, res, next) => {
         }),
       );
 
-      referrals = merged;
+      referrals = merged.filter(Boolean);
+
+      const existingReferralIds = new Set(
+        (referrals || [])
+          .map((referral) => String(referral?.id || '').trim())
+          .filter(Boolean),
+      );
+
+      const prospectOnlySeamless = (dashboardProspects || [])
+        .filter((prospect) => {
+          const source = normalizeSourceSystem(prospect?.sourceSystem || prospect?.source_system);
+          if (source !== 'seamless') {
+            return false;
+          }
+          if (!isProspectVisibleToViewer(prospect)) {
+            return false;
+          }
+          const prospectId = String(prospect?.id || '').trim();
+          if (!prospectId) return false;
+          return !existingReferralIds.has(prospectId);
+        })
+        .map((prospect) => {
+          const createdAtRaw = prospect?.createdAt || prospect?.created_at || prospect?.assignedAt || prospect?.assigned_at;
+          const updatedAtRaw = prospect?.updatedAt || prospect?.updated_at || prospect?.lastSyncedAt || prospect?.last_synced_at || createdAtRaw;
+          const createdAt = createdAtRaw ? new Date(createdAtRaw).toISOString() : new Date().toISOString();
+          const updatedAt = updatedAtRaw ? new Date(updatedAtRaw).toISOString() : createdAt;
+          return {
+            id: String(prospect.id),
+            status: prospect?.status || 'pending',
+            salesRepId: prospect?.salesRepId || null,
+            referrerDoctorId: null,
+            referrerDoctorName: 'Seamless.ai',
+            referrerDoctorEmail: null,
+            referrerDoctorPhone: null,
+            referredContactName: prospect?.contactName || 'Seamless Lead',
+            referredContactEmail: prospect?.contactEmail || null,
+            referredContactPhone: prospect?.contactPhone || null,
+            notes: prospect?.notes || null,
+            createdAt,
+            updatedAt,
+            source: 'seamless',
+            sourceSystem: 'seamless',
+            sourceExternalId: prospect?.sourceExternalId || null,
+            assignedByRuleId: prospect?.assignedByRuleId || null,
+            assignedAt: prospect?.assignedAt || null,
+            lastSyncedAt: prospect?.lastSyncedAt || null,
+            isManual: Boolean(prospect?.isManual),
+            resellerPermitExempt: Boolean(prospect?.resellerPermitExempt),
+            resellerPermitFilePath: prospect?.resellerPermitFilePath || null,
+            resellerPermitFileName: prospect?.resellerPermitFileName || null,
+            resellerPermitUploadedAt: prospect?.resellerPermitUploadedAt || null,
+            referredContactHasAccount: false,
+            referredContactEligibleForCredit: false,
+            creditIssuedAt: null,
+            creditIssuedAmount: null,
+            creditIssuedBy: null,
+          };
+        });
+
+      referrals = [...prospectOnlySeamless, ...referrals];
     } catch (error) {
       logger.warn({ err: error }, 'Failed to overlay sales prospect data onto dashboard referrals');
     }
@@ -753,11 +942,82 @@ const getDoctorLedger = (req, res, next) => {
       };
     });
 
+    referrals = (referrals || []).map((referral) => ({
+      ...referral,
+      sourceSystem: normalizeSourceSystem(
+        referral?.sourceSystem
+        || referral?.source
+        || (isHouseContactReferral(referral) ? 'contact_form' : null),
+      ),
+    }));
+
+    const sourceCounts = {};
+    const stageCounts = {};
+    const sourceStageCounts = {};
+    (referrals || []).forEach((referral) => {
+      const source = normalizeSourceSystem(
+        referral?.sourceSystem
+        || referral?.source
+        || (isHouseContactReferral(referral) ? 'contact_form' : null),
+      );
+      const normalizedStatus = normalizeReferralStatus(referral?.status) || 'pending';
+      const stage = normalizedStatus === 'contact_form' ? 'pending' : normalizedStatus;
+      sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+      stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+      if (!sourceStageCounts[source]) {
+        sourceStageCounts[source] = {};
+      }
+      sourceStageCounts[source][stage] = (sourceStageCounts[source][stage] || 0) + 1;
+    });
+
+    let unassignedCount = 0;
+    let seamlessLastSyncedAt = null;
+    try {
+      const prospects = Array.isArray(dashboardProspects) && dashboardProspects.length > 0
+        ? dashboardProspects
+        : await salesProspectRepository.getAll();
+      const visibleProspects = (prospects || []).filter((prospect) => isProspectVisibleToViewer(prospect));
+      unassignedCount = visibleProspects.filter(
+        (prospect) => String(prospect?.salesRepId || '').trim() === 'unassigned',
+      ).length;
+      const latest = visibleProspects
+        .map((prospect) => {
+          if (normalizeSourceSystem(prospect?.sourceSystem) !== 'seamless') return null;
+          return prospect?.lastSyncedAt || null;
+        })
+        .filter(Boolean)
+        .map((value) => Date.parse(String(value)))
+        .filter((value) => Number.isFinite(value));
+      if (latest.length > 0) {
+        seamlessLastSyncedAt = new Date(Math.max(...latest)).toISOString();
+      }
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to compute CRM prospect aggregates for dashboard');
+    }
+
+    let seamlessCheckpoint = null;
+    try {
+      seamlessCheckpoint = await crmRepository.getSyncCheckpoint('seamless', 'default');
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to load CRM Seamless sync checkpoint');
+    }
+
     res.json({
       referrals,
       codes,
       users: usersWithOrders,
       statuses: REFERRAL_STATUSES,
+      unassignedCount,
+      dataFreshness: {
+        generatedAt: new Date().toISOString(),
+        seamlessLastSyncedAt: seamlessLastSyncedAt || null,
+        seamlessCheckpointAt: seamlessCheckpoint?.updatedAt || null,
+      },
+      queueAggregates: {
+        bySource: sourceCounts,
+        byStage: stageCounts,
+        bySourceStage: sourceStageCounts,
+      },
     });
   } catch (error) {
     next(error);
@@ -1109,6 +1369,7 @@ const updateReferral = (req, res, next) => {
           salesRepId: resolvedOwnerId,
           referralId: contactFormId ? null : (isManual ? null : String(referralId)),
           contactFormId: contactFormId ? String(contactFormId) : null,
+          sourceSystem: contactFormId ? 'contact_form' : (isManual ? 'manual' : 'referral'),
           status: updates.status || updated?.status || existingProspect?.status || 'pending',
           notes: Object.prototype.hasOwnProperty.call(updates, 'notes')
             ? updates.notes
@@ -1239,6 +1500,7 @@ const createManualProspect = async (req, res, next) => {
       .upsert({
         id: String(record.id),
         salesRepId: String(salesRepId),
+        sourceSystem: 'manual',
         status,
         notes: notes || null,
         isManual: true,
@@ -1333,6 +1595,56 @@ const getSalesProspect = async (req, res, next) => {
   }
 };
 
+const getLeadActivity = async (req, res, next) => {
+  try {
+    ensureSalesRep(req.user, 'getLeadActivity');
+    const identifier = String(req.params.identifier || '').trim();
+    if (!identifier) {
+      const error = new Error('Identifier is required');
+      error.status = 400;
+      throw error;
+    }
+
+    const role = normalizeRole(req.user.role);
+    const isAdmin = role === 'admin';
+    const isLead = isSalesLead(role);
+    const ownerIds = normalizeOwnerIds(req.user);
+    const requestedSalesRepId = req.query.salesRepId || req.user.salesRepId || req.user.id;
+    const scopeAll = (isAdmin || isLead) && (req.query.scope || '').toLowerCase() === 'all';
+    const salesRepId = scopeAll ? null : String(requestedSalesRepId);
+
+    let prospect = await salesProspectRepository.findById(identifier);
+    if (!prospect && salesRepId) {
+      const contactFormId = extractContactFormId(identifier);
+      prospect = contactFormId
+        ? await salesProspectRepository.findBySalesRepAndContactFormId(salesRepId, contactFormId)
+        : await salesProspectRepository.findByDoctorId(identifier)
+          || await salesProspectRepository.findBySalesRepAndDoctorId(salesRepId, identifier)
+          || await salesProspectRepository.findBySalesRepAndReferralId(salesRepId, identifier);
+    }
+
+    if (prospect && !scopeAll && !isAdmin && !isLead) {
+      const owner = prospect.salesRepId ? String(prospect.salesRepId) : null;
+      if (owner && owner !== 'unassigned' && !ownerIds.includes(owner)) {
+        const error = new Error('Prospect not found');
+        error.status = 404;
+        throw error;
+      }
+    }
+
+    const prospectId = prospect?.id || identifier;
+    const activities = await crmRepository.listLeadActivityByProspectId(prospectId, {
+      limit: req.query?.limit,
+    });
+    res.json({
+      prospectId,
+      activities,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const upsertSalesProspect = async (req, res, next) => {
   try {
     ensureSalesRep(req.user, 'upsertSalesProspect');
@@ -1398,6 +1710,7 @@ const upsertSalesProspect = async (req, res, next) => {
           id: identifier,
           salesRepId: String(owner),
           contactFormId: String(contactFormId),
+          sourceSystem: 'contact_form',
           status: 'contact_form',
           isManual: false,
         };
@@ -1405,6 +1718,7 @@ const upsertSalesProspect = async (req, res, next) => {
         base = {
           id: identifier,
           salesRepId: String(owner),
+          sourceSystem: 'manual',
           status: 'pending',
           isManual: true,
         };
@@ -1420,6 +1734,7 @@ const upsertSalesProspect = async (req, res, next) => {
           base = {
             id: `doctor:${identifier}`,
             salesRepId: String(owner),
+            sourceSystem: 'account',
             doctorId: String(identifier),
             status: 'converted',
             isManual: true,
@@ -1431,6 +1746,7 @@ const upsertSalesProspect = async (req, res, next) => {
           base = {
             id: identifier,
             salesRepId: String(owner),
+            sourceSystem: 'referral',
             referralId: identifier,
             status: 'pending',
             isManual: false,
@@ -1518,6 +1834,7 @@ const uploadResellerPermit = async (req, res, next) => {
           id: identifier,
           salesRepId: String(owner),
           contactFormId: String(contactFormId),
+          sourceSystem: 'contact_form',
           status: 'contact_form',
           isManual: false,
         };
@@ -1525,6 +1842,7 @@ const uploadResellerPermit = async (req, res, next) => {
         base = {
           id: identifier,
           salesRepId: String(owner),
+          sourceSystem: 'manual',
           status: 'pending',
           isManual: true,
         };
@@ -1532,6 +1850,7 @@ const uploadResellerPermit = async (req, res, next) => {
         base = {
           id: identifier,
           salesRepId: String(owner),
+          sourceSystem: 'referral',
           referralId: identifier,
           status: 'pending',
           isManual: false,
@@ -1658,6 +1977,7 @@ module.exports = {
   createManualProspect,
   deleteManualProspect,
   getSalesProspect,
+  getLeadActivity,
   upsertSalesProspect,
   uploadResellerPermit,
   downloadResellerPermit,

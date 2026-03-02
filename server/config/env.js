@@ -239,6 +239,30 @@ const env = {
     // Background task to keep MySQL in sync with WooCommerce/local orders
     intervalMs: toNumber(process.env.ORDER_SYNC_INTERVAL_MS, 5 * 60 * 1000),
   },
+  crm: {
+    seamlessEnabled: process.env.CRM_SEAMLESS_ENABLED === 'true',
+    seamlessReconciliationIntervalMs: toNumber(
+      process.env.CRM_SEAMLESS_RECONCILIATION_INTERVAL_MS,
+      15 * 60 * 1000,
+    ),
+  },
+  seamless: {
+    apiBaseUrl: process.env.SEAMLESS_API_BASE_URL || 'https://api.seamless.ai/api/client/v1',
+    apiKey: process.env.SEAMLESS_API_KEY || '',
+    oauthAccessToken: process.env.SEAMLESS_OAUTH_ACCESS_TOKEN || '',
+    webhookSecret: process.env.SEAMLESS_WEBHOOK_SECRET || '',
+    contactsPath: process.env.SEAMLESS_CONTACTS_PATH || '/contacts',
+    companiesPath: process.env.SEAMLESS_COMPANIES_PATH || '/companies',
+    backfillPath: process.env.SEAMLESS_BACKFILL_PATH || '/contacts',
+    backfillLimit: Math.max(1, Math.min(toNumber(process.env.SEAMLESS_BACKFILL_LIMIT, 100), 500)),
+    backfillMaxPages: Math.max(1, Math.min(toNumber(process.env.SEAMLESS_BACKFILL_MAX_PAGES, 10), 200)),
+    backfillLookbackHours: Math.max(
+      1,
+      Math.min(toNumber(process.env.SEAMLESS_BACKFILL_LOOKBACK_HOURS, 24), 24 * 90),
+    ),
+    includeCompaniesBackfill: parseBooleanEnv(process.env.SEAMLESS_INCLUDE_COMPANIES_BACKFILL) === true,
+    requestTimeoutMs: toNumber(process.env.SEAMLESS_REQUEST_TIMEOUT_MS, 15000),
+  },
 };
 
 const mysqlEnabledFlag = parseBooleanEnv(process.env.MYSQL_ENABLED);

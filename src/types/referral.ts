@@ -1,6 +1,7 @@
 export type ReferralStatus =
   | 'pending'
   | 'contacted'
+  | 'verified'
   | 'account_created'
   | 'nuture'
   | 'converted'

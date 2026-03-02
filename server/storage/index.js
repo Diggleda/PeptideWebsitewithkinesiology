@@ -8,6 +8,10 @@ const referralStore = new JsonStore(env.dataDir, 'referrals.json', []);
 const referralCodeStore = new JsonStore(env.dataDir, 'referral-codes.json', []);
 const salesProspectStore = new JsonStore(env.dataDir, 'sales-prospects.json', []);
 const creditLedgerStore = new JsonStore(env.dataDir, 'credit-ledger.json', []);
+const crmLeadActivityStore = new JsonStore(env.dataDir, 'crm-lead-activity.json', []);
+const crmAssignmentRulesStore = new JsonStore(env.dataDir, 'crm-assignment-rules.json', []);
+const crmSyncCheckpointStore = new JsonStore(env.dataDir, 'crm-sync-checkpoint.json', []);
+const seamlessStore = new JsonStore(env.dataDir, 'seamless.json', []);
 const peptideForumStore = new JsonStore(env.dataDir, 'the-peptide-forum.json', {
   updatedAt: null,
   items: [],
@@ -28,6 +32,10 @@ const initStorage = () => {
   referralCodeStore.init();
   salesProspectStore.init();
   creditLedgerStore.init();
+  crmLeadActivityStore.init();
+  crmAssignmentRulesStore.init();
+  crmSyncCheckpointStore.init();
+  seamlessStore.init();
   peptideForumStore.init();
   settingsStore.init();
 };
@@ -40,6 +48,10 @@ module.exports = {
   referralCodeStore,
   salesProspectStore,
   creditLedgerStore,
+  crmLeadActivityStore,
+  crmAssignmentRulesStore,
+  crmSyncCheckpointStore,
+  seamlessStore,
   peptideForumStore,
   settingsStore,
   initStorage,

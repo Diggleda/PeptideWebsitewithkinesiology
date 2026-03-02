@@ -82,12 +82,19 @@ const STATEMENTS = [
       doctor_id VARCHAR(32) NULL,
       referral_id VARCHAR(64) NULL,
       contact_form_id VARCHAR(64) NULL,
+      source_system VARCHAR(32) NULL,
+      source_external_id VARCHAR(128) NULL,
+      source_payload_json LONGTEXT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'pending',
       notes LONGTEXT NULL,
       is_manual TINYINT(1) NOT NULL DEFAULT 0,
       contact_name VARCHAR(190) NULL,
       contact_email VARCHAR(190) NULL,
       contact_phone VARCHAR(32) NULL,
+      assigned_by_rule_id VARCHAR(64) NULL,
+      assigned_at DATETIME NULL,
+      last_synced_at DATETIME NULL,
+      sync_hash VARCHAR(64) NULL,
       reseller_permit_exempt TINYINT(1) NOT NULL DEFAULT 0,
       reseller_permit_file_path VARCHAR(255) NULL,
       reseller_permit_file_name VARCHAR(255) NULL,
@@ -96,7 +103,59 @@ const STATEMENTS = [
       updated_at DATETIME NULL,
       UNIQUE KEY uniq_sales_rep_doctor (sales_rep_id, doctor_id),
       UNIQUE KEY uniq_sales_rep_referral (sales_rep_id, referral_id),
-      UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id)
+      UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id),
+      INDEX idx_sales_prospects_source_system (source_system),
+      INDEX idx_sales_prospects_source_external_id (source_external_id),
+      INDEX idx_sales_prospects_status (status),
+      INDEX idx_sales_prospects_last_synced_at (last_synced_at)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS crm_lead_activity (
+      id VARCHAR(64) PRIMARY KEY,
+      prospect_id VARCHAR(64) NOT NULL,
+      actor_id VARCHAR(64) NULL,
+      event_type VARCHAR(64) NOT NULL,
+      event_payload_json LONGTEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_crm_lead_activity_prospect_created (prospect_id, created_at),
+      INDEX idx_crm_lead_activity_event_type (event_type)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS crm_assignment_rules (
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(190) NOT NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      priority INT NOT NULL DEFAULT 100,
+      conditions_json LONGTEXT NULL,
+      assignee_sales_rep_id VARCHAR(64) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_crm_assignment_rules_enabled_priority (enabled, priority)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS crm_sync_checkpoint (
+      source_system VARCHAR(64) NOT NULL,
+      checkpoint_key VARCHAR(64) NOT NULL DEFAULT 'default',
+      cursor_value VARCHAR(255) NULL,
+      cursor_timestamp DATETIME NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (source_system, checkpoint_key)
+    ) CHARACTER SET utf8mb4
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS seamless (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      source_system VARCHAR(64) NOT NULL DEFAULT 'seamless',
+      trigger VARCHAR(64) NOT NULL DEFAULT 'webhook',
+      actor_id VARCHAR(64) NULL,
+      payload_json LONGTEXT NOT NULL,
+      received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_seamless_created_at (created_at),
+      INDEX idx_seamless_trigger_created_at (trigger, created_at)
     ) CHARACTER SET utf8mb4
   `,
   `
@@ -322,6 +381,55 @@ const ensureSalesProspectColumns = async () => {
     return;
   }
   const columns = [
+    {
+      name: 'source_system',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN source_system VARCHAR(32) NULL
+      `,
+    },
+    {
+      name: 'source_external_id',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN source_external_id VARCHAR(128) NULL
+      `,
+    },
+    {
+      name: 'source_payload_json',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN source_payload_json LONGTEXT NULL
+      `,
+    },
+    {
+      name: 'assigned_by_rule_id',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN assigned_by_rule_id VARCHAR(64) NULL
+      `,
+    },
+    {
+      name: 'assigned_at',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN assigned_at DATETIME NULL
+      `,
+    },
+    {
+      name: 'last_synced_at',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN last_synced_at DATETIME NULL
+      `,
+    },
+    {
+      name: 'sync_hash',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN sync_hash VARCHAR(64) NULL
+      `,
+    },
     {
       name: 'reseller_permit_exempt',
       ddl: `

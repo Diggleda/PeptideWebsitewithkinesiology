@@ -5069,6 +5069,10 @@ html {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
 }
 
+.sales-rep-dashboard-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sales-rep-dashboard,
 .sales-rep-dashboard-grid,
 .sales-tracking-card,

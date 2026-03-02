@@ -21,12 +21,14 @@ router.delete('/admin/manual/:referralId', authenticate, referralController.dele
 router.patch('/admin/referrals/:referralId', authenticate, referralController.updateReferral);
 router.get('/admin/sales-prospects/:identifier', authenticate, referralController.getSalesProspect);
 router.patch('/admin/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
+router.get('/admin/leads/:identifier/activity', authenticate, referralController.getLeadActivity);
 router.post('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
 router.get('/admin/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);
 
 // Non-admin aliases for sales reps / sales leads (avoids infra path restrictions on /admin/*).
 router.get('/sales-prospects/:identifier', authenticate, referralController.getSalesProspect);
 router.patch('/sales-prospects/:identifier', authenticate, referralController.upsertSalesProspect);
+router.get('/leads/:identifier/activity', authenticate, referralController.getLeadActivity);
 router.post('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.uploadResellerPermit);
 router.get('/sales-prospects/:identifier/reseller-permit', authenticate, referralController.downloadResellerPermit);
 router.patch('/admin/codes/:codeId', authenticate, referralController.updateReferralCodeStatus);

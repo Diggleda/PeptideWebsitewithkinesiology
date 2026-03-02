@@ -13,6 +13,11 @@ const normalizeEmail = (value) => {
   return String(value).trim().toLowerCase();
 };
 
+const normalizePhoneDigits = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/[^0-9]/g, '');
+};
+
 const isDoctorLinked = (record) => Boolean(normalizeId(record?.doctorId || record?.doctor_id));
 
 const nowIso = () => new Date().toISOString();
@@ -25,12 +30,33 @@ const ensureDefaults = (record) => {
   const updatedAt = record.updatedAt || record.updated_at || createdAt || null;
   const resellerPermitUploadedAt =
     record.resellerPermitUploadedAt || record.reseller_permit_uploaded_at || null;
+  const sourcePayloadJson = record.sourcePayloadJson || record.source_payload_json || null;
+  const assignedAt = record.assignedAt || record.assigned_at || null;
+  const lastSyncedAt = record.lastSyncedAt || record.last_synced_at || null;
   return {
     id: normalizeId(record.id),
     salesRepId: normalizeId(record.salesRepId || record.sales_rep_id),
     doctorId: normalizeId(record.doctorId || record.doctor_id),
     referralId: normalizeId(record.referralId || record.referral_id),
     contactFormId: normalizeId(record.contactFormId || record.contact_form_id),
+    sourceSystem: normalizeId(record.sourceSystem || record.source_system),
+    sourceExternalId: normalizeId(record.sourceExternalId || record.source_external_id),
+    sourcePayloadJson:
+      sourcePayloadJson == null
+        ? null
+        : typeof sourcePayloadJson === 'object'
+          ? sourcePayloadJson
+          : (() => {
+            try {
+              return JSON.parse(String(sourcePayloadJson));
+            } catch {
+              return null;
+            }
+          })(),
+    assignedByRuleId: normalizeId(record.assignedByRuleId || record.assigned_by_rule_id),
+    assignedAt: assignedAt ? new Date(assignedAt).toISOString() : null,
+    lastSyncedAt: lastSyncedAt ? new Date(lastSyncedAt).toISOString() : null,
+    syncHash: normalizeId(record.syncHash || record.sync_hash),
     status: (record.status || 'pending').toString().trim().toLowerCase() || 'pending',
     notes: record.notes == null ? null : String(record.notes),
     isManual: Boolean(record.isManual) || Boolean(record.is_manual),
@@ -60,12 +86,24 @@ const toDbParams = (record) => {
   const resellerPermitUploadedAt = record.resellerPermitUploadedAt
     ? new Date(record.resellerPermitUploadedAt)
     : null;
+  const assignedAt = record.assignedAt ? new Date(record.assignedAt) : null;
+  const lastSyncedAt = record.lastSyncedAt ? new Date(record.lastSyncedAt) : null;
   return {
     id: record.id,
     salesRepId: record.salesRepId,
     doctorId: record.doctorId,
     referralId: record.referralId,
     contactFormId: record.contactFormId,
+    sourceSystem: record.sourceSystem || null,
+    sourceExternalId: record.sourceExternalId || null,
+    sourcePayloadJson:
+      record.sourcePayloadJson && typeof record.sourcePayloadJson === 'object'
+        ? JSON.stringify(record.sourcePayloadJson)
+        : null,
+    assignedByRuleId: record.assignedByRuleId || null,
+    assignedAt,
+    lastSyncedAt,
+    syncHash: record.syncHash || null,
     status: record.status,
     notes: record.notes,
     isManual: record.isManual ? 1 : 0,
@@ -240,6 +278,93 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
   return matches[0] || null;
 };
 
+const findBySourceExternalId = async (sourceSystem, sourceExternalId) => {
+  const source = normalizeId(sourceSystem);
+  const externalId = normalizeId(sourceExternalId);
+  if (!source || !externalId) return null;
+  if (mysqlClient.isEnabled()) {
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT * FROM sales_prospects
+        WHERE source_system = :sourceSystem
+          AND source_external_id = :sourceExternalId
+        ORDER BY COALESCE(updated_at, created_at) DESC
+        LIMIT 1
+      `,
+      { sourceSystem: source, sourceExternalId: externalId },
+    );
+    return rowToRecord(row);
+  }
+  const records = salesProspectStore.read();
+  const list = Array.isArray(records) ? records : [];
+  return list
+    .map(ensureDefaults)
+    .find(
+      (item) =>
+        normalizeId(item.sourceSystem) === source
+        && normalizeId(item.sourceExternalId) === externalId,
+    ) || null;
+};
+
+const findByContactEmail = async (contactEmail) => {
+  const email = normalizeEmail(contactEmail);
+  if (!email) return null;
+  if (mysqlClient.isEnabled()) {
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT * FROM sales_prospects
+        WHERE LOWER(TRIM(contact_email)) = :contactEmail
+        ORDER BY COALESCE(updated_at, created_at) DESC
+        LIMIT 1
+      `,
+      { contactEmail: email },
+    );
+    return rowToRecord(row);
+  }
+  const records = salesProspectStore.read();
+  const list = Array.isArray(records) ? records : [];
+  const matches = list
+    .map(ensureDefaults)
+    .filter((item) => normalizeEmail(item.contactEmail) === email);
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => {
+    const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
+    const bMs = Date.parse(String(b.updatedAt || b.createdAt || '')) || 0;
+    return bMs - aMs;
+  });
+  return matches[0] || null;
+};
+
+const findByContactPhone = async (contactPhone) => {
+  const phone = normalizePhoneDigits(contactPhone);
+  if (!phone) return null;
+  const matchesByPhone = (records) => (records || [])
+    .map(ensureDefaults)
+    .filter((item) => normalizePhoneDigits(item.contactPhone) === phone)
+    .sort((a, b) => {
+      const aMs = Date.parse(String(a.updatedAt || a.createdAt || '')) || 0;
+      const bMs = Date.parse(String(b.updatedAt || b.createdAt || '')) || 0;
+      return bMs - aMs;
+    });
+
+  if (mysqlClient.isEnabled()) {
+    const rows = await mysqlClient.fetchAll(
+      `
+        SELECT *
+        FROM sales_prospects
+        WHERE contact_phone IS NOT NULL
+      `,
+    );
+    const matches = matchesByPhone(rows);
+    return matches.length > 0 ? matches[0] : null;
+  }
+
+  const records = salesProspectStore.read();
+  const list = Array.isArray(records) ? records : [];
+  const matches = matchesByPhone(list);
+  return matches.length > 0 ? matches[0] : null;
+};
+
 const findAllByReferralId = async (referralId) => {
   const target = normalizeId(referralId);
   if (!target) return [];
@@ -269,6 +394,19 @@ const upsert = async (prospect) => {
   let existing = null;
   if (id) {
     existing = await findById(id);
+  }
+  if (
+    !existing
+    && normalizeId(incoming.sourceSystem)
+    && normalizeId(incoming.sourceExternalId)
+  ) {
+    existing = await findBySourceExternalId(incoming.sourceSystem, incoming.sourceExternalId);
+  }
+  if (!existing && normalizeEmail(incoming.contactEmail)) {
+    existing = await findByContactEmail(incoming.contactEmail);
+  }
+  if (!existing && normalizePhoneDigits(incoming.contactPhone)) {
+    existing = await findByContactPhone(incoming.contactPhone);
   }
   if (!existing && doctorId) {
     existing = await findByDoctorId(doctorId);
@@ -330,6 +468,13 @@ const upsert = async (prospect) => {
 	          doctor_id,
 	          referral_id,
 	          contact_form_id,
+	          source_system,
+	          source_external_id,
+	          source_payload_json,
+	          assigned_by_rule_id,
+	          assigned_at,
+	          last_synced_at,
+	          sync_hash,
 	          status,
 	          notes,
 	          is_manual,
@@ -348,6 +493,13 @@ const upsert = async (prospect) => {
 	          :doctorId,
 	          :referralId,
 	          :contactFormId,
+	          :sourceSystem,
+	          :sourceExternalId,
+	          :sourcePayloadJson,
+	          :assignedByRuleId,
+	          :assignedAt,
+	          :lastSyncedAt,
+	          :syncHash,
 	          :status,
 	          :notes,
 	          :isManual,
@@ -369,6 +521,13 @@ const upsert = async (prospect) => {
 	          doctor_id = VALUES(doctor_id),
 	          referral_id = VALUES(referral_id),
 	          contact_form_id = VALUES(contact_form_id),
+	          source_system = VALUES(source_system),
+	          source_external_id = VALUES(source_external_id),
+	          source_payload_json = VALUES(source_payload_json),
+	          assigned_by_rule_id = VALUES(assigned_by_rule_id),
+	          assigned_at = VALUES(assigned_at),
+	          last_synced_at = VALUES(last_synced_at),
+	          sync_hash = VALUES(sync_hash),
 	          status = VALUES(status),
 	          notes = VALUES(notes),
 	          is_manual = VALUES(is_manual),
@@ -448,6 +607,9 @@ module.exports = {
   findBySalesRepAndReferralId,
   findBySalesRepAndContactFormId,
   findBySalesRepAndContactEmail,
+  findBySourceExternalId,
+  findByContactEmail,
+  findByContactPhone,
   findAllByReferralId,
   upsert,
   remove,

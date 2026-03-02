@@ -7,8 +7,14 @@ const stripAuthPrefix = (value) => {
 const extractWebhookToken = (req) => {
   const authHeader = req.headers?.authorization;
   const sigHeader = req.headers?.['x-webhook-signature'];
+  const tokenHeader = req.headers?.token;
+  const webhookSecretHeader = req.headers?.['x-webhook-secret'];
+  const apiKeyHeader = req.headers?.['x-api-key'];
   const provided = stripAuthPrefix(typeof authHeader === 'string' ? authHeader : '')
-    || stripAuthPrefix(typeof sigHeader === 'string' ? sigHeader : '');
+    || stripAuthPrefix(typeof sigHeader === 'string' ? sigHeader : '')
+    || stripAuthPrefix(typeof webhookSecretHeader === 'string' ? webhookSecretHeader : '')
+    || stripAuthPrefix(typeof tokenHeader === 'string' ? tokenHeader : '')
+    || stripAuthPrefix(typeof apiKeyHeader === 'string' ? apiKeyHeader : '');
   return provided;
 };
 
@@ -37,4 +43,3 @@ const requireWebhookSecret = (resolveSecret) => (req, res, next) => {
 module.exports = {
   requireWebhookSecret,
 };
-

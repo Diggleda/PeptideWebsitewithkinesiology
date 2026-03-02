@@ -75,6 +75,7 @@ import {
 	  delegationAPI,
 	  trackingAPI,
 	  referralAPI,
+	  seamlessAPI,
 	  newsAPI,
 	  quotesAPI,
 	  forumAPI,
@@ -231,6 +232,16 @@ interface ContactFormSubmission {
   phone: string;
   source: string;
   created_at: string;
+}
+
+interface SeamlessRawEntry {
+  id: string | number;
+  sourceSystem?: string | null;
+  trigger?: string | null;
+  actorId?: string | null;
+  payload?: unknown;
+  receivedAt?: string | null;
+  createdAt?: string | null;
 }
 
 // Feature flags for passkey UX. Defaults keep prompts manual-only.
@@ -2056,17 +2067,17 @@ const IMAGE_PREFETCH_DELAY_MS = (() => {
 const SALES_REP_PIPELINE = [
   {
     key: "pending_combined",
-    label: "Pending",
+    label: "New",
     statuses: ["pending", "contact_form"],
   },
   {
     key: "contacted",
-    label: "Contacting",
+    label: "Contacted",
     statuses: ["contacted"],
   },
   {
     key: "verified",
-    label: "Verified",
+    label: "Qualified",
     statuses: ["verified", "verifying"],
   },
   {
@@ -2081,18 +2092,18 @@ const SALES_REP_PIPELINE = [
   },
   {
     key: "nuture",
-    label: "Nuturing",
+    label: "Nurture",
     statuses: ["nuture"],
   },
 ];
 
 const REFERRAL_STATUS_FLOW = [
-  { key: "pending", label: "Pending" },
-  { key: "contacted", label: "Contacting" },
-  { key: "verified", label: "Verified" },
+  { key: "pending", label: "New" },
+  { key: "contacted", label: "Contacted" },
+  { key: "verified", label: "Qualified" },
   { key: "account_created", label: "Account Created" },
   { key: "converted", label: "Converted" },
-  { key: "nuture", label: "Nuturing" },
+  { key: "nuture", label: "Nurture" },
 ];
 const REFERRAL_STATUS_FLOW_SELECT = REFERRAL_STATUS_FLOW.filter(
   (stage) => stage.key !== "nuture",
@@ -2108,8 +2119,24 @@ const REFERRAL_STATUS_SET = new Set([
 ]);
 const sanitizeReferralStatus = (status?: string | null): string => {
   const normalized = (status || "").toLowerCase().trim();
+  if (normalized === "new") {
+    return "pending";
+  }
+  if (normalized === "qualified") {
+    return "verified";
+  }
   if (normalized === "verifying") {
     return "verified";
+  }
+  if (normalized === "nurture" || normalized === "nurturing" || normalized === "nuturing") {
+    return "nuture";
+  }
+  if (
+    normalized === "account created" ||
+    normalized === "account-created" ||
+    normalized === "accountcreated"
+  ) {
+    return "account_created";
   }
   if (REFERRAL_STATUS_SET.has(normalized)) {
     return normalized;
@@ -2130,12 +2157,12 @@ const toTitleCase = (value?: string | null): string | null => {
 };
 
 const CONTACT_FORM_STATUS_FLOW = [
-  { key: "contact_form", label: "Pending" },
-  { key: "contacted", label: "Contacting" },
-  { key: "verified", label: "Verified" },
+  { key: "contact_form", label: "New" },
+  { key: "contacted", label: "Contacted" },
+  { key: "verified", label: "Qualified" },
   { key: "account_created", label: "Account Created" },
   { key: "converted", label: "Converted" },
-  { key: "nuture", label: "Nuturing" },
+  { key: "nuture", label: "Nurture" },
 ];
 const CONTACT_FORM_STATUS_FLOW_SELECT = CONTACT_FORM_STATUS_FLOW.filter(
   (stage) => stage.key !== "nuture",
@@ -2294,7 +2321,7 @@ const humanizeReferralStatus = (status?: string) => {
     return match.label;
   }
   if (normalized === "contact_form") {
-    return "Pending";
+    return "New";
   }
   return status
     .split("_")
@@ -9669,13 +9696,27 @@ function MainApp() {
   type AdminDashboardTabId = "here_now" | "admin_report" | "structure" | "maintenance";
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
-  type SalesDashboardTabId = "here_now" | "settings";
+  type SalesDashboardTabId =
+    | "crm"
+    | "your_sales"
+    | "doctor_referrals_manual"
+    | "settings";
   const [salesDashboardTab, setSalesDashboardTab] =
-    useState<SalesDashboardTabId>("here_now");
+    useState<SalesDashboardTabId>("crm");
+  const [crmSeamlessRawEntries, setCrmSeamlessRawEntries] = useState<SeamlessRawEntry[]>([]);
+  const [crmSeamlessRawLoading, setCrmSeamlessRawLoading] = useState(false);
+  const [crmSeamlessRawError, setCrmSeamlessRawError] = useState<string | null>(null);
+  const [crmSeamlessRawLastFetchedAt, setCrmSeamlessRawLastFetchedAt] = useState<string | null>(null);
   const salesDashboardTabs = useMemo(
     () =>
       [
-        { id: "here_now" as const, label: "Here and now", Icon: GlobeAmericasIcon },
+        { id: "crm" as const, label: "CRM", Icon: GlobeAmericasIcon },
+        { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
+        {
+          id: "doctor_referrals_manual" as const,
+          label: "Doctor Referrals and Manual",
+          Icon: UserGroupIcon,
+        },
         { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
       ] satisfies Array<{
         id: SalesDashboardTabId;
@@ -9714,6 +9755,53 @@ function MainApp() {
       window.removeEventListener("resize", onResize);
     };
   }, [updateSalesDashboardTabIndicator]);
+  const refreshCrmSeamlessRawEntries = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!user) {
+        return;
+      }
+      if (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role)) {
+        return;
+      }
+      const silent = options?.silent === true;
+      if (!silent) {
+        setCrmSeamlessRawLoading(true);
+      }
+      setCrmSeamlessRawError(null);
+      try {
+        const response = (await seamlessAPI.getRawPayloads(25)) as any;
+        const entries = Array.isArray(response?.entries) ? response.entries : [];
+        setCrmSeamlessRawEntries(entries as SeamlessRawEntry[]);
+        setCrmSeamlessRawLastFetchedAt(new Date().toISOString());
+      } catch (error: any) {
+        const message =
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Unable to load Seamless raw payloads.";
+        setCrmSeamlessRawError(message);
+      } finally {
+        if (!silent) {
+          setCrmSeamlessRawLoading(false);
+        }
+      }
+    },
+    [user?.id, user?.role],
+  );
+  useEffect(() => {
+    if (!user) return;
+    if (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role)) {
+      return;
+    }
+    if (salesDashboardTab !== "crm") {
+      return;
+    }
+    void refreshCrmSeamlessRawEntries();
+  }, [
+    refreshCrmSeamlessRawEntries,
+    salesDashboardTab,
+    user?.id,
+    user?.role,
+  ]);
   const adminDashboardTabs = useMemo(
     () =>
       [
@@ -17836,13 +17924,35 @@ function MainApp() {
 	    const convertedReferrals = referrals.filter(
 	      (ref) => (ref.status || "").toLowerCase() === "converted",
 	    ).length;
-	    const showSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
-	    const isSalesRoleDashboard = showSalesDashboardTabs || isAdmin(user?.role);
-	    const isSalesHereNowActive = salesDashboardTab === "here_now" || isAdmin(user?.role);
-	    const shouldShowLiveClientsCard =
-	      showSalesDashboardTabs &&
-	      salesDashboardTab === "here_now" &&
-	      (!isAdmin(user?.role) || adminDashboardTab === "here_now");
+    const showSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
+    const isSalesRoleDashboard = showSalesDashboardTabs || isAdmin(user?.role);
+    const isLegacyAdminSalesView = isAdmin(user?.role);
+    const isSalesCrmActive = salesDashboardTab === "crm";
+    const isSalesYourSalesActive = salesDashboardTab === "your_sales";
+    const isSalesDoctorReferralsManualActive =
+      salesDashboardTab === "doctor_referrals_manual";
+    const isSalesSettingsActive = salesDashboardTab === "settings";
+    const isCrmSectionActive =
+      isSalesRoleDashboard &&
+      (isLegacyAdminSalesView || (showSalesDashboardTabs && isSalesCrmActive));
+    const isYourSalesSectionActive =
+      isSalesRoleDashboard &&
+      (isLegacyAdminSalesView || (showSalesDashboardTabs && isSalesYourSalesActive));
+    const isDoctorReferralsManualSectionActive =
+      isSalesRoleDashboard &&
+      (isLegacyAdminSalesView ||
+        (showSalesDashboardTabs && isSalesDoctorReferralsManualActive));
+    const showSalesDashboardGrid =
+      isSalesRoleDashboard &&
+      (isLegacyAdminSalesView ||
+        (showSalesDashboardTabs &&
+          (isSalesYourSalesActive || isSalesDoctorReferralsManualActive)));
+    const showSingleSalesDashboardCard =
+      showSalesDashboardTabs &&
+      (isSalesYourSalesActive !== isSalesDoctorReferralsManualActive);
+    const shouldShowLiveClientsCard =
+      showSalesDashboardTabs &&
+      (!isAdmin(user?.role) || adminDashboardTab === "here_now");
 	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
 	    const adminDashboardPeriodLabel = (() => {
 	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
@@ -17867,7 +17977,7 @@ function MainApp() {
 	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
 	    }, 0);
 	    const renderAdminOnHoldOrdersCard = () => (
-	      <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+	      <div className="sales-rep-leads-card sales-rep-combined-card">
 	        <div className="mb-4 flex w-full items-start justify-between gap-3">
 	          <div className="min-w-0">
 	            <h3 className="text-lg font-semibold text-slate-900">
@@ -18013,7 +18123,7 @@ function MainApp() {
 	      </div>
 	    );
 	    const renderEmailControlsCard = () => (
-	      <div className="mb-4 glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+	      <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
 	        <div className="border-b border-slate-200/60 pb-3">
 	          <h4 className="text-base font-semibold text-slate-900">Email Controls</h4>
 	          <p className="text-sm text-slate-600 mb-1">
@@ -18129,106 +18239,10 @@ function MainApp() {
 		            )}
 			          </div>
 
-                {isAdmin(user?.role) && (
-                  <div className="relative w-full">
-                    <div
-                      className="w-full account-tab-scroll-container"
-                      ref={adminDashboardTabsContainerRef}
-                      onScroll={updateAdminDashboardTabIndicator}
-                    >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
-                        {adminDashboardTabs.map((tab) => {
-                          const isActive = adminDashboardTab === tab.id;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
-                                isActive && "text-slate-900",
-                              )}
-                              data-admin-dashboard-tab={tab.id}
-                              aria-pressed={isActive}
-                              onClick={() => setAdminDashboardTab(tab.id)}
-                            >
-                              <span
-                                className="inline-flex items-center gap-2"
-                                data-admin-dashboard-tab-content
-                              >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
-                                </span>
-                                <span className="inline-flex items-center">{tab.label}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className="account-tab-underline-indicator"
-                      style={{
-                        left: adminDashboardTabIndicator.left,
-                        width: adminDashboardTabIndicator.width,
-                        opacity: 1,
-                      }}
-                    />
-                  </div>
-                )}
-
-			          {showSalesDashboardTabs && (
-                  <div className="relative w-full">
-                    <div
-                      className="w-full account-tab-scroll-container"
-                      ref={salesDashboardTabsContainerRef}
-                      onScroll={updateSalesDashboardTabIndicator}
-                    >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
-                        {salesDashboardTabs.map((tab) => {
-                          const isActive = salesDashboardTab === tab.id;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
-                                isActive && "text-slate-900",
-                              )}
-                              data-sales-dashboard-tab={tab.id}
-                              aria-pressed={isActive}
-                              onClick={() => setSalesDashboardTab(tab.id)}
-                            >
-                              <span
-                                className="inline-flex items-center gap-2"
-                                data-sales-dashboard-tab-content
-                              >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
-                                </span>
-                                <span className="inline-flex items-center">{tab.label}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className="account-tab-underline-indicator"
-                      style={{
-                        left: salesDashboardTabIndicator.left,
-                        width: salesDashboardTabIndicator.width,
-                        opacity: 1,
-                      }}
-                    />
-                  </div>
-                )}
-
 			          {shouldShowLiveClientsCard && (
 			            <div
                     className={clsx(
-                      "glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70",
+                      "sales-rep-leads-card sales-rep-combined-card",
                       isAdmin(user?.role) && "order-last",
                     )}
                   >
@@ -18268,13 +18282,13 @@ function MainApp() {
                             </div>
                           </div>
                         )}
-	
+
 	                {liveClientsError && (
 	                  <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
 	                    {liveClientsError}
 	                  </div>
 	                )}
-	
+
 	                {liveClientsLoading ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
 	                    Loading live clients…
@@ -18434,163 +18448,163 @@ function MainApp() {
 		                          lastSeenMs != null
 		                            ? Math.max(0, (Date.now() - lastSeenMs) / 60000)
 		                            : null;
-			                        const IDLE_AFTER_MINUTES = 2;
-			                        const onlineReported = Boolean(entry.isOnline);
-			                        const idleReported = Boolean(entry.isIdle);
-			                        const isOnlineNow = onlineReported;
-			                        const showIdle =
-			                          isOnlineNow &&
-			                          (idleReported ||
-			                            (minutesSinceLastSeen != null &&
+		                        const IDLE_AFTER_MINUTES = 2;
+		                        const onlineReported = Boolean(entry.isOnline);
+		                        const idleReported = Boolean(entry.isIdle);
+		                        const isOnlineNow = onlineReported;
+		                        const showIdle =
+		                          isOnlineNow &&
+		                          (idleReported ||
+		                            (minutesSinceLastSeen != null &&
 		                              minutesSinceLastSeen >= IDLE_AFTER_MINUTES));
-			                        const role = String(entry?.role || "").toLowerCase().trim();
-			                        const rolePill = (() => {
-			                          if (role === "admin") {
-			                            return {
-			                              label: "Admin",
-			                              style: {
-			                                backgroundColor: "rgb(61,43,233)",
-			                                color: "#ffffff",
-			                              } as React.CSSProperties,
-			                            };
-			                          }
-			                          if (role === "sales_rep" || role === "salesrep" || role === "rep") {
-			                            return {
-			                              label: "Sales Rep",
-			                              style: {
-			                                backgroundColor: "rgb(129,221,228)",
-			                                color: "#ffffff",
-			                              } as React.CSSProperties,
-			                            };
-			                          }
-			                          if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
-			                            return {
-			                              label: "Sales Lead",
-			                              style: {
-			                                backgroundColor: "rgb(129,221,228)",
-			                                color: "#ffffff",
-			                              } as React.CSSProperties,
-			                            };
-			                          }
-			                          if (role === "doctor") {
-			                            return {
-			                              label: "Doctor",
-			                              style: {
-			                                backgroundColor: "rgb(95,179,249)",
-			                                color: "#ffffff",
-			                              } as React.CSSProperties,
-			                            };
-			                          }
-			                          if (role === "test_doctor") {
-			                            return {
-			                              label: "Test Doctor",
-			                              style: {
-			                                backgroundColor: "rgb(95,179,249)",
-			                                color: "#ffffff",
-			                              } as React.CSSProperties,
-			                            };
-			                          }
-			                          return null;
-			                        })();
+		                        const role = String(entry?.role || "").toLowerCase().trim();
+		                        const rolePill = (() => {
+		                          if (role === "admin") {
+		                            return {
+		                              label: "Admin",
+		                              style: {
+		                                backgroundColor: "rgb(61,43,233)",
+		                                color: "#ffffff",
+		                              } as React.CSSProperties,
+		                            };
+		                          }
+		                          if (role === "sales_rep" || role === "salesrep" || role === "rep") {
+		                            return {
+		                              label: "Sales Rep",
+		                              style: {
+		                                backgroundColor: "rgb(129,221,228)",
+		                                color: "#ffffff",
+		                              } as React.CSSProperties,
+		                            };
+		                          }
+		                          if (role === "sales_lead" || role === "saleslead" || role === "sales-lead") {
+		                            return {
+		                              label: "Sales Lead",
+		                              style: {
+		                                backgroundColor: "rgb(129,221,228)",
+		                                color: "#ffffff",
+		                              } as React.CSSProperties,
+		                            };
+		                          }
+		                          if (role === "doctor") {
+		                            return {
+		                              label: "Doctor",
+		                              style: {
+		                                backgroundColor: "rgb(95,179,249)",
+		                                color: "#ffffff",
+		                              } as React.CSSProperties,
+		                            };
+		                          }
+		                          if (role === "test_doctor") {
+		                            return {
+		                              label: "Test Doctor",
+		                              style: {
+		                                backgroundColor: "rgb(95,179,249)",
+		                                color: "#ffffff",
+		                              } as React.CSSProperties,
+		                            };
+		                          }
+		                          return null;
+		                        })();
 
-			                        const idleMinutesLabel = showIdle ? formatIdleMinutes(entry) : null;
-			                        const formatOfflineFor = (value?: string | null) => {
-			                          const raw = formatRelativeMinutes(value);
-			                          if (raw === "a few moments ago") return "a few moments";
-			                          return raw.replace(/\s+ago$/, "");
-			                        };
-			                        const offlineAnchor =
-			                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
-			                        const statusLine = isOnlineNow
-			                          ? showIdle
-			                            ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
-			                            : formatOnlineDuration(entry.lastLoginAt)
-			                          : offlineAnchor
-			                            ? `Offline for ${formatOfflineFor(offlineAnchor)}`
-			                            : "Offline";
+		                        const idleMinutesLabel = showIdle ? formatIdleMinutes(entry) : null;
+		                        const formatOfflineFor = (value?: string | null) => {
+		                          const raw = formatRelativeMinutes(value);
+		                          if (raw === "a few moments ago") return "a few moments";
+		                          return raw.replace(/\s+ago$/, "");
+		                        };
+		                        const offlineAnchor =
+		                          entry?.lastSeenAt || entry?.lastInteractionAt || entry?.lastLoginAt || null;
+		                        const statusLine = isOnlineNow
+		                          ? showIdle
+		                            ? `Idle${idleMinutesLabel ? ` (${idleMinutesLabel})` : ""} - ${formatOnlineDuration(entry.lastLoginAt)}`
+		                            : formatOnlineDuration(entry.lastLoginAt)
+		                          : offlineAnchor
+		                            ? `Offline for ${formatOfflineFor(offlineAnchor)}`
+		                            : "Offline";
 
-			                        return (
+		                        return (
 		                          <div
 		                            key={entry.id}
 		                            className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2"
 		                          >
-			                            <button
-			                              type="button"
-			                              onClick={() => openLiveUserDetail(entry)}
-			                              aria-label={`Open ${displayName} profile`}
-			                              className="min-w-0 flex-1"
-			                              style={{ background: "transparent", border: "none", padding: 0 }}
-			                            >
-			                              <div className="flex items-center gap-3 min-w-0">
-			                                <div
-			                                  className="rounded-full shrink-0"
-			                                  style={{
-			                                    width: 41.4,
-			                                    height: 41.4,
-			                                    minWidth: 41.4,
-			                                    boxShadow: !isOnlineNow
-			                                      ? undefined
-			                                      : showIdle
-			                                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
-			                                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
-			                                  }}
-			                                >
-			                                  <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
-			                                    {avatarUrl ? (
-			                                      <img
-			                                        src={avatarUrl}
-			                                        alt={displayName}
-			                                        className="h-full w-full object-cover"
-			                                        loading="lazy"
-			                                        decoding="async"
-			                                      />
-			                                    ) : (
-			                                      <span className="text-[11px] font-semibold text-slate-600">
-			                                        {getInitials(displayName)}
-			                                      </span>
-			                                    )}
-			                                  </div>
-			                                </div>
-			                                <div className="min-w-0 flex-1 overflow-hidden">
-			                                  <div className="flex flex-col items-start gap-0.5 text-left">
-			                                    {rolePill && (
-			                                      <span
-			                                        className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0 self-start whitespace-nowrap"
-			                                        style={rolePill.style}
-			                                      >
-			                                        {rolePill.label}
-			                                      </span>
-			                                    )}
-			                                    <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
-			                                      {displayName}
-			                                    </span>
-			                                    <span className="text-sm text-slate-600 whitespace-nowrap">
-			                                      {entry.email || "—"}
-			                                    </span>
-			                                    <span className="text-sm text-slate-600 whitespace-nowrap">
-			                                      {statusLine}
-			                                    </span>
-			                                  </div>
-			                                </div>
-			                              </div>
-			                            </button>
+		                            <button
+		                              type="button"
+		                              onClick={() => openLiveUserDetail(entry)}
+		                              aria-label={`Open ${displayName} profile`}
+		                              className="min-w-0 flex-1"
+		                              style={{ background: "transparent", border: "none", padding: 0 }}
+		                            >
+		                              <div className="flex items-center gap-3 min-w-0">
+		                                <div
+		                                  className="rounded-full shrink-0"
+		                                  style={{
+		                                    width: 41.4,
+		                                    height: 41.4,
+		                                    minWidth: 41.4,
+		                                    boxShadow: !isOnlineNow
+		                                      ? undefined
+		                                      : showIdle
+		                                        ? "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(148,163,184,1)"
+		                                        : "0 0 0 1px rgba(255,255,255,1), 0 0 0 4px rgba(95,179,249,1)",
+		                                  }}
+		                                >
+		                                  <div className="rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shadow-sm w-full h-full transition hover:shadow-md hover:border-slate-300">
+		                                    {avatarUrl ? (
+		                                      <img
+		                                        src={avatarUrl}
+		                                        alt={displayName}
+		                                        className="h-full w-full object-cover"
+		                                        loading="lazy"
+		                                        decoding="async"
+		                                      />
+		                                    ) : (
+		                                      <span className="text-[11px] font-semibold text-slate-600">
+		                                        {getInitials(displayName)}
+		                                      </span>
+		                                    )}
+		                                  </div>
+		                                </div>
+		                                <div className="min-w-0 flex-1 overflow-hidden">
+		                                  <div className="flex flex-col items-start gap-0.5 text-left">
+		                                    {rolePill && (
+		                                      <span
+		                                        className="inline-flex items-center squircle-xs px-2 py-[2px] text-sm font-semibold shrink-0 self-start whitespace-nowrap"
+		                                        style={rolePill.style}
+		                                      >
+		                                        {rolePill.label}
+		                                      </span>
+		                                    )}
+		                                    <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+		                                      {displayName}
+		                                    </span>
+		                                    <span className="text-sm text-slate-600 whitespace-nowrap">
+		                                      {entry.email || "—"}
+		                                    </span>
+		                                    <span className="text-sm text-slate-600 whitespace-nowrap">
+		                                      {statusLine}
+		                                    </span>
+		                                  </div>
+		                                </div>
+		                              </div>
+		                            </button>
 		                          </div>
 		                        );
-			                          })}
+		                      })}
 	                            </div>
 		                          )}
 		                    </div>
 	                  </div>
 	                </div>
-	                  );
-	                })()}
-	              </div>
-		            </div>
-		          )}
+                  );
+                })()}
+              </div>
+            </div>
+          )}
 
-		          {isSalesLead(user?.role) && salesDashboardTab === "here_now" && (
+		          {isSalesLead(user?.role) && showSalesDashboardTabs && (
 		            <div className="mt-6">
-		              <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		              <div className="sales-rep-leads-card sales-rep-combined-card">
 		                <div className="flex flex-col gap-3 mb-4">
 		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
 			                    <div className="min-w-0">
@@ -18601,121 +18615,119 @@ function MainApp() {
 			                        Orders placed by doctors assigned to each rep.
 			                      </p>
 			                    </div>
-					                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-					                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
-					                        <div className="flex flex-wrap items-center justify-end gap-2">
-					                          <Popover.Root
-					                            open={adminDashboardPeriodPickerOpen}
-					                            onOpenChange={setAdminDashboardPeriodPickerOpen}
-					                          >
-					                            <Popover.Trigger asChild>
-					                              <Button
-					                                type="button"
-					                                variant="outline"
-					                                size="icon"
-					                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
-					                                aria-label="Select sales by rep date range"
-					                                title="Select date range"
-					                              >
-					                                <CalendarDays aria-hidden="true" />
-					                              </Button>
-					                            </Popover.Trigger>
-					                            <Popover.Portal>
-					                              <Popover.Content
-					                                side="bottom"
-					                                align="end"
-					                                sideOffset={8}
-					                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-					                              >
-					                                <div className="text-sm font-semibold text-slate-800">
-					                                  Sales by Sales Rep timeframe
-					                                </div>
-					                                <div className="mt-2">
-					                                  <DayPicker
-					                                    mode="range"
-					                                    numberOfMonths={1}
-					                                    selected={adminDashboardPeriodRange}
-					                                    onSelect={handleAdminDashboardPeriodSelect}
-					                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-					                                  />
-					                                </div>
-					                                <div className="mt-3 flex items-center justify-between">
-					                                  <Button
-					                                    type="button"
-					                                    variant="ghost"
-					                                    size="sm"
-					                                    className="text-slate-700"
-					                                    onClick={() => {
-					                                      const defaults = getDefaultSalesBySalesRepPeriod();
-					                                      setSalesRepPeriodStart(defaults.start);
-					                                      setSalesRepPeriodEnd(defaults.end);
-					                                    }}
-					                                  >
-					                                    Default
-					                                  </Button>
-					                                  <Button
-					                                    type="button"
-					                                    variant="outline"
-					                                    size="sm"
-					                                    className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-					                                    onClick={() => {
-					                                      applyAdminDashboardPeriod();
-					                                      setAdminDashboardPeriodPickerOpen(false);
-					                                    }}
-					                                  >
-					                                    Done
-					                                  </Button>
-					                                </div>
-					                                <Popover.Arrow className="calendar-popover-arrow" />
-					                              </Popover.Content>
-					                            </Popover.Portal>
-					                          </Popover.Root>
-					                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-					                            ({adminDashboardPeriodLabel})
-					                          </span>
-						                          <Button
-						                            type="button"
-						                            variant="outline"
-						                            size="sm"
-						                            className="header-home-button squircle-sm bg-white text-slate-900"
-						                            onClick={() => void refreshSalesBySalesRepSummary()}
-						                            disabled={salesRepSalesSummaryLoading}
-						                            aria-busy={salesRepSalesSummaryLoading}
-						                            title="Refresh"
-						                          >
-						                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
-						                          </Button>
-					                        </div>
-					
-					                        <div className="flex flex-wrap items-center justify-end gap-2">
-					                          <Button
-					                            type="button"
-					                            variant="outline"
-					                            size="sm"
-					                            className="gap-2"
-					                            onClick={downloadSalesBySalesRepCsv}
-					                            disabled={salesRepSalesSummary.length === 0}
-					                            title="Download CSV"
-					                          >
-					                            <Download className="h-4 w-4" aria-hidden="true" />
-					                            Download CSV
-					                          </Button>
-					                          <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
-					                            <span className="block min-w-0 truncate">
-					                              Last downloaded:{" "}
-					                              {salesRepSalesCsvDownloadedAt
-					                                ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
-					                                    timeZone: "America/Los_Angeles",
-					                                  })
-					                                : "—"}
-					                            </span>
-					                          </span>
-					                        </div>
-					                      </div>
-					                    </div>
-				                  </div>
-
-		                  {/* Totals shown inline above list below */}
+			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+			                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+			                        <div className="flex flex-wrap items-center justify-end gap-2">
+			                          <Popover.Root
+			                            open={adminDashboardPeriodPickerOpen}
+			                            onOpenChange={setAdminDashboardPeriodPickerOpen}
+			                          >
+			                            <Popover.Trigger asChild>
+			                              <Button
+			                                type="button"
+			                                variant="outline"
+			                                size="icon"
+			                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
+			                                aria-label="Select sales by rep date range"
+			                                title="Select date range"
+			                              >
+			                                <CalendarDays aria-hidden="true" />
+			                              </Button>
+			                            </Popover.Trigger>
+			                            <Popover.Portal>
+			                              <Popover.Content
+			                                side="bottom"
+			                                align="end"
+			                                sideOffset={8}
+			                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+			                              >
+			                                <div className="text-sm font-semibold text-slate-800">
+			                                  Sales by Sales Rep timeframe
+			                                </div>
+			                                <div className="mt-2">
+			                                  <DayPicker
+			                                    mode="range"
+			                                    numberOfMonths={1}
+			                                    selected={adminDashboardPeriodRange}
+			                                    onSelect={handleAdminDashboardPeriodSelect}
+			                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+			                                  />
+			                                </div>
+			                                <div className="mt-3 flex items-center justify-between">
+			                                  <Button
+			                                    type="button"
+			                                    variant="ghost"
+			                                    size="sm"
+			                                    className="text-slate-700"
+			                                    onClick={() => {
+			                                      const defaults = getDefaultSalesBySalesRepPeriod();
+			                                      setSalesRepPeriodStart(defaults.start);
+			                                      setSalesRepPeriodEnd(defaults.end);
+			                                    }}
+			                                  >
+			                                    Default
+			                                  </Button>
+			                                  <Button
+			                                    type="button"
+			                                    variant="outline"
+			                                    size="sm"
+			                                    className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+			                                    onClick={() => {
+			                                      applyAdminDashboardPeriod();
+			                                      setAdminDashboardPeriodPickerOpen(false);
+			                                    }}
+			                                  >
+			                                    Done
+			                                  </Button>
+			                                </div>
+			                                <Popover.Arrow className="calendar-popover-arrow" />
+			                              </Popover.Content>
+			                            </Popover.Portal>
+			                          </Popover.Root>
+			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+			                            ({adminDashboardPeriodLabel})
+			                          </span>
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            className="header-home-button squircle-sm bg-white text-slate-900"
+			                            onClick={() => void refreshSalesBySalesRepSummary()}
+			                            disabled={salesRepSalesSummaryLoading}
+			                            aria-busy={salesRepSalesSummaryLoading}
+			                            title="Refresh"
+			                          >
+			                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
+			                          </Button>
+			                        </div>
+			                        <div className="flex flex-wrap items-center justify-end gap-2">
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            className="gap-2"
+			                            onClick={downloadSalesBySalesRepCsv}
+			                            disabled={salesRepSalesSummary.length === 0}
+			                            title="Download CSV"
+			                          >
+			                            <Download className="h-4 w-4" aria-hidden="true" />
+			                            Download CSV
+			                          </Button>
+			                          <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+			                            <span className="block min-w-0 truncate">
+			                              Last downloaded:{" "}
+			                              {salesRepSalesCsvDownloadedAt
+			                                ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+			                                    timeZone: "America/Los_Angeles",
+			                                  })
+			                                : "—"}
+			                            </span>
+			                          </span>
+			                        </div>
+			                      </div>
+			                    </div>
+			                  </div>
+		                    {/* Totals shown inline above list below */}
 		                </div>
 		                <div
 		                  className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
@@ -18754,8 +18766,7 @@ function MainApp() {
 		                                0,
 		                              ),
 		                              wholesaleRevenue: salesRepSalesSummary.reduce(
-		                                (sum, row) =>
-		                                  sum + (Number(row.wholesaleRevenue) || 0),
+		                                (sum, row) => sum + (Number(row.wholesaleRevenue) || 0),
 		                                0,
 		                              ),
 		                              retailRevenue: salesRepSalesSummary.reduce(
@@ -18806,24 +18817,20 @@ function MainApp() {
 		                              }}
 		                            >
 		                              <div className="text-sm font-semibold text-slate-900 min-w-0">
-			                                <button
-			                                  type="button"
-			                                  className="min-w-0 text-left hover:underline"
-			                                  onClick={() =>
-			                                    openLiveUserDetail(
-			                                      {
-			                                        id: rep.salesRepUserId || rep.salesRepId,
-			                                        name: rep.salesRepName,
-			                                        email: rep.salesRepEmail,
-			                                        role: "sales_rep",
-			                                      },
-			                                      {
-		                                        salesRepWholesaleRevenue: Number(
-		                                          rep.wholesaleRevenue || 0,
-		                                        ),
-		                                        salesRepRetailRevenue: Number(
-		                                          rep.retailRevenue || 0,
-		                                        ),
+		                                <button
+		                                  type="button"
+		                                  className="min-w-0 text-left hover:underline"
+		                                  onClick={() =>
+		                                    openLiveUserDetail(
+		                                      {
+		                                        id: rep.salesRepUserId || rep.salesRepId,
+		                                        name: rep.salesRepName,
+		                                        email: rep.salesRepEmail,
+		                                        role: "sales_rep",
+		                                      },
+		                                      {
+		                                        salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
+		                                        salesRepRetailRevenue: Number(rep.retailRevenue || 0),
 		                                      },
 		                                    )
 		                                  }
@@ -18858,6 +18865,103 @@ function MainApp() {
 		            </div>
 		          )}
 
+                {isAdmin(user?.role) && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={adminDashboardTabsContainerRef}
+                      onScroll={updateAdminDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {adminDashboardTabs.map((tab) => {
+                          const isActive = adminDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-admin-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setAdminDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-admin-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">{tab.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: adminDashboardTabIndicator.left,
+                        width: adminDashboardTabIndicator.width,
+                        opacity: 1,
+                      }}
+                    />
+                  </div>
+                )}
+
+			          {showSalesDashboardTabs && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={salesDashboardTabsContainerRef}
+                      onScroll={updateSalesDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {salesDashboardTabs.map((tab) => {
+                          const isActive = salesDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-sales-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setSalesDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-sales-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">{tab.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: salesDashboardTabIndicator.left,
+                        width: salesDashboardTabIndicator.width,
+                        opacity: 1,
+                      }}
+                    />
+                  </div>
+                )}
+
+
 		          {adminActionState.error && (
 		            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
 		              {adminActionState.error}
@@ -18881,7 +18985,7 @@ function MainApp() {
 	                      adminDashboardTab === "here_now" ||
 	                        adminDashboardTab === "maintenance"
 	                        ? "space-y-6"
-	                        : "glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70",
+	                        : "sales-rep-leads-card sales-rep-combined-card",
 	                    )}
 	                  >
                 {adminDashboardTab === "maintenance" && (
@@ -19064,7 +19168,7 @@ function MainApp() {
                     <>
 	                {renderEmailControlsCard()}
 
-		                <div className="mb-4 glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
                       <div className="border-b border-slate-200/60 pb-3">
                         <h4 className="text-base font-semibold text-slate-900">Portal Controls</h4>
                         <p className="text-sm text-slate-600 mb-1">
@@ -19319,7 +19423,7 @@ function MainApp() {
 	                )}
 
 	                {adminDashboardTab === "here_now" && (
-	                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 space-y-4">
+	                <div className="sales-rep-leads-card sales-rep-combined-card space-y-4">
                   <div>
                     <h4 className="text-base font-semibold text-slate-900">
                       Live users
@@ -19779,7 +19883,7 @@ function MainApp() {
                 </div>
                 )}
 		                {adminDashboardTab === "maintenance" && !certificateUploadsVisible && (
-		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                  <div className="sales-rep-leads-card sales-rep-combined-card">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		                      <div>
 		                        <h4 className="text-base font-semibold text-slate-900">
@@ -19808,7 +19912,7 @@ function MainApp() {
 		                )}
 
 		                {adminDashboardTab === "maintenance" && certificateUploadsVisible && (
-		                  <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+		                  <div className="sales-rep-leads-card sales-rep-combined-card">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		                      <div>
 		                        <h4 className="text-base font-semibold text-slate-900">
@@ -19960,7 +20064,7 @@ function MainApp() {
 	          )}
 
 					          {isAdmin(user?.role) && adminDashboardTab === "admin_report" && (
-						            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70 admin-tab-panel-enter">
+						            <div className="sales-rep-leads-card sales-rep-combined-card admin-tab-panel-enter">
 						              <div className="flex flex-col gap-3 mb-4">
 						                <div className="sales-rep-header-row flex w-full flex-col gap-3">
 						                  <div className="min-w-0">
@@ -20061,7 +20165,7 @@ function MainApp() {
 				
 					              <div className="mt-8 space-y-6">
 
-				                <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+				                <div className="sales-rep-leads-card sales-rep-combined-card">
 				                  <div className="flex flex-col gap-3 mb-4">
 	                <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
@@ -20243,7 +20347,7 @@ function MainApp() {
               </div>
             </div>
 
-            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+            <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="sales-rep-header-row flex w-full flex-col gap-3">
 	                  <div className="min-w-0">
@@ -20422,7 +20526,7 @@ function MainApp() {
 			              )}
             </div>
 
-            <div className="glass-card squircle-xl p-4 sm:p-6 border border-slate-200/70">
+            <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 	                  <div className="min-w-0">
@@ -20818,8 +20922,87 @@ function MainApp() {
 			              </div>
 			            </div>
 			          )}
+
+          {isCrmSectionActive && (
+            <div
+              className={clsx(
+                "sales-rep-leads-card sales-rep-combined-card",
+                isAdmin(user?.role) && "order-last",
+              )}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    CRM Seamless Raw Payloads
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    Raw JSON saved from Seamless webhook/backfill ingestion.
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {crmSeamlessRawLastFetchedAt
+                      ? `Last fetched ${formatDateTime(crmSeamlessRawLastFetchedAt)}`
+                      : "Not fetched yet"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="header-home-button squircle-sm bg-white text-slate-900"
+                  onClick={() => void refreshCrmSeamlessRawEntries()}
+                  disabled={crmSeamlessRawLoading}
+                >
+                  {crmSeamlessRawLoading ? "Refreshing…" : "Refresh"}
+                </Button>
+              </div>
+              {crmSeamlessRawError ? (
+                <div className="px-4 py-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                  {crmSeamlessRawError}
+                </div>
+              ) : crmSeamlessRawLoading && crmSeamlessRawEntries.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-slate-500">
+                  Loading Seamless payloads…
+                </div>
+              ) : crmSeamlessRawEntries.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-slate-500">
+                  No Seamless payloads have been saved yet.
+                </div>
+              ) : (
+                <div className="max-h-[500px] overflow-y-auto space-y-3 pr-1">
+                  {crmSeamlessRawEntries.map((entry, index) => {
+                    const createdAt = entry?.createdAt || entry?.receivedAt || null;
+                    const payloadText = (() => {
+                      const payload = (entry as any)?.payload;
+                      if (typeof payload === "string") {
+                        return payload;
+                      }
+                      try {
+                        return JSON.stringify(payload ?? null, null, 2);
+                      } catch {
+                        return String(payload ?? "");
+                      }
+                    })();
+                    return (
+                      <details
+                        key={String(entry?.id || `${entry?.createdAt || "raw"}-${index}`)}
+                        className="rounded-lg border border-slate-200/80 bg-white/80 p-3"
+                      >
+                        <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                          #{entry?.id ?? "—"} • {entry?.trigger || "webhook"} •{" "}
+                          {createdAt ? formatDateTime(createdAt) : "Timestamp unavailable"}
+                        </summary>
+                        <pre className="mt-3 rounded-md bg-slate-900 text-slate-100 text-xs p-3 overflow-x-auto">
+                          {payloadText}
+                        </pre>
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 	
-		          {isSalesRoleDashboard && isSalesHereNowActive && hasChartData && (
+		          {isCrmSectionActive && hasChartData && (
 	            <div className={clsx("sales-rep-combined-chart", isAdmin(user?.role) && "order-last")}>
 	              <div className="sales-rep-chart-header">
 	                <div>
@@ -20933,8 +21116,15 @@ function MainApp() {
             </div>
           )}
 
-          {isSalesRoleDashboard && isSalesHereNowActive && (
-          <div className={clsx("sales-rep-dashboard-grid", isAdmin(user?.role) && "order-last")}>
+          {showSalesDashboardGrid && (
+          <div
+            className={clsx(
+              "sales-rep-dashboard-grid",
+              isAdmin(user?.role) && "order-last",
+              showSingleSalesDashboardCard && "sales-rep-dashboard-grid--single",
+            )}
+          >
+            {isYourSalesSectionActive && (
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
                 <div className="sales-rep-leads-title">
@@ -21285,6 +21475,8 @@ function MainApp() {
                   })}
               </div>
             </div>
+            )}
+            {isDoctorReferralsManualSectionActive && (
             <div className="sales-rep-leads-card sales-rep-combined-card">
               <div className="sales-rep-leads-header">
                 <div className="sales-rep-leads-title">
@@ -21453,14 +21645,14 @@ function MainApp() {
 				                            .slice(0, 64)}`;
 				                          const shouldShowAccountCreatedForVerified =
 				                            hasContactAccount && selectedStatusValue === "verified";
-			                          const currentStatusLabel = (() => {
-				                            if (selectedStatusValue === "pending") {
-				                              return "Pending";
-				                            }
-				                            if (shouldShowAccountCreatedForVerified) {
-				                              return "Account Created";
-				                            }
-				                            return humanizeReferralStatus(selectedStatusValue);
+				                          const currentStatusLabel = (() => {
+					                            if (selectedStatusValue === "pending") {
+					                              return "New";
+					                            }
+					                            if (shouldShowAccountCreatedForVerified) {
+					                              return "Account Created";
+					                            }
+					                            return humanizeReferralStatus(selectedStatusValue);
 				                          })();
 			                          const nextPromotion = (() => {
 			                            if (isSyntheticAccount) {
@@ -21469,18 +21661,18 @@ function MainApp() {
 			                              }
 			                              return { value: "converted", label: "Converted", disabled: false };
 			                            }
-			                            if (shouldShowAccountCreatedForVerified) {
-			                              return { value: "converted", label: "Converted", disabled: false };
-			                            }
-			                            switch (selectedStatusValue) {
-			                              case "pending":
-			                                return { value: "contacted", label: "Contacting", disabled: false };
-			                              case "contacted":
-			                                return {
-			                                  value: "verified",
-			                                  label: permitSatisfied ? "Verified" : "Verified (permit required)",
-			                                  disabled: !permitSatisfied,
-			                                };
+				                            if (shouldShowAccountCreatedForVerified) {
+				                              return { value: "converted", label: "Converted", disabled: false };
+				                            }
+				                            switch (selectedStatusValue) {
+				                              case "pending":
+				                                return { value: "contacted", label: "Contacted", disabled: false };
+				                              case "contacted":
+				                                return {
+				                                  value: "verified",
+				                                  label: permitSatisfied ? "Qualified" : "Qualified (permit required)",
+				                                  disabled: !permitSatisfied,
+				                                };
 			                              case "verified":
 			                                return { value: "account_created", label: "Account Created", disabled: false };
 			                              case "account_created":
@@ -21489,16 +21681,16 @@ function MainApp() {
 			                                return null;
 			                            }
 			                          })();
-                              const stageInstructionKey =
-                                shouldShowAccountCreatedForVerified
-                                  ? "account_created"
-                                  : selectedStatusValue;
-                              const stageInstructions: Record<string, string> = {
-                                pending: "Move to Contacting when ready to reach out.",
-                                contacted:
-                                  "Reach out to them, verify their practice, ensure they have an NPI number, and note down any other personal and practice details. Collect their reseller permit if available for their tax exemption. When verified, advance their status.",
-                                verified:
-                                  "Now that they are verified, help them create an account by sharing your referral code. You can see when they have created an account with the label in this container.",
+	                              const stageInstructionKey =
+	                                shouldShowAccountCreatedForVerified
+	                                  ? "account_created"
+	                                  : selectedStatusValue;
+	                              const stageInstructions: Record<string, string> = {
+	                                pending: "Move to Contacted when ready to reach out.",
+	                                contacted:
+	                                  "Reach out to them, verify their practice, ensure they have an NPI number, and note down any other personal and practice details. Collect their reseller permit if available for their tax exemption. When verified, advance their status.",
+	                                verified:
+	                                  "Now that they are qualified, help them create an account by sharing your referral code. You can see when they have created an account with the label in this container.",
                                 account_created:
                                   "Now that their account is created, walk them through the platform. Ensure to promote their educational and research excellence and our support for them. You can preemptively move them to the Converted status for your convenience if you wish. It will note when they make their first purchase automatically.",
                               };
@@ -21514,14 +21706,14 @@ function MainApp() {
 			                            ];
 			                            const currentIndex = order.indexOf(selectedStatusValue);
 			                            if (currentIndex <= 0) return [];
-			                            return order.slice(0, currentIndex).map((value) => ({
-			                                value,
-			                                label:
-			                                  value === "pending"
-			                                    ? "Pending"
-			                                    : humanizeReferralStatus(value),
-			                                disabled: false,
-			                              }));
+				                            return order.slice(0, currentIndex).map((value) => ({
+				                                value,
+				                                label:
+				                                  value === "pending"
+				                                    ? "New"
+				                                    : humanizeReferralStatus(value),
+				                                disabled: false,
+				                              }));
 			                          })();
 			                          const promotionOptions = [
 			                            ...backwardStatuses,
@@ -22486,13 +22678,13 @@ function MainApp() {
 		                                            true,
 		                                          );
 		                                        }
-		                                        base.forEach((value) => {
-		                                          const label =
-		                                            value === "pending"
-		                                              ? "Pending"
-		                                              : humanizeReferralStatus(value);
-		                                          pushUnique(value, label, false);
-		                                        });
+			                                        base.forEach((value) => {
+			                                          const label =
+			                                            value === "pending"
+			                                              ? "New"
+			                                              : humanizeReferralStatus(value);
+			                                          pushUnique(value, label, false);
+			                                        });
 		                                        return options.map((option) => (
 		                                          <option
 		                                            key={option.value}
@@ -22526,15 +22718,18 @@ function MainApp() {
               </div>
               {/* Historic prospects removed; credited referrals appear in Sales */}
 	            </div>
+            )}
 	          </div>
 	          )}
-	          {showSalesDashboardTabs && salesDashboardTab === "settings" && (
+	          {showSalesDashboardTabs && isSalesSettingsActive && (
 	            <div>
 	              {renderEmailControlsCard()}
 	            </div>
 	          )}
 	        </div>
-	        {isSalesRoleDashboard && isSalesHereNowActive && (
+	        {(isCrmSectionActive ||
+	          isYourSalesSectionActive ||
+	          isDoctorReferralsManualSectionActive) && (
 	        <p className="text-xs text-slate-500/80 pt-2 text-center italic dashboard-feedback-note">
           Send dashboard recommendations and ideas to{" "}
           <a

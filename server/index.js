@@ -161,6 +161,12 @@ const start = async () => {
       } catch (error) {
         logger.error({ err: error }, 'Failed to start ShipStation status sync job');
       }
+      try {
+        const { startSeamlessReconciliationJob } = require('./services/crmSeamlessService');
+        startSeamlessReconciliationJob();
+      } catch (error) {
+        logger.error({ err: error }, 'Failed to start CRM Seamless reconciliation job');
+      }
     });
 
     server.on('error', (error) => {

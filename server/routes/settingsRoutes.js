@@ -25,6 +25,7 @@ const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const userRepository = require('../repositories/userRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
+const crmRepository = require('../repositories/crmRepository');
 
 const router = Router();
 
@@ -243,6 +244,41 @@ router.put('/reports', authenticate, requireAdminOrSalesLead, async (req, res) =
     taxesByStateCsvDownloadedAt: await getTaxesByStateCsvDownloadedAt(),
     productsCommissionCsvDownloadedAt: await getProductsCommissionCsvDownloadedAt(),
   });
+});
+
+router.get('/crm/assignment-rules', authenticate, requireAdminOrSalesLead, async (_req, res) => {
+  try {
+    const rules = await crmRepository.listAssignmentRules();
+    return res.json({ rules });
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to load CRM assignment rules');
+    return res.status(500).json({ error: 'Unable to load CRM assignment rules' });
+  }
+});
+
+router.put('/crm/assignment-rules', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  try {
+    const payload = Array.isArray(req.body) ? req.body : req.body?.rules;
+    if (!Array.isArray(payload)) {
+      return res.status(400).json({ error: 'rules array is required' });
+    }
+    const sanitized = payload.map((rule, index) => ({
+      id: typeof rule?.id === 'string' ? rule.id : undefined,
+      name: typeof rule?.name === 'string' ? rule.name : `Rule ${index + 1}`,
+      enabled: rule?.enabled !== false,
+      priority: Number.isFinite(Number(rule?.priority)) ? Number(rule.priority) : index + 1,
+      conditions: rule?.conditions && typeof rule.conditions === 'object' ? rule.conditions : {},
+      assigneeSalesRepId:
+        rule?.assigneeSalesRepId != null
+          ? String(rule.assigneeSalesRepId)
+          : (rule?.assignee_sales_rep_id != null ? String(rule.assignee_sales_rep_id) : null),
+    }));
+    const rules = await crmRepository.replaceAssignmentRules(sanitized);
+    return res.json({ rules });
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to update CRM assignment rules');
+    return res.status(500).json({ error: 'Unable to update CRM assignment rules' });
+  }
 });
 
 router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
