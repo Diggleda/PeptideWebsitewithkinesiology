@@ -1000,6 +1000,19 @@ const parseDelegateLabelMeta = (metaData = []) => {
   return null;
 };
 
+const normalizeWooDateString = (value, { assumeUtc = false } = {}) => {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const canonical = raw.includes(' ') && !raw.includes('T')
+    ? raw.replace(' ', 'T')
+    : raw;
+  const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(canonical);
+  const parseTarget = assumeUtc && !hasTimezone ? `${canonical}Z` : canonical;
+  const parsed = new Date(parseTarget);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 const mapWooOrderSummary = (order) => {
   const metaData = Array.isArray(order?.meta_data) ? order.meta_data : [];
   const pepproMeta = metaData.find((entry) => entry?.key === 'peppro_order_id');
@@ -1024,8 +1037,14 @@ const mapWooOrderSummary = (order) => {
     totalTax: normalizeNumber(order?.total_tax),
     shippingTotal: normalizeNumber(order?.shipping_total),
     paymentMethod: order?.payment_method_title || order?.payment_method || null,
-    createdAt: order?.date_created || order?.date_created_gmt || null,
-    updatedAt: order?.date_modified || order?.date_modified_gmt || null,
+    createdAt:
+      normalizeWooDateString(order?.date_created_gmt, { assumeUtc: true })
+      || normalizeWooDateString(order?.date_created)
+      || null,
+    updatedAt:
+      normalizeWooDateString(order?.date_modified_gmt, { assumeUtc: true })
+      || normalizeWooDateString(order?.date_modified)
+      || null,
     billingName: formatBillingName(order?.billing),
     billingEmail: order?.billing?.email || null,
     source: 'woocommerce',

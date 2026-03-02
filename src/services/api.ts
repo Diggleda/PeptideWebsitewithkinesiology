@@ -3,6 +3,8 @@ import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText
 
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
+  const allowCrossOriginApi =
+    String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -20,15 +22,19 @@ export const API_BASE_URL = (() => {
   const normalized = configured.replace(/\/+$/, '');
   const normalizedWithApi = normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 
-  // Guardrail: in production builds, always default to same-origin to avoid CORS/proxy drift.
-  if (import.meta.env.PROD && typeof window !== 'undefined' && window.location?.origin) {
+  // Guardrail: when loaded from a hosted browser origin, default to same-origin API unless
+  // explicitly overridden. This prevents env/proxy drift from sending the app cross-origin.
+  if (!allowCrossOriginApi && typeof window !== 'undefined' && window.location?.origin) {
     try {
       if (/^https?:\/\//i.test(normalizedWithApi)) {
         const parsed = new URL(normalizedWithApi);
         const current = new URL(window.location.origin);
-        if (parsed.origin !== current.origin) {
+        const currentHost = String(current.hostname || '').toLowerCase();
+        const isCurrentLocalhost =
+          currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
+        if (!isCurrentLocalhost && parsed.origin !== current.origin) {
           if (typeof console !== 'undefined' && console.warn) {
-            console.warn('[API] Ignoring cross-origin VITE_API_URL in production bundle; defaulting to same-origin /api');
+            console.warn('[API] Ignoring cross-origin VITE_API_URL for hosted origin; defaulting to same-origin /api');
           }
           return `${window.location.origin}/api`;
         }

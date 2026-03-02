@@ -661,8 +661,16 @@ const buildBillingAddressFromUser = (user, fallbackAddress = null) => {
   if (!user) {
     return fallbackAddress;
   }
+  const normalizedRole = normalizeRole(user.role);
+  const shouldUseRecipientName =
+    normalizedRole === 'admin'
+    || normalizedRole === 'sales_rep'
+    || normalizedRole === 'rep'
+    || normalizedRole === 'sales_lead'
+    || normalizedRole === 'saleslead';
+  const recipientName = fallbackAddress?.name || null;
   return {
-    name: user.name || fallbackAddress?.name || null,
+    name: shouldUseRecipientName ? (recipientName || user.name || null) : (user.name || recipientName || null),
     company: user.company || fallbackAddress?.company || null,
     addressLine1: user.officeAddressLine1 || fallbackAddress?.addressLine1 || null,
     addressLine2: user.officeAddressLine2 || fallbackAddress?.addressLine2 || null,

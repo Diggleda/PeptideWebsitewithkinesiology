@@ -12752,9 +12752,17 @@ function MainApp() {
         const key = orderKey(order, idx);
         originalByKey.set(key, order);
       });
-      const normalizeDateField = (value: any): string | null => {
+      const normalizeDateField = (
+        value: any,
+        options?: { assumeUtcNoTimezone?: boolean },
+      ): string | null => {
         if (typeof value === "string" && value.trim().length > 0) {
-          const d = new Date(value);
+          const raw = value.trim();
+          const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
+          const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(canonical);
+          const parseTarget =
+            options?.assumeUtcNoTimezone && !hasTimezone ? `${canonical}Z` : canonical;
+          const d = new Date(parseTarget);
           return Number.isNaN(d.getTime()) ? null : d.toISOString();
         }
         if (value instanceof Date) {
@@ -12799,18 +12807,26 @@ function MainApp() {
             null;
           const doctorInfo = doctorId ? doctorLookup.get(doctorId) : null;
           const createdAt =
+            normalizeDateField((order as any).dateCreatedGmt, {
+              assumeUtcNoTimezone: true,
+            }) ||
+            normalizeDateField((order as any).date_created_gmt, {
+              assumeUtcNoTimezone: true,
+            }) ||
             normalizeDateField(order.createdAt) ||
             normalizeDateField((order as any).dateCreated) ||
             normalizeDateField((order as any).date_created) ||
-            normalizeDateField((order as any).dateCreatedGmt) ||
-            normalizeDateField((order as any).date_created_gmt) ||
             null;
           const updatedAt =
+            normalizeDateField((order as any).dateModifiedGmt, {
+              assumeUtcNoTimezone: true,
+            }) ||
+            normalizeDateField((order as any).date_modified_gmt, {
+              assumeUtcNoTimezone: true,
+            }) ||
             normalizeDateField(order.updatedAt) ||
             normalizeDateField((order as any).dateModified) ||
             normalizeDateField((order as any).date_modified) ||
-            normalizeDateField((order as any).dateModifiedGmt) ||
-            normalizeDateField((order as any).date_modified_gmt) ||
             createdAt;
           const estimatedArrival =
             normalizeDateField(order?.shippingEstimate?.estimatedArrivalDate) ||
