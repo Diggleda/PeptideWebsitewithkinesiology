@@ -754,8 +754,10 @@ const buildLocalOrderSummary = (order) => {
     billingAddress: buildAddressSummary(order.billingAddress),
     shippingEstimate: order.shippingEstimate || null,
     shippingTotal: order.shippingTotal ?? null,
-    handDelivery: false,
-    fulfillmentMethod: isHandDeliverySelection(order.shippingEstimate) ? 'hand_delivery' : 'shipping',
+    handDelivery: Boolean(order.handDelivery || isHandDeliverySelection(order.shippingEstimate)),
+    fulfillmentMethod: (order.handDelivery || isHandDeliverySelection(order.shippingEstimate))
+      ? 'hand_delivery'
+      : 'shipping',
     pickupLocation: null,
     pickupReadyNotice: null,
     taxTotal: order.taxTotal ?? null,
@@ -1011,16 +1013,19 @@ const isHandDeliverySelection = (shippingEstimate) => {
 };
 
 const resolveCheckoutShippingData = ({
-  handDelivery: _handDelivery,
+  handDelivery,
   shippingAddress,
   shippingEstimate,
   shippingTotal,
 }) => {
-
-  if (isHandDeliverySelection(shippingEstimate)) {
+  const handDeliveryRequested = normalizeBooleanish(handDelivery);
+  if (handDeliveryRequested || isHandDeliverySelection(shippingEstimate)) {
     const normalizedAddress = ensureShippingAddress(shippingAddress);
+    const normalizedEstimate = (shippingEstimate && typeof shippingEstimate === 'object')
+      ? shippingEstimate
+      : {};
     return {
-      handDelivery: false,
+      handDelivery: true,
       shippingAddress: normalizedAddress,
       shippingEstimate: {
         carrierId: HAND_DELIVERY_SERVICE_CODE,
@@ -1031,8 +1036,11 @@ const resolveCheckoutShippingData = ({
         estimatedArrivalDate: null,
         rate: 0,
         currency: 'USD',
-        addressFingerprint: createAddressFingerprint(normalizedAddress),
+        addressFingerprint: normalizedEstimate.addressFingerprint || createAddressFingerprint(normalizedAddress),
         meta: {
+          ...(normalizedEstimate.meta && typeof normalizedEstimate.meta === 'object'
+            ? normalizedEstimate.meta
+            : {}),
           deliveryMethod: HAND_DELIVERY_SERVICE_CODE,
         },
       },
@@ -1135,7 +1143,10 @@ const createOrderInternal = async ({
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected = isHandDeliverySelection(shippingData.shippingEstimate);
+  const handDeliverySelected =
+    normalizeBooleanish(handDelivery)
+    || shippingData.handDelivery === true
+    || isHandDeliverySelection(shippingData.shippingEstimate);
   const itemsSubtotal = calculateItemsSubtotal(items);
   const normalizedTaxTotal = taxExempt
     ? 0
@@ -1189,8 +1200,8 @@ const createOrderInternal = async ({
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
       preferFallbackAddress: handDeliverySelected,
     }),
-    handDelivery: false,
-    fulfillmentMethod: isHandDeliverySelection(shippingData.shippingEstimate) ? 'hand_delivery' : 'shipping',
+    handDelivery: handDeliverySelected,
+    fulfillmentMethod: handDeliverySelected ? 'hand_delivery' : 'shipping',
     pickupLocation: null,
     pickupReadyNotice: null,
     referralCode: referralCode || null,
@@ -1475,7 +1486,10 @@ const estimateOrderTotals = async ({
     shippingEstimate,
     shippingTotal,
   });
-  const handDeliverySelected = isHandDeliverySelection(shippingData.shippingEstimate);
+  const handDeliverySelected =
+    normalizeBooleanish(handDelivery)
+    || shippingData.handDelivery === true
+    || isHandDeliverySelection(shippingData.shippingEstimate);
 
   const itemsSubtotal = calculateItemsSubtotal(items);
   const taxExempt = await isUserTaxExemptForCheckout(user);
@@ -1505,6 +1519,8 @@ const estimateOrderTotals = async ({
     billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
       preferFallbackAddress: handDeliverySelected,
     }),
+    handDelivery: handDeliverySelected,
+    fulfillmentMethod: handDeliverySelected ? 'hand_delivery' : 'shipping',
     status: 'pending',
     createdAt: new Date().toISOString(),
     physicianCertificationAccepted: false,

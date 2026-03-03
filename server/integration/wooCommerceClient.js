@@ -587,6 +587,7 @@ const buildShippingLines = ({ shippingTotal, shippingEstimate, shippingAddress }
 
 const buildOrderPayload = async ({ order, customer }) => {
   const shippingAddress = order.shippingAddress || null;
+  const billingAddress = order.billingAddress || shippingAddress || null;
   const shippingTotal = typeof order.shippingTotal === 'number' && Number.isFinite(order.shippingTotal)
     ? Number(order.shippingTotal)
     : 0;
@@ -668,8 +669,15 @@ const buildOrderPayload = async ({ order, customer }) => {
     line_items: buildLineItems(order.items || [], { taxTotal, taxRateId: manualTaxRateId }),
     meta_data: metaData,
     billing: {
-      first_name: customer.name || 'PepPro',
-      email: customer.email || 'orders@peppro.example',
+      first_name: billingAddress?.name || customer.name || 'PepPro',
+      email: billingAddress?.email || customer.email || 'orders@peppro.example',
+      phone: billingAddress?.phone || '',
+      address_1: billingAddress?.addressLine1 || '',
+      address_2: billingAddress?.addressLine2 || '',
+      city: billingAddress?.city || '',
+      state: billingAddress?.state || '',
+      postcode: billingAddress?.postalCode || '',
+      country: billingAddress?.country || 'US',
     },
   };
   if (manualTaxRateId && taxTotal > 0) {
