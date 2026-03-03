@@ -35,7 +35,11 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
       const fixed = Number(rule?.price || rule?.amount || 0);
       if (min > 0 && fixed > 0 && basePrice > 0) {
         const discount = Math.max(0, Math.min(100, (1 - fixed / basePrice) * 100));
-        bulkPricingTiers.push({ minQuantity: Math.floor(min), discountPercentage: Math.round(discount) });
+        bulkPricingTiers.push({
+          minQuantity: Math.floor(min),
+          discountPercentage: Math.round(discount),
+          unitPrice: Math.round((fixed + Number.EPSILON) * 100) / 100,
+        });
       }
     }
     if (bulkPricingTiers.length === 0) {
@@ -47,7 +51,11 @@ export async function loadLocalProductForCard(): Promise<Product | null> {
         const min = qtyMatch ? Number(qtyMatch[1]) : 0;
         if (min > 0 && val > 0 && basePrice > 0) {
           const discount = Math.max(0, Math.min(100, (1 - val / basePrice) * 100));
-          bulkPricingTiers.push({ minQuantity: min, discountPercentage: Math.round(discount) });
+          bulkPricingTiers.push({
+            minQuantity: min,
+            discountPercentage: Math.round(discount),
+            unitPrice: Math.round((val + Number.EPSILON) * 100) / 100,
+          });
         }
       }
       bulkPricingTiers.sort((a, b) => a.minQuantity - b.minQuantity);

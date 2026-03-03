@@ -2788,6 +2788,7 @@ const normalizeFixedRule = (
   return {
     minQuantity: Math.floor(minQuantity),
     discountPercentage: Math.round(discount),
+    unitPrice: Math.round((price + Number.EPSILON) * 100) / 100,
   };
 };
 

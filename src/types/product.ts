@@ -28,6 +28,7 @@ export interface ProductVariant {
 export interface BulkPricingTier {
   minQuantity: number;
   discountPercentage: number;
+  unitPrice?: number;
 }
 
 export interface ProductTag {

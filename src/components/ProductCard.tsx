@@ -160,6 +160,7 @@ export interface ProductVariation {
 export interface BulkPricingTier {
   minQuantity: number;
   discountPercentage: number;
+  unitPrice?: number;
 }
 
 export interface Product {

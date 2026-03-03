@@ -93,8 +93,13 @@ export const computeUnitPrice = (
       }
 
       if (applicable) {
-        const discountPercentage = Number(applicable.discountPercentage) || 0;
-        unitPrice = basePrice * (1 - discountPercentage / 100);
+        const fixedUnitPrice = Number((applicable as any).unitPrice);
+        if (Number.isFinite(fixedUnitPrice) && fixedUnitPrice > 0) {
+          unitPrice = fixedUnitPrice;
+        } else {
+          const discountPercentage = Number(applicable.discountPercentage) || 0;
+          unitPrice = basePrice * (1 - discountPercentage / 100);
+        }
       }
     }
   }
