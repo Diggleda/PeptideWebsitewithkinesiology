@@ -16033,18 +16033,14 @@ function MainApp() {
       const detail = (event as any)?.detail || {};
       const reason =
         typeof detail?.reason === "string" ? detail.reason : "";
-      const authCode =
-        typeof detail?.authCode === "string" ? detail.authCode : "";
-
-      const forcedByOtherLogin =
-        reason === "another_tab_login" ||
-        reason === "credentials_used_elsewhere" ||
-        authCode === "TOKEN_REVOKED";
+      const forcedByOtherLogin = reason === "another_tab_login";
 
       if (forcedByOtherLogin) {
         toast.error(
           "Another login with your credentials has forced your logout. If this wasn't you, reset your password.",
         );
+      } else if (reason === "token_revoked" || reason === "auth_revoked") {
+        toast.info("Your session ended. Please sign in again.");
       }
 
       handleLogout();

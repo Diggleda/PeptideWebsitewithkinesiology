@@ -21,22 +21,25 @@ def seed_defaults() -> None:
     discount_code_repository.ensure_code_exists(
         code="RESEARCH",
         discount_value=50.0,
-        overwrite_value=True,
+        overwrite_value=False,
         condition={"min_cart_quantity": 4},
-        overwrite_condition=True,
+        overwrite_condition=False,
     )
     discount_code_repository.ensure_code_exists(
         code="GLORIAINEXCELSISDEO",
         discount_value=0.0,
-        overwrite_value=True,
+        overwrite_value=False,
         condition={
             "allowed_roles": [
                 "admin",
                 "sales_rep",
                 "test_rep",
+                "test_reps",
                 "sales_lead",
                 "saleslead",
                 "sales-lead",
+                "lead",
+                "leads",
                 "rep",
             ],
             "single_use_per_user": False,
@@ -46,7 +49,7 @@ def seed_defaults() -> None:
                 "max_quantity": 26,
             },
         },
-        overwrite_condition=True,
+        overwrite_condition=False,
     )
 
 
@@ -54,26 +57,31 @@ def _normalize_role(role: Optional[str]) -> str:
     return str(role or "").strip().lower()
 
 
+def _canonical_role(role: Optional[str]) -> str:
+    normalized = _normalize_role(role)
+    if normalized == "test_reps":
+        return "test_rep"
+    if normalized == "saleslead":
+        return "sales_lead"
+    if normalized == "sales-lead":
+        return "sales_lead"
+    if normalized in ("lead", "leads"):
+        return "sales_lead"
+    return normalized
+
+
 def _is_role_allowed(user_role: str, allowed_roles: list[Any]) -> bool:
-    normalized = _normalize_role(user_role)
+    normalized = _canonical_role(user_role)
     if not normalized:
         return False
-    allowed = {str(item or "").strip().lower() for item in (allowed_roles or []) if str(item or "").strip()}
+    allowed = {
+        _canonical_role(str(item or "").strip().lower())
+        for item in (allowed_roles or [])
+        if str(item or "").strip()
+    }
     if not allowed:
         return False
-    if normalized in allowed:
-        return True
-    aliases = {
-        "saleslead": {"sales_lead", "sales-lead"},
-        "sales_lead": {"saleslead", "sales-lead"},
-        "sales-lead": {"sales_lead", "saleslead"},
-        "sales_rep": {"rep"},
-        "rep": {"sales_rep"},
-    }
-    for alias in aliases.get(normalized, set()):
-        if alias in allowed:
-            return True
-    return False
+    return normalized in allowed
 
 
 def _parse_pricing_override(condition: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -111,6 +119,7 @@ def preview_discount_for_user(
     cart_quantity: float | int = 0,
 ) -> Dict[str, Any]:
     seed_defaults()
+
     record = discount_code_repository.find_by_code(code)
     if not record:
         return {"valid": False, "message": "Invalid discount code"}

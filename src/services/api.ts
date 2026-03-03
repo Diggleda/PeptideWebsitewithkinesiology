@@ -610,7 +610,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
         // Otherwise (e.g., calling /auth/logout without a token) we'd recurse.
         if (token) {
           const authCode = typeof codeField === 'string' ? codeField : undefined;
-          const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+          const reason = authCode === 'TOKEN_REVOKED' ? 'token_revoked' : 'auth_revoked';
           dispatchForceLogout(reason, { authCode });
         }
         (error as any).code = 'AUTH_REQUIRED';
@@ -761,7 +761,7 @@ const fetchWithAuthForm = async (url: string, options: RequestInit = {}) => {
       clearSessionId();
       if (token) {
         const authCode = typeof codeField === 'string' ? codeField : undefined;
-        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+        const reason = authCode === 'TOKEN_REVOKED' ? 'token_revoked' : 'auth_revoked';
         dispatchForceLogout(reason, { authCode });
       }
       (error as any).code = 'AUTH_REQUIRED';
@@ -871,7 +871,7 @@ const fetchWithAuthBlob = async (url: string, options: RequestInit = {}) => {
       clearSessionId();
       if (token) {
         const authCode = typeof codeField === 'string' ? codeField : undefined;
-        const reason = authCode === 'TOKEN_REVOKED' ? 'credentials_used_elsewhere' : 'auth_revoked';
+        const reason = authCode === 'TOKEN_REVOKED' ? 'token_revoked' : 'auth_revoked';
         dispatchForceLogout(reason, { authCode });
       }
       (error as any).code = 'AUTH_REQUIRED';
