@@ -657,7 +657,8 @@ const buildAddressSummary = (address = {}) => {
   };
 };
 
-const buildBillingAddressFromUser = (user, fallbackAddress = null) => {
+const buildBillingAddressFromUser = (user, fallbackAddress = null, options = {}) => {
+  const preferFallbackAddress = options?.preferFallbackAddress === true;
   if (!user) {
     return fallbackAddress;
   }
@@ -669,6 +670,20 @@ const buildBillingAddressFromUser = (user, fallbackAddress = null) => {
     || normalizedRole === 'sales_lead'
     || normalizedRole === 'saleslead';
   const recipientName = fallbackAddress?.name || null;
+  if (preferFallbackAddress && fallbackAddress) {
+    return {
+      name: recipientName || user.name || null,
+      company: fallbackAddress?.company || user.company || null,
+      addressLine1: fallbackAddress?.addressLine1 || user.officeAddressLine1 || null,
+      addressLine2: fallbackAddress?.addressLine2 || user.officeAddressLine2 || null,
+      city: fallbackAddress?.city || user.officeCity || null,
+      state: fallbackAddress?.state || user.officeState || null,
+      postalCode: fallbackAddress?.postalCode || user.officePostalCode || null,
+      country: fallbackAddress?.country || 'US',
+      phone: fallbackAddress?.phone || user.phone || null,
+      email: fallbackAddress?.email || user.email || null,
+    };
+  }
   return {
     name: shouldUseRecipientName ? (recipientName || user.name || null) : (user.name || recipientName || null),
     company: user.company || fallbackAddress?.company || null,
@@ -1120,6 +1135,7 @@ const createOrderInternal = async ({
     shippingEstimate,
     shippingTotal,
   });
+  const handDeliverySelected = isHandDeliverySelection(shippingData.shippingEstimate);
   const itemsSubtotal = calculateItemsSubtotal(items);
   const normalizedTaxTotal = taxExempt
     ? 0
@@ -1170,7 +1186,9 @@ const createOrderInternal = async ({
     shippingTotal: shippingData.shippingTotal,
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
-    billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress),
+    billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
+      preferFallbackAddress: handDeliverySelected,
+    }),
     handDelivery: false,
     fulfillmentMethod: isHandDeliverySelection(shippingData.shippingEstimate) ? 'hand_delivery' : 'shipping',
     pickupLocation: null,
@@ -1457,6 +1475,7 @@ const estimateOrderTotals = async ({
     shippingEstimate,
     shippingTotal,
   });
+  const handDeliverySelected = isHandDeliverySelection(shippingData.shippingEstimate);
 
   const itemsSubtotal = calculateItemsSubtotal(items);
   const taxExempt = await isUserTaxExemptForCheckout(user);
@@ -1483,7 +1502,9 @@ const estimateOrderTotals = async ({
     shippingTotal: shippingData.shippingTotal,
     shippingEstimate: shippingData.shippingEstimate,
     shippingAddress: shippingData.shippingAddress,
-    billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress),
+    billingAddress: buildBillingAddressFromUser(user, shippingData.shippingAddress, {
+      preferFallbackAddress: handDeliverySelected,
+    }),
     status: 'pending',
     createdAt: new Date().toISOString(),
     physicianCertificationAccepted: false,

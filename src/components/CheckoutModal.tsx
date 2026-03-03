@@ -1580,21 +1580,34 @@ export function CheckoutModal({
               <div className="space-y-4">
                 <h3>Shipping Address</h3>
                 {allowManualHandDelivery && !isDelegateFlow && (
-                  <div className="flex items-center gap-3 rounded-lg border border-slate-200/80 bg-white/70 px-4 py-3">
-                    <input
-                      id="manual-hand-delivery"
-                      type="checkbox"
-                      className="brand-checkbox"
-                      checked={manualHandDelivery}
-                      onChange={(event) => setManualHandDelivery(event.target.checked)}
-                      disabled={isDoctorHandDeliveryEnabled}
-                    />
-                    <label
-                      htmlFor="manual-hand-delivery"
-                      className="text-sm font-medium text-slate-800"
-                    >
-                      Mark this order as hand delivered
-                    </label>
+                  <div
+                    className={`glass-card squircle-lg flex flex-wrap items-center justify-between gap-4 border px-6 py-4 transition-colors ${
+                      manualHandDelivery
+                        ? 'border-[rgba(34,197,94,0.38)] shadow-[0_20px_48px_-38px_rgba(34,197,94,0.35)]'
+                        : 'border-[rgba(95,179,249,0.28)] shadow-[0_20px_48px_-40px_rgba(95,179,249,0.22)] hover:border-[rgba(95,179,249,0.42)]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <input
+                        id="manual-hand-delivery"
+                        type="checkbox"
+                        className="brand-checkbox"
+                        checked={manualHandDelivery}
+                        onChange={(event) => setManualHandDelivery(event.target.checked)}
+                        disabled={isDoctorHandDeliveryEnabled}
+                      />
+                      <div className="flex flex-col">
+                        <label htmlFor="manual-hand-delivery" className="text-base font-semibold text-slate-900">
+                          Hand delivered
+                        </label>
+                        <span className="text-xs text-slate-600">Per-order local delivery override</span>
+                      </div>
+                    </div>
+                    {manualHandDelivery && (
+                      <span className="inline-flex items-center rounded-full border border-green-200/80 bg-green-50/70 px-3 py-1 text-xs font-semibold text-green-800">
+                        Enabled
+                      </span>
+                    )}
                   </div>
                 )}
                 {isDoctorHandDeliveryEnabled && (
