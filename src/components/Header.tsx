@@ -396,19 +396,71 @@ const formatOrderDate = (value?: string | null) => {
 
 const resolveOrderPlacedAt = (order?: AccountOrderSummary | null): string | null => {
   if (!order || typeof order !== 'object') return null;
+  const sourceToken = String((order as any)?.source || '').trim().toLowerCase();
+  const shouldForceMysqlPacific =
+    sourceToken === 'mysql'
+    || sourceToken === 'peppro'
+    || sourceToken === 'local'
+    || Boolean((order as any)?.created_at);
+  const isWooOnlySource = sourceToken === 'woo' || sourceToken === 'woocommerce';
+  const parseObject = (value: unknown): Record<string, any> | null => {
+    if (!value) return null;
+    if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, any>;
+    if (typeof value !== 'string') return null;
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, any>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const readMeta = (container: any) => {
+    const lists = [container?.meta_data, container?.metaData];
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const entry of list) {
+        const key = String(entry?.key || '').trim().toLowerCase();
+        if (key !== 'peppro_created_at') continue;
+        const value = typeof entry?.value === 'string' ? entry.value.trim() : '';
+        if (value) return value;
+      }
+    }
+    return null;
+  };
+  const payload = parseObject((order as any).payload);
+  const payloadOrder = parseObject(payload?.order) || payload;
+  const nestedCandidate =
+    (typeof payloadOrder?.created_at === 'string' && payloadOrder.created_at.trim()) ||
+    (typeof payloadOrder?.createdAt === 'string' && payloadOrder.createdAt.trim()) ||
+    (() => {
+      const integrationRoots = [parseObject((order as any).integrationDetails), parseObject((order as any).integrations)];
+      for (const root of integrationRoots) {
+        if (!root) continue;
+        const woo = parseObject(root.wooCommerce) || parseObject(root.woocommerce) || root;
+        const response = parseObject((woo as any)?.response) || {};
+        const direct =
+          (typeof (woo as any)?.peppro_created_at === 'string' && (woo as any).peppro_created_at.trim()) ||
+          (typeof response?.peppro_created_at === 'string' && response.peppro_created_at.trim()) ||
+          readMeta(response);
+        if (direct) return direct;
+      }
+      return null;
+    })();
+  if (isWooOnlySource && !(order as any).created_at && !nestedCandidate) {
+    return null;
+  }
+
   const pacificCandidates = [
     (order as any).created_at,
-    order.createdAt,
-    (order as any).date_created,
-    (order as any).dateCreated,
+    nestedCandidate,
+    shouldForceMysqlPacific ? order.createdAt : null,
   ];
   for (const candidate of pacificCandidates) {
-    const parsed = parseBackendTimestampAsPacificWallTime(candidate);
-    if (parsed) return parsed.toISOString();
-  }
-  const utcCandidates = [(order as any).date_created_gmt, (order as any).dateCreatedGmt];
-  for (const candidate of utcCandidates) {
-    const parsed = parseBackendTimestamp(candidate);
+    const parsed = parseBackendTimestampAsPacificWallTime(candidate, {
+      ignoreExplicitTimezone: shouldForceMysqlPacific,
+    });
     if (parsed) return parsed.toISOString();
   }
   return null;

@@ -1114,15 +1114,96 @@ const normalizeStringField = (value: unknown) => {
 const hasExplicitTimezone = (value: string) =>
   /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
 
+const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, any>;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, any>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const readMetaTimestampValue = (container: any, keyName: string): string | null => {
+  if (!container || typeof container !== "object") return null;
+  const lists = [container.meta_data, container.metaData];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      const key = String((entry as any)?.key || "").trim().toLowerCase();
+      if (key !== keyName.toLowerCase()) continue;
+      const value = normalizeStringField((entry as any)?.value);
+      if (value) return value;
+    }
+  }
+  return null;
+};
+
+const resolveNestedMysqlCreatedAtCandidate = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+
+  const payload = parseObjectCandidate(order.payload);
+  const payloadOrder = parseObjectCandidate(payload?.order) || payload;
+  const payloadCandidate =
+    normalizeStringField(payloadOrder?.created_at) ||
+    normalizeStringField(payloadOrder?.createdAt) ||
+    normalizeStringField(payloadOrder?.peppro_created_at) ||
+    normalizeStringField(payloadOrder?.pepproCreatedAt);
+  if (payloadCandidate) return payloadCandidate;
+
+  const integrationRoots = [
+    parseObjectCandidate(order.integrationDetails),
+    parseObjectCandidate(order.integrations),
+  ].filter(Boolean) as Record<string, any>[];
+
+  for (const root of integrationRoots) {
+    const woo = parseObjectCandidate((root as any)?.wooCommerce) || parseObjectCandidate((root as any)?.woocommerce) || root;
+    const wooResponse = parseObjectCandidate((woo as any)?.response) || {};
+    const wooPayload = parseObjectCandidate((woo as any)?.payload) || {};
+
+    const direct =
+      normalizeStringField((woo as any)?.peppro_created_at) ||
+      normalizeStringField((woo as any)?.pepproCreatedAt) ||
+      normalizeStringField((wooResponse as any)?.peppro_created_at) ||
+      normalizeStringField((wooResponse as any)?.pepproCreatedAt) ||
+      normalizeStringField((wooPayload as any)?.peppro_created_at) ||
+      normalizeStringField((wooPayload as any)?.pepproCreatedAt);
+    if (direct) return direct;
+
+    const metaCandidate =
+      readMetaTimestampValue(wooResponse, "peppro_created_at") ||
+      readMetaTimestampValue(wooPayload, "peppro_created_at");
+    if (metaCandidate) return metaCandidate;
+  }
+
+  return null;
+};
+
 const normalizeTimestampCandidate = (
   value: unknown,
-  options?: { assumeUtcNoTimezone?: boolean; assumePacificWallTime?: boolean },
+  options?: {
+    assumeUtcNoTimezone?: boolean;
+    assumePacificWallTime?: boolean;
+    forcePacificWallTime?: boolean;
+  },
 ): string | null => {
   if (typeof value === "string" && value.trim().length > 0) {
     const raw = value.trim();
     const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
     if (options?.assumePacificWallTime) {
-      const pacificDate = parseBackendTimestampAsPacificWallTime(canonical);
+      const pacificDate = parseBackendTimestampAsPacificWallTime(canonical, {
+        ignoreExplicitTimezone: options?.forcePacificWallTime === true,
+      });
       return pacificDate ? pacificDate.toISOString() : null;
     }
     if (options?.assumeUtcNoTimezone && !hasExplicitTimezone(canonical)) {
@@ -1140,28 +1221,29 @@ const normalizeTimestampCandidate = (
 
 const resolveOrderPlacedAt = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
-  const mysqlCandidates = [order.created_at, order.createdAt];
+  const sourceToken = String(order?.source || "").trim().toLowerCase();
+  const shouldForceMysqlPacific =
+    sourceToken === "mysql" ||
+    sourceToken === "peppro" ||
+    sourceToken === "local" ||
+    Boolean(order?.created_at);
+  const isWooOnlySource =
+    sourceToken === "woo" || sourceToken === "woocommerce";
+
+  // Hard rule: order timestamps must come from MySQL-origin fields only.
+  if (isWooOnlySource && !order?.created_at && !resolveNestedMysqlCreatedAtCandidate(order)) {
+    return null;
+  }
+  const mysqlCandidates = [
+    order.created_at,
+    resolveNestedMysqlCreatedAtCandidate(order),
+    shouldForceMysqlPacific ? order.createdAt : null,
+  ];
   for (const candidate of mysqlCandidates) {
     const normalized = normalizeTimestampCandidate(candidate, {
       assumePacificWallTime: true,
+      forcePacificWallTime: shouldForceMysqlPacific,
     });
-    if (normalized) return normalized;
-  }
-  const fallbackCandidates = [
-    { value: order.date_created, assumePacificWallTime: true },
-    { value: order.dateCreated, assumePacificWallTime: true },
-    { value: order.date_created_gmt, assumeUtcNoTimezone: true },
-    { value: order.dateCreatedGmt, assumeUtcNoTimezone: true },
-  ];
-  for (const candidate of fallbackCandidates) {
-    if (candidate && typeof candidate === "object" && "value" in candidate) {
-      const normalized = normalizeTimestampCandidate(candidate.value, {
-        assumeUtcNoTimezone: Boolean((candidate as any).assumeUtcNoTimezone),
-      });
-      if (normalized) return normalized;
-      continue;
-    }
-    const normalized = normalizeTimestampCandidate(candidate);
     if (normalized) return normalized;
   }
   return null;
@@ -1882,7 +1964,12 @@ const normalizeAccountOrdersResponse = (
           notes: typeof order?.notes === "string" ? order.notes : null,
           createdAt,
           updatedAt,
-          source: "woocommerce",
+          source:
+            String(order?.source || "").trim().toLowerCase() === "mysql" ||
+            String(order?.source || "").trim().toLowerCase() === "peppro" ||
+            String(order?.source || "").trim().toLowerCase() === "local"
+              ? "peppro"
+              : "woocommerce",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
             null,
@@ -7187,12 +7274,12 @@ function MainApp() {
             ...detail,
             shippingEstimate: detail.shippingEstimate || order.shippingEstimate || null,
             createdAt:
-              detailPlacedAt ||
               resolveOrderPlacedAt(order as any) ||
+              detailPlacedAt ||
               null,
             updatedAt:
-              detailUpdatedAt ||
               resolveOrderUpdatedAt(order as any) ||
+              detailUpdatedAt ||
               resolveOrderPlacedAt(order as any) ||
               null,
             lineItems: detail.lineItems?.length ? detail.lineItems : order.lineItems,
@@ -7297,10 +7384,20 @@ function MainApp() {
           { woo: Array.isArray(detail) ? detail : [detail] },
           { includeCanceled: true },
         );
-	        if (normalized && normalized.length > 0) {
-	          const enriched = normalized[0];
-	          setSalesOrderDetail(enriched);
-	          const derived = deriveSalesOrderEditableFields(enriched);
+        if (normalized && normalized.length > 0) {
+          const basePlacedAt = resolveOrderPlacedAt(order as any);
+          const baseUpdatedAt = resolveOrderUpdatedAt(order as any) || basePlacedAt;
+          const enriched = {
+            ...normalized[0],
+            createdAt: basePlacedAt || resolveOrderPlacedAt(normalized[0] as any) || null,
+            updatedAt:
+              baseUpdatedAt ||
+              resolveOrderUpdatedAt(normalized[0] as any) ||
+              resolveOrderPlacedAt(normalized[0] as any) ||
+              null,
+          };
+          setSalesOrderDetail(enriched);
+          const derived = deriveSalesOrderEditableFields(enriched);
 	          setSalesOrderFieldsSaved(derived);
 	          setSalesOrderFieldsDraft(derived);
 	          setSalesOrderNotesDraft(

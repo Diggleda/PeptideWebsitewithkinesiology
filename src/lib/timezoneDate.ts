@@ -101,6 +101,7 @@ export const parseBackendTimestamp = (value?: string | Date | null): Date | null
 
 export const parseBackendTimestampAsPacificWallTime = (
   value?: string | Date | null,
+  options?: { ignoreExplicitTimezone?: boolean },
 ): Date | null => {
   if (!value) return null;
   if (value instanceof Date) {
@@ -114,12 +115,17 @@ export const parseBackendTimestampAsPacificWallTime = (
   if (!raw) return null;
   const normalized = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
 
-  // If timestamp already has an explicit timezone, trust that instant as authoritative.
-  if (HAS_EXPLICIT_TIMEZONE_RE.test(normalized)) {
+  const hasExplicitTimezone = HAS_EXPLICIT_TIMEZONE_RE.test(normalized);
+  if (hasExplicitTimezone && !options?.ignoreExplicitTimezone) {
+    // For true timezone-aware timestamps, preserve the encoded instant.
     return parseBackendTimestamp(normalized);
   }
 
-  const pacificDate = parseNaivePacific(normalized);
+  const withoutTimezone = hasExplicitTimezone
+    ? normalized.replace(/(?:[zZ]|[+-]\d{2}:?\d{2})$/, "")
+    : normalized;
+
+  const pacificDate = parseNaivePacific(withoutTimezone);
   if (pacificDate) return pacificDate;
-  return parseBackendTimestamp(normalized);
+  return parseBackendTimestamp(withoutTimezone);
 };
