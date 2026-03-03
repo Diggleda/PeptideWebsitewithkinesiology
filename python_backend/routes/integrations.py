@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
+from ..middleware.auth import require_auth
 from ..services import integration_service
 from ..utils.http import handle_action
 
@@ -26,3 +27,18 @@ def sync_peptide_forum():
     payload = request.get_json(force=True, silent=True) or {}
     headers = {key.lower(): value for key, value in request.headers.items()}
     return handle_action(lambda: integration_service.sync_peptide_forum(payload, headers))
+
+
+@blueprint.route("/seamless/raw", methods=["OPTIONS"])
+@blueprint.route("/seamless/raw/", methods=["OPTIONS"])
+def get_seamless_raw_options():
+    return "", 204
+
+
+@blueprint.get("/seamless/raw")
+@blueprint.get("/seamless/raw/")
+@require_auth
+def get_seamless_raw():
+    limit = request.args.get("limit", "20")
+    current_user = getattr(g, "current_user", None) or {}
+    return handle_action(lambda: integration_service.list_seamless_raw_payloads(current_user, limit))

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
-from typing import Dict, List, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List
 
+from ..database import mysql_client
 from ..repositories import sales_rep_repository, user_repository
+from ..storage import seamless_store
 from ..utils.http import service_error as _service_error
 from . import get_config
 from . import peptide_forum_service
@@ -122,4 +126,144 @@ def sync_peptide_forum(payload: Dict, headers: Dict[str, str]) -> Dict:
     result = peptide_forum_service.replace_from_webhook(items)
     return {"success": True, **result}
 
+
+def _normalize_role(value: Any) -> str:
+    role = str(value or "").strip().lower()
+    return re.sub(r"[\s-]+", "_", role)
+
+
+def _ensure_sales_role(current_user: Dict[str, Any]) -> None:
+    role = _normalize_role((current_user or {}).get("role"))
+    if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "admin"):
+        raise _service_error("Sales role access required", 403)
+
+
+def _safe_limit(limit_raw: Any, fallback: int = 20) -> int:
+    try:
+        value = int(limit_raw)
+    except Exception:
+        value = fallback
+    return max(1, min(value, 200))
+
+
+def _to_iso_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, (int, float)):
+        try:
+            parsed = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except Exception:
+            return None
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_json_maybe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, int, float, bool)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return value
+    return value
+
+
+def _normalize_seamless_entry(row: Dict[str, Any], fallback_id: int) -> Dict[str, Any]:
+    entry_id = row.get("id")
+    source_system = str(row.get("sourceSystem") or row.get("source_system") or "seamless").strip().lower() or "seamless"
+    trigger = str(row.get("trigger") or "webhook").strip().lower() or "webhook"
+    actor_id = row.get("actorId") if row.get("actorId") is not None else row.get("actor_id")
+    actor_text = str(actor_id).strip() if actor_id is not None else ""
+    received_at = _to_iso_or_none(row.get("receivedAt") or row.get("received_at"))
+    created_at = _to_iso_or_none(row.get("createdAt") or row.get("created_at")) or received_at
+    payload = _parse_json_maybe(row.get("payload") if "payload" in row else row.get("payload_json"))
+    return {
+        "id": str(entry_id if entry_id is not None else fallback_id),
+        "sourceSystem": source_system,
+        "trigger": trigger,
+        "actorId": actor_text or None,
+        "payload": payload,
+        "receivedAt": received_at,
+        "createdAt": created_at,
+    }
+
+
+def _entry_sort_key(entry: Dict[str, Any]) -> float:
+    for key in ("createdAt", "receivedAt"):
+        parsed = _to_iso_or_none(entry.get(key))
+        if parsed:
+            try:
+                return datetime.fromisoformat(parsed.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+    return 0.0
+
+
+def list_seamless_raw_payloads(current_user: Dict[str, Any], limit: Any = 20) -> Dict[str, Any]:
+    _ensure_sales_role(current_user)
+    safe_limit = _safe_limit(limit, 20)
+    entries: List[Dict[str, Any]] = []
+
+    if bool(get_config().mysql.get("enabled")):
+        try:
+            rows = mysql_client.fetch_all(
+                """
+                SELECT
+                  id,
+                  source_system,
+                  trigger,
+                  actor_id,
+                  payload_json,
+                  received_at,
+                  created_at
+                FROM seamless
+                ORDER BY created_at DESC, id DESC
+                LIMIT %(limit)s
+                """,
+                {"limit": safe_limit},
+            )
+            entries = [
+                _normalize_seamless_entry(row or {}, index + 1)
+                for index, row in enumerate(rows or [])
+            ]
+        except Exception:
+            # Fall back to JSON store if the table is not provisioned in this environment.
+            entries = []
+
+    if not entries:
+        rows = seamless_store.read() if seamless_store else []
+        normalized = [
+            _normalize_seamless_entry(row or {}, index + 1)
+            for index, row in enumerate(rows if isinstance(rows, list) else [])
+        ]
+        entries = sorted(normalized, key=_entry_sort_key, reverse=True)[:safe_limit]
+
+    return {
+        "ok": True,
+        "sourceSystem": "seamless",
+        "count": len(entries),
+        "entries": entries,
+    }
 
