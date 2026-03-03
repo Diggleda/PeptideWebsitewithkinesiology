@@ -14,6 +14,7 @@ import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
+import { parseBackendTimestamp } from '../lib/timezoneDate';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -379,8 +380,8 @@ interface HeaderProps {
 
 const formatOrderDate = (value?: string | null) => {
   if (!value) return 'Pending';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseBackendTimestamp(value);
+  if (!date) {
     return value;
   }
   return date.toLocaleString('en-US', {
@@ -395,8 +396,8 @@ const formatOrderDate = (value?: string | null) => {
 
 const formatLinkDateTime = (value?: string | null) => {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseBackendTimestamp(value);
+  if (!date) {
     return value;
   }
   const datePart = date.toLocaleDateString('en-US', {

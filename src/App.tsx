@@ -13,6 +13,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
+import { parseBackendTimestamp } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -9740,15 +9741,10 @@ function MainApp() {
       `button[data-sales-dashboard-tab="${salesDashboardTab}"]`,
       ) || container.querySelector<HTMLButtonElement>("button[data-sales-dashboard-tab]");
     if (!activeBtn) return;
-    const content = activeBtn.querySelector<HTMLElement>("[data-sales-dashboard-tab-content]");
-    const extraUnderlineWidth = 8;
-    const measuredWidth = content ? content.offsetWidth : activeBtn.offsetWidth;
-    if (!measuredWidth) return;
-    const left =
-      (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
-      container.scrollLeft -
-      extraUnderlineWidth / 2;
-    const width = measuredWidth + extraUnderlineWidth;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
     setSalesDashboardTabIndicator({ left, width, opacity: 1 });
   }, [salesDashboardTab]);
   useLayoutEffect(() => {
@@ -9854,15 +9850,10 @@ function MainApp() {
       `button[data-admin-dashboard-tab="${adminDashboardTab}"]`,
       ) || container.querySelector<HTMLButtonElement>("button[data-admin-dashboard-tab]");
     if (!activeBtn) return;
-    const content = activeBtn.querySelector<HTMLElement>("[data-admin-dashboard-tab-content]");
-    const extraUnderlineWidth = 8;
-    const measuredWidth = content ? content.offsetWidth : activeBtn.offsetWidth;
-    if (!measuredWidth) return;
-    const left =
-      (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
-      container.scrollLeft -
-      extraUnderlineWidth / 2;
-    const width = measuredWidth + extraUnderlineWidth;
+    const inset = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
+    const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
     setAdminDashboardTabIndicator({ left, width, opacity: 1 });
   }, [adminDashboardTab]);
   useLayoutEffect(() => {
@@ -12783,10 +12774,12 @@ function MainApp() {
           const raw = value.trim();
           const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
           const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(canonical);
-          const parseTarget =
-            options?.assumeUtcNoTimezone && !hasTimezone ? `${canonical}Z` : canonical;
-          const d = new Date(parseTarget);
-          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+          if (options?.assumeUtcNoTimezone && !hasTimezone) {
+            const d = new Date(`${canonical}Z`);
+            return Number.isNaN(d.getTime()) ? null : d.toISOString();
+          }
+          const d = parseBackendTimestamp(canonical);
+          return d ? d.toISOString() : null;
         }
         if (value instanceof Date) {
           return Number.isNaN(value.getTime()) ? null : value.toISOString();
@@ -14230,8 +14223,8 @@ function MainApp() {
     if (!value) {
       return "—";
     }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
+    const date = parseBackendTimestamp(value);
+    if (!date) {
       return value;
     }
     return date.toLocaleString(undefined, {
@@ -18017,7 +18010,7 @@ function MainApp() {
 	    }, 0);
 	    const renderAdminOnHoldOrdersCard = () => (
 	      <div className="sales-rep-leads-card sales-rep-combined-card">
-	        <div className="mb-4 flex w-full items-start justify-between gap-3">
+	        <div className="mb-0 flex w-full items-start justify-between gap-3">
 	          <div className="min-w-0">
 	            <h3 className="text-lg font-semibold text-slate-900">
 	              Order On-Hold
