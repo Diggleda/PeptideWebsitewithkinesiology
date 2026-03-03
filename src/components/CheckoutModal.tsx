@@ -69,6 +69,22 @@ interface CartItem {
   variant?: ProductVariant | null;
 }
 
+type CheckoutPayloadItem = {
+  cartItemId: string;
+  productId: string;
+  variantId: string | null;
+  sku: string | null;
+  name: string;
+  price: number;
+  quantity: number;
+  note: string | null;
+  position: number;
+  weightOz: number | null;
+  lengthIn: number | null;
+  widthIn: number | null;
+  heightIn: number | null;
+};
+
 type ShippingAddress = {
   name?: string | null;
   addressLine1?: string | null;
@@ -197,6 +213,8 @@ interface CheckoutModalProps {
     taxTotal?: number | null;
     paymentMethod?: 'bacs' | string | null;
     discountCode?: string | null;
+    discountCodeAmount?: number | null;
+    items?: CheckoutPayloadItem[];
   }) => Promise<CheckoutResult | void> | CheckoutResult | void;
   onClearCart?: () => void;
   onPaymentSuccess?: () => void;
@@ -839,15 +857,65 @@ export function CheckoutModal({
     }
   };
 
-	  const handleCheckout = async () => {
+  const handleCheckout = async () => {
+    const priceByCartItemId = new Map(
+      checkoutLineItems.map((item) => [item.cartItemId, item.price]),
+    );
+    const checkoutItems: CheckoutPayloadItem[] = cartItems.map(({ id, product, quantity, note, variant }, index) => {
+      const resolvedProductId = String(product.wooId ?? product.id);
+      const resolvedVariantId = variant ? String(variant.wooId ?? variant.id) : null;
+      const resolvedSku = (variant?.sku || product.sku || '').trim() || null;
+      const unitWeightOzRaw = variant?.weightOz ?? product.weightOz ?? null;
+      const dimensions = variant?.dimensions || product.dimensions || null;
+      const priceCandidate = priceByCartItemId.get(id);
+      const unitPrice = Number.isFinite(priceCandidate as number)
+        ? Number(priceCandidate)
+        : computeUnitPrice(product, variant ?? null, quantity, {
+            pricingMode: resolvedPricingMode,
+            markupPercent: pricingMarkupPercent,
+            forcedTierRange:
+              discountPricingOverride?.mode === 'force_tier_band'
+                ? {
+                    minQuantity: discountPricingOverride.minQuantity,
+                    maxQuantity: discountPricingOverride.maxQuantity,
+                  }
+                : null,
+          });
+
+      return {
+        cartItemId: id,
+        productId: resolvedProductId,
+        variantId: resolvedVariantId,
+        sku: resolvedSku,
+        name: variant ? `${product.name} — ${variant.label}` : product.name,
+        price: unitPrice,
+        quantity,
+        note: note ?? null,
+        position: index + 1,
+        weightOz: typeof unitWeightOzRaw === 'number' && Number.isFinite(unitWeightOzRaw) ? unitWeightOzRaw : null,
+        lengthIn:
+          typeof dimensions?.lengthIn === 'number' && Number.isFinite(dimensions.lengthIn)
+            ? dimensions.lengthIn
+            : null,
+        widthIn:
+          typeof dimensions?.widthIn === 'number' && Number.isFinite(dimensions.widthIn)
+            ? dimensions.widthIn
+            : null,
+        heightIn:
+          typeof dimensions?.heightIn === 'number' && Number.isFinite(dimensions.heightIn)
+            ? dimensions.heightIn
+            : null,
+      };
+    });
     console.debug('[CheckoutModal] Checkout start', {
       total,
-      items: cartItems.map((item) => ({
-        id: item.id,
-        productId: item.product.id,
-        variantId: item.variant?.id,
-        qty: item.quantity
-      }))
+      items: checkoutItems.map((item) => ({
+        cartItemId: item.cartItemId,
+        productId: item.productId,
+        variantId: item.variantId,
+        qty: item.quantity,
+        price: item.price,
+      })),
     });
 	    setIsProcessing(true);
 	    try {
@@ -876,6 +944,8 @@ export function CheckoutModal({
 	        taxTotal: taxAmount,
 	        paymentMethod: paymentMethod === 'none' ? null : paymentMethod,
 	        discountCode: discountCodeApplied?.code ?? null,
+          discountCodeAmount: discountCodeAmount,
+          items: checkoutItems,
 	      });
 	      if (isDelegateFlow) {
 	        const candidateMessage =

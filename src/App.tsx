@@ -16949,9 +16949,26 @@ function MainApp() {
     taxTotal?: number | null;
     paymentMethod?: string | null;
     discountCode?: string | null;
+    discountCodeAmount?: number | null;
+    items?: Array<{
+      cartItemId?: string | null;
+      productId: string;
+      variantId?: string | null;
+      sku?: string | null;
+      name?: string | null;
+      price: number;
+      quantity: number;
+      note?: string | null;
+      position?: number | null;
+      weightOz?: number | null;
+      lengthIn?: number | null;
+      widthIn?: number | null;
+      heightIn?: number | null;
+    }>;
   }) => {
     console.debug("[Checkout] Attempt", {
-      items: cartItems.length,
+      cartItems: cartItems.length,
+      checkoutItems: Array.isArray(options?.items) ? options.items.length : 0,
       shipping: options,
     });
     if (cartItems.length === 0) {
@@ -16959,32 +16976,50 @@ function MainApp() {
       return;
     }
 
-    const items = cartItems.map(({ id, product, quantity, note, variant }, index) => {
-      const resolvedProductId = product.wooId ?? product.id;
-      const resolvedVariantId = variant?.wooId ?? variant?.id ?? null;
-      const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
-      const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
-        pricingMode: checkoutPricingMode,
-        markupPercent: delegatePricingMarkupPercent,
-      });
-      const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
-      const dimensions = variant?.dimensions || product.dimensions || undefined;
-      return {
-        cartItemId: id,
-        productId: resolvedProductId,
-        variantId: resolvedVariantId,
-        sku: resolvedSku,
-        name: variant ? `${product.name} — ${variant.label}` : product.name,
-        price: unitPrice,
-        quantity,
-        note: note ?? null,
-        position: index + 1,
-        weightOz: unitWeightOz,
-        lengthIn: dimensions?.lengthIn ?? null,
-        widthIn: dimensions?.widthIn ?? null,
-        heightIn: dimensions?.heightIn ?? null,
-      };
-    });
+    const itemsFromCheckout = Array.isArray(options?.items) ? options.items : null;
+    const items =
+      itemsFromCheckout && itemsFromCheckout.length > 0
+        ? itemsFromCheckout.map((item, index) => ({
+            cartItemId: item.cartItemId ? String(item.cartItemId) : `checkout-${index + 1}`,
+            productId: String(item.productId),
+            variantId: item.variantId ? String(item.variantId) : null,
+            sku: item.sku ? String(item.sku).trim() || null : null,
+            name: item.name ? String(item.name) : `Item ${index + 1}`,
+            price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+            quantity: Math.max(1, Number(item.quantity) || 1),
+            note: item.note ?? null,
+            position: Number.isFinite(Number(item.position)) ? Number(item.position) : index + 1,
+            weightOz: Number.isFinite(Number(item.weightOz)) ? Number(item.weightOz) : null,
+            lengthIn: Number.isFinite(Number(item.lengthIn)) ? Number(item.lengthIn) : null,
+            widthIn: Number.isFinite(Number(item.widthIn)) ? Number(item.widthIn) : null,
+            heightIn: Number.isFinite(Number(item.heightIn)) ? Number(item.heightIn) : null,
+          }))
+        : cartItems.map(({ id, product, quantity, note, variant }, index) => {
+            const resolvedProductId = product.wooId ?? product.id;
+            const resolvedVariantId = variant?.wooId ?? variant?.id ?? null;
+            const resolvedSku = (variant?.sku || product.sku || "").trim() || null;
+            const unitPrice = computeUnitPrice(product, variant ?? null, quantity, {
+              pricingMode: checkoutPricingMode,
+              markupPercent: delegatePricingMarkupPercent,
+            });
+            const unitWeightOz = variant?.weightOz ?? product.weightOz ?? null;
+            const dimensions = variant?.dimensions || product.dimensions || undefined;
+            return {
+              cartItemId: id,
+              productId: resolvedProductId,
+              variantId: resolvedVariantId,
+              sku: resolvedSku,
+              name: variant ? `${product.name} — ${variant.label}` : product.name,
+              price: unitPrice,
+              quantity,
+              note: note ?? null,
+              position: index + 1,
+              weightOz: unitWeightOz,
+              lengthIn: dimensions?.lengthIn ?? null,
+              widthIn: dimensions?.widthIn ?? null,
+              heightIn: dimensions?.heightIn ?? null,
+            };
+          });
 
 	    const itemTotal = items.reduce(
 	      (sum, item) => sum + item.price * item.quantity,
@@ -17054,6 +17089,7 @@ function MainApp() {
 	        total,
 	        undefined,
 	        options?.discountCode ?? undefined,
+	        options?.discountCodeAmount ?? null,
 	        {
 	          address: options?.shippingAddress ?? null,
 	          estimate: options?.shippingRate ?? null,
@@ -27395,6 +27431,7 @@ function MainApp() {
                   const discountCode = String((salesOrderDetail as any).discountCode || '')
                     .trim()
                     .toUpperCase() || null;
+                  const hasDiscountCode = Boolean(discountCode);
                   const discountCodeAmount = Math.abs(coerceNumber((salesOrderDetail as any).discountCodeAmount) ?? 0);
                   const appliedReferralCredit = Math.abs(coerceNumber((salesOrderDetail as any).appliedReferralCredit) ?? 0);
                   const hasExplicitDiscounts = discountCodeAmount > 0 || appliedReferralCredit > 0;
@@ -27879,6 +27916,12 @@ function MainApp() {
                             <span>
                               -{formatCurrency(discountCodeAmount, salesOrderDetail.currency || "USD")}
                             </span>
+                          </div>
+                        )}
+                        {hasDiscountCode && discountCodeAmount <= 0 && (
+                          <div className="flex justify-between text-[rgb(26,85,173)]">
+                            <span>{`Discount code used (${discountCode})`}</span>
+                            <span>Applied</span>
                           </div>
                         )}
                         {hasExplicitDiscounts && appliedReferralCredit > 0 && (

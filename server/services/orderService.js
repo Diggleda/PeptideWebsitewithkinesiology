@@ -1103,6 +1103,8 @@ const createOrderInternal = async ({
   items,
   total,
   referralCode,
+  discountCode,
+  discountCodeAmount,
   shippingAddress,
   shippingEstimate,
   shippingTotal,
@@ -1184,6 +1186,15 @@ const createOrderInternal = async ({
     return 'Zelle / Bank transfer';
   };
   const manualPaymentLabel = resolveManualPaymentLabel(paymentMethod);
+  const normalizedDiscountCode = (() => {
+    const raw = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
+    return raw || null;
+  })();
+  const normalizedDiscountCodeAmount = (() => {
+    const parsed = Number(discountCodeAmount);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return roundCurrency(parsed);
+  })();
   const order = {
     id: orderId || generateOrderId(),
     userId,
@@ -1205,6 +1216,12 @@ const createOrderInternal = async ({
     pickupLocation: null,
     pickupReadyNotice: null,
     referralCode: referralCode || null,
+    discountCode: normalizedDiscountCode,
+    discountCodeAmount: normalizedDiscountCodeAmount,
+    originalItemsSubtotal:
+      normalizedDiscountCodeAmount > 0
+        ? roundCurrency(itemsSubtotal + normalizedDiscountCodeAmount)
+        : roundCurrency(itemsSubtotal),
     status: 'pending',
     paymentMethod: manualPaymentLabel,
     paymentDetails: manualPaymentLabel,
@@ -1351,6 +1368,11 @@ const createOrderInternal = async ({
         orderId: order.id,
         wooOrderNumber,
         total: order.total,
+        discountCode: order.discountCode || null,
+        discountCodeAmount:
+          typeof order.discountCodeAmount === 'number' && Number.isFinite(order.discountCodeAmount)
+            ? order.discountCodeAmount
+            : 0,
       });
     } catch (error) {
       logger.warn({ err: error, orderId: order.id }, 'Failed to send payment instructions email');
@@ -1373,6 +1395,8 @@ const createOrder = async ({
   items,
   total,
   referralCode,
+  discountCode,
+  discountCodeAmount,
   shippingAddress,
   shippingEstimate,
   shippingTotal,
@@ -1400,6 +1424,8 @@ const createOrder = async ({
       items,
       total,
       referralCode,
+      discountCode,
+      discountCodeAmount,
       shippingAddress,
       shippingEstimate,
       shippingTotal,
@@ -1438,6 +1464,8 @@ const createOrder = async ({
     items,
     total,
     referralCode,
+    discountCode,
+    discountCodeAmount,
     shippingAddress,
     shippingEstimate,
     shippingTotal,

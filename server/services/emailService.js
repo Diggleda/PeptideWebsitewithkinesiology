@@ -198,6 +198,8 @@ const sendOrderPaymentInstructionsEmail = async ({
   orderId,
   wooOrderNumber,
   total,
+  discountCode,
+  discountCodeAmount,
 }) => {
   const recipient = normalizeEmailAddress(to);
   if (!recipient) {
@@ -209,12 +211,24 @@ const sendOrderPaymentInstructionsEmail = async ({
   const displayOrderNumber = (wooOrderNumber || orderId || '').trim();
   const displayName = String(customerName || 'PepPro Customer').trim() || 'PepPro Customer';
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
+  const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
+  const normalizedDiscountCodeAmount = Number.isFinite(Number(discountCodeAmount))
+    ? Math.max(0, Number(discountCodeAmount))
+    : 0;
+  const discountDetails = normalizedDiscountCode
+    ? `<br /><strong>Discount code used</strong>: ${escapeHtml(normalizedDiscountCode)}${
+      normalizedDiscountCodeAmount > 0
+        ? `<br /><strong>Discount applied</strong>: -$${normalizedDiscountCodeAmount.toFixed(2)}`
+        : ''
+    }`
+    : '';
   const { supportEmail, zelleSection, bankSection } = buildPaymentInstructionsSections();
 
   const html = htmlTemplate
     .replaceAll('{{customerName}}', escapeHtml(displayName))
     .replaceAll('{{orderNumber}}', escapeHtml(displayOrderNumber || ''))
     .replaceAll('{{orderTotal}}', escapeHtml(formattedTotal))
+    .replaceAll('{{discountDetails}}', discountDetails)
     .replaceAll('{{supportEmail}}', escapeHtml(supportEmail))
     .replaceAll('{{zelleSection}}', zelleSection)
     .replaceAll('{{bankTransferSection}}', bankSection);
@@ -236,7 +250,9 @@ const sendOrderPaymentInstructionsEmail = async ({
       orderId: orderId || null,
       wooOrderNumber: wooOrderNumber || null,
       total: Number.isFinite(Number(total)) ? Number(total) : null,
-      note: 'SMTP transport unavailable; payment instructions not sent.',
+      note: normalizedDiscountCode
+        ? `discountCode=${normalizedDiscountCode}, discountAmount=${normalizedDiscountCodeAmount.toFixed(2)}`
+        : 'SMTP transport unavailable; payment instructions not sent.',
     });
     return;
   }
@@ -248,6 +264,9 @@ const sendOrderPaymentInstructionsEmail = async ({
       orderId: orderId || null,
       wooOrderNumber: wooOrderNumber || null,
       total: Number.isFinite(Number(total)) ? Number(total) : null,
+      note: normalizedDiscountCode
+        ? `discountCode=${normalizedDiscountCode}, discountAmount=${normalizedDiscountCodeAmount.toFixed(2)}`
+        : null,
       error: error instanceof Error ? error.message : String(error),
     });
   }

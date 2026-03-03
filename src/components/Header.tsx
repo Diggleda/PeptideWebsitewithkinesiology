@@ -5221,6 +5221,7 @@ export function Header({
     )
       .trim()
       .toUpperCase() || null;
+    const hasDiscountCode = Boolean(discountCode);
     const discountCodeAmount = Math.abs(
       parseWooMoney(
         (selectedOrder as any).discountCodeAmount,
@@ -5526,6 +5527,12 @@ export function Header({
                     <div className="flex justify-between text-[rgb(26,85,173)]">
                       <span>{discountCode ? `Discount (${discountCode})` : 'Discount'}</span>
                       <span>-{formatCurrency(resolvedDiscountCodeAmount, selectedOrder.currency || 'USD')}</span>
+                    </div>
+                  )}
+                  {hasDiscountCode && resolvedDiscountCodeAmount <= 0 && (
+                    <div className="flex justify-between text-[rgb(26,85,173)]">
+                      <span>{`Discount code used (${discountCode})`}</span>
+                      <span>Applied</span>
                     </div>
                   )}
                   {resolvedHasExplicitDiscounts && appliedReferralCredit > 0 && (

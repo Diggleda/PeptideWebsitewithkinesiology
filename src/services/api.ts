@@ -1472,6 +1472,7 @@ const buildOrderFingerprint = (payload: {
   total: number;
   referralCode?: string;
   discountCode?: string;
+  discountCodeAmount?: number | null;
   paymentMethod?: string | null;
   handDelivery?: boolean;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
@@ -1499,6 +1500,10 @@ const buildOrderFingerprint = (payload: {
     total: Number(payload.total) || 0,
     referralCode: payload.referralCode || null,
     discountCode: payload.discountCode || null,
+    discountCodeAmount:
+      typeof payload.discountCodeAmount === 'number' && Number.isFinite(payload.discountCodeAmount)
+        ? payload.discountCodeAmount
+        : null,
     paymentMethod: payload.paymentMethod || null,
     handDelivery: payload.handDelivery === true,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
@@ -1552,6 +1557,7 @@ export const ordersAPI = {
     total: number,
     referralCode?: string,
     discountCode?: string,
+    discountCodeAmount?: number | null,
     shipping?: {
       address?: any;
       estimate?: any;
@@ -1572,6 +1578,7 @@ export const ordersAPI = {
       total,
       referralCode,
       discountCode,
+      discountCodeAmount: typeof discountCodeAmount === 'number' ? discountCodeAmount : null,
       shipping,
       paymentMethod,
       handDelivery: options?.handDelivery === true,
@@ -1590,6 +1597,10 @@ export const ordersAPI = {
         total,
         referralCode,
         discountCode: discountCode ?? null,
+        discountCodeAmount:
+          typeof discountCodeAmount === 'number' && Number.isFinite(discountCodeAmount)
+            ? discountCodeAmount
+            : null,
         pricingMode: pricingMode ?? null,
         paymentMethod: paymentMethod ?? null,
         shippingAddress: shipping?.address,

@@ -340,6 +340,8 @@ const createOrder = async (req, res, next) => {
       shippingEstimate: req.body.shippingEstimate,
       shippingTotal: req.body.shippingTotal,
       referralCode: req.body.referralCode,
+      discountCode: req.body.discountCode,
+      discountCodeAmount: req.body.discountCodeAmount,
       physicianCertification: req.body.physicianCertification === true,
       taxTotal: req.body.taxTotal,
       paymentMethod: req.body.paymentMethod,
