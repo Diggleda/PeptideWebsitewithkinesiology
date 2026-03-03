@@ -397,6 +397,37 @@ const _timeoutMsForRequest = (url: string, method: string) => {
   return _PEPPRO_DEFAULT_TIMEOUT_MS;
 };
 
+const isNetworkLikeFetchError = (error: any) => {
+  const name = String(error?.name || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  if (name === 'aborterror') return false;
+  return (
+    name === 'typeerror'
+    || message.includes('failed to fetch')
+    || message.includes('load failed')
+    || message.includes('networkerror')
+    || message.includes('fetch failed')
+  );
+};
+
+const toSameOriginApiUrl = (url: string) => {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) {
+      return null;
+    }
+    if (!parsed.pathname.startsWith('/api/')) {
+      return null;
+    }
+    return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
+};
+
 const _fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
   if (typeof window === 'undefined' || timeoutMs <= 0 || !Number.isFinite(timeoutMs)) {
     return fetch(url, init);
@@ -442,6 +473,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
 
   const run = async () => {
     let requestUrl = rewrittenUrl;
+    let usedSameOriginFallback = false;
 
     if (method === 'GET' && !(options.cache && options.cache !== 'default')) {
       const normalized = requestUrl.toLowerCase();
@@ -457,28 +489,61 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     }
 
     let response: Response;
+    const requestInit: RequestInit = {
+      cache: options.cache ?? 'no-store',
+      ...options,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        ...headers,
+      },
+    };
+    const timeoutMs = _timeoutMsForRequest(requestUrl, method);
     try {
-      const timeoutMs = _timeoutMsForRequest(requestUrl, method);
-      response = await _fetchWithTimeout(requestUrl, {
-        cache: options.cache ?? 'no-store',
-        ...options,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          ...headers,
-        },
-      }, timeoutMs);
+      response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
-      const isAbort = error?.name === 'AbortError';
-      const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
-      dispatchApiReachability({ ok: false, status: null, message });
-      if (isAbort) {
-        const wrapped = new Error('Request timed out');
-        (wrapped as any).code = 'TIMEOUT';
-        (wrapped as any).status = null;
-        throw wrapped;
+      const sameOriginFallbackUrl =
+        (method === 'GET' || method === 'HEAD')
+          ? toSameOriginApiUrl(requestUrl)
+          : null;
+      if (sameOriginFallbackUrl && isNetworkLikeFetchError(error)) {
+        try {
+          response = await _fetchWithTimeout(sameOriginFallbackUrl, requestInit, timeoutMs);
+          requestUrl = sameOriginFallbackUrl;
+          usedSameOriginFallback = true;
+        } catch (retryError: any) {
+          const retryIsAbort = retryError?.name === 'AbortError';
+          const retryMessage = retryIsAbort
+            ? 'Request timed out'
+            : (typeof retryError?.message === 'string' ? retryError.message : null);
+          dispatchApiReachability({ ok: false, status: null, message: retryMessage });
+          if (retryIsAbort) {
+            const wrapped = new Error('Request timed out');
+            (wrapped as any).code = 'TIMEOUT';
+            (wrapped as any).status = null;
+            throw wrapped;
+          }
+          throw retryError;
+        }
+      } else {
+        const isAbort = error?.name === 'AbortError';
+        const message = isAbort ? 'Request timed out' : (typeof error?.message === 'string' ? error.message : null);
+        dispatchApiReachability({ ok: false, status: null, message });
+        if (isAbort) {
+          const wrapped = new Error('Request timed out');
+          (wrapped as any).code = 'TIMEOUT';
+          (wrapped as any).status = null;
+          throw wrapped;
+        }
+        throw error;
       }
-      throw error;
+    }
+
+    if (usedSameOriginFallback && typeof console !== 'undefined' && console.warn) {
+      console.warn('[API] Cross-origin request failed; retried on same-origin /api', {
+        originalUrl: rewrittenUrl,
+        fallbackUrl: requestUrl,
+      });
     }
 
     if (response.ok) {
@@ -1408,6 +1473,7 @@ const buildOrderFingerprint = (payload: {
   referralCode?: string;
   discountCode?: string;
   paymentMethod?: string | null;
+  handDelivery?: boolean;
   shipping?: { address?: any; estimate?: any; shippingTotal?: number | null };
   taxTotal?: number | null;
   delegateProposalToken?: string | null;
@@ -1434,6 +1500,7 @@ const buildOrderFingerprint = (payload: {
     referralCode: payload.referralCode || null,
     discountCode: payload.discountCode || null,
     paymentMethod: payload.paymentMethod || null,
+    handDelivery: payload.handDelivery === true,
     taxTotal: typeof payload.taxTotal === 'number' ? payload.taxTotal : null,
     delegateProposalToken:
       typeof payload.delegateProposalToken === 'string' && payload.delegateProposalToken.trim()
@@ -1493,6 +1560,7 @@ export const ordersAPI = {
     expectedShipmentWindow?: string | null,
     options?: {
       physicianCertification?: boolean;
+      handDelivery?: boolean;
       delegateProposalToken?: string | null;
     },
     taxTotal?: number | null,
@@ -1506,6 +1574,7 @@ export const ordersAPI = {
       discountCode,
       shipping,
       paymentMethod,
+      handDelivery: options?.handDelivery === true,
       taxTotal,
       delegateProposalToken: options?.delegateProposalToken ?? null,
     });
@@ -1528,6 +1597,7 @@ export const ordersAPI = {
         shippingTotal: shipping?.shippingTotal ?? null,
         expectedShipmentWindow: expectedShipmentWindow ?? null,
         physicianCertification: options?.physicianCertification === true,
+        handDelivery: options?.handDelivery === true,
         delegateProposalToken: options?.delegateProposalToken ?? null,
         taxTotal: typeof taxTotal === 'number' ? taxTotal : null,
       }),

@@ -191,6 +191,7 @@ interface CheckoutModalProps {
     shippingAddress: ShippingAddress | null;
     shippingRate: ShippingRate | null;
     shippingTotal: number;
+    handDelivery?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted: boolean;
     taxTotal?: number | null;
@@ -208,6 +209,7 @@ interface CheckoutModalProps {
   customerName?: string | null;
   salesRepName?: string | null;
   handDelivered?: boolean;
+  allowManualHandDelivery?: boolean;
   defaultShippingAddress?: ShippingAddress | null;
   defaultShippingRate?: ShippingRate | null;
   availableCredits?: number;
@@ -279,6 +281,7 @@ export function CheckoutModal({
   customerName,
   salesRepName,
   handDelivered = false,
+  allowManualHandDelivery = false,
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
@@ -310,6 +313,7 @@ export function CheckoutModal({
   const [bulkOpenMap, setBulkOpenMap] = useState<Record<string, boolean>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('zelle');
+  const [manualHandDelivery, setManualHandDelivery] = useState(false);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [checkoutStatusMessage, setCheckoutStatusMessage] = useState<string | null>(null);
@@ -446,7 +450,10 @@ export function CheckoutModal({
     ? Number(selectedShippingRate.rate) || 0
     : 0;
   const isDoctorHandDeliveryEnabled = !isDelegateCheckoutFlow && handDelivered === true;
-  const effectiveShippingCost = isDoctorHandDeliveryEnabled ? 0 : shippingCost;
+  const isManualHandDeliveryEnabled =
+    !isDelegateCheckoutFlow && allowManualHandDelivery && manualHandDelivery === true;
+  const isHandDeliveryEnabled = isDoctorHandDeliveryEnabled || isManualHandDeliveryEnabled;
+  const effectiveShippingCost = isHandDeliveryEnabled ? 0 : shippingCost;
   const localSalesRepDisplayName = String(salesRepName || '').trim() || 'Your sales rep';
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
@@ -473,13 +480,13 @@ export function CheckoutModal({
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = true;
-  const hasSelectedShippingRate = isDoctorHandDeliveryEnabled
+  const hasSelectedShippingRate = isHandDeliveryEnabled
     || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
     && hasSelectedShippingRate
-    && !isDoctorHandDeliveryEnabled
+    && !isHandDeliveryEnabled
     && shippingAddressComplete
     && checkoutLineItems.length > 0,
   );
@@ -792,7 +799,7 @@ export function CheckoutModal({
     });
 	    setIsProcessing(true);
 	    try {
-        const handDeliveryRate: ShippingRate | null = isDoctorHandDeliveryEnabled
+        const handDeliveryRate: ShippingRate | null = isHandDeliveryEnabled
           ? {
               carrierId: 'hand_delivery',
               serviceCode: 'hand_delivery',
@@ -804,13 +811,14 @@ export function CheckoutModal({
               addressFingerprint: shippingAddressSignature || null,
             }
           : null;
-        const checkoutShippingRate = isDoctorHandDeliveryEnabled
+        const checkoutShippingRate = isHandDeliveryEnabled
           ? handDeliveryRate
           : selectedShippingRate;
 	      const result = await onCheckout({
 	        shippingAddress,
 	        shippingRate: checkoutShippingRate,
 	        shippingTotal: effectiveShippingCost,
+          handDelivery: isHandDeliveryEnabled,
 	        expectedShipmentWindow: deliveryEstimate?.shipWindowLabel ?? null,
 	        physicianCertificationAccepted: termsAccepted,
 	        taxTotal: taxAmount,
@@ -1013,6 +1021,7 @@ export function CheckoutModal({
       setBulkOpenMap({});
       setTermsAccepted(false);
       setPaymentMethod('zelle');
+      setManualHandDelivery(false);
       setPlacedOrderNumber(null);
       setCheckoutStatus('idle');
       setCheckoutStatusMessage(null);
@@ -1570,6 +1579,24 @@ export function CheckoutModal({
               {/* Shipping */}
               <div className="space-y-4">
                 <h3>Shipping Address</h3>
+                {allowManualHandDelivery && !isDelegateFlow && (
+                  <div className="flex items-center gap-3 rounded-lg border border-slate-200/80 bg-white/70 px-4 py-3">
+                    <input
+                      id="manual-hand-delivery"
+                      type="checkbox"
+                      className="brand-checkbox"
+                      checked={manualHandDelivery}
+                      onChange={(event) => setManualHandDelivery(event.target.checked)}
+                      disabled={isDoctorHandDeliveryEnabled}
+                    />
+                    <label
+                      htmlFor="manual-hand-delivery"
+                      className="text-sm font-medium text-slate-800"
+                    >
+                      Mark this order as hand delivered
+                    </label>
+                  </div>
+                )}
                 {isDoctorHandDeliveryEnabled && (
                   <div className="glass-card squircle-md border border-[rgba(95,179,249,0.45)] bg-gradient-to-r from-[rgba(95,179,249,0.16)] via-[rgba(95,179,249,0.10)] to-[rgba(255,255,255,0.75)] px-6 py-5 shadow-[0_14px_30px_-24px_rgba(95,179,249,0.9)]">
                     <p className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-[rgb(58,142,214)]">
@@ -1670,7 +1697,7 @@ export function CheckoutModal({
                       />
                     </div>
                   </div>
-                  {!isDoctorHandDeliveryEnabled && (
+                  {!isHandDeliveryEnabled && (
                     <div className="flex items-center gap-3">
                       <Button
                         type="button"
@@ -1684,7 +1711,7 @@ export function CheckoutModal({
                       {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
                     </div>
                   )}
-                  {!isDoctorHandDeliveryEnabled && shippingRates && shippingRates.length > 0 && (
+                  {!isHandDeliveryEnabled && shippingRates && shippingRates.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
                       <select
@@ -1966,7 +1993,7 @@ export function CheckoutModal({
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Shipping:</span>
 	                  <span>
-                      {isDoctorHandDeliveryEnabled ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
+                      {isHandDeliveryEnabled ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
                     </span>
 	                </div>
 	                <div className="flex justify-between text-sm text-slate-700">

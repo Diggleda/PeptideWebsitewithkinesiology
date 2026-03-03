@@ -16912,6 +16912,7 @@ function MainApp() {
     shippingAddress?: any | null;
     shippingRate: any;
     shippingTotal?: number | null;
+    handDelivery?: boolean;
     expectedShipmentWindow?: string | null;
     physicianCertificationAccepted?: boolean;
     taxTotal?: number | null;
@@ -17031,6 +17032,7 @@ function MainApp() {
 	        {
 	          physicianCertification:
 	            options?.physicianCertificationAccepted === true,
+            handDelivery: options?.handDelivery === true,
             delegateProposalToken: delegationProposalReview?.token ?? null,
 	        },
 	        taxTotal,
@@ -25553,8 +25555,14 @@ function MainApp() {
           handDelivered={
             isDelegateMode
               ? false
-              : Boolean((user as any)?.handDelivered || (user as any)?.hand_delivered)
+              : Boolean(
+                  isDoctorRole(user?.role) &&
+                    ((user as any)?.handDelivered || (user as any)?.hand_delivered),
+                )
           }
+          allowManualHandDelivery={Boolean(
+            !isDelegateMode && user?.role && (isRep(user.role) || isAdmin(user.role)),
+          )}
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
 	        }
