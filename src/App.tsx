@@ -9763,6 +9763,26 @@ function MainApp() {
       window.removeEventListener("resize", onResize);
     };
   }, [updateSalesDashboardTabIndicator]);
+  useEffect(() => {
+    const container = salesDashboardTabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateSalesDashboardTabIndicator();
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [updateSalesDashboardTabIndicator]);
+  useEffect(() => {
+    if (!showSalesDashboardTabs) return;
+    const timer = window.setTimeout(() => {
+      updateSalesDashboardTabIndicator();
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [showSalesDashboardTabs, salesDashboardTab, updateSalesDashboardTabIndicator, user?.id, user?.role]);
   const refreshCrmSeamlessRawEntries = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!user) {
@@ -9872,6 +9892,26 @@ function MainApp() {
       window.removeEventListener("resize", onResize);
     };
   }, [updateAdminDashboardTabIndicator]);
+  useEffect(() => {
+    const container = adminDashboardTabsContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      updateAdminDashboardTabIndicator();
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [updateAdminDashboardTabIndicator]);
+  useEffect(() => {
+    if (!isAdmin(user?.role)) return;
+    const timer = window.setTimeout(() => {
+      updateAdminDashboardTabIndicator();
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [adminDashboardTab, updateAdminDashboardTabIndicator, user?.id, user?.role]);
 
 	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
 	  useEffect(() => {
@@ -18939,7 +18979,7 @@ function MainApp() {
                       style={{
                         left: adminDashboardTabIndicator.left,
                         width: adminDashboardTabIndicator.width,
-                        opacity: 1,
+                        opacity: adminDashboardTabIndicator.opacity,
                       }}
                     />
                   </div>
@@ -18987,7 +19027,7 @@ function MainApp() {
                       style={{
                         left: salesDashboardTabIndicator.left,
                         width: salesDashboardTabIndicator.width,
-                        opacity: 1,
+                        opacity: salesDashboardTabIndicator.opacity,
                       }}
                     />
                   </div>

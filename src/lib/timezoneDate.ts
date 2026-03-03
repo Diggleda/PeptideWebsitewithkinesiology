@@ -1,6 +1,6 @@
 const HAS_EXPLICIT_TIMEZONE_RE = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
 const NAIVE_DATETIME_RE =
-  /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?)?$/;
+  /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,9}))?)?)?$/;
 
 const TIME_PARTS_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Los_Angeles",
@@ -39,6 +39,7 @@ const parseNaivePacific = (value: string): Date | null => {
   const hour = Number(match[4] || "0");
   const minute = Number(match[5] || "0");
   const second = Number(match[6] || "0");
+  const fractional = (match[7] || "").trim();
   if (
     !Number.isFinite(year) ||
     !Number.isFinite(month) ||
@@ -49,8 +50,20 @@ const parseNaivePacific = (value: string): Date | null => {
   ) {
     return null;
   }
+  if (
+    month < 1 || month > 12 ||
+    day < 1 || day > 31 ||
+    hour < 0 || hour > 23 ||
+    minute < 0 || minute > 59 ||
+    second < 0 || second > 59
+  ) {
+    return null;
+  }
 
-  const targetWallAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const msFromFraction = fractional
+    ? Number((fractional.slice(0, 3) + "000").slice(0, 3))
+    : 0;
+  const targetWallAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second, msFromFraction);
   let resolvedUtcMs = targetWallAsUtcMs;
   for (let i = 0; i < 3; i += 1) {
     resolvedUtcMs = targetWallAsUtcMs - getPacificOffsetMs(resolvedUtcMs);
@@ -85,4 +98,3 @@ export const parseBackendTimestamp = (value?: string | Date | null): Date | null
   const fallback = new Date(normalized);
   return Number.isNaN(fallback.getTime()) ? null : fallback;
 };
-
