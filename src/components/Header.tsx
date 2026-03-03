@@ -14,7 +14,7 @@ import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
-import { parseBackendTimestamp } from '../lib/timezoneDate';
+import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -394,6 +394,26 @@ const formatOrderDate = (value?: string | null) => {
   });
 };
 
+const resolveOrderPlacedAt = (order?: AccountOrderSummary | null): string | null => {
+  if (!order || typeof order !== 'object') return null;
+  const pacificCandidates = [
+    (order as any).created_at,
+    order.createdAt,
+    (order as any).date_created,
+    (order as any).dateCreated,
+  ];
+  for (const candidate of pacificCandidates) {
+    const parsed = parseBackendTimestampAsPacificWallTime(candidate);
+    if (parsed) return parsed.toISOString();
+  }
+  const utcCandidates = [(order as any).date_created_gmt, (order as any).dateCreatedGmt];
+  for (const candidate of utcCandidates) {
+    const parsed = parseBackendTimestamp(candidate);
+    if (parsed) return parsed.toISOString();
+  }
+  return null;
+};
+
 const formatLinkDateTime = (value?: string | null) => {
   if (!value) return null;
   const date = parseBackendTimestamp(value);
@@ -586,7 +606,8 @@ const formatExpectedDelivery = (order: AccountOrderSummary) => {
     }
   }
   if (estimate.estimatedDeliveryDays && Number.isFinite(estimate.estimatedDeliveryDays)) {
-    const baseDate = order.createdAt ? new Date(order.createdAt) : new Date();
+    const baseDateRaw = resolveOrderPlacedAt(order) || order.createdAt || null;
+    const baseDate = baseDateRaw ? new Date(baseDateRaw) : new Date();
     if (!Number.isNaN(baseDate.getTime())) {
       const projected = new Date(baseDate.getTime());
       projected.setDate(projected.getDate() + Number(estimate.estimatedDeliveryDays));
@@ -4847,7 +4868,9 @@ export function Header({
                   <div className="order-header-meta flex flex-wrap items-center gap-8 text-sm text-slate-700">
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Order placed</p>
-                      <p className="text-sm font-semibold text-slate-900">{formatOrderDate(order.createdAt)}</p>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {formatOrderDate(resolveOrderPlacedAt(order))}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Total</p>
@@ -5299,7 +5322,9 @@ export function Header({
             <div className="space-y-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Placed</p>
-                <p className="text-sm font-semibold text-slate-900">{formatOrderDate(selectedOrder.createdAt)}</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatOrderDate(resolveOrderPlacedAt(selectedOrder))}
+                </p>
               </div>
               {showExpectedDeliveryDetails && (
                 <div>

@@ -98,3 +98,23 @@ export const parseBackendTimestamp = (value?: string | Date | null): Date | null
   const fallback = new Date(normalized);
   return Number.isNaN(fallback.getTime()) ? null : fallback;
 };
+
+export const parseBackendTimestampAsPacificWallTime = (
+  value?: string | Date | null,
+): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const raw = value.trim();
+  if (!raw) return null;
+  const normalized = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
+  const withoutTimezone = normalized.replace(/(?:[zZ]|[+-]\d{2}:?\d{2})$/, "");
+  const pacificDate = parseNaivePacific(withoutTimezone);
+  if (pacificDate) return pacificDate;
+  return parseBackendTimestamp(withoutTimezone);
+};

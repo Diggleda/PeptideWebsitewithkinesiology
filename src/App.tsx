@@ -13,7 +13,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
-import { parseBackendTimestamp } from "./lib/timezoneDate";
+import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -1111,6 +1111,86 @@ const normalizeStringField = (value: unknown) => {
   return null;
 };
 
+const hasExplicitTimezone = (value: string) =>
+  /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+
+const normalizeTimestampCandidate = (
+  value: unknown,
+  options?: { assumeUtcNoTimezone?: boolean; assumePacificWallTime?: boolean },
+): string | null => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    const raw = value.trim();
+    const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
+    if (options?.assumePacificWallTime) {
+      const pacificDate = parseBackendTimestampAsPacificWallTime(canonical);
+      return pacificDate ? pacificDate.toISOString() : null;
+    }
+    if (options?.assumeUtcNoTimezone && !hasExplicitTimezone(canonical)) {
+      const utcDate = new Date(`${canonical}Z`);
+      return Number.isNaN(utcDate.getTime()) ? null : utcDate.toISOString();
+    }
+    const parsed = parseBackendTimestamp(canonical);
+    return parsed ? parsed.toISOString() : null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return null;
+};
+
+const resolveOrderPlacedAt = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+  const mysqlCandidates = [order.created_at, order.createdAt];
+  for (const candidate of mysqlCandidates) {
+    const normalized = normalizeTimestampCandidate(candidate, {
+      assumePacificWallTime: true,
+    });
+    if (normalized) return normalized;
+  }
+  const fallbackCandidates = [
+    { value: order.date_created, assumePacificWallTime: true },
+    { value: order.dateCreated, assumePacificWallTime: true },
+    { value: order.date_created_gmt, assumeUtcNoTimezone: true },
+    { value: order.dateCreatedGmt, assumeUtcNoTimezone: true },
+  ];
+  for (const candidate of fallbackCandidates) {
+    if (candidate && typeof candidate === "object" && "value" in candidate) {
+      const normalized = normalizeTimestampCandidate(candidate.value, {
+        assumeUtcNoTimezone: Boolean((candidate as any).assumeUtcNoTimezone),
+      });
+      if (normalized) return normalized;
+      continue;
+    }
+    const normalized = normalizeTimestampCandidate(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const resolveOrderUpdatedAt = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+  const candidates = [
+    order.updated_at,
+    order.updatedAt,
+    order.date_modified,
+    order.dateModified,
+    { value: order.date_modified_gmt, assumeUtcNoTimezone: true },
+    { value: order.dateModifiedGmt, assumeUtcNoTimezone: true },
+  ];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object" && "value" in candidate) {
+      const normalized = normalizeTimestampCandidate(candidate.value, {
+        assumeUtcNoTimezone: Boolean((candidate as any).assumeUtcNoTimezone),
+      });
+      if (normalized) return normalized;
+      continue;
+    }
+    const normalized = normalizeTimestampCandidate(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
@@ -1613,6 +1693,8 @@ const normalizeAccountOrdersResponse = (
           normalizeWooOrderId(order?.woo_order_id) ||
           resolveWooOrderIdFromIntegrations(order);
         const cancellationId = wooOrderId || identifier;
+        const createdAt = resolveOrderPlacedAt(order);
+        const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
         registerLocalEntry({
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -1630,8 +1712,8 @@ const normalizeAccountOrdersResponse = (
           discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
           appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
-          createdAt: order?.createdAt || null,
-          updatedAt: order?.updatedAt || null,
+          createdAt,
+          updatedAt,
           source: "peppro",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
@@ -1664,7 +1746,7 @@ const normalizeAccountOrdersResponse = (
           ),
           shippingEstimate: normalizeShippingEstimateField(
             order?.shippingEstimate || order?.shipping_estimate,
-            { fallbackDate: order?.createdAt || null },
+            { fallbackDate: createdAt || null },
           ),
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
@@ -1694,6 +1776,8 @@ const normalizeAccountOrdersResponse = (
           normalizeWooOrderId(order?.woo_order_id) ||
           resolveWooOrderIdFromIntegrations(order);
         const cancellationId = wooOrderId || identifier;
+        const createdAt = resolveOrderPlacedAt(order);
+        const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
         registerLocalEntry({
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -1711,8 +1795,8 @@ const normalizeAccountOrdersResponse = (
           discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
           appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
-          createdAt: order?.createdAt || null,
-          updatedAt: order?.updatedAt || null,
+          createdAt,
+          updatedAt,
           source: "peppro",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
@@ -1745,7 +1829,7 @@ const normalizeAccountOrdersResponse = (
           ),
           shippingEstimate: normalizeShippingEstimateField(
             order?.shippingEstimate || order?.shipping_estimate,
-            { fallbackDate: order?.createdAt || null },
+            { fallbackDate: createdAt || null },
           ),
           shippingTotal: coerceNumber(order?.shippingTotal) ?? null,
           taxTotal: coerceNumber(order?.taxTotal) ?? null,
@@ -1772,6 +1856,8 @@ const normalizeAccountOrdersResponse = (
           : order?.number
             ? `woo-${order.number}`
             : `woo-${Math.random().toString(36).slice(2, 10)}`;
+        const createdAt = resolveOrderPlacedAt(order);
+        const updatedAt = resolveOrderUpdatedAt(order) || createdAt;
         const wooEntry: AccountOrderSummary = {
           id: identifier,
           asDelegate: delegateFields.asDelegate,
@@ -1794,16 +1880,8 @@ const normalizeAccountOrdersResponse = (
           discountCodeAmount: coerceNumber(order?.discountCodeAmount ?? order?.discount_code_amount) ?? null,
           appliedReferralCredit: coerceNumber(order?.appliedReferralCredit ?? order?.applied_referral_credit) ?? null,
           notes: typeof order?.notes === "string" ? order.notes : null,
-          createdAt:
-            order?.createdAt ||
-            order?.dateCreated ||
-            order?.date_created ||
-            null,
-          updatedAt:
-            order?.updatedAt ||
-            order?.dateModified ||
-            order?.date_modified ||
-            null,
+          createdAt,
+          updatedAt,
           source: "woocommerce",
           doctorId:
             normalizeStringField(order?.doctorId ?? order?.doctor_id ?? order?.userId ?? order?.user_id) ||
@@ -1837,7 +1915,7 @@ const normalizeAccountOrdersResponse = (
             order?.shippingEstimate || order?.shipping_estimate,
             {
               fallbackDate:
-                order?.createdAt ||
+                createdAt ||
                 order?.dateCompleted ||
                 order?.date_created ||
                 null,
@@ -1871,8 +1949,8 @@ const normalizeAccountOrdersResponse = (
   }
 
   return result.sort((a, b) => {
-    const tsA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const tsB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    const tsA = parseBackendTimestamp(a.createdAt)?.getTime() || 0;
+    const tsB = parseBackendTimestamp(b.createdAt)?.getTime() || 0;
     return tsB - tsA;
   });
 };
@@ -7095,6 +7173,8 @@ function MainApp() {
   const mergeSalesOrderDetail = useCallback(
     (detail: AccountOrderSummary | null) => {
       if (!detail) return;
+      const detailPlacedAt = resolveOrderPlacedAt(detail as any);
+      const detailUpdatedAt = resolveOrderUpdatedAt(detail as any) || detailPlacedAt;
       setSalesTrackingOrders((prev) =>
         prev.map((order) => {
           const match =
@@ -7106,8 +7186,15 @@ function MainApp() {
             ...order,
             ...detail,
             shippingEstimate: detail.shippingEstimate || order.shippingEstimate || null,
-            createdAt: detail.createdAt || order.createdAt || null,
-            updatedAt: detail.updatedAt || order.updatedAt || null,
+            createdAt:
+              detailPlacedAt ||
+              resolveOrderPlacedAt(order as any) ||
+              null,
+            updatedAt:
+              detailUpdatedAt ||
+              resolveOrderUpdatedAt(order as any) ||
+              resolveOrderPlacedAt(order as any) ||
+              null,
             lineItems: detail.lineItems?.length ? detail.lineItems : order.lineItems,
           };
         }),
@@ -7580,14 +7667,9 @@ function MainApp() {
     const fromMs = from.getTime();
     const toMs = to.getTime();
     return orders.filter((order) => {
-      const raw =
-        (order as any)?.createdAt ||
-        (order as any)?.created_at ||
-        (order as any)?.dateCreated ||
-        (order as any)?.date_created ||
-        null;
-      if (!raw) return false;
-      const ts = new Date(raw).getTime();
+      const placedAt = resolveOrderPlacedAt(order as any);
+      if (!placedAt) return false;
+      const ts = parseBackendTimestamp(placedAt)?.getTime() ?? Number.NaN;
       if (!Number.isFinite(ts)) return false;
       return ts >= fromMs && ts <= toMs;
     });
@@ -7658,8 +7740,8 @@ function MainApp() {
       };
 
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const aTime = parseBackendTimestamp(resolveOrderPlacedAt(a as any))?.getTime() || 0;
+        const bTime = parseBackendTimestamp(resolveOrderPlacedAt(b as any))?.getTime() || 0;
         return bTime - aTime;
       });
       const latestOrder = ordersSorted[0];
@@ -7696,7 +7778,7 @@ function MainApp() {
 	          : addressFromOrder
 	            ? "order"
 	            : null);
-	      const lastOrderDate = latestOrder?.createdAt || null;
+	      const lastOrderDate = resolveOrderPlacedAt(latestOrder as any) || null;
       const relevantOrders = bucket.orders.filter((order) =>
         shouldCountRevenueForStatus(order.status),
       );
@@ -8672,12 +8754,7 @@ function MainApp() {
         if (onlyIds && !onlyIds.has(key)) return false;
 
         const hasPlaced =
-          Boolean(
-            order.createdAt ||
-              (order as any).dateCreated ||
-              (order as any).date_created ||
-              (order as any).date_created_gmt,
-          ) || false;
+          Boolean(resolveOrderPlacedAt(order as any)) || false;
         const hasEta = Boolean(
           order?.shippingEstimate?.estimatedArrivalDate ||
             (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
@@ -9775,14 +9852,15 @@ function MainApp() {
     };
   }, [updateSalesDashboardTabIndicator]);
   useEffect(() => {
-    if (!showSalesDashboardTabs) return;
+    const canShowSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
+    if (!canShowSalesDashboardTabs) return;
     const timer = window.setTimeout(() => {
       updateSalesDashboardTabIndicator();
     }, 80);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [showSalesDashboardTabs, salesDashboardTab, updateSalesDashboardTabIndicator, user?.id, user?.role]);
+  }, [salesDashboardTab, updateSalesDashboardTabIndicator, user?.id, user?.role]);
   const refreshCrmSeamlessRawEntries = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!user) {
@@ -12806,26 +12884,7 @@ function MainApp() {
         const key = orderKey(order, idx);
         originalByKey.set(key, order);
       });
-      const normalizeDateField = (
-        value: any,
-        options?: { assumeUtcNoTimezone?: boolean },
-      ): string | null => {
-        if (typeof value === "string" && value.trim().length > 0) {
-          const raw = value.trim();
-          const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
-          const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(canonical);
-          if (options?.assumeUtcNoTimezone && !hasTimezone) {
-            const d = new Date(`${canonical}Z`);
-            return Number.isNaN(d.getTime()) ? null : d.toISOString();
-          }
-          const d = parseBackendTimestamp(canonical);
-          return d ? d.toISOString() : null;
-        }
-        if (value instanceof Date) {
-          return Number.isNaN(value.getTime()) ? null : value.toISOString();
-        }
-        return null;
-      };
+      const normalizeDateField = normalizeTimestampCandidate;
 
       // Normalize using Woo order summaries only (same shape doctor tab uses)
       const existingByKey = new Map<string, AccountOrderSummary>();
@@ -12862,27 +12921,10 @@ function MainApp() {
             (order as any).doctorId ||
             null;
           const doctorInfo = doctorId ? doctorLookup.get(doctorId) : null;
-          const createdAt =
-            normalizeDateField((order as any).dateCreatedGmt, {
-              assumeUtcNoTimezone: true,
-            }) ||
-            normalizeDateField((order as any).date_created_gmt, {
-              assumeUtcNoTimezone: true,
-            }) ||
-            normalizeDateField(order.createdAt) ||
-            normalizeDateField((order as any).dateCreated) ||
-            normalizeDateField((order as any).date_created) ||
-            null;
+          const createdAt = resolveOrderPlacedAt(order as any) || resolveOrderPlacedAt(original as any);
           const updatedAt =
-            normalizeDateField((order as any).dateModifiedGmt, {
-              assumeUtcNoTimezone: true,
-            }) ||
-            normalizeDateField((order as any).date_modified_gmt, {
-              assumeUtcNoTimezone: true,
-            }) ||
-            normalizeDateField(order.updatedAt) ||
-            normalizeDateField((order as any).dateModified) ||
-            normalizeDateField((order as any).date_modified) ||
+            resolveOrderUpdatedAt(order as any) ||
+            resolveOrderUpdatedAt(original as any) ||
             createdAt;
           const estimatedArrival =
             normalizeDateField(order?.shippingEstimate?.estimatedArrivalDate) ||
@@ -13013,20 +13055,15 @@ function MainApp() {
           return true;
         })
         .sort((a, b) => {
-          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          const aTime = parseBackendTimestamp(a.createdAt)?.getTime() || 0;
+          const bTime = parseBackendTimestamp(b.createdAt)?.getTime() || 0;
           return bTime - aTime;
         });
 
       const buildSignature = (order: AccountOrderSummary) => {
         const key = String(order.id || order.number || "");
-        const createdAt =
-          order.createdAt ||
-          (order as any).dateCreated ||
-          (order as any).date_created ||
-          (order as any).date_created_gmt ||
-          "";
-        const updatedAt = order.updatedAt || (order as any).dateModified || "";
+        const createdAt = resolveOrderPlacedAt(order as any) || "";
+        const updatedAt = resolveOrderUpdatedAt(order as any) || "";
         const eta =
           order?.shippingEstimate?.estimatedArrivalDate ||
           (order as any)?.shippingEstimate?.deliveryDateGuaranteed ||
@@ -13192,24 +13229,14 @@ function MainApp() {
 	        return salesTrackingOrders
 	          .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
 	          .sort((a, b) => {
-	            const aTime = Date.parse(
-	              String(
-	                (a as any)?.createdAt ||
-	                  (a as any)?.dateCreated ||
-	                  (a as any)?.date_created ||
-	                  (a as any)?.updatedAt ||
-	                  "",
-	              ),
-	            );
-	            const bTime = Date.parse(
-	              String(
-	                (b as any)?.createdAt ||
-	                  (b as any)?.dateCreated ||
-	                  (b as any)?.date_created ||
-	                  (b as any)?.updatedAt ||
-	                  "",
-	              ),
-	            );
+	            const aTime =
+                parseBackendTimestamp(
+                  resolveOrderPlacedAt(a as any) || resolveOrderUpdatedAt(a as any),
+                )?.getTime() || 0;
+	            const bTime =
+                parseBackendTimestamp(
+                  resolveOrderPlacedAt(b as any) || resolveOrderUpdatedAt(b as any),
+                )?.getTime() || 0;
 	            const safeA = Number.isFinite(aTime) ? aTime : 0;
 	            const safeB = Number.isFinite(bTime) ? bTime : 0;
 	            return safeB - safeA;
@@ -13259,24 +13286,14 @@ function MainApp() {
 	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
 	        const sorted = sourceOrders
 	          .sort((a, b) => {
-	            const aTime = Date.parse(
-	              String(
-	                (a as any)?.createdAt ||
-	                  (a as any)?.dateCreated ||
-	                  (a as any)?.date_created ||
-	                  (a as any)?.updatedAt ||
-	                  "",
-	              ),
-	            );
-	            const bTime = Date.parse(
-	              String(
-	                (b as any)?.createdAt ||
-	                  (b as any)?.dateCreated ||
-	                  (b as any)?.date_created ||
-	                  (b as any)?.updatedAt ||
-	                  "",
-	              ),
-	            );
+	            const aTime =
+                parseBackendTimestamp(
+                  resolveOrderPlacedAt(a as any) || resolveOrderUpdatedAt(a as any),
+                )?.getTime() || 0;
+	            const bTime =
+                parseBackendTimestamp(
+                  resolveOrderPlacedAt(b as any) || resolveOrderUpdatedAt(b as any),
+                )?.getTime() || 0;
 	            const safeA = Number.isFinite(aTime) ? aTime : 0;
 	            const safeB = Number.isFinite(bTime) ? bTime : 0;
 	            return safeB - safeA;
@@ -16743,9 +16760,7 @@ function MainApp() {
 	          const wooId = meta?.wooOrderId || null;
 	          const wooNumber = meta?.wooOrderNumber || null;
 	          const createdAt =
-	            created?.createdAt ||
-	            created?.created_at ||
-            new Date().toISOString();
+	            resolveOrderPlacedAt(created) || new Date().toISOString();
           const lineItemsRaw = Array.isArray(created?.items) ? created.items : [];
           const lineItems = lineItemsRaw.map((item: any, index: number) => {
             const quantity =
@@ -18143,10 +18158,7 @@ function MainApp() {
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
 	                    const orderPlacedAt =
-	                      order.createdAt ||
-	                      (order as any)?.dateCreated ||
-	                      (order as any)?.date_created ||
-	                      null;
+	                      resolveOrderPlacedAt(order as any);
 	                    const total = Number(
 	                      (order as any)?.grandTotal ?? order.total ?? 0,
 	                    );
@@ -21434,13 +21446,7 @@ function MainApp() {
                           >
                           {bucket.orders.map((order) => {
                             const placedDate =
-                              order.createdAt ||
-                              (order as any).dateCreated ||
-                              (order as any).date_created ||
-                              (order as any).dateCreatedGmt ||
-                              (order as any).date_created_gmt ||
-                              order.updatedAt ||
-                              null;
+                              resolveOrderPlacedAt(order as any);
                             const isShipped =
                               ((order as any)?.shippingEstimate?.status ||
                                 (order as any)?.shipping?.status ||
@@ -26438,6 +26444,7 @@ function MainApp() {
                           const delegateOrderLabel =
                             normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
                             normalizeDelegateOrderLabel((order as any)?.as_delegate);
+                          const placedAt = resolveOrderPlacedAt(order as any);
                           return (
 	                        <button
 	                          key={order.id}
@@ -26460,7 +26467,7 @@ function MainApp() {
                                 ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
-	                              {order.createdAt ? formatDateTime(order.createdAt) : "Date unavailable"}
+	                              {placedAt ? formatDateTime(placedAt) : "Date unavailable"}
 	                            </div>
 	                          </div>
 	                          <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
@@ -26935,11 +26942,7 @@ function MainApp() {
                 };
 
                 const placedDate =
-                  salesOrderDetail.createdAt ||
-                  (salesOrderDetail as any).dateCreated ||
-                  (salesOrderDetail as any).date_created ||
-                  salesOrderDetail.updatedAt ||
-                  null;
+                  resolveOrderPlacedAt(salesOrderDetail as any);
                 const normalizedStatus = String(
                   (shipping as any)?.status || salesOrderDetail.status || "",
                 )
