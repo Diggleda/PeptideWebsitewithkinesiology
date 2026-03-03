@@ -13,7 +13,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
-import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
+import { parseBackendTimestamp } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -1111,9 +1111,6 @@ const normalizeStringField = (value: unknown) => {
   return null;
 };
 
-const hasExplicitTimezone = (value: string) =>
-  /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
-
 const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   if (!value) return null;
   if (typeof value === "object" && !Array.isArray(value)) {
@@ -1134,59 +1131,23 @@ const parseObjectCandidate = (value: unknown): Record<string, any> | null => {
   return null;
 };
 
-const readMetaTimestampValue = (container: any, keyName: string): string | null => {
-  if (!container || typeof container !== "object") return null;
-  const lists = [container.meta_data, container.metaData];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const entry of list) {
-      const key = String((entry as any)?.key || "").trim().toLowerCase();
-      if (key !== keyName.toLowerCase()) continue;
-      const value = normalizeStringField((entry as any)?.value);
-      if (value) return value;
-    }
-  }
-  return null;
-};
-
 const resolveNestedMysqlCreatedAtCandidate = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
   const payload = parseObjectCandidate(order.payload);
   const payloadOrder = parseObjectCandidate(payload?.order) || payload;
-  const payloadCandidate =
-    normalizeStringField(payloadOrder?.created_at) ||
-    normalizeStringField(payloadOrder?.createdAt) ||
-    normalizeStringField(payloadOrder?.peppro_created_at) ||
-    normalizeStringField(payloadOrder?.pepproCreatedAt);
+  const payloadCandidate = normalizeStringField(payloadOrder?.created_at);
   if (payloadCandidate) return payloadCandidate;
-
-  const integrationRoots = [
-    parseObjectCandidate(order.integrationDetails),
-    parseObjectCandidate(order.integrations),
-  ].filter(Boolean) as Record<string, any>[];
-
-  for (const root of integrationRoots) {
-    const woo = parseObjectCandidate((root as any)?.wooCommerce) || parseObjectCandidate((root as any)?.woocommerce) || root;
-    const wooResponse = parseObjectCandidate((woo as any)?.response) || {};
-    const wooPayload = parseObjectCandidate((woo as any)?.payload) || {};
-
-    const direct =
-      normalizeStringField((woo as any)?.peppro_created_at) ||
-      normalizeStringField((woo as any)?.pepproCreatedAt) ||
-      normalizeStringField((wooResponse as any)?.peppro_created_at) ||
-      normalizeStringField((wooResponse as any)?.pepproCreatedAt) ||
-      normalizeStringField((wooPayload as any)?.peppro_created_at) ||
-      normalizeStringField((wooPayload as any)?.pepproCreatedAt);
-    if (direct) return direct;
-
-    const metaCandidate =
-      readMetaTimestampValue(wooResponse, "peppro_created_at") ||
-      readMetaTimestampValue(wooPayload, "peppro_created_at");
-    if (metaCandidate) return metaCandidate;
-  }
-
   return null;
+};
+
+const resolveRawPayloadOrdersCreatedAt = (order: any): string | null => {
+  if (!order || typeof order !== "object") return null;
+  const payload = parseObjectCandidate(order.payload);
+  const payloadOrders = parseObjectCandidate(payload?.orders);
+  return typeof payloadOrders?.created_at === "string"
+    ? payloadOrders.created_at
+    : null;
 };
 
 const normalizeTimestampCandidate = (
@@ -1197,56 +1158,40 @@ const normalizeTimestampCandidate = (
     forcePacificWallTime?: boolean;
   },
 ): string | null => {
-  if (typeof value === "string" && value.trim().length > 0) {
-    const raw = value.trim();
-    const canonical = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
-    if (options?.assumePacificWallTime) {
-      const pacificDate = parseBackendTimestampAsPacificWallTime(canonical, {
-        ignoreExplicitTimezone: options?.forcePacificWallTime === true,
-      });
-      return pacificDate ? pacificDate.toISOString() : null;
-    }
-    if (options?.assumeUtcNoTimezone && !hasExplicitTimezone(canonical)) {
-      const utcDate = new Date(`${canonical}Z`);
-      return Number.isNaN(utcDate.getTime()) ? null : utcDate.toISOString();
-    }
-    const parsed = parseBackendTimestamp(canonical);
-    return parsed ? parsed.toISOString() : null;
-  }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
+  void options;
+  if (typeof value === "string") return normalizeStringField(value);
   return null;
 };
 
 const resolveOrderPlacedAt = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
-  const sourceToken = String(order?.source || "").trim().toLowerCase();
-  const shouldForceMysqlPacific =
-    sourceToken === "mysql" ||
-    sourceToken === "peppro" ||
-    sourceToken === "local" ||
-    Boolean(order?.created_at);
-  const isWooOnlySource =
-    sourceToken === "woo" || sourceToken === "woocommerce";
 
-  // Hard rule: order timestamps must come from MySQL-origin fields only.
-  if (isWooOnlySource && !order?.created_at && !resolveNestedMysqlCreatedAtCandidate(order)) {
-    return null;
-  }
-  const mysqlCandidates = [
-    order.created_at,
-    resolveNestedMysqlCreatedAtCandidate(order),
-    shouldForceMysqlPacific ? order.createdAt : null,
-  ];
-  for (const candidate of mysqlCandidates) {
-    const normalized = normalizeTimestampCandidate(candidate, {
-      assumePacificWallTime: true,
-      forcePacificWallTime: shouldForceMysqlPacific,
+  const readMetaValue = (meta: any, keys: string[]) => {
+    if (!Array.isArray(meta)) return null;
+    const normalizedKeys = new Set(
+      keys.map((key) => String(key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
+    );
+    const found = meta.find((entry: any) => {
+      const key = String(entry?.key || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      return normalizedKeys.has(key);
     });
-    if (normalized) return normalized;
-  }
-  return null;
+    return normalizeStringField(found?.value);
+  };
+
+  const integrations = parseMaybeJson(order?.integrationDetails || order?.integrations) || {};
+  const wooIntegration = parseMaybeJson(integrations?.wooCommerce || integrations?.woocommerce) || {};
+  const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
+  const wooPayload = parseMaybeJson(wooIntegration?.payload) || {};
+
+  const rawMysqlCreatedAt =
+    resolveRawPayloadOrdersCreatedAt(order) ||
+    normalizeStringField(order?.created_at) ||
+    resolveNestedMysqlCreatedAtCandidate(order) ||
+    normalizeStringField(order?.createdAt) ||
+    readMetaValue(order?.meta_data, ["peppro_created_at"]) ||
+    readMetaValue(wooResponse?.meta_data, ["peppro_created_at"]) ||
+    readMetaValue(wooPayload?.meta_data, ["peppro_created_at"]);
+  return rawMysqlCreatedAt || null;
 };
 
 const resolveOrderUpdatedAt = (order: any): string | null => {
@@ -7837,9 +7782,9 @@ function MainApp() {
       };
 
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
-        const aTime = parseBackendTimestamp(resolveOrderPlacedAt(a as any))?.getTime() || 0;
-        const bTime = parseBackendTimestamp(resolveOrderPlacedAt(b as any))?.getTime() || 0;
-        return bTime - aTime;
+        const aTime = String(resolveOrderPlacedAt(a as any) || "").trim();
+        const bTime = String(resolveOrderPlacedAt(b as any) || "").trim();
+        return bTime.localeCompare(aTime);
       });
       const latestOrder = ordersSorted[0];
       const addressSource =
@@ -18287,7 +18232,7 @@ function MainApp() {
 	                        </div>
 	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
 	                          {orderPlacedAt
-	                            ? formatDateTime(orderPlacedAt)
+	                            ? orderPlacedAt
 	                            : "Date unavailable"}
 	                        </div>
 	                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
@@ -21565,7 +21510,7 @@ function MainApp() {
                               salesOrderRefreshingIds.has(orderKey);
                             const showShimmer = isHydrating;
                             const placedLabel = placedDate
-                              ? `Order placed ${formatDateTime(placedDate as string)}`
+                              ? `Order placed ${placedDate}`
                               : "Order placed Unknown date";
 	                            const arrivalLabel = arrivalDate
 	                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
@@ -26428,7 +26373,7 @@ function MainApp() {
                       </p>
                       <p className="text-sm font-semibold text-slate-900">
                         {salesDoctorDetail.lastOrderDate
-                          ? formatDateTime(salesDoctorDetail.lastOrderDate)
+                          ? salesDoctorDetail.lastOrderDate
                           : "Unavailable"}
                       </p>
                     </div>
@@ -26564,7 +26509,7 @@ function MainApp() {
                                 ) : null}
 	                            </div>
 	                            <div className="text-xs text-slate-500">
-	                              {placedAt ? formatDateTime(placedAt) : "Date unavailable"}
+	                              {placedAt || "Date unavailable"}
 	                            </div>
 	                          </div>
 	                          <div className="text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
@@ -27113,7 +27058,7 @@ function MainApp() {
                         </p>
                         <p className="font-semibold text-slate-900">
                           {placedDate
-                            ? formatDateTime(placedDate)
+                            ? placedDate
                             : "—"}
                         </p>
                       </div>

@@ -113,6 +113,15 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     return 'wholesale';
   };
 
+  const appendPstSuffix = (value) => {
+    const trimmed = sanitizeString(value);
+    if (!trimmed) return null;
+    return /\bPST$/i.test(trimmed) ? trimmed : `${trimmed} PST`;
+  };
+
+  const createdAtRaw = sanitizeString(order.createdAt) || new Date().toISOString();
+  const createdAtRawWithPst = appendPstSuffix(createdAtRaw);
+
   const payload = {
     id: sanitizeString(order.id),
     userId: sanitizeString(order.userId),
@@ -138,10 +147,15 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
         ...(order && typeof order === 'object' ? order : {}),
         total: computeGrandTotal(order),
         grandTotal: computeGrandTotal(order),
+        createdAt: createdAtRawWithPst || createdAtRaw,
+        created_at: createdAtRawWithPst || createdAtRaw,
+      },
+      orders: {
+        created_at: createdAtRawWithPst || createdAtRaw,
       },
       integrations: order.integrationDetails,
     }),
-    createdAt: order.createdAt || new Date().toISOString(),
+    createdAt: createdAtRaw,
     updatedAt: new Date().toISOString(),
   };
 
