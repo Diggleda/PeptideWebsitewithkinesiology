@@ -455,7 +455,7 @@ const isKnownAssignee = (assigneeSalesRepId) => {
   const user = userRepository.findById(normalized);
   if (!user) return false;
   const role = normalizeRole(user.role);
-  return role === 'sales_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead';
+  return role === 'sales_rep' || role === 'test_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead';
 };
 
 const resolveAssigneeByEmail = (email) => {
@@ -474,7 +474,7 @@ const resolveAssigneeByEmail = (email) => {
       return false;
     }
     const role = normalizeRole(candidate?.role);
-    return role === 'sales_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead';
+    return role === 'sales_rep' || role === 'test_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead';
   });
   if (!matched) {
     return null;

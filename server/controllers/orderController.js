@@ -386,8 +386,8 @@ const getOrders = async (req, res, next) => {
 
 const getOrdersForSalesRep = async (req, res, next) => {
   try {
-    const role = (req.user?.role || '').toLowerCase();
-    if (role !== 'sales_rep' && role !== 'rep' && role !== 'admin') {
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'sales_rep' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
     const scope = role === 'admin' && (req.query.scope || '').toLowerCase() === 'all' ? 'all' : 'mine';

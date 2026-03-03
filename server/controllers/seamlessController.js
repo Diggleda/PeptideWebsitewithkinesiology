@@ -39,6 +39,7 @@ const ensureSalesRole = (req, context = 'seamless') => {
   const role = normalizeRole(user?.role || req.user?.role);
   const isSalesRep =
     role === 'sales_rep'
+    || role === 'test_rep'
     || role === 'rep'
     || role === 'sales_lead'
     || role === 'saleslead'
@@ -114,8 +115,16 @@ const getHealth = async (req, res, next) => {
 
 const getRawPayloads = async (req, res, next) => {
   try {
-    ensureFeatureEnabled();
     ensureSalesRole(req, 'seamless.raw');
+    if (!env.crm?.seamlessEnabled) {
+      return res.json({
+        ok: true,
+        sourceSystem: 'seamless',
+        disabled: true,
+        count: 0,
+        entries: [],
+      });
+    }
     const limit = Number(req.query?.limit);
     const entries = await seamlessRepository.listRawPayloads({ limit });
     return res.json({

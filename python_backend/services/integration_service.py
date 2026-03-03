@@ -134,7 +134,7 @@ def _normalize_role(value: Any) -> str:
 
 def _ensure_sales_role(current_user: Dict[str, Any]) -> None:
     role = _normalize_role((current_user or {}).get("role"))
-    if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "admin"):
+    if role not in ("sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "admin"):
         raise _service_error("Sales role access required", 403)
 
 
@@ -266,4 +266,3 @@ def list_seamless_raw_payloads(current_user: Dict[str, Any], limit: Any = 20) ->
         "count": len(entries),
         "entries": entries,
     }
-

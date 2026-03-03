@@ -13,7 +13,7 @@ import {
 import clsx from "clsx";
 import { computeUnitPrice, roundCurrency, type PricingMode } from "./lib/pricing";
 import { withStaticAssetStamp } from "./lib/assetUrl";
-import { parseBackendTimestamp } from "./lib/timezoneDate";
+import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from "./lib/timezoneDate";
 import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
@@ -222,6 +222,7 @@ interface User {
   officeState?: string | null;
   officePostalCode?: string | null;
   receiveClientOrderUpdateEmails?: boolean;
+  handDelivered?: boolean;
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
@@ -271,11 +272,14 @@ const isSalesLead = (role?: string | null) => {
       normalized === "sales-lead")
   );
 };
+const isTestRep = (role?: string | null) =>
+  normalizeRole(role) === "test_rep";
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
   return (
     normalized !== "admin" &&
     (normalized === "sales_rep" ||
+      normalized === "test_rep" ||
       normalized === "rep" ||
       normalized === "sales_lead" ||
       normalized === "saleslead" ||
@@ -1218,6 +1222,46 @@ const resolveOrderUpdatedAt = (order: any): string | null => {
   return null;
 };
 
+const parseOrderPlacedRawToDate = (rawValue?: string | null): Date | null => {
+  const raw = normalizeStringField(rawValue);
+  if (!raw) return null;
+
+  const hasPstSuffix = /\s+PST$/i.test(raw);
+  const withoutPst = hasPstSuffix ? raw.replace(/\s+PST$/i, "").trim() : raw;
+  if (!withoutPst) return null;
+
+  // Treat persisted SQL order timestamps as Pacific wall time, even when legacy
+  // normalization added a timezone suffix (e.g. trailing "Z").
+  const pacificWallTime = parseBackendTimestampAsPacificWallTime(withoutPst, {
+    ignoreExplicitTimezone: true,
+  });
+  if (pacificWallTime) return pacificWallTime;
+  return parseBackendTimestamp(withoutPst);
+};
+
+const resolveOrderSortTimeMs = (order: any): number => {
+  const placed = parseOrderPlacedRawToDate(resolveOrderPlacedAt(order));
+  if (placed) return placed.getTime();
+  const updated = resolveOrderUpdatedAt(order);
+  const updatedDate = updated ? parseBackendTimestamp(updated) : null;
+  return updatedDate ? updatedDate.getTime() : 0;
+};
+
+const formatOrderPlacedAtForLocalDisplay = (order: any): string | null => {
+  const raw = resolveOrderPlacedAt(order);
+  if (!raw) return null;
+  const parsed = parseOrderPlacedRawToDate(raw);
+  if (!parsed) return raw;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+};
+
 const resolveOrderAsDelegateLabel = (order: any): string | null => {
   if (!order || typeof order !== "object") return null;
 
@@ -1981,8 +2025,8 @@ const normalizeAccountOrdersResponse = (
   }
 
   return result.sort((a, b) => {
-    const tsA = parseBackendTimestamp(a.createdAt)?.getTime() || 0;
-    const tsB = parseBackendTimestamp(b.createdAt)?.getTime() || 0;
+    const tsA = parseOrderPlacedRawToDate(String(a.createdAt || ""))?.getTime() || 0;
+    const tsB = parseOrderPlacedRawToDate(String(b.createdAt || ""))?.getTime() || 0;
     return tsB - tsA;
   });
 };
@@ -5160,6 +5204,14 @@ function MainApp() {
       } catch {
         setPatientLinksEnabled(false);
       }
+      try {
+        const stored = localStorage.getItem("peppro:crm-enabled");
+        if (stored !== null) {
+          setCrmEnabled(stored !== "false");
+        }
+      } catch {
+        setCrmEnabled(true);
+      }
 	    try {
 	      const stored = localStorage.getItem("peppro:peptide-forum-enabled");
 	      if (stored !== null) {
@@ -5197,9 +5249,10 @@ function MainApp() {
 		    let cancelled = false;
 		    const fetchSetting = async () => {
 		      try {
-		        const [shopResult, patientLinksResult, forumResult, researchResult] = await Promise.allSettled([
+		        const [shopResult, patientLinksResult, crmResult, forumResult, researchResult] = await Promise.allSettled([
 		          settingsAPI.getShopStatus(),
               settingsAPI.getPatientLinksStatus(),
+              settingsAPI.getCrmStatus(),
 		          settingsAPI.getForumStatus(),
 		          settingsAPI.getResearchStatus(),
 		        ]);
@@ -5223,6 +5276,20 @@ function MainApp() {
                 localStorage.setItem(
                   "peppro:patient-links-enabled",
                   info.patientLinksEnabled ? "true" : "false",
+                );
+              } catch {
+                // ignore
+              }
+            }
+          }
+          if (crmResult.status === "fulfilled") {
+            const crm = crmResult.value as any;
+            if (crm && typeof crm.crmEnabled === "boolean") {
+              setCrmEnabled(crm.crmEnabled);
+              try {
+                localStorage.setItem(
+                  "peppro:crm-enabled",
+                  crm.crmEnabled ? "true" : "false",
                 );
               } catch {
                 // ignore
@@ -5457,6 +5524,56 @@ function MainApp() {
           }
         } finally {
           setSettingsSaving((prev) => ({ ...prev, patientLinks: false }));
+        }
+      },
+      [user?.role],
+    );
+
+    const handleCrmToggle = useCallback(
+      async (value: boolean) => {
+        if (!isAdmin(user?.role)) {
+          return;
+        }
+        setSettingsSaving((prev) => ({ ...prev, crm: true }));
+        let previousValue = true;
+        setCrmEnabled((prev) => {
+          previousValue = prev;
+          return value;
+        });
+        try {
+          localStorage.setItem("peppro:crm-enabled", value ? "true" : "false");
+        } catch {
+          // ignore
+        }
+        try {
+          const updated = await settingsAPI.updateCrmStatus(value);
+          const confirmed =
+            updated && typeof (updated as any).crmEnabled === "boolean"
+              ? (updated as any).crmEnabled
+              : value;
+          setCrmEnabled(confirmed);
+          try {
+            localStorage.setItem(
+              "peppro:crm-enabled",
+              confirmed ? "true" : "false",
+            );
+          } catch {
+            // ignore
+          }
+        } catch (error) {
+          console.warn("[Settings] Failed to update CRM setting", error);
+          toast.error("Unable to update CRM setting right now.");
+          setCrmEnabled(previousValue);
+          try {
+            localStorage.setItem(
+              "peppro:crm-enabled",
+              previousValue ? "true" : "false",
+            );
+          } catch {
+            // ignore
+          }
+        } finally {
+          setSettingsSaving((prev) => ({ ...prev, crm: false }));
         }
       },
       [user?.role],
@@ -7711,7 +7828,7 @@ function MainApp() {
     return orders.filter((order) => {
       const placedAt = resolveOrderPlacedAt(order as any);
       if (!placedAt) return false;
-      const ts = parseBackendTimestamp(placedAt)?.getTime() ?? Number.NaN;
+      const ts = parseOrderPlacedRawToDate(placedAt)?.getTime() ?? Number.NaN;
       if (!Number.isFinite(ts)) return false;
       return ts >= fromMs && ts <= toMs;
     });
@@ -7782,9 +7899,9 @@ function MainApp() {
       };
 
       const ordersSorted = [...(bucket.orders || [])].sort((a, b) => {
-        const aTime = String(resolveOrderPlacedAt(a as any) || "").trim();
-        const bTime = String(resolveOrderPlacedAt(b as any) || "").trim();
-        return bTime.localeCompare(aTime);
+        const aTime = resolveOrderSortTimeMs(a as any);
+        const bTime = resolveOrderSortTimeMs(b as any);
+        return bTime - aTime;
       });
       const latestOrder = ordersSorted[0];
       const addressSource =
@@ -9846,12 +9963,11 @@ function MainApp() {
       }>,
     [],
   );
+  const isSalesDashboardVisible = isRep(user?.role) || isSalesLead(user?.role);
   const salesDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
-  const [salesDashboardTabIndicator, setSalesDashboardTabIndicator] = useState<{
-    left: number;
-    width: number;
-    opacity: number;
-  }>({ left: 0, width: 0, opacity: 0 });
+  const [salesDashboardIndicatorLeft, setSalesDashboardIndicatorLeft] = useState<number>(0);
+  const [salesDashboardIndicatorWidth, setSalesDashboardIndicatorWidth] = useState<number>(0);
+  const [salesDashboardIndicatorOpacity, setSalesDashboardIndicatorOpacity] = useState<number>(0);
   const updateSalesDashboardTabIndicator = useCallback(() => {
     const container = salesDashboardTabsContainerRef.current;
     if (!container) return;
@@ -9860,29 +9976,45 @@ function MainApp() {
       `button[data-sales-dashboard-tab="${salesDashboardTab}"]`,
       ) || container.querySelector<HTMLButtonElement>("button[data-sales-dashboard-tab]");
     if (!activeBtn) return;
-    const inset = 8;
+    const inset = 8; // match account modal tab underline math
     const scrollLeft = container.scrollLeft || 0;
     const left = Math.max(0, activeBtn.offsetLeft - scrollLeft + inset);
     const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
-    setSalesDashboardTabIndicator({ left, width, opacity: 1 });
+    setSalesDashboardIndicatorLeft(left);
+    setSalesDashboardIndicatorWidth(width);
+    setSalesDashboardIndicatorOpacity(width > 0 ? 1 : 0);
   }, [salesDashboardTab]);
+
+  const setSalesDashboardTabsContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      salesDashboardTabsContainerRef.current = node;
+      if (!node) return;
+      // Ensure we measure after the element is actually laid out.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          updateSalesDashboardTabIndicator();
+        });
+      });
+    },
+    [updateSalesDashboardTabIndicator],
+  );
   useLayoutEffect(() => {
+    if (!isSalesDashboardVisible) return;
     const frame = window.requestAnimationFrame(() => {
       updateSalesDashboardTabIndicator();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [updateSalesDashboardTabIndicator]);
+  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator, salesDashboardTab]);
   useEffect(() => {
-    updateSalesDashboardTabIndicator();
+    if (!isSalesDashboardVisible) return;
     const onResize = () => updateSalesDashboardTabIndicator();
     window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-    };
-  }, [updateSalesDashboardTabIndicator]);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator]);
   useEffect(() => {
+    if (!isSalesDashboardVisible) return;
     const container = salesDashboardTabsContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
@@ -9892,17 +10024,7 @@ function MainApp() {
     return () => {
       container.removeEventListener("scroll", handleScroll);
     };
-  }, [updateSalesDashboardTabIndicator]);
-  useEffect(() => {
-    const canShowSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
-    if (!canShowSalesDashboardTabs) return;
-    const timer = window.setTimeout(() => {
-      updateSalesDashboardTabIndicator();
-    }, 80);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [salesDashboardTab, updateSalesDashboardTabIndicator, user?.id, user?.role]);
+  }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator]);
   const refreshCrmSeamlessRawEntries = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!user) {
@@ -9977,6 +10099,7 @@ function MainApp() {
     [],
   );
   const adminDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const isAdminDashboardVisible = isAdmin(user?.role);
   const [adminDashboardTabIndicator, setAdminDashboardTabIndicator] = useState<{
     left: number;
     width: number;
@@ -9997,22 +10120,25 @@ function MainApp() {
     setAdminDashboardTabIndicator({ left, width, opacity: 1 });
   }, [adminDashboardTab]);
   useLayoutEffect(() => {
+    if (!isAdminDashboardVisible) return;
     const frame = window.requestAnimationFrame(() => {
       updateAdminDashboardTabIndicator();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [updateAdminDashboardTabIndicator]);
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator, adminDashboardTab]);
   useEffect(() => {
+    if (!isAdminDashboardVisible) return;
     updateAdminDashboardTabIndicator();
     const onResize = () => updateAdminDashboardTabIndicator();
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
     };
-  }, [updateAdminDashboardTabIndicator]);
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
   useEffect(() => {
+    if (!isAdminDashboardVisible) return;
     const container = adminDashboardTabsContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
@@ -10022,16 +10148,7 @@ function MainApp() {
     return () => {
       container.removeEventListener("scroll", handleScroll);
     };
-  }, [updateAdminDashboardTabIndicator]);
-  useEffect(() => {
-    if (!isAdmin(user?.role)) return;
-    const timer = window.setTimeout(() => {
-      updateAdminDashboardTabIndicator();
-    }, 80);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [adminDashboardTab, updateAdminDashboardTabIndicator, user?.id, user?.role]);
+  }, [isAdminDashboardVisible, updateAdminDashboardTabIndicator]);
 
 	  const salesByRepAutoLoadedKeyRef = useRef<string>("");
 	  useEffect(() => {
@@ -10283,6 +10400,7 @@ function MainApp() {
 	  const [referralDataError, setReferralDataError] = useState<ReactNode>(null);
 	  const [shopEnabled, setShopEnabled] = useState(true);
   const [patientLinksEnabled, setPatientLinksEnabled] = useState(false);
+  const [crmEnabled, setCrmEnabled] = useState(true);
   const [receiveClientOrderUpdateEmails, setReceiveClientOrderUpdateEmails] =
     useState(false);
   const [accountIndicatorTotal, setAccountIndicatorTotal] = useState(0);
@@ -10294,6 +10412,7 @@ function MainApp() {
   const [settingsSaving, setSettingsSaving] = useState<{
     shop: boolean;
     patientLinks: boolean;
+    crm: boolean;
     forum: boolean;
     research: boolean;
     testPaymentsOverride: boolean;
@@ -10301,11 +10420,20 @@ function MainApp() {
   }>({
     shop: false,
     patientLinks: false,
+    crm: false,
     forum: false,
     research: false,
     testPaymentsOverride: false,
     receiveClientOrderUpdateEmails: false,
   });
+  useEffect(() => {
+    if (salesDashboardTab !== "crm") {
+      return;
+    }
+    if (!crmEnabled && !isTestRep(user?.role)) {
+      setSalesDashboardTab("your_sales");
+    }
+  }, [crmEnabled, salesDashboardTab, user?.role]);
   type ServerHealthPayload = {
 	    status?: string;
 	    message?: string;
@@ -10450,10 +10578,28 @@ function MainApp() {
 	  >({});
 	  const adminHandDeliveryInFlightRef = useRef(false);
 	  const adminHandDeliveryLastFetchedAtRef = useRef<number>(0);
+  type SalesRepHandDeliveryDoctorEntry = {
+    userId: string;
+    salesRepId?: string | null;
+    name: string;
+    email?: string | null;
+    role: string;
+    handDelivered: boolean;
+  };
+  const [salesRepHandDeliveryDoctors, setSalesRepHandDeliveryDoctors] = useState<
+    SalesRepHandDeliveryDoctorEntry[]
+  >([]);
+  const [salesRepHandDeliveryLoading, setSalesRepHandDeliveryLoading] = useState(false);
+  const [salesRepHandDeliveryError, setSalesRepHandDeliveryError] = useState<string | null>(null);
+  const [salesRepHandDeliverySavingByUserId, setSalesRepHandDeliverySavingByUserId] = useState<
+    Record<string, boolean>
+  >({});
+  const salesRepHandDeliveryInFlightRef = useRef(false);
+  const salesRepHandDeliveryLastFetchedAtRef = useRef<number>(0);
 
   const shouldShowLocalHandDeliveryNotice = useMemo(() => {
     const role = normalizeRole(user?.role);
-    if (!["sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"].includes(role)) {
+    if (!["sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"].includes(role)) {
       return false;
     }
 
@@ -10524,6 +10670,25 @@ function MainApp() {
 	    },
 	    [],
 	  );
+  const normalizeSalesRepHandDeliveryDoctorEntry = useCallback(
+    (entry: any): SalesRepHandDeliveryDoctorEntry | null => {
+      const userId = String(entry?.userId ?? entry?.id ?? "").trim();
+      if (!userId) return null;
+      const name =
+        String(entry?.name ?? entry?.email ?? `Doctor ${userId}`).trim() || `Doctor ${userId}`;
+      const email = typeof entry?.email === "string" ? String(entry.email).trim() : null;
+      const role = normalizeRole(entry?.role || "doctor") || "doctor";
+      return {
+        userId,
+        salesRepId: entry?.salesRepId ? String(entry.salesRepId).trim() : null,
+        name,
+        email: email || null,
+        role,
+        handDelivered: Boolean(entry?.handDelivered || entry?.hand_delivered),
+      };
+    },
+    [],
+  );
 
 	  const fetchAdminHandDeliveryUsers = useCallback(
 	    async (options?: { force?: boolean }) => {
@@ -10604,11 +10769,7 @@ function MainApp() {
 	        }
 	      } catch (error: any) {
 	        setAdminHandDeliveryUsers(previous);
-	        toast.error(
-	          typeof error?.message === "string"
-	            ? error.message
-	            : "Unable to update hand delivery jurisdiction.",
-	        );
+	        toast.error("Update Failed. Please try again");
 	      } finally {
 	        setAdminHandDeliverySavingByUserId((current) => ({ ...current, [userId]: false }));
 	      }
@@ -10639,6 +10800,151 @@ function MainApp() {
 	    user?.id,
 	    user?.role,
 	  ]);
+  const isCurrentSalesRepLocalJurisdiction = useMemo(() => {
+    const role = normalizeRole(user?.role);
+    if (!isRep(role) && !isSalesLead(role)) return false;
+    const jurisdiction = String(
+      (user as any)?.salesRepJurisdiction ??
+        user?.salesRep?.jurisdiction ??
+        (user as any)?.jurisdiction ??
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    return jurisdiction === "local";
+  }, [user]);
+
+  const fetchSalesRepHandDeliveryDoctors = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!user || postLoginHold) return;
+      const role = normalizeRole(user.role);
+      if (!isRep(role) && !isSalesLead(role)) return;
+      if (!isCurrentSalesRepLocalJurisdiction) {
+        setSalesRepHandDeliveryDoctors([]);
+        setSalesRepHandDeliveryError(null);
+        return;
+      }
+      const now = Date.now();
+      const ttlMs = 30_000;
+      if (!options?.force && now - salesRepHandDeliveryLastFetchedAtRef.current < ttlMs) {
+        return;
+      }
+      if (salesRepHandDeliveryInFlightRef.current) {
+        return;
+      }
+      salesRepHandDeliveryInFlightRef.current = true;
+      salesRepHandDeliveryLastFetchedAtRef.current = now;
+      setSalesRepHandDeliveryLoading(true);
+      setSalesRepHandDeliveryError(null);
+      try {
+        const payload = (await settingsAPI.getSalesRepHandDeliveryDoctors()) as any;
+        const rows = Array.isArray(payload?.doctors)
+          ? payload.doctors
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        const normalized = rows
+          .map((row: any) => normalizeSalesRepHandDeliveryDoctorEntry(row))
+          .filter(
+            (row: SalesRepHandDeliveryDoctorEntry | null): row is SalesRepHandDeliveryDoctorEntry =>
+              Boolean(row),
+          )
+          .sort((a, b) => {
+            const byName = a.name.localeCompare(b.name);
+            if (byName !== 0) return byName;
+            return String(a.email || "").localeCompare(String(b.email || ""));
+          });
+        setSalesRepHandDeliveryDoctors(normalized);
+      } catch (error: any) {
+        setSalesRepHandDeliveryDoctors([]);
+        setSalesRepHandDeliveryError(
+          typeof error?.message === "string"
+            ? error.message
+            : "Unable to load doctors for hand delivery settings.",
+        );
+      } finally {
+        setSalesRepHandDeliveryLoading(false);
+        salesRepHandDeliveryInFlightRef.current = false;
+      }
+    },
+    [
+      isCurrentSalesRepLocalJurisdiction,
+      normalizeSalesRepHandDeliveryDoctorEntry,
+      postLoginHold,
+      user?.id,
+      user?.role,
+    ],
+  );
+
+  const handleSalesRepDoctorHandDeliveryToggle = useCallback(
+    async (entry: SalesRepHandDeliveryDoctorEntry, nextChecked: boolean) => {
+      const userId = String(entry?.userId || "").trim();
+      if (!userId) return;
+      if (salesRepHandDeliverySavingByUserId[userId]) return;
+      const previous = salesRepHandDeliveryDoctors;
+      setSalesRepHandDeliveryDoctors((current) =>
+        current.map((row) =>
+          row.userId === userId
+            ? {
+                ...row,
+                handDelivered: nextChecked,
+              }
+            : row,
+        ),
+      );
+      setSalesRepHandDeliverySavingByUserId((current) => ({ ...current, [userId]: true }));
+      try {
+        const payload = (await settingsAPI.updateSalesRepDoctorHandDelivery(
+          userId,
+          nextChecked,
+        )) as any;
+        const normalized = normalizeSalesRepHandDeliveryDoctorEntry(payload?.entry);
+        if (normalized) {
+          setSalesRepHandDeliveryDoctors((current) =>
+            current.map((row) => (row.userId === userId ? normalized : row)),
+          );
+        }
+      } catch (error: any) {
+        setSalesRepHandDeliveryDoctors(previous);
+        toast.error("Update Failed. Please try again");
+      } finally {
+        setSalesRepHandDeliverySavingByUserId((current) => ({ ...current, [userId]: false }));
+      }
+    },
+    [
+      normalizeSalesRepHandDeliveryDoctorEntry,
+      salesRepHandDeliveryDoctors,
+      salesRepHandDeliverySavingByUserId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!user || postLoginHold) {
+      setSalesRepHandDeliveryDoctors([]);
+      setSalesRepHandDeliveryLoading(false);
+      setSalesRepHandDeliveryError(null);
+      setSalesRepHandDeliverySavingByUserId({});
+      return;
+    }
+    const role = normalizeRole(user.role);
+    if (!isRep(role) && !isSalesLead(role)) {
+      setSalesRepHandDeliveryDoctors([]);
+      setSalesRepHandDeliveryLoading(false);
+      setSalesRepHandDeliveryError(null);
+      setSalesRepHandDeliverySavingByUserId({});
+      return;
+    }
+    if (salesDashboardTab !== "settings") {
+      return;
+    }
+    void fetchSalesRepHandDeliveryDoctors();
+  }, [
+    fetchSalesRepHandDeliveryDoctors,
+    postLoginHold,
+    salesDashboardTab,
+    user?.id,
+    user?.role,
+  ]);
 
 	  useEffect(() => {
 	    liveClientsRef.current = liveClients;
@@ -13097,8 +13403,8 @@ function MainApp() {
           return true;
         })
         .sort((a, b) => {
-          const aTime = parseBackendTimestamp(a.createdAt)?.getTime() || 0;
-          const bTime = parseBackendTimestamp(b.createdAt)?.getTime() || 0;
+          const aTime = parseOrderPlacedRawToDate(String(a.createdAt || ""))?.getTime() || 0;
+          const bTime = parseOrderPlacedRawToDate(String(b.createdAt || ""))?.getTime() || 0;
           return bTime - aTime;
         });
 
@@ -13271,14 +13577,8 @@ function MainApp() {
 	        return salesTrackingOrders
 	          .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
 	          .sort((a, b) => {
-	            const aTime =
-                parseBackendTimestamp(
-                  resolveOrderPlacedAt(a as any) || resolveOrderUpdatedAt(a as any),
-                )?.getTime() || 0;
-	            const bTime =
-                parseBackendTimestamp(
-                  resolveOrderPlacedAt(b as any) || resolveOrderUpdatedAt(b as any),
-                )?.getTime() || 0;
+	            const aTime = resolveOrderSortTimeMs(a as any);
+	            const bTime = resolveOrderSortTimeMs(b as any);
 	            const safeA = Number.isFinite(aTime) ? aTime : 0;
 	            const safeB = Number.isFinite(bTime) ? bTime : 0;
 	            return safeB - safeA;
@@ -13328,14 +13628,8 @@ function MainApp() {
 	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
 	        const sorted = sourceOrders
 	          .sort((a, b) => {
-	            const aTime =
-                parseBackendTimestamp(
-                  resolveOrderPlacedAt(a as any) || resolveOrderUpdatedAt(a as any),
-                )?.getTime() || 0;
-	            const bTime =
-                parseBackendTimestamp(
-                  resolveOrderPlacedAt(b as any) || resolveOrderUpdatedAt(b as any),
-                )?.getTime() || 0;
+	            const aTime = resolveOrderSortTimeMs(a as any);
+	            const bTime = resolveOrderSortTimeMs(b as any);
 	            const safeA = Number.isFinite(aTime) ? aTime : 0;
 	            const safeB = Number.isFinite(bTime) ? bTime : 0;
 	            return safeB - safeA;
@@ -18057,11 +18351,13 @@ function MainApp() {
     const isSalesRoleDashboard = showSalesDashboardTabs || isAdmin(user?.role);
     const isLegacyAdminSalesView = isAdmin(user?.role);
     const isSalesCrmActive = salesDashboardTab === "crm";
+    const isCrmVisibleForRole = crmEnabled || isTestRep(user?.role);
     const isSalesYourSalesActive = salesDashboardTab === "your_sales";
     const isSalesDoctorReferralsManualActive =
       salesDashboardTab === "doctor_referrals_manual";
     const isSalesSettingsActive = salesDashboardTab === "settings";
     const isCrmSectionActive =
+      isCrmVisibleForRole &&
       isSalesRoleDashboard &&
       (isLegacyAdminSalesView || (showSalesDashboardTabs && isSalesCrmActive));
     const isYourSalesSectionActive =
@@ -18199,8 +18495,8 @@ function MainApp() {
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
 	                      "Unknown doctor";
-	                    const orderPlacedAt =
-	                      resolveOrderPlacedAt(order as any);
+                    const orderPlacedAt =
+                      formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
 	                      (order as any)?.grandTotal ?? order.total ?? 0,
 	                    );
@@ -18286,6 +18582,77 @@ function MainApp() {
 	        </div>
 	      </div>
 	    );
+    const renderSalesRepHandDeliveryCard = () => {
+      if (!showSalesDashboardTabs) return null;
+      if (!isCurrentSalesRepLocalJurisdiction) return null;
+      return (
+        <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
+          <div className="border-b border-slate-200/60 pb-3">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1 pr-2">
+              <h4 className="text-base font-semibold text-slate-900">Hand Delivery</h4>
+              <p className="text-sm text-slate-600">
+                Doctors assigned to you. Check to enable hand delivery + free shipping messaging.
+              </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
+                disabled={salesRepHandDeliveryLoading}
+                className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
+                title="Refresh hand delivery doctors"
+              >
+                {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
+              </Button>
+            </div>
+          </div>
+
+          {salesRepHandDeliveryError && (
+            <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-4 py-2">
+              {salesRepHandDeliveryError}
+            </div>
+          )}
+
+          {salesRepHandDeliveryLoading ? (
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading doctors…</div>
+          ) : salesRepHandDeliveryDoctors.length === 0 ? (
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">
+              No assigned doctors found.
+            </div>
+          ) : (
+            <div className="pt-4 sales-rep-table-wrapper admin-dashboard-list flex flex-col gap-2">
+              {salesRepHandDeliveryDoctors.map((entry) => {
+                const saving = Boolean(salesRepHandDeliverySavingByUserId[entry.userId]);
+                return (
+                  <label
+                    key={entry.userId}
+                    className="inline-flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-sm text-slate-800"
+                  >
+                    <span className="min-w-0 truncate">
+                      {entry.name}
+                      {entry.email ? (
+                        <span className="ml-2 text-xs text-slate-500">{entry.email}</span>
+                      ) : null}
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="brand-checkbox"
+                      checked={entry.handDelivered}
+                      disabled={saving}
+                      onChange={(event) =>
+                        void handleSalesRepDoctorHandDeliveryToggle(entry, event.target.checked)
+                      }
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
 		
 		    return (
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
@@ -18400,10 +18767,8 @@ function MainApp() {
                                 decoding="async"
                               />
                               <p className="text-slate-800 hand-delivery-note-text">
-                                Hand delivery is communicated to your clients during checkout.
-                                Ensure to deliver their order when it is ready. Coordinate the
-                                shipment of their order if you are unable to hand deliver (we
-                                will ship free of charge for local clients).
+                                You can configure which clients will receive hand delivery
+                                communications at checkout by going to your settings tab.
                               </p>
                             </div>
                           </div>
@@ -18433,6 +18798,7 @@ function MainApp() {
 		                        if (
 		                          ![
 		                            "sales_rep",
+                                    "test_rep",
 		                            "salesrep",
 		                            "rep",
 		                            "sales_lead",
@@ -18524,7 +18890,7 @@ function MainApp() {
 		                                className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 		                              >
 		                                <option value="all">All</option>
-		                                <option value="sales_rep">Sales Rep</option>
+		                                <option value="sales_rep">Sales / Test Rep</option>
 		                                <option value="doctor">Doctors</option>
 		                                <option value="test_doctor">Test doctors</option>
 		                              </select>
@@ -18594,7 +18960,7 @@ function MainApp() {
 		                              } as React.CSSProperties,
 		                            };
 		                          }
-		                          if (role === "sales_rep" || role === "salesrep" || role === "rep") {
+		                          if (role === "sales_rep" || role === "test_rep" || role === "salesrep" || role === "rep") {
 		                            return {
 		                              label: "Sales Rep",
 		                              style: {
@@ -18731,7 +19097,7 @@ function MainApp() {
 		          {isSalesLead(user?.role) && showSalesDashboardTabs && (
 		            <div className="mt-6">
 		              <div className="sales-rep-leads-card sales-rep-combined-card">
-		                <div className="flex flex-col gap-3 mb-4">
+		                <div className="flex flex-col gap-3">
 		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
 			                    <div className="min-w-0">
 			                      <h3 className="text-lg font-semibold text-slate-900">
@@ -19020,7 +19386,9 @@ function MainApp() {
                                 <span className="inline-flex h-5 w-5 items-center justify-center">
                                   <tab.Icon className="h-5 w-5" />
                                 </span>
-                                <span className="inline-flex items-center">{tab.label}</span>
+                                <span className="inline-flex items-center">
+                                  {tab.id === "crm" ? "CRM In-Development" : tab.label}
+                                </span>
                               </span>
                             </button>
                           );
@@ -19043,11 +19411,14 @@ function MainApp() {
                   <div className="relative w-full">
                     <div
                       className="w-full account-tab-scroll-container"
-                      ref={salesDashboardTabsContainerRef}
+                      ref={setSalesDashboardTabsContainerRef}
                       onScroll={updateSalesDashboardTabIndicator}
                     >
                       <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
                         {salesDashboardTabs.map((tab) => {
+                          if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
+                            return null;
+                          }
                           const isActive = salesDashboardTab === tab.id;
                           return (
                             <button
@@ -19079,9 +19450,9 @@ function MainApp() {
                       aria-hidden="true"
                       className="account-tab-underline-indicator"
                       style={{
-                        left: salesDashboardTabIndicator.left,
-                        width: salesDashboardTabIndicator.width,
-                        opacity: salesDashboardTabIndicator.opacity,
+                        left: salesDashboardIndicatorLeft,
+                        width: salesDashboardIndicatorWidth,
+                        opacity: salesDashboardIndicatorOpacity,
                       }}
                     />
                   </div>
@@ -19365,6 +19736,38 @@ function MainApp() {
                           </span>
                         </label>
                       </div>
+
+                      <div className="border-b border-slate-200/60 py-4 last:border-b-0">
+                        <label
+                          className={`flex items-start gap-3 ${isAdmin(user.role) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label="Enable CRM for sales users"
+                            checked={crmEnabled}
+                            onChange={(e) => handleCrmToggle(e.target.checked)}
+                            className="brand-checkbox mt-0.5"
+                            disabled={!isAdmin(user.role) || settingsSaving.crm}
+                          />
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
+                              <span>CRM tab (sales users)</span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                {"\u00A0"}(
+                                {settingsSaving.crm
+                                  ? "Saving…"
+                                  : crmEnabled
+                                    ? "Enabled"
+                                    : "Disabled"}
+                                )
+                              </span>
+                            </span>
+                            <span className="block text-xs text-slate-600">
+                              When disabled, only users with role test_rep can access CRM.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
 		
 		                  <div className="border-b border-slate-200/60 py-4 last:border-b-0">
 		                    <label
@@ -19549,7 +19952,7 @@ function MainApp() {
 	                )}
 
 	                {adminDashboardTab === "here_now" && (
-	                <div className="sales-rep-leads-card sales-rep-combined-card space-y-4">
+	                <div className="sales-rep-leads-card sales-rep-combined-card">
                   <div>
                     <h4 className="text-base font-semibold text-slate-900">
                       Live users
@@ -19577,10 +19980,8 @@ function MainApp() {
                           decoding="async"
                         />
                         <p className="text-slate-800 hand-delivery-note-text">
-                          Hand delivery is communicated to your clients during checkout.
-                          Ensure to deliver their order when it is ready. Coordinate the
-                          shipment of their order if you are unable to hand deliver (we
-                          will ship free of charge for local clients).
+                          You can configure which clients will receive hand delivery
+                          communications at checkout by going to your settings tab.
                         </p>
                       </div>
                     </div>
@@ -19708,7 +20109,7 @@ function MainApp() {
 		                      const role = String(entry?.role || "").toLowerCase().trim();
 		                      if (adminLiveUsersRoleFilter !== "all") {
 		                        if (adminLiveUsersRoleFilter === "sales_rep") {
-		                          if (!["sales_rep", "salesrep", "rep"].includes(role)) {
+		                          if (!["sales_rep", "test_rep", "salesrep", "rep"].includes(role)) {
 	                            return false;
 	                          }
 	                        } else if (adminLiveUsersRoleFilter === "sales_lead") {
@@ -19803,7 +20204,7 @@ function MainApp() {
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
-	                              <option value="sales_rep">Sales Rep</option>
+	                              <option value="sales_rep">Sales / Test Rep</option>
 	                              <option value="sales_lead">Sales Lead</option>
 	                              <option value="doctor">Doctors</option>
 	                              <option value="test_doctor">Test doctors</option>
@@ -19843,7 +20244,7 @@ function MainApp() {
 		                                    } as React.CSSProperties,
 		                                  };
 		                                }
-				                                if (role === "sales_rep" || role === "salesrep") {
+				                                if (role === "sales_rep" || role === "test_rep" || role === "salesrep" || role === "rep") {
 				                                  return {
 				                                    label: "Sales Rep",
 				                                    style: {
@@ -20191,7 +20592,7 @@ function MainApp() {
 
 					          {isAdmin(user?.role) && adminDashboardTab === "admin_report" && (
 						            <div className="sales-rep-leads-card sales-rep-combined-card admin-tab-panel-enter">
-						              <div className="flex flex-col gap-3 mb-4">
+						              <div className="flex flex-col gap-3">
 						                <div className="sales-rep-header-row flex w-full flex-col gap-3">
 						                  <div className="min-w-0">
 						                    <h3 className="text-lg font-semibold text-slate-900">
@@ -20292,7 +20693,7 @@ function MainApp() {
 					              <div className="mt-8 space-y-6">
 
 				                <div className="sales-rep-leads-card sales-rep-combined-card">
-				                  <div className="flex flex-col gap-3 mb-4">
+				                  <div className="flex flex-col gap-3">
 	                <div className="sales-rep-header-row flex w-full flex-col gap-3">
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-slate-900">
@@ -20474,7 +20875,7 @@ function MainApp() {
             </div>
 
             <div className="sales-rep-leads-card sales-rep-combined-card">
-              <div className="flex flex-col gap-3 mb-4">
+              <div className="flex flex-col gap-3">
                 <div className="sales-rep-header-row flex w-full flex-col gap-3">
 	                  <div className="min-w-0">
 	                    <h3 className="text-lg font-semibold text-slate-900">Taxes by State</h3>
@@ -21488,7 +21889,7 @@ function MainApp() {
                           >
                           {bucket.orders.map((order) => {
                             const placedDate =
-                              resolveOrderPlacedAt(order as any);
+                              formatOrderPlacedAtForLocalDisplay(order as any);
                             const isShipped =
                               ((order as any)?.shippingEstimate?.status ||
                                 (order as any)?.shipping?.status ||
@@ -22842,8 +23243,9 @@ function MainApp() {
 	          </div>
 	          )}
 	          {showSalesDashboardTabs && isSalesSettingsActive && (
-	            <div>
+	            <div className="space-y-4">
 	              {renderEmailControlsCard()}
+                {renderSalesRepHandDeliveryCard()}
 	            </div>
 	          )}
 	        </div>
@@ -25148,7 +25550,11 @@ function MainApp() {
         customerEmail={isDelegateMode ? null : user?.email || null}
         customerName={isDelegateMode ? null : user?.name || null}
 	        salesRepName={isDelegateMode ? null : user?.salesRep?.name || null}
-	        salesRepJurisdiction={isDelegateMode ? null : user?.salesRep?.jurisdiction || null}
+          handDelivered={
+            isDelegateMode
+              ? false
+              : Boolean((user as any)?.handDelivered || (user as any)?.hand_delivered)
+          }
 	        defaultShippingAddress={
 	          isDelegateMode ? null : (proposalShippingAddress ?? checkoutDefaultShippingAddress)
 	        }
@@ -26373,7 +26779,7 @@ function MainApp() {
                       </p>
                       <p className="text-sm font-semibold text-slate-900">
                         {salesDoctorDetail.lastOrderDate
-                          ? salesDoctorDetail.lastOrderDate
+                          ? formatOrderPlacedAtForLocalDisplay({ createdAt: salesDoctorDetail.lastOrderDate })
                           : "Unavailable"}
                       </p>
                     </div>
@@ -26486,7 +26892,7 @@ function MainApp() {
                           const delegateOrderLabel =
                             normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
                             normalizeDelegateOrderLabel((order as any)?.as_delegate);
-                          const placedAt = resolveOrderPlacedAt(order as any);
+                          const placedAt = formatOrderPlacedAtForLocalDisplay(order as any);
                           return (
 	                        <button
 	                          key={order.id}
@@ -26984,7 +27390,7 @@ function MainApp() {
                 };
 
                 const placedDate =
-                  resolveOrderPlacedAt(salesOrderDetail as any);
+                  formatOrderPlacedAtForLocalDisplay(salesOrderDetail as any);
                 const normalizedStatus = String(
                   (shipping as any)?.status || salesOrderDetail.status || "",
                 )

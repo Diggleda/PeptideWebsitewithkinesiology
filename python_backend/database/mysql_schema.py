@@ -12,6 +12,7 @@ CREATE_TABLE_STATEMENTS = [
         password VARCHAR(255) NOT NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'doctor',
         status VARCHAR(32) NOT NULL DEFAULT 'active',
+        hand_delivered TINYINT(1) NOT NULL DEFAULT 0,
         is_online TINYINT(1) NOT NULL DEFAULT 0,
         session_id VARCHAR(64) NULL,
         last_seen_at DATETIME NULL,
@@ -316,6 +317,7 @@ def ensure_schema() -> None:
 
     # Apply lightweight schema evolutions without breaking existing tables
     migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_delivered TINYINT(1) NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url LONGTEXT NULL",
         "ALTER TABLE users MODIFY COLUMN profile_image_url LONGTEXT NULL",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS downloads LONGTEXT NULL",
@@ -437,6 +439,10 @@ def ensure_schema() -> None:
 
     # Ensure cross-device session invalidation support is available.
     try:
+        if not _column_exists("users", "hand_delivered"):
+            mysql_client.execute(
+                "ALTER TABLE users ADD COLUMN hand_delivered TINYINT(1) NOT NULL DEFAULT 0"
+            )
         if not _column_exists("users", "session_id"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN session_id VARCHAR(64) NULL")
     except Exception:

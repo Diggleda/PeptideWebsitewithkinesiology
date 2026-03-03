@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
   patientLinksEnabled: false,
   peptideForumEnabled: true,
   researchDashboardEnabled: false,
+  crmEnabled: true,
   stripeMode: null, // null = follow env
   salesBySalesRepCsvDownloadedAt: null, // ISO timestamp (admin report)
   salesLeadSalesBySalesRepCsvDownloadedAt: null, // ISO timestamp (sales lead report)
@@ -45,6 +46,7 @@ const normalizeSettings = (settings = {}) => {
   merged.researchDashboardEnabled = Boolean(
     raw.researchDashboardEnabled ?? DEFAULT_SETTINGS.researchDashboardEnabled,
   );
+  merged.crmEnabled = Boolean(raw.crmEnabled ?? DEFAULT_SETTINGS.crmEnabled);
   const stripeMode = typeof raw.stripeMode === 'string'
     ? raw.stripeMode.toLowerCase().trim()
     : null;
@@ -168,6 +170,11 @@ const getResearchDashboardEnabled = async () => {
   return Boolean(settings.researchDashboardEnabled);
 };
 
+const getCrmEnabled = async () => {
+  const settings = await getSettings();
+  return Boolean(settings.crmEnabled);
+};
+
 const setShopEnabled = async (enabled) => {
   const base = await getSettings();
   const next = normalizeSettings({ ...(base || loadFromStore()), shopEnabled: Boolean(enabled) });
@@ -227,6 +234,22 @@ const setResearchDashboardEnabled = async (enabled) => {
   }
   persistToStore(next);
   return Boolean(next.researchDashboardEnabled);
+};
+
+const setCrmEnabled = async (enabled) => {
+  const base = await getSettings();
+  const next = normalizeSettings({
+    ...(base || loadFromStore()),
+    crmEnabled: Boolean(enabled),
+  });
+  if (mysqlClient.isEnabled()) {
+    await persistToSql(next);
+    const confirmed = (await loadFromSql()) || next;
+    persistToStore(confirmed);
+    return Boolean(confirmed.crmEnabled);
+  }
+  persistToStore(next);
+  return Boolean(next.crmEnabled);
 };
 
 const resolveStripeMode = (settings) => {
@@ -358,6 +381,8 @@ module.exports = {
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
   setResearchDashboardEnabled,
+  getCrmEnabled,
+  setCrmEnabled,
   getStripeMode,
   getStripeModeSync,
   setStripeMode,

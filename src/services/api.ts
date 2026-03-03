@@ -1076,6 +1076,13 @@ export const settingsAPI = {
       credentials: 'include',
     });
   },
+  getCrmStatus: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/crm`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+  },
   getForumStatus: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/forum`, {
       method: 'GET',
@@ -1105,6 +1112,12 @@ export const settingsAPI = {
   },
   updatePatientLinksStatus: async (enabled: boolean) => {
     return fetchWithAuth(`${API_BASE_URL}/settings/patient-links`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+  updateCrmStatus: async (enabled: boolean) => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/crm`, {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     });
@@ -1242,7 +1255,7 @@ export const settingsAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },
@@ -1263,6 +1276,26 @@ export const settingsAPI = {
       {
         method: 'PATCH',
         body: JSON.stringify({ jurisdiction }),
+      },
+    );
+  },
+  getSalesRepHandDeliveryDoctors: async () => {
+    return fetchWithAuth(`${API_BASE_URL}/settings/structure/hand-delivery/doctors`, {
+      method: 'GET',
+    });
+  },
+  updateSalesRepDoctorHandDelivery: async (
+    doctorUserId: string | number,
+    handDelivered: boolean,
+  ) => {
+    if (!doctorUserId) {
+      throw new Error('doctorUserId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/settings/structure/hand-delivery/doctors/${encodeURIComponent(String(doctorUserId))}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ handDelivered: Boolean(handDelivered) }),
       },
     );
   },

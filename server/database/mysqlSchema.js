@@ -264,6 +264,13 @@ const ensureUserColumns = async () => {
         ADD COLUMN receive_client_order_update_emails TINYINT(1) NOT NULL DEFAULT 0
       `,
     },
+    {
+      name: 'hand_delivered',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN hand_delivered TINYINT(1) NOT NULL DEFAULT 0
+      `,
+    },
   ];
 
   for (const column of columns) {

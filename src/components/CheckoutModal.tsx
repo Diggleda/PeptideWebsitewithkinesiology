@@ -207,7 +207,7 @@ interface CheckoutModalProps {
   customerEmail?: string | null;
   customerName?: string | null;
   salesRepName?: string | null;
-  salesRepJurisdiction?: string | null;
+  handDelivered?: boolean;
   defaultShippingAddress?: ShippingAddress | null;
   defaultShippingRate?: ShippingRate | null;
   availableCredits?: number;
@@ -278,7 +278,7 @@ export function CheckoutModal({
   customerEmail,
   customerName,
   salesRepName,
-  salesRepJurisdiction,
+  handDelivered = false,
   onClearCart,
   onPaymentSuccess,
   defaultShippingAddress,
@@ -445,9 +445,8 @@ export function CheckoutModal({
   const shippingCost = selectedShippingRate?.rate
     ? Number(selectedShippingRate.rate) || 0
     : 0;
-  const normalizedSalesRepJurisdiction = String(salesRepJurisdiction || '').trim().toLowerCase();
-  const isLocalSalesRepJurisdiction = !isDelegateCheckoutFlow && normalizedSalesRepJurisdiction === 'local';
-  const effectiveShippingCost = isLocalSalesRepJurisdiction ? 0 : shippingCost;
+  const isDoctorHandDeliveryEnabled = !isDelegateCheckoutFlow && handDelivered === true;
+  const effectiveShippingCost = isDoctorHandDeliveryEnabled ? 0 : shippingCost;
   const localSalesRepDisplayName = String(salesRepName || '').trim() || 'Your sales rep';
   const taxAmount = Math.max(0, typeof taxEstimate?.amount === 'number' ? taxEstimate.amount : 0);
   const normalizedCredits = Math.max(0, Number(availableCredits || 0));
@@ -474,13 +473,13 @@ export function CheckoutModal({
     .join('|');
   const shippingAddressComplete = isAddressComplete(shippingAddress);
   const isPaymentValid = true;
-  const hasSelectedShippingRate = isLocalSalesRepJurisdiction
+  const hasSelectedShippingRate = isDoctorHandDeliveryEnabled
     || Boolean(shippingRates && shippingRates.length > 0 && selectedRateIndex != null);
   const shouldFetchTax = Boolean(
     isOpen
     && (isAuthenticated || allowUnauthenticatedCheckout)
     && hasSelectedShippingRate
-    && !isLocalSalesRepJurisdiction
+    && !isDoctorHandDeliveryEnabled
     && shippingAddressComplete
     && checkoutLineItems.length > 0,
   );
@@ -793,7 +792,7 @@ export function CheckoutModal({
     });
 	    setIsProcessing(true);
 	    try {
-        const handDeliveryRate: ShippingRate | null = isLocalSalesRepJurisdiction
+        const handDeliveryRate: ShippingRate | null = isDoctorHandDeliveryEnabled
           ? {
               carrierId: 'hand_delivery',
               serviceCode: 'hand_delivery',
@@ -805,7 +804,7 @@ export function CheckoutModal({
               addressFingerprint: shippingAddressSignature || null,
             }
           : null;
-        const checkoutShippingRate = isLocalSalesRepJurisdiction
+        const checkoutShippingRate = isDoctorHandDeliveryEnabled
           ? handDeliveryRate
           : selectedShippingRate;
 	      const result = await onCheckout({
@@ -1571,7 +1570,7 @@ export function CheckoutModal({
               {/* Shipping */}
               <div className="space-y-4">
                 <h3>Shipping Address</h3>
-                {isLocalSalesRepJurisdiction && (
+                {isDoctorHandDeliveryEnabled && (
                   <div className="glass-card squircle-md border border-[rgba(95,179,249,0.45)] bg-gradient-to-r from-[rgba(95,179,249,0.16)] via-[rgba(95,179,249,0.10)] to-[rgba(255,255,255,0.75)] px-6 py-5 shadow-[0_14px_30px_-24px_rgba(95,179,249,0.9)]">
                     <p className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-[rgb(58,142,214)]">
                       <span>Local Hand Delivery</span>
@@ -1671,7 +1670,7 @@ export function CheckoutModal({
                       />
                     </div>
                   </div>
-                  {!isLocalSalesRepJurisdiction && (
+                  {!isDoctorHandDeliveryEnabled && (
                     <div className="flex items-center gap-3">
                       <Button
                         type="button"
@@ -1685,7 +1684,7 @@ export function CheckoutModal({
                       {shippingRateError && <p className="text-sm text-red-600">{shippingRateError}</p>}
                     </div>
                   )}
-                  {!isLocalSalesRepJurisdiction && shippingRates && shippingRates.length > 0 && (
+                  {!isDoctorHandDeliveryEnabled && shippingRates && shippingRates.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-semibold text-slate-700">Select a service</h4>
                       <select
@@ -1967,7 +1966,7 @@ export function CheckoutModal({
 	                <div className="flex justify-between text-sm text-slate-700">
 	                  <span>Shipping:</span>
 	                  <span>
-                      {isLocalSalesRepJurisdiction ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
+                      {isDoctorHandDeliveryEnabled ? 'FREE ($0.00)' : `$${displayShippingCost.toFixed(2)}`}
                     </span>
 	                </div>
 	                <div className="flex justify-between text-sm text-slate-700">

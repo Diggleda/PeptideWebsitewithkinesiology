@@ -114,6 +114,11 @@ def _ensure_defaults(user: Dict) -> Dict:
         normalized["receiveClientOrderUpdateEmails"] = _normalize_bool(
             normalized.get("receive_client_order_update_emails")
         )
+    if "handDelivered" in normalized:
+        normalized["handDelivered"] = _normalize_bool(normalized.get("handDelivered"))
+    else:
+        normalized["handDelivered"] = _normalize_bool(normalized.get("hand_delivered"))
+    normalized["hand_delivered"] = 1 if normalized.get("handDelivered") else 0
     return normalized
 
 
@@ -367,6 +372,7 @@ def _mysql_insert(user: Dict) -> Dict:
         """
         INSERT INTO users (
             id, name, email, password, role, status, is_online, sales_rep_id, referrer_doctor_id,
+            hand_delivered,
             session_id,
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
@@ -379,7 +385,7 @@ def _mysql_insert(user: Dict) -> Dict:
             npi_number, npi_last_verified_at, npi_verification, npi_status, npi_check_error
         ) VALUES (
             %(id)s, %(name)s, %(email)s, %(password)s, %(role)s, %(status)s, %(is_online)s, %(sales_rep_id)s,
-            %(referrer_doctor_id)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
+            %(referrer_doctor_id)s, %(hand_delivered)s, %(session_id)s, %(last_seen_at)s, %(last_interaction_at)s,
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
@@ -394,6 +400,7 @@ def _mysql_insert(user: Dict) -> Dict:
             role = VALUES(role),
             status = VALUES(status),
             is_online = VALUES(is_online),
+            hand_delivered = VALUES(hand_delivered),
             sales_rep_id = CASE
                 WHEN sales_rep_id IS NULL OR TRIM(sales_rep_id) = '' THEN VALUES(sales_rep_id)
                 ELSE sales_rep_id
@@ -455,6 +462,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             role = %(role)s,
             status = %(status)s,
             is_online = %(is_online)s,
+            hand_delivered = %(hand_delivered)s,
             sales_rep_id = %(sales_rep_id)s,
             referrer_doctor_id = %(referrer_doctor_id)s,
             session_id = %(session_id)s,
@@ -528,6 +536,7 @@ def _row_to_user(row: Dict) -> Dict:
             "password": row.get("password"),
             "role": row.get("role"),
             "status": row.get("status"),
+            "handDelivered": bool(row.get("hand_delivered")),
             "isOnline": bool(row.get("is_online")),
             "salesRepId": row.get("sales_rep_id"),
             "referrerDoctorId": row.get("referrer_doctor_id"),
@@ -588,6 +597,7 @@ def _to_db_params(user: Dict) -> Dict:
         "role": user.get("role"),
         "status": user.get("status"),
         "is_online": 1 if user.get("isOnline") else 0,
+        "hand_delivered": 1 if _normalize_bool(user.get("handDelivered")) else 0,
         "sales_rep_id": user.get("salesRepId"),
         "referrer_doctor_id": user.get("referrerDoctorId"),
         "session_id": user.get("sessionId"),

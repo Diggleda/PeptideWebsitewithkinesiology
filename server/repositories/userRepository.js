@@ -99,6 +99,7 @@ const syncDirectShippingToSql = (user) => {
     taxExemptReason: user.taxExemptReason || null,
     devCommission: user.devCommission ? 1 : 0,
     receiveClientOrderUpdateEmails: user.receiveClientOrderUpdateEmails ? 1 : 0,
+    handDelivered: user.handDelivered ? 1 : 0,
   };
   logger.info(
     {
@@ -139,7 +140,8 @@ const syncDirectShippingToSql = (user) => {
           tax_exempt_source,
           tax_exempt_reason,
           dev_commission,
-          receive_client_order_update_emails
+          receive_client_order_update_emails,
+          hand_delivered
         ) VALUES (
           :id,
           :email,
@@ -162,7 +164,8 @@ const syncDirectShippingToSql = (user) => {
           :taxExemptSource,
           :taxExemptReason,
           :devCommission,
-          :receiveClientOrderUpdateEmails
+          :receiveClientOrderUpdateEmails,
+          :handDelivered
         )
         ON DUPLICATE KEY UPDATE
           email = COALESCE(VALUES(email), email),
@@ -185,7 +188,8 @@ const syncDirectShippingToSql = (user) => {
           tax_exempt_source = VALUES(tax_exempt_source),
           tax_exempt_reason = VALUES(tax_exempt_reason),
           dev_commission = VALUES(dev_commission),
-          receive_client_order_update_emails = VALUES(receive_client_order_update_emails)
+          receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
+          hand_delivered = VALUES(hand_delivered)
       `,
       params,
     )
@@ -309,6 +313,12 @@ const ensureUserDefaults = (user) => {
       normalized.receiveClientOrderUpdateEmails,
     );
   }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'handDelivered')) {
+    normalized.handDelivered = normalizeBooleanFlag(normalized.hand_delivered);
+  } else {
+    normalized.handDelivered = normalizeBooleanFlag(normalized.handDelivered);
+  }
+  normalized.hand_delivered = normalized.handDelivered ? 1 : 0;
   DIRECT_SHIPPING_FIELDS.forEach((field) => {
     if (!Object.prototype.hasOwnProperty.call(normalized, field)) {
       normalized[field] = null;

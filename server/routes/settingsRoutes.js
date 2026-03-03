@@ -9,6 +9,8 @@ const {
   setPeptideForumEnabled,
   getResearchDashboardEnabled,
   setResearchDashboardEnabled,
+  getCrmEnabled,
+  setCrmEnabled,
   getStripeMode,
   setStripeMode,
   getSalesBySalesRepCsvDownloadedAt,
@@ -24,6 +26,7 @@ const { env } = require('../config/env');
 const mysqlClient = require('../database/mysqlClient');
 const { logger } = require('../config/logger');
 const userRepository = require('../repositories/userRepository');
+const salesRepRepository = require('../repositories/salesRepRepository');
 const salesProspectRepository = require('../repositories/salesProspectRepository');
 const crmRepository = require('../repositories/crmRepository');
 
@@ -41,7 +44,7 @@ const isSalesLead = (role) => {
 };
 const isSalesRep = (role) => {
   const normalized = normalizeRole(role);
-  return normalized === 'sales_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
+  return normalized === 'sales_rep' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead';
 };
 
 const requireAdmin = (req, res, next) => {
@@ -84,6 +87,76 @@ const requireSalesRepOrAdmin = (req, res, next) => {
   }
   req.currentUser = user;
   return next();
+};
+
+const resolveCurrentSalesRepRecord = (user) => {
+  if (!user) return null;
+  const bySalesRepId = user?.salesRepId ? salesRepRepository.findById(String(user.salesRepId)) : null;
+  if (bySalesRepId) return bySalesRepId;
+  const byUserId = user?.id ? salesRepRepository.findById(String(user.id)) : null;
+  if (byUserId) return byUserId;
+  const byEmail = user?.email ? salesRepRepository.findByEmail(String(user.email)) : null;
+  return byEmail || null;
+};
+
+const isDoctorUser = (user) => {
+  const role = normalizeRole(user?.role);
+  return role === 'doctor' || role === 'test_doctor';
+};
+
+const normalizeOwnershipIds = (values = []) =>
+  Array.from(new Set(values
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean)));
+
+const buildDoctorOwnershipSet = async (ownerIds = []) => {
+  const ownedDoctorIds = new Set();
+  const ownedEmails = new Set();
+  try {
+    const prospects = await salesProspectRepository.getAll();
+    const owned = (prospects || []).filter((record) => ownerIds.includes(String(record?.salesRepId || '')));
+    owned
+      .map((record) => String(record?.doctorId || '').trim())
+      .filter(Boolean)
+      .forEach((id) => ownedDoctorIds.add(id));
+    owned
+      .map((record) => String(record?.contactEmail || '').trim().toLowerCase())
+      .filter(Boolean)
+      .forEach((email) => ownedEmails.add(email));
+  } catch (error) {
+    logger.warn({ err: error, ownerIds }, 'Unable to load ownership prospects for hand delivery');
+  }
+  return { ownedDoctorIds, ownedEmails };
+};
+
+const buildSalesRepDoctorEntries = async (ownerIds = []) => {
+  const ownershipIds = normalizeOwnershipIds(ownerIds);
+  const { ownedDoctorIds, ownedEmails } = await buildDoctorOwnershipSet(ownershipIds);
+  return userRepository
+    .getAll()
+    .filter((candidate) => {
+      if (!isDoctorUser(candidate)) return false;
+      const directOwnerId = String(candidate?.salesRepId || '').trim();
+      if (directOwnerId && ownershipIds.includes(directOwnerId)) return true;
+      const doctorId = String(candidate?.id || '').trim();
+      if (doctorId && ownedDoctorIds.has(doctorId)) return true;
+      const email = String(candidate?.email || '').trim().toLowerCase();
+      return Boolean(email && ownedEmails.has(email));
+    })
+    .map((doctor) => ({
+      userId: String(doctor.id),
+      salesRepId: doctor?.salesRepId ? String(doctor.salesRepId) : null,
+      name: String(doctor?.name || doctor?.email || `Doctor ${doctor?.id || ''}`).trim(),
+      email: doctor?.email ? String(doctor.email).trim().toLowerCase() : null,
+      role: normalizeRole(doctor?.role || ''),
+      handDelivered: Boolean(doctor?.handDelivered || doctor?.hand_delivered),
+    }))
+    .sort((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return String(a.email || '').localeCompare(String(b.email || ''));
+    });
 };
 
 const computePresenceSnapshot = ({ user, nowMs, onlineThresholdMs, idleThresholdMs }) => {
@@ -151,6 +224,11 @@ router.get('/research', async (_req, res) => {
   res.json({ researchDashboardEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
+router.get('/crm', async (_req, res) => {
+  const enabled = await getCrmEnabled();
+  res.json({ crmEnabled: enabled, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
 router.put('/shop', authenticate, requireAdmin, async (req, res) => {
   const enabled = Boolean(req.body?.enabled);
   const confirmed = await setShopEnabled(enabled);
@@ -173,6 +251,12 @@ router.put('/research', authenticate, requireAdmin, async (req, res) => {
   const enabled = req.body?.researchDashboardEnabled ?? req.body?.enabled;
   const confirmed = await setResearchDashboardEnabled(Boolean(enabled));
   res.json({ researchDashboardEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
+});
+
+router.put('/crm', authenticate, requireAdmin, async (req, res) => {
+  const enabled = req.body?.crmEnabled ?? req.body?.enabled;
+  const confirmed = await setCrmEnabled(Boolean(enabled));
+  res.json({ crmEnabled: confirmed, mysqlEnabled: mysqlClient.isEnabled() });
 });
 
 router.get('/stripe', async (_req, res) => {
@@ -308,6 +392,164 @@ router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
   });
 });
 
+router.get('/structure/hand-delivery', authenticate, requireAdmin, async (_req, res) => {
+  const users = userRepository.getAll();
+  const rows = (users || [])
+    .filter((candidate) => {
+      const role = normalizeRole(candidate?.role);
+      return role === 'sales_rep' || role === 'rep' || role === 'sales_lead' || role === 'saleslead' || role === 'admin';
+    })
+    .map((candidate) => {
+      const jurisdiction = String(candidate?.jurisdiction || '').trim().toLowerCase() || null;
+      return {
+        userId: String(candidate.id || ''),
+        salesRepId: candidate?.salesRepId ? String(candidate.salesRepId) : null,
+        name: String(candidate?.name || candidate?.email || `User ${candidate?.id || ''}`).trim(),
+        role: normalizeRole(candidate?.role || ''),
+        jurisdiction,
+        isLocal: jurisdiction === 'local',
+      };
+    })
+    .filter((entry) => entry.userId.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return res.json({ users: rows });
+});
+
+router.patch('/structure/hand-delivery/:userId', authenticate, requireAdmin, async (req, res) => {
+  const userId = String(req.params?.userId || '').trim();
+  const requestedJurisdiction = req.body?.jurisdiction;
+  const jurisdiction =
+    typeof requestedJurisdiction === 'string' && requestedJurisdiction.trim().toLowerCase() === 'local'
+      ? 'local'
+      : null;
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+  const existing = userRepository.findById(userId);
+  if (!existing) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  const updated = userRepository.update({
+    ...existing,
+    jurisdiction,
+  });
+
+  const repRecord = resolveCurrentSalesRepRecord(updated || existing);
+  if (repRecord?.id) {
+    salesRepRepository.update({
+      ...repRecord,
+      jurisdiction,
+    });
+  }
+
+  return res.json({
+    entry: {
+      userId: String((updated || existing).id),
+      salesRepId: (updated || existing)?.salesRepId ? String((updated || existing).salesRepId) : null,
+      name: String((updated || existing)?.name || (updated || existing)?.email || `User ${userId}`).trim(),
+      role: normalizeRole((updated || existing)?.role || ''),
+      jurisdiction,
+      isLocal: jurisdiction === 'local',
+    },
+  });
+});
+
+router.get('/structure/hand-delivery/doctors', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  const currentRole = normalizeRole(current?.role);
+  const requestedSalesRepId = typeof req.query?.salesRepId === 'string'
+    ? String(req.query.salesRepId).trim()
+    : '';
+
+  const repRecord = isAdmin(currentRole) && requestedSalesRepId
+    ? salesRepRepository.findById(requestedSalesRepId)
+    : resolveCurrentSalesRepRecord(current);
+  const repJurisdiction = String(repRecord?.jurisdiction || '').trim().toLowerCase();
+  const isLocalJurisdiction = repJurisdiction === 'local';
+
+  const ownerIds = normalizeOwnershipIds([
+    repRecord?.id,
+    repRecord?.salesRepId,
+    current?.salesRepId,
+    current?.id,
+  ]);
+
+  if (!isLocalJurisdiction && !isAdmin(currentRole)) {
+    return res.json({
+      salesRepId: repRecord?.id || current?.id || null,
+      isLocalJurisdiction: false,
+      doctors: [],
+    });
+  }
+
+  const doctors = await buildSalesRepDoctorEntries(ownerIds);
+  return res.json({
+    salesRepId: repRecord?.id || current?.id || null,
+    isLocalJurisdiction,
+    doctors,
+  });
+});
+
+router.patch('/structure/hand-delivery/doctors/:doctorUserId', authenticate, requireSalesRepOrAdmin, async (req, res) => {
+  const doctorUserId = String(req.params?.doctorUserId || '').trim();
+  const requested = req.body?.handDelivered;
+  if (!doctorUserId) {
+    return res.status(400).json({ error: 'doctorUserId is required' });
+  }
+  if (typeof requested !== 'boolean') {
+    return res.status(400).json({ error: 'handDelivered boolean is required' });
+  }
+
+  const current = req.currentUser || userRepository.findById(req.user?.id);
+  const currentRole = normalizeRole(current?.role);
+  const repRecord = resolveCurrentSalesRepRecord(current);
+  const repJurisdiction = String(repRecord?.jurisdiction || '').trim().toLowerCase();
+  const isLocalJurisdiction = repJurisdiction === 'local';
+  if (!isLocalJurisdiction && !isAdmin(currentRole)) {
+    return res.status(403).json({ error: 'Local sales rep jurisdiction required' });
+  }
+
+  const doctor = userRepository.findById(doctorUserId);
+  if (!doctor || !isDoctorUser(doctor)) {
+    return res.status(404).json({ error: 'Doctor not found' });
+  }
+
+  if (!isAdmin(currentRole)) {
+    const ownerIds = normalizeOwnershipIds([
+      repRecord?.id,
+      repRecord?.salesRepId,
+      current?.salesRepId,
+      current?.id,
+    ]);
+    const doctors = await buildSalesRepDoctorEntries(ownerIds);
+    const allowed = doctors.some((entry) => entry.userId === doctorUserId);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Doctor access required' });
+    }
+  }
+
+  const updated = userRepository.update({
+    ...doctor,
+    handDelivered: requested,
+    hand_delivered: requested ? 1 : 0,
+  });
+  if (!updated) {
+    return res.status(500).json({ error: 'Unable to update doctor hand delivery' });
+  }
+
+  return res.json({
+    entry: {
+      userId: String(updated.id),
+      salesRepId: updated?.salesRepId ? String(updated.salesRepId) : null,
+      name: String(updated?.name || updated?.email || `Doctor ${updated?.id || ''}`).trim(),
+      email: updated?.email ? String(updated.email).trim().toLowerCase() : null,
+      role: normalizeRole(updated?.role || ''),
+      handDelivered: Boolean(updated?.handDelivered || updated?.hand_delivered),
+    },
+  });
+});
+
 const parseActivityWindow = (raw) => {
   const normalized = String(raw || '').trim().toLowerCase();
   if (normalized === 'hour' || normalized === '1h' || normalized === 'last_hour') return 'hour';
@@ -379,6 +621,98 @@ const fallbackLiveUsers = [
     role: 'doctor',
   },
 ];
+
+const buildLiveUsersPayload = () => {
+  const nowMs = Date.now();
+  const onlineThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_ONLINE_THRESHOLD_MINUTES, 45),
+    1,
+    24 * 60,
+  );
+  const idleThresholdMinutes = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_IDLE_THRESHOLD_MINUTES, 5),
+    1,
+    12 * 60,
+  );
+  const pseudoLiveEnabled = String(
+    process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS || 'false',
+  ).toLowerCase() === 'true';
+  const pseudoLiveCount = clampNumber(
+    parseNumber(process.env.USER_ACTIVITY_PSEUDO_LIVE_USERS_COUNT, 4),
+    1,
+    12,
+  );
+  const onlineThresholdMs = onlineThresholdMinutes * 60 * 1000;
+  const idleThresholdMs = idleThresholdMinutes * 60 * 1000;
+
+  const normalized = userRepository.getAll().map((user) => {
+    const snapshot = computePresenceSnapshot({
+      user,
+      nowMs,
+      onlineThresholdMs,
+      idleThresholdMs,
+    });
+    return {
+      id: user.id,
+      name: user.name || null,
+      email: user.email || null,
+      role: normalizeUserRole(user.role),
+      profileImageUrl: user.profileImageUrl || null,
+      ...snapshot,
+    };
+  });
+
+  let liveUsers = normalized.filter((user) => user.isOnline);
+  if (pseudoLiveEnabled && liveUsers.length < pseudoLiveCount) {
+    const liveIds = new Set(liveUsers.map((user) => user.id));
+    const liveEmails = new Set(
+      liveUsers.map((user) => user.email).filter((email) => email),
+    );
+    const needed = Math.max(0, pseudoLiveCount - liveUsers.length);
+    const extras = fallbackLiveUsers
+      .filter((entry) => !liveIds.has(entry.id) && !liveEmails.has(entry.email))
+      .slice(0, needed)
+      .map((entry, index) => ({
+        id: entry.id,
+        name: entry.name || null,
+        email: entry.email || null,
+        role: normalizeUserRole(entry.role),
+        isOnline: true,
+        isIdle: (liveUsers.length + index) % 3 === 0,
+        isSimulated: true,
+        lastLoginAt: new Date(nowMs - (index + 1) * 12 * 60 * 1000).toISOString(),
+        lastSeenAt: null,
+        lastInteractionAt: null,
+        idleMinutes: null,
+        onlineMinutes: null,
+        profileImageUrl: null,
+      }));
+    if (extras.length > 0) {
+      liveUsers = [...liveUsers, ...extras];
+    }
+  }
+
+  liveUsers = liveUsers.sort((a, b) =>
+    String(a?.name || a?.email || a?.id || '')
+      .toLowerCase()
+      .localeCompare(String(b?.name || b?.email || b?.id || '').toLowerCase()),
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    users: liveUsers,
+    liveUsers,
+    total: liveUsers.length,
+  };
+};
+
+router.get('/live-users', authenticate, requireAdminOrSalesLead, async (_req, res) => {
+  res.json(buildLiveUsersPayload());
+});
+
+router.get('/live-users/longpoll', authenticate, requireAdminOrSalesLead, async (_req, res) => {
+  res.json(buildLiveUsersPayload());
+});
 
 router.get('/live-clients', authenticate, requireSalesRepOrAdmin, async (req, res) => {
   const nowMs = Date.now();

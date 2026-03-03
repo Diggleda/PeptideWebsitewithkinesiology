@@ -59,6 +59,7 @@ def _public_user_profile(user: dict) -> dict:
         "email": user.get("email") or None,
         "role": user.get("role") or None,
         "status": user.get("status") or None,
+        "handDelivered": bool(user.get("handDelivered")) or bool(user.get("hand_delivered")),
         "isOnline": bool(user.get("isOnline")),
         "lastLoginAt": user.get("lastLoginAt") or None,
         "createdAt": user.get("createdAt") or None,
@@ -89,11 +90,18 @@ def _is_admin_role(role: str) -> bool:
 
 def _is_sales_rep_role(role: str) -> bool:
     normalized = _normalize_role(role)
-    return normalized in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead")
+    return normalized in ("sales_rep", "test_rep", "rep", "sales_lead", "saleslead", "sales-lead")
 
 def _is_sales_lead_role(role: str) -> bool:
     normalized = _normalize_role(role)
     return normalized in ("sales_lead", "saleslead", "sales-lead")
+
+def _require_sales_rep_or_admin():
+    role = _normalize_role((getattr(g, "current_user", None) or {}).get("role"))
+    if not (_is_admin_role(role) or _is_sales_rep_role(role)):
+        err = RuntimeError("Sales rep access required")
+        setattr(err, "status", 403)
+        raise err
 
 
 def _normalize_hand_delivery_role(role: object) -> str:
@@ -171,6 +179,90 @@ def _serialize_hand_delivery_entry(user: dict, rep: dict | None) -> dict:
         "jurisdiction": "local" if is_local else jurisdiction,
         "isLocal": is_local,
     }
+
+def _resolve_current_sales_rep_record(current_user: dict) -> dict | None:
+    try:
+        reps = sales_rep_repository.get_all() or []
+    except Exception:
+        reps = []
+    by_id, by_legacy_user_id, by_email = _build_sales_rep_indexes(reps)
+    return _resolve_sales_rep_for_user(
+        current_user or {},
+        by_id=by_id,
+        by_legacy_user_id=by_legacy_user_id,
+        by_email=by_email,
+    )
+
+def _require_local_jurisdiction_for_sales_rep(current_user: dict) -> None:
+    role = _normalize_role((current_user or {}).get("role"))
+    if _is_admin_role(role):
+        return
+    rep = _resolve_current_sales_rep_record(current_user or {})
+    jurisdiction = str((rep or {}).get("jurisdiction") or "").strip().lower()
+    if jurisdiction != "local":
+        err = RuntimeError("Sales rep local jurisdiction required")
+        setattr(err, "status", 403)
+        raise err
+
+def _is_doctor_role(role: object) -> bool:
+    normalized = _normalize_role(role)
+    return normalized in ("doctor", "test_doctor")
+
+def _build_hand_delivery_doctor_entries(owner_ids: set[str]) -> list[dict]:
+    normalized_owner_ids = {str(value).strip() for value in (owner_ids or set()) if str(value).strip()}
+    if not normalized_owner_ids:
+        return []
+
+    try:
+        prospects = sales_prospect_repository.get_all() or []
+    except Exception:
+        prospects = []
+
+    doctor_id_set = {
+        str(record.get("doctorId") or record.get("doctor_id") or "").strip()
+        for record in prospects
+        if isinstance(record, dict) and str(record.get("salesRepId") or record.get("sales_rep_id") or "").strip() in normalized_owner_ids
+    }
+    doctor_id_set = {value for value in doctor_id_set if value}
+
+    email_set = {
+        str(record.get("contactEmail") or record.get("contact_email") or "").strip().lower()
+        for record in prospects
+        if isinstance(record, dict) and str(record.get("salesRepId") or record.get("sales_rep_id") or "").strip() in normalized_owner_ids
+    }
+    email_set = {value for value in email_set if value and "@" in value}
+
+    users = user_repository.get_all() or []
+    entries: list[dict] = []
+    for user in users:
+        if not isinstance(user, dict):
+            continue
+        if not _is_doctor_role(user.get("role")):
+            continue
+        user_id = str(user.get("id") or "").strip()
+        user_email = str(user.get("email") or "").strip().lower()
+        direct_owner_id = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+        if not (
+            (direct_owner_id and direct_owner_id in normalized_owner_ids)
+            or (user_id and user_id in doctor_id_set)
+            or (user_email and user_email in email_set)
+        ):
+            continue
+        entries.append(
+            {
+                "userId": user_id,
+                "salesRepId": direct_owner_id or None,
+                "name": str(user.get("name") or "").strip()
+                or str(user.get("email") or "").strip()
+                or (user_id or "Doctor"),
+                "email": user_email or None,
+                "role": _normalize_role(user.get("role") or ""),
+                "handDelivered": bool(user.get("handDelivered")) or bool(user.get("hand_delivered")),
+            }
+        )
+
+    entries.sort(key=lambda row: (str(row.get("name") or "").lower(), str(row.get("email") or "")))
+    return entries
 
 def _compute_allowed_sales_rep_ids(
     sales_rep_id: str,
@@ -590,6 +682,16 @@ def get_patient_links():
 
     return handle_action(action)
 
+@blueprint.get("/crm")
+def get_crm():
+    def action():
+        settings = settings_service.get_settings()
+        return {
+            "crmEnabled": bool(settings.get("crmEnabled", True)),
+        }
+
+    return handle_action(action)
+
 
 @blueprint.put("/shop")
 @require_auth
@@ -649,6 +751,20 @@ def update_patient_links():
         updated = settings_service.update_settings({"patientLinksEnabled": enabled})
         return {
             "patientLinksEnabled": bool(updated.get("patientLinksEnabled", False)),
+        }
+
+    return handle_action(action)
+
+@blueprint.put("/crm")
+@require_auth
+def update_crm():
+    def action():
+        _require_admin()
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", False))
+        updated = settings_service.update_settings({"crmEnabled": enabled})
+        return {
+            "crmEnabled": bool(updated.get("crmEnabled", True)),
         }
 
     return handle_action(action)
@@ -1133,6 +1249,97 @@ def update_hand_delivery_jurisdiction(user_id: str):
         return {
             "entry": _serialize_hand_delivery_entry(user, updated_rep),
         }
+
+    return handle_action(action)
+
+
+@blueprint.get("/structure/hand-delivery/doctors")
+@require_auth
+def get_hand_delivery_doctors():
+    def action():
+        _require_sales_rep_or_admin()
+        current_user = getattr(g, "current_user", None) or {}
+        _require_local_jurisdiction_for_sales_rep(current_user)
+        base_owner_id = str(current_user.get("salesRepId") or current_user.get("sales_rep_id") or current_user.get("id") or "").strip()
+        owner_ids = _compute_allowed_sales_rep_ids(base_owner_id) if base_owner_id else set()
+        if current_user.get("id"):
+            owner_ids.add(str(current_user.get("id")))
+        entries = _build_hand_delivery_doctor_entries(owner_ids)
+        return {
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "doctors": entries,
+            "total": len(entries),
+        }
+
+    return handle_action(action)
+
+
+@blueprint.patch("/structure/hand-delivery/doctors/<doctor_user_id>")
+@require_auth
+def update_hand_delivery_doctor(doctor_user_id: str):
+    def action():
+        _require_sales_rep_or_admin()
+        current_user = getattr(g, "current_user", None) or {}
+        role = _normalize_role(current_user.get("role"))
+        _require_local_jurisdiction_for_sales_rep(current_user)
+
+        target_id = str(doctor_user_id or "").strip()
+        if not target_id:
+            err = RuntimeError("doctor_user_id is required")
+            setattr(err, "status", 400)
+            raise err
+
+        payload = request.get_json(silent=True) or {}
+        requested = payload.get("handDelivered")
+        if type(requested) is not bool:
+            err = RuntimeError("handDelivered boolean is required")
+            setattr(err, "status", 400)
+            raise err
+
+        doctor = user_repository.find_by_id(target_id)
+        if not doctor:
+            err = RuntimeError("User not found")
+            setattr(err, "status", 404)
+            raise err
+        if not _is_doctor_role(doctor.get("role")):
+            err = RuntimeError("Doctor access required")
+            setattr(err, "status", 403)
+            raise err
+
+        if not _is_admin_role(role):
+            base_owner_id = str(current_user.get("salesRepId") or current_user.get("sales_rep_id") or current_user.get("id") or "").strip()
+            owner_ids = _compute_allowed_sales_rep_ids(base_owner_id) if base_owner_id else set()
+            if current_user.get("id"):
+                owner_ids.add(str(current_user.get("id")))
+            allowed_doctors = _build_hand_delivery_doctor_entries(owner_ids)
+            if not any(str(entry.get("userId") or "") == target_id for entry in allowed_doctors):
+                err = RuntimeError("Not authorized to edit this user")
+                setattr(err, "status", 403)
+                raise err
+
+        updated = user_repository.update(
+            {
+                **doctor,
+                "handDelivered": requested,
+                "hand_delivered": 1 if requested else 0,
+            }
+        )
+        if not updated:
+            err = RuntimeError("Unable to update doctor hand delivery")
+            setattr(err, "status", 500)
+            raise err
+
+        entry = {
+            "userId": str(updated.get("id") or "").strip(),
+            "salesRepId": str(updated.get("salesRepId") or updated.get("sales_rep_id") or "").strip() or None,
+            "name": str(updated.get("name") or "").strip()
+            or str(updated.get("email") or "").strip()
+            or f"Doctor {str(updated.get('id') or '')}",
+            "email": str(updated.get("email") or "").strip().lower() or None,
+            "role": _normalize_role(updated.get("role") or ""),
+            "handDelivered": bool(updated.get("handDelivered")) or bool(updated.get("hand_delivered")),
+        }
+        return {"entry": entry}
 
     return handle_action(action)
 

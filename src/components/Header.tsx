@@ -24,7 +24,7 @@ const isSalesLead = (role?: string | null) => {
 };
 const isRep = (role?: string | null) => {
   const normalized = normalizeRole(role);
-  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead' || normalized === 'sales-lead');
+  return normalized !== 'admin' && (normalized === 'sales_rep' || normalized === 'test_rep' || normalized === 'rep' || normalized === 'sales_lead' || normalized === 'saleslead' || normalized === 'sales-lead');
 };
 const isDoctorRole = (role?: string | null) => {
   const normalized = normalizeRole(role);
