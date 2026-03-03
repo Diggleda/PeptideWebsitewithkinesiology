@@ -874,17 +874,6 @@ def create_order(
         )
 
         should_record_discount_code_use = bool(order.get("discountCode"))
-        if should_record_discount_code_use:
-            cart_quantity = _sum_cart_quantity(order.get("items"))
-            discount_code_repository.reserve_use_once(
-                code=str(order.get("discountCode") or ""),
-                user_id=user_id,
-                user_name=str(user.get("name") or "").strip() or None,
-                order_id=str(order.get("id") or "").strip() or None,
-                enforce_single_use=bool(order.get("discountCodeSingleUsePerUser", True)),
-                items_subtotal=float(order.get("originalItemsSubtotal") or 0.0),
-                quantity=cart_quantity,
-            )
 
     order_repository.insert(order)
     try:
@@ -930,6 +919,20 @@ def create_order(
                 )
             except Exception:
                 pass
+            if should_record_discount_code_use:
+                try:
+                    cart_quantity = _sum_cart_quantity(order.get("items"))
+                    discount_code_repository.reserve_use_once(
+                        code=str(order.get("discountCode") or ""),
+                        user_id=user_id,
+                        user_name=str(user.get("name") or "").strip() or None,
+                        order_id=str(order.get("wooOrderNumber") or order.get("wooOrderId") or "").strip() or None,
+                        enforce_single_use=bool(order.get("discountCodeSingleUsePerUser", True)),
+                        items_subtotal=float(order.get("originalItemsSubtotal") or 0.0),
+                        quantity=cart_quantity,
+                    )
+                except Exception:
+                    logger.error("Failed to record discount code usage", exc_info=True, extra={"orderId": order.get("id")})
         # On successful Woo order creation, finalize referral credit deduction
         if order.get("appliedReferralCredit"):
             try:

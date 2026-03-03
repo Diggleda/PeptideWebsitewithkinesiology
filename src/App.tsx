@@ -16040,7 +16040,9 @@ function MainApp() {
           "Another login with your credentials has forced your logout. If this wasn't you, reset your password.",
         );
       } else if (reason === "token_revoked" || reason === "auth_revoked") {
-        toast.info("Your session ended. Please sign in again.");
+        toast.info(
+          "Our server has had an issue. To keep your account secure, we have logged you out. Please sign in again.",
+        );
       }
 
       handleLogout();

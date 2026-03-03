@@ -85,6 +85,12 @@ def find_by_code(code: str) -> Optional[Dict[str, Any]]:
             parsed = json.loads(value)
         except Exception:
             return {}
+        if isinstance(parsed, list):
+            out_list: Dict[str, Dict[str, Any]] = {}
+            for idx, val in enumerate(parsed):
+                if isinstance(val, str) and val.strip():
+                    out_list[f"entry:{idx}"] = {"label": val.strip(), "subtotal": None, "quantity": None}
+            return out_list
         if not isinstance(parsed, dict):
             return {}
         out: Dict[str, Dict[str, Any]] = {}
@@ -202,8 +208,9 @@ def reserve_use_once(
     quantity: int,
 ) -> Dict[str, Any]:
     """
-    Atomically mark this code as used by `user_id` (once per user).
-    Stores a { userId: { subtotal, quantity } } mapping in `used_by_json`.
+    Atomically mark this code usage.
+    - Single-use codes store { userId: "(name):(wooOrderId)" } for enforcement.
+    - Reusable codes append labels to a JSON array: ["(name):(wooOrderId)", ...]
     """
     if not _using_mysql():
         err = RuntimeError("Discount codes are unavailable (MySQL disabled).")
@@ -250,22 +257,41 @@ def reserve_use_once(
             used_by = json.loads(used_by_raw) if used_by_raw else {}
         except Exception:
             used_by = {}
-        if not isinstance(used_by, dict):
+        if not isinstance(used_by, (dict, list)):
             used_by = {}
 
-        if enforce_single_use and str(user_id) in used_by:
-            err = ValueError("Discount code already used")
-            setattr(err, "status", 400)
-            raise err
+        if enforce_single_use:
+            if not isinstance(used_by, dict):
+                used_by = {}
+            if str(user_id) in used_by:
+                err = ValueError("Discount code already used")
+                setattr(err, "status", 400)
+                raise err
+        else:
+            if isinstance(used_by, dict):
+                # Backfill from legacy object format into append-only list of labels.
+                values: list[str] = []
+                for val in used_by.values():
+                    if isinstance(val, str) and val.strip():
+                        values.append(val.strip())
+                    elif isinstance(val, dict):
+                        label = val.get("label")
+                        if isinstance(label, str) and label.strip():
+                            values.append(label.strip())
+                used_by = values
+            if not isinstance(used_by, list):
+                used_by = []
 
         display_name = str(user_name or "").strip() or str(user_id)
         display_order_id = str(order_id or "").strip() or "unknown"
         entry_value = f"({display_name}):({display_order_id})"
-        entry_key = str(user_id)
-        if not enforce_single_use:
-            # For reusable codes, keep a per-order history instead of overwriting one user key.
-            entry_key = f"{str(user_id)}:{display_order_id}:{int(datetime.now(timezone.utc).timestamp())}"
-        used_by[entry_key] = entry_value
+
+        if enforce_single_use:
+            used_by[str(user_id)] = entry_value
+        else:
+            # Reusable code history as JSON array of labels.
+            used_by.append(entry_value)
+
         if write_cols:
             set_parts = [f"{col} = %({col})s" for col in write_cols]
             set_parts.append("updated_at = %(updated_at)s")
