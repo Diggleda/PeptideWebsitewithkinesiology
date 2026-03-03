@@ -2,7 +2,7 @@
 /**
  * Plugin Name: PepPro Email Overrides
  * Description: Customize BACS/Zelle instructions in WooCommerce emails + enforce PepPro mail identity (optional SMTP).
- * Version: 1.1.6
+ * Version: 1.1.7
  */
 
 if (!defined('ABSPATH')) exit;
@@ -572,6 +572,33 @@ function peppro_email_overrides_add_sales_rep_cc($headers, $email_id, $order, $e
 }
 
 add_filter('woocommerce_email_headers', 'peppro_email_overrides_add_sales_rep_cc', 20, 4);
+
+function peppro_email_overrides_render_discount_summary($order, $sent_to_admin, $plain_text, $email) {
+  if (!$order instanceof WC_Order) return;
+
+  $discount_code = strtoupper(trim((string) $order->get_meta('peppro_discount_code')));
+  $discount_amount_raw = $order->get_meta('peppro_discount_code_amount');
+  $discount_amount = is_numeric($discount_amount_raw) ? (float) $discount_amount_raw : 0.0;
+
+  if ($discount_code === '') return;
+
+  if ($plain_text) {
+    echo "\n";
+    echo sprintf("Discount code used: %s\n", $discount_code);
+    if ($discount_amount > 0) {
+      echo sprintf("Discount applied: -$%0.2f\n", $discount_amount);
+    }
+    return;
+  }
+
+  echo '<table cellspacing="0" cellpadding="6" border="0" style="width:100%;margin:12px 0 0;border:1px solid #e2e8f0;border-radius:8px;">';
+  echo '<tr><th scope="row" style="text-align:left;color:#334155;">Discount code used</th><td style="text-align:right;color:#0f172a;font-weight:600;">' . esc_html($discount_code) . '</td></tr>';
+  if ($discount_amount > 0) {
+    echo '<tr><th scope="row" style="text-align:left;color:#334155;">Discount applied</th><td style="text-align:right;color:#0f172a;">-' . esc_html(wc_price($discount_amount, array('currency' => $order->get_currency()))) . '</td></tr>';
+  }
+  echo '</table>';
+}
+add_action('woocommerce_email_after_order_table', 'peppro_email_overrides_render_discount_summary', 20, 4);
 
 function peppro_bacs_email_instructions($order, $sent_to_admin, $plain_text, $email) {
   if ($sent_to_admin || !$order instanceof WC_Order) return;
