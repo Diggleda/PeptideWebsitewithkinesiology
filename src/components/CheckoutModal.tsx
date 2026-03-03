@@ -468,6 +468,13 @@ export function CheckoutModal({
         .join('|'),
     [checkoutLineItems],
   );
+  const cartCompositionSignature = useMemo(
+    () =>
+      cartItems
+        .map((item) => `${item.id}:${Number(item.quantity) || 0}`)
+        .join('|'),
+    [cartItems],
+  );
   const subtotal = useMemo(
     () => checkoutLineItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [checkoutLineItems],
@@ -589,7 +596,7 @@ export function CheckoutModal({
   useEffect(() => {
     setDiscountCodeApplied(null);
     setDiscountCodeMessage(null);
-  }, [cartLineItemSignature]);
+  }, [cartCompositionSignature]);
 
   const handleApplyDiscountCode = useCallback(async () => {
     const code = discountCodeDraft.trim().toUpperCase();

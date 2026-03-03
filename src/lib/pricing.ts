@@ -61,13 +61,29 @@ export const computeUnitPrice = (
       ) {
         const min = Math.max(0, Number(forcedTierRange.minQuantity) || 0);
         const max = Math.max(min, Number(forcedTierRange.maxQuantity) || min);
-        applicable =
-          [...tiers]
-            .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
-            .find((tier) => {
+        const sortedAsc = [...tiers].sort(
+          (a, b) => (Number(a.minQuantity) || 0) - (Number(b.minQuantity) || 0),
+        );
+        // Anchor forced pricing to the lower bound of the requested band (ex: 11-26 -> quantity 11).
+        // This matches typical tier table semantics where each tier starts at its min quantity.
+        const targetQuantity = min;
+        for (let idx = 0; idx < sortedAsc.length; idx += 1) {
+          const tier = sortedAsc[idx];
+          const tierMin = Number(tier.minQuantity) || 0;
+          const nextTierMin =
+            idx + 1 < sortedAsc.length ? Number(sortedAsc[idx + 1].minQuantity) || 0 : Number.POSITIVE_INFINITY;
+          if (tierMin <= targetQuantity && targetQuantity < nextTierMin) {
+            applicable = tier;
+            break;
+          }
+        }
+        if (!applicable) {
+          applicable =
+            sortedAsc.find((tier) => {
               const tierMin = Number(tier.minQuantity) || 0;
               return tierMin >= min && tierMin <= max;
             }) ?? null;
+        }
       }
       if (!applicable) {
         applicable =
