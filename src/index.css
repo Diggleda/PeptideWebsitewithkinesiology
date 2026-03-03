@@ -5316,7 +5316,7 @@ html {
   top: 50%;
   transform: translateY(-50%);
   pointer-events: none;
-  color: rgba(15, 23, 42, 0.45);
+  color: rgb(95, 179, 249);
   display: inline-flex;
   width: 18px;
   height: 18px;

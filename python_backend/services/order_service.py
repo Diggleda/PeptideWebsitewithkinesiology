@@ -522,6 +522,7 @@ def estimate_order_totals(
     if normalized_discount_code:
         applied = discount_code_service.apply_discount_to_subtotal(
             user_id=user_id,
+            user_role=role,
             code=normalized_discount_code,
             items_subtotal=float(items_total),
             cart_quantity=cart_quantity,
@@ -795,6 +796,7 @@ def create_order(
         if normalized_discount_code:
             applied = discount_code_service.apply_discount_to_subtotal(
                 user_id=user_id,
+                user_role=role,
                 code=normalized_discount_code,
                 items_subtotal=items_subtotal,
                 cart_quantity=cart_quantity,
@@ -803,6 +805,9 @@ def create_order(
             order["discountCode"] = applied.get("code") or normalized_discount_code
             order["discountCodeValue"] = float(applied.get("discountValue") or 0.0)
             order["discountCodeAmount"] = round(max(0.0, discount_code_amount), 2)
+            order["discountCodeSingleUsePerUser"] = bool(applied.get("singleUsePerUser", True))
+            if isinstance(applied.get("pricingOverride"), dict):
+                order["discountCodePricingOverride"] = applied.get("pricingOverride")
 
         effective_items_subtotal = max(0.0, float(items_subtotal) - max(0.0, discount_code_amount))
         # Persist the discounted subtotal as the new items subtotal.
@@ -868,7 +873,10 @@ def create_order(
             2,
         )
 
-        if order.get("discountCode") and float(order.get("discountCodeAmount") or 0) > 0:
+        should_reserve_discount_code = bool(order.get("discountCode")) and bool(
+            order.get("discountCodeSingleUsePerUser", True),
+        )
+        if should_reserve_discount_code:
             cart_quantity = _sum_cart_quantity(order.get("items"))
             discount_code_repository.reserve_use_once(
                 code=str(order.get("discountCode") or ""),

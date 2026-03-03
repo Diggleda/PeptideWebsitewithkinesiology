@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter } from './ui/card';
@@ -63,6 +63,15 @@ const AUTO_OPEN_IMAGE_MAX_ATTEMPTS = (() => {
     return parsed;
   }
   return 10;
+})();
+
+const VISIBLE_VARIANT_RETRY_INTERVAL_MS = (() => {
+  const raw = String((import.meta as any).env?.VITE_VISIBLE_VARIANT_RETRY_INTERVAL_MS || '').trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 1000) {
+    return parsed;
+  }
+  return 4500;
 })();
 
 const prefetchImageOnce = (src: string, timeoutMs: number): Promise<boolean> =>
@@ -200,6 +209,9 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   const [bulkOpen, setBulkOpen] = useState(false);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const variantsLoadTriggeredRef = useRef(false);
+  const variantRetryLastAttemptAtRef = useRef(0);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isCardVisible, setIsCardVisible] = useState(false);
   const userInteractedRef = useRef(false);
   const autoCycleDoneRef = useRef<string | null>(null);
   const autoOpenDoneRef = useRef<string | null>(null);
@@ -350,27 +362,91 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     typeof onEnsureVariants === 'function' &&
     (needsVariants || product.variations.some((variation) => String(variation.id).startsWith('woo-variation-')));
 
-  const triggerVariantLoad = async (options?: { force?: boolean }) => {
-    if (!canLoadVariants) {
+  const triggerVariantLoad = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!canLoadVariants) {
+        return;
+      }
+      const isForce = options?.force === true;
+      if (variantsLoading) {
+        return;
+      }
+      if (!isForce && variantsLoadTriggeredRef.current) {
+        return;
+      }
+      if (!isForce) {
+        variantsLoadTriggeredRef.current = true;
+      }
+      try {
+        setVariantsLoading(true);
+        return await onEnsureVariants(options);
+      } finally {
+        setVariantsLoading(false);
+      }
+    },
+    [canLoadVariants, onEnsureVariants, variantsLoading],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
       return;
     }
-    const isForce = options?.force === true;
-    if (variantsLoading) {
+    const node = cardRef.current;
+    if (!node) {
       return;
     }
-    if (!isForce && variantsLoadTriggeredRef.current) {
+    if (typeof IntersectionObserver !== 'function') {
+      setIsCardVisible(true);
       return;
     }
-    if (!isForce) {
-      variantsLoadTriggeredRef.current = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        setIsCardVisible(Boolean(entry?.isIntersecting));
+      },
+      { root: null, rootMargin: '220px 0px', threshold: 0.01 },
+    );
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const stillNeedsVariants =
+      needsVariants || selectableVariations.length === 0 || !uiVariationId;
+    if (!isCardVisible || !canLoadVariants || !stillNeedsVariants) {
+      return;
     }
-    try {
-      setVariantsLoading(true);
-      return await onEnsureVariants(options);
-    } finally {
-      setVariantsLoading(false);
-    }
-  };
+
+    let cancelled = false;
+    const runAttempt = () => {
+      if (cancelled || variantsLoading) {
+        return;
+      }
+      const now = Date.now();
+      if (now - variantRetryLastAttemptAtRef.current < VISIBLE_VARIANT_RETRY_INTERVAL_MS) {
+        return;
+      }
+      variantRetryLastAttemptAtRef.current = now;
+      void triggerVariantLoad({ force: true });
+    };
+
+    runAttempt();
+    const timer = window.setInterval(runAttempt, VISIBLE_VARIANT_RETRY_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    canLoadVariants,
+    isCardVisible,
+    needsVariants,
+    selectableVariations.length,
+    triggerVariantLoad,
+    uiVariationId,
+    variantsLoading,
+  ]);
 
   const handleVariationChange = (variationId: string) => {
     userInteractedRef.current = true;
@@ -706,6 +782,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   return (
     <>
       <Card
+        ref={cardRef}
         className="group h-full gap-3 overflow-hidden glass-card squircle-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-l-4 border-l-[rgba(95,179,249,0.5)] border-t border-r border-b border-[rgba(255,255,255,0.45)]"
         style={{
           background:

@@ -716,6 +716,36 @@ const resolveSalesOrderShippingStatus = (
   return value ? String(value).trim() || null : null;
 };
 
+const isSalesOrderHandDelivered = (
+  order?: AccountOrderSummary | null,
+): boolean => {
+  if (!order) return false;
+  const candidates = [
+    (order as any)?.handDelivery === true ? "hand_delivery" : "",
+    (order as any)?.facility_pickup === true ? "facility_pickup" : "",
+    (order as any)?.fulfillmentMethod,
+    (order as any)?.fulfillment_method,
+    (order as any)?.shippingService,
+    (order as any)?.shipping_service,
+    (order as any)?.shippingEstimate?.serviceType,
+    (order as any)?.shippingEstimate?.serviceCode,
+    (order as any)?.shippingEstimate?.carrierId,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  return candidates.some((value) =>
+    value === "hand delivery" ||
+    value === "hand delivered" ||
+    value === "hand_delivery" ||
+    value === "local hand delivery" ||
+    value === "local_hand_delivery" ||
+    value === "local_delivery" ||
+    value === "hand-delivery" ||
+    value === "hand-delivered" ||
+    value === "facility_pickup",
+  );
+};
+
 const describeSalesOrderStatus = (
   order?: AccountOrderSummary | null,
 ): string => {
@@ -9963,7 +9993,7 @@ function MainApp() {
       }>,
     [],
   );
-  const isSalesDashboardVisible = isRep(user?.role) || isSalesLead(user?.role);
+  const isSalesDashboardVisible = isRep(user?.role) || isSalesLead(user?.role) || isAdmin(user?.role);
   const salesDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [salesDashboardIndicatorLeft, setSalesDashboardIndicatorLeft] = useState<number>(0);
   const [salesDashboardIndicatorWidth, setSalesDashboardIndicatorWidth] = useState<number>(0);
@@ -18349,9 +18379,8 @@ function MainApp() {
 	    const convertedReferrals = referrals.filter(
 	      (ref) => (ref.status || "").toLowerCase() === "converted",
 	    ).length;
-    const showSalesDashboardTabs = isRep(user?.role) || isSalesLead(user?.role);
-    const isSalesRoleDashboard = showSalesDashboardTabs || isAdmin(user?.role);
-    const isLegacyAdminSalesView = isAdmin(user?.role);
+    const showSalesDashboardTabs =
+      isRep(user?.role) || isSalesLead(user?.role) || isAdmin(user?.role);
     const isSalesCrmActive = salesDashboardTab === "crm";
     const isCrmVisibleForRole = crmEnabled || isTestRep(user?.role);
     const isSalesYourSalesActive = salesDashboardTab === "your_sales";
@@ -18360,26 +18389,23 @@ function MainApp() {
     const isSalesSettingsActive = salesDashboardTab === "settings";
     const isCrmSectionActive =
       isCrmVisibleForRole &&
-      isSalesRoleDashboard &&
-      (isLegacyAdminSalesView || (showSalesDashboardTabs && isSalesCrmActive));
+      showSalesDashboardTabs &&
+      isSalesCrmActive;
     const isYourSalesSectionActive =
-      isSalesRoleDashboard &&
-      (isLegacyAdminSalesView || (showSalesDashboardTabs && isSalesYourSalesActive));
+      showSalesDashboardTabs &&
+      isSalesYourSalesActive;
     const isDoctorReferralsManualSectionActive =
-      isSalesRoleDashboard &&
-      (isLegacyAdminSalesView ||
-        (showSalesDashboardTabs && isSalesDoctorReferralsManualActive));
+      showSalesDashboardTabs &&
+      isSalesDoctorReferralsManualActive;
     const showSalesDashboardGrid =
-      isSalesRoleDashboard &&
-      (isLegacyAdminSalesView ||
-        (showSalesDashboardTabs &&
-          (isSalesYourSalesActive || isSalesDoctorReferralsManualActive)));
+      showSalesDashboardTabs &&
+      (isSalesYourSalesActive || isSalesDoctorReferralsManualActive);
     const showSingleSalesDashboardCard =
       showSalesDashboardTabs &&
       (isSalesYourSalesActive !== isSalesDoctorReferralsManualActive);
     const shouldShowLiveClientsCard =
       showSalesDashboardTabs &&
-      (!isAdmin(user?.role) || adminDashboardTab === "here_now");
+      !isAdmin(user?.role);
 	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
 	    const adminDashboardPeriodLabel = (() => {
 	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
@@ -18459,7 +18485,7 @@ function MainApp() {
 	                  }}
 	                >
 	                  <div className="whitespace-nowrap">Order</div>
-	                  <div className="whitespace-nowrap text-center">Doctor</div>
+		                  <div className="whitespace-nowrap text-center">Ordered by</div>
 	                  <div className="whitespace-nowrap text-right">Placed</div>
 	                  <div className="whitespace-nowrap text-right">Total</div>
 	                </div>
@@ -19409,7 +19435,7 @@ function MainApp() {
                   </div>
                 )}
 
-			          {showSalesDashboardTabs && (
+			          {showSalesDashboardTabs && !isAdmin(user?.role) && (
                   <div className="relative w-full">
                     <div
                       className="w-full account-tab-scroll-container"
@@ -21452,6 +21478,57 @@ function MainApp() {
 			            </div>
 			          )}
 
+          {showSalesDashboardTabs && isAdmin(user?.role) && (
+            <div className="relative w-full">
+              <div
+                className="w-full account-tab-scroll-container"
+                ref={setSalesDashboardTabsContainerRef}
+                onScroll={updateSalesDashboardTabIndicator}
+              >
+                <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                  {salesDashboardTabs.map((tab) => {
+                    if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
+                      return null;
+                    }
+                    const isActive = salesDashboardTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        className={clsx(
+                          "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                          isActive && "text-slate-900",
+                        )}
+                        data-sales-dashboard-tab={tab.id}
+                        aria-pressed={isActive}
+                        onClick={() => setSalesDashboardTab(tab.id)}
+                      >
+                        <span
+                          className="inline-flex items-center gap-2"
+                          data-sales-dashboard-tab-content
+                        >
+                          <span className="inline-flex h-5 w-5 items-center justify-center">
+                            <tab.Icon className="h-5 w-5" />
+                          </span>
+                          <span className="inline-flex items-center">{tab.label}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <span
+                aria-hidden="true"
+                className="account-tab-underline-indicator"
+                style={{
+                  left: salesDashboardIndicatorLeft,
+                  width: salesDashboardIndicatorWidth,
+                  opacity: salesDashboardIndicatorOpacity,
+                }}
+              />
+            </div>
+          )}
+
           {isCrmSectionActive && (
             <div
               className={clsx(
@@ -21915,9 +21992,11 @@ function MainApp() {
                             const placedLabel = placedDate
                               ? `Order placed ${placedDate}`
                               : "Order placed Unknown date";
-	                            const arrivalLabel = arrivalDate
-	                              ? `Expected delivery ${formatDate(arrivalDate as string)}`
-	                              : "Expected delivery unavailable";
+                            const arrivalLabel = isSalesOrderHandDelivered(order as any)
+                              ? "Hand Delivered"
+	                              : arrivalDate
+	                                ? `Expected delivery ${formatDate(arrivalDate as string)}`
+	                                : "Expected delivery unavailable";
 	                            const statusLabel = describeSalesOrderStatus(order as any);
                               const delegateOrderLabel =
                                 normalizeDelegateOrderLabel((order as any)?.asDelegate) ||

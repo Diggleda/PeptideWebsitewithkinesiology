@@ -33,6 +33,7 @@ def preview_code():
             subtotal = 0.0
         return discount_code_service.preview_discount_for_user(
             user_id=g.current_user.get("id"),
+            user_role=g.current_user.get("role"),
             code=str(code),
             items_subtotal=subtotal,
             cart_quantity=cart_quantity,

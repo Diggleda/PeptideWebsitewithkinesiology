@@ -305,6 +305,11 @@ export function CheckoutModal({
     code: string;
     discountValue: number;
     discountAmount: number;
+    pricingOverride?: {
+      mode: 'force_tier_band';
+      minQuantity: number;
+      maxQuantity: number;
+    } | null;
   } | null>(null);
   const [discountCodeMessage, setDiscountCodeMessage] = useState<string | null>(null);
   const [discountCodeBusy, setDiscountCodeBusy] = useState(false);
@@ -408,12 +413,38 @@ export function CheckoutModal({
     return visible;
   };
 
+  const discountPricingOverride = useMemo(() => {
+    const raw = discountCodeApplied?.pricingOverride;
+    if (!raw || raw.mode !== 'force_tier_band') {
+      return null;
+    }
+    const min = Number(raw.minQuantity);
+    const max = Number(raw.maxQuantity);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return null;
+    }
+    const normalizedMin = Math.max(1, Math.floor(min));
+    const normalizedMax = Math.max(normalizedMin, Math.floor(max));
+    return {
+      mode: 'force_tier_band' as const,
+      minQuantity: normalizedMin,
+      maxQuantity: normalizedMax,
+    };
+  }, [discountCodeApplied?.pricingOverride]);
+
   const checkoutLineItems = useMemo(
     () =>
       cartItems.map(({ id, product, quantity, note, variant }, index) => {
         const unitPrice = computeUnitPrice(product, variant, quantity, {
           pricingMode: resolvedPricingMode,
           markupPercent: pricingMarkupPercent,
+          forcedTierRange:
+            discountPricingOverride?.mode === 'force_tier_band'
+              ? {
+                  minQuantity: discountPricingOverride.minQuantity,
+                  maxQuantity: discountPricingOverride.maxQuantity,
+                }
+              : null,
         });
         return {
           cartItemId: id,
@@ -428,7 +459,7 @@ export function CheckoutModal({
           image: variant?.image || product.image || null,
         };
       }),
-    [cartItems, pricingMarkupPercent, resolvedPricingMode],
+    [cartItems, discountPricingOverride, pricingMarkupPercent, resolvedPricingMode],
   );
   const cartLineItemSignature = useMemo(
     () =>
@@ -587,10 +618,24 @@ export function CheckoutModal({
       if (resp?.valid) {
         const amount = Math.max(0, Number(resp.discountAmount || 0));
         const value = Math.max(0, Number(resp.discountValue || 0));
+        const pricingOverrideRaw = resp?.pricingOverride;
+        const pricingOverride =
+          pricingOverrideRaw &&
+          String(pricingOverrideRaw.mode || '').toLowerCase() === 'force_tier_band'
+            ? {
+                mode: 'force_tier_band' as const,
+                minQuantity: Math.max(1, Number(pricingOverrideRaw.minQuantity) || 11),
+                maxQuantity: Math.max(
+                  Math.max(1, Number(pricingOverrideRaw.minQuantity) || 11),
+                  Number(pricingOverrideRaw.maxQuantity) || 26,
+                ),
+              }
+            : null;
         setDiscountCodeApplied({
           code: String(resp.code || code),
           discountValue: value,
           discountAmount: amount,
+          pricingOverride,
         });
         setDiscountCodeMessage(null);
       } else {
@@ -1908,7 +1953,9 @@ export function CheckoutModal({
                       )}
                       {discountCodeApplied && !discountCodeMessage && (
                         <div className="text-xs text-emerald-700">
-                          Applied {discountCodeApplied.code} (${discountCodeApplied.discountValue.toFixed(2)} off)
+                          {discountCodeApplied.pricingOverride?.mode === 'force_tier_band'
+                            ? `Applied ${discountCodeApplied.code} (forcing ${discountCodeApplied.pricingOverride.minQuantity}-${discountCodeApplied.pricingOverride.maxQuantity} tier pricing)`
+                            : `Applied ${discountCodeApplied.code} ($${discountCodeApplied.discountValue.toFixed(2)} off)`}
                         </div>
                       )}
                     </div>
@@ -1995,6 +2042,18 @@ export function CheckoutModal({
                         <span>- ${discountCodeAmount.toFixed(2)}</span>
                       </div>
                     )}
+                    {!testOverrideApplied &&
+                      discountCodeApplied &&
+                      discountCodeAmount <= 0 &&
+                      discountCodeApplied.pricingOverride?.mode === 'force_tier_band' && (
+                        <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
+                          <span>Tier pricing ({discountCodeApplied.code})</span>
+                          <span>
+                            {discountCodeApplied.pricingOverride.minQuantity}-
+                            {discountCodeApplied.pricingOverride.maxQuantity}
+                          </span>
+                        </div>
+                      )}
 		                {displayAppliedCredits > 0 && (
 		                  <div className="flex justify-between text-sm font-semibold text-[rgb(95,179,249)]">
 		                    <span>Referral Credit</span>

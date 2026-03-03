@@ -26,7 +26,11 @@ export const computeUnitPrice = (
   product: Product,
   variant: ProductVariant | null | undefined,
   quantity: number,
-  options?: { pricingMode?: PricingMode; markupPercent?: number | null },
+  options?: {
+    pricingMode?: PricingMode;
+    markupPercent?: number | null;
+    forcedTierRange?: { minQuantity: number; maxQuantity: number } | null;
+  },
 ) => {
   const pricingMode: PricingMode = options?.pricingMode ?? 'wholesale';
   const markupPercentRaw = Number(options?.markupPercent ?? 0);
@@ -46,11 +50,31 @@ export const computeUnitPrice = (
 
   if (pricingMode !== 'retail') {
     const tiers = product.bulkPricingTiers ?? [];
+    const forcedTierRange = options?.forcedTierRange ?? null;
 
     if (Array.isArray(tiers) && tiers.length > 0) {
-      const applicable = [...tiers]
-        .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
-        .find((tier) => quantity >= (Number(tier.minQuantity) || 0));
+      let applicable = null as (typeof tiers)[number] | null;
+      if (
+        forcedTierRange &&
+        Number.isFinite(Number(forcedTierRange.minQuantity)) &&
+        Number.isFinite(Number(forcedTierRange.maxQuantity))
+      ) {
+        const min = Math.max(0, Number(forcedTierRange.minQuantity) || 0);
+        const max = Math.max(min, Number(forcedTierRange.maxQuantity) || min);
+        applicable =
+          [...tiers]
+            .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
+            .find((tier) => {
+              const tierMin = Number(tier.minQuantity) || 0;
+              return tierMin >= min && tierMin <= max;
+            }) ?? null;
+      }
+      if (!applicable) {
+        applicable =
+          [...tiers]
+            .sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))
+            .find((tier) => quantity >= (Number(tier.minQuantity) || 0)) ?? null;
+      }
 
       if (applicable) {
         const discountPercentage = Number(applicable.discountPercentage) || 0;
