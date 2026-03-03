@@ -5132,10 +5132,17 @@ export function Header({
       parseAddress((selectedOrder as any).shipping) ||
       wooShippingAddress ||
       parseAddress(selectedOrder.billingAddress);
-    const billingAddress =
+    const billingAddressBase =
       parseAddress(selectedOrder.billingAddress) ||
       wooBillingAddress ||
       parseAddress(selectedOrder.shippingAddress);
+    const shippingRecipientName = typeof shippingAddress?.name === 'string'
+      ? shippingAddress.name.trim()
+      : '';
+    const billingAddress =
+      billingAddressBase && shippingRecipientName
+        ? { ...billingAddressBase, name: shippingRecipientName }
+        : billingAddressBase;
     const lineItems = selectedOrder.lineItems || [];
     const summedLineItems = lineItems.reduce((sum, line) => {
       const lineTotal = parseWooMoney(line.total, parseWooMoney(line.subtotal, 0));

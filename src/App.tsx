@@ -2,6 +2,7 @@ import {
   useState,
   useMemo,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   FormEvent,
@@ -9730,23 +9731,34 @@ function MainApp() {
     left: number;
     width: number;
     opacity: number;
-  }>({ left: 0, width: 112, opacity: 1 });
+  }>({ left: 0, width: 0, opacity: 0 });
   const updateSalesDashboardTabIndicator = useCallback(() => {
     const container = salesDashboardTabsContainerRef.current;
     if (!container) return;
-    const activeBtn = container.querySelector<HTMLButtonElement>(
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(
       `button[data-sales-dashboard-tab="${salesDashboardTab}"]`,
-    );
+      ) || container.querySelector<HTMLButtonElement>("button[data-sales-dashboard-tab]");
     if (!activeBtn) return;
     const content = activeBtn.querySelector<HTMLElement>("[data-sales-dashboard-tab-content]");
     const extraUnderlineWidth = 8;
+    const measuredWidth = content ? content.offsetWidth : activeBtn.offsetWidth;
+    if (!measuredWidth) return;
     const left =
       (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
       container.scrollLeft -
       extraUnderlineWidth / 2;
-    const width = (content ? content.offsetWidth : activeBtn.offsetWidth) + extraUnderlineWidth;
+    const width = measuredWidth + extraUnderlineWidth;
     setSalesDashboardTabIndicator({ left, width, opacity: 1 });
   }, [salesDashboardTab]);
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      updateSalesDashboardTabIndicator();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [updateSalesDashboardTabIndicator]);
   useEffect(() => {
     updateSalesDashboardTabIndicator();
     const onResize = () => updateSalesDashboardTabIndicator();
@@ -9833,23 +9845,34 @@ function MainApp() {
     left: number;
     width: number;
     opacity: number;
-  }>({ left: 0, width: 112, opacity: 1 });
+  }>({ left: 0, width: 0, opacity: 0 });
   const updateAdminDashboardTabIndicator = useCallback(() => {
     const container = adminDashboardTabsContainerRef.current;
     if (!container) return;
-    const activeBtn = container.querySelector<HTMLButtonElement>(
+    const activeBtn =
+      container.querySelector<HTMLButtonElement>(
       `button[data-admin-dashboard-tab="${adminDashboardTab}"]`,
-    );
+      ) || container.querySelector<HTMLButtonElement>("button[data-admin-dashboard-tab]");
     if (!activeBtn) return;
     const content = activeBtn.querySelector<HTMLElement>("[data-admin-dashboard-tab-content]");
     const extraUnderlineWidth = 8;
+    const measuredWidth = content ? content.offsetWidth : activeBtn.offsetWidth;
+    if (!measuredWidth) return;
     const left =
       (content ? activeBtn.offsetLeft + content.offsetLeft : activeBtn.offsetLeft) -
       container.scrollLeft -
       extraUnderlineWidth / 2;
-    const width = (content ? content.offsetWidth : activeBtn.offsetWidth) + extraUnderlineWidth;
+    const width = measuredWidth + extraUnderlineWidth;
     setAdminDashboardTabIndicator({ left, width, opacity: 1 });
   }, [adminDashboardTab]);
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      updateAdminDashboardTabIndicator();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [updateAdminDashboardTabIndicator]);
   useEffect(() => {
     updateAdminDashboardTabIndicator();
     const onResize = () => updateAdminDashboardTabIndicator();
@@ -26774,6 +26797,14 @@ function MainApp() {
                   (salesOrderDetail as any).billing ||
                   (salesOrderDetail as any).billing_address ||
                   null;
+                const shippingRecipientName =
+                  typeof (shippingAddress as any)?.name === "string"
+                    ? String((shippingAddress as any).name).trim()
+                    : "";
+                const billingAddressForDisplay =
+                  billingAddress && shippingRecipientName
+                    ? { ...(billingAddress as any), name: shippingRecipientName }
+                    : billingAddress;
                 const lineItems =
                   salesOrderDetail.lineItems ||
                   (salesOrderDetail as any).lineItems ||
@@ -27199,7 +27230,7 @@ function MainApp() {
                         <h4 className="text-base font-semibold text-slate-900">
                           Billing Information
                         </h4>
-                        {renderAddressLines(billingAddress)}
+                        {renderAddressLines(billingAddressForDisplay)}
                         <div className="text-sm text-slate-700 space-y-1">
                           <p>
                             <span className="font-semibold">Payment:</span>{" "}

@@ -1035,8 +1035,11 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         order_total = max(0.0, items_total - applied_credit + shipping_total + tax_total)
 
     address = order.get("shippingAddress") or {}
+    recipient_name = str(address.get("name") or "").strip() if isinstance(address, dict) else ""
+    if not recipient_name:
+        recipient_name = str(customer.get("name") or "PepPro").strip() or "PepPro"
     billing_address = {
-        "first_name": customer.get("name") or "PepPro",
+        "first_name": recipient_name,
         "last_name": "",
         "email": customer.get("email") or "orders@peppro.example",
         "address_1": address.get("addressLine1") or "",
@@ -1048,7 +1051,7 @@ def build_order_payload(order: Dict, customer: Dict) -> Dict:
         "phone": address.get("phone") or "",
     }
     shipping_address = {
-        "first_name": address.get("name") or customer.get("name") or "PepPro",
+        "first_name": recipient_name,
         "last_name": "",
         "address_1": address.get("addressLine1") or "",
         "address_2": address.get("addressLine2") or "",
