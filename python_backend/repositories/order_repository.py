@@ -10,7 +10,7 @@ from ..services import get_config
 from ..database import mysql_client
 from .. import storage
 
-HAND_DELIVERY_SERVICE_LABEL = "Hand delivered"
+HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
 
 
 def _using_mysql() -> bool:

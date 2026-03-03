@@ -18,7 +18,7 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
-const HAND_DELIVERY_SERVICE_LABEL = 'Hand delivered';
+const HAND_DELIVERY_SERVICE_LABEL = 'Hand Delivered';
 
 const isHandDeliveryOrder = (order) => {
   if (!order || typeof order !== 'object') {

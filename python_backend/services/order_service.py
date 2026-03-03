@@ -28,10 +28,10 @@ from . import discount_code_service
 logger = logging.getLogger(__name__)
 
 _PERF_LOG_ENABLED = (os.environ.get("PERF_LOG") or "").strip().lower() in ("1", "true", "yes", "on")
-FACILITY_PICKUP_LOCATION = "640 S Grand Ave, Santa Ana, CA 92705, Unit #107"
-FACILITY_PICKUP_LABEL = "Facility pick-up (Santa Ana, CA)"
-FACILITY_PICKUP_NOTICE = "You will receive an email when your order is ready for pickup."
-FACILITY_PICKUP_SERVICE_CODE = "facility_pickup_santa_ana"
+FACILITY_PICKUP_LOCATION = None
+FACILITY_PICKUP_LABEL = "Hand Delivered"
+FACILITY_PICKUP_NOTICE = None
+FACILITY_PICKUP_SERVICE_CODE = "hand_delivery"
 
 
 def _perf_log(message: str, *, duration_ms: float, threshold_ms: float = 500.0) -> None:
@@ -694,9 +694,10 @@ def create_order(
     is_facility_pickup = bool(facility_pickup)
     shipping_address = shipping_address or {}
     if is_facility_pickup:
-        shipping_address = {}
+        existing_rate = shipping_rate if isinstance(shipping_rate, dict) else {}
         shipping_rate = {
-            "carrierId": "facility_pickup",
+            **existing_rate,
+            "carrierId": FACILITY_PICKUP_SERVICE_CODE,
             "serviceType": FACILITY_PICKUP_LABEL,
             "serviceCode": FACILITY_PICKUP_SERVICE_CODE,
             "rate": 0,
@@ -758,7 +759,7 @@ def create_order(
         "shippingEstimate": shipping_rate or {},
         "shippingAddress": shipping_address or {},
         "handDelivery": is_facility_pickup,
-        "fulfillmentMethod": "facility_pickup" if is_facility_pickup else "shipping",
+        "fulfillmentMethod": "hand_delivery" if is_facility_pickup else "shipping",
         "pickupLocation": FACILITY_PICKUP_LOCATION if is_facility_pickup else None,
         "pickupReadyNotice": FACILITY_PICKUP_NOTICE if is_facility_pickup else None,
         "referralCode": normalized_referral,
@@ -4817,5 +4818,3 @@ def get_products_and_commission_for_admin(*, period_start: Optional[str] = None,
                 except Exception:
                     pass
             _admin_products_commission_inflight = None
-
-
