@@ -197,6 +197,7 @@ def reserve_use_once(
     user_id: str,
     user_name: Optional[str] = None,
     order_id: Optional[str] = None,
+    enforce_single_use: bool = True,
     items_subtotal: float,
     quantity: int,
 ) -> Dict[str, Any]:
@@ -252,14 +253,19 @@ def reserve_use_once(
         if not isinstance(used_by, dict):
             used_by = {}
 
-        if str(user_id) in used_by:
+        if enforce_single_use and str(user_id) in used_by:
             err = ValueError("Discount code already used")
             setattr(err, "status", 400)
             raise err
 
         display_name = str(user_name or "").strip() or str(user_id)
         display_order_id = str(order_id or "").strip() or "unknown"
-        used_by[str(user_id)] = f"({display_name}):({display_order_id})"
+        entry_value = f"({display_name}):({display_order_id})"
+        entry_key = str(user_id)
+        if not enforce_single_use:
+            # For reusable codes, keep a per-order history instead of overwriting one user key.
+            entry_key = f"{str(user_id)}:{display_order_id}:{int(datetime.now(timezone.utc).timestamp())}"
+        used_by[entry_key] = entry_value
         if write_cols:
             set_parts = [f"{col} = %({col})s" for col in write_cols]
             set_parts.append("updated_at = %(updated_at)s")
