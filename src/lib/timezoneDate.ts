@@ -113,8 +113,13 @@ export const parseBackendTimestampAsPacificWallTime = (
   const raw = value.trim();
   if (!raw) return null;
   const normalized = raw.includes(" ") && !raw.includes("T") ? raw.replace(" ", "T") : raw;
-  const withoutTimezone = normalized.replace(/(?:[zZ]|[+-]\d{2}:?\d{2})$/, "");
-  const pacificDate = parseNaivePacific(withoutTimezone);
+
+  // If timestamp already has an explicit timezone, trust that instant as authoritative.
+  if (HAS_EXPLICIT_TIMEZONE_RE.test(normalized)) {
+    return parseBackendTimestamp(normalized);
+  }
+
+  const pacificDate = parseNaivePacific(normalized);
   if (pacificDate) return pacificDate;
-  return parseBackendTimestamp(withoutTimezone);
+  return parseBackendTimestamp(normalized);
 };
