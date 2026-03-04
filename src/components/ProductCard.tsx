@@ -600,6 +600,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   }, [product.images, product.image, selectedVariation?.image]);
 
   const primaryImage = galleryImages[0] || product.image;
+  const showVariationChevron = selectableVariations.length > 1;
 
   const variationSelector =
     product.variations && product.variations.length > 0 ? (
@@ -631,7 +632,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
               }
             }}
             disabled={variantsLoading}
-            className="w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select"
+            className={`w-full squircle-sm border border-[rgba(255,255,255,0.5)] bg-white/80 px-3 py-2 text-sm font-[Lexend] transition-all focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.4)] focus:border-[rgba(95,179,249,0.6)] product-card-select${showVariationChevron ? '' : ' pr-3'}`}
             >
             {(needsVariants || !uiVariationId || selectableVariations.length === 0) && (
               <option value="" disabled>
@@ -644,11 +645,13 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
               </option>
             ))}
           </select>
-          <span className="product-card-select__chevron" aria-hidden="true">
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </span>
+          {showVariationChevron && (
+            <span className="product-card-select__chevron" aria-hidden="true">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </span>
+          )}
         </div>
       </div>
     ) : null;

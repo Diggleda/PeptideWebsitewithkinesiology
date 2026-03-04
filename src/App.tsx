@@ -7513,6 +7513,26 @@ function MainApp() {
 	          mergeSalesOrderDetail(enriched);
         }
       } catch (error: any) {
+        const message =
+          typeof error?.message === "string" ? error.message.toLowerCase() : "";
+        const isTransientDetailError =
+          error?.code === "TIMEOUT" ||
+          error?.status === 429 ||
+          error?.status === 500 ||
+          error?.status === 502 ||
+          error?.status === 503 ||
+          error?.status === 504 ||
+          message.includes("timed out") ||
+          message.includes("timeout") ||
+          message.includes("failed to fetch") ||
+          message.includes("load failed") ||
+          message.includes("networkerror") ||
+          message.includes("cors") ||
+          message.includes("preflight");
+        if (isTransientDetailError) {
+          console.warn("[Sales Tracking] Order detail request timed out; showing cached summary", error);
+          return;
+        }
         console.error("[Sales Tracking] Failed to fetch order detail", error);
         toast.error(
           typeof error?.message === "string"
@@ -13128,6 +13148,7 @@ function MainApp() {
 	      const message =
 	        typeof error?.message === "string" ? error.message.toLowerCase() : "";
 	      return (
+          error?.code === "TIMEOUT" ||
 	        status === 429 ||
 	        status === 500 ||
 	        status === 502 ||
@@ -13135,8 +13156,13 @@ function MainApp() {
 	        status === 504 ||
 	        message.includes("busy") ||
 	        message.includes("retry") ||
+          message.includes("timed out") ||
+          message.includes("timeout") ||
 	        message.includes("failed to fetch") ||
-	        message.includes("load failed")
+	        message.includes("load failed") ||
+          message.includes("networkerror") ||
+          message.includes("cors") ||
+          message.includes("preflight")
 	      );
 	    };
 
@@ -24039,10 +24065,30 @@ function MainApp() {
                 <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   <div className="post-login-layout">
                     <div
-                      className="post-login-news glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl"
-                      style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
+                      className="post-login-news space-y-4"
                     >
-                      <div className="space-y-5">
+                      <div
+                        className="glass-card squircle-md px-4 py-2 shadow-lg transition-all duration-500"
+                        style={{
+                          backdropFilter: "blur(20px) saturate(1.4)",
+                          border: "2px solid rgb(95,179,249)",
+                        }}
+                      >
+                        <p
+                          className="px-4 sm:px-6 italic text-left leading-snug break-words"
+                          style={{
+                            color: "rgb(95,179,249)",
+                            fontSize: "clamp(1.5rem, 2.1vw, 1.2rem)",
+                          }}
+                        >
+                          Promoting endogenous healing through a community of practitioners who work one-on-one, day in and day out, to improve individual health across all aspects of healing.
+                        </p>
+                      </div>
+                      <div
+                        className="glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] p-6 sm:p-8 shadow-xl"
+                        style={{ backdropFilter: "blur(38px) saturate(1.6)" }}
+                      >
+                        <div className="space-y-5">
                         <div className="flex items-center justify-between gap-3 mb-4">
                           <h2 className="text-lg sm:text-xl font-semibold text-[rgb(95,179,249)]">
                             Peptide News
@@ -24178,6 +24224,7 @@ function MainApp() {
                             )}
                         </div>
                       </div>
+                    </div>
                     </div>
 	                    <div
 	                      className="post-login-info glass-card landing-glass squircle-xl border border-[var(--brand-glass-border-2)] pt-6 px-6 pb-4 sm:pt-8 sm:px-8 sm:pb-5 shadow-xl"
@@ -27374,7 +27421,7 @@ function MainApp() {
         }}
       >
         <DialogContent className="max-w-4xl">
-          {salesOrderDetailLoading && (
+          {salesOrderDetailLoading && !salesOrderDetail && (
             <>
               <VisuallyHidden>
                 <DialogTitle>Loading order details</DialogTitle>
@@ -27383,7 +27430,7 @@ function MainApp() {
               {renderSalesOrderSkeleton()}
             </>
           )}
-          {!salesOrderDetailLoading && salesOrderDetail && (
+          {salesOrderDetail && (
             <>
               <DialogHeader>
                 <DialogTitle>

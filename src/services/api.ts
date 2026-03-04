@@ -656,11 +656,18 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
 
   const promise = run();
   _inflightGetRequests.set(dedupeKey, promise);
-  void promise.finally(() => {
-    if (_inflightGetRequests.get(dedupeKey) === promise) {
-      _inflightGetRequests.delete(dedupeKey);
-    }
-  });
+  void promise.then(
+    () => {
+      if (_inflightGetRequests.get(dedupeKey) === promise) {
+        _inflightGetRequests.delete(dedupeKey);
+      }
+    },
+    () => {
+      if (_inflightGetRequests.get(dedupeKey) === promise) {
+        _inflightGetRequests.delete(dedupeKey);
+      }
+    },
+  );
   return promise;
 };
 

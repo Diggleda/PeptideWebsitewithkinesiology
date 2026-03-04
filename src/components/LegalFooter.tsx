@@ -426,7 +426,6 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
             {/* Legal text + links - middle column on desktop, bottom on mobile */}
             <div className="legal-links flex flex-col items-center text-center gap-1 w-full lg:items-start lg:text-left">
               <div className="space-y-1 text-sm text-slate-600 w-full">
-                <p>Advancing healthcare through research and availability.</p>
                 <p className="text-xs text-slate-500">© {new Date().getFullYear()} PepPro. All rights reserved.</p>
                 <p className="text-xs text-slate-500"> This website design is guided by consciousness calibration.</p>
               </div>
