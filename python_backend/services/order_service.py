@@ -2392,6 +2392,11 @@ def _persist_shipping_update(
         merged["shippingEstimate"] = current_est
     if tracking and not merged.get("trackingNumber"):
         merged["trackingNumber"] = tracking
+    ship_date = None
+    if isinstance(shipstation_info, dict):
+        ship_date = shipstation_info.get("shipDate")
+    if ship_date and not merged.get("shippedAt") and not merged.get("shipped_at"):
+        merged["shippedAt"] = ship_date
 
     integrations = _ensure_dict(merged.get("integrationDetails") or merged.get("integrations"))
     if shipstation_info:

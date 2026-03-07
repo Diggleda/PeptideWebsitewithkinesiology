@@ -765,14 +765,14 @@ def insert(order: Dict) -> Dict:
                 INSERT INTO orders (
                     id, user_id, as_delegate, pricing_mode, items, items_subtotal, total, shipping_total, shipping_carrier, shipping_service,
                     facility_pickup, fulfillment_method, pickup_location, pickup_ready_notice,
-                    tracking_number,
+                    tracking_number, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
                     %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(items_subtotal)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
                     %(facility_pickup)s, %(fulfillment_method)s, %(pickup_location)s, %(pickup_ready_notice)s,
-                    %(tracking_number)s,
+                    %(tracking_number)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                     %(created_at)s, %(updated_at)s
@@ -792,6 +792,7 @@ def insert(order: Dict) -> Dict:
                     pickup_location = VALUES(pickup_location),
                     pickup_ready_notice = VALUES(pickup_ready_notice),
                     tracking_number = VALUES(tracking_number),
+                    shipped_at = VALUES(shipped_at),
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -814,13 +815,13 @@ def insert(order: Dict) -> Dict:
                 """
                 INSERT INTO orders (
                     id, user_id, as_delegate, pricing_mode, items, total, shipping_total, shipping_carrier, shipping_service,
-                    tracking_number,
+                    tracking_number, shipped_at,
                     physician_certified, referral_code, status,
                     referrer_bonus, first_order_bonus, integrations, shipping_rate, expected_shipment_window, notes, shipping_address, payload,
                     created_at, updated_at
                 ) VALUES (
                     %(id)s, %(user_id)s, %(as_delegate)s, %(pricing_mode)s, %(items)s, %(total)s, %(shipping_total)s, %(shipping_carrier)s, %(shipping_service)s,
-                    %(tracking_number)s,
+                    %(tracking_number)s, %(shipped_at)s,
                     %(physician_certified)s, %(referral_code)s, %(status)s,
                     %(referrer_bonus)s, %(first_order_bonus)s, %(integrations)s, %(shipping_rate)s, %(expected_shipment_window)s, %(notes)s, %(shipping_address)s, %(payload)s,
                     %(created_at)s, %(updated_at)s
@@ -835,6 +836,7 @@ def insert(order: Dict) -> Dict:
                     shipping_carrier = VALUES(shipping_carrier),
                     shipping_service = VALUES(shipping_service),
                     tracking_number = VALUES(tracking_number),
+                    shipped_at = VALUES(shipped_at),
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -881,6 +883,7 @@ def update(order: Dict) -> Optional[Dict]:
                     pickup_location = %(pickup_location)s,
                     pickup_ready_notice = %(pickup_ready_notice)s,
                     tracking_number = %(tracking_number)s,
+                    shipped_at = %(shipped_at)s,
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -910,6 +913,7 @@ def update(order: Dict) -> Optional[Dict]:
                     shipping_carrier = %(shipping_carrier)s,
                     shipping_service = %(shipping_service)s,
                     tracking_number = %(tracking_number)s,
+                    shipped_at = %(shipped_at)s,
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -1018,6 +1022,7 @@ def _row_to_order(row: Optional[Dict]) -> Optional[Dict]:
         "shippingCarrier": row.get("shipping_carrier"),
         "shippingService": row.get("shipping_service"),
         "trackingNumber": row.get("tracking_number") or None,
+        "shippedAt": fmt_datetime(row.get("shipped_at")) or None,
         "physicianCertificationAccepted": bool(row.get("physician_certified")),
         "referralCode": row.get("referral_code"),
         "status": row.get("status"),
@@ -1215,6 +1220,7 @@ def _to_db_params(order: Dict) -> Dict:
             or order.get("shippingEstimate", {}).get("serviceCode")
         ),
         "tracking_number": tracking_number,
+        "shipped_at": parse_dt(order.get("shippedAt") or order.get("shipped_at")),
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),
         "status": order.get("status") or "pending",

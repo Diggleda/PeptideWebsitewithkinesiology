@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from ..database import mysql_client
 from ..integrations import ship_station, woo_commerce
+from ..repositories import order_repository
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,52 @@ def _map_shipstation_status_to_woo(status: Any) -> Optional[str]:
     return None
 
 
+def _persist_local_order_shipping_update(woo_order_id: Any, shipstation_info: Dict[str, Any]) -> None:
+    local_order = order_repository.find_by_order_identifier(str(woo_order_id or "").strip())
+    if not local_order:
+        return
+
+    merged = dict(local_order)
+    estimate = dict(merged.get("shippingEstimate") or {})
+    status = shipstation_info.get("status")
+    ship_date = shipstation_info.get("shipDate")
+    tracking = shipstation_info.get("trackingNumber")
+    carrier = shipstation_info.get("carrierCode")
+    service = shipstation_info.get("serviceCode")
+
+    if status and not estimate.get("status"):
+        estimate["status"] = str(status).strip().lower()
+    if ship_date and not estimate.get("shipDate"):
+        estimate["shipDate"] = ship_date
+    if carrier and not estimate.get("carrierId"):
+        estimate["carrierId"] = carrier
+    if service and not estimate.get("serviceType"):
+        estimate["serviceType"] = service
+    if estimate:
+        merged["shippingEstimate"] = estimate
+
+    integrations = dict(merged.get("integrationDetails") or merged.get("integrations") or {})
+    integrations["shipStation"] = shipstation_info
+    merged["integrationDetails"] = integrations
+
+    if tracking and not merged.get("trackingNumber"):
+        merged["trackingNumber"] = tracking
+    if ship_date and not merged.get("shippedAt") and not merged.get("shipped_at"):
+        merged["shippedAt"] = ship_date
+    if status and not merged.get("status"):
+        merged["status"] = str(status).strip().lower()
+    merged["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    try:
+        order_repository.update(merged)
+    except Exception:
+        logger.warning(
+            "[shipstation-sync] failed to persist local order shipping update",
+            exc_info=True,
+            extra={"wooOrderId": woo_order_id, "orderId": local_order.get("id")},
+        )
+
+
 def _fetch_orders_for_sync(*, lookback_days: int, max_orders: int) -> List[Dict[str, Any]]:
     if not woo_commerce.is_configured():
         return []
@@ -439,6 +486,7 @@ def run_sync_once(*, ignore_cooldown: bool = False) -> Dict[str, Any]:
                     ship_date=ss.get("shipDate"),
                     existing_meta_data=order.get("meta_data") if isinstance(order.get("meta_data"), list) else None,
                 )
+                _persist_local_order_shipping_update(woo_order_id, ss)
                 if isinstance(result, dict) and result.get("changed") is True:
                     updated += 1
                     note = woo_commerce.build_shipstation_note(
