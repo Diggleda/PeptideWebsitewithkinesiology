@@ -47,10 +47,17 @@ const STATEMENTS = [
       pickup_ready_notice VARCHAR(255) NULL,
       physician_certified TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      order_placed_at DATETIME NULL,
+      shipped_at DATETIME NULL,
+      status_normalized VARCHAR(64)
+        GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
+        STORED,
       payload LONGTEXT NULL,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       INDEX idx_peppro_orders_user (user_id),
+      INDEX idx_peppro_orders_user_created (user_id, created_at),
+      INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at),
       INDEX idx_peppro_orders_woo (woo_order_id),
       INDEX idx_peppro_orders_shipstation (shipstation_order_id)
     ) CHARACTER SET utf8mb4
@@ -62,7 +69,9 @@ const STATEMENTS = [
       email VARCHAR(255) NOT NULL,
       phone VARCHAR(64) NULL,
       source VARCHAR(255) NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_contact_forms_email (email),
+      INDEX idx_contact_forms_created_at (created_at)
     ) CHARACTER SET utf8mb4
   `,
   `
@@ -90,6 +99,9 @@ const STATEMENTS = [
       is_manual TINYINT(1) NOT NULL DEFAULT 0,
       contact_name VARCHAR(190) NULL,
       contact_email VARCHAR(190) NULL,
+      contact_email_normalized VARCHAR(190)
+        GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(contact_email, ''))))
+        STORED,
       contact_phone VARCHAR(32) NULL,
       assigned_by_rule_id VARCHAR(64) NULL,
       assigned_at DATETIME NULL,
@@ -104,6 +116,10 @@ const STATEMENTS = [
       UNIQUE KEY uniq_sales_rep_doctor (sales_rep_id, doctor_id),
       UNIQUE KEY uniq_sales_rep_referral (sales_rep_id, referral_id),
       UNIQUE KEY uniq_sales_rep_contact_form (sales_rep_id, contact_form_id),
+      INDEX idx_sales_prospects_doctor_updated (doctor_id, updated_at, created_at),
+      INDEX idx_sales_prospects_contact_email_norm (contact_email_normalized),
+      INDEX idx_sales_prospects_referral_id (referral_id),
+      INDEX idx_sales_prospects_contact_form_id (contact_form_id),
       INDEX idx_sales_prospects_source_system (source_system),
       INDEX idx_sales_prospects_source_external_id (source_external_id),
       INDEX idx_sales_prospects_status (status),
@@ -175,6 +191,31 @@ const STATEMENTS = [
     ) CHARACTER SET utf8mb4
   `,
 ];
+
+const ensureIndex = async (tableName, indexName, ddl) => {
+  try {
+    const existing = await mysqlClient.fetchOne(
+      `
+        SELECT INDEX_NAME
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :tableName
+          AND INDEX_NAME = :indexName
+        LIMIT 1
+      `,
+      { tableName, indexName },
+    );
+    if (!existing) {
+      await mysqlClient.execute(ddl);
+      logger.info({ table: tableName, index: indexName }, 'MySQL index added');
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, table: tableName, index: indexName },
+      'Failed to ensure MySQL index',
+    );
+  }
+};
 
 const ensureUserColumns = async () => {
   if (!mysqlClient.isEnabled()) {
@@ -271,6 +312,15 @@ const ensureUserColumns = async () => {
         ADD COLUMN hand_delivered TINYINT(1) NOT NULL DEFAULT 0
       `,
     },
+    {
+      name: 'email_normalized',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN email_normalized VARCHAR(255)
+          GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(email, ''))))
+          STORED
+      `,
+    },
   ];
 
   for (const column of columns) {
@@ -304,6 +354,11 @@ const ensureUserColumns = async () => {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL users table column');
     }
   }
+  await ensureIndex(
+    'users',
+    'idx_users_email_normalized',
+    'ALTER TABLE users ADD INDEX idx_users_email_normalized (email_normalized)',
+  );
 };
 
 const ensureOrderColumns = async () => {
@@ -360,6 +415,29 @@ const ensureOrderColumns = async () => {
         ADD COLUMN pickup_ready_notice VARCHAR(255) NULL AFTER pickup_location
       `,
     },
+    {
+      name: 'status_normalized',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN status_normalized VARCHAR(64)
+          GENERATED ALWAYS AS (LOWER(REPLACE(REPLACE(COALESCE(status, ''), '_', '-'), ' ', '-')))
+          STORED
+      `,
+    },
+    {
+      name: 'order_placed_at',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN order_placed_at DATETIME NULL AFTER status
+      `,
+    },
+    {
+      name: 'shipped_at',
+      ddl: `
+        ALTER TABLE peppro_orders
+        ADD COLUMN shipped_at DATETIME NULL AFTER order_placed_at
+      `,
+    },
   ];
   for (const column of columns) {
     try {
@@ -381,6 +459,16 @@ const ensureOrderColumns = async () => {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL peppro_orders column');
     }
   }
+  await ensureIndex(
+    'peppro_orders',
+    'idx_peppro_orders_user_created',
+    'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_user_created (user_id, created_at)',
+  );
+  await ensureIndex(
+    'peppro_orders',
+    'idx_peppro_orders_status_norm_created',
+    'ALTER TABLE peppro_orders ADD INDEX idx_peppro_orders_status_norm_created (status_normalized, created_at)',
+  );
 };
 
 const ensureSalesProspectColumns = async () => {
@@ -465,6 +553,15 @@ const ensureSalesProspectColumns = async () => {
         ADD COLUMN reseller_permit_uploaded_at DATETIME NULL
       `,
     },
+    {
+      name: 'contact_email_normalized',
+      ddl: `
+        ALTER TABLE sales_prospects
+        ADD COLUMN contact_email_normalized VARCHAR(190)
+          GENERATED ALWAYS AS (LOWER(TRIM(COALESCE(contact_email, ''))))
+          STORED
+      `,
+    },
   ];
   for (const column of columns) {
     try {
@@ -486,6 +583,26 @@ const ensureSalesProspectColumns = async () => {
       logger.error({ err: error, column: column.name }, 'Failed to ensure MySQL sales_prospects column');
     }
   }
+  await ensureIndex(
+    'sales_prospects',
+    'idx_sales_prospects_doctor_updated',
+    'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_doctor_updated (doctor_id, updated_at, created_at)',
+  );
+  await ensureIndex(
+    'sales_prospects',
+    'idx_sales_prospects_contact_email_norm',
+    'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_contact_email_norm (contact_email_normalized)',
+  );
+  await ensureIndex(
+    'sales_prospects',
+    'idx_sales_prospects_referral_id',
+    'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_referral_id (referral_id)',
+  );
+  await ensureIndex(
+    'sales_prospects',
+    'idx_sales_prospects_contact_form_id',
+    'ALTER TABLE sales_prospects ADD INDEX idx_sales_prospects_contact_form_id (contact_form_id)',
+  );
 };
 
 const ensureBugReportColumns = async () => {
@@ -537,6 +654,22 @@ const ensureBugReportColumns = async () => {
   }
 };
 
+const ensureContactFormIndexes = async () => {
+  if (!mysqlClient.isEnabled()) {
+    return;
+  }
+  await ensureIndex(
+    'contact_forms',
+    'idx_contact_forms_email',
+    'ALTER TABLE contact_forms ADD INDEX idx_contact_forms_email (email)',
+  );
+  await ensureIndex(
+    'contact_forms',
+    'idx_contact_forms_created_at',
+    'ALTER TABLE contact_forms ADD INDEX idx_contact_forms_created_at (created_at)',
+  );
+};
+
 const ensureSchema = async () => {
   if (!mysqlClient.isEnabled()) {
     return;
@@ -548,6 +681,7 @@ const ensureSchema = async () => {
   await ensureOrderColumns();
   await ensureSalesProspectColumns();
   await ensureBugReportColumns();
+  await ensureContactFormIndexes();
   logger.info('MySQL schema ensured');
 };
 

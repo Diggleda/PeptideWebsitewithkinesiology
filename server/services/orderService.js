@@ -2870,7 +2870,7 @@ const getSalesByRep = async ({
           `
             SELECT contact_email, sales_rep_id, updated_at, created_at
             FROM sales_prospects
-            WHERE LOWER(TRIM(contact_email)) IN (${placeholders})
+            WHERE contact_email_normalized IN (${placeholders})
           `,
           params,
         );

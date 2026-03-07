@@ -1,6 +1,7 @@
 const { orderStore } = require('../storage');
 
-const getAll = () => orderStore.read();
+const getAll = () => (typeof orderStore.readCached === 'function' ? orderStore.readCached() : orderStore.read());
+const getAllForWrite = () => orderStore.read();
 
 const findById = (id) => getAll().find((order) => order.id === id) || null;
 
@@ -17,7 +18,7 @@ const findByUserIdAndIdempotencyKey = (userId, idempotencyKey) => {
 const findByPaymentIntentId = (paymentIntentId) => getAll().find((order) => order.paymentIntentId === paymentIntentId) || null;
 
 const insert = (order) => {
-  const orders = getAll();
+  const orders = getAllForWrite();
   const existing = orders.find((item) => item.id === order.id);
   if (existing) {
     return existing;
@@ -28,7 +29,7 @@ const insert = (order) => {
 };
 
 const update = (order) => {
-  const orders = getAll();
+  const orders = getAllForWrite();
   const index = orders.findIndex((item) => item.id === order.id);
   if (index === -1) {
     return null;
@@ -39,7 +40,7 @@ const update = (order) => {
 };
 
 const removeById = (id) => {
-  const orders = getAll();
+  const orders = getAllForWrite();
   const filtered = orders.filter((order) => order.id !== id);
   if (filtered.length === orders.length) {
     return null;

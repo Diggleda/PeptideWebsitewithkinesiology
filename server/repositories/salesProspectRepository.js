@@ -119,13 +119,19 @@ const toDbParams = (record) => {
   };
 };
 
+const readStoreRecords = () => {
+  const records = typeof salesProspectStore.readCached === 'function'
+    ? salesProspectStore.readCached()
+    : salesProspectStore.read();
+  return Array.isArray(records) ? records : [];
+};
+
 const getAll = async () => {
   if (mysqlClient.isEnabled()) {
     const rows = await mysqlClient.fetchAll('SELECT * FROM sales_prospects');
     return (rows || []).map(rowToRecord).filter(Boolean);
   }
-  const records = salesProspectStore.read();
-  return Array.isArray(records) ? records.map(ensureDefaults).filter(Boolean) : [];
+  return readStoreRecords().map(ensureDefaults).filter(Boolean);
 };
 
 const findById = async (id) => {
@@ -138,8 +144,7 @@ const findById = async (id) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   return list.map(ensureDefaults).find((item) => item.id === target) || null;
 };
 
@@ -159,8 +164,7 @@ const findBySalesRepAndDoctorId = async (salesRepId, doctorId) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   return list
     .map(ensureDefaults)
     .find((item) => item.salesRepId === rep && item.doctorId === doc) || null;
@@ -182,8 +186,7 @@ const findByDoctorId = async (doctorId) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   const matches = list
     .map(ensureDefaults)
     .filter((item) => normalizeId(item.doctorId) === doc);
@@ -217,8 +220,7 @@ const findBySalesRepAndReferralId = async (salesRepId, referralId) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   return list
     .map(ensureDefaults)
     .find((item) => item.salesRepId === rep && item.referralId === ref) || null;
@@ -240,8 +242,7 @@ const findBySalesRepAndContactFormId = async (salesRepId, contactFormId) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   return list
     .map(ensureDefaults)
     .find((item) => item.salesRepId === rep && item.contactFormId === form) || null;
@@ -256,7 +257,7 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
       `
         SELECT * FROM sales_prospects
         WHERE sales_rep_id = :salesRepId
-          AND LOWER(TRIM(contact_email)) = :contactEmail
+          AND contact_email_normalized = :contactEmail
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -264,8 +265,7 @@ const findBySalesRepAndContactEmail = async (salesRepId, contactEmail) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   const matches = list
     .map(ensureDefaults)
     .filter((item) => item.salesRepId === rep && normalizeEmail(item.contactEmail) === email);
@@ -295,8 +295,7 @@ const findBySourceExternalId = async (sourceSystem, sourceExternalId) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   return list
     .map(ensureDefaults)
     .find(
@@ -313,7 +312,7 @@ const findByContactEmail = async (contactEmail) => {
     const row = await mysqlClient.fetchOne(
       `
         SELECT * FROM sales_prospects
-        WHERE LOWER(TRIM(contact_email)) = :contactEmail
+        WHERE contact_email_normalized = :contactEmail
         ORDER BY COALESCE(updated_at, created_at) DESC
         LIMIT 1
       `,
@@ -321,8 +320,7 @@ const findByContactEmail = async (contactEmail) => {
     );
     return rowToRecord(row);
   }
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   const matches = list
     .map(ensureDefaults)
     .filter((item) => normalizeEmail(item.contactEmail) === email);
@@ -359,8 +357,7 @@ const findByContactPhone = async (contactPhone) => {
     return matches.length > 0 ? matches[0] : null;
   }
 
-  const records = salesProspectStore.read();
-  const list = Array.isArray(records) ? records : [];
+  const list = readStoreRecords();
   const matches = matchesByPhone(list);
   return matches.length > 0 ? matches[0] : null;
 };
@@ -379,8 +376,7 @@ const findAllByReferralId = async (referralId) => {
     );
     return Array.isArray(rows) ? rows.map(rowToRecord).filter(Boolean) : [];
   }
-  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
-  return records
+  return readStoreRecords()
     .map(ensureDefaults)
     .filter((item) => item.id === target || item.referralId === target);
 };
@@ -545,7 +541,8 @@ const upsert = async (prospect) => {
     return findById(normalized.id);
   }
 
-  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
+  const baseRecords = salesProspectStore.read();
+  const records = Array.isArray(baseRecords) ? baseRecords : [];
   const index = records.findIndex((item) => normalizeId(item.id) === normalized.id);
   if (index >= 0) {
     records[index] = normalized;
@@ -568,7 +565,8 @@ const remove = async (id) => {
       return false;
     }
   }
-  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
+  const baseRecords = salesProspectStore.read();
+  const records = Array.isArray(baseRecords) ? baseRecords : [];
   const next = records.filter((item) => normalizeId(item.id) !== target);
   salesProspectStore.write(next);
   return next.length !== records.length;
@@ -589,7 +587,8 @@ const removeByReferralId = async (referralId) => {
       return false;
     }
   }
-  const records = Array.isArray(salesProspectStore.read()) ? salesProspectStore.read() : [];
+  const baseRecords = salesProspectStore.read();
+  const records = Array.isArray(baseRecords) ? baseRecords : [];
   const next = records.filter((item) => {
     const id = normalizeId(item?.id);
     const refId = normalizeId(item?.referralId || item?.referral_id);

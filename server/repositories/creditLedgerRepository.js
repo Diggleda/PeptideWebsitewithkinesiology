@@ -1,12 +1,15 @@
 const crypto = require('crypto');
 const { creditLedgerStore } = require('../storage');
 
-const getAll = () => creditLedgerStore.read();
+const getAll = () => (typeof creditLedgerStore.readCached === 'function'
+  ? creditLedgerStore.readCached()
+  : creditLedgerStore.read());
+const getAllForWrite = () => creditLedgerStore.read();
 
 const findByDoctorId = (doctorId) => getAll().filter((entry) => entry.doctorId === doctorId);
 
 const insert = (entry) => {
-  const records = getAll();
+  const records = getAllForWrite();
   const record = {
     id: entry.id || crypto.randomUUID(),
     currency: entry.currency || 'USD',

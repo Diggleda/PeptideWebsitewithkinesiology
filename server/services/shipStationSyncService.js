@@ -73,6 +73,90 @@ const buildShipmentNote = ({ shipStationStatus, trackingNumber, carrierCode, shi
   return parts.join(' • ');
 };
 
+const persistShipmentSnapshotToSql = async ({
+  wooOrderId,
+  shipStationOrderId,
+  shipStationStatus,
+  trackingNumber,
+  carrierCode,
+  shipDate,
+}) => {
+  if (!wooOrderId) return;
+
+  const normalizedStatus = normalizeShipStationStatus(shipStationStatus) || null;
+  const normalizedTracking = pickFirstString(trackingNumber);
+  const normalizedShipDate = pickFirstString(shipDate);
+  const normalizedShipStationOrderId = pickFirstString(shipStationOrderId);
+
+  let baseOrder = null;
+  try {
+    baseOrder = await orderSqlRepository.fetchByWooOrderId(wooOrderId);
+    if (!baseOrder && normalizedShipStationOrderId) {
+      baseOrder = await orderSqlRepository.fetchByShipStationOrderId(normalizedShipStationOrderId);
+    }
+  } catch (error) {
+    logger.warn({ err: error, wooOrderId }, 'ShipStation SQL snapshot: lookup failed');
+    return;
+  }
+
+  if (!baseOrder || !baseOrder.id) {
+    return;
+  }
+
+  const nextShippingEstimate = {
+    ...(baseOrder.shippingEstimate && typeof baseOrder.shippingEstimate === 'object'
+      ? baseOrder.shippingEstimate
+      : {}),
+  };
+  if (normalizedStatus === 'shipped' && !nextShippingEstimate.status) {
+    nextShippingEstimate.status = 'shipped';
+  }
+  if (normalizedShipDate && !nextShippingEstimate.shipDate) {
+    nextShippingEstimate.shipDate = normalizedShipDate;
+  }
+  if (carrierCode && !nextShippingEstimate.carrierId) {
+    nextShippingEstimate.carrierId = carrierCode;
+  }
+
+  const nextIntegrations = {
+    ...(baseOrder.integrationDetails && typeof baseOrder.integrationDetails === 'object'
+      ? baseOrder.integrationDetails
+      : {}),
+  };
+  nextIntegrations.shipStation = {
+    ...(nextIntegrations.shipStation && typeof nextIntegrations.shipStation === 'object'
+      ? nextIntegrations.shipStation
+      : {}),
+    status: pickFirstString(shipStationStatus, nextIntegrations.shipStation?.status),
+    trackingNumber: pickFirstString(normalizedTracking, nextIntegrations.shipStation?.trackingNumber),
+    carrierCode: pickFirstString(carrierCode, nextIntegrations.shipStation?.carrierCode),
+    shipDate: pickFirstString(normalizedShipDate, nextIntegrations.shipStation?.shipDate),
+    orderId: pickFirstString(normalizedShipStationOrderId, nextIntegrations.shipStation?.orderId),
+  };
+
+  const nextOrder = {
+    ...baseOrder,
+    status: normalizedStatus || baseOrder.status,
+    trackingNumber: normalizedTracking || baseOrder.trackingNumber || null,
+    shipStationOrderId: normalizedShipStationOrderId || baseOrder.shipStationOrderId || null,
+    shippingEstimate: Object.keys(nextShippingEstimate).length > 0 ? nextShippingEstimate : null,
+    integrationDetails: nextIntegrations,
+  };
+  if (!nextOrder.shippedAt && nextIntegrations.shipStation?.shipDate) {
+    nextOrder.shippedAt = nextIntegrations.shipStation.shipDate;
+  }
+
+  try {
+    await orderSqlRepository.persistOrder({
+      order: nextOrder,
+      wooOrderId,
+      shipStationOrderId: nextOrder.shipStationOrderId,
+    });
+  } catch (error) {
+    logger.warn({ err: error, orderId: baseOrder.id, wooOrderId }, 'ShipStation SQL snapshot: persist failed');
+  }
+};
+
 const resolveWooOrderId = async ({ orderNumber, shipStationOrderId, shipStationOrderKey }) => {
   const keyDerived = parseWooOrderIdFromShipStationOrderKey(shipStationOrderKey);
   if (keyDerived) {
@@ -231,6 +315,15 @@ const syncWooFromShipStation = async ({
     },
     'ShipStation → WooCommerce sync processed',
   );
+
+  await persistShipmentSnapshotToSql({
+    wooOrderId,
+    shipStationOrderId: effectiveShipStationOrderId,
+    shipStationStatus: effectiveShipStationStatus,
+    trackingNumber: effectiveTrackingNumber,
+    carrierCode: effectiveCarrierCode,
+    shipDate: effectiveShipDate,
+  });
 
   return {
     status: 'success',
@@ -439,6 +532,15 @@ const runShipStationStatusSyncOnce = async () => {
             }
           }
         }
+
+        await persistShipmentSnapshotToSql({
+          wooOrderId,
+          shipStationOrderId: ship.orderId,
+          shipStationStatus: ship.status,
+          trackingNumber: ship.trackingNumber,
+          carrierCode: ship.carrierCode,
+          shipDate: ship.shipDate,
+        });
       } catch (error) {
         failed += 1;
         logger.warn(

@@ -6,7 +6,8 @@ const normalizeId = (value) => {
   return String(value);
 };
 
-const getAll = () => referralStore.read();
+const getAll = () => (typeof referralStore.readCached === 'function' ? referralStore.readCached() : referralStore.read());
+const getAllForWrite = () => referralStore.read();
 
 const findById = (id) => getAll().find((referral) => referral.id === id) || null;
 
@@ -21,7 +22,7 @@ const findBySalesRepId = (salesRepId) => {
 };
 
 const insert = (referral) => {
-  const records = getAll();
+  const records = getAllForWrite();
   const record = {
     id: referral.id || crypto.randomUUID(),
     ...referral,
@@ -32,7 +33,7 @@ const insert = (referral) => {
 };
 
 const update = (id, updates) => {
-  const records = getAll();
+  const records = getAllForWrite();
   const index = records.findIndex((referral) => referral.id === id);
   if (index === -1) {
     return null;
@@ -48,7 +49,7 @@ const update = (id, updates) => {
 };
 
 const remove = (id) => {
-  const records = getAll();
+  const records = getAllForWrite();
   const next = records.filter((referral) => referral.id !== id);
   if (next.length === records.length) {
     return false;

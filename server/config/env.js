@@ -111,6 +111,17 @@ const env = {
   backendBuild: process.env.BACKEND_BUILD || resolveBackendBuild(),
   logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   logPretty: process.env.LOG_PRETTY === 'true',
+  perf: {
+    enabled: process.env.PERF_LOG_ENABLED !== 'false',
+    onlyApi: process.env.PERF_LOG_ONLY_API !== 'false',
+    slowRequestMs: Math.max(50, Math.min(toNumber(process.env.PERF_SLOW_REQUEST_MS, 400), 60_000)),
+    summaryIntervalMs: Math.max(
+      10_000,
+      Math.min(toNumber(process.env.PERF_SUMMARY_INTERVAL_MS, 5 * 60 * 1000), 60 * 60 * 1000),
+    ),
+    topRoutes: Math.max(1, Math.min(toNumber(process.env.PERF_TOP_ROUTES, 5), 20)),
+    minHitsForSummary: Math.max(1, Math.min(toNumber(process.env.PERF_MIN_HITS_FOR_SUMMARY, 5), 500)),
+  },
   rateLimit: {
     enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
     windowSeconds: Math.max(10, Math.min(toNumber(process.env.RATE_LIMIT_WINDOW_SECONDS, 60), 10 * 60)),

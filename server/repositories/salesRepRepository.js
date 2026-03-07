@@ -24,7 +24,7 @@ const ensureDefaults = (record) => {
 };
 
 const load = () => {
-  const reps = salesRepStore.read();
+  const reps = typeof salesRepStore.readCached === 'function' ? salesRepStore.readCached() : salesRepStore.read();
   return Array.isArray(reps) ? reps.map(ensureDefaults) : [];
 };
 

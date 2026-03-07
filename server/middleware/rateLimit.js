@@ -8,6 +8,7 @@ const EXPENSIVE_LIMIT = env.rateLimit?.maxRequestsExpensive || 80;
 const AUTH_LIMIT = env.rateLimit?.maxRequestsAuth || 40;
 
 const hits = new Map();
+let requestCounter = 0;
 
 const getClientIp = (req) => {
   const candidate = req.headers['cf-connecting-ip']
@@ -53,8 +54,20 @@ const limitForBucket = (bucket) => {
 };
 
 const pruneBucket = (timestamps, cutoff) => {
-  while (timestamps.length > 0 && timestamps[0] < cutoff) {
-    timestamps.shift();
+  let firstValidIndex = 0;
+  while (firstValidIndex < timestamps.length && timestamps[firstValidIndex] < cutoff) {
+    firstValidIndex += 1;
+  }
+  if (firstValidIndex > 0) {
+    timestamps.splice(0, firstValidIndex);  }
+};
+
+const pruneGlobal = (cutoff) => {
+  for (const [key, timestamps] of hits.entries()) {
+    pruneBucket(timestamps, cutoff);
+    if (timestamps.length === 0) {
+      hits.delete(key);
+    }
   }
 };
 
@@ -77,6 +90,10 @@ const rateLimit = (req, res, next) => {
   const limit = limitForBucket(bucket);
   const now = Date.now();
   const cutoff = now - WINDOW_SECONDS * 1000;
+  requestCounter += 1;
+  if ((requestCounter & 255) === 0) {
+    pruneGlobal(cutoff);
+  }
   const key = `${ip}:${bucket}`;
 
   const timestamps = hits.get(key) || [];
@@ -99,4 +116,3 @@ const rateLimit = (req, res, next) => {
 };
 
 module.exports = { rateLimit };
-

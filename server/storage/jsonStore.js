@@ -10,6 +10,8 @@ class JsonStore {
     this.filePath = path.join(baseDir, fileName);
     this.cache = null;
     this.cacheMtimeMs = 0;
+    this.lastCacheValidationAt = 0;
+    this.cacheValidationIntervalMs = 250;
   }
 
   getDefaultValue() {
@@ -146,25 +148,41 @@ class JsonStore {
   }
 
   read() {
+    return this.readInternal({ clone: true });
+  }
+
+  readCached() {
+    return this.readInternal({ clone: false });
+  }
+
+  readInternal({ clone } = { clone: true }) {
     try {
       this.ensureDir();
       if (!fs.existsSync(this.filePath)) {
-        return this.getDefaultValue();
+        const fallback = this.getDefaultValue();
+        return clone ? this.cloneData(fallback) : fallback;
       }
 
       if (this.cache !== null) {
-        try {
-          const stat = fs.statSync(this.filePath);
-          if (stat.mtimeMs === this.cacheMtimeMs) {
-            return this.cloneData(this.cache);
+        const now = Date.now();
+        const shouldValidate = now - this.lastCacheValidationAt >= this.cacheValidationIntervalMs;
+        if (shouldValidate) {
+          this.lastCacheValidationAt = now;
+          try {
+            const stat = fs.statSync(this.filePath);
+            if (stat.mtimeMs !== this.cacheMtimeMs) {
+              this.readFromDisk();
+            }
+          } catch (_error) {
+            // If stat fails, fall back to the cached payload to avoid blocking the request path.
           }
-        } catch (_error) {
-          // If stat fails, fall back to disk read.
         }
+        return clone ? this.cloneData(this.cache) : this.cache;
       }
 
       const data = this.readFromDisk();
-      return this.cloneData(data);
+      this.lastCacheValidationAt = Date.now();
+      return clone ? this.cloneData(data) : data;
     } catch (error) {
       logger.error({ err: error, file: this.filePath }, 'Failed to read store');
       throw error;
@@ -195,6 +213,7 @@ class JsonStore {
       } catch (_error) {
         this.cacheMtimeMs = Date.now();
       }
+      this.lastCacheValidationAt = Date.now();
     } catch (error) {
       try {
         if (tmpPath && fs.existsSync(tmpPath)) {

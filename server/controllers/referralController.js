@@ -313,7 +313,7 @@ const fetchMysqlAccountLookup = async (emails) => {
     return new Map();
   }
   const placeholders = normalized.map(() => '?').join(', ');
-  const query = `SELECT id, email FROM users WHERE LOWER(TRIM(email)) IN (${placeholders})`;
+  const query = `SELECT id, email FROM users WHERE email_normalized IN (${placeholders})`;
   try {
     const rows = await mysqlClient.fetchAll(query, normalized);
     const lookup = new Map();
@@ -329,6 +329,27 @@ const fetchMysqlAccountLookup = async (emails) => {
     });
     return lookup;
   } catch (error) {
+    const fallbackable = error && typeof error === 'object' && error.code === 'ER_BAD_FIELD_ERROR';
+    if (fallbackable) {
+      try {
+        const fallbackQuery = `SELECT id, email FROM users WHERE LOWER(TRIM(email)) IN (${placeholders})`;
+        const rows = await mysqlClient.fetchAll(fallbackQuery, normalized);
+        const lookup = new Map();
+        (rows || []).forEach((row) => {
+          const email = normalizeEmail(row?.email);
+          if (email) {
+            lookup.set(email, {
+              id: row?.id != null ? String(row.id) : null,
+              email,
+              source: 'mysql',
+            });
+          }
+        });
+        return lookup;
+      } catch {
+        // fall through to warning below
+      }
+    }
     logger.warn({ err: error }, 'Failed to query MySQL for referral account lookup');
     return null;
   }
@@ -1456,7 +1477,7 @@ const createManualProspect = async (req, res, next) => {
         }
         try {
           const row = await mysqlClient.fetchOne(
-            'SELECT id FROM contact_forms WHERE LOWER(email) = :email LIMIT 1',
+            'SELECT id FROM contact_forms WHERE email = :email LIMIT 1',
             { email },
           );
           return Boolean(row);

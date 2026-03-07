@@ -20,6 +20,82 @@ const toNumber = (value, fallback = 0) => {
 const roundCurrency = (value) => Math.max(0, Math.round((toNumber(value, 0) + 1e-9) * 100) / 100);
 const HAND_DELIVERY_SERVICE_LABEL = 'Hand Delivered';
 
+const toIsoDateTime = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+};
+
+const normalizeStatusToken = (value) => String(value || '').trim().toLowerCase().replace(/_/g, '-');
+
+const resolveTrackingNumber = (order) => {
+  if (!order || typeof order !== 'object') return null;
+  const candidates = [
+    order.trackingNumber,
+    order.tracking_number,
+    order.integrationDetails?.shipStation?.trackingNumber,
+    order.integrations?.shipStation?.trackingNumber,
+    order.integrations?.shipstation?.trackingNumber,
+  ];
+  for (const candidate of candidates) {
+    const normalized = sanitizeString(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const resolveOrderPlacedAt = (order, createdAtFallback) => {
+  if (!order || typeof order !== 'object') {
+    return toIsoDateTime(createdAtFallback);
+  }
+  const candidates = [
+    order.orderPlacedAt,
+    order.order_placed_at,
+    order.placedAt,
+    order.placed_at,
+    order.createdAt,
+    order.created_at,
+    createdAtFallback,
+  ];
+  for (const candidate of candidates) {
+    const parsed = toIsoDateTime(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+};
+
+const resolveShippedAt = (order) => {
+  if (!order || typeof order !== 'object') return null;
+
+  const explicitCandidates = [
+    order.shippedAt,
+    order.shipped_at,
+    order.shippingEstimate?.shipDate,
+    order.shippingEstimate?.shippedAt,
+    order.integrationDetails?.shipStation?.shipDate,
+    order.integrationDetails?.shipStation?.shippedAt,
+    order.integrations?.shipStation?.shipDate,
+    order.integrations?.shipStation?.shippedAt,
+    order.integrations?.shipstation?.shipDate,
+    order.integrations?.shipstation?.shippedAt,
+  ];
+  for (const candidate of explicitCandidates) {
+    const parsed = toIsoDateTime(candidate);
+    if (parsed) return parsed;
+  }
+
+  const status = normalizeStatusToken(order.status);
+  const trackingNumber = resolveTrackingNumber(order);
+  const isShippedLike = status === 'shipped' || status === 'completed';
+  if (isShippedLike && trackingNumber) {
+    return new Date().toISOString();
+  }
+  return null;
+};
+
 const isHandDeliveryOrder = (order) => {
   if (!order || typeof order !== 'object') {
     return false;
@@ -121,6 +197,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
 
   const createdAtRaw = sanitizeString(order.createdAt) || new Date().toISOString();
   const createdAtRawWithPst = appendPstSuffix(createdAtRaw);
+  const orderPlacedAt = resolveOrderPlacedAt(order, createdAtRaw);
+  const shippedAt = resolveShippedAt(order);
 
   const payload = {
     id: sanitizeString(order.id),
@@ -141,12 +219,18 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
     pickupReadyNotice: sanitizeString(order.pickupReadyNotice || null),
     physicianCertified: order.physicianCertificationAccepted === true ? 1 : 0,
     status: order.status || 'pending',
+    orderPlacedAt,
+    shippedAt,
     paymentDetails: sanitizeString(order.paymentDetails || order.paymentMethod || null),
     payload: JSON.stringify({
       order: {
         ...(order && typeof order === 'object' ? order : {}),
         total: computeGrandTotal(order),
         grandTotal: computeGrandTotal(order),
+        orderPlacedAt,
+        order_placed_at: orderPlacedAt,
+        shippedAt,
+        shipped_at: shippedAt,
         createdAt: createdAtRawWithPst || createdAtRaw,
         created_at: createdAtRawWithPst || createdAtRaw,
       },
@@ -179,6 +263,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           pickup_ready_notice,
           physician_certified,
           status,
+          order_placed_at,
+          shipped_at,
           \`Payment Details\`,
           payload,
           created_at,
@@ -200,6 +286,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           :pickupReadyNotice,
           :physicianCertified,
           :status,
+          :orderPlacedAt,
+          :shippedAt,
           :paymentDetails,
           :payload,
           :createdAt,
@@ -219,6 +307,8 @@ const persistOrder = async ({ order, wooOrderId, shipStationOrderId }) => {
           pickup_ready_notice = VALUES(pickup_ready_notice),
           physician_certified = VALUES(physician_certified),
           status = VALUES(status),
+          order_placed_at = COALESCE(order_placed_at, VALUES(order_placed_at)),
+          shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
           \`Payment Details\` = VALUES(\`Payment Details\`),
           payload = VALUES(payload),
           pricing_mode = VALUES(pricing_mode),
@@ -341,6 +431,23 @@ const mapRowToOrder = (row, options = {}) => {
     pickupReadyNotice: sanitizeString(payloadOrder.pickupReadyNotice)
       || sanitizeString(row.pickup_ready_notice),
     status: payloadOrder.status || row.status || 'pending',
+    orderPlacedAt: toIso(
+      payloadOrder.orderPlacedAt
+      || payloadOrder.order_placed_at
+      || row.order_placed_at
+      || payloadOrder.createdAt
+      || payloadOrder.created_at
+      || row.created_at,
+    ),
+    shippedAt: toIso(
+      payloadOrder.shippedAt
+      || payloadOrder.shipped_at
+      || payloadOrder.shippingEstimate?.shipDate
+      || payloadOrder.shippingEstimate?.shippedAt
+      || payload?.integrations?.shipStation?.shipDate
+      || payload?.integrations?.shipStation?.shippedAt
+      || row.shipped_at,
+    ),
     createdAt: toIso(payloadOrder.createdAt || payloadOrder.created_at || row.created_at || row.updated_at || payloadOrder.updatedAt || payloadOrder.updated_at),
     updatedAt: toIso(payloadOrder.updatedAt || payloadOrder.updated_at || row.updated_at || row.created_at || payloadOrder.createdAt || payloadOrder.created_at),
     integrationDetails: payloadOrder.integrationDetails
@@ -694,7 +801,7 @@ const fetchByStatuses = async (statuses = [], options = {}) => {
       `
         SELECT *
         FROM peppro_orders
-        WHERE ${statusExpr} IN (${placeholders})
+        WHERE COALESCE(status_normalized, '') IN (${placeholders})
         ORDER BY COALESCE(created_at, updated_at) DESC
         LIMIT ${limit}
       `,

@@ -29,6 +29,7 @@ const { env } = require('./config/env');
 const { logger } = require('./config/logger');
 const { requestContext } = require('./config/requestContext');
 const { rateLimit } = require('./middleware/rateLimit');
+const { requestTiming } = require('./middleware/requestTiming');
 
 const sanitizePublicMessage = (message) => {
   if (!message || typeof message !== 'string') {
@@ -299,6 +300,7 @@ const createApp = () => {
   app.use(cors(corsOptions));
 
   app.use(rateLimit);
+  app.use(requestTiming);
 
   // Stripe webhook needs the raw body for signature verification.
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
@@ -318,10 +320,12 @@ const createApp = () => {
     return undefined;
   }));
 
-  app.use((req, res, next) => {
-    logger.debug({ method: req.method, path: req.path }, 'Incoming request');
-    next();
-  });
+  if (typeof logger.isLevelEnabled !== 'function' || logger.isLevelEnabled('debug')) {
+    app.use((req, res, next) => {
+      logger.debug({ method: req.method, path: req.path }, 'Incoming request');
+      next();
+    });
+  }
 
   app.use((req, res, next) => {
     res.on('finish', () => {
