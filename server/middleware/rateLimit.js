@@ -59,7 +59,8 @@ const pruneBucket = (timestamps, cutoff) => {
     firstValidIndex += 1;
   }
   if (firstValidIndex > 0) {
-    timestamps.splice(0, firstValidIndex);  }
+    timestamps.splice(0, firstValidIndex);
+  }
 };
 
 const pruneGlobal = (cutoff) => {
