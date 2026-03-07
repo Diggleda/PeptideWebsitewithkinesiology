@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from python_backend.config import load_config
@@ -14,6 +16,64 @@ from python_backend.logging_config import configure_logging
 from python_backend.services import configure_services
 
 LOGGER = logging.getLogger("peppro.backfill_shipdates")
+
+
+def _strip_wrapping_quotes(value: str) -> str:
+    text = value.strip()
+    if len(text) >= 2 and ((text[0] == text[-1]) and text[0] in ("'", '"')):
+        return text[1:-1]
+    return text
+
+
+def _load_setenv_from_htaccess() -> Dict[str, str]:
+    """
+    Mirror Passenger/Apache SetEnv behavior for CLI script runs.
+    This keeps script bootstrapping aligned with how Woo/ShipStation sync runs in web workers.
+    """
+    loaded: Dict[str, str] = {}
+    repo_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        repo_root / "public_html" / ".htaccess",
+        repo_root / "server" / "php" / "public_html" / "port.peppro.net" / ".htaccess",
+    ]
+
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except Exception:
+            continue
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if not stripped.lower().startswith("setenv "):
+                continue
+            parts = stripped.split(None, 2)
+            if len(parts) < 3:
+                continue
+            key = parts[1].strip()
+            raw_value = _strip_wrapping_quotes(parts[2])
+            if not key:
+                continue
+            os.environ[key] = raw_value
+            loaded[key] = raw_value
+
+    return loaded
+
+
+def _bootstrap_cli_env() -> None:
+    """
+    For CLI runs, attempt the same environment source used by Passenger workers.
+    """
+    if os.environ.get("MYSQL_USER") and os.environ.get("MYSQL_DATABASE"):
+        return
+
+    loaded = _load_setenv_from_htaccess()
+    dot_env_path = loaded.get("DOTENV_CONFIG_PATH")
+    if dot_env_path and not os.environ.get("DOTENV_CONFIG_PATH"):
+        os.environ["DOTENV_CONFIG_PATH"] = dot_env_path
 
 
 def _safe_str(value: Any) -> Optional[str]:
@@ -293,6 +353,7 @@ def _resolve_ship_info(order_numbers: Sequence[str], sleep_ms: int) -> Optional[
 
 
 def run(*, apply: bool, limit: int, offset: int, sleep_ms: int, require_tracking: bool) -> None:
+    _bootstrap_cli_env()
     config = load_config()
     configure_logging(config)
     configure_services(config)
