@@ -1,10 +1,11 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { sanitizePayloadMessages, sanitizeServiceNames } from '../lib/publicText';
 
+const ALLOW_CROSS_ORIGIN_API =
+  String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
+
 export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
-  const allowCrossOriginApi =
-    String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
   const currentHost =
     typeof window !== 'undefined' && window.location?.hostname
       ? String(window.location.hostname).toLowerCase()
@@ -30,7 +31,7 @@ export const API_BASE_URL = (() => {
 
   // Guardrail: when loaded from a hosted browser origin, default to same-origin API unless
   // explicitly overridden. This prevents env/proxy drift from sending the app cross-origin.
-  if (!allowCrossOriginApi && typeof window !== 'undefined' && window.location?.origin) {
+  if (!ALLOW_CROSS_ORIGIN_API && typeof window !== 'undefined' && window.location?.origin) {
     try {
       if (/^https?:\/\//i.test(normalizedWithApi)) {
         const parsed = new URL(normalizedWithApi);
@@ -506,7 +507,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
       const sameOriginFallbackUrl =
-        (method === 'GET' || method === 'HEAD')
+        !ALLOW_CROSS_ORIGIN_API && (method === 'GET' || method === 'HEAD')
           ? toSameOriginApiUrl(requestUrl)
           : null;
       if (sameOriginFallbackUrl && isNetworkLikeFetchError(error)) {
