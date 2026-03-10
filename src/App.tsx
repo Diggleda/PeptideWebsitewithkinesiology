@@ -3556,9 +3556,9 @@ function MainApp() {
     : 0;
   const delegateDoctorNameForShare = useMemo(() => {
     const raw = typeof delegateContext?.doctorName === "string" ? delegateContext.doctorName.trim() : "";
-    if (!raw) return "Doctor";
+    if (!raw) return "Physician";
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
-    return stripped || "Doctor";
+    return stripped || "Physician";
   }, [delegateContext?.doctorName]);
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
@@ -3581,6 +3581,7 @@ function MainApp() {
   const [productDetailOpen, setProductDetailOpen] = useState(false);
   const [loginPromptToken, setLoginPromptToken] = useState(0);
   const apiWarmupInFlight = useRef(false);
+  const adminReportsCalendarRef = useRef<HTMLDivElement | null>(null);
   const [shouldReopenCheckout, setShouldReopenCheckout] = useState(false);
   const [loginContext, setLoginContext] = useState<"checkout" | null>(null);
   const canUseRetailPricing = Boolean(
@@ -5490,7 +5491,7 @@ function MainApp() {
 	        }
 	      } catch (error) {
 	        console.warn("[Shop] Failed to update shop toggle", error);
-	        toast.error("Unable to update Shop setting right now.");
+	        toast.error("Unable to update Explore Peptides view setting right now.");
 	        setShopEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
@@ -9171,6 +9172,13 @@ function MainApp() {
   >(undefined);
   const [adminDashboardPeriodPickerOpen, setAdminDashboardPeriodPickerOpen] =
     useState(false);
+  const scrollToAdminReportsCalendar = useCallback(() => {
+    adminReportsCalendarRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    setAdminDashboardPeriodPickerOpen(true);
+  }, []);
 
   useEffect(() => {
     if (adminDashboardPeriodPickerOpen) return;
@@ -10003,7 +10011,7 @@ function MainApp() {
         { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
         {
           id: "doctor_referrals_manual" as const,
-          label: "Doctor Referrals and Manual",
+          label: "Physician Referrals and Manual",
           Icon: UserGroupIcon,
         },
         { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
@@ -10726,7 +10734,7 @@ function MainApp() {
       const userId = String(entry?.userId ?? entry?.id ?? "").trim();
       if (!userId) return null;
       const name =
-        String(entry?.name ?? entry?.email ?? `Doctor ${userId}`).trim() || `Doctor ${userId}`;
+        String(entry?.name ?? entry?.email ?? `Physician ${userId}`).trim() || `Physician ${userId}`;
       const email = typeof entry?.email === "string" ? String(entry.email).trim() : null;
       const role = normalizeRole(entry?.role || "doctor") || "doctor";
       return {
@@ -10911,7 +10919,7 @@ function MainApp() {
         setSalesRepHandDeliveryError(
           typeof error?.message === "string"
             ? error.message
-            : "Unable to load doctors for hand delivery settings.",
+            : "Unable to load physicians for hand delivery settings.",
         );
       } finally {
         setSalesRepHandDeliveryLoading(false);
@@ -13073,14 +13081,14 @@ function MainApp() {
       if (referral.referrerDoctorId) {
         lookup.set(
           referral.referrerDoctorId,
-          referral.referrerDoctorName || "Doctor",
+          referral.referrerDoctorName || "Physician",
         );
       }
       if (referral.convertedDoctorId) {
         const convertedName =
           referral.referrerDoctorName ??
           referral.referredContactName ??
-          "Converted doctor";
+          "Converted physician";
         lookup.set(referral.convertedDoctorId, convertedName);
       }
     }
@@ -13231,7 +13239,7 @@ function MainApp() {
 	              doc.name ||
 	              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
 	              doc.email ||
-	              "Doctor",
+	              "Physician",
 	            email: doc.email || doc.doctorEmail || doc.userEmail || null,
 	            profileImageUrl:
 	              doc.profileImageUrl || doc.profile_image_url || null,
@@ -13416,7 +13424,7 @@ function MainApp() {
               (order as any)?.billing_name ||
               (order as any)?.billing?.lastName ||
               (order as any)?.billing?.last_name ||
-              "Doctor",
+              "Physician",
             doctorProfileImageUrl:
               doctorInfo?.profileImageUrl ||
               (original as any)?.doctorProfileImageUrl ||
@@ -13918,7 +13926,7 @@ function MainApp() {
         doctorInfo?.name ||
         salesRepDoctorsById.get(doctorId) ||
         order.doctorName ||
-        "Doctor";
+        "Physician";
       const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
       const doctorAvatar =
         doctorInfo?.profileImageUrl ||
@@ -13946,7 +13954,7 @@ function MainApp() {
           .join(" ")
           .trim() ||
         (order as any)?.billing_name ||
-        "Doctor";
+        "Physician";
 	      const doctorEmailFromOrder =
 	        doctorEmail ||
 	        (order as any)?.billing?.email ||
@@ -16063,7 +16071,7 @@ function MainApp() {
 
       if (forcedByOtherLogin) {
         toast.error(
-          "Another login with your credentials has forced your logout. If this wasn't you, reset your password.",
+          'Somebody else signed in with your credentials. If this was not you, click "Reset Password" and login with your new credentials.',
         );
       } else if (reason === "token_revoked" || reason === "auth_revoked") {
         toast.info(
@@ -17423,7 +17431,7 @@ function MainApp() {
     if (!referralForm.contactName.trim()) {
       setReferralStatusMessage({
         type: "error",
-        message: "Please provide the doctor’s name before submitting.",
+        message: "Please provide the physician’s name before submitting.",
       });
       return;
     }
@@ -17688,7 +17696,7 @@ function MainApp() {
                 Referral Rewards Hub
               </p>
               <p className="text-xs text-slate-500">
-                Invite doctors & track credited referrals
+                Invite physicians & track credited referrals
               </p>
             </div>
           </div>
@@ -18257,7 +18265,7 @@ function MainApp() {
     );
 
     return (
-      <section className="grid gap-6 mb-16 mt-0">
+      <section className="grid gap-0 mb-16 mt-0">
         <div
           className={`glass-card squircle-xl referral-pill-wrapper transition-all duration-500 ${
             isReferralSectionExpanded
@@ -18583,7 +18591,7 @@ function MainApp() {
 	                      orderAny?.doctor_email ||
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
-	                      "Unknown doctor";
+	                      "Unknown physician";
                     const orderPlacedAt =
                       formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -18681,7 +18689,7 @@ function MainApp() {
               <div className="min-w-0 flex-1 pr-2">
               <h4 className="text-base font-semibold text-slate-900">Hand Delivery</h4>
               <p className="text-sm text-slate-600">
-                Doctors assigned to you. Check to enable hand delivery + free shipping messaging.
+                Physicians assigned to you. Check to enable hand delivery + free shipping messaging.
               </p>
               </div>
               <Button
@@ -18691,7 +18699,7 @@ function MainApp() {
                 onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
                 disabled={salesRepHandDeliveryLoading}
                 className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
-                title="Refresh hand delivery doctors"
+                title="Refresh hand delivery physicians"
               >
                 {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
               </Button>
@@ -18705,10 +18713,10 @@ function MainApp() {
           )}
 
           {salesRepHandDeliveryLoading ? (
-            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading doctors…</div>
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading physicians…</div>
           ) : salesRepHandDeliveryDoctors.length === 0 ? (
             <div className="pt-4 px-4 py-3 text-sm text-slate-500">
-              No assigned doctors found.
+              No assigned physicians found.
             </div>
           ) : (
             <div className="pt-4 sales-rep-table-wrapper admin-dashboard-list flex flex-col gap-2">
@@ -18833,8 +18841,8 @@ function MainApp() {
 		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
 		                  <p className="text-sm text-slate-600">
 		                    {isSalesLead(user?.role) || isAdmin(user?.role)
-		                      ? "All doctors and sales reps (online, idle, and offline)."
-		                      : "Your doctors (online, idle, and offline)."}
+		                      ? "All physicians and sales reps (online, idle, and offline)."
+		                      : "Your physicians (online, idle, and offline)."}
 		                  </p>
 		                </div>
 
@@ -18954,7 +18962,7 @@ function MainApp() {
 
 	                  return (
 	                    <div className="space-y-3">
-		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4">
 		                        <div className="flex flex-wrap items-center gap-3">
 		                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
 		                            <input
@@ -18980,8 +18988,8 @@ function MainApp() {
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
-		                                <option value="doctor">Doctors</option>
-		                                <option value="test_doctor">Test doctors</option>
+		                                <option value="doctor">Physicians</option>
+		                                <option value="test_doctor">Test physicians</option>
 		                              </select>
 		                            </label>
 		                          )}
@@ -19011,7 +19019,7 @@ function MainApp() {
 	                            <div className="flex w-full min-w-[900px] flex-col gap-2">
 		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
-		                        const displayName = entry.name || entry.email || "Doctor";
+		                        const displayName = entry.name || entry.email || "Physician";
 		                        const resolveLastSeenMs = () => {
 		                          const raw =
 		                            entry?.lastInteractionAt ||
@@ -19069,7 +19077,7 @@ function MainApp() {
 		                          }
 		                          if (role === "doctor") {
 		                            return {
-		                              label: "Doctor",
+		                              label: "Physician",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -19078,7 +19086,7 @@ function MainApp() {
 		                          }
 		                          if (role === "test_doctor") {
 		                            return {
-		                              label: "Test Doctor",
+		                              label: "Test Physician",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -19193,7 +19201,7 @@ function MainApp() {
 			                        Sales by Sales Rep
 			                      </h3>
 			                      <p className="text-sm text-slate-600">
-			                        Orders placed by doctors assigned to each rep.
+			                        Orders placed by physicians assigned to each rep.
 			                      </p>
 			                    </div>
 			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
@@ -19266,7 +19274,7 @@ function MainApp() {
 			                            </Popover.Portal>
 			                          </Popover.Root>
 			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-			                            ({adminDashboardPeriodLabel})
+			                            {adminDashboardPeriodLabel}
 			                          </span>
 			                          <Button
 			                            type="button"
@@ -19768,7 +19776,7 @@ function MainApp() {
 		                    >
 		                      <input
 		                        type="checkbox"
-		                        aria-label="Enable Shop for users"
+		                        aria-label="Enable Explore Peptides view for users"
 		                        checked={shopEnabled}
 		                        onChange={(e) => handleShopToggle(e.target.checked)}
 		                        className="brand-checkbox mt-0.5"
@@ -19776,7 +19784,7 @@ function MainApp() {
 		                      />
 		                      <span className="min-w-0">
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Shop button for users</span>
+		                          <span>Explore Peptides view for users</span>
 		                          <span className="text-xs font-semibold text-slate-500">
 		                            {"\u00A0"}(
 		                            {settingsSaving.shop
@@ -19788,7 +19796,7 @@ function MainApp() {
 		                          </span>
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
-		                          Controls whether doctors see the Shop button.
+		                          Controls whether physicians see the Explore Peptides button.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -19800,7 +19808,7 @@ function MainApp() {
                         >
                           <input
                             type="checkbox"
-                            aria-label="Enable Patient Links tab for doctors"
+                            aria-label="Enable Patient Links tab for physicians"
                             checked={patientLinksEnabled}
                             onChange={(e) => handlePatientLinksToggle(e.target.checked)}
                             className="brand-checkbox mt-0.5"
@@ -19808,7 +19816,7 @@ function MainApp() {
                           />
                           <span className="min-w-0">
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>Patient Links tab (doctors)</span>
+                              <span>Patient Links tab (physicians)</span>
                               <span className="text-xs font-semibold text-slate-500">
                                 {"\u00A0"}(
                                 {settingsSaving.patientLinks
@@ -19820,7 +19828,7 @@ function MainApp() {
                               </span>
                             </span>
                             <span className="block text-xs text-slate-600">
-                              When disabled, only test doctors can access Patient Links.
+                              When disabled, only test physicians can access Patient Links.
                             </span>
                           </span>
                         </label>
@@ -19898,7 +19906,7 @@ function MainApp() {
 		                    >
 		                      <input
 		                        type="checkbox"
-		                        aria-label="Enable Research dashboard for doctors and reps"
+		                        aria-label="Enable Research dashboard for physicians and reps"
 		                        checked={researchDashboardEnabled}
 		                        onChange={(e) =>
 		                          handleResearchDashboardToggle(e.target.checked)
@@ -19912,7 +19920,7 @@ function MainApp() {
 		                      />
 		                      <span className="min-w-0">
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Research dashboard access (doctors/reps)</span>
+		                          <span>Research dashboard access (physicians/reps)</span>
 		                          <span className="text-xs font-semibold text-slate-500">
 		                            {"\u00A0"}(
 		                            {settingsSaving.research
@@ -19926,7 +19934,7 @@ function MainApp() {
 		                          </span>
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
-		                          When disabled, only admins and test doctors see the work-in-progress research dashboard.
+		                          When disabled, only admins and test physicians see the work-in-progress research dashboard.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -20268,7 +20276,7 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4">
                         <div className="flex flex-wrap items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                             <input
@@ -20295,8 +20303,8 @@ function MainApp() {
                               <option value="admin">Admin</option>
 	                              <option value="sales_rep">Sales / Test Rep</option>
 	                              <option value="sales_lead">Sales Lead</option>
-	                              <option value="doctor">Doctors</option>
-	                              <option value="test_doctor">Test doctors</option>
+	                              <option value="doctor">Physicians</option>
+	                              <option value="test_doctor">Test physicians</option>
                             </select>
                           </label>
                         </div>
@@ -20353,7 +20361,7 @@ function MainApp() {
 				                                }
 				                                if (role === "doctor") {
 				                                  return {
-				                                    label: "Doctor",
+				                                    label: "Physician",
 				                                    style: {
 				                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -20362,7 +20370,7 @@ function MainApp() {
 			                                }
 			                                if (role === "test_doctor") {
 			                                  return {
-			                                    label: "Test Doctor",
+			                                    label: "Test Physician",
 			                                    style: {
 			                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -20692,7 +20700,10 @@ function MainApp() {
 						                    </p>
 						                  </div>
 						                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-						                    <div className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+						                    <div
+                                        ref={adminReportsCalendarRef}
+                                        className="sales-rep-action flex min-w-0 flex-row flex-wrap items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1"
+                                      >
 						                      <Popover.Root
 						                        open={adminDashboardPeriodPickerOpen}
 						                        onOpenChange={setAdminDashboardPeriodPickerOpen}
@@ -20759,9 +20770,14 @@ function MainApp() {
 						                          </Popover.Content>
 						                        </Popover.Portal>
 						                      </Popover.Root>
-						                      <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-						                        ({adminDashboardPeriodLabel})
-						                      </span>
+						                      <button
+                                        type="button"
+                                        onClick={scrollToAdminReportsCalendar}
+                                        className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4"
+                                        title="Jump to timeframe selector"
+                                      >
+						                        {adminDashboardPeriodLabel}
+						                      </button>
 							                      <Button
 							                        type="button"
 							                        variant="outline"
@@ -20789,12 +20805,20 @@ function MainApp() {
                       Sales by Sales Rep
                     </h3>
                     <p className="text-sm text-slate-600">
-                      Orders placed by doctors assigned to each rep.
+                      Orders placed by physicians assigned to each rep.
                     </p>
 				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
                   <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
                     <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+                      <button
+                        type="button"
+                        onClick={scrollToAdminReportsCalendar}
+                        className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                        title="Jump to timeframe selector"
+                      >
+                        {adminDashboardPeriodLabel}
+                      </button>
                       <Button
                         type="button"
                         variant="outline"
@@ -20975,6 +20999,14 @@ function MainApp() {
 	                  </div>
 	                  <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
 	                    <div className="sales-rep-action flex min-w-0 flex-row items-center justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+                        <button
+                          type="button"
+                          onClick={scrollToAdminReportsCalendar}
+                          className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                          title="Jump to timeframe selector"
+                        >
+                          {adminDashboardPeriodLabel}
+                        </button>
 	                      <Button
 	                        type="button"
 	                        variant="outline"
@@ -21231,6 +21263,14 @@ function MainApp() {
 						              <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Products sold list">
 					                    <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 					                      <span>Products Sold</span>
+                                <button
+                                  type="button"
+                                  onClick={scrollToAdminReportsCalendar}
+                                  className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                                  title="Jump to timeframe selector"
+                                >
+                                  {adminDashboardPeriodLabel}
+                                </button>
 					                    </div>
 					                    <div className="w-full" style={{ minWidth: 920 }}>
 					                      <div className="w-max">
@@ -21278,38 +21318,48 @@ function MainApp() {
 							                  <div className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar" role="region" aria-label="Commission list">
 							                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
 						                      <span>Commission</span>
-                                <Button
-                                  asChild
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 rounded-full"
-                                  title="Open Google Sheet"
-                                >
-                                  <a
-                                    href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    aria-label="Open Google Sheet"
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <button
+                                    type="button"
+                                    onClick={scrollToAdminReportsCalendar}
+                                    className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate hover:underline underline-offset-4 text-right"
+                                    title="Jump to timeframe selector"
                                   >
-                                    <svg
-                                      viewBox="0 0 48 48"
-                                      width="18"
-                                      height="18"
-                                      aria-hidden="true"
+                                    {adminDashboardPeriodLabel}
+                                  </button>
+                                  <Button
+                                    asChild
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-full"
+                                    title="Open Google Sheet"
+                                  >
+                                    <a
+                                      href="https://docs.google.com/spreadsheets/d/1KFAGGtys4YmMbeiy7f-su8iZQUBpg40hifjDrf5aGTU/edit?gid=72196618#gid=72196618"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      aria-label="Open Google Sheet"
                                     >
-                                      <path
-                                        fill="#0F9D58"
-                                        d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
-                                      />
-                                      <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
-                                      <path
-                                        fill="#FFFFFF"
-                                        d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
-                                      />
-                                    </svg>
-                                  </a>
-                                </Button>
+                                      <svg
+                                        viewBox="0 0 48 48"
+                                        width="18"
+                                        height="18"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          fill="#0F9D58"
+                                          d="M28,3H12c-2.21,0-4,1.79-4,4v34c0,2.21,1.79,4,4,4h24c2.21,0,4-1.79,4-4V15L28,3z"
+                                        />
+                                        <path fill="#87CEAC" d="M28,3v10c0,1.1,0.9,2,2,2h10L28,3z" />
+                                        <path
+                                          fill="#FFFFFF"
+                                          d="M16 21h16v2H16zm0 5h16v2H16zm0 5h16v2H16zm0 5h10v2H16z"
+                                        />
+                                      </svg>
+                                    </a>
+                                  </Button>
+                                </div>
 						                    </div>
 							                    <div className="w-full" style={{ minWidth: 920 }}>
 							                      <div className="w-max">
@@ -21799,7 +21849,7 @@ function MainApp() {
                     <div className="min-w-0">
                       <h3 className="text-lg sm:text-xl">Your Sales</h3>
                       <p className="text-sm text-slate-600">
-                        Live orders grouped by your doctors.
+                        Live orders grouped by your physicians.
                       </p>
                     </div>
                     <div className="sales-rep-card-controls">
@@ -22795,7 +22845,7 @@ function MainApp() {
 		                                              }}
 		                                              className="prospect-permit-checkbox-input"
 		                                            />
-		                                            Doctor does not have a resellers permit
+		                                            Physician does not have a resellers permit
 		                                          </label>
 			                                          <div className="prospect-permit-file-picker">
 				                                            <input
@@ -22936,7 +22986,7 @@ function MainApp() {
                       </p>
                     ) : filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
-                        You have no referrals yet. Encourage doctors to grow the
+                        You have no referrals yet. Encourage physicians to grow the
                         network.
                       </p>
                     ) : (
@@ -23405,9 +23455,9 @@ function MainApp() {
           .
         </p>
         )}
-      </section>
-    );
-  };
+		      </section>
+		    );
+		  };
 
   const handleViewProduct = (product: Product) => {
     console.debug("[Product] View details", { productId: product.id });
@@ -24071,17 +24121,16 @@ function MainApp() {
                         className="glass-card squircle-md px-4 py-2 shadow-lg transition-all duration-500"
                         style={{
                           backdropFilter: "blur(20px) saturate(1.4)",
-                          border: "2px solid rgb(95,179,249)",
                         }}
                       >
                         <p
-                          className="px-4 sm:px-6 italic text-left leading-snug break-words"
+                          className="px-2 sm:px-1 italic text-left leading-snug break-words"
                           style={{
                             color: "rgb(95,179,249)",
-                            fontSize: "clamp(1.5rem, 2.1vw, 1.2rem)",
+                            fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
                           }}
                         >
-                          Promoting endogenous healing through a community of practitioners who work one-on-one, day in and day out, to improve individual health across all aspects of healing.
+                          It is our mission to promote endogenous healing through a community of practitioners who work one-on-one, day in and day out, improving individual health across all aspects of healing.
                         </p>
                       </div>
                       <div
@@ -24272,7 +24321,7 @@ function MainApp() {
                             className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                             style={{ backgroundColor: "rgb(95, 179, 249)" }}
                           >
-                            <span className="mr-2">Shop</span>
+                            <span className="mr-2">Explore Peptides</span>
                             <ArrowRight
                               className="h-4 w-4"
                               aria-hidden="true"
@@ -24280,7 +24329,7 @@ function MainApp() {
                           </Button>
 	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
 	                            <span className="text-[11px] text-slate-600 italic">
-	                              Shop for physicians:{" "}
+	                              Explore Peptides view for physicians:{" "}
 	                              {shopEnabled ? "Enabled" : "Disabled"}
 	                            </span>
 	                          )}
@@ -25569,7 +25618,7 @@ function MainApp() {
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
 			                  <p className="text-lg font-semibold text-slate-900">This delegate session has expired.</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Please request a new link from your doctor and try again.
+			                    Please request a new link from your physician and try again.
 			                  </p>
 			                </div>
 			              </main>
@@ -25598,8 +25647,8 @@ function MainApp() {
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
 		                          <p className="mt-1 text-sm text-slate-700">
 		                            Your proposal has been sent to{' '}
-		                            {delegateDoctorNameForShare === 'Doctor'
-		                              ? 'your doctor'
+		                            {delegateDoctorNameForShare === 'Physician'
+		                              ? 'your physician'
 		                              : `Dr. ${delegateDoctorNameForShare}`}
 		                            .
 		                          </p>
@@ -26216,7 +26265,7 @@ function MainApp() {
 		                    placeholder={
 		                      salesDoctorNotesLoading
 		                        ? "Loading notes..."
-		                        : "Add notes about this doctor"
+		                        : "Add notes about this physician"
 		                    }
 		                    className="text-sm notes-textarea"
 		                    disabled={salesDoctorNotesLoading}
@@ -28011,7 +28060,7 @@ function MainApp() {
 
 	                    <div className="space-y-2">
 	                      <h4 className="text-base font-semibold text-slate-900">
-	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the doctor)</span>
+	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the physician)</span>
 	                      </h4>
 	                      {(() => {
 	                        const canEdit = Boolean(

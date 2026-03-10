@@ -1,6 +1,10 @@
 const axios = require('axios');
 const { XMLParser } = require('fast-xml-parser');
-const cheerio = require('cheerio');
+
+// `cheerio` can hang during module initialization in some local/dev environments.
+// Keep backend startup and page load responsive by skipping the HTML-scraping paths
+// when DOM parsing is unavailable.
+const getCheerio = () => null;
 
 const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
@@ -174,6 +178,10 @@ const pickFromSrcSet = (srcset = '') => {
 
 async function fetchNatureSubject(subjectUrl, limit = 20) {
   try {
+    const cheerio = getCheerio();
+    if (!cheerio) {
+      return [];
+    }
     const { data: html } = await axios.get(subjectUrl, { timeout: 10000, responseType: 'text', headers: DEFAULT_HEADERS });
     const $ = cheerio.load(html);
 
@@ -243,6 +251,10 @@ async function getPeptideNews({ limit = 20 } = {}) {
   const now = Date.now();
   if (newsCache.items.length && now - newsCache.fetchedAt < CACHE_TTL_MS) {
     return newsCache.items.slice(0, limit);
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return [];
   }
 
   if (newsCache.pending) {
@@ -413,6 +425,10 @@ async function enrichItemsWithOg(items, maxFetch = 6) {
 
 async function fetchOgMeta(url) {
   try {
+    const cheerio = getCheerio();
+    if (!cheerio) {
+      return { image: '', description: '', published: '' };
+    }
     const { data: html } = await axios.get(url, { timeout: 9000, responseType: 'text', headers: DEFAULT_HEADERS, maxRedirects: 5 });
     const $ = cheerio.load(html);
     const image = (
@@ -481,6 +497,10 @@ function detectPublishedDate($) {
 
 async function resolveGoogleNewsTarget(url) {
   try {
+    const cheerio = getCheerio();
+    if (!cheerio) {
+      return '';
+    }
     const { data: html } = await axios.get(url, { timeout: 7000, responseType: 'text', headers: DEFAULT_HEADERS, maxRedirects: 5 });
     const $ = cheerio.load(html);
     // meta refresh pattern: <meta http-equiv="refresh" content="0;url=...">

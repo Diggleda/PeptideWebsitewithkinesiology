@@ -48,7 +48,7 @@ const buildPatientLinkDefaultInstructions = (
   const doctor = typeof doctorName === 'string' ? doctorName.trim() : '';
   return contact
     ? `Please send payment to ${contact}.`
-    : `Reach out to ${doctor || 'your doctor'} for Zelle payment details.`;
+    : `Reach out to ${doctor || 'your physician'} for Zelle payment details.`;
 };
 
 const normalizePatientLinkPaymentMethod = (value: unknown): PatientLinkPaymentMethod => {
@@ -4279,7 +4279,7 @@ export function Header({
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
-                Share this code with doctors to link them to your account. Editing is disabled for security.
+                Share this code with physicians to link them to your account. Editing is disabled for security.
               </p>
             </div>
           )}
@@ -4986,7 +4986,7 @@ export function Header({
 	                          {repView && (order.doctorName || order.doctorEmail) && (
 	                            <p className="text-sm text-slate-700 break-words">
 	                              <span className="font-semibold">
-	                                {order.doctorName || "Doctor"}
+	                                {order.doctorName || "Physician"}
 	                              </span>
 	                              {order.doctorEmail ? ` — ${order.doctorEmail}` : ""}
 	                            </p>
@@ -5731,7 +5731,7 @@ export function Header({
 				                    >
 				                      <User className={delegateUserIconClassName} aria-hidden="true" />
 				                      <span className="font-semibold truncate min-w-0 max-w-full">{`Delegate of ${
-				                        localUser?.name ? `Dr. ${localUser.name}` : 'Doctor'
+				                        localUser?.name ? `Dr. ${localUser.name}` : 'Physician'
 				                      }`}</span>
 				                    </div>
 				                    {!isLargeScreen && (
@@ -6331,8 +6331,8 @@ export function Header({
 
   const delegateDoctorLabel = (() => {
     const raw = typeof delegateDoctorName === 'string' ? delegateDoctorName.trim() : '';
-    if (!raw) return 'Doctor';
-    if (raw.toLowerCase() === 'doctor') return 'Doctor';
+    if (!raw) return 'Physician';
+    if (raw.toLowerCase() === 'doctor') return 'Physician';
     return `Dr. ${raw}`;
   })();
 
@@ -6453,7 +6453,7 @@ export function Header({
 	              </div>
               <DialogDescription className="account-header-description">
                 {((localUser?.visits ?? user?.visits ?? 1) > 1)
-                  ? `We appreciate you joining us on the path to making healthcare simpler and more fulfilling!`
+                  ? ``
                   : `We are thrilled to have you with us—let's make healthcare fulfilling together!`}
               </DialogDescription>
               <p className="text-sm text-slate-600">
@@ -7108,7 +7108,7 @@ export function Header({
 	                          : withStaticAssetStamp('/PepPro_fulllogo.png'))
 	                        : withStaticAssetStamp('/PepPro_fulllogo.png')
 		                    }
-	                    alt={delegateMode ? 'Doctor logo' : 'PepPro logo'}
+	                    alt={delegateMode ? 'Physician logo' : 'PepPro logo'}
 		                    className="relative z-[1] flex-shrink-0"
 		                    style={{
 		                      display: 'block',

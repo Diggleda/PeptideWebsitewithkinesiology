@@ -36,7 +36,7 @@ const CreditManager: React.FC = () => {
       <div className="manual-credit-header">
         <div>
           <p className="manual-credit-kicker">Manual Credit</p>
-          <h3>Adjust a doctor&apos;s balance</h3>
+          <h3>Adjust a physician&apos;s balance</h3>
           <p>Add one-off credits for first orders, corrections, or retention incentives.</p>
         </div>
         <div className="manual-credit-meta">
@@ -51,7 +51,7 @@ const CreditManager: React.FC = () => {
       <form className="manual-credit-form" onSubmit={handleSubmit}>
         <div className="manual-credit-grid">
           <label className="manual-credit-field">
-            <span>Doctor ID</span>
+            <span>Physician ID</span>
             <input
               type="text"
               id="doctorId"

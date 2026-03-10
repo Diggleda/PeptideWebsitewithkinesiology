@@ -584,7 +584,7 @@ export function CheckoutModal({
   const delegateComparisonPricingMode: PricingMode = 'wholesale';
   const delegateDoctorDisplayName = isDelegateFlow
     ? (String(delegateDoctorName || '').trim().toLowerCase() === 'doctor'
-      ? 'Doctor'
+      ? 'Physician'
       : `Dr. ${delegateDoctorName}`)
     : null;
 
@@ -952,7 +952,7 @@ export function CheckoutModal({
 	          result && typeof result === 'object' && 'message' in result && (result as any).message
 	            ? String((result as any).message)
 	            : null;
-	        const successMessage = candidateMessage || `Shared with ${delegateDoctorDisplayName || 'Doctor'}`;
+	        const successMessage = candidateMessage || `Shared with ${delegateDoctorDisplayName || 'Physician'}`;
 	        setPlacedOrderNumber(null);
 	        setCheckoutStatus('success');
 	        setCheckoutStatusMessage(successMessage);
@@ -1445,7 +1445,7 @@ export function CheckoutModal({
 	              <DialogDescription>
 	                {proposalMode
 	                  ? (isDelegateFlow
-	                    ? `Review your proposal and share it with ${delegateDoctorDisplayName || 'the doctor'}.`
+	                    ? `Review your proposal and share it with ${delegateDoctorDisplayName || 'the physician'}.`
 	                    : 'Review this proposal and place your order.')
 	                  : 'Review and place your order.'}
 	              </DialogDescription>
@@ -1560,7 +1560,7 @@ export function CheckoutModal({
 	                                    {showDualPricing && delegateUnitPrice != null ? (
 	                                      <div className="flex flex-col leading-tight">
 	                                        <span className={retailPricingEnabled ? 'text-green-700 font-bold tabular-nums' : 'text-green-600 font-bold tabular-nums'}>
-	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Doctor:</span>
+	                                          <span className="text-[11px] font-semibold text-slate-500 mr-1">Physician:</span>
 	                                          ${doctorUnitPrice.toFixed(2)}
 	                                          {retailPricingEnabled ? (
 	                                            <span className="ml-1 text-[11px] font-semibold text-green-700">(Retail)</span>
@@ -1913,7 +1913,7 @@ export function CheckoutModal({
 	                  {isDelegateFlow ? (
 	                    <>
 	                      <p className="mt-2">
-	                        Payment method is configured by {delegateDoctorDisplayName || 'the doctor'} for this proposal.
+	                        Payment method is configured by {delegateDoctorDisplayName || 'the physician'} for this proposal.
 	                      </p>
 	                      {delegatePaymentInstructionsText ? (
 	                        <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
@@ -2050,7 +2050,7 @@ export function CheckoutModal({
 	                <label htmlFor="physician-terms" className="text-sm text-slate-700 leading-snug flex-1">
 	                  {isDelegateFlow ? (
 	                    <>
-	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Doctor'}), and I agree to PepPro&apos;s{' '}
+	                      I understand I am compiling a proposal as a delegate of ({delegateDoctorDisplayName || 'Physician'}), and I agree to PepPro&apos;s{' '}
 	                    </>
 	                  ) : (
 	                    <>
