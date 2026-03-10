@@ -5,12 +5,6 @@ export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
   const allowCrossOriginApi =
     String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
-  const currentHost =
-    typeof window !== 'undefined' && window.location?.hostname
-      ? String(window.location.hostname).toLowerCase()
-      : '';
-  const isLocalhost =
-    currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -35,7 +29,10 @@ export const API_BASE_URL = (() => {
       if (/^https?:\/\//i.test(normalizedWithApi)) {
         const parsed = new URL(normalizedWithApi);
         const current = new URL(window.location.origin);
-        if (!isLocalhost && parsed.origin !== current.origin) {
+        const currentHost = String(current.hostname || '').toLowerCase();
+        const isCurrentLocalhost =
+          currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
+        if (!isCurrentLocalhost && parsed.origin !== current.origin) {
           if (typeof console !== 'undefined' && console.warn) {
             console.warn('[API] Ignoring cross-origin VITE_API_URL for hosted origin; defaulting to same-origin /api');
           }
