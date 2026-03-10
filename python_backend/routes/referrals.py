@@ -258,13 +258,10 @@ def admin_sales_rep_by_id(sales_rep_id: str):
         if not (is_admin_like or is_sales_lead):
             raise _error("ADMIN_ACCESS_REQUIRED", 403)
 
-        requested_rep_id = (sales_rep_id or "").strip()
-        if not requested_rep_id:
+        rep_id = (sales_rep_id or "").strip()
+        if not rep_id:
             raise _error("SALES_REP_ID_REQUIRED", 400)
 
-        # The admin UI can send canonical `sales_reps.id`, linked `users.id`,
-        # or legacy/external sales rep identifiers. Resolve to the canonical rep id first.
-        rep_id = referral_service._resolve_sales_rep_id(requested_rep_id) or requested_rep_id
         rep = sales_rep_repository.find_by_id(rep_id)
         if not rep:
             raise _error("SALES_REP_NOT_FOUND", 404)
@@ -618,4 +615,5 @@ def _error(message, status):
     err = ValueError(message)
     setattr(err, "status", status)
     return err
+
 
