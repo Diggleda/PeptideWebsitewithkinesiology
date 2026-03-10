@@ -73,7 +73,6 @@ import {
 } from "recharts@2.15.2";
 	import {
 	  authAPI,
-	  type PersistedCartItemPayload,
 	  ordersAPI,
 	  delegationAPI,
 	  trackingAPI,
@@ -227,7 +226,6 @@ interface User {
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
-  cart?: PersistedCartItemPayload[];
 }
 
 interface ContactFormSubmission {
@@ -314,8 +312,6 @@ interface CartItem {
   note?: string;
   variant?: ProductVariant | null;
 }
-
-type PersistedCartItem = PersistedCartItemPayload;
 
 type CheckoutShippingAddress = {
   name?: string | null;
@@ -3505,9 +3501,7 @@ function MainApp() {
   const shipStationDashboardUrl = "https://ship14.shipstation.com";
   const [user, setUser] = useState<User | null>(null);
   const prevUserIdRef = useRef<string | null>(null);
-  const hydratedCartUserIdRef = useRef<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [pendingPersistedCart, setPendingPersistedCart] = useState<PersistedCartItem[] | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [patientLinksRefreshToken, setPatientLinksRefreshToken] = useState(0);
   const proposalCheckoutWasOpenRef = useRef(false);
@@ -3562,9 +3556,9 @@ function MainApp() {
     : 0;
   const delegateDoctorNameForShare = useMemo(() => {
     const raw = typeof delegateContext?.doctorName === "string" ? delegateContext.doctorName.trim() : "";
-    if (!raw) return "Physician";
+    if (!raw) return "Doctor";
     const stripped = raw.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|miss)\s+/i, "").trim();
-    return stripped || "Physician";
+    return stripped || "Doctor";
   }, [delegateContext?.doctorName]);
   const formatDelegateTimeRemaining = useCallback((expiryMs: number | null, nowMs: number) => {
     if (!expiryMs || !Number.isFinite(expiryMs)) return null;
@@ -3899,7 +3893,6 @@ function MainApp() {
 
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
-  const [logoutThanksActive, setLogoutThanksActive] = useState(false);
   const [peptideForumEnabled, setPeptideForumEnabled] =
     useState(true);
 	  const [peptideForumLoading, setPeptideForumLoading] = useState(false);
@@ -5045,27 +5038,6 @@ function MainApp() {
     }
   }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const handleLogoutWithThanks = () => {
-      setLogoutThanksActive(true);
-      setShouldAnimateInfoFocus(false);
-      setInfoFocusActive(false);
-    };
-    window.addEventListener(
-      "peppro:logout-with-thanks",
-      handleLogoutWithThanks as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        "peppro:logout-with-thanks",
-        handleLogoutWithThanks as EventListener,
-      );
-    };
-  }, []);
-
   const applyLoginSuccessState = useCallback((nextUser: User) => {
     setUser(nextUser);
     setPostLoginHold(true);
@@ -5519,7 +5491,7 @@ function MainApp() {
 	        }
 	      } catch (error) {
 	        console.warn("[Shop] Failed to update shop toggle", error);
-	        toast.error("Unable to update Explore Peptides view setting right now.");
+	        toast.error("Unable to update Explore Compounds view setting right now.");
 	        setShopEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
@@ -10039,7 +10011,7 @@ function MainApp() {
         { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
         {
           id: "doctor_referrals_manual" as const,
-          label: "Physician Referrals and Manual",
+          label: "Doctor Referrals and Manual",
           Icon: UserGroupIcon,
         },
         { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
@@ -10762,7 +10734,7 @@ function MainApp() {
       const userId = String(entry?.userId ?? entry?.id ?? "").trim();
       if (!userId) return null;
       const name =
-        String(entry?.name ?? entry?.email ?? `Physician ${userId}`).trim() || `Physician ${userId}`;
+        String(entry?.name ?? entry?.email ?? `Doctor ${userId}`).trim() || `Doctor ${userId}`;
       const email = typeof entry?.email === "string" ? String(entry.email).trim() : null;
       const role = normalizeRole(entry?.role || "doctor") || "doctor";
       return {
@@ -10947,7 +10919,7 @@ function MainApp() {
         setSalesRepHandDeliveryError(
           typeof error?.message === "string"
             ? error.message
-            : "Unable to load physicians for hand delivery settings.",
+            : "Unable to load doctors for hand delivery settings.",
         );
       } finally {
         setSalesRepHandDeliveryLoading(false);
@@ -13109,14 +13081,14 @@ function MainApp() {
       if (referral.referrerDoctorId) {
         lookup.set(
           referral.referrerDoctorId,
-          referral.referrerDoctorName || "Physician",
+          referral.referrerDoctorName || "Doctor",
         );
       }
       if (referral.convertedDoctorId) {
         const convertedName =
           referral.referrerDoctorName ??
           referral.referredContactName ??
-          "Converted physician";
+          "Converted doctor";
         lookup.set(referral.convertedDoctorId, convertedName);
       }
     }
@@ -13267,7 +13239,7 @@ function MainApp() {
 	              doc.name ||
 	              [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() ||
 	              doc.email ||
-	              "Physician",
+	              "Doctor",
 	            email: doc.email || doc.doctorEmail || doc.userEmail || null,
 	            profileImageUrl:
 	              doc.profileImageUrl || doc.profile_image_url || null,
@@ -13452,7 +13424,7 @@ function MainApp() {
               (order as any)?.billing_name ||
               (order as any)?.billing?.lastName ||
               (order as any)?.billing?.last_name ||
-              "Physician",
+              "Doctor",
             doctorProfileImageUrl:
               doctorInfo?.profileImageUrl ||
               (original as any)?.doctorProfileImageUrl ||
@@ -13954,7 +13926,7 @@ function MainApp() {
         doctorInfo?.name ||
         salesRepDoctorsById.get(doctorId) ||
         order.doctorName ||
-        "Physician";
+        "Doctor";
       const doctorEmail = doctorInfo?.email || order.doctorEmail || null;
       const doctorAvatar =
         doctorInfo?.profileImageUrl ||
@@ -13982,7 +13954,7 @@ function MainApp() {
           .join(" ")
           .trim() ||
         (order as any)?.billing_name ||
-        "Physician";
+        "Doctor";
 	      const doctorEmailFromOrder =
 	        doctorEmail ||
 	        (order as any)?.billing?.email ||
@@ -15484,20 +15456,6 @@ function MainApp() {
   }, [user, postLoginHold]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const syncUltraWideClass = () => {
-      const physicalScreenWidth = Number(window.screen?.width || 0);
-      document.body.classList.toggle("ultra-wide-screen", physicalScreenWidth > 2000);
-    };
-    syncUltraWideClass();
-    window.addEventListener("resize", syncUltraWideClass);
-    return () => {
-      window.removeEventListener("resize", syncUltraWideClass);
-      document.body.classList.remove("ultra-wide-screen");
-    };
-  }, []);
-
-  useEffect(() => {
     if (
       !user ||
       (!isRep(user.role) && !isAdmin(user.role)) ||
@@ -16065,14 +16023,9 @@ function MainApp() {
 	    setLoginContext(null);
 	    setPostLoginHold(false);
 	    setIsReturningUser(false);
-	    setShouldAnimateInfoFocus(false);
-	    setInfoFocusActive(false);
-	    setLogoutThanksActive(false);
 	    setCheckoutOpen(false);
 	    setShouldReopenCheckout(false);
-    setCartItems([]);
-    setPendingPersistedCart(null);
-    hydratedCartUserIdRef.current = null;
+    setShouldAnimateInfoFocus(false);
     setDoctorSummary(null);
     setDoctorReferrals([]);
     setSalesRepDashboard(null);
@@ -16081,64 +16034,6 @@ function MainApp() {
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   }, []);
-
-  useEffect(() => {
-    const nextUserId =
-      user?.id !== undefined && user?.id !== null ? String(user.id) : null;
-    if (!nextUserId) {
-      hydratedCartUserIdRef.current = null;
-      setPendingPersistedCart(null);
-      return;
-    }
-    if (hydratedCartUserIdRef.current === nextUserId) {
-      return;
-    }
-    hydratedCartUserIdRef.current = nextUserId;
-    setPendingPersistedCart(Array.isArray(user?.cart) ? user.cart : []);
-  }, [user?.cart, user?.id]);
-
-  useEffect(() => {
-    if (!user?.id || pendingPersistedCart === null) {
-      return;
-    }
-    if (catalogProducts.length === 0) {
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const hydratedCart = await hydratePersistedCartItems(pendingPersistedCart);
-      if (cancelled) {
-        return;
-      }
-      setCartItems(hydratedCart);
-      setPendingPersistedCart(null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [catalogProducts.length, hydratePersistedCartItems, pendingPersistedCart, user?.id]);
-
-  const persistedCartSignature = useMemo(
-    () => JSON.stringify(serializeCartItems(cartItems)),
-    [cartItems, serializeCartItems],
-  );
-
-  useEffect(() => {
-    if (!user?.id || isDelegateMode) {
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      void authAPI.updateCart(serializeCartItems(cartItems)).catch((error) => {
-        console.warn("[Cart] Failed to persist cart", {
-          userId: user.id,
-          error,
-        });
-      });
-    }, 350);
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [cartItems, isDelegateMode, persistedCartSignature, serializeCartItems, user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -16172,31 +16067,15 @@ function MainApp() {
       const detail = (event as any)?.detail || {};
       const reason =
         typeof detail?.reason === "string" ? detail.reason : "";
-      const authCode =
-        typeof detail?.authCode === "string" ? detail.authCode : "";
       const forcedByOtherLogin = reason === "another_tab_login";
 
       if (forcedByOtherLogin) {
         toast.error(
           'Somebody else signed in with your credentials. If this was not you, click "Reset Password" and login with your new credentials.',
         );
-      } else if (
-        authCode === "SESSION_IDLE_TIMEOUT" ||
-        authCode === "SESSION_MAX_AGE" ||
-        authCode === "TOKEN_EXPIRED"
-      ) {
-        toast.info("Your session expired. Please sign in again.");
-      } else if (
-        authCode === "TOKEN_INVALID" ||
-        authCode === "TOKEN_REVOKED" ||
-        authCode === "INVALID_TOKEN"
-      ) {
-        toast.info(
-          "Your account was signed out because your login is no longer valid. Please sign in again.",
-        );
       } else if (reason === "token_revoked" || reason === "auth_revoked") {
         toast.info(
-          "Your account was signed out because your login changed or is no longer valid. Please sign in again.",
+          "Our server has had an issue. To keep your account secure, we have logged you out. Please sign in again.",
         );
       }
 
@@ -16454,108 +16333,6 @@ function MainApp() {
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
-
-  const serializeCartItems = useCallback(
-    (items: CartItem[]): PersistedCartItem[] =>
-      items
-        .map(({ product, quantity, note, variant }) => {
-          const productId = String(product.id || "").trim();
-          if (!productId) {
-            return null;
-          }
-          return {
-            productId,
-            productWooId:
-              Number.isFinite(Number(product.wooId)) ? Number(product.wooId) : null,
-            variantId: variant?.id ? String(variant.id).trim() : null,
-            variantWooId:
-              Number.isFinite(Number(variant?.wooId)) ? Number(variant?.wooId) : null,
-            quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
-            note: typeof note === "string" && note.trim() ? note.trim() : null,
-          } satisfies PersistedCartItem;
-        })
-        .filter((item): item is PersistedCartItem => Boolean(item)),
-    [],
-  );
-
-  const hydratePersistedCartItems = useCallback(
-    async (items: PersistedCartItem[]): Promise<CartItem[]> => {
-      const nextCart: CartItem[] = [];
-      const addOrMerge = (
-        product: Product,
-        variant: ProductVariant | null,
-        quantity: number,
-        note?: string | null,
-      ) => {
-        const cartItemId = buildCartItemId(product.id, variant?.id ?? null);
-        const existing = nextCart.find((item) => item.id === cartItemId);
-        if (existing) {
-          existing.quantity += quantity;
-          if (note) {
-            existing.note = note;
-          }
-          return;
-        }
-        nextCart.push({
-          id: cartItemId,
-          product,
-          quantity,
-          note: note ?? undefined,
-          variant: variant ?? undefined,
-        });
-      };
-
-      for (const item of Array.isArray(items) ? items : []) {
-        const productId = String(item?.productId || "").trim();
-        const productWooId = Number(item?.productWooId);
-        const variantId = String(item?.variantId || "").trim();
-        const variantWooId = Number(item?.variantWooId);
-        const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
-        const note = typeof item?.note === "string" ? item.note.trim() : null;
-
-        let matchedProduct =
-          catalogProducts.find((product) => product.id === productId) ||
-          (Number.isFinite(productWooId)
-            ? catalogProducts.find(
-                (product) =>
-                  product.wooId === productWooId || product.id === `woo-${productWooId}`,
-              )
-            : undefined);
-
-        if (!matchedProduct) {
-          continue;
-        }
-
-        if (
-          (matchedProduct.type ?? "").toLowerCase() === "variable" ||
-          variantId ||
-          Number.isFinite(variantWooId)
-        ) {
-          matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
-        }
-
-        let matchedVariant: ProductVariant | null = null;
-        if (matchedProduct.variants?.length) {
-          matchedVariant =
-            matchedProduct.variants.find((variant) => variant.id === variantId) ??
-            (Number.isFinite(variantWooId)
-              ? matchedProduct.variants.find((variant) => variant.wooId === variantWooId) ?? null
-              : null);
-          if (!matchedVariant) {
-            matchedVariant =
-              matchedProduct.variants.find((variant) => variant.inStock) ??
-              matchedProduct.variants[0] ??
-              null;
-          }
-        }
-
-        addOrMerge(matchedProduct, matchedVariant, quantity, note);
-      }
-
-      return nextCart;
-    },
-    [catalogProducts, ensureCatalogProductHasVariants],
-  );
 
   const handleAddToCart = (
     productId: string,
@@ -17654,7 +17431,7 @@ function MainApp() {
     if (!referralForm.contactName.trim()) {
       setReferralStatusMessage({
         type: "error",
-        message: "Please provide the physician’s name before submitting.",
+        message: "Please provide the doctor’s name before submitting.",
       });
       return;
     }
@@ -17919,7 +17696,7 @@ function MainApp() {
                 Referral Rewards Hub
               </p>
               <p className="text-xs text-slate-500">
-                Invite physicians & track credited referrals
+                Invite doctors & track credited referrals
               </p>
             </div>
           </div>
@@ -18814,7 +18591,7 @@ function MainApp() {
 	                      orderAny?.doctor_email ||
 	                      shippingAddress?.email ||
 	                      billingAddress?.email ||
-	                      "Unknown physician";
+	                      "Unknown doctor";
                     const orderPlacedAt =
                       formatOrderPlacedAtForLocalDisplay(order as any);
 	                    const total = Number(
@@ -18842,14 +18619,6 @@ function MainApp() {
 	                          >
 	                            {`Order #${orderNumber}`}
 	                          </button>
-	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
-	                            <div className="w-full sm:w-auto sm:flex sm:items-center">
-	                              <span className="block text-center sm:text-left text-[11px] text-slate-600 italic">
-	                                Explore Peptides view for physicians:{" "}
-	                                {shopEnabled ? "Enabled" : "Disabled"}
-	                              </span>
-	                            </div>
-	                          )}
 	                        </div>
 	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
 	                          {doctorLabel}
@@ -18920,7 +18689,7 @@ function MainApp() {
               <div className="min-w-0 flex-1 pr-2">
               <h4 className="text-base font-semibold text-slate-900">Hand Delivery</h4>
               <p className="text-sm text-slate-600">
-                Physicians assigned to you. Check to enable hand delivery + free shipping messaging.
+                Doctors assigned to you. Check to enable hand delivery + free shipping messaging.
               </p>
               </div>
               <Button
@@ -18930,7 +18699,7 @@ function MainApp() {
                 onClick={() => void fetchSalesRepHandDeliveryDoctors({ force: true })}
                 disabled={salesRepHandDeliveryLoading}
                 className="header-home-button squircle-sm bg-white text-slate-900 ml-auto shrink-0"
-                title="Refresh hand delivery physicians"
+                title="Refresh hand delivery doctors"
               >
                 {salesRepHandDeliveryLoading ? "Refreshing…" : "Refresh"}
               </Button>
@@ -18944,10 +18713,10 @@ function MainApp() {
           )}
 
           {salesRepHandDeliveryLoading ? (
-            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading physicians…</div>
+            <div className="pt-4 px-4 py-3 text-sm text-slate-500">Loading doctors…</div>
           ) : salesRepHandDeliveryDoctors.length === 0 ? (
             <div className="pt-4 px-4 py-3 text-sm text-slate-500">
-              No assigned physicians found.
+              No assigned doctors found.
             </div>
           ) : (
             <div className="pt-4 sales-rep-table-wrapper admin-dashboard-list flex flex-col gap-2">
@@ -18983,6 +18752,26 @@ function MainApp() {
     };
 		
 		    return (
+          <div className="w-full space-y-3">
+            <div
+              className="glass-card squircle-xl w-full px-4 py-2 shadow-lg transition-all duration-500"
+              style={{
+                backdropFilter: "blur(20px) saturate(1.4)",
+                borderRadius: "var(--squircle-xl)",
+              }}
+            >
+              <p
+                className="px-2 sm:px-1 italic text-left leading-snug break-words"
+                style={{
+                  color: "rgb(95,179,249)",
+                  fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
+                }}
+              >
+                It is our mission to promote endogenous healing through a community
+                of practitioners who work one-on-one, day in and day out,
+                improving individual health across all aspects of healing.
+              </p>
+            </div>
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-6">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -19072,8 +18861,8 @@ function MainApp() {
 		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
 		                  <p className="text-sm text-slate-600">
 		                    {isSalesLead(user?.role) || isAdmin(user?.role)
-		                      ? "All physicians and sales reps (online, idle, and offline)."
-		                      : "Your physicians (online, idle, and offline)."}
+		                      ? "All doctors and sales reps (online, idle, and offline)."
+		                      : "Your doctors (online, idle, and offline)."}
 		                  </p>
 		                </div>
 
@@ -19192,9 +18981,9 @@ function MainApp() {
 	                  const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
 
 	                  return (
-	                      <div className="space-y-3">
-		                      <div className="flex min-w-0 flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between">
-		                        <div className="flex min-w-0 flex-wrap items-center gap-3">
+	                    <div className="space-y-3">
+		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+		                        <div className="flex flex-wrap items-center gap-3">
 		                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
 		                            <input
 		                              type="checkbox"
@@ -19208,19 +18997,19 @@ function MainApp() {
 		                            {onlineCount} online
 		                          </span>
 		                          {isSalesLead(user?.role) && (
-		                            <label className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-slate-600 sm:w-auto sm:flex-nowrap">
+		                            <label className="flex items-center gap-2 text-xs text-slate-600">
 		                              <span className="uppercase tracking-wide text-[11px] text-slate-500">
 		                                Type
 		                              </span>
 		                              <select
 		                                value={salesLeadLiveUsersRoleFilter}
 		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="w-full min-w-0 rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:w-auto sm:min-w-[9rem]"
+		                                className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
-		                                <option value="doctor">Physicians</option>
-		                                <option value="test_doctor">Test physicians</option>
+		                                <option value="doctor">Doctors</option>
+		                                <option value="test_doctor">Test doctors</option>
 		                              </select>
 		                            </label>
 		                          )}
@@ -19250,7 +19039,7 @@ function MainApp() {
 	                            <div className="flex w-full min-w-[900px] flex-col gap-2">
 		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
-		                        const displayName = entry.name || entry.email || "Physician";
+		                        const displayName = entry.name || entry.email || "Doctor";
 		                        const resolveLastSeenMs = () => {
 		                          const raw =
 		                            entry?.lastInteractionAt ||
@@ -19308,7 +19097,7 @@ function MainApp() {
 		                          }
 		                          if (role === "doctor") {
 		                            return {
-		                              label: "Physician",
+		                              label: "Doctor",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -19317,7 +19106,7 @@ function MainApp() {
 		                          }
 		                          if (role === "test_doctor") {
 		                            return {
-		                              label: "Test Physician",
+		                              label: "Test Doctor",
 		                              style: {
 		                                backgroundColor: "rgb(95,179,249)",
 		                                color: "#ffffff",
@@ -19432,7 +19221,7 @@ function MainApp() {
 			                        Sales by Sales Rep
 			                      </h3>
 			                      <p className="text-sm text-slate-600">
-			                        Orders placed by physicians assigned to each rep.
+			                        Orders placed by doctors assigned to each rep.
 			                      </p>
 			                    </div>
 			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
@@ -20007,7 +19796,7 @@ function MainApp() {
 		                    >
 		                      <input
 		                        type="checkbox"
-		                        aria-label="Enable Explore Peptides view for users"
+		                        aria-label="Enable Explore Compounds view for users"
 		                        checked={shopEnabled}
 		                        onChange={(e) => handleShopToggle(e.target.checked)}
 		                        className="brand-checkbox mt-0.5"
@@ -20015,7 +19804,7 @@ function MainApp() {
 		                      />
 		                      <span className="min-w-0">
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Explore Peptides view for users</span>
+		                          <span>Explore Compounds view for users</span>
 		                          <span className="text-xs font-semibold text-slate-500">
 		                            {"\u00A0"}(
 		                            {settingsSaving.shop
@@ -20027,7 +19816,7 @@ function MainApp() {
 		                          </span>
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
-		                          Controls whether physicians see the Explore Peptides button.
+		                          Controls whether physicians see the Explore Compounds view.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -20039,7 +19828,7 @@ function MainApp() {
                         >
                           <input
                             type="checkbox"
-                            aria-label="Enable Patient Links tab for physicians"
+                            aria-label="Enable Patient Links tab for doctors"
                             checked={patientLinksEnabled}
                             onChange={(e) => handlePatientLinksToggle(e.target.checked)}
                             className="brand-checkbox mt-0.5"
@@ -20047,7 +19836,7 @@ function MainApp() {
                           />
                           <span className="min-w-0">
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-                              <span>Patient Links tab (physicians)</span>
+                              <span>Patient Links tab (doctors)</span>
                               <span className="text-xs font-semibold text-slate-500">
                                 {"\u00A0"}(
                                 {settingsSaving.patientLinks
@@ -20059,7 +19848,7 @@ function MainApp() {
                               </span>
                             </span>
                             <span className="block text-xs text-slate-600">
-                              When disabled, only test physicians can access Patient Links.
+                              When disabled, only test doctors can access Patient Links.
                             </span>
                           </span>
                         </label>
@@ -20137,7 +19926,7 @@ function MainApp() {
 		                    >
 		                      <input
 		                        type="checkbox"
-		                        aria-label="Enable Research dashboard for physicians and reps"
+		                        aria-label="Enable Research dashboard for doctors and reps"
 		                        checked={researchDashboardEnabled}
 		                        onChange={(e) =>
 		                          handleResearchDashboardToggle(e.target.checked)
@@ -20151,7 +19940,7 @@ function MainApp() {
 		                      />
 		                      <span className="min-w-0">
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Research dashboard access (physicians/reps)</span>
+		                          <span>Research dashboard access (doctors/reps)</span>
 		                          <span className="text-xs font-semibold text-slate-500">
 		                            {"\u00A0"}(
 		                            {settingsSaving.research
@@ -20165,7 +19954,7 @@ function MainApp() {
 		                          </span>
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
-		                          When disabled, only admins and test physicians see the work-in-progress research dashboard.
+		                          When disabled, only admins and test doctors see the work-in-progress research dashboard.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -20507,8 +20296,8 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
-                        <div className="flex min-w-0 flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex min-w-0 flex-wrap items-center gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
+                        <div className="flex flex-wrap items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                             <input
                               type="checkbox"
@@ -20521,21 +20310,21 @@ function MainApp() {
                           <span className="text-xs text-slate-500">
                             {onlineCount} online
                           </span>
-                          <label className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-slate-600 sm:w-auto sm:flex-nowrap">
+                          <label className="flex items-center gap-2 text-xs text-slate-600">
                             <span className="uppercase tracking-wide text-[11px] text-slate-500">
                               Type
                             </span>
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="w-full min-w-0 rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:w-auto sm:min-w-[9rem]"
+                              className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
 	                              <option value="sales_rep">Sales / Test Rep</option>
 	                              <option value="sales_lead">Sales Lead</option>
-	                              <option value="doctor">Physicians</option>
-	                              <option value="test_doctor">Test physicians</option>
+	                              <option value="doctor">Doctors</option>
+	                              <option value="test_doctor">Test doctors</option>
                             </select>
                           </label>
                         </div>
@@ -20592,7 +20381,7 @@ function MainApp() {
 				                                }
 				                                if (role === "doctor") {
 				                                  return {
-				                                    label: "Physician",
+				                                    label: "Doctor",
 				                                    style: {
 				                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -20601,7 +20390,7 @@ function MainApp() {
 			                                }
 			                                if (role === "test_doctor") {
 			                                  return {
-			                                    label: "Test Physician",
+			                                    label: "Test Doctor",
 			                                    style: {
 			                                      backgroundColor: "rgb(95,179,249)",
 			                                      color: "#ffffff",
@@ -21036,7 +20825,7 @@ function MainApp() {
                       Sales by Sales Rep
                     </h3>
                     <p className="text-sm text-slate-600">
-                      Orders placed by physicians assigned to each rep.
+                      Orders placed by doctors assigned to each rep.
                     </p>
 				                    {/* Period controls moved to the parent Admin Reports header. */}
                   </div>
@@ -22080,7 +21869,7 @@ function MainApp() {
                     <div className="min-w-0">
                       <h3 className="text-lg sm:text-xl">Your Sales</h3>
                       <p className="text-sm text-slate-600">
-                        Live orders grouped by your physicians.
+                        Live orders grouped by your doctors.
                       </p>
                     </div>
                     <div className="sales-rep-card-controls">
@@ -23076,7 +22865,7 @@ function MainApp() {
 		                                              }}
 		                                              className="prospect-permit-checkbox-input"
 		                                            />
-		                                            Physician does not have a resellers permit
+		                                            Doctor does not have a resellers permit
 		                                          </label>
 			                                          <div className="prospect-permit-file-picker">
 				                                            <input
@@ -23217,7 +23006,7 @@ function MainApp() {
                       </p>
                     ) : filteredSalesRepReferrals.length === 0 ? (
                       <p className="lead-panel-empty text-sm text-slate-500 px-1 py-2">
-                        You have no referrals yet. Encourage physicians to grow the
+                        You have no referrals yet. Encourage doctors to grow the
                         network.
                       </p>
                     ) : (
@@ -23687,6 +23476,7 @@ function MainApp() {
         </p>
         )}
 		      </section>
+          </div>
 		    );
 		  };
 
@@ -24185,10 +23975,10 @@ function MainApp() {
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
           {(!user || postLoginHold) && !isDelegateMode && (
-            <div className="ultra-wide-landing-shell min-h-screen flex flex-col items-center pt-20 px-4 py-12">
+            <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
               {/* Logo with Welcome and Quote Containers */}
               {postLoginHold && user ? (
-	                <div className="ultra-wide-welcome-shell w-full max-w-7xl mb-6 px-4">
+	                <div className="w-full max-w-7xl mb-6 px-4">
 		                  {isDesktopLandingLayout ? (
 			                    <div className="flex items-center justify-between gap-6 lg:gap-8 mb-8 w-full">
 		                      <div className="flex-shrink-0">
@@ -24252,7 +24042,7 @@ function MainApp() {
                         {landingAccountButton}
                       </div>
                       <div
-                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full ${logoutThanksActive ? "" : "info-highlight-card"} ${infoFocusActive && !logoutThanksActive ? "info-focus-active" : ""} ${
+                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
                           showWelcome
                             ? "opacity-100 translate-y-0"
                             : "opacity-0 -translate-y-4"
@@ -24343,7 +24133,7 @@ function MainApp() {
 
               {/* Info Container - After Login */}
               {postLoginHold && user ? (
-                <div className="ultra-wide-info-shell w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
+                <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   <div className="post-login-layout">
                     <div
                       className="post-login-news space-y-4"
@@ -24520,8 +24310,6 @@ function MainApp() {
                             type="button"
                             size="lg"
                             onClick={() => {
-                              setShouldAnimateInfoFocus(false);
-                              setInfoFocusActive(false);
                               if (typeof window !== "undefined") {
                                 window.dispatchEvent(
                                   new CustomEvent("peppro:logout-with-thanks"),
@@ -24554,21 +24342,19 @@ function MainApp() {
                             className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
                             style={{ backgroundColor: "rgb(95, 179, 249)" }}
                           >
-                            <span className="mr-2">Explore Peptides</span>
+                            <span className="mr-2">Explore Compounds</span>
                             <ArrowRight
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
                           </Button>
-                        </div>
-                        {(isRep(user?.role) || isAdmin(user?.role)) && (
-                          <div className="w-full pb-2">
-                            <span className="block text-center text-[11px] text-slate-600 italic md:text-left">
-                              Explore Peptides view for physicians:{" "}
-                              {shopEnabled ? "Enabled" : "Disabled"}
-                            </span>
-                          </div>
-                        )}
+	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
+	                            <span className="text-[11px] text-slate-600 italic">
+	                              Explore Compounds view for physicians:{" "}
+	                              {shopEnabled ? "Enabled" : "Disabled"}
+	                            </span>
+	                          )}
+	                        </div>
                           {isDesktopLandingLayout && (
                             <div
                               className={`glass-card ${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} squircle-md border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 flex flex-col justify-center w-full`}
@@ -25853,7 +25639,7 @@ function MainApp() {
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
 			                  <p className="text-lg font-semibold text-slate-900">This delegate session has expired.</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Please request a new link from your physician and try again.
+			                    Please request a new link from your doctor and try again.
 			                  </p>
 			                </div>
 			              </main>
@@ -25882,8 +25668,8 @@ function MainApp() {
 		                          <h2 className="text-xl font-semibold text-slate-900">Proposal Status</h2>
 		                          <p className="mt-1 text-sm text-slate-700">
 		                            Your proposal has been sent to{' '}
-		                            {delegateDoctorNameForShare === 'Physician'
-		                              ? 'your physician'
+		                            {delegateDoctorNameForShare === 'Doctor'
+		                              ? 'your doctor'
 		                              : `Dr. ${delegateDoctorNameForShare}`}
 		                            .
 		                          </p>
@@ -26500,7 +26286,7 @@ function MainApp() {
 		                    placeholder={
 		                      salesDoctorNotesLoading
 		                        ? "Loading notes..."
-		                        : "Add notes about this physician"
+		                        : "Add notes about this doctor"
 		                    }
 		                    className="text-sm notes-textarea"
 		                    disabled={salesDoctorNotesLoading}
@@ -28295,7 +28081,7 @@ function MainApp() {
 
 	                    <div className="space-y-2">
 	                      <h4 className="text-base font-semibold text-slate-900">
-	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the physician)</span>
+	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the doctor)</span>
 	                      </h4>
 	                      {(() => {
 	                        const canEdit = Boolean(
