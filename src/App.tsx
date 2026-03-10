@@ -41,6 +41,7 @@ import {
 	  EyeOff,
 	  ArrowRight,
 	  ArrowLeft,
+      ChevronDown,
 		  ChevronRight,
 		  RefreshCw,
 		  ArrowUpDown,
@@ -86,6 +87,7 @@ import {
 	  passwordResetAPI,
 	  settingsAPI,
 	  API_BASE_URL,
+    type PersistedCartItemPayload,
 	} from "./services/api";
 import { getTabId, isTabLeader, releaseTabLeadership } from "./lib/tabLocks";
 import { ProductDetailDialog } from "./components/ProductDetailDialog";
@@ -226,6 +228,8 @@ interface User {
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
+  visits?: number;
+  cart?: PersistedCartItemPayload[];
 }
 
 interface ContactFormSubmission {
@@ -312,6 +316,8 @@ interface CartItem {
   note?: string;
   variant?: ProductVariant | null;
 }
+
+type PersistedCartItem = PersistedCartItemPayload;
 
 type CheckoutShippingAddress = {
   name?: string | null;
@@ -3502,6 +3508,9 @@ function MainApp() {
   const [user, setUser] = useState<User | null>(null);
   const prevUserIdRef = useRef<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [pendingPersistedCart, setPendingPersistedCart] = useState<PersistedCartItem[] | null>(null);
+  const hydratedCartUserIdRef = useRef<string | null>(null);
+  const cartPersistTimerRef = useRef<number | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [patientLinksRefreshToken, setPatientLinksRefreshToken] = useState(0);
   const proposalCheckoutWasOpenRef = useRef(false);
@@ -4775,7 +4784,9 @@ function MainApp() {
             "Please sign in again to view your latest orders.",
           );
           setUser(null);
-          toast.error("Your session expired. Please log in again.");
+          if (Date.now() - forcedLogoutAtRef.current > 2500) {
+            toast.error("Your session expired. Please log in again.");
+          }
           return [];
         }
         const message =
@@ -4866,9 +4877,11 @@ function MainApp() {
 	      } catch (error: any) {
 	        if (error?.code === "AUTH_REQUIRED") {
 	          setUser(null);
-	          toast.error(
-            "Your session expired. Please log in again to cancel orders.",
-          );
+            if (Date.now() - forcedLogoutAtRef.current > 2500) {
+	            toast.error(
+              "Your session expired. Please log in again to cancel orders.",
+            );
+            }
           throw new Error("Please log in again to cancel orders.");
         }
         throw error;
@@ -5039,6 +5052,8 @@ function MainApp() {
   }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
 
   const applyLoginSuccessState = useCallback((nextUser: User) => {
+    forcedLogoutAtRef.current = 0;
+    forcedLogoutReasonRef.current = null;
     setUser(nextUser);
     setPostLoginHold(true);
     setShouldAnimateInfoFocus(true);
@@ -5491,7 +5506,7 @@ function MainApp() {
 	        }
 	      } catch (error) {
 	        console.warn("[Shop] Failed to update shop toggle", error);
-	        toast.error("Unable to update Explore Compounds view setting right now.");
+	        toast.error("Unable to update Explore Peptides view setting right now.");
 	        setShopEnabled(previousValue);
 	        try {
 	          localStorage.setItem(
@@ -8812,8 +8827,22 @@ function MainApp() {
 	            },
 	            roleFromProfile || "doctor",
 	          );
-        } catch (error) {
+        } catch (error: any) {
           console.warn("[Admin] Failed to hydrate live user detail", error);
+          const normalizedRole = normalizeRole(entryRole || entry?.role || "");
+          const isSalesRepModal =
+            normalizedRole === "sales_rep" ||
+            normalizedRole === "rep" ||
+            normalizedRole === "sales_lead" ||
+            normalizedRole === "saleslead" ||
+            normalizedRole === "sales-lead";
+          const message =
+            typeof error?.message === "string" && error.message.trim().length > 0
+              ? error.message.trim()
+              : isSalesRepModal
+                ? "Unable to load this sales rep's order details."
+                : "Unable to load this account's details.";
+          toast.error(message);
         } finally {
           setSalesDoctorDetailLoading(false);
         }
@@ -10587,6 +10616,8 @@ function MainApp() {
 		  const lastPresenceHeartbeatPingAtRef = useRef(0);
 		  const lastPresenceInteractionPingAtRef = useRef(0);
 		  const lastSessionCheckAtRef = useRef(0);
+      const forcedLogoutAtRef = useRef(0);
+      const forcedLogoutReasonRef = useRef<string | null>(null);
 
   useEffect(() => {
 	    isIdleRef.current = isIdle;
@@ -12175,6 +12206,7 @@ function MainApp() {
   } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
+  const [logoutThanksActive, setLogoutThanksActive] = useState(false);
   const welcomeShownRef = useRef(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [referralSearchTerm, setReferralSearchTerm] = useState("");
@@ -16019,6 +16051,13 @@ function MainApp() {
 	    console.debug("[Auth] Logout");
 	    authAPI.logout();
 	    setUser(null);
+      setCartItems([]);
+      setPendingPersistedCart(null);
+      hydratedCartUserIdRef.current = null;
+      if (cartPersistTimerRef.current) {
+        window.clearTimeout(cartPersistTimerRef.current);
+        cartPersistTimerRef.current = null;
+      }
 	    setAccountModalRequest(null);
 	    setLoginContext(null);
 	    setPostLoginHold(false);
@@ -16063,20 +16102,60 @@ function MainApp() {
     if (typeof window === "undefined") {
       return;
     }
+    const handleLogoutThanks = () => {
+      setLogoutThanksActive(true);
+    };
+    window.addEventListener(
+      "peppro:logout-with-thanks",
+      handleLogoutThanks as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "peppro:logout-with-thanks",
+        handleLogoutThanks as EventListener,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (user && postLoginHold) {
+      return;
+    }
+    setLogoutThanksActive(false);
+  }, [user, postLoginHold]);
+
+  useEffect(() => {
+    if (!logoutThanksActive) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setLogoutThanksActive(false);
+    }, 7000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [logoutThanksActive]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
     const handleForcedLogout = (event?: Event) => {
       const detail = (event as any)?.detail || {};
       const reason =
         typeof detail?.reason === "string" ? detail.reason : "";
-      const forcedByOtherLogin = reason === "another_tab_login";
+      const forcedByOtherLogin =
+        reason === "another_tab_login" || reason === "token_revoked";
+
+      forcedLogoutAtRef.current = Date.now();
+      forcedLogoutReasonRef.current = reason || null;
 
       if (forcedByOtherLogin) {
         toast.error(
-          'Somebody else signed in with your credentials. If this was not you, click "Reset Password" and login with your new credentials.',
+          'Your account was signed in on another device, so this session was ended. If this was not you, reset your password and sign in again.',
         );
-      } else if (reason === "token_revoked" || reason === "auth_revoked") {
-        toast.info(
-          "Our server has had an issue. To keep your account secure, we have logged you out. Please sign in again.",
-        );
+      } else if (reason === "auth_revoked") {
+        toast.info("Your session expired. Please sign in again.");
       }
 
       handleLogout();
@@ -16333,6 +16412,156 @@ function MainApp() {
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
+
+  const serializeCartItems = useCallback(
+    (items: CartItem[]): PersistedCartItem[] =>
+      (Array.isArray(items) ? items : [])
+        .map((item) => {
+          const productId = String(item.product?.id ?? "").trim();
+          if (!productId) {
+            return null;
+          }
+          return {
+            productId,
+            productWooId:
+              typeof item.product?.wooId === "number" ? item.product.wooId : null,
+            variantId: item.variant?.id ? String(item.variant.id) : null,
+            variantWooId:
+              typeof item.variant?.wooId === "number" ? item.variant.wooId : null,
+            quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+            note: typeof item.note === "string" && item.note.trim() ? item.note : null,
+          };
+        })
+        .filter((item): item is PersistedCartItem => Boolean(item)),
+    [],
+  );
+
+  const hydratePersistedCartItems = useCallback(
+    async (items: PersistedCartItem[]): Promise<CartItem[]> => {
+      const nextCart: CartItem[] = [];
+
+      for (const item of Array.isArray(items) ? items : []) {
+        const productId = String(item?.productId ?? "").trim();
+        const variantId = String(item?.variantId ?? "").trim();
+        const productWooId = Number(item?.productWooId ?? NaN);
+        const variantWooId = Number(item?.variantWooId ?? NaN);
+        const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
+
+        let matchedProduct =
+          catalogProducts.find((product) => product.id === productId) ??
+          (Number.isFinite(productWooId)
+            ? catalogProducts.find((product) => product.wooId === productWooId)
+            : undefined);
+
+        if (!matchedProduct) {
+          continue;
+        }
+
+        if ((matchedProduct.type ?? "").toLowerCase() === "variable") {
+          matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+        }
+
+        let matchedVariant: ProductVariant | null = null;
+        if (variantId && matchedProduct.variants?.length) {
+          matchedVariant =
+            matchedProduct.variants.find((variant) => variant.id === variantId) ??
+            null;
+        }
+        if (!matchedVariant && Number.isFinite(variantWooId) && matchedProduct.variants?.length) {
+          matchedVariant =
+            matchedProduct.variants.find((variant) => variant.wooId === variantWooId) ??
+            null;
+        }
+
+        nextCart.push({
+          id: buildCartItemId(matchedProduct.id, matchedVariant?.id ?? null),
+          product: matchedProduct,
+          quantity,
+          note: typeof item?.note === "string" && item.note.trim() ? item.note : undefined,
+          variant: matchedVariant ?? undefined,
+        });
+      }
+
+      return nextCart;
+    },
+    [catalogProducts, ensureCatalogProductHasVariants],
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      hydratedCartUserIdRef.current = null;
+      setPendingPersistedCart(null);
+      return;
+    }
+    if (hydratedCartUserIdRef.current === user.id) {
+      return;
+    }
+    hydratedCartUserIdRef.current = user.id;
+    setPendingPersistedCart(Array.isArray(user.cart) ? user.cart : []);
+  }, [user?.id, user?.cart]);
+
+  useEffect(() => {
+    if (!user?.id || pendingPersistedCart === null) {
+      return;
+    }
+    if (!Array.isArray(catalogProducts) || catalogProducts.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const hydrated = await hydratePersistedCartItems(pendingPersistedCart);
+      if (!cancelled) {
+        setCartItems(hydrated);
+        setPendingPersistedCart(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, pendingPersistedCart, catalogProducts, hydratePersistedCartItems]);
+
+  useEffect(() => {
+    if (cartPersistTimerRef.current) {
+      window.clearTimeout(cartPersistTimerRef.current);
+      cartPersistTimerRef.current = null;
+    }
+    if (!user?.id || pendingPersistedCart !== null) {
+      return;
+    }
+
+    const serialized = serializeCartItems(cartItems);
+    const persisted = Array.isArray(user.cart) ? user.cart : [];
+    if (JSON.stringify(serialized) === JSON.stringify(persisted)) {
+      return;
+    }
+
+    cartPersistTimerRef.current = window.setTimeout(() => {
+      void authAPI
+        .updateCart(serialized)
+        .then(() => {
+          setUser((previous) =>
+            previous && previous.id === user.id
+              ? { ...previous, cart: serialized }
+              : previous,
+          );
+        })
+        .catch((error) => {
+          console.warn("[Cart] Failed to persist cart", error);
+        })
+        .finally(() => {
+          cartPersistTimerRef.current = null;
+        });
+    }, 350);
+
+    return () => {
+      if (cartPersistTimerRef.current) {
+        window.clearTimeout(cartPersistTimerRef.current);
+        cartPersistTimerRef.current = null;
+      }
+    };
+  }, [user?.id, user?.cart, cartItems, pendingPersistedCart, serializeCartItems]);
 
   const handleAddToCart = (
     productId: string,
@@ -18753,25 +18982,6 @@ function MainApp() {
 		
 		    return (
           <div className="w-full space-y-3">
-            <div
-              className="glass-card squircle-xl w-full px-4 py-2 shadow-lg transition-all duration-500"
-              style={{
-                backdropFilter: "blur(20px) saturate(1.4)",
-                borderRadius: "var(--squircle-xl)",
-              }}
-            >
-              <p
-                className="px-2 sm:px-1 italic text-left leading-snug break-words"
-                style={{
-                  color: "rgb(95,179,249)",
-                  fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
-                }}
-              >
-                It is our mission to promote endogenous healing through a community
-                of practitioners who work one-on-one, day in and day out,
-                improving individual health across all aspects of healing.
-              </p>
-            </div>
 		      <section className="glass-card squircle-xl p-4 sm:p-6 shadow-[0_30px_80px_-55px_rgba(95,179,249,0.6)] w-full sales-rep-dashboard">
 		        <div className="flex flex-col gap-6">
 		          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -18982,9 +19192,10 @@ function MainApp() {
 
 	                  return (
 	                    <div className="space-y-3">
-		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
-		                        <div className="flex flex-wrap items-center gap-3">
-		                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
+		                        <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
+                              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+		                          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-slate-700">
 		                            <input
 		                              type="checkbox"
 		                              className="brand-checkbox"
@@ -18993,24 +19204,26 @@ function MainApp() {
 		                            />
 		                            Show offline
 		                          </label>
-		                          <span className="text-xs text-slate-500">
+		                          <span className="shrink-0 text-xs text-slate-500">
 		                            {onlineCount} online
 		                          </span>
+                              </div>
 		                          {isSalesLead(user?.role) && (
-		                            <label className="flex items-center gap-2 text-xs text-slate-600">
-		                              <span className="uppercase tracking-wide text-[11px] text-slate-500">
-		                                Type
-		                              </span>
+		                            <label className="ml-auto relative flex min-w-0 flex-1 items-center text-xs text-slate-600 sm:ml-auto sm:min-w-[34%] sm:flex-none">
 		                              <select
 		                                value={salesLeadLiveUsersRoleFilter}
 		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                                className="squircle-sm h-10 min-w-0 w-full max-w-full appearance-none border border-slate-200/80 bg-white/95 px-3 pr-10 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
 		                                <option value="doctor">Doctors</option>
 		                                <option value="test_doctor">Test doctors</option>
 		                              </select>
+                                      <ChevronDown
+                                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                                        aria-hidden="true"
+                                      />
 		                            </label>
 		                          )}
 		                        </div>
@@ -19023,7 +19236,7 @@ function MainApp() {
 	                            }
 	                          }}
 		                          placeholder={isSalesLead(user?.role) ? "Search users…" : "Search clients…"}
-		                          className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                          className="squircle-sm min-w-0 w-full max-w-full sm:w-[260px] border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 		                        />
 	                      </div>
 
@@ -19796,7 +20009,7 @@ function MainApp() {
 		                    >
 		                      <input
 		                        type="checkbox"
-		                        aria-label="Enable Explore Compounds view for users"
+		                        aria-label="Enable Explore Peptides view for users"
 		                        checked={shopEnabled}
 		                        onChange={(e) => handleShopToggle(e.target.checked)}
 		                        className="brand-checkbox mt-0.5"
@@ -19804,7 +20017,7 @@ function MainApp() {
 		                      />
 		                      <span className="min-w-0">
 		                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-800">
-		                          <span>Explore Compounds view for users</span>
+		                          <span>Explore Peptides view for users</span>
 		                          <span className="text-xs font-semibold text-slate-500">
 		                            {"\u00A0"}(
 		                            {settingsSaving.shop
@@ -19816,7 +20029,7 @@ function MainApp() {
 		                          </span>
 		                        </span>
 		                        <span className="block text-xs text-slate-600">
-		                          Controls whether physicians see the Explore Compounds view.
+		                          Controls whether physicians see the Explore Peptides view.
 		                        </span>
 		                      </span>
 		                    </label>
@@ -20296,9 +20509,10 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
+                        <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
+                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-slate-700">
                             <input
                               type="checkbox"
                               className="brand-checkbox"
@@ -20307,17 +20521,15 @@ function MainApp() {
                             />
                             Show offline
                           </label>
-                          <span className="text-xs text-slate-500">
+                          <span className="shrink-0 text-xs text-slate-500">
                             {onlineCount} online
                           </span>
-                          <label className="flex items-center gap-2 text-xs text-slate-600">
-                            <span className="uppercase tracking-wide text-[11px] text-slate-500">
-                              Type
-                            </span>
+                          </div>
+                          <label className="ml-auto relative flex min-w-0 flex-1 items-center text-xs text-slate-600 sm:ml-auto sm:min-w-[34%] sm:flex-none">
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                              className="squircle-sm h-10 min-w-0 w-full max-w-full appearance-none border border-slate-200/80 bg-white/95 px-3 pr-10 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
@@ -20326,6 +20538,10 @@ function MainApp() {
 	                              <option value="doctor">Doctors</option>
 	                              <option value="test_doctor">Test doctors</option>
                             </select>
+                            <ChevronDown
+                              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                              aria-hidden="true"
+                            />
                           </label>
                         </div>
                           <input
@@ -20337,7 +20553,7 @@ function MainApp() {
                               }
                             }}
                             placeholder="Search users…"
-                            className="w-full sm:w-[260px] rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            className="squircle-sm min-w-0 w-full max-w-full sm:w-[260px] border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                           />
                         </div>
 
@@ -23737,6 +23953,8 @@ function MainApp() {
 
   const featuredProducts = filteredProductCatalog.slice(0, 4);
   const quoteReady = showQuote && Boolean(quoteOfTheDay);
+  const hideMobileWelcomeDuringLogout =
+    logoutThanksActive && !isDesktopLandingLayout;
   const { quoteFontSize, quoteLineClamp, quoteMobileFont } = useMemo(() => {
     const len = quoteOfTheDay?.text?.length || 0;
     if (len > 260) {
@@ -23831,7 +24049,32 @@ function MainApp() {
 			    );
 			  };
 		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
-		  const landingAccountLabel = (typeof user?.name === 'string' && user.name.trim()) ? user.name.trim() : 'Account';
+      const landingAccountRole = String(user?.role || "").trim().toLowerCase();
+		  const landingAccountLabel = (() => {
+        const rawName =
+          typeof user?.name === "string" && user.name.trim()
+            ? user.name.trim()
+            : "Account";
+        if (landingAccountRole === "admin") {
+          return `Admin: ${rawName}`;
+        }
+        if (
+          landingAccountRole === "sales_lead" ||
+          landingAccountRole === "saleslead" ||
+          landingAccountRole === "sales-lead"
+        ) {
+          return `Lead: ${rawName}`;
+        }
+        if (
+          landingAccountRole === "sales_rep" ||
+          landingAccountRole === "salesrep" ||
+          landingAccountRole === "rep" ||
+          landingAccountRole === "test_rep"
+        ) {
+          return `Rep: ${rawName}`;
+        }
+        return rawName;
+      })();
 		  const landingAccountButton = user ? (
 		    <Button
 		      type="button"
@@ -24041,68 +24284,70 @@ function MainApp() {
                         </div>
                         {landingAccountButton}
                       </div>
-                      <div
-                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
-                          showWelcome
-                            ? "opacity-100 translate-y-0"
-                            : "opacity-0 -translate-y-4"
-                        } flex flex-col items-center text-center justify-center sm:justify-start`}
-                        style={{
-                          backdropFilter: "blur(20px) saturate(1.4)",
-                          minHeight:
-                            quoteReady && quoteOfTheDay
-                              ? "auto"
-                              : "min(140px, 20vh)",
-                        }}
-                      >
-                        <p
-                          className={`text-center font-semibold text-[rgb(95,179,249)] shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
+                      {!hideMobileWelcomeDuringLogout && (
+                        <div
+                          className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
+                            showWelcome
+                              ? "opacity-100 translate-y-0"
+                              : "opacity-0 -translate-y-4"
+                          } flex flex-col items-center text-center justify-center sm:justify-start`}
                           style={{
-                            color: "rgb(95,179,249)",
-                            fontSize:
+                            backdropFilter: "blur(20px) saturate(1.4)",
+                            minHeight:
                               quoteReady && quoteOfTheDay
-                                ? "clamp(1rem, 3.2vw, 1.6rem)"
-                                : "clamp(1.32rem, 4.9vw, 1.9rem)",
-                            lineHeight: 1.2,
-                            transform:
-                              quoteReady && quoteOfTheDay
-                                ? "translateY(-8px)"
-                                : "translateY(0)",
-                            transition:
-                              "font-size 600ms ease, transform 600ms ease",
+                                ? "auto"
+                                : "min(140px, 20vh)",
                           }}
                         >
-                          Welcome{user.visits && user.visits > 1 ? " back" : ""}, {user.name}!
-                        </p>
-                        <div
-                          className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500 mt-6`}
-                          aria-live="polite"
-                        >
-                          {!quoteReady && (
-                            <div className="min-h-[56px] flex items-center justify-center w-full">
-                              <p className="text-sm font-semibold mt-3 text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
-                                Loading today&apos;s quote…
+                          <p
+                            className={`text-center font-semibold text-[rgb(95,179,249)] shimmer-text ${infoFocusActive ? "is-shimmering" : "shimmer-text--cooldown"}`}
+                            style={{
+                              color: "rgb(95,179,249)",
+                              fontSize:
+                                quoteReady && quoteOfTheDay
+                                  ? "clamp(1rem, 3.2vw, 1.6rem)"
+                                  : "clamp(1.32rem, 4.9vw, 1.9rem)",
+                              lineHeight: 1.2,
+                              transform:
+                                quoteReady && quoteOfTheDay
+                                  ? "translateY(-8px)"
+                                  : "translateY(0)",
+                              transition:
+                                "font-size 600ms ease, transform 600ms ease",
+                            }}
+                          >
+                            Welcome{user.visits && user.visits > 1 ? " back" : ""}, {user.name}!
+                          </p>
+                          <div
+                            className={`${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} w-full rounded-lg bg-white/65 px-3 py-3 sm:px-4 sm:py-3 text-center shadow-inner transition-opacity duration-500 mt-6`}
+                            aria-live="polite"
+                          >
+                            {!quoteReady && (
+                              <div className="min-h-[56px] flex items-center justify-center w-full">
+                                <p className="text-sm font-semibold mt-3 text-center shimmer-text is-shimmering" style={{ color: "rgb(95,179,249)" }}>
+                                  Loading today&apos;s quote…
+                                </p>
+                              </div>
+                            )}
+                            {quoteReady && quoteOfTheDay && (
+                              <p
+                                className="px-4 sm:px-6 italic text-[rgb(95,179,249)] leading-snug break-words"
+                                style={{
+                                  color: "rgb(95,179,249)",
+                                  fontSize: quoteMobileFont,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  display: "-webkit-box",
+                                  WebkitLineClamp: quoteLineClamp,
+                                  WebkitBoxOrient: "vertical",
+                                }}
+                              >
+                                "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
                               </p>
-                            </div>
-                          )}
-                          {quoteReady && quoteOfTheDay && (
-                            <p
-                              className="px-4 sm:px-6 italic text-[rgb(95,179,249)] leading-snug break-words"
-                              style={{
-                                color: "rgb(95,179,249)",
-                                fontSize: quoteMobileFont,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                display: "-webkit-box",
-                                WebkitLineClamp: quoteLineClamp,
-                                WebkitBoxOrient: "vertical",
-                              }}
-                            >
-                              "{quoteOfTheDay.text}" — {quoteOfTheDay.author}
-                            </p>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -24139,13 +24384,13 @@ function MainApp() {
                       className="post-login-news space-y-4"
                     >
                       <div
-                        className="glass-card squircle-md px-4 py-2 shadow-lg transition-all duration-500"
+                        className="glass-card squircle-md px-6 py-4 sm:px-4 sm:py-2 shadow-lg transition-all duration-500"
                         style={{
                           backdropFilter: "blur(20px) saturate(1.4)",
                         }}
                       >
                         <p
-                          className="px-2 sm:px-1 italic text-left leading-snug break-words"
+                          className="px-1 sm:px-1 italic text-left leading-snug break-words"
                           style={{
                             color: "rgb(95,179,249)",
                             fontSize: "clamp(1.3rem, 2vw, 1.1rem)",
@@ -24302,55 +24547,57 @@ function MainApp() {
 	                    >
                       <div className="space-y-4">
                         <div
-                          className={`flex w-full flex-wrap items-center gap-3 pb-2 ${
-                            isDoctorRole(user?.role) ? "justify-between" : ""
-                          }`}
+                          className="flex w-full flex-col gap-3 pb-2 sm:justify-between"
                         >
-                          <Button
-                            type="button"
-                            size="lg"
-                            onClick={() => {
-                              if (typeof window !== "undefined") {
-                                window.dispatchEvent(
-                                  new CustomEvent("peppro:logout-with-thanks"),
-                                );
-                              } else {
-                                handleLogout();
+                          <div
+                            className="flex w-full flex-wrap items-center justify-between gap-3"
+                          >
+                            <Button
+                              type="button"
+                              size="lg"
+                              onClick={() => {
+                                if (typeof window !== "undefined") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("peppro:logout-with-thanks"),
+                                  );
+                                } else {
+                                  handleLogout();
+                                }
+                              }}
+                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                              style={{ backgroundColor: "rgb(95, 179, 249)" }}
+                            >
+                              <ArrowLeft
+                                className="h-4 w-4 mr-2"
+                                aria-hidden="true"
+                              />
+                              <span>Logout</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="lg"
+                              onClick={handleAdvanceFromWelcome}
+                              disabled={
+                                !(
+                                  shopEnabled ||
+                                  isAdmin(user?.role) ||
+                                  isRep(user?.role) ||
+                                  isTestDoctor(user?.role)
+                                )
                               }
-                            }}
-                            className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                            style={{ backgroundColor: "rgb(95, 179, 249)" }}
-                          >
-                            <ArrowLeft
-                              className="h-4 w-4 mr-2"
-                              aria-hidden="true"
-                            />
-                            <span>Logout</span>
-                          </Button>
-                          <Button
-                            type="button"
-                            size="lg"
-                            onClick={handleAdvanceFromWelcome}
-                            disabled={
-                              !(
-                                shopEnabled ||
-                                isAdmin(user?.role) ||
-                                isRep(user?.role) ||
-                                isTestDoctor(user?.role)
-                              )
-                            }
-                            className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
-                            style={{ backgroundColor: "rgb(95, 179, 249)" }}
-                          >
-                            <span className="mr-2">Explore Compounds</span>
-                            <ArrowRight
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
-                          </Button>
+                              className="text-white squircle-sm px-6 py-2 font-semibold uppercase tracking-wide shadow-lg shadow-[rgba(95,179,249,0.4)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(95,179,249,0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-white transition-all duration-300 hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 active:translate-y-0"
+                              style={{ backgroundColor: "rgb(95, 179, 249)" }}
+                            >
+                              <span className="mr-2">Explore Peptides</span>
+                              <ArrowRight
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            </Button>
+                          </div>
 	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
-	                            <span className="text-[11px] text-slate-600 italic">
-	                              Explore Compounds view for physicians:{" "}
+	                            <span className="block w-full text-[11px] text-slate-600 italic">
+	                              Explore Peptides view for physicians:{" "}
 	                              {shopEnabled ? "Enabled" : "Disabled"}
 	                            </span>
 	                          )}
