@@ -5,6 +5,18 @@ export const API_BASE_URL = (() => {
   const configured = ((import.meta.env.VITE_API_URL as string | undefined) || '').trim();
   const allowCrossOriginApi =
     String((import.meta.env.VITE_ALLOW_CROSS_ORIGIN_API as string | undefined) || '').toLowerCase() === 'true';
+  const currentOrigin =
+    typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? String(window.location.hostname).toLowerCase()
+      : '';
+  const isLocalhost =
+    currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
+  const isPepProHosted =
+    currentHost === 'peppro.net' ||
+    currentHost === 'www.peppro.net' ||
+    currentHost === 'api.peppro.net';
 
   if (!configured) {
     // In dev we expect the API on localhost:3001 by default.
@@ -22,6 +34,12 @@ export const API_BASE_URL = (() => {
   const normalized = configured.replace(/\/+$/, '');
   const normalizedWithApi = normalized.toLowerCase().endsWith('/api') ? normalized : `${normalized}/api`;
 
+  // Production PepPro pages should stay same-origin to avoid CORS/proxy drift between
+  // peppro.net and api.peppro.net. Keep localhost/dev behavior unchanged.
+  if (currentOrigin && isPepProHosted && !isLocalhost) {
+    return `${currentOrigin}/api`;
+  }
+
   // Guardrail: when loaded from a hosted browser origin, default to same-origin API unless
   // explicitly overridden. This prevents env/proxy drift from sending the app cross-origin.
   if (!allowCrossOriginApi && typeof window !== 'undefined' && window.location?.origin) {
@@ -29,10 +47,7 @@ export const API_BASE_URL = (() => {
       if (/^https?:\/\//i.test(normalizedWithApi)) {
         const parsed = new URL(normalizedWithApi);
         const current = new URL(window.location.origin);
-        const currentHost = String(current.hostname || '').toLowerCase();
-        const isCurrentLocalhost =
-          currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
-        if (!isCurrentLocalhost && parsed.origin !== current.origin) {
+        if (!isLocalhost && parsed.origin !== current.origin) {
           if (typeof console !== 'undefined' && console.warn) {
             console.warn('[API] Ignoring cross-origin VITE_API_URL for hosted origin; defaulting to same-origin /api');
           }
