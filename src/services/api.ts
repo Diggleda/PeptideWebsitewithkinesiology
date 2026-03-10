@@ -47,6 +47,28 @@ export const API_BASE_URL = (() => {
   return normalizedWithApi;
 })();
 
+const shouldUseSameOriginApiFallback = (requestUrl: string) => {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return false;
+  }
+  try {
+    const request = new URL(requestUrl, window.location.origin);
+    const current = new URL(window.location.origin);
+    if (request.origin === current.origin) {
+      return false;
+    }
+    // If the app is intentionally configured to use a cross-origin API, do not
+    // silently retry onto `window.location.origin/api/*`.
+    const apiBase = new URL(API_BASE_URL, window.location.origin);
+    if (apiBase.origin !== current.origin) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+  return true;
+};
+
 type AuthTabEvent = {
   type: 'LOGIN';
   tabId: string;
@@ -503,7 +525,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
       const sameOriginFallbackUrl =
-        (method === 'GET' || method === 'HEAD')
+        ((method === 'GET' || method === 'HEAD') && shouldUseSameOriginApiFallback(requestUrl))
           ? toSameOriginApiUrl(requestUrl)
           : null;
       if (sameOriginFallbackUrl && isNetworkLikeFetchError(error)) {
@@ -1343,7 +1365,7 @@ export const settingsAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },
@@ -2140,7 +2162,7 @@ export const referralAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },
