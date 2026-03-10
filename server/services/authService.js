@@ -120,6 +120,70 @@ const normalizeBooleanFlag = (value) => {
   return false;
 };
 
+const normalizeCartItems = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+      const quantity = Math.max(1, Math.floor(Number(item.quantity) || 0));
+      const productId = normalizeOptionalString(item.productId);
+      if (!productId || quantity <= 0) {
+        return null;
+      }
+      return {
+        productId,
+        productWooId: Number.isFinite(Number(item.productWooId)) ? Number(item.productWooId) : null,
+        variantId: normalizeOptionalString(item.variantId),
+        variantWooId: Number.isFinite(Number(item.variantWooId)) ? Number(item.variantWooId) : null,
+        quantity,
+        note: normalizeOptionalString(item.note),
+      };
+    })
+    .filter(Boolean);
+};
+
+const hydrateUserCartFromSql = async (user) => {
+  if (!user || !mysqlClient.isEnabled()) {
+    return user;
+  }
+  try {
+    const row = await mysqlClient.fetchOne(
+      `
+        SELECT cart
+        FROM users
+        WHERE id = :userId
+        LIMIT 1
+      `,
+      { userId: user.id },
+    );
+    if (!row || !Object.prototype.hasOwnProperty.call(row, 'cart')) {
+      return user;
+    }
+    const rawCart = row.cart;
+    const parsedCart =
+      typeof rawCart === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(rawCart);
+            } catch {
+              return [];
+            }
+          })()
+        : rawCart;
+    return {
+      ...user,
+      cart: normalizeCartItems(parsedCart),
+    };
+  } catch (error) {
+    logger.warn({ err: error, userId: user.id }, 'Failed to hydrate user cart from MySQL');
+    return user;
+  }
+};
+
 const sanitizeUser = (user) => {
   const normalizeRepSummary = (rep) => {
     if (!rep || typeof rep !== 'object') return null;
@@ -163,6 +227,7 @@ const sanitizeUser = (user) => {
   return {
     ...rest,
     profileImageUrl: normalizeOptionalString(user.profileImageUrl),
+    cart: normalizeCartItems(user.cart),
     role: normalizeRole(user.role),
     receiveClientOrderUpdateEmails: normalizeBooleanFlag(user.receiveClientOrderUpdateEmails),
     hasPasskeys: Array.isArray(passkeys) && passkeys.length > 0,
@@ -453,10 +518,11 @@ const register = async ({
   }
 
   const token = createAuthToken({ id: user.id, email: user.email });
+  const hydratedUser = await hydrateUserCartFromSql(user);
 
   return {
     token,
-    user: sanitizeUser(user),
+    user: sanitizeUser(hydratedUser),
   };
 };
 
@@ -512,7 +578,8 @@ const login = async ({ email, password }) => {
 
   const token = createAuthToken({ id: user.id, email: user.email });
   const totalMs = elapsedMs(totalStart);
-  const sanitizedUser = sanitizeUser(updated || user);
+  const hydratedUser = await hydrateUserCartFromSql(updated || user);
+  const sanitizedUser = sanitizeUser(hydratedUser);
 
   logger.debug(
     {
@@ -542,14 +609,14 @@ const checkEmail = (email) => {
   return { exists };
 };
 
-const getProfile = (userId) => {
+const getProfile = async (userId) => {
   const user = userRepository.findById(userId);
   if (!user) {
     const error = new Error('User not found');
     error.status = 404;
     throw error;
   }
-  return sanitizeUser(user);
+  return sanitizeUser(await hydrateUserCartFromSql(user));
 };
 
 const updateProfile = async (userId, data) => {
@@ -619,6 +686,18 @@ const updateProfile = async (userId, data) => {
     });
   }
 
+  return sanitizeUser(updated);
+};
+
+const updateCart = async (userId, cart) => {
+  const user = userRepository.findById(userId);
+  if (!user) {
+    throw createError('User not found', 404);
+  }
+  const updated = userRepository.update({
+    ...user,
+    cart: normalizeCartItems(cart),
+  }) || user;
   return sanitizeUser(updated);
 };
 
@@ -717,6 +796,7 @@ module.exports = {
   checkEmail,
   getProfile,
   updateProfile,
+  updateCart,
   sanitizeUser,
   createAuthToken,
   requestPasswordReset,

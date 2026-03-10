@@ -73,6 +73,7 @@ import {
 } from "recharts@2.15.2";
 	import {
 	  authAPI,
+	  type PersistedCartItemPayload,
 	  ordersAPI,
 	  delegationAPI,
 	  trackingAPI,
@@ -226,6 +227,7 @@ interface User {
   referralCredits?: number;
   totalReferrals?: number;
   mustResetPassword?: boolean;
+  cart?: PersistedCartItemPayload[];
 }
 
 interface ContactFormSubmission {
@@ -312,6 +314,8 @@ interface CartItem {
   note?: string;
   variant?: ProductVariant | null;
 }
+
+type PersistedCartItem = PersistedCartItemPayload;
 
 type CheckoutShippingAddress = {
   name?: string | null;
@@ -3501,7 +3505,9 @@ function MainApp() {
   const shipStationDashboardUrl = "https://ship14.shipstation.com";
   const [user, setUser] = useState<User | null>(null);
   const prevUserIdRef = useRef<string | null>(null);
+  const hydratedCartUserIdRef = useRef<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [pendingPersistedCart, setPendingPersistedCart] = useState<PersistedCartItem[] | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [patientLinksRefreshToken, setPatientLinksRefreshToken] = useState(0);
   const proposalCheckoutWasOpenRef = useRef(false);
@@ -3893,6 +3899,7 @@ function MainApp() {
 
   const [infoFocusActive, setInfoFocusActive] = useState(false);
   const [shouldAnimateInfoFocus, setShouldAnimateInfoFocus] = useState(false);
+  const [logoutThanksActive, setLogoutThanksActive] = useState(false);
   const [peptideForumEnabled, setPeptideForumEnabled] =
     useState(true);
 	  const [peptideForumLoading, setPeptideForumLoading] = useState(false);
@@ -5037,6 +5044,27 @@ function MainApp() {
       setInfoFocusActive(false);
     }
   }, [postLoginHold, user?.id, shouldAnimateInfoFocus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleLogoutWithThanks = () => {
+      setLogoutThanksActive(true);
+      setShouldAnimateInfoFocus(false);
+      setInfoFocusActive(false);
+    };
+    window.addEventListener(
+      "peppro:logout-with-thanks",
+      handleLogoutWithThanks as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "peppro:logout-with-thanks",
+        handleLogoutWithThanks as EventListener,
+      );
+    };
+  }, []);
 
   const applyLoginSuccessState = useCallback((nextUser: User) => {
     setUser(nextUser);
@@ -15456,6 +15484,20 @@ function MainApp() {
   }, [user, postLoginHold]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const syncUltraWideClass = () => {
+      const physicalScreenWidth = Number(window.screen?.width || 0);
+      document.body.classList.toggle("ultra-wide-screen", physicalScreenWidth > 2000);
+    };
+    syncUltraWideClass();
+    window.addEventListener("resize", syncUltraWideClass);
+    return () => {
+      window.removeEventListener("resize", syncUltraWideClass);
+      document.body.classList.remove("ultra-wide-screen");
+    };
+  }, []);
+
+  useEffect(() => {
     if (
       !user ||
       (!isRep(user.role) && !isAdmin(user.role)) ||
@@ -16023,9 +16065,14 @@ function MainApp() {
 	    setLoginContext(null);
 	    setPostLoginHold(false);
 	    setIsReturningUser(false);
+	    setShouldAnimateInfoFocus(false);
+	    setInfoFocusActive(false);
+	    setLogoutThanksActive(false);
 	    setCheckoutOpen(false);
 	    setShouldReopenCheckout(false);
-    setShouldAnimateInfoFocus(false);
+    setCartItems([]);
+    setPendingPersistedCart(null);
+    hydratedCartUserIdRef.current = null;
     setDoctorSummary(null);
     setDoctorReferrals([]);
     setSalesRepDashboard(null);
@@ -16034,6 +16081,64 @@ function MainApp() {
     setAdminActionState({ updatingReferral: null, error: null });
     // toast.success('Logged out successfully');
   }, []);
+
+  useEffect(() => {
+    const nextUserId =
+      user?.id !== undefined && user?.id !== null ? String(user.id) : null;
+    if (!nextUserId) {
+      hydratedCartUserIdRef.current = null;
+      setPendingPersistedCart(null);
+      return;
+    }
+    if (hydratedCartUserIdRef.current === nextUserId) {
+      return;
+    }
+    hydratedCartUserIdRef.current = nextUserId;
+    setPendingPersistedCart(Array.isArray(user?.cart) ? user.cart : []);
+  }, [user?.cart, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || pendingPersistedCart === null) {
+      return;
+    }
+    if (catalogProducts.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const hydratedCart = await hydratePersistedCartItems(pendingPersistedCart);
+      if (cancelled) {
+        return;
+      }
+      setCartItems(hydratedCart);
+      setPendingPersistedCart(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogProducts.length, hydratePersistedCartItems, pendingPersistedCart, user?.id]);
+
+  const persistedCartSignature = useMemo(
+    () => JSON.stringify(serializeCartItems(cartItems)),
+    [cartItems, serializeCartItems],
+  );
+
+  useEffect(() => {
+    if (!user?.id || isDelegateMode) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void authAPI.updateCart(serializeCartItems(cartItems)).catch((error) => {
+        console.warn("[Cart] Failed to persist cart", {
+          userId: user.id,
+          error,
+        });
+      });
+    }, 350);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [cartItems, isDelegateMode, persistedCartSignature, serializeCartItems, user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -16067,15 +16172,31 @@ function MainApp() {
       const detail = (event as any)?.detail || {};
       const reason =
         typeof detail?.reason === "string" ? detail.reason : "";
+      const authCode =
+        typeof detail?.authCode === "string" ? detail.authCode : "";
       const forcedByOtherLogin = reason === "another_tab_login";
 
       if (forcedByOtherLogin) {
         toast.error(
           'Somebody else signed in with your credentials. If this was not you, click "Reset Password" and login with your new credentials.',
         );
+      } else if (
+        authCode === "SESSION_IDLE_TIMEOUT" ||
+        authCode === "SESSION_MAX_AGE" ||
+        authCode === "TOKEN_EXPIRED"
+      ) {
+        toast.info("Your session expired. Please sign in again.");
+      } else if (
+        authCode === "TOKEN_INVALID" ||
+        authCode === "TOKEN_REVOKED" ||
+        authCode === "INVALID_TOKEN"
+      ) {
+        toast.info(
+          "Your account was signed out because your login is no longer valid. Please sign in again.",
+        );
       } else if (reason === "token_revoked" || reason === "auth_revoked") {
         toast.info(
-          "Our server has had an issue. To keep your account secure, we have logged you out. Please sign in again.",
+          "Your account was signed out because your login changed or is no longer valid. Please sign in again.",
         );
       }
 
@@ -16333,6 +16454,108 @@ function MainApp() {
 
   const buildCartItemId = (productId: string, variantId?: string | null) =>
     variantId ? `${productId}::${variantId}` : productId;
+
+  const serializeCartItems = useCallback(
+    (items: CartItem[]): PersistedCartItem[] =>
+      items
+        .map(({ product, quantity, note, variant }) => {
+          const productId = String(product.id || "").trim();
+          if (!productId) {
+            return null;
+          }
+          return {
+            productId,
+            productWooId:
+              Number.isFinite(Number(product.wooId)) ? Number(product.wooId) : null,
+            variantId: variant?.id ? String(variant.id).trim() : null,
+            variantWooId:
+              Number.isFinite(Number(variant?.wooId)) ? Number(variant?.wooId) : null,
+            quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
+            note: typeof note === "string" && note.trim() ? note.trim() : null,
+          } satisfies PersistedCartItem;
+        })
+        .filter((item): item is PersistedCartItem => Boolean(item)),
+    [],
+  );
+
+  const hydratePersistedCartItems = useCallback(
+    async (items: PersistedCartItem[]): Promise<CartItem[]> => {
+      const nextCart: CartItem[] = [];
+      const addOrMerge = (
+        product: Product,
+        variant: ProductVariant | null,
+        quantity: number,
+        note?: string | null,
+      ) => {
+        const cartItemId = buildCartItemId(product.id, variant?.id ?? null);
+        const existing = nextCart.find((item) => item.id === cartItemId);
+        if (existing) {
+          existing.quantity += quantity;
+          if (note) {
+            existing.note = note;
+          }
+          return;
+        }
+        nextCart.push({
+          id: cartItemId,
+          product,
+          quantity,
+          note: note ?? undefined,
+          variant: variant ?? undefined,
+        });
+      };
+
+      for (const item of Array.isArray(items) ? items : []) {
+        const productId = String(item?.productId || "").trim();
+        const productWooId = Number(item?.productWooId);
+        const variantId = String(item?.variantId || "").trim();
+        const variantWooId = Number(item?.variantWooId);
+        const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
+        const note = typeof item?.note === "string" ? item.note.trim() : null;
+
+        let matchedProduct =
+          catalogProducts.find((product) => product.id === productId) ||
+          (Number.isFinite(productWooId)
+            ? catalogProducts.find(
+                (product) =>
+                  product.wooId === productWooId || product.id === `woo-${productWooId}`,
+              )
+            : undefined);
+
+        if (!matchedProduct) {
+          continue;
+        }
+
+        if (
+          (matchedProduct.type ?? "").toLowerCase() === "variable" ||
+          variantId ||
+          Number.isFinite(variantWooId)
+        ) {
+          matchedProduct = await ensureCatalogProductHasVariants(matchedProduct);
+        }
+
+        let matchedVariant: ProductVariant | null = null;
+        if (matchedProduct.variants?.length) {
+          matchedVariant =
+            matchedProduct.variants.find((variant) => variant.id === variantId) ??
+            (Number.isFinite(variantWooId)
+              ? matchedProduct.variants.find((variant) => variant.wooId === variantWooId) ?? null
+              : null);
+          if (!matchedVariant) {
+            matchedVariant =
+              matchedProduct.variants.find((variant) => variant.inStock) ??
+              matchedProduct.variants[0] ??
+              null;
+          }
+        }
+
+        addOrMerge(matchedProduct, matchedVariant, quantity, note);
+      }
+
+      return nextCart;
+    },
+    [catalogProducts, ensureCatalogProductHasVariants],
+  );
 
   const handleAddToCart = (
     productId: string,
@@ -18619,6 +18842,14 @@ function MainApp() {
 	                          >
 	                            {`Order #${orderNumber}`}
 	                          </button>
+	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
+	                            <div className="w-full sm:w-auto sm:flex sm:items-center">
+	                              <span className="block text-center sm:text-left text-[11px] text-slate-600 italic">
+	                                Explore Peptides view for physicians:{" "}
+	                                {shopEnabled ? "Enabled" : "Disabled"}
+	                              </span>
+	                            </div>
+	                          )}
 	                        </div>
 	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
 	                          {doctorLabel}
@@ -18961,9 +19192,9 @@ function MainApp() {
 	                  const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
 
 	                  return (
-	                    <div className="space-y-3">
-		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4">
-		                        <div className="flex flex-wrap items-center gap-3">
+	                      <div className="space-y-3">
+		                      <div className="flex min-w-0 flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between">
+		                        <div className="flex min-w-0 flex-wrap items-center gap-3">
 		                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
 		                            <input
 		                              type="checkbox"
@@ -18977,14 +19208,14 @@ function MainApp() {
 		                            {onlineCount} online
 		                          </span>
 		                          {isSalesLead(user?.role) && (
-		                            <label className="flex items-center gap-2 text-xs text-slate-600">
+		                            <label className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-slate-600 sm:w-auto sm:flex-nowrap">
 		                              <span className="uppercase tracking-wide text-[11px] text-slate-500">
 		                                Type
 		                              </span>
 		                              <select
 		                                value={salesLeadLiveUsersRoleFilter}
 		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                                className="w-full min-w-0 rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:w-auto sm:min-w-[9rem]"
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
@@ -20276,8 +20507,8 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4">
-                        <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex min-w-0 flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 flex-wrap items-center gap-3">
                           <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                             <input
                               type="checkbox"
@@ -20290,14 +20521,14 @@ function MainApp() {
                           <span className="text-xs text-slate-500">
                             {onlineCount} online
                           </span>
-                          <label className="flex items-center gap-2 text-xs text-slate-600">
+                          <label className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-slate-600 sm:w-auto sm:flex-nowrap">
                             <span className="uppercase tracking-wide text-[11px] text-slate-500">
                               Type
                             </span>
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                              className="w-full min-w-0 rounded-md border border-slate-200/80 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:w-auto sm:min-w-[9rem]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
@@ -23954,10 +24185,10 @@ function MainApp() {
         <div className="flex-1 w-full flex flex-col">
           {/* Landing Page - Show when not logged in */}
           {(!user || postLoginHold) && !isDelegateMode && (
-            <div className="min-h-screen flex flex-col items-center pt-20 px-4 py-12">
+            <div className="ultra-wide-landing-shell min-h-screen flex flex-col items-center pt-20 px-4 py-12">
               {/* Logo with Welcome and Quote Containers */}
               {postLoginHold && user ? (
-	                <div className="w-full max-w-7xl mb-6 px-4">
+	                <div className="ultra-wide-welcome-shell w-full max-w-7xl mb-6 px-4">
 		                  {isDesktopLandingLayout ? (
 			                    <div className="flex items-center justify-between gap-6 lg:gap-8 mb-8 w-full">
 		                      <div className="flex-shrink-0">
@@ -24021,7 +24252,7 @@ function MainApp() {
                         {landingAccountButton}
                       </div>
                       <div
-                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full info-highlight-card ${infoFocusActive ? "info-focus-active" : ""} ${
+                        className={`glass-card squircle-lg border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 w-full ${logoutThanksActive ? "" : "info-highlight-card"} ${infoFocusActive && !logoutThanksActive ? "info-focus-active" : ""} ${
                           showWelcome
                             ? "opacity-100 translate-y-0"
                             : "opacity-0 -translate-y-4"
@@ -24112,7 +24343,7 @@ function MainApp() {
 
               {/* Info Container - After Login */}
               {postLoginHold && user ? (
-                <div className="w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
+                <div className="ultra-wide-info-shell w-full max-w-6xl mt-4 sm:mt-6 md:mt-8">
                   <div className="post-login-layout">
                     <div
                       className="post-login-news space-y-4"
@@ -24289,6 +24520,8 @@ function MainApp() {
                             type="button"
                             size="lg"
                             onClick={() => {
+                              setShouldAnimateInfoFocus(false);
+                              setInfoFocusActive(false);
                               if (typeof window !== "undefined") {
                                 window.dispatchEvent(
                                   new CustomEvent("peppro:logout-with-thanks"),
@@ -24327,13 +24560,15 @@ function MainApp() {
                               aria-hidden="true"
                             />
                           </Button>
-	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
-	                            <span className="text-[11px] text-slate-600 italic">
-	                              Explore Peptides view for physicians:{" "}
-	                              {shopEnabled ? "Enabled" : "Disabled"}
-	                            </span>
-	                          )}
-	                        </div>
+                        </div>
+                        {(isRep(user?.role) || isAdmin(user?.role)) && (
+                          <div className="w-full pb-2">
+                            <span className="block text-center text-[11px] text-slate-600 italic md:text-left">
+                              Explore Peptides view for physicians:{" "}
+                              {shopEnabled ? "Enabled" : "Disabled"}
+                            </span>
+                          </div>
+                        )}
                           {isDesktopLandingLayout && (
                             <div
                               className={`glass-card ${quoteLoading && !quoteReady ? "quote-container-shimmer" : ""} squircle-md border border-[var(--brand-glass-border-2)] px-4 py-4 shadow-lg transition-all duration-500 flex flex-col justify-center w-full`}

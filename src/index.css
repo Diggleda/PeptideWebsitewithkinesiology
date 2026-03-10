@@ -5665,6 +5665,29 @@ html {
   width: 100%;
 }
 
+body.ultra-wide-screen main.mobile-safe-area {
+  --ultra-wide-side-pad: clamp(4rem, 8vw, 12rem);
+  padding-left: var(--ultra-wide-side-pad) !important;
+  padding-right: var(--ultra-wide-side-pad) !important;
+  box-sizing: border-box;
+}
+
+body.ultra-wide-screen main.mobile-safe-area .max-w-7xl {
+  padding-left: var(--ultra-wide-side-pad) !important;
+  padding-right: var(--ultra-wide-side-pad) !important;
+}
+
+body.ultra-wide-screen .ultra-wide-info-shell {
+  padding-left: var(--ultra-wide-side-pad) !important;
+  padding-right: var(--ultra-wide-side-pad) !important;
+  box-sizing: border-box;
+}
+
+body.ultra-wide-screen .ultra-wide-info-shell {
+  width: min(100%, calc(100vw - (2 * var(--ultra-wide-side-pad)))) !important;
+  max-width: min(100%, calc(100vw - (2 * var(--ultra-wide-side-pad)))) !important;
+}
+
 @media (max-width: 640px) {
   .mobile-safe-area {
     padding-left: clamp(0.75rem, 4vw, 1.25rem);
@@ -6735,6 +6758,11 @@ body.account-modal-open .info-focus-overlay {
   transition-timing-function: ease !important;
   animation: none !important;
   transform: none !important;
+}
+
+.logout-thanks-modal {
+  margin-top: 30vh !important;
+  margin-top: 30dvh !important;
 }
 
 [data-radix-dialog-overlay][data-state="open"],

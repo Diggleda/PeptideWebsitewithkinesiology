@@ -61,6 +61,32 @@ const normalizeBooleanFlag = (value) => {
   return false;
 };
 
+const normalizeCartItems = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+      const quantity = Math.max(1, Math.floor(Number(item.quantity) || 0));
+      const productId = normalizeOptionalString(item.productId);
+      if (!productId || quantity <= 0) {
+        return null;
+      }
+      return {
+        productId,
+        productWooId: Number.isFinite(Number(item.productWooId)) ? Number(item.productWooId) : null,
+        variantId: normalizeOptionalString(item.variantId),
+        variantWooId: Number.isFinite(Number(item.variantWooId)) ? Number(item.variantWooId) : null,
+        quantity,
+        note: normalizeOptionalString(item.note),
+      };
+    })
+    .filter(Boolean);
+};
+
 const syncDirectShippingToSql = (user) => {
   if (!mysqlClient.isEnabled()) {
     logger.warn(
@@ -100,6 +126,7 @@ const syncDirectShippingToSql = (user) => {
     devCommission: user.devCommission ? 1 : 0,
     receiveClientOrderUpdateEmails: user.receiveClientOrderUpdateEmails ? 1 : 0,
     handDelivered: user.handDelivered ? 1 : 0,
+    cartJson: JSON.stringify(normalizeCartItems(user.cart)),
   };
   logger.info(
     {
@@ -141,7 +168,8 @@ const syncDirectShippingToSql = (user) => {
           tax_exempt_reason,
           dev_commission,
           receive_client_order_update_emails,
-          hand_delivered
+          hand_delivered,
+          cart
         ) VALUES (
           :id,
           :email,
@@ -165,7 +193,8 @@ const syncDirectShippingToSql = (user) => {
           :taxExemptReason,
           :devCommission,
           :receiveClientOrderUpdateEmails,
-          :handDelivered
+          :handDelivered,
+          CAST(:cartJson AS JSON)
         )
         ON DUPLICATE KEY UPDATE
           email = COALESCE(VALUES(email), email),
@@ -189,7 +218,8 @@ const syncDirectShippingToSql = (user) => {
           tax_exempt_reason = VALUES(tax_exempt_reason),
           dev_commission = VALUES(dev_commission),
           receive_client_order_update_emails = VALUES(receive_client_order_update_emails),
-          hand_delivered = VALUES(hand_delivered)
+          hand_delivered = VALUES(hand_delivered),
+          cart = VALUES(cart)
       `,
       params,
     )
@@ -300,6 +330,11 @@ const ensureUserDefaults = (user) => {
     normalized.profileImageUrl = null;
   } else {
     normalized.profileImageUrl = normalizeOptionalString(normalized.profileImageUrl);
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'cart')) {
+    normalized.cart = [];
+  } else {
+    normalized.cart = normalizeCartItems(normalized.cart);
   }
   if (!Object.prototype.hasOwnProperty.call(normalized, 'devCommission')) {
     normalized.devCommission = false;

@@ -32,9 +32,9 @@ const checkEmail = (req, res, next) => {
   }
 };
 
-const getProfile = (req, res, next) => {
+const getProfile = async (req, res, next) => {
   try {
-    const result = authService.getProfile(req.user.id);
+    const result = await authService.getProfile(req.user.id);
     res.json(result);
   } catch (error) {
     next(error);
@@ -65,6 +65,15 @@ const updateProfile = async (req, res, next) => {
       );
     }
     const updated = await authService.updateProfile(req.user.id, req.body || {});
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateCart = async (req, res, next) => {
+  try {
+    const updated = await authService.updateCart(req.user.id, req.body?.cart || []);
     res.json(updated);
   } catch (error) {
     next(error);
@@ -169,6 +178,7 @@ module.exports = {
   getProfile,
   verifyNpi,
   updateProfile,
+  updateCart,
   deleteAccount,
   logout,
   requestPasswordReset,

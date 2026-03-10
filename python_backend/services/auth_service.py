@@ -45,6 +45,41 @@ def _normalize_bool(value: Any) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_cart_items(value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        product_id = str(item.get("productId") or "").strip()
+        if not product_id:
+            continue
+        try:
+            quantity = max(1, int(float(item.get("quantity") or 0) or 0))
+        except Exception:
+            quantity = 1
+
+        def _to_optional_int(raw: Any) -> int | None:
+            try:
+                return int(float(raw)) if raw is not None else None
+            except Exception:
+                return None
+
+        note = item.get("note")
+        normalized.append(
+            {
+                "productId": product_id,
+                "productWooId": _to_optional_int(item.get("productWooId")),
+                "variantId": (str(item.get("variantId") or "").strip() or None),
+                "variantWooId": _to_optional_int(item.get("variantWooId")),
+                "quantity": quantity,
+                "note": (str(note).strip() or None) if note is not None else None,
+            }
+        )
+    return normalized
+
+
 def _build_reset_url(token: str) -> str:
     config = get_config()
     base = (config.password_reset_public_base_url or config.frontend_base_url or "http://localhost:3000").rstrip("/")
@@ -815,6 +850,20 @@ def update_profile(user_id: str, data: Dict) -> Dict:
             "hasProfileImage": bool(saved.get("profileImageUrl")),
         },
     )
+    return _sanitize_user(saved)
+
+
+def update_cart(user_id: str, cart: Any) -> Dict:
+    user = user_repository.find_by_id(user_id)
+    if not user:
+        raise _not_found("User not found")
+
+    saved = user_repository.update(
+        {
+            **user,
+            "cart": _normalize_cart_items(cart),
+        }
+    ) or user
     return _sanitize_user(saved)
 
 

@@ -183,3 +183,11 @@ def update_me():
     user_id = g.current_user.get("id")
     payload = request.get_json(force=True, silent=True) or {}
     return handle_action(lambda: auth_service.update_profile(user_id, payload))
+
+
+@blueprint.put("/me/cart")
+@require_auth
+def update_me_cart():
+    user_id = g.current_user.get("id")
+    payload = request.get_json(force=True, silent=True) or {}
+    return handle_action(lambda: auth_service.update_cart(user_id, payload.get("cart") or []))

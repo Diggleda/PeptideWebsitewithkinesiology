@@ -6632,7 +6632,7 @@ export function Header({
       <Dialog open={logoutThanksOpen} onOpenChange={handleLogoutThanksOpenChange}>
         <DialogContent
           hideCloseButton
-          className="logout-thanks-modal duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
+          className="logout-thanks-modal relative self-start !mx-auto !mb-6 !mt-0 duration-[250ms] data-[state=closed]:duration-[250ms] !max-w-[min(28rem,calc(100vw-2rem))]"
           overlayClassName="logout-thanks-overlay"
           onTransitionEnd={(event) => {
             if (event.propertyName !== 'opacity') return;
@@ -6641,14 +6641,15 @@ export function Header({
             finishLogoutModalClose();
           }}
 	          style={{
-	            margin: 'auto',
 	            maxWidth: 'min(32rem, calc(100vw - 2rem))',
+	            backgroundColor: 'rgba(250, 253, 255, 0.985)',
+	            backdropFilter: 'blur(8px) saturate(1.1)',
+	            WebkitBackdropFilter: 'blur(8px) saturate(1.1)',
 	            opacity: logoutThanksOpacity,
               // Use a CSS var so we can override global `!important` transition rules.
               ["--logout-thanks-ms" as any]: `${logoutThanksTransitionMs}ms`,
-	            transform: 'none',
 	          }}
-	          containerClassName="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10"
+	          containerClassName="fixed inset-0 z-[10000] flex items-start justify-center px-6 pb-6 md:px-10 md:pb-10"
           overlayStyle={{
             backgroundColor: 'rgba(4, 14, 21, 0.45)',
             backdropFilter: 'blur(22px) saturate(1.35)',
@@ -6661,7 +6662,7 @@ export function Header({
             <DialogTitle>Logged out</DialogTitle>
             <DialogDescription>Thank you message after logging out.</DialogDescription>
           </VisuallyHidden>
-          <div className="px-8 py-14 text-center sm:px-10 sm:py-16">
+          <div className="px-8 py-10 text-center sm:px-10 sm:py-16">
             <p className="text-base leading-relaxed" style={{ color: secondaryColor }}>
               Thank you for being a partner of ours and a joy to those around you. We at PepPro wish you a great rest
               of your day and will be here when you need us!

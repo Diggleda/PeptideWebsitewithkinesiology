@@ -39,6 +39,43 @@ def _normalize_bool(value) -> bool:
     return text in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_cart_items(value) -> List[Dict]:
+    if not isinstance(value, list):
+        return []
+    normalized: List[Dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        product_id = str(item.get("productId") or "").strip()
+        try:
+            quantity = max(1, int(float(item.get("quantity") or 0) or 0))
+        except Exception:
+            quantity = 1
+        if not product_id or quantity <= 0:
+            continue
+        product_woo_id = item.get("productWooId")
+        variant_woo_id = item.get("variantWooId")
+        try:
+            normalized_product_woo_id = int(float(product_woo_id)) if product_woo_id is not None else None
+        except Exception:
+            normalized_product_woo_id = None
+        try:
+            normalized_variant_woo_id = int(float(variant_woo_id)) if variant_woo_id is not None else None
+        except Exception:
+            normalized_variant_woo_id = None
+        normalized.append(
+            {
+                "productId": product_id,
+                "productWooId": normalized_product_woo_id,
+                "variantId": _normalize_identifier(item.get("variantId")),
+                "variantWooId": normalized_variant_woo_id,
+                "quantity": quantity,
+                "note": _normalize_identifier(item.get("note")),
+            }
+        )
+    return normalized
+
+
 def _ensure_defaults(user: Dict) -> Dict:
     normalized = dict(user)
     normalized.setdefault("role", "doctor")
@@ -62,6 +99,13 @@ def _ensure_defaults(user: Dict) -> Dict:
     normalized.setdefault("profileImageUrl", None)
     normalized.setdefault("delegateLogoUrl", normalized.get("delegateLogoUrl") or None)
     normalized.setdefault("zelleContact", normalized.get("zelleContact") or None)
+    cart = normalized.get("cart")
+    if isinstance(cart, str):
+        try:
+            cart = json.loads(cart)
+        except json.JSONDecodeError:
+            cart = None
+    normalized["cart"] = _normalize_cart_items(cart)
     downloads = normalized.get("downloads")
     if isinstance(downloads, str):
         try:
@@ -377,7 +421,7 @@ def _mysql_insert(user: Dict) -> Dict:
             last_seen_at, last_interaction_at,
             lead_type, lead_type_source, lead_type_locked_at,
             phone, office_address_line1, office_address_line2, office_city, office_state,
-            office_postal_code, office_country, profile_image_url, delegate_logo_url, zelle_contact, downloads,
+            office_postal_code, office_country, profile_image_url, delegate_logo_url, zelle_contact, cart, downloads,
             referral_credits, total_referrals, visits,
             receive_client_order_update_emails,
             markup_percent,
@@ -389,7 +433,7 @@ def _mysql_insert(user: Dict) -> Dict:
             %(lead_type)s, %(lead_type_source)s, %(lead_type_locked_at)s,
             %(phone)s, %(office_address_line1)s, %(office_address_line2)s,
             %(office_city)s, %(office_state)s, %(office_postal_code)s, %(office_country)s,
-            %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(downloads)s, %(referral_credits)s,
+            %(profile_image_url)s, %(delegate_logo_url)s, %(zelle_contact)s, %(cart)s, %(downloads)s, %(referral_credits)s,
             %(total_referrals)s, %(visits)s, %(receive_client_order_update_emails)s, %(markup_percent)s, %(created_at)s, %(last_login_at)s,
             %(must_reset_password)s, %(first_order_bonus_granted_at)s,
             %(npi_number)s, %(npi_last_verified_at)s, %(npi_verification)s, %(npi_status)s, %(npi_check_error)s
@@ -422,6 +466,7 @@ def _mysql_insert(user: Dict) -> Dict:
             profile_image_url = VALUES(profile_image_url),
             delegate_logo_url = VALUES(delegate_logo_url),
             zelle_contact = VALUES(zelle_contact),
+            cart = VALUES(cart),
             downloads = VALUES(downloads),
             referral_credits = VALUES(referral_credits),
             total_referrals = VALUES(total_referrals),
@@ -481,6 +526,7 @@ def _mysql_update(user: Dict) -> Optional[Dict]:
             profile_image_url = %(profile_image_url)s,
             delegate_logo_url = %(delegate_logo_url)s,
             zelle_contact = %(zelle_contact)s,
+            cart = %(cart)s,
             downloads = %(downloads)s,
             referral_credits = %(referral_credits)s,
             total_referrals = %(total_referrals)s,
@@ -556,6 +602,7 @@ def _row_to_user(row: Dict) -> Dict:
             "profileImageUrl": row.get("profile_image_url"),
             "delegateLogoUrl": row.get("delegate_logo_url"),
             "zelleContact": row.get("zelle_contact") or None,
+            "cart": row.get("cart"),
             "downloads": downloads,
             "referralCode": row.get("referral_code"),
             "referralCredits": float(row.get("referral_credits") or 0),
@@ -616,6 +663,7 @@ def _to_db_params(user: Dict) -> Dict:
         "profile_image_url": user.get("profileImageUrl"),
         "delegate_logo_url": user.get("delegateLogoUrl"),
         "zelle_contact": user.get("zelleContact"),
+        "cart": json.dumps(_normalize_cart_items(user.get("cart"))),
         "downloads": json.dumps(user.get("downloads") or []),
         "referral_credits": float(user.get("referralCredits") or 0),
         "total_referrals": int(user.get("totalReferrals") or 0),

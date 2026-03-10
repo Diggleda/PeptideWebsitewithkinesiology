@@ -911,6 +911,15 @@ export type UpdateProfilePayload = {
   receiveClientOrderUpdateEmails?: boolean;
 };
 
+export type PersistedCartItemPayload = {
+  productId: string;
+  productWooId?: number | null;
+  variantId?: string | null;
+  variantWooId?: number | null;
+  quantity: number;
+  note?: string | null;
+};
+
 // Auth API
 export const authAPI = {
   register: async (input: {
@@ -1031,6 +1040,13 @@ export const authAPI = {
     return fetchWithAuth(`${API_BASE_URL}/auth/me`, {
       method: 'PUT',
       body: JSON.stringify(payload),
+    });
+  },
+
+  updateCart: async (cart: PersistedCartItemPayload[]) => {
+    return fetchWithAuth(`${API_BASE_URL}/auth/me/cart`, {
+      method: 'PUT',
+      body: JSON.stringify({ cart }),
     });
   },
 

@@ -321,6 +321,13 @@ const ensureUserColumns = async () => {
           STORED
       `,
     },
+    {
+      name: 'cart',
+      ddl: `
+        ALTER TABLE users
+        ADD COLUMN cart JSON NULL
+      `,
+    },
   ];
 
   for (const column of columns) {
