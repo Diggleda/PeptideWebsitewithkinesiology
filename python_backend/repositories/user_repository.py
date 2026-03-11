@@ -186,6 +186,48 @@ def get_all() -> List[Dict]:
     return _load()
 
 
+def list_sales_tracking_users_for_admin() -> List[Dict]:
+    """
+    Lightweight projection for admin sales tracking.
+
+    This avoids loading heavyweight fields like password/cart/download payloads when the
+    dashboard only needs identity, attribution, and display metadata.
+    """
+    if not _using_mysql():
+        return [
+            user
+            for user in _load()
+            if str(user.get("role") or "").strip().lower() in ("doctor", "test_doctor", "sales_rep", "rep")
+        ]
+
+    rows = mysql_client.fetch_all(
+        """
+        SELECT
+            id,
+            name,
+            email,
+            role,
+            status,
+            sales_rep_id,
+            referrer_doctor_id,
+            lead_type,
+            lead_type_source,
+            lead_type_locked_at,
+            phone,
+            office_address_line1,
+            office_address_line2,
+            office_city,
+            office_state,
+            office_postal_code,
+            office_country,
+            profile_image_url
+        FROM users
+        WHERE LOWER(COALESCE(role, '')) IN ('doctor', 'test_doctor', 'sales_rep', 'rep')
+        """
+    )
+    return [_row_to_user(row) for row in rows or []]
+
+
 def list_recent_users_since(cutoff: datetime) -> List[Dict]:
     """
     Lightweight user activity projection used by admin dashboards.

@@ -12,6 +12,37 @@ from .. import storage
 
 HAND_DELIVERY_SERVICE_LABEL = "Hand Delivered"
 
+_SALES_TRACKING_SELECT_COLUMNS = """
+    id,
+    user_id,
+    as_delegate,
+    pricing_mode,
+    items,
+    items_subtotal,
+    total,
+    shipping_total,
+    facility_pickup,
+    fulfillment_method,
+    pickup_location,
+    pickup_ready_notice,
+    shipping_rate,
+    shipping_carrier,
+    shipping_service,
+    tracking_number,
+    shipped_at,
+    physician_certified,
+    referral_code,
+    status,
+    integrations,
+    expected_shipment_window,
+    shipping_address,
+    woo_order_id,
+    woo_order_number,
+    woo_order_key,
+    created_at,
+    updated_at
+"""
+
 
 def _using_mysql() -> bool:
     return bool(get_config().mysql.get("enabled"))
@@ -355,6 +386,34 @@ def find_by_user_ids(user_ids: List[str]) -> List[Dict]:
     return [order for order in _load() if str(order.get("userId") or "") in id_set]
 
 
+def find_sales_tracking_by_user_ids(user_ids: List[str]) -> List[Dict]:
+    ids = [str(uid).strip() for uid in (user_ids or []) if str(uid).strip()]
+    if not ids:
+        return []
+    if _using_mysql():
+        results: List[Dict] = []
+        chunk_size = 500
+        for offset in range(0, len(ids), chunk_size):
+            chunk = ids[offset : offset + chunk_size]
+            placeholders = ", ".join([f"%(user_id_{idx})s" for idx in range(len(chunk))])
+            params = {f"user_id_{idx}": user_id for idx, user_id in enumerate(chunk)}
+            rows = mysql_client.fetch_all(
+                f"""
+                SELECT {_SALES_TRACKING_SELECT_COLUMNS}
+                FROM orders
+                WHERE user_id IN ({placeholders})
+                ORDER BY created_at DESC
+                """,
+                params,
+            )
+            for row in rows or []:
+                mapped = _row_to_order(row)
+                if mapped:
+                    results.append(mapped)
+        return results
+    return find_by_user_ids(ids)
+
+
 def list_recent(limit: int = 500) -> List[Dict]:
     try:
         limit_value = int(limit)
@@ -370,6 +429,26 @@ def list_recent(limit: int = 500) -> List[Dict]:
     orders = list(_load())
     orders.sort(key=lambda o: str(o.get("createdAt") or ""), reverse=True)
     return orders[:limit_value]
+
+
+def list_recent_sales_tracking(limit: int = 500) -> List[Dict]:
+    try:
+        limit_value = int(limit)
+    except Exception:
+        limit_value = 500
+    limit_value = max(1, min(limit_value, 5000))
+    if _using_mysql():
+        rows = mysql_client.fetch_all(
+            f"""
+            SELECT {_SALES_TRACKING_SELECT_COLUMNS}
+            FROM orders
+            ORDER BY created_at DESC
+            LIMIT %(limit)s
+            """,
+            {"limit": limit_value},
+        )
+        return [_row_to_order(row) for row in rows]
+    return list_recent(limit_value)
 
 
 def list_for_commission(start_utc: datetime, end_utc: datetime) -> List[Dict]:

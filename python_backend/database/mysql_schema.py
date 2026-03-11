@@ -41,7 +41,10 @@ CREATE_TABLE_STATEMENTS = [
         created_at DATETIME NULL,
         last_login_at DATETIME NULL,
         must_reset_password TINYINT(1) NOT NULL DEFAULT 0,
-        first_order_bonus_granted_at DATETIME NULL
+        first_order_bonus_granted_at DATETIME NULL,
+        KEY idx_users_role (role),
+        KEY idx_users_sales_rep_id (sales_rep_id),
+        KEY idx_users_lead_type (lead_type)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -181,7 +184,10 @@ CREATE_TABLE_STATEMENTS = [
         payload LONGTEXT NULL,
         shipping_address LONGTEXT NULL,
         created_at DATETIME NULL,
-        updated_at DATETIME NULL
+        updated_at DATETIME NULL,
+        KEY idx_orders_user_id (user_id),
+        KEY idx_orders_created_at (created_at),
+        KEY idx_orders_user_created_at (user_id, created_at)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -312,6 +318,22 @@ def ensure_schema() -> None:
                   AND column_name = %(column)s
                 """,
                 {"table": table, "column": column},
+            )
+            return int((row or {}).get("cnt") or 0) > 0
+        except Exception:
+            return False
+
+    def _index_exists(table: str, index: str) -> bool:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = %(table)s
+                  AND index_name = %(index)s
+                """,
+                {"table": table, "index": index},
             )
             return int((row or {}).get("cnt") or 0) > 0
         except Exception:
@@ -512,6 +534,23 @@ def ensure_schema() -> None:
     try:
         if not _column_exists("users", "markup_percent"):
             mysql_client.execute("ALTER TABLE users ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    # Ensure high-traffic sales tracking queries use indexes instead of full table scans.
+    try:
+        if not _index_exists("users", "idx_users_role"):
+            mysql_client.execute("ALTER TABLE users ADD INDEX idx_users_role (role)")
+        if not _index_exists("users", "idx_users_sales_rep_id"):
+            mysql_client.execute("ALTER TABLE users ADD INDEX idx_users_sales_rep_id (sales_rep_id)")
+        if not _index_exists("users", "idx_users_lead_type"):
+            mysql_client.execute("ALTER TABLE users ADD INDEX idx_users_lead_type (lead_type)")
+        if not _index_exists("orders", "idx_orders_user_id"):
+            mysql_client.execute("ALTER TABLE orders ADD INDEX idx_orders_user_id (user_id)")
+        if not _index_exists("orders", "idx_orders_created_at"):
+            mysql_client.execute("ALTER TABLE orders ADD INDEX idx_orders_created_at (created_at)")
+        if not _index_exists("orders", "idx_orders_user_created_at"):
+            mysql_client.execute("ALTER TABLE orders ADD INDEX idx_orders_user_created_at (user_id, created_at)")
     except Exception:
         pass
 

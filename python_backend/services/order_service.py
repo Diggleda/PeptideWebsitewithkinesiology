@@ -1818,7 +1818,14 @@ def get_orders_for_sales_rep(
                     _SALES_REP_ORDERS_TTL_SECONDS,
                 )
                 return cached.get("value")
-    users = user_repository.get_all()
+    use_admin_local_fast_path = bool(
+        local_only and include_all_doctors and not normalized_sales_rep_id
+    )
+    users = (
+        user_repository.list_sales_tracking_users_for_admin()
+        if use_admin_local_fast_path
+        else user_repository.get_all()
+    )
     user_by_id = {str(u.get("id")): u for u in users if isinstance(u, dict) and u.get("id") is not None}
     rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
     allowed_rep_ids = (
@@ -1854,18 +1861,19 @@ def get_orders_for_sales_rep(
         doctors.append(user)
 
     # Ensure doctors have a stable lead type stored for commission tracking.
-    try:
-        doctor_only = [d for d in doctors if (d.get("role") or "").lower() in ("doctor", "test_doctor")]
-        backfilled = referral_service.backfill_lead_types_for_doctors(doctor_only)
-        if isinstance(backfilled, list) and backfilled:
-            backfilled_by_id = {str(d.get("id")): d for d in backfilled if isinstance(d, dict) and d.get("id") is not None}
-            merged: List[Dict] = []
-            for entry in doctors:
-                entry_id = str(entry.get("id")) if isinstance(entry, dict) else ""
-                merged.append(backfilled_by_id.get(entry_id) or entry)
-            doctors = merged
-    except Exception:
-        pass
+    if not use_admin_local_fast_path:
+        try:
+            doctor_only = [d for d in doctors if (d.get("role") or "").lower() in ("doctor", "test_doctor")]
+            backfilled = referral_service.backfill_lead_types_for_doctors(doctor_only)
+            if isinstance(backfilled, list) and backfilled:
+                backfilled_by_id = {str(d.get("id")): d for d in backfilled if isinstance(d, dict) and d.get("id") is not None}
+                merged: List[Dict] = []
+                for entry in doctors:
+                    entry_id = str(entry.get("id")) if isinstance(entry, dict) else ""
+                    merged.append(backfilled_by_id.get(entry_id) or entry)
+                doctors = merged
+        except Exception:
+            pass
 
     doctor_lookup = {
         str(doc.get("id")): {
@@ -1891,10 +1899,13 @@ def get_orders_for_sales_rep(
 
     # Include contact-form prospects so reps/admins can see lead activity, and so order attribution by
     # billing email can match house leads even when no doctor user exists yet.
-    try:
-        prospects = sales_prospect_repository.get_all()
-    except Exception:
+    if use_admin_local_fast_path:
         prospects = []
+    else:
+        try:
+            prospects = sales_prospect_repository.get_all()
+        except Exception:
+            prospects = []
 
     if isinstance(prospects, list) and prospects:
         house_sales_rep_id = None
@@ -2007,14 +2018,17 @@ def get_orders_for_sales_rep(
     local_by_id: Dict[str, Dict] = {}
     try:
         doctor_ids = [str(doc.get("id")) for doc in doctors if doc.get("id") is not None]
-        local_orders = order_repository.find_by_user_ids(doctor_ids) if doctor_ids else []
+        if use_admin_local_fast_path:
+            local_orders = order_repository.find_sales_tracking_by_user_ids(doctor_ids) if doctor_ids else []
+        else:
+            local_orders = order_repository.find_by_user_ids(doctor_ids) if doctor_ids else []
     except Exception:
         local_orders = []
 
     # Fallback scan catches cases where the doctor user isn't linked to the rep, but the order payload contains doctorSalesRepId.
-    if not local_orders:
+    if not local_orders and not use_admin_local_fast_path:
         try:
-            local_orders = order_repository.list_recent(750)
+            local_orders = order_repository.list_recent_sales_tracking(750)
         except Exception:
             local_orders = []
 
