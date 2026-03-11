@@ -1795,6 +1795,9 @@ def get_orders_for_sales_rep(
     include_house_contacts: bool = False,
 ):
     normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    def _normalize_lead_type(value: object) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
     scope_key = "all" if include_all_doctors else "mine"
     logger.info(
         "[SalesRep] Fetch start salesRepId=%s scope=%s includeDoctors=%s",
@@ -1829,9 +1832,18 @@ def get_orders_for_sales_rep(
         role = (user.get("role") or "").lower()
         is_doctor = role in ("doctor", "test_doctor")
         is_sales_rep_customer = include_sales_rep_customers and role in ("sales_rep", "rep")
+        lead_type = _normalize_lead_type(user.get("leadType") or user.get("lead_type"))
+        is_house_contact_doctor = include_house_contacts and is_doctor and lead_type in (
+            "contact_form",
+            "house",
+            "house_contact",
+        )
         if not is_doctor and not is_sales_rep_customer:
             continue
         doctor_sales_rep = str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip()
+        if is_house_contact_doctor:
+            doctors.append(user)
+            continue
         if include_all_doctors:
             if allowed_rep_ids and doctor_sales_rep not in allowed_rep_ids:
                 continue
@@ -2018,6 +2030,14 @@ def get_orders_for_sales_rep(
 
         local_user = user_by_id.get(local_user_id)
         local_role = (local_user.get("role") or "").lower() if isinstance(local_user, dict) else ""
+        local_lead_type = _normalize_lead_type(
+            (local_user or {}).get("leadType") or (local_user or {}).get("lead_type")
+        )
+        local_is_house_contact = include_house_contacts and local_lead_type in (
+            "contact_form",
+            "house",
+            "house_contact",
+        )
         if local_role:
             if local_role in ("doctor", "test_doctor"):
                 pass
@@ -2040,6 +2060,7 @@ def get_orders_for_sales_rep(
             if not (
                 (rep_from_order and rep_from_order in allowed_rep_ids)
                 or (rep_from_user and rep_from_user in allowed_rep_ids)
+                or local_is_house_contact
             ):
                 continue
 
