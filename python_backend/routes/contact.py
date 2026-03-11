@@ -8,7 +8,7 @@ from flask import Blueprint, request
 from ..storage import contact_form_store
 from ..utils.http import handle_action
 from ..database import mysql_client
-from ..repositories import sales_rep_repository, sales_prospect_repository
+from ..repositories import sales_rep_repository, sales_prospect_repository, user_repository
 
 blueprint = Blueprint("contact", __name__, url_prefix="/api/contact")
 
@@ -69,6 +69,10 @@ def submit_contact():
                             "contactPhone": record["phone"],
                         }
                     )
+                    user_repository.mark_contact_form_origin_for_email(
+                        record["email"],
+                        source=f"contact_form:{inserted_id}",
+                    )
             except Exception:
                 pass
         except Exception:
@@ -76,6 +80,13 @@ def submit_contact():
                 forms = contact_form_store.read()
                 forms.append(record)
                 contact_form_store.write(forms)
+            try:
+                user_repository.mark_contact_form_origin_for_email(
+                    record["email"],
+                    source="contact_form",
+                )
+            except Exception:
+                pass
 
         return {"status": "ok"}
 

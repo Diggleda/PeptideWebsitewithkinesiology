@@ -15,7 +15,7 @@ def create_app() -> "Flask":
     from .logging_config import configure_logging
     from .middleware.rate_limit import init_rate_limit
     from .middleware.request_logging import init_request_logging
-    from .repositories import sales_prospect_repository
+    from .repositories import sales_prospect_repository, user_repository
     from .routes import register_blueprints
     from .services import configure_services
     from .services.patient_links_sweep_service import start_patient_links_sweep
@@ -40,6 +40,10 @@ def create_app() -> "Flask":
     init_database(config)
     try:
         sales_prospect_repository.ensure_house_sales_rep_for_contact_forms()
+    except Exception:
+        pass
+    try:
+        user_repository.backfill_contact_form_lead_types()
     except Exception:
         pass
     start_product_document_sync()

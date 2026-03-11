@@ -277,6 +277,105 @@ def list_recent_users_since(cutoff: datetime) -> List[Dict]:
     return result
 
 
+def mark_contact_form_origin_for_email(
+    email: str,
+    *,
+    source: Optional[str] = None,
+    locked_at: Optional[str] = None,
+) -> Optional[Dict]:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return None
+    user = find_by_email(normalized_email)
+    if not user:
+        return None
+    role = str(user.get("role") or "").strip().lower()
+    if role not in ("doctor", "test_doctor"):
+        return user
+    if str(user.get("referrerDoctorId") or "").strip():
+        return user
+    existing_lead_type = str(user.get("leadType") or "").strip().lower()
+    if existing_lead_type:
+        return user
+    update_payload = {
+        "id": user.get("id"),
+        "leadType": "contact_form",
+        "leadTypeSource": source or user.get("leadTypeSource") or "contact_form",
+        "leadTypeLockedAt": locked_at or user.get("leadTypeLockedAt") or datetime.now(timezone.utc).isoformat(),
+    }
+    return update(update_payload) or {**user, **update_payload}
+
+
+def backfill_contact_form_lead_types() -> int:
+    if _using_mysql():
+        try:
+            result = mysql_client.execute(
+                """
+                UPDATE users u
+                JOIN (
+                    SELECT LOWER(email) AS email_normalized, MIN(id) AS contact_form_id
+                    FROM contact_forms
+                    WHERE email IS NOT NULL AND TRIM(email) <> ''
+                    GROUP BY LOWER(email)
+                ) cf ON LOWER(TRIM(u.email)) = cf.email_normalized
+                SET
+                    u.lead_type = 'contact_form',
+                    u.lead_type_source = CONCAT('contact_form:', cf.contact_form_id),
+                    u.lead_type_locked_at = COALESCE(u.lead_type_locked_at, UTC_TIMESTAMP())
+                WHERE
+                    (u.lead_type IS NULL OR TRIM(u.lead_type) = '')
+                    AND LOWER(COALESCE(u.role, '')) IN ('doctor', 'test_doctor')
+                    AND (u.referrer_doctor_id IS NULL OR TRIM(u.referrer_doctor_id) = '')
+                """
+            )
+            return int(result or 0)
+        except Exception:
+            return 0
+
+    try:
+        from ..storage import contact_form_store
+
+        forms = contact_form_store.read() if contact_form_store else []
+    except Exception:
+        forms = []
+
+    first_contact_form_id_by_email: Dict[str, str] = {}
+    for idx, row in enumerate(forms or []):
+        if not isinstance(row, dict):
+            continue
+        email = str(row.get("email") or "").strip().lower()
+        if not email or email in first_contact_form_id_by_email:
+            continue
+        record_id = str(row.get("id") or f"contact_form:{idx + 1}").strip()
+        first_contact_form_id_by_email[email] = record_id
+
+    updated_count = 0
+    for user in get_all():
+        if not isinstance(user, dict):
+            continue
+        role = str(user.get("role") or "").strip().lower()
+        if role not in ("doctor", "test_doctor"):
+            continue
+        if str(user.get("referrerDoctorId") or "").strip():
+            continue
+        if str(user.get("leadType") or "").strip():
+            continue
+        email = str(user.get("email") or "").strip().lower()
+        source = first_contact_form_id_by_email.get(email)
+        if not source:
+            continue
+        if update(
+            {
+                "id": user.get("id"),
+                "leadType": "contact_form",
+                "leadTypeSource": source,
+                "leadTypeLockedAt": datetime.now(timezone.utc).isoformat(),
+            }
+        ):
+            updated_count += 1
+    return updated_count
+
+
 def find_by_email(email: str) -> Optional[Dict]:
     email = (email or "").strip()
     if email.lower().startswith("mailto:"):

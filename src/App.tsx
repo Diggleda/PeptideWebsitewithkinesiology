@@ -8128,6 +8128,12 @@ function MainApp() {
           [
             id,
             ...aliasIds,
+            entry?.userId,
+            entry?.user_id,
+            entry?.salesRepUserId,
+            entry?.sales_rep_user_id,
+            entry?.legacyUserId,
+            entry?.legacy_user_id,
             entry?.ownerSalesRepId,
             entry?.owner_sales_rep_id,
             entry?.salesRepId,
@@ -8143,6 +8149,7 @@ function MainApp() {
       const avatarUrl = entry?.profileImageUrl || null;
       const displayName = entry?.name || entry?.email || "User";
       const entryRole = normalizeRole(entry?.role);
+      const entryIsSalesActor = isRep(entryRole) || isAdmin(entryRole);
       const salesWholesaleRevenue =
         typeof options?.salesRepWholesaleRevenue === "number" &&
         Number.isFinite(options.salesRepWholesaleRevenue)
@@ -8344,12 +8351,72 @@ function MainApp() {
             return { profileResp, ordersResp, canonicalUserId };
           };
 
+          const tryLoadForSalesRepId = async (candidateId: string) => {
+            const salesRepResp = (await settingsAPI.getSalesRepProfile(candidateId)) as any;
+            const rep = (salesRepResp as any)?.salesRep || (salesRepResp as any)?.sales_rep || null;
+            if (!rep) {
+              throw new Error("SALES_REP_NOT_FOUND");
+            }
+            const repId = String(rep?.id || candidateId || "").trim();
+            const repUserId = String(rep?.userId || "").trim();
+            const fallbackProfileResp = {
+              user: {
+                id: repUserId || repId || candidateId,
+                name: rep?.name || displayName,
+                email: rep?.email || entry?.email || null,
+                phone: rep?.phone || null,
+                role: normalizeRole(rep?.role || entryRole || "sales_rep") || "sales_rep",
+                profileImageUrl: avatarUrl,
+                salesRepId: repId || candidateId,
+              },
+            };
+
+            if (!repUserId) {
+              return {
+                profileResp: fallbackProfileResp,
+                ordersResp: { orders: [] },
+                canonicalUserId: repId || candidateId,
+                resolvedSalesRepIdentifier: repId || candidateId,
+              };
+            }
+
+            try {
+              const loaded = await tryLoadForUserId(repUserId);
+              return {
+                profileResp: loaded.profileResp,
+                ordersResp: loaded.ordersResp,
+                canonicalUserId: loaded.canonicalUserId,
+                resolvedSalesRepIdentifier: repId || repUserId,
+              };
+            } catch {
+              return {
+                profileResp: fallbackProfileResp,
+                ordersResp: { orders: [] },
+                canonicalUserId: repUserId,
+                resolvedSalesRepIdentifier: repId || repUserId,
+              };
+            }
+          };
+
           let profileResp: any = null;
           let ordersResp: any = null;
           let resolvedUserId = id;
           let resolvedSalesRepIdentifier = "";
 
           for (const candidateId of candidateIds) {
+            if (entryIsSalesActor) {
+              try {
+                const loaded = await tryLoadForSalesRepId(candidateId);
+                profileResp = loaded.profileResp;
+                ordersResp = loaded.ordersResp;
+                resolvedUserId = loaded.canonicalUserId;
+                resolvedSalesRepIdentifier = loaded.resolvedSalesRepIdentifier;
+                break;
+              } catch {
+                // continue to next candidate/strategy
+              }
+            }
+
             try {
               const loaded = await tryLoadForUserId(candidateId);
               profileResp = loaded.profileResp;
@@ -8361,23 +8428,38 @@ function MainApp() {
               // continue to next candidate/strategy
             }
 
-            try {
-              const salesRepResp = (await settingsAPI.getSalesRepProfile(candidateId)) as any;
-              const rep = (salesRepResp as any)?.salesRep || null;
-              const repUserId = String(rep?.userId || "").trim();
-              const repId = String(rep?.id || "").trim();
-              if (!repUserId) {
-                continue;
+            if (!entryIsSalesActor) {
+              try {
+                const loaded = await tryLoadForSalesRepId(candidateId);
+                profileResp = loaded.profileResp;
+                ordersResp = loaded.ordersResp;
+                resolvedUserId = loaded.canonicalUserId;
+                resolvedSalesRepIdentifier = loaded.resolvedSalesRepIdentifier;
+                break;
+              } catch {
+                // continue to next candidate
               }
-              const loaded = await tryLoadForUserId(repUserId);
-              profileResp = loaded.profileResp;
-              ordersResp = loaded.ordersResp;
-              resolvedUserId = loaded.canonicalUserId;
-              resolvedSalesRepIdentifier = repId || repUserId;
-              break;
-            } catch {
-              // continue to next candidate
             }
+          }
+
+          if ((!profileResp || !ordersResp) && entryIsSalesActor) {
+            profileResp =
+              profileResp ||
+              ({
+                user: {
+                  id: resolvedUserId || id,
+                  name: displayName,
+                  email: entry?.email || null,
+                  phone: null,
+                  role: entryRole || "sales_rep",
+                  profileImageUrl: avatarUrl,
+                  salesRepId:
+                    resolvedSalesRepIdentifier ||
+                    String(entry?.salesRepId || entry?.sales_rep_id || id || "").trim() ||
+                    null,
+                },
+              } as any);
+            ordersResp = ordersResp || ({ orders: [] } as any);
           }
 
           if (!profileResp || !ordersResp) {
@@ -10222,10 +10304,24 @@ function MainApp() {
     const width = Math.max(0, activeBtn.offsetWidth - inset * 2);
     setAdminDashboardTabIndicator({ left, width, opacity: 1 });
   }, [adminDashboardTab]);
+  const setAdminDashboardTabsContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      adminDashboardTabsContainerRef.current = node;
+      if (!node) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          updateAdminDashboardTabIndicator();
+        });
+      });
+    },
+    [updateAdminDashboardTabIndicator],
+  );
   useLayoutEffect(() => {
     if (!isAdminDashboardVisible) return;
     const frame = window.requestAnimationFrame(() => {
-      updateAdminDashboardTabIndicator();
+      window.requestAnimationFrame(() => {
+        updateAdminDashboardTabIndicator();
+      });
     });
     return () => {
       window.cancelAnimationFrame(frame);
@@ -13832,6 +13928,11 @@ function MainApp() {
 	    }
 	    return salesTrackingOrders.filter((order) => {
 	      const orderAny = order as any;
+        const normalizeLeadType = (value: unknown) =>
+          String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, "_");
 	      const orderOwnerCandidates = [
 	        orderAny?.doctorSalesRepId,
 	        orderAny?.doctor_sales_rep_id,
@@ -13842,6 +13943,13 @@ function MainApp() {
 	      ]
 	        .map((value) => normalizeId(value))
 	        .filter((value) => value.length > 0);
+        if (
+          orderOwnerCandidates.some(
+            (value) => value === "__house__" || value.toLowerCase() === "house",
+          )
+        ) {
+          return true;
+        }
 	      if (orderOwnerCandidates.some((value) => allowedOwnerIds.has(value))) {
 	        return true;
 	      }
@@ -13856,9 +13964,22 @@ function MainApp() {
 	      if (!doctorId) return false;
 	      const doctorInfo = salesTrackingDoctors.get(doctorId);
 	      const doctorOwnerId = normalizeId(doctorInfo?.salesRepId);
+        const doctorLeadType = normalizeLeadType(
+          doctorInfo?.leadType || orderAny?.leadType || orderAny?.lead_type,
+        );
+        if (
+          doctorLeadType === "house" ||
+          doctorLeadType === "contact_form" ||
+          doctorLeadType === "house_contact"
+        ) {
+          return true;
+        }
 	      if (doctorOwnerId && allowedOwnerIds.has(doctorOwnerId)) {
 	        return true;
 	      }
+        if (doctorOwnerId === "__house__" || doctorOwnerId.toLowerCase() === "house") {
+          return true;
+        }
 	      return false;
 	    });
 	  }, [
@@ -19713,7 +19834,7 @@ function MainApp() {
                   <div className="relative w-full">
                     <div
                       className="w-full account-tab-scroll-container"
-                      ref={adminDashboardTabsContainerRef}
+                      ref={setAdminDashboardTabsContainerRef}
                       onScroll={updateAdminDashboardTabIndicator}
                     >
                       <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
