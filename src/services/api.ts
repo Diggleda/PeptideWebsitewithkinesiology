@@ -1365,7 +1365,7 @@ export const settingsAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },
@@ -2162,7 +2162,7 @@ export const referralAPI = {
       throw new Error('salesRepId is required');
     }
     return fetchWithAuth(
-      `${API_BASE_URL}/referrals/sales-reps/${encodeURIComponent(String(salesRepId))}`,
+      `${API_BASE_URL}/settings/sales-reps/${encodeURIComponent(String(salesRepId))}`,
       { method: 'GET' },
     );
   },

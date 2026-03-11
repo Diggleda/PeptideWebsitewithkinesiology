@@ -4485,7 +4485,7 @@ html {
   display: inline-flex;
   align-items: center;
   border-radius: var(--squircle-sm);
-  padding: 0.15rem 0.75rem;
+  padding: 0.3rem 0.95rem;
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -4514,7 +4514,7 @@ html {
   display: inline-flex;
   align-items: center;
   border-radius: var(--squircle-sm);
-  padding: 0.15rem 0.65rem;
+  padding: 0.3rem 0.9rem;
   font-size: 0.72rem;
   font-weight: 600;
   border: 1px dashed rgba(148, 163, 184, 0.4);
@@ -5024,6 +5024,15 @@ html {
 .sales-metric-controls {
   gap: 0.6rem;
   width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable both-edges;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.sales-metric-controls::-webkit-scrollbar {
+  display: none;
 }
 
 .sales-metric-pill-group {
@@ -5031,10 +5040,13 @@ html {
   gap: 0.6rem;
   justify-content: flex-end;
   margin-left: auto;
+  min-width: max-content;
+  flex-wrap: nowrap;
 }
 
 .sales-metric-pill {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: var(--squircle-sm, 12px);
@@ -5272,6 +5284,11 @@ html {
     margin-left: -0.5rem;
     margin-right: -0.5rem;
     padding: 0.5rem;
+  }
+  .sales-rep-table-wrapper.live-users-scroll {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0.75rem;
   }
   .sales-rep-table-wrapper table,
   .sales-rep-dashboard .overflow-x-auto table {
@@ -6662,7 +6679,7 @@ body.account-modal-open .info-focus-overlay {
 }
 
 .mobile-search-toggle-button .mobile-search-icon {
-  color: rgb(100, 116, 139) !important;
+  color: rgb(95, 179, 249) !important;
 }
 
 .mobile-search-toggle-button:hover,

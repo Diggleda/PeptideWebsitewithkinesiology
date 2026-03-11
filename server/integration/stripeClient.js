@@ -1,9 +1,20 @@
-const Stripe = require('stripe');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
 const { getStripeModeSync } = require('../services/settingsService');
 
 const stripeClients = new Map();
+let StripeModule = null;
+
+const getStripeModule = () => {
+  if (StripeModule) {
+    return StripeModule;
+  }
+  // Lazy-load Stripe so backend startup does not block on SDK import
+  // until a Stripe-backed endpoint is actually used.
+  // eslint-disable-next-line global-require
+  StripeModule = require('stripe');
+  return StripeModule;
+};
 
 const resolveSecretKey = (mode) => {
   const normalized = String(mode || '').toLowerCase().trim() === 'live' ? 'live' : 'test';
@@ -30,6 +41,7 @@ const getClient = () => {
   if (existing) {
     return existing;
   }
+  const Stripe = getStripeModule();
   const created = Stripe(secretKey, {
     apiVersion: '2024-06-20',
   });

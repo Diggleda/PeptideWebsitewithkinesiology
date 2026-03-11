@@ -41,7 +41,7 @@ import {
 	  EyeOff,
 	  ArrowRight,
 	  ArrowLeft,
-      ChevronDown,
+		  Search,
 		  ChevronRight,
 		  RefreshCw,
 		  ArrowUpDown,
@@ -6506,6 +6506,8 @@ function MainApp() {
       }, [salesDoctorDetailStack]);
 		  const salesDoctorDialogContentRef = useRef<HTMLDivElement | null>(null);
 		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
+      const [salesDoctorDetailHydrating, setSalesDoctorDetailHydrating] = useState(false);
+      const salesDoctorDetailRequestIdRef = useRef(0);
 	  const [salesDoctorCommissionRange, setSalesDoctorCommissionRange] = useState<
 	    DateRange | undefined
 	  >(undefined);
@@ -6596,6 +6598,7 @@ function MainApp() {
             setSalesDoctorDetail(null);
           }
           setSalesDoctorDetailLoading(false);
+          setSalesDoctorDetailHydrating(false);
         }, []);
 
 			  useEffect(() => {
@@ -8111,6 +8114,8 @@ function MainApp() {
         salesRepRetailRevenue?: number | null;
       },
     ) => {
+      const requestId = salesDoctorDetailRequestIdRef.current + 1;
+      salesDoctorDetailRequestIdRef.current = requestId;
       const id = String(entry?.id || "").trim();
       if (!id) return;
       const aliasIds = Array.isArray(entry?.aliasIds)
@@ -8149,7 +8154,6 @@ function MainApp() {
           ? options.salesRepRetailRevenue
           : null;
 
-      setSalesDoctorDetailLoading(true);
       openSalesDoctorDetail(
         {
           doctorId: id,
@@ -8185,12 +8189,17 @@ function MainApp() {
         },
         entryRole || "doctor",
       );
+      setSalesDoctorDetailLoading(false);
+      setSalesDoctorDetailHydrating(true);
 
 	      if (!isAdmin(user?.role) && !isSalesLead(user?.role)) {
 	        (async () => {
 	          try {
 	            const role = user?.role || null;
 	            if (!role || !isRep(role)) {
+                if (salesDoctorDetailRequestIdRef.current === requestId) {
+                  setSalesDoctorDetailHydrating(false);
+                }
 	              return;
 	            }
 
@@ -8313,7 +8322,10 @@ function MainApp() {
           } catch (error) {
             console.warn("[Sales Rep] Failed to hydrate live client detail", error);
           } finally {
-            setSalesDoctorDetailLoading(false);
+            if (salesDoctorDetailRequestIdRef.current === requestId) {
+              setSalesDoctorDetailLoading(false);
+              setSalesDoctorDetailHydrating(false);
+            }
           }
 	        })();
 	        return;
@@ -8844,7 +8856,10 @@ function MainApp() {
                 : "Unable to load this account's details.";
           toast.error(message);
         } finally {
-          setSalesDoctorDetailLoading(false);
+          if (salesDoctorDetailRequestIdRef.current === requestId) {
+            setSalesDoctorDetailLoading(false);
+            setSalesDoctorDetailHydrating(false);
+          }
         }
       })();
     },
@@ -13774,24 +13789,6 @@ function MainApp() {
 	    void fetchSalesTrackingOrders().catch((error) => {
 	      console.debug("[Sales Tracking] Initial refresh skipped", error);
 	    });
-    const leaderKey = "sales-tracking-poll";
-    const pollIntervalMs = 25000;
-    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
-    const pollHandle = window.setInterval(() => {
-      if (!isPageVisible()) {
-        return;
-      }
-      if (!isTabLeader(leaderKey, leaderTtlMs)) {
-        return;
-      }
-	      void fetchSalesTrackingOrders().catch((error) => {
-	        console.debug("[Sales Tracking] Poll refresh skipped", error);
-	      });
-    }, pollIntervalMs);
-    return () => {
-      releaseTabLeadership(leaderKey);
-      window.clearInterval(pollHandle);
-    };
   }, [fetchSalesTrackingOrders, userRole, postLoginHold]);
 
 	  useEffect(() => {
@@ -13880,13 +13877,18 @@ function MainApp() {
     const activeOrders = scopedSalesTrackingOrders.filter((order) => {
       return shouldCountRevenueForStatus(order.status);
     });
-    const revenue = activeOrders.reduce(
-      (sum, order) => sum + (coerceNumber(order.total) ?? 0),
-      0,
-    );
+    const wholesaleRevenue = activeOrders.reduce((sum, order) => {
+      const pricingMode = String((order as any)?.pricingMode || (order as any)?.pricing_mode || "").toLowerCase();
+      return pricingMode === "wholesale" ? sum + (coerceNumber(order.total) ?? 0) : sum;
+    }, 0);
+    const retailRevenue = activeOrders.reduce((sum, order) => {
+      const pricingMode = String((order as any)?.pricingMode || (order as any)?.pricing_mode || "").toLowerCase();
+      return pricingMode === "retail" ? sum + (coerceNumber(order.total) ?? 0) : sum;
+    }, 0);
     return {
       totalOrders: activeOrders.length,
-      totalRevenue: revenue,
+      wholesaleRevenue,
+      retailRevenue,
       latestOrder: activeOrders[0] || scopedSalesTrackingOrders[0],
     };
 	  }, [scopedSalesTrackingOrders]);
@@ -18180,7 +18182,11 @@ function MainApp() {
               ) : (
                 <div className="space-y-4">
                   <div className="referral-toolbar">
-                    <div className="referral-toolbar__search">
+                    <div className="referral-toolbar__search relative">
+                      <Search
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                        aria-hidden="true"
+                      />
                       <input
                         type="search"
                         value={referralSearchTerm}
@@ -18189,7 +18195,7 @@ function MainApp() {
                         }
                         placeholder="Search by name or email"
                         aria-label="Search referrals"
-                        className="referral-search-input"
+                        className="referral-search-input header-search-input h-10 pl-10 pr-3 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-0"
                       />
                     </div>
                     <Button
@@ -18996,7 +19002,9 @@ function MainApp() {
               <p className="text-sm text-slate-600">
                 {isAdmin(user?.role)
                   ? "Monitor PepPro business activities, sales reps, and keep track of your sales."
-                  : "Develop your leads and sales."}
+                  : isSalesLead(user?.role)
+                    ? "Keep track of your team and develop your sales."
+                    : "Develop your leads and sales."}
               </p>
 	            </div>
 	            {isAdmin(user?.role) && (
@@ -19191,10 +19199,10 @@ function MainApp() {
 	                  const onlineCount = liveUsers.filter((u: any) => Boolean(u?.isOnline)).length;
 
 	                  return (
-	                    <div className="space-y-3">
-		                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
-		                        <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
-                              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+	                      <div className="space-y-3">
+	                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
+                              <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
+		                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
 		                          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-slate-700">
 		                            <input
 		                              type="checkbox"
@@ -19213,31 +19221,39 @@ function MainApp() {
 		                              <select
 		                                value={salesLeadLiveUsersRoleFilter}
 		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="squircle-sm h-10 min-w-0 w-full max-w-full appearance-none border border-slate-200/80 bg-white/95 px-3 pr-10 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
+		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
 		                              >
 		                                <option value="all">All</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
 		                                <option value="doctor">Doctors</option>
 		                                <option value="test_doctor">Test doctors</option>
 		                              </select>
-                                      <ChevronDown
-                                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                                        aria-hidden="true"
-                                      />
+                                      <span className="product-card-select__chevron" aria-hidden="true">
+                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                          <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                        </svg>
+		                                      </span>
 		                            </label>
 		                          )}
 		                        </div>
-		                        <input
-		                          value={liveClientsSearch}
-		                          onChange={(e) => setLiveClientsSearch(e.target.value)}
-		                          onKeyDown={(e) => {
+		                        <div className="relative min-w-0 w-full max-w-full">
+		                          <Search
+		                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+		                            style={{ color: "rgb(100, 116, 139)" }}
+		                            aria-hidden="true"
+		                          />
+		                          <input
+		                            value={liveClientsSearch}
+		                            onChange={(e) => setLiveClientsSearch(e.target.value)}
+		                            onKeyDown={(e) => {
 	                            if (e.key === "Enter") {
 	                              e.preventDefault();
 	                            }
 	                          }}
-		                          placeholder={isSalesLead(user?.role) ? "Search users…" : "Search clients…"}
-		                          className="squircle-sm min-w-0 w-full max-w-full sm:w-[260px] border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-		                        />
+		                            placeholder={isSalesLead(user?.role) ? "Search users…" : "Search clients…"}
+		                            className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                          />
+		                        </div>
 	                      </div>
 
 	                      <div
@@ -19249,7 +19265,7 @@ function MainApp() {
 		                              {isSalesLead(user?.role) ? "No users found." : "No clients found."}
 		                            </div>
 	                          ) : (
-	                            <div className="flex w-full min-w-[900px] flex-col gap-2">
+	                            <div className="flex w-full min-w-0 flex-col gap-2 sm:min-w-[900px]">
 		                          {liveUsers.map((entry: any) => {
 		                        const avatarUrl = entry.profileImageUrl || null;
 		                        const displayName = entry.name || entry.email || "Doctor";
@@ -20529,7 +20545,7 @@ function MainApp() {
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="squircle-sm h-10 min-w-0 w-full max-w-full appearance-none border border-slate-200/80 bg-white/95 px-3 pr-10 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
+                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
@@ -20538,23 +20554,31 @@ function MainApp() {
 	                              <option value="doctor">Doctors</option>
 	                              <option value="test_doctor">Test doctors</option>
                             </select>
-                            <ChevronDown
-                              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                              aria-hidden="true"
-                            />
+                            <span className="product-card-select__chevron" aria-hidden="true">
+                              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                              </svg>
+                            </span>
                           </label>
                         </div>
-                          <input
-                            value={adminLiveUsersSearch}
-                            onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                              }
-                            }}
-                            placeholder="Search users…"
-                            className="squircle-sm min-w-0 w-full max-w-full sm:w-[260px] border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                          />
+                          <div className="relative min-w-0 w-full max-w-full">
+                            <Search
+                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                              style={{ color: "rgb(100, 116, 139)" }}
+                              aria-hidden="true"
+                            />
+                            <input
+                              value={adminLiveUsersSearch}
+                              onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                }
+                              }}
+                              placeholder="Search users…"
+                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            />
+                          </div>
                         </div>
 
                         <div className={`sales-rep-table-wrapper admin-dashboard-list ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
@@ -20564,7 +20588,7 @@ function MainApp() {
 	                                No users found.
 	                              </div>
 	                            ) : (
-	                              <div className="flex w-full min-w-[900px] flex-col gap-2">
+	                              <div className="flex w-full min-w-0 flex-col gap-2 sm:min-w-[900px]">
 		                            {liveUsers.map((entry) => {
                               const role = String(entry?.role || "").toLowerCase().trim();
 		                              const rolePill = (() => {
@@ -22109,18 +22133,26 @@ function MainApp() {
                   </div>
                 </div>
               </div>
-              <div className="sales-metric-pill-group sales-metric-controls">
-                <div className="sales-metric-pill">
-                  <p className="sales-metric-label">Orders</p>
-                  <p className="sales-metric-value">
-                    {salesTrackingSummary?.totalOrders ?? 0}
-                  </p>
-                </div>
-                <div className="sales-metric-pill">
-                  <p className="sales-metric-label">Total Revenue</p>
-                  <p className="sales-metric-value">
-                    {formatCurrency(salesTrackingSummary?.totalRevenue ?? 0)}
-                  </p>
+              <div className="sales-metric-controls">
+                <div className="sales-metric-pill-group">
+                  <div className="sales-metric-pill">
+                    <p className="sales-metric-label">Orders</p>
+                    <p className="sales-metric-value">
+                      {salesTrackingSummary?.totalOrders ?? 0}
+                    </p>
+                  </div>
+                  <div className="sales-metric-pill">
+                    <p className="sales-metric-label">Wholesale Revenue</p>
+                    <p className="sales-metric-value">
+                      {formatCurrency(salesTrackingSummary?.wholesaleRevenue ?? 0)}
+                    </p>
+                  </div>
+                  <div className="sales-metric-pill">
+                    <p className="sales-metric-label">Retail Revenue</p>
+                    <p className="sales-metric-value">
+                      {formatCurrency(salesTrackingSummary?.retailRevenue ?? 0)}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="sales-rep-lead-grid">
@@ -22295,11 +22327,16 @@ function MainApp() {
                                 </button>
                                 <div className="text-right">
                                   <p className="text-xs text-slate-500 uppercase tracking-[0.16em]">
-                                    Revenue
+                                    Wholesale / Retail
                                   </p>
-                                  <p className="text-base font-semibold text-slate-900">
-                                    {formatCurrency(bucket.total)}
-                                  </p>
+                                  <div className="space-y-0.5">
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      W: {formatCurrency(Number(bucket.salesWholesaleRevenue) || 0)}
+                                    </p>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      R: {formatCurrency(Number(bucket.salesRetailRevenue) || 0)}
+                                    </p>
+                                  </div>
                                   <p className="text-xs text-slate-500">
                                     {bucket.orders.length} order
                                     {bucket.orders.length === 1 ? "" : "s"}
@@ -24048,7 +24085,7 @@ function MainApp() {
 			      </>
 			    );
 			  };
-		  const landingAvatarSize = isDesktopLandingLayout ? 52 : 61;
+		  const landingAvatarSize = isDesktopLandingLayout ? 48 : 53;
       const landingAccountRole = String(user?.role || "").trim().toLowerCase();
 		  const landingAccountLabel = (() => {
         const rawName =
@@ -24596,7 +24633,7 @@ function MainApp() {
                             </Button>
                           </div>
 	                          {(isRep(user?.role) || isAdmin(user?.role)) && (
-	                            <span className="block w-full text-[11px] text-slate-600 italic">
+	                            <span className="block w-full text-right text-[11px] text-slate-600 italic">
 	                              Explore Peptides view for physicians:{" "}
 	                              {shopEnabled ? "Enabled" : "Disabled"}
 	                            </span>
@@ -26292,7 +26329,7 @@ function MainApp() {
         }}
 		      >
 		        <DialogContent ref={salesDoctorDialogContentRef} className="max-w-2xl">
-	          {salesDoctorDetailLoading ? (
+	          {salesDoctorDetailLoading && !salesDoctorDetail ? (
               <>
                 <VisuallyHidden>
                   <DialogTitle>Loading account details</DialogTitle>
@@ -26304,6 +26341,11 @@ function MainApp() {
               salesDoctorDetail && (
 	            <div className="space-y-4">
 			              <DialogHeader>
+                      {salesDoctorDetailHydrating && (
+                        <DialogDescription className="text-xs text-slate-500">
+                          Loading account activity...
+                        </DialogDescription>
+                      )}
 			                <DialogTitle className="space-y-0.5">
 			                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
 				                  <div className="text-sm font-normal text-slate-600">
@@ -26606,12 +26648,15 @@ function MainApp() {
 	                  )}
 	                </div>
 	                <div className="space-y-1">
-			                    {(isRep(salesDoctorDetail.role) ||
+			                    {((isRep(salesDoctorDetail.role) ||
+                            isAdmin(salesDoctorDetail.role)) ||
 		                        typeof salesDoctorDetail.personalRevenue === "number" ||
 		                        typeof salesDoctorDetail.salesRevenue === "number") ? (
 			                      <>
 				                        {(() => {
 				                          const role = normalizeRole(salesDoctorDetail.role || "");
+                                  const isSalesActor =
+                                    isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role);
 				                          const personalOrdersRaw = Array.isArray(
 				                            salesDoctorDetail.personalOrders,
 				                          )
@@ -27183,7 +27228,7 @@ function MainApp() {
                               type="button"
                               size="xs"
                               variant="outline"
-                              className="self-start whitespace-nowrap"
+                              className="self-start whitespace-nowrap px-4 py-2"
                               onClick={() => void saveSalesDoctorPhone()}
                               disabled={salesDoctorPhoneSaving || !hasChanges}
                             >
@@ -27233,7 +27278,7 @@ function MainApp() {
                           type="button"
                           size="xs"
                           variant="outline"
-                          className="self-start whitespace-nowrap"
+                          className="self-start whitespace-nowrap px-4 py-2"
                           onClick={() => void saveSalesDoctorAddress()}
                           disabled={salesDoctorAddressSaving || !hasChanges}
                         >
@@ -27367,10 +27412,13 @@ function MainApp() {
 		                      : personalOrders.length > 0
 		                        ? 0
 		                        : (salesDoctorDetail.salesRevenue ?? 0);
+		                  const isSalesActor =
+                            isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role);
 		                  const hasSplit =
-		                    (typeof salesDoctorDetail.personalRevenue === "number" ||
+                            isSalesActor ||
+		                    ((typeof salesDoctorDetail.personalRevenue === "number" ||
 		                      typeof salesDoctorDetail.salesRevenue === "number") &&
-		                    (personalOrders.length > 0 || salesOrders.length > 0);
+		                    (personalOrders.length > 0 || salesOrders.length > 0));
 
 	                  const renderOrdersList = (orders: AccountOrderSummary[]) => (
 	                    <div className="space-y-2">
