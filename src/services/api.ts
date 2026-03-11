@@ -2319,10 +2319,20 @@ export const seamlessAPI = {
 };
 
 // Health check
+export const getServerHealth = async () => {
+  return fetchWithAuth(`${API_BASE_URL}/health`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+};
+
 export const checkServerHealth = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
-    return response.ok;
+    await getServerHealth();
+    return true;
   } catch {
     return false;
   }

@@ -84,6 +84,7 @@ import {
 	  forumAPI,
 	  wooAPI,
 	  checkServerHealth,
+    getServerHealth,
 	  passwordResetAPI,
 	  settingsAPI,
 	  API_BASE_URL,
@@ -6519,6 +6520,37 @@ function MainApp() {
 	  >(undefined);
 	  const [salesDoctorCommissionPickerOpen, setSalesDoctorCommissionPickerOpen] =
 	    useState(false);
+  const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
+    () => getDefaultSalesBySalesRepPeriod().start,
+  );
+  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
+    () => getDefaultSalesBySalesRepPeriod().end,
+  );
+    const getClearedSalesDoctorCommissionWindow = () => {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const midMonth = new Date(now.getFullYear(), now.getMonth(), 15);
+      const from = today >= midMonth ? midMonth : startOfMonth;
+      return {
+        range: {
+          from,
+          to: today,
+        } satisfies DateRange,
+        start: formatDateInputValue(from),
+        end: formatDateInputValue(today),
+      };
+    };
+    const getSalesDoctorCommissionRangeFromActivePeriod = () => {
+      const from = salesRepPeriodStart
+        ? parseDateInputValueLocal(salesRepPeriodStart)
+        : null;
+      const to = salesRepPeriodEnd ? parseDateInputValueLocal(salesRepPeriodEnd) : null;
+      if (from && to) {
+        return { from, to } satisfies DateRange;
+      }
+      return getClearedSalesDoctorCommissionWindow().range;
+    };
 		  const [salesDoctorOwnerRepProfiles, setSalesDoctorOwnerRepProfiles] = useState<
 		    Record<
 		      string,
@@ -6597,7 +6629,7 @@ function MainApp() {
 		  const salesRepProspectsKeyRef = useRef<string | null>(null);
 
 				  useEffect(() => {
-				    setSalesDoctorCommissionRange(undefined);
+				    setSalesDoctorCommissionRange(getSalesDoctorCommissionRangeFromActivePeriod());
 				    setSalesDoctorCommissionPickerOpen(false);
 				    setSalesDoctorCommissionFromReport(null);
 				    setSalesDoctorCommissionFromReportLoading(false);
@@ -6605,6 +6637,18 @@ function MainApp() {
 				    salesDoctorCommissionRequestIdRef.current = 0;
 				    salesDoctorCommissionFromReportKeyRef.current = "";
 				  }, [salesDoctorDetail?.doctorId]);
+
+      useEffect(() => {
+        if (salesDoctorCommissionPickerOpen || !salesDoctorDetail?.doctorId) {
+          return;
+        }
+        setSalesDoctorCommissionRange(getSalesDoctorCommissionRangeFromActivePeriod());
+      }, [
+        salesRepPeriodEnd,
+        salesRepPeriodStart,
+        salesDoctorCommissionPickerOpen,
+        salesDoctorDetail?.doctorId,
+      ]);
 
         const closeTopSalesDoctorDetailModal = useCallback(() => {
           const stack = salesDoctorDetailStackRef.current;
@@ -9268,6 +9312,69 @@ function MainApp() {
     </div>
   );
 
+  const renderSalesDoctorMetricSkeletons = (count = 1) => (
+    <div className="grid grid-cols-1 gap-3" aria-hidden="true">
+      {[...Array(count)].map((_, idx) => (
+        <div
+          key={`sales-doctor-metric-skeleton-${idx}`}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 space-y-2"
+        >
+          <div className="news-loading-line news-loading-shimmer w-24" />
+          <div className="news-loading-line news-loading-shimmer w-16" />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSalesDoctorOrdersSkeleton = (sections = 2) => (
+    <div className="space-y-4" aria-hidden="true">
+      {[...Array(sections)].map((_, idx) => (
+        <div key={`sales-doctor-orders-skeleton-${idx}`} className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="news-loading-line news-loading-shimmer w-28" />
+            <div className="news-loading-line news-loading-shimmer w-16" />
+          </div>
+          <div className="space-y-2">
+            {[...Array(2)].map((__, orderIdx) => (
+              <div
+                key={`sales-doctor-order-card-skeleton-${idx}-${orderIdx}`}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-2 min-w-0 flex-1">
+                    <div className="news-loading-line news-loading-shimmer w-36" />
+                    <div className="news-loading-line news-loading-shimmer w-24" />
+                  </div>
+                  <div className="news-loading-line news-loading-shimmer w-14" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSalesDoctorProspectsSkeleton = (count = 3) => (
+    <div className="space-y-2" aria-hidden="true">
+      {[...Array(count)].map((_, idx) => (
+        <div
+          key={`sales-doctor-prospect-skeleton-${idx}`}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-3"
+        >
+          <div className="flex items-center gap-3">
+            <div className="news-loading-thumb rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="news-loading-line news-loading-shimmer w-36" />
+              <div className="news-loading-line news-loading-shimmer w-28" />
+            </div>
+            <div className="news-loading-line news-loading-shimmer w-16" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   const enrichMissingOrderDetails = useCallback(
     async (
       ordersToEnrich: AccountOrderSummary[],
@@ -9480,12 +9587,6 @@ function MainApp() {
     useState<number | null>(null);
   const [adminProductsCommissionCsvDownloadedAt, setAdminProductsCommissionCsvDownloadedAt] =
     useState<string | null>(null);
-  const [salesRepPeriodStart, setSalesRepPeriodStart] = useState<string>(
-    () => getDefaultSalesBySalesRepPeriod().start,
-  );
-  const [salesRepPeriodEnd, setSalesRepPeriodEnd] = useState<string>(
-    () => getDefaultSalesBySalesRepPeriod().end,
-  );
   const [adminDashboardPeriodRange, setAdminDashboardPeriodRange] = useState<
     DateRange | undefined
   >(undefined);
@@ -10884,15 +10985,7 @@ function MainApp() {
       setServerHealthLoading(true);
       setServerHealthError(null);
       try {
-        const res = await fetch(`${API_BASE_URL}/health?_ts=${Date.now()}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          throw new Error(`Health check failed (${res.status})`);
-        }
-        const payload = (await res.json()) as ServerHealthPayload;
+        const payload = (await getServerHealth()) as ServerHealthPayload;
         setServerHealthPayload(payload);
       } catch (error: any) {
         setServerHealthError(
@@ -26768,11 +26861,6 @@ function MainApp() {
               salesDoctorDetail && (
 	            <div className="space-y-4">
 			              <DialogHeader>
-                      {salesDoctorDetailHydrating && (
-                        <DialogDescription className="text-xs text-slate-500">
-                          Loading account activity...
-                        </DialogDescription>
-                      )}
 			                <DialogTitle className="space-y-0.5">
 			                  <div className="text-slate-900">{salesDoctorDetail.name}</div>
 				                  <div className="text-sm font-normal text-slate-600">
@@ -27365,14 +27453,15 @@ function MainApp() {
 			                                          size="sm"
 			                                          className="text-slate-700"
 			                                          onClick={() => {
-			                                            const defaults = getDefaultSalesBySalesRepPeriod();
-			                                            setSalesDoctorCommissionRange(undefined);
-			                                            setSalesRepPeriodStart(defaults.start);
-			                                            setSalesRepPeriodEnd(defaults.end);
+			                                            const cleared =
+			                                              getClearedSalesDoctorCommissionWindow();
+			                                            setSalesDoctorCommissionRange(cleared.range);
+			                                            setSalesRepPeriodStart(cleared.start);
+			                                            setSalesRepPeriodEnd(cleared.end);
 			                                            applyAdminDashboardPeriod();
 			                                          }}
 			                                        >
-			                                          Default
+			                                          Clear
 			                                        </Button>
 					                                      <Button
 					                                        type="button"
@@ -27527,9 +27616,16 @@ function MainApp() {
 			                                        variant="ghost"
 			                                        size="sm"
 			                                        className="text-slate-700"
-			                                        onClick={() => setSalesDoctorCommissionRange(undefined)}
+			                                        onClick={() => {
+                                              const cleared =
+                                                getClearedSalesDoctorCommissionWindow();
+                                              setSalesDoctorCommissionRange(cleared.range);
+                                              setSalesRepPeriodStart(cleared.start);
+                                              setSalesRepPeriodEnd(cleared.end);
+                                              applyAdminDashboardPeriod();
+                                            }}
 			                                      >
-			                                        All time
+			                                        Clear
 			                                      </Button>
 					                                      <Button
 					                                        type="button"
@@ -27718,29 +27814,16 @@ function MainApp() {
               </div>
 
               {(() => {
-                const visibleOrdersCount = salesDoctorDetail.orders.filter(
-                  (order) => shouldCountRevenueForStatus(order.status),
-                ).length;
+                const showMetricsSkeleton =
+                  salesDoctorDetailHydrating &&
+                  salesDoctorDetail.orders.length === 0 &&
+                  !salesDoctorDetail.lastOrderDate &&
+                  typeof salesDoctorDetail.avgOrderValue !== "number";
+                if (showMetricsSkeleton) {
+                  return renderSalesDoctorMetricSkeletons();
+                }
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Total Orders
-                      </p>
-                      <p className="text-lg font-semibold text-slate-900">
-                        {visibleOrdersCount}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Last Order
-                      </p>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {salesDoctorDetail.lastOrderDate
-                          ? formatOrderPlacedAtForLocalDisplay({ createdAt: salesDoctorDetail.lastOrderDate })
-                          : "Unavailable"}
-                      </p>
-                    </div>
+                  <div className="grid grid-cols-1 gap-3">
                     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                       <p className="text-xs uppercase tracking-wide text-slate-500">
                         Avg Order Value
@@ -27756,10 +27839,85 @@ function MainApp() {
               })()}
 
 		              <div className="space-y-2">
-		                <p className="text-sm font-semibold text-slate-700">
-		                  Recent Orders
-		                </p>
+                    {(() => {
+                      const hasCustomRange =
+                        Boolean(salesDoctorCommissionRange?.from) &&
+                        Boolean(salesDoctorCommissionRange?.to);
+                      const formatOrdersDateLabel = (value?: Date | string | null) => {
+                        if (!value) return null;
+                        const date = value instanceof Date ? value : new Date(value);
+                        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+                          return null;
+                        }
+                        return date.toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        });
+                      };
+                      const formatOrdersPeriodLabel = (
+                        startRaw?: string | null,
+                        endRaw?: string | null,
+                      ) => {
+                        const start = formatOrdersDateLabel(startRaw || null);
+                        const end = formatOrdersDateLabel(endRaw || null);
+                        if (start && end) {
+                          return `${start} - ${end}`;
+                        }
+                        if (start) {
+                          return `Since ${start}`;
+                        }
+                        if (end) {
+                          return `Until ${end}`;
+                        }
+                        return "All time";
+                      };
+                      const customRangeLabel = hasCustomRange
+                        ? (() => {
+                            const start = formatOrdersDateLabel(
+                              salesDoctorCommissionRange?.from || null,
+                            );
+                            const end = formatOrdersDateLabel(
+                              salesDoctorCommissionRange?.to || null,
+                            );
+                            if (start && end) {
+                              return `${start} - ${end}`;
+                            }
+                            return start || end || null;
+                          })()
+                        : null;
+                      const periodLabel = formatOrdersPeriodLabel(
+                        adminProductsCommissionMeta?.periodStart ??
+                          salesRepPeriodStart ??
+                          salesRepSalesSummaryMeta?.periodStart ??
+                          salesRepProductSalesSummaryMeta?.periodStart ??
+                          null,
+                        adminProductsCommissionMeta?.periodEnd ??
+                          salesRepPeriodEnd ??
+                          salesRepSalesSummaryMeta?.periodEnd ??
+                          salesRepProductSalesSummaryMeta?.periodEnd ??
+                          null,
+                      );
+                      return (
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-700">
+                            Orders by type
+                          </p>
+                          <span className="text-xs text-slate-500">
+                            {customRangeLabel || periodLabel}
+                          </span>
+                        </div>
+                      );
+                    })()}
 			                {(() => {
+                      const showOrdersSkeleton =
+                        salesDoctorDetailHydrating &&
+                        salesDoctorDetail.orders.length === 0 &&
+                        !Array.isArray(salesDoctorDetail.personalOrders) &&
+                        !Array.isArray(salesDoctorDetail.salesOrders);
+                      if (showOrdersSkeleton) {
+                        return renderSalesDoctorOrdersSkeleton();
+                      }
 			                  const personalOrders = Array.isArray(salesDoctorDetail.personalOrders)
 			                    ? salesDoctorDetail.personalOrders
 			                    : [];
@@ -27973,7 +28131,7 @@ function MainApp() {
 				                  {!salesRepProspectsError && (
 				                    <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
 				                      {salesRepProspectsLoading ? (
-				                        <p className="text-xs text-slate-500">Loading prospects…</p>
+				                        renderSalesDoctorProspectsSkeleton()
 				                      ) : (salesRepProspectsForModal || []).length > 0 ? (
 				                        (salesRepProspectsForModal || []).map((row: any) => {
 			                          const listKey = String(
