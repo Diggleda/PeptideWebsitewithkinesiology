@@ -405,12 +405,16 @@ const _PEPPRO_AUTH_TIMEOUT_MS = 12000;
 const _PEPPRO_HEALTH_TIMEOUT_MS = 5000;
 const _PEPPRO_LONGPOLL_TIMEOUT_MS = 30000;
 const _PEPPRO_CHECKOUT_TIMEOUT_MS = 45000;
+const _PEPPRO_SALES_TRACKING_TIMEOUT_MS = 45000;
 
 const _timeoutMsForRequest = (url: string, method: string) => {
   const normalized = String(url || '').toLowerCase();
   if (normalized.includes('/api/health')) return _PEPPRO_HEALTH_TIMEOUT_MS;
   if (normalized.includes('/api/auth/')) return _PEPPRO_AUTH_TIMEOUT_MS;
   if (normalized.includes('/longpoll')) return _PEPPRO_LONGPOLL_TIMEOUT_MS;
+  if (method === 'GET' && normalized.includes('/api/orders/sales-rep')) {
+    return _PEPPRO_SALES_TRACKING_TIMEOUT_MS;
+  }
   // Order placement can be slower because it may sync with WooCommerce.
   if (method === 'POST' && (normalized.endsWith('/api/orders') || normalized.includes('/api/orders/'))) {
     return _PEPPRO_CHECKOUT_TIMEOUT_MS;
@@ -1709,13 +1713,16 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
-  getForSalesRep: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all' }) => {
+  getForSalesRep: async (options?: { salesRepId?: string | null; scope?: 'mine' | 'all'; localOnly?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.salesRepId) {
       params.set('salesRepId', options.salesRepId);
     }
     if (options?.scope) {
       params.set('scope', options.scope);
+    }
+    if (options?.localOnly) {
+      params.set('localOnly', 'true');
     }
     // Ask backend (Node or Python) to include doctor context if supported
     params.set('includeDoctors', 'true');

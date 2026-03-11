@@ -13245,9 +13245,9 @@ function MainApp() {
 
 	  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
 	    const role = userRole;
-	    const scope: "mine" | "all" = "mine";
+	    const scope: "mine" | "all" = isAdmin(role) ? "all" : "mine";
 	    const salesRepId = userSalesRepId || userId;
-	    const salesRepIdParam = salesRepId;
+	    const salesRepIdParam = isAdmin(role) && scope === "all" ? null : salesRepId;
 	    const currentUserId = userId != null ? String(userId).trim() : "";
 	    const currentUserEmail =
 	      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
@@ -13351,6 +13351,7 @@ function MainApp() {
 	          response = await ordersAPI.getForSalesRep({
 	            salesRepId: salesRepIdParam || undefined,
 	            scope,
+              localOnly: isAdmin(role) && scope === "all",
 	          });
 	          break;
 	        } catch (error: any) {

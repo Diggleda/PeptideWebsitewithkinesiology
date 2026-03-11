@@ -1793,6 +1793,7 @@ def get_orders_for_sales_rep(
     force: bool = False,
     include_all_doctors: bool = False,
     include_house_contacts: bool = False,
+    local_only: bool = False,
 ):
     normalized_sales_rep_id = str(sales_rep_id or "").strip()
     def _normalize_lead_type(value: object) -> str:
@@ -1805,7 +1806,7 @@ def get_orders_for_sales_rep(
         scope_key,
         include_doctors,
     )
-    cache_key = f"{normalized_sales_rep_id or 'ALL'}::{scope_key}::{'withDoctors' if include_doctors else 'ordersOnly'}"
+    cache_key = f"{normalized_sales_rep_id or 'ALL'}::{scope_key}::{'withDoctors' if include_doctors else 'ordersOnly'}::{'localOnly' if local_only else 'mixed'}"
     now = time.time()
     if not force and _SALES_REP_ORDERS_TTL_SECONDS > 0:
         with _sales_rep_orders_cache_lock:
@@ -2092,7 +2093,7 @@ def get_orders_for_sales_rep(
     seen_keys = set()
 
     # WooCommerce orders (if configured) - single paged pull, filter by doctor email.
-    woo_enabled = woo_commerce.is_configured()
+    woo_enabled = woo_commerce.is_configured() and not local_only
     logger.info(
         "[SalesRep] Doctor list computed salesRepId=%s doctorCount=%s wooEnabled=%s doctorEmails=%s",
         normalized_sales_rep_id or "ALL",

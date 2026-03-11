@@ -212,12 +212,14 @@ def list_orders_for_sales_rep():
             sales_rep_id = None if scope_all else g.current_user.get("id")
         force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
         include_doctors = (request.args.get("includeDoctors") or "").strip().lower() not in ("0", "false", "no")
+        local_only = (request.args.get("localOnly") or "").strip().lower() in ("1", "true", "yes")
         return order_service.get_orders_for_sales_rep(
             sales_rep_id,
             include_doctors=include_doctors,
             force=force,
             include_all_doctors=scope_all,
             include_house_contacts=(role == "admin"),
+            local_only=local_only,
         )
 
     return handle_action(action)
