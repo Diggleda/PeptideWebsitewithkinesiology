@@ -1324,8 +1324,11 @@ export function Header({
 	        text.includes('internet connection') ||
 	        text.includes('not connected to the internet') ||
 	        text.includes('network request failed') ||
+	        text.includes('fetch api cannot load') ||
 	        text.includes('failed to fetch') ||
 	        text.includes('load failed') ||
+	        text.includes('access-control-allow-origin') ||
+	        text.includes('origin https://') ||
 	        text.includes('offline')
 	      );
 	    };
@@ -1396,8 +1399,11 @@ export function Header({
 	        status === 502 ||
 	        status === 503 ||
 	        status === 504 ||
+	        message.includes('fetch api cannot load') ||
 	        message.includes('failed to fetch') ||
-	        message.includes('load failed');
+	        message.includes('load failed') ||
+	        message.includes('access-control-allow-origin') ||
+	        message.includes('origin https://');
 	      if (!looksLikeBackendDown) {
 	        return;
 	      }

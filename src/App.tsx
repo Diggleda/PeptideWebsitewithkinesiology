@@ -15648,9 +15648,12 @@ function MainApp() {
         typeof message === "string" ? message.toUpperCase() : "";
       const isNetworkError =
         message === "Failed to fetch" ||
+        normalizedMessage.includes("FETCH API CANNOT LOAD") ||
         normalizedMessage.includes("LOAD FAILED") ||
         normalizedMessage.includes("NETWORKERROR") ||
-        normalizedMessage.includes("NETWORK_ERROR");
+        normalizedMessage.includes("NETWORK_ERROR") ||
+        normalizedMessage.includes("ACCESS-CONTROL-ALLOW-ORIGIN") ||
+        normalizedMessage.includes("ORIGIN HTTPS://");
       const isServerError = statusCode !== null && statusCode >= 500;
       const isTimeout = errorCode === "TIMEOUT" || normalizedMessage.includes("TIMED OUT");
       const elapsedMs = Date.now() - startedAt;
@@ -17624,8 +17627,11 @@ function MainApp() {
       const normalizedMessage = message.toUpperCase();
       const isNetworkError =
         message === "Failed to fetch" ||
+        normalizedMessage.includes("FETCH API CANNOT LOAD") ||
         normalizedMessage.includes("NETWORKERROR") ||
-        normalizedMessage.includes("NETWORK_ERROR");
+        normalizedMessage.includes("NETWORK_ERROR") ||
+        normalizedMessage.includes("ACCESS-CONTROL-ALLOW-ORIGIN") ||
+        normalizedMessage.includes("ORIGIN HTTPS://");
       const isServerError = statusCode !== null && statusCode >= 500;
 
       if (attempt === 0 && (isNetworkError || isServerError)) {
@@ -25041,10 +25047,13 @@ function MainApp() {
 	                                  return "offline";
 	                                }
 	                                if (
+	                                  text.includes("fetch api cannot load") ||
 	                                  text.includes("failed to fetch") ||
 	                                  text.includes("networkerror") ||
 	                                  text.includes("network request failed") ||
 	                                  text.includes("load failed") ||
+	                                  text.includes("access-control-allow-origin") ||
+	                                  text.includes("origin https://") ||
 	                                  text.includes("timeout") ||
 	                                  text.includes("econnrefused") ||
 	                                  text.includes("enotfound") ||

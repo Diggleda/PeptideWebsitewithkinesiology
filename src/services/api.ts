@@ -425,10 +425,13 @@ const isNetworkLikeFetchError = (error: any) => {
   if (name === 'aborterror') return false;
   return (
     name === 'typeerror'
+    || message.includes('fetch api cannot load')
     || message.includes('failed to fetch')
     || message.includes('load failed')
     || message.includes('networkerror')
     || message.includes('fetch failed')
+    || message.includes('access-control-allow-origin')
+    || message.includes('origin https://')
   );
 };
 
