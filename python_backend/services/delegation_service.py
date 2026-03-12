@@ -13,6 +13,7 @@ from ..database import mysql_client
 from ..repositories import order_repository
 from ..repositories import patient_links_repository
 from ..repositories import user_repository
+from ..services import email_service
 from ..services import get_config
 from ..services import settings_service  # type: ignore[attr-defined]
 from ..storage import settings_store
@@ -159,6 +160,11 @@ def _validate_research_note(value: Optional[str], *, field_name: str, max_len: i
             setattr(err, "status", 400)
             raise err
     return text[:max_len]
+
+
+def _validate_delegate_review_notes(value: Optional[str]) -> Optional[str]:
+    sanitized = _validate_non_phi_label(value, field_name="reviewNotes", max_len=4000)
+    return _validate_research_note(sanitized, field_name="reviewNotes", max_len=4000)
 
 
 def _compensation_disclosure(markup_percent: object) -> str:
@@ -868,6 +874,7 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
             "proposalStatus": review_status,
             "proposalReviewedAt": link.get("delegateReviewedAt"),
             "proposalReviewOrderId": link.get("delegateReviewOrderId"),
+            "proposalReviewNotes": link.get("delegateReviewNotes"),
             "disclosures": _research_supply_disclosures(link.get("markupPercent")),
             "compensationDisclosure": _compensation_disclosure(link.get("markupPercent")),
         }
@@ -934,6 +941,7 @@ def store_delegate_submission(
     if not _using_mysql():
         return
     _migrate_legacy_links_to_table()
+    submitted_at = shared_at.astimezone(timezone.utc) if isinstance(shared_at, datetime) else datetime.now(timezone.utc)
     link = patient_links_repository.find_by_token(token, include_inactive=True) or {}
     ok = patient_links_repository.store_delegate_payload(
         token,
@@ -974,6 +982,30 @@ def store_delegate_submission(
                 "allowedProducts": link.get("allowedProducts") or [],
             },
         )
+        doctor_id = str(link.get("doctorId") or "").strip()
+        if doctor_id:
+            try:
+                doctor = user_repository.find_by_id(doctor_id) or {}
+                recipient = str(doctor.get("email") or "").strip()
+                if recipient:
+                    proposal_label = (
+                        str(link.get("referenceLabel") or "").strip()
+                        or str(link.get("patientReference") or "").strip()
+                        or str(link.get("studyLabel") or "").strip()
+                        or str(link.get("subjectLabel") or "").strip()
+                        or "Delegate proposal"
+                    )
+                    email_service.send_delegate_proposal_ready_email(
+                        recipient,
+                        doctor_name=str(doctor.get("name") or "").strip() or None,
+                        proposal_label=proposal_label,
+                        submitted_at=submitted_at,
+                    )
+            except Exception:
+                logger.exception(
+                    "[Delegation] Failed to send delegate proposal ready email",
+                    extra={"token": token, "doctorId": doctor_id},
+                )
         return
     err = RuntimeError("Unable to persist delegate payload")
     setattr(err, "status", 502)
@@ -1040,6 +1072,7 @@ def get_link_proposal(doctor_id: str, token: str) -> Dict[str, Any]:
         "proposalStatus": review_status,
         "proposalReviewedAt": link.get("delegateReviewedAt"),
         "proposalReviewOrderId": link.get("delegateReviewOrderId"),
+        "proposalReviewNotes": link.get("delegateReviewNotes"),
     }
 
 
@@ -1049,6 +1082,7 @@ def review_link_proposal(
     *,
     status: str,
     order_id: Optional[str] = None,
+    notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
         err = RuntimeError("MySQL backend is required for patient links")
@@ -1079,12 +1113,14 @@ def review_link_proposal(
         err = ValueError("No proposal found for this link")
         setattr(err, "status", 409)
         raise err
+    notes_value = _validate_delegate_review_notes(notes)
 
     ok = patient_links_repository.set_delegate_review_status(
         doctor_id,
         token,
         status=status,
         order_id=order_id,
+        notes=notes_value,
         reviewed_at=datetime.now(timezone.utc),
     )
     if not ok:
@@ -1096,7 +1132,7 @@ def review_link_proposal(
         "proposal_reviewed",
         token=token,
         doctor_id=doctor_id,
-        payload={"status": status, "orderId": order_id},
+        payload={"status": status, "orderId": order_id, "hasNotes": bool(notes_value)},
     )
 
     updated = patient_links_repository.find_by_token(token, include_inactive=True) or {}
@@ -1139,6 +1175,7 @@ def review_link_proposal(
         "proposalStatus": review_status or status,
         "proposalReviewedAt": updated.get("delegateReviewedAt"),
         "proposalReviewOrderId": updated.get("delegateReviewOrderId"),
+        "proposalReviewNotes": updated.get("delegateReviewNotes"),
     }
 
 

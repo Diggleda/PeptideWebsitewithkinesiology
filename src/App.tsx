@@ -3572,6 +3572,7 @@ function MainApp() {
     proposalStatus?: string | null;
     proposalReviewedAt?: string | null;
     proposalReviewOrderId?: string | null;
+    proposalReviewNotes?: string | null;
   } | null>(null);
   const [delegateLoading, setDelegateLoading] = useState(false);
   const [delegateError, setDelegateError] = useState<string | null>(null);
@@ -3859,6 +3860,12 @@ function MainApp() {
 	              : typeof resolved?.proposal_review_order_id === "string"
 	                ? resolved.proposal_review_order_id
 	                : null,
+            proposalReviewNotes:
+              typeof resolved?.proposalReviewNotes === "string"
+                ? resolved.proposalReviewNotes
+                : typeof resolved?.proposal_review_notes === "string"
+                  ? resolved.proposal_review_notes
+                  : null,
 	        });
       } catch (error: any) {
         if (cancelled) return;
@@ -3943,6 +3950,12 @@ function MainApp() {
                 : typeof resolved?.proposal_review_order_id === 'string'
                   ? resolved.proposal_review_order_id
                   : prev.proposalReviewOrderId ?? null,
+            proposalReviewNotes:
+              typeof resolved?.proposalReviewNotes === 'string'
+                ? resolved.proposalReviewNotes
+                : typeof resolved?.proposal_review_notes === 'string'
+                  ? resolved.proposal_review_notes
+                  : prev.proposalReviewNotes ?? null,
           };
         });
       } catch {
@@ -17801,13 +17814,16 @@ function MainApp() {
     [buildDelegationCartSignature, catalogProducts, ensureCatalogProductHasVariants],
   );
 
-  const handleRejectActiveDelegationProposal = useCallback(async () => {
+  const handleRejectActiveDelegationProposal = useCallback(async (notes?: string | null) => {
     if (!activeDelegationProposal?.token) {
       toast.error('No active proposal to reject.');
       return;
     }
     const token = activeDelegationProposal.token;
-    await delegationAPI.reviewLinkProposal(token, { status: 'rejected' });
+    await delegationAPI.reviewLinkProposal(token, {
+      status: 'rejected',
+      notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
+    });
     setActiveDelegationProposal(null);
     setProposalShippingAddress(null);
     setProposalShippingRate(null);
@@ -18075,6 +18091,7 @@ function MainApp() {
 	                proposalStatus: 'pending',
 	                proposalReviewedAt: null,
 	                proposalReviewOrderId: null,
+                  proposalReviewNotes: null,
 	              };
 	            });
 	          } catch {
@@ -26804,6 +26821,12 @@ function MainApp() {
 		                            <span className="font-semibold">Order:</span> {delegateContext.proposalReviewOrderId}
 		                          </p>
 		                        )}
+                        {delegateContext?.proposalReviewNotes && (
+                          <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm text-rose-950">
+                            <p className="font-semibold text-rose-900">Physician notes</p>
+                            <p className="mt-1 whitespace-pre-line">{delegateContext.proposalReviewNotes}</p>
+                          </div>
+                        )}
 		                      </div>
 		                    </div>
 		                  </div>

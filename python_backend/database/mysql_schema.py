@@ -264,6 +264,7 @@ CREATE_TABLE_STATEMENTS = [
         delegate_review_status VARCHAR(32) NULL,
         delegate_reviewed_at DATETIME NULL,
         delegate_review_order_id VARCHAR(32) NULL,
+        delegate_review_notes LONGTEXT NULL,
         KEY idx_patient_links_doctor (doctor_id),
         KEY idx_patient_links_expires (expires_at),
         KEY idx_patient_links_status (status)
@@ -680,6 +681,8 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_reviewed_at DATETIME NULL")
         if not _column_exists("patient_links", "delegate_review_order_id"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_order_id VARCHAR(32) NULL")
+        if not _column_exists("patient_links", "delegate_review_notes"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_notes LONGTEXT NULL")
     except Exception:
         pass
 

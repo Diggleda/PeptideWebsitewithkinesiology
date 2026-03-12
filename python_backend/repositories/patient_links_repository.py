@@ -239,6 +239,7 @@ def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Di
         "delegateReviewStatus": row.get("delegate_review_status"),
         "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
         "delegateReviewOrderId": row.get("delegate_review_order_id"),
+        "delegateReviewNotes": row.get("delegate_review_notes") or None,
     }
 
 
@@ -399,7 +400,7 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
                last_used_at, last_opened_at, last_order_at, revoked_at,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
-               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id, delegate_review_notes
         FROM patient_links
         WHERE doctor_id = %(doctor_id)s
           AND expires_at > UTC_TIMESTAMP()
@@ -429,7 +430,7 @@ def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dic
                received_payment,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
-               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id, delegate_review_notes
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND expires_at > UTC_TIMESTAMP()
@@ -605,7 +606,7 @@ def update_link(
                last_used_at, last_opened_at, last_order_at, revoked_at,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
-               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id, delegate_review_notes
         FROM patient_links
         WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND doctor_id = %(doctor_id)s
@@ -695,6 +696,7 @@ def store_delegate_payload(
                 delegate_review_status = 'pending',
                 delegate_reviewed_at = NULL,
                 delegate_review_order_id = NULL,
+                delegate_review_notes = NULL,
                 last_used_at = UTC_TIMESTAMP(),
                 last_order_at = %(shared_at)s,
                 usage_count = COALESCE(usage_count, 0) + 1,
@@ -726,6 +728,7 @@ def set_delegate_review_status(
     *,
     status: str,
     order_id: Optional[str] = None,
+    notes: Optional[str] = None,
     reviewed_at: Optional[datetime] = None,
 ) -> bool:
     if not _using_mysql():
@@ -747,7 +750,8 @@ def set_delegate_review_status(
             SET
                 delegate_review_status = %(status)s,
                 delegate_reviewed_at = %(reviewed_at)s,
-                delegate_review_order_id = %(order_id)s
+                delegate_review_order_id = %(order_id)s,
+                delegate_review_notes = %(notes)s
             WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
               AND expires_at > UTC_TIMESTAMP()
@@ -758,6 +762,7 @@ def set_delegate_review_status(
                 "status": normalized_status,
                 "reviewed_at": when.replace(tzinfo=None),
                 "order_id": str(order_id).strip() if order_id is not None and str(order_id).strip() else None,
+                "notes": _normalize_optional_text(notes, max_len=4000),
             },
         )
         return int(affected or 0) > 0

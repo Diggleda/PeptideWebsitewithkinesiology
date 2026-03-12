@@ -1937,7 +1937,7 @@ export const delegationAPI = {
 
   reviewLinkProposal: async (
     token: string,
-    payload: { status: string; orderId?: string | null },
+    payload: { status: string; orderId?: string | null; notes?: string | null; reviewNotes?: string | null },
   ) => {
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) {

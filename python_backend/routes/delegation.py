@@ -260,6 +260,12 @@ def review_link_proposal(token: str):
         doctor_id = _resolve_target_doctor_id(role)
         status = payload.get("status") or payload.get("proposalStatus") or None
         order_id = payload.get("orderId") or payload.get("order_id") or payload.get("doctorOrderId") or None
+        notes = (
+            payload.get("notes")
+            or payload.get("reviewNotes")
+            or payload.get("proposalReviewNotes")
+            or None
+        )
         if not isinstance(status, str) or not status.strip():
             err = ValueError("status is required")
             setattr(err, "status", 400)
@@ -269,6 +275,7 @@ def review_link_proposal(token: str):
             token,
             status=str(status),
             order_id=str(order_id).strip() if isinstance(order_id, str) and str(order_id).strip() else None,
+            notes=str(notes).strip() if isinstance(notes, str) and str(notes).strip() else None,
         )
         return {"success": True, **result}
 

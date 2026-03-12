@@ -871,7 +871,7 @@ def insert(order: Dict) -> Dict:
                     pickup_location = VALUES(pickup_location),
                     pickup_ready_notice = VALUES(pickup_ready_notice),
                     tracking_number = VALUES(tracking_number),
-                    shipped_at = VALUES(shipped_at),
+                    shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -915,7 +915,7 @@ def insert(order: Dict) -> Dict:
                     shipping_carrier = VALUES(shipping_carrier),
                     shipping_service = VALUES(shipping_service),
                     tracking_number = VALUES(tracking_number),
-                    shipped_at = VALUES(shipped_at),
+                    shipped_at = COALESCE(shipped_at, VALUES(shipped_at)),
                     physician_certified = VALUES(physician_certified),
                     referral_code = VALUES(referral_code),
                     status = VALUES(status),
@@ -962,7 +962,7 @@ def update(order: Dict) -> Optional[Dict]:
                     pickup_location = %(pickup_location)s,
                     pickup_ready_notice = %(pickup_ready_notice)s,
                     tracking_number = %(tracking_number)s,
-                    shipped_at = %(shipped_at)s,
+                    shipped_at = COALESCE(shipped_at, %(shipped_at)s),
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -992,7 +992,7 @@ def update(order: Dict) -> Optional[Dict]:
                     shipping_carrier = %(shipping_carrier)s,
                     shipping_service = %(shipping_service)s,
                     tracking_number = %(tracking_number)s,
-                    shipped_at = %(shipped_at)s,
+                    shipped_at = COALESCE(shipped_at, %(shipped_at)s),
                     referral_code = %(referral_code)s,
                     status = %(status)s,
                     referrer_bonus = %(referrer_bonus)s,
@@ -1245,6 +1245,50 @@ def _to_db_params(order: Dict) -> Dict:
                     return text
         return None
 
+    def _resolve_shipped_at(value: Dict) -> Optional[str]:
+        explicit_candidates = [
+            value.get("shippedAt"),
+            value.get("shipped_at"),
+        ]
+
+        shipping = value.get("shippingEstimate") or value.get("shipping") or {}
+        if isinstance(shipping, dict):
+            explicit_candidates.extend(
+                [
+                    shipping.get("shipDate"),
+                    shipping.get("shippedAt"),
+                    shipping.get("shipped_at"),
+                ]
+            )
+
+        integrations = value.get("integrationDetails") or value.get("integrations") or {}
+        if isinstance(integrations, str):
+            try:
+                integrations = json.loads(integrations)
+            except Exception:
+                integrations = {}
+        if isinstance(integrations, dict):
+            shipstation = integrations.get("shipStation") or integrations.get("shipstation") or {}
+            if isinstance(shipstation, str):
+                try:
+                    shipstation = json.loads(shipstation)
+                except Exception:
+                    shipstation = {}
+            if isinstance(shipstation, dict):
+                explicit_candidates.extend(
+                    [
+                        shipstation.get("shipDate"),
+                        shipstation.get("shippedAt"),
+                        shipstation.get("shipped_at"),
+                    ]
+                )
+
+        for candidate in explicit_candidates:
+            parsed = parse_dt(candidate)
+            if parsed:
+                return parsed
+        return None
+
     # Commission reporting must never derive subtotal from order totals.
     items_subtotal = _num(order.get("itemsSubtotal"), 0.0)
     shipping_total = _num(order.get("shippingTotal"), 0.0)
@@ -1299,7 +1343,7 @@ def _to_db_params(order: Dict) -> Dict:
             or order.get("shippingEstimate", {}).get("serviceCode")
         ),
         "tracking_number": tracking_number,
-        "shipped_at": parse_dt(order.get("shippedAt") or order.get("shipped_at")),
+        "shipped_at": _resolve_shipped_at(order),
         "physician_certified": 1 if order.get("physicianCertificationAccepted") else 0,
         "referral_code": order.get("referralCode"),
         "status": order.get("status") or "pending",

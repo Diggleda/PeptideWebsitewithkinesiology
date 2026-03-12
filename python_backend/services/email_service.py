@@ -256,16 +256,9 @@ def _build_password_reset_email(reset_url: str, base_url: str) -> Tuple[str, str
     return html, plain
 
 
-def send_password_reset_email(recipient: str, reset_url: str) -> None:
-    """
-    Dispatch a password reset link. In development we log the URL locally so engineers can click it.
-    """
-    # Never log the reset URL/token (it can be used to take over the account).
-    logger.info("Dispatching password reset email", extra={"recipient": recipient})
+def _dispatch_email(recipient: str, subject: str, html: str, plain_text: Optional[str] = None) -> None:
+    logger.info("Dispatching email", extra={"recipient": recipient, "subject": subject})
     config = get_config()
-    subject = "Password Reset Request"
-    base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
-    html, plain_text = _build_password_reset_email(reset_url, base_url)
     settings = _email_settings()
 
     if config.is_production:
@@ -274,22 +267,137 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
                 _send_via_sendgrid(recipient, subject, html, settings, plain_text=plain_text)
                 return
             except Exception:
-                logger.error("Failed to send password reset email via SendGrid", exc_info=True)
+                logger.error("Failed to send email via SendGrid", exc_info=True)
         smtp_cfg = (settings.get("smtp") or {}) if isinstance(settings.get("smtp"), dict) else {}
         if smtp_cfg.get("host") and (smtp_cfg.get("pass") or ""):
             try:
                 _send_via_smtp(recipient, subject, html, settings, plain_text=plain_text)
                 return
             except Exception:
-                logger.error("Failed to send password reset email via SMTP", exc_info=True)
+                logger.error("Failed to send email via SMTP", exc_info=True)
 
         logger.error(
-            "No email provider succeeded for password reset; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS",
-            extra={"recipient": recipient},
+            "No email provider succeeded; set SENDGRID_API_KEY or SMTP_HOST/SMTP_PASS",
+            extra={"recipient": recipient, "subject": subject},
         )
+        return
 
     _write_dev_mail(subject, recipient, plain_text)
-    logger.info("Password reset email logged locally", extra={"recipient": recipient})
+    logger.info("Email logged locally", extra={"recipient": recipient, "subject": subject})
+
+
+def _build_delegate_proposal_ready_email(
+    *,
+    doctor_name: Optional[str],
+    proposal_label: Optional[str],
+    submitted_at_label: Optional[str],
+    base_url: str,
+) -> Tuple[str, str]:
+    safe_base_url = base_url.rstrip("/") or "https://peppro.net"
+    logo_url = f"{safe_base_url}/Peppro_fulllogo.png"
+    physician_label = (str(doctor_name or "").strip() or "Doctor").strip()
+    proposal_label_text = str(proposal_label or "").strip() or "Delegate proposal"
+    submitted_line = submitted_at_label or "Just now"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PepPro Delegate Proposal Ready for Review</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="margin:0;padding:0;background-color:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#111827;color-scheme:light;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6f8;padding:32px 0;color-scheme:light;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,0.08);color-scheme:light;">
+            <tr>
+              <td style="background-color:#ffffff;padding:24px 24px 12px;" align="center">
+                <img src="{logo_url}" alt="PepPro" style="max-width:180px;width:100%;height:auto;display:block;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px 28px 8px;">
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0B274B;">Delegate proposal ready for review</h1>
+                <p style="margin:0 0 12px;line-height:1.6;">
+                  {physician_label}, your delegate has submitted a proposal and it is ready for review in PepPro.
+                </p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;border:1px solid #dbe4ee;border-radius:12px;background:#f8fbff;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#0f172a;"><strong>Proposal:</strong> {proposal_label_text}</p>
+                      <p style="margin:0;font-size:14px;line-height:1.5;color:#0f172a;"><strong>Submitted:</strong> {submitted_line}</p>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 24px;line-height:1.6;">
+                  Sign in to your PepPro account and open Account, then Delegate Links, to review or reject the proposal.
+                </p>
+                <p style="margin:0 0 32px;text-align:center;">
+                  <a href="{safe_base_url}" style="display:inline-block;padding:14px 28px;background-color:#5FB3F9;color:#ffffff;font-weight:700;border-radius:999px;text-decoration:none;">Review in PepPro</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 28px 32px;font-size:12px;color:#6b7280;line-height:1.5;">
+                <p style="margin:0 0 4px;">Need help? Contact PepPro support at <a href="mailto:support@peppro.net" style="color:#5FB3F9;text-decoration:none;">support@peppro.net</a>.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+    plain = (
+        "A delegate proposal is ready for review in PepPro.\n"
+        f"Proposal: {proposal_label_text}\n"
+        f"Submitted: {submitted_line}\n"
+        "Sign in to PepPro and open Account > Delegate Links to review it.\n"
+        f"Open PepPro: {safe_base_url}\n"
+        "Need help? Contact support@peppro.net."
+    )
+    return html, plain
+
+
+def send_password_reset_email(recipient: str, reset_url: str) -> None:
+    """
+    Dispatch a password reset link. In development we log the URL locally so engineers can click it.
+    """
+    logger.info("Dispatching password reset email", extra={"recipient": recipient})
+    config = get_config()
+    subject = "Password Reset Request"
+    base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    html, plain_text = _build_password_reset_email(reset_url, base_url)
+    _dispatch_email(recipient, subject, html, plain_text)
+
+
+def send_delegate_proposal_ready_email(
+    recipient: str,
+    *,
+    doctor_name: Optional[str] = None,
+    proposal_label: Optional[str] = None,
+    submitted_at: Optional[datetime] = None,
+) -> None:
+    recipient_email = str(recipient or "").strip()
+    if not recipient_email:
+        raise ValueError("recipient is required")
+    config = get_config()
+    base_url = (config.frontend_base_url or "http://localhost:3000").rstrip("/")
+    submitted_label = None
+    if isinstance(submitted_at, datetime):
+        try:
+            submitted_label = submitted_at.astimezone().strftime("%b %-d, %Y at %-I:%M %p %Z")
+        except Exception:
+            submitted_label = submitted_at.isoformat()
+    subject = "Delegate Proposal Ready for Review"
+    html, plain_text = _build_delegate_proposal_ready_email(
+        doctor_name=doctor_name,
+        proposal_label=proposal_label,
+        submitted_at_label=submitted_label,
+        base_url=base_url,
+    )
+    _dispatch_email(recipient_email, subject, html, plain_text)
 
 
 def send_template(template_name: str, context: Optional[Dict[str, Any]] = None) -> None:

@@ -11,6 +11,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
+import { Textarea } from './ui/textarea';
 import { Card, CardContent } from './ui/card';
 import { Minus, Plus, Trash2, X, Landmark, ArrowLeftRight, ShoppingCart } from 'lucide-react';
 import type { Product, ProductVariant } from '../types/product';
@@ -250,7 +251,7 @@ interface CheckoutModalProps {
   delegatePaymentInstructions?: string | null;
   pricingMarkupPercent?: number | null;
   proposalMarkupPercent?: number | null;
-  onRejectProposal?: (() => Promise<void> | void) | null;
+  onRejectProposal?: ((notes?: string | null) => Promise<void> | void) | null;
 }
 
 const formatCardNumber = (value: string) =>
@@ -370,6 +371,8 @@ export function CheckoutModal({
   const [taxEstimateError, setTaxEstimateError] = useState<string | null>(null);
   const [taxEstimatePending, setTaxEstimatePending] = useState(false);
   const [isRejectingProposal, setIsRejectingProposal] = useState(false);
+  const [rejectNotesOpen, setRejectNotesOpen] = useState(false);
+  const [rejectNotesDraft, setRejectNotesDraft] = useState('');
   const lastTaxQuoteRef = useRef<{ key: string; ts: number } | null>(null);
   const activeTaxRequestRef = useRef<AbortController | null>(null);
   const initialDefaultRateAppliedRef = useRef(false);
@@ -713,9 +716,15 @@ export function CheckoutModal({
 
   const handleRejectProposalFromCheckout = useCallback(async () => {
     if (!canRejectProposalInCheckout || !onRejectProposal || isRejectingProposal) return;
+    if (!rejectNotesOpen) {
+      setRejectNotesOpen(true);
+      return;
+    }
     setIsRejectingProposal(true);
     try {
-      await Promise.resolve(onRejectProposal());
+      await Promise.resolve(onRejectProposal(rejectNotesDraft.trim() || null));
+      setRejectNotesDraft('');
+      setRejectNotesOpen(false);
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
@@ -725,7 +734,14 @@ export function CheckoutModal({
     } finally {
       setIsRejectingProposal(false);
     }
-  }, [canRejectProposalInCheckout, isRejectingProposal, onRejectProposal]);
+  }, [canRejectProposalInCheckout, isRejectingProposal, onRejectProposal, rejectNotesDraft, rejectNotesOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !canRejectProposalInCheckout) {
+      setRejectNotesOpen(false);
+      setRejectNotesDraft('');
+    }
+  }, [canRejectProposalInCheckout, isOpen]);
 
   // No-op referral handling removed
 
@@ -2217,16 +2233,53 @@ export function CheckoutModal({
 	              </div>
 
               {/* Checkout Button */}
+              {canRejectProposalInCheckout && rejectNotesOpen && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="proposal-reject-notes" className="text-sm font-semibold text-rose-900">
+                      Rejection notes for the delegate
+                    </Label>
+                    <Textarea
+                      id="proposal-reject-notes"
+                      value={rejectNotesDraft}
+                      onChange={(event) => setRejectNotesDraft(event.target.value)}
+                      placeholder="Explain what needs to change before this proposal can be approved…"
+                      rows={4}
+                      maxLength={4000}
+                      className="border-rose-200 bg-white text-slate-900 placeholder:text-slate-400"
+                    />
+                    <p className="text-xs text-rose-800/80">
+                      These notes are shown to the delegate in their proposal status panel.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="pt-4 flex items-center gap-2">
                 {canRejectProposalInCheckout && (
-                  <Button
-                    variant="outline"
-                    onClick={handleRejectProposalFromCheckout}
-                    disabled={isProcessing || checkoutStatus === 'success' || isRejectingProposal}
-                    className="squircle-sm border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800"
-                  >
-                    {isRejectingProposal ? 'Rejecting…' : 'Reject'}
-                  </Button>
+                  <>
+                    {rejectNotesOpen && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (isRejectingProposal) return;
+                          setRejectNotesOpen(false);
+                          setRejectNotesDraft('');
+                        }}
+                        disabled={isRejectingProposal}
+                        className="squircle-sm border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-800"
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={handleRejectProposalFromCheckout}
+                      disabled={isProcessing || checkoutStatus === 'success' || isRejectingProposal}
+                      className="squircle-sm border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800"
+                    >
+                      {isRejectingProposal ? 'Rejecting…' : rejectNotesOpen ? 'Reject proposal' : 'Reject'}
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="ghost"
