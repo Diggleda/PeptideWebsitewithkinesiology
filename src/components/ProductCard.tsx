@@ -47,6 +47,9 @@ const AUTO_CYCLE_STRENGTH_DELAY_MS = (() => {
 const PLACEHOLDER_VARIATION_ID = '__peppro_needs_variant__';
 const PLACEHOLDER_IMAGE_SRC = '/PepPro_icon.png';
 
+const roundCurrency = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
 const AUTO_OPEN_IMAGE_TIMEOUT_MS = (() => {
   const raw = String((import.meta as any).env?.VITE_AUTO_OPEN_IMAGE_TIMEOUT_MS || '').trim();
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
@@ -321,16 +324,20 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
 
   const calculatePrice = () => {
     if (bulkTiers.length === 0) {
-      return selectedVariation.basePrice;
+      return roundCurrency(selectedVariation.basePrice);
     }
     const applicableTier = [...bulkTiers]
       .sort((a, b) => b.minQuantity - a.minQuantity)
       .find((tier) => quantity >= tier.minQuantity);
     if (applicableTier) {
+      const fixedUnitPrice = Number(applicableTier.unitPrice);
+      if (Number.isFinite(fixedUnitPrice) && fixedUnitPrice > 0) {
+        return roundCurrency(fixedUnitPrice);
+      }
       const discount = applicableTier.discountPercentage / 100;
-      return selectedVariation.basePrice * (1 - discount);
+      return roundCurrency(selectedVariation.basePrice * (1 - discount));
     }
-    return selectedVariation.basePrice;
+    return roundCurrency(selectedVariation.basePrice);
   };
 
   const currentUnitPrice = calculatePrice();

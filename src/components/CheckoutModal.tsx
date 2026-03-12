@@ -486,6 +486,10 @@ export function CheckoutModal({
         .join('|'),
     [checkoutLineItems],
   );
+  const checkoutLineItemsByCartItemId = useMemo(
+    () => new Map(checkoutLineItems.map((item) => [item.cartItemId, item])),
+    [checkoutLineItems],
+  );
   const cartCompositionSignature = useMemo(
     () =>
       cartItems
@@ -1504,14 +1508,19 @@ export function CheckoutModal({
                 )}
                 <div className="flex w-full max-w-full flex-col gap-4 pb-2 lg:grid lg:grid-cols-2 auto-rows-fr">
                 {cartItems.map((item, index) => {
+                  const authoritativeLineItem = checkoutLineItemsByCartItemId.get(item.id) ?? null;
+                  const shouldLockPhysicianCartPricing = !discountCodeApplied && authoritativeLineItem != null;
                   const baseImages = item.product.images.length > 0 ? item.product.images : [item.product.image];
                   const carouselImages = item.variant?.image
                     ? [item.variant.image, ...baseImages].filter((src, index, self) => src && self.indexOf(src) === index)
                     : baseImages;
-	                  const doctorUnitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
+	                  const computedDoctorUnitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
 	                    pricingMode: resolvedPricingMode,
 	                    markupPercent: 0,
 	                  });
+                    const doctorUnitPrice = shouldLockPhysicianCartPricing
+                      ? authoritativeLineItem.price
+                      : computedDoctorUnitPrice;
 	                  const delegateUnitPrice =
 	                    showDualPricing && proposalMarkupPercentValue != null
 	                      ? computeUnitPrice(item.product, item.variant, item.quantity, {
@@ -1519,10 +1528,13 @@ export function CheckoutModal({
 	                          markupPercent: proposalMarkupPercentValue,
 	                        })
 	                      : null;
-	                  const unitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
+	                  const computedUnitPrice = computeUnitPrice(item.product, item.variant, item.quantity, {
 	                    pricingMode: resolvedPricingMode,
 	                    markupPercent: pricingMarkupPercent,
 	                  });
+                    const unitPrice = shouldLockPhysicianCartPricing
+                      ? authoritativeLineItem.price
+                      : computedUnitPrice;
 	                  const lineTotal = unitPrice * item.quantity;
 	                  const delegateLineTotal = delegateUnitPrice != null ? delegateUnitPrice * item.quantity : null;
                   const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);

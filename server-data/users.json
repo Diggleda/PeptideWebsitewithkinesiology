@@ -45,9 +45,9 @@
     "referralCode": "57F8DC",
     "referralCredits": 0,
     "totalReferrals": 0,
-    "visits": 295,
+    "visits": 296,
     "createdAt": "2025-11-24T15:24:47.996Z",
-    "lastLoginAt": "2026-03-11T00:33:18.773Z",
+    "lastLoginAt": "2026-03-12T00:53:50.676Z",
     "role": "test_doctor",
     "salesRepId": "rep1",
     "npiNumber": "1063837144",
@@ -71,15 +71,24 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "1970-01-01T00:00:00.000Z",
-    "lastInteractionAt": "2026-03-11T00:33:35.089Z",
-    "isOnline": false,
-    "isIdle": false,
+    "lastSeenAt": "2026-03-12T01:00:38.012Z",
+    "lastInteractionAt": "2026-03-12T01:00:25.812Z",
+    "isOnline": true,
+    "isIdle": true,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
     "hand_delivered": 0,
-    "cart": []
+    "cart": [
+      {
+        "productId": "woo-1201",
+        "productWooId": 1201,
+        "variantId": "woo-variation-1203",
+        "variantWooId": 1203,
+        "quantity": 11,
+        "note": null
+      }
+    ]
   },
   {
     "id": "1764556043938",

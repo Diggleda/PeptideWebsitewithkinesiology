@@ -2404,7 +2404,8 @@ const getOrdersForSalesRep = async (
   const doctorIds = doctors.map((d) => normalizeId(d.id)).filter(Boolean);
   const contactLeadEmails = Array.from(contactLeadByEmail.keys());
 
-  // Only use MySQL/WooCommerce-backed orders for sales rep reporting
+  // Keep sales rep reporting on local data sources only. Woo per-doctor fetches are slow
+  // and make the "Your Sales" dashboard timing-dependent on external API latency.
   if (mysqlClient.isEnabled()) {
     const sqlOrders = await orderSqlRepository.fetchByUserIds(doctorIds);
     logger.debug(
@@ -2471,47 +2472,6 @@ const getOrdersForSalesRep = async (
         });
       }
     }
-  } else if (wooCommerceClient?.isConfigured?.()) {
-    for (const doctor of doctors) {
-      const doctorEmail = (doctor.email || '').trim().toLowerCase();
-      if (!doctorEmail) continue;
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const wooOrders = await wooCommerceClient.fetchOrdersByEmail(doctorEmail, { perPage: 50 });
-        logger.debug(
-          {
-            doctorId: doctor.id,
-            doctorEmail,
-            count: Array.isArray(wooOrders) ? wooOrders.length : 0,
-          },
-          'Sales rep fetch: WooCommerce orders loaded for doctor',
-        );
-        // eslint-disable-next-line no-restricted-syntax
-        for (const wooOrder of wooOrders) {
-          const baseSummary = buildWooOrderSummary(wooOrder);
-          if (!baseSummary) continue;
-          // eslint-disable-next-line no-await-in-loop
-          const summary = await enrichOrderWithShipStation(baseSummary);
-	          const key = `woo:${summary.id || summary.number}`;
-	          if (seenKeys.has(key)) continue;
-	          seenKeys.add(key);
-	          const doctorMeta = doctorLookup.get(doctor.id) || null;
-	          summaries.push({
-	            ...summary,
-	            doctorId: doctor.id,
-		            doctorName: doctorMeta?.name || doctor.name || getDoctorFallbackName(doctor.id),
-	            doctorEmail: doctorMeta?.email || doctor.email || null,
-	            doctorProfileImageUrl: doctorMeta?.profileImageUrl || doctor.profileImageUrl || null,
-	            doctorSalesRepId: doctorMeta?.salesRepId || null,
-	            doctorSalesRepName: doctorMeta?.salesRepName || null,
-	            doctorSalesRepEmail: doctorMeta?.salesRepEmail || null,
-	            source: 'woo',
-	          });
-	        }
-      } catch (error) {
-        logger.error({ err: error, doctorEmail }, 'Failed to fetch WooCommerce orders for doctor');
-      }
-    }
   } else {
     const doctorIdSet = new Set(doctorIds);
     const localOrders = orderRepository.getAll().filter((order) => doctorIdSet.has(normalizeId(order?.userId)));
@@ -2523,7 +2483,7 @@ const getOrdersForSalesRep = async (
         mysqlEnabled: mysqlClient.isEnabled(),
         wooConfigured: !!wooCommerceClient?.isConfigured?.(),
       },
-      'Sales rep fetch: using local JSON order source',
+      'Sales rep fetch: using local JSON order source (Woo disabled for this path)',
     );
 
     // eslint-disable-next-line no-restricted-syntax

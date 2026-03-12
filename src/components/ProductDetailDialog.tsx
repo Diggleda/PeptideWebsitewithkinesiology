@@ -13,6 +13,7 @@ import type { Product } from '../types/product';
 import { Minus, Plus, ShoppingCart, Package, Pill, Building2, CheckCircle2, AlertCircle, Tag } from 'lucide-react';
 import { ProductImageCarousel } from './ProductImageCarousel';
 import { Badge } from './ui/badge';
+import { computeUnitPrice } from '../lib/pricing';
 
 interface ProductDetailDialogProps {
   product: Product | null;
@@ -149,7 +150,11 @@ export function ProductDetailDialog({
     return Math.round((value * (1 + markupPercent / 100) + Number.EPSILON) * 100) / 100;
   };
 
-  const displayPrice = applyMarkup(activeVariant?.price ?? product?.price ?? 0);
+  const displayPrice = product
+    ? computeUnitPrice(product, activeVariant, quantity, {
+        markupPercent,
+      })
+    : 0;
   const displayOriginalPriceRaw =
     activeVariant?.originalPrice ?? (!product?.hasVariants ? product?.originalPrice : undefined);
   const displayOriginalPrice =
@@ -384,7 +389,11 @@ export function ProductDetailDialog({
                       <div className="grid gap-2 sm:grid-cols-2">
                         {variantOptions.map((variant) => {
                           const isActive = variant.id === activeVariant?.id;
-                          const variantPrice = applyMarkup(variant.price);
+                          const variantPrice = product
+                            ? computeUnitPrice(product, variant, quantity, {
+                                markupPercent,
+                              })
+                            : 0;
                           const attributesSummary = variant.attributes
                             .map((attr) => attr.value || attr.name)
                             .filter(Boolean)
