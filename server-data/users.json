@@ -71,24 +71,15 @@
     "isTaxExempt": false,
     "taxExemptSource": null,
     "taxExemptReason": null,
-    "lastSeenAt": "2026-03-12T13:55:16.716Z",
-    "lastInteractionAt": "2026-03-12T13:55:11.654Z",
+    "lastSeenAt": "2026-03-12T14:00:12.047Z",
+    "lastInteractionAt": "2026-03-12T13:58:11.346Z",
     "isOnline": true,
     "isIdle": true,
     "devCommission": false,
     "receiveClientOrderUpdateEmails": false,
     "handDelivered": false,
     "hand_delivered": 0,
-    "cart": [
-      {
-        "productId": "woo-1201",
-        "productWooId": 1201,
-        "variantId": "woo-variation-1203",
-        "variantWooId": 1203,
-        "quantity": 11,
-        "note": null
-      }
-    ]
+    "cart": []
   },
   {
     "id": "1764556043938",

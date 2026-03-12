@@ -34,6 +34,14 @@ def list_catalog_categories():
 @blueprint.get("/products/<int:product_id>/variations")
 def list_catalog_variations(product_id: int):
     def action():
-        return get_catalog_product_variations(product_id)
+        force_raw = str(request.args.get("force", "") or "").strip().lower()
+        per_page = request.args.get("per_page", request.args.get("perPage", "100"))
+        status = request.args.get("status", "publish")
+        return get_catalog_product_variations(
+            product_id,
+            force=force_raw in ("1", "true", "yes"),
+            per_page=int(per_page),
+            status=str(status),
+        )
 
     return handle_action(action)

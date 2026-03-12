@@ -70,6 +70,37 @@ def _compact_json(data: Any) -> bytes:
     return json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def _decode_snapshot_json(raw: Any) -> Dict[str, Any] | List[Any] | None:
+    if isinstance(raw, memoryview):
+        raw = raw.tobytes()
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode("utf-8")
+        except Exception:
+            return None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
+
+
+def _variation_has_price_data(variation: Dict[str, Any]) -> bool:
+    for key in ("price", "regular_price", "sale_price"):
+        value = variation.get(key)
+        if isinstance(value, (int, float)):
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def _snapshot_variations_are_usable(variations: List[Dict[str, Any]]) -> bool:
+    return bool(variations) and any(_variation_has_price_data(item) for item in variations)
+
+
 def _chunked(values: List[int], *, size: int) -> List[List[int]]:
     if not values:
         return []
@@ -498,14 +529,9 @@ def get_catalog_products(*, page: int = 1, per_page: int = 100) -> List[Dict[str
     )
     items: List[Dict[str, Any]] = []
     for row in rows or []:
-        raw = (row or {}).get("data")
-        if isinstance(raw, (bytes, bytearray)):
-            try:
-                parsed = json.loads(raw.decode("utf-8"))
-            except Exception:
-                continue
-            if isinstance(parsed, dict):
-                items.append(parsed)
+        parsed = _decode_snapshot_json((row or {}).get("data"))
+        if isinstance(parsed, dict):
+            items.append(parsed)
     return items
 
 
@@ -522,22 +548,16 @@ def get_catalog_categories() -> List[Dict[str, Any]]:
         """,
         {"kind": KIND_CATALOG_CATEGORIES},
     )
-    raw = (row or {}).get("data") if isinstance(row, dict) else None
-    if isinstance(raw, (bytes, bytearray)):
-        try:
-            parsed = json.loads(raw.decode("utf-8"))
-            cats = parsed.get("categories") if isinstance(parsed, dict) else None
-            return cats if isinstance(cats, list) else []
-        except Exception:
-            return []
+    parsed = _decode_snapshot_json((row or {}).get("data") if isinstance(row, dict) else None)
+    if isinstance(parsed, dict):
+        cats = parsed.get("categories")
+        return cats if isinstance(cats, list) else []
     return []
 
 
-def get_catalog_product_variations(product_id: int) -> List[Dict[str, Any]]:
+def _get_snapshot_product_variations(product_id: int) -> List[Dict[str, Any]]:
     if not bool(get_config().mysql.get("enabled")):
-        err = RuntimeError("MySQL is not enabled")
-        setattr(err, "status", 503)
-        raise err
+        return []
     pid = int(product_id)
     row = mysql_client.fetch_one(
         """
@@ -547,12 +567,46 @@ def get_catalog_product_variations(product_id: int) -> List[Dict[str, Any]]:
         """,
         {"woo_product_id": pid, "kind": KIND_CATALOG_PRODUCT_FULL},
     )
-    raw = (row or {}).get("data") if isinstance(row, dict) else None
-    if isinstance(raw, (bytes, bytearray)):
-        try:
-            parsed = json.loads(raw.decode("utf-8"))
-            variations = parsed.get("variations") if isinstance(parsed, dict) else None
-            return variations if isinstance(variations, list) else []
-        except Exception:
-            return []
+    parsed = _decode_snapshot_json((row or {}).get("data") if isinstance(row, dict) else None)
+    if isinstance(parsed, dict):
+        variations = parsed.get("variations")
+        return [item for item in variations if isinstance(item, dict)] if isinstance(variations, list) else []
     return []
+
+
+def get_catalog_product_variations(
+    product_id: int,
+    *,
+    force: bool = False,
+    per_page: int = 100,
+    status: str = "publish",
+) -> List[Dict[str, Any]]:
+    pid = int(product_id)
+    safe_per_page = max(1, min(int(per_page), 100))
+    normalized_status = str(status or "publish").strip().lower() or "publish"
+    params = {"per_page": safe_per_page, "status": normalized_status}
+    snapshot = _get_snapshot_product_variations(pid)
+
+    if not force and _snapshot_variations_are_usable(snapshot):
+        return snapshot
+
+    try:
+        if force:
+            data, _meta = woo_commerce.fetch_catalog_fresh(
+                f"products/{pid}/variations",
+                params,
+                acquire_timeout=15,
+            )
+        else:
+            data, _meta = woo_commerce.fetch_catalog_proxy(
+                f"products/{pid}/variations",
+                params,
+            )
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+    except Exception:
+        if snapshot:
+            return snapshot
+        raise
+
+    return snapshot
