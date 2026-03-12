@@ -3238,6 +3238,7 @@ const mapWooProductToProduct = (
               heightIn: parseDimensionInches(variation.dimensions.height),
             }
           : undefined,
+        bulkPricingTiers: variantBulk.length > 0 ? variantBulk : undefined,
       };
     })
     .filter((variant): variant is ProductVariant =>
@@ -3378,6 +3379,7 @@ const toCardProduct = (
           image: variant.image,
           weightOz: variant.weightOz ?? null,
           stockQuantity: variant.stockQuantity ?? null,
+          bulkPricingTiers: variant.bulkPricingTiers ?? [],
         }))
       : needsVariantSelection
         ? [

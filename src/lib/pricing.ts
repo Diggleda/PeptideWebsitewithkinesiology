@@ -49,7 +49,7 @@ export const computeUnitPrice = (
   let unitPrice = basePrice;
 
   if (pricingMode !== 'retail') {
-    const tiers = product.bulkPricingTiers ?? [];
+    const tiers = variant?.bulkPricingTiers ?? product.bulkPricingTiers ?? [];
     const forcedTierRange = options?.forcedTierRange ?? null;
 
     if (Array.isArray(tiers) && tiers.length > 0) {

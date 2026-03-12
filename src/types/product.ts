@@ -23,6 +23,7 @@ export interface ProductVariant {
   description?: string;
   weightOz?: number | null;
   dimensions?: ProductDimensions;
+  bulkPricingTiers?: BulkPricingTier[];
 }
 
 export interface BulkPricingTier {

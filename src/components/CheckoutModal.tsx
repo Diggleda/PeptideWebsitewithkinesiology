@@ -415,8 +415,12 @@ export function CheckoutModal({
     return Math.max(0, Math.min(500, raw));
   }, [proposalMarkupPercent]);
 
-  const getVisibleBulkTiers = (product: Product, quantity: number) => {
-    const tiers = product.bulkPricingTiers ?? [];
+  const getVisibleBulkTiers = (
+    product: Product,
+    quantity: number,
+    variant?: ProductVariant | null,
+  ) => {
+    const tiers = variant?.bulkPricingTiers ?? product.bulkPricingTiers ?? [];
     if (!tiers.length) {
       return [];
     }
@@ -1537,9 +1541,13 @@ export function CheckoutModal({
                       : computedUnitPrice;
 	                  const lineTotal = unitPrice * item.quantity;
 	                  const delegateLineTotal = delegateUnitPrice != null ? delegateUnitPrice * item.quantity : null;
-                  const allTiers = (item.product.bulkPricingTiers ?? []).sort((a, b) => a.minQuantity - b.minQuantity);
-                  const visibleTiers = getVisibleBulkTiers(item.product, item.quantity);
-                  const upcomingTier = allTiers.find((tier) => item.quantity < tier.minQuantity) || null;
+                  const activeBulkTiers = (
+                    item.variant?.bulkPricingTiers ??
+                    item.product.bulkPricingTiers ??
+                    []
+                  ).sort((a, b) => a.minQuantity - b.minQuantity);
+                  const visibleTiers = getVisibleBulkTiers(item.product, item.quantity, item.variant);
+                  const upcomingTier = activeBulkTiers.find((tier) => item.quantity < tier.minQuantity) || null;
                   const isBulkOpen = bulkOpenMap[item.id] ?? false;
                   return (
                     <Card

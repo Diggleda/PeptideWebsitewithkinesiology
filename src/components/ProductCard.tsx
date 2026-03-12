@@ -158,6 +158,7 @@ export interface ProductVariation {
   basePrice: number;
   image?: string;
   stockQuantity?: number | null;
+  bulkPricingTiers?: BulkPricingTier[];
 }
 
 export interface BulkPricingTier {
@@ -319,7 +320,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
     };
   }, [product.id, product.variations, variantsLoading]);
 
-  const bulkTiers = product.bulkPricingTiers ?? [];
+  const bulkTiers = selectedVariation.bulkPricingTiers ?? product.bulkPricingTiers ?? [];
   const quantityButtonClasses = 'h-8 w-8 squircle-sm';
 
   const calculatePrice = () => {
