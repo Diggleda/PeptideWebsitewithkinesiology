@@ -164,6 +164,11 @@ def preview_discount_for_user(
     single_use_per_user = bool(condition.get("single_use_per_user", True))
     used_by = record.get("usedBy") or {}
     if single_use_per_user and isinstance(used_by, dict) and str(user_id) in used_by:
+        if bool(condition.get("first_order_only")):
+            return {
+                "valid": False,
+                "message": "This discount code was only valid for your first order.",
+            }
         return {"valid": False, "message": "Discount code already used"}
 
     min_qty_raw = condition.get("min_cart_quantity")

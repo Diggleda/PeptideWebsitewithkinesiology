@@ -212,15 +212,8 @@ const sendOrderPaymentInstructionsEmail = async ({
   const displayName = String(customerName || 'PepPro Customer').trim() || 'PepPro Customer';
   const formattedTotal = Number.isFinite(Number(total)) ? `$${Number(total).toFixed(2)}` : '';
   const normalizedDiscountCode = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
-  const normalizedDiscountCodeAmount = Number.isFinite(Number(discountCodeAmount))
-    ? Math.max(0, Number(discountCodeAmount))
-    : 0;
   const discountDetails = normalizedDiscountCode
-    ? `<br /><strong>Discount code used</strong>: ${escapeHtml(normalizedDiscountCode)}${
-      normalizedDiscountCodeAmount > 0
-        ? `<br /><strong>Discount applied</strong>: -$${normalizedDiscountCodeAmount.toFixed(2)}`
-        : ''
-    }`
+    ? `<br /><strong>Discount code used</strong>: ${escapeHtml(normalizedDiscountCode)}`
     : '';
   const { supportEmail, zelleSection, bankSection } = buildPaymentInstructionsSections();
 
