@@ -29,24 +29,6 @@ const toIsoDateTime = (value) => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 };
 
-const normalizeStatusToken = (value) => String(value || '').trim().toLowerCase().replace(/_/g, '-');
-
-const resolveTrackingNumber = (order) => {
-  if (!order || typeof order !== 'object') return null;
-  const candidates = [
-    order.trackingNumber,
-    order.tracking_number,
-    order.integrationDetails?.shipStation?.trackingNumber,
-    order.integrations?.shipStation?.trackingNumber,
-    order.integrations?.shipstation?.trackingNumber,
-  ];
-  for (const candidate of candidates) {
-    const normalized = sanitizeString(candidate);
-    if (normalized) return normalized;
-  }
-  return null;
-};
-
 const resolveOrderPlacedAt = (order, createdAtFallback) => {
   if (!order || typeof order !== 'object') {
     return toIsoDateTime(createdAtFallback);
@@ -87,12 +69,6 @@ const resolveShippedAt = (order) => {
     if (parsed) return parsed;
   }
 
-  const status = normalizeStatusToken(order.status);
-  const trackingNumber = resolveTrackingNumber(order);
-  const isShippedLike = status === 'shipped' || status === 'completed';
-  if (isShippedLike && trackingNumber) {
-    return new Date().toISOString();
-  }
   return null;
 };
 
