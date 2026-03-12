@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from ..repositories import order_repository
 from ..repositories import discount_code_repository
+
+_NON_QUALIFYING_FIRST_ORDER_STATUSES = {
+    "cancelled",
+    "canceled",
+    "trash",
+    "refunded",
+    "on-hold",
+    "on_hold",
+    "delegation_draft",
+}
 
 
 def _round_money(value: float) -> float:
@@ -22,8 +33,8 @@ def seed_defaults() -> None:
         code="RESEARCH",
         discount_value=50.0,
         overwrite_value=False,
-        condition={"min_cart_quantity": 4},
-        overwrite_condition=False,
+        condition={"min_cart_quantity": 4, "first_order_only": True},
+        overwrite_condition=True,
     )
     discount_code_repository.ensure_code_exists(
         code="GLORIAINEXCELSISDEO",
@@ -110,6 +121,24 @@ def _parse_pricing_override(condition: Dict[str, Any]) -> Optional[Dict[str, Any
     }
 
 
+def _has_prior_qualifying_order(user_id: str) -> bool:
+    candidate = str(user_id or "").strip()
+    if not candidate:
+        return False
+    try:
+        orders = order_repository.find_by_user_id(candidate)
+    except Exception:
+        return False
+    for order in orders or []:
+        if not isinstance(order, dict):
+            continue
+        status = str(order.get("status") or "").strip().lower()
+        if status in _NON_QUALIFYING_FIRST_ORDER_STATUSES:
+            continue
+        return True
+    return False
+
+
 def preview_discount_for_user(
     *,
     user_id: str,
@@ -153,6 +182,9 @@ def preview_discount_for_user(
             "valid": False,
             "message": f"Discount code requires at least {min_qty} total items (quantity) in your cart (you have {qty})",
         }
+
+    if bool(condition.get("first_order_only")) and _has_prior_qualifying_order(user_id):
+        return {"valid": False, "message": "Discount code is only available on your first order"}
 
     discount_value = float(record.get("discountValue") or 0.0)
     discount_value = max(0.0, discount_value)
