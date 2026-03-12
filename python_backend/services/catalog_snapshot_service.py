@@ -87,20 +87,6 @@ def _decode_snapshot_json(raw: Any) -> Dict[str, Any] | List[Any] | None:
     return parsed if isinstance(parsed, (dict, list)) else None
 
 
-def _variation_has_price_data(variation: Dict[str, Any]) -> bool:
-    for key in ("price", "regular_price", "sale_price"):
-        value = variation.get(key)
-        if isinstance(value, (int, float)):
-            return True
-        if isinstance(value, str) and value.strip():
-            return True
-    return False
-
-
-def _snapshot_variations_are_usable(variations: List[Dict[str, Any]]) -> bool:
-    return bool(variations) and any(_variation_has_price_data(item) for item in variations)
-
-
 def _chunked(values: List[int], *, size: int) -> List[List[int]]:
     if not values:
         return []
@@ -581,32 +567,5 @@ def get_catalog_product_variations(
     per_page: int = 100,
     status: str = "publish",
 ) -> List[Dict[str, Any]]:
-    pid = int(product_id)
-    safe_per_page = max(1, min(int(per_page), 100))
-    normalized_status = str(status or "publish").strip().lower() or "publish"
-    params = {"per_page": safe_per_page, "status": normalized_status}
-    snapshot = _get_snapshot_product_variations(pid)
-
-    if not force and _snapshot_variations_are_usable(snapshot):
-        return snapshot
-
-    try:
-        if force:
-            data, _meta = woo_commerce.fetch_catalog_fresh(
-                f"products/{pid}/variations",
-                params,
-                acquire_timeout=15,
-            )
-        else:
-            data, _meta = woo_commerce.fetch_catalog_proxy(
-                f"products/{pid}/variations",
-                params,
-            )
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-    except Exception:
-        if snapshot:
-            return snapshot
-        raise
-
-    return snapshot
+    del force, per_page, status
+    return _get_snapshot_product_variations(int(product_id))

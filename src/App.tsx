@@ -108,6 +108,7 @@ import {
   CreditLedgerEntry,
 } from "./types/referral";
 	import {
+    CATALOG_SNAPSHOT_ACTIVE,
 	  listProducts,
 	  listCategories,
 	  listProductVariations,
@@ -4232,6 +4233,9 @@ function MainApp() {
           ...(shouldForce ? { force: true } : null),
         });
         const resolved = Array.isArray(response) ? response : [];
+        if (CATALOG_SNAPSHOT_ACTIVE) {
+          return resolved;
+        }
         // If we got variants but none have images, retry once against Woo (bypass cache).
         if (!shouldForce && resolved.length > 0 && !hasVariationImages(resolved)) {
           try {

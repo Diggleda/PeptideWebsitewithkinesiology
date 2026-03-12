@@ -42,6 +42,8 @@ const resolveCatalogBase = () => {
 };
 
 const CATALOG_BASE = resolveCatalogBase();
+export const CATALOG_SNAPSHOT_ACTIVE =
+  Boolean(CATALOG_BASE) && !CATALOG_SNAPSHOT_DISABLED;
 
 const getWindowOrigin = () => {
   if (typeof window !== 'undefined' && window.location?.origin) {
