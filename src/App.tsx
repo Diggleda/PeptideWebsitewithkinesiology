@@ -19566,7 +19566,7 @@ function MainApp() {
 	    const renderEmailControlsCard = () => (
 	      <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
 	        <div className="border-b border-slate-200/60 pb-3">
-	          <h4 className="text-base font-semibold text-slate-900">Email Controls</h4>
+	          <h4 className="text-lg font-semibold text-slate-900">Email Controls</h4>
 	          <p className="text-sm text-slate-600 mb-1">
 	            Set your preferences for receiving email updates.
 	          </p>
@@ -19609,7 +19609,7 @@ function MainApp() {
           <div className="border-b border-slate-200/60 pb-3">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1 pr-2">
-              <h4 className="text-base font-semibold text-slate-900">Hand Delivery</h4>
+              <h4 className="text-lg font-semibold text-slate-900">Hand Delivery</h4>
               <p className="text-sm text-slate-600">
                 Doctors assigned to you. Check to enable hand delivery + free shipping messaging.
               </p>
@@ -19763,7 +19763,7 @@ function MainApp() {
                   >
 		              <div className="flex flex-col gap-2">
 		                <div>
-		                  <h4 className="text-base font-semibold text-slate-900">Live clients</h4>
+		                  <h4 className="text-lg font-semibold text-slate-900">Clients</h4>
 		                  <p className="text-sm text-slate-600">
 		                    {isSalesLead(user?.role) || isAdmin(user?.role)
 		                      ? "All doctors and sales reps (online, idle, and offline)."
@@ -19804,7 +19804,7 @@ function MainApp() {
 
 	                {liveClientsLoading ? (
 	                  <div className="px-4 py-3 text-sm text-slate-500">
-	                    Loading live clients…
+	                    Loading clients…
 	                  </div>
 	                ) : (() => {
 		                  const normalizedQuery = liveClientsSearch.trim().toLowerCase();
@@ -19887,10 +19887,14 @@ function MainApp() {
 
 	                  return (
 	                      <div className="space-y-3">
-	                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
-                              <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
-		                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-		                          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-slate-700">
+	                        <div
+                            className={clsx(
+                              "clients-controls-row flex flex-col gap-3 px-3 sm:px-1",
+                              !isSalesLead(user?.role) && "clients-controls-row--no-filter",
+                            )}
+                          >
+                              <div className="clients-controls-leading flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-none sm:gap-3">
+		                          <label className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 text-sm text-slate-700">
 		                            <input
 		                              type="checkbox"
 		                              className="brand-checkbox"
@@ -19902,28 +19906,8 @@ function MainApp() {
 		                          <span className="shrink-0 text-xs text-slate-500">
 		                            {onlineCount} online
 		                          </span>
-                              </div>
-		                          {isSalesLead(user?.role) && (
-		                            <label className="ml-auto relative flex min-w-0 flex-1 items-center text-xs text-slate-600 sm:ml-auto sm:min-w-[34%] sm:flex-none">
-		                              <select
-		                                value={salesLeadLiveUsersRoleFilter}
-		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
-		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
-		                              >
-		                                <option value="all">All</option>
-		                                <option value="sales_rep">Sales / Test Rep</option>
-		                                <option value="doctor">Doctors</option>
-		                                <option value="test_doctor">Test doctors</option>
-		                              </select>
-                                      <span className="product-card-select__chevron" aria-hidden="true">
-                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                                          <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                        </svg>
-		                                      </span>
-		                            </label>
-		                          )}
 		                        </div>
-		                        <div className="relative min-w-0 w-full max-w-full">
+		                        <div className="clients-controls-search relative min-w-0 w-full max-w-full sm:basis-0 sm:flex-1">
 		                          <Search
 		                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
 		                            style={{ color: "rgb(100, 116, 139)" }}
@@ -19937,10 +19921,29 @@ function MainApp() {
 	                              e.preventDefault();
 	                            }
 	                          }}
-		                            placeholder={isSalesLead(user?.role) ? "Search users…" : "Search clients…"}
+		                            placeholder="Search clients…"
 		                            className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 		                          />
 		                        </div>
+		                          {isSalesLead(user?.role) && (
+		                            <label className="clients-controls-filter relative flex min-w-0 w-full items-center text-xs text-slate-600 sm:w-[220px] sm:flex-none">
+		                              <select
+		                                value={salesLeadLiveUsersRoleFilter}
+		                                onChange={(e) => setSalesLeadLiveUsersRoleFilter(e.target.value)}
+		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+		                              >
+		                                <option value="all">All</option>
+		                                <option value="sales_rep">Sales / Test Rep</option>
+		                                <option value="doctor">Doctors</option>
+		                                <option value="test_doctor">Test doctors</option>
+		                              </select>
+                                      <span className="product-card-select__chevron" aria-hidden="true">
+                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                          <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                        </svg>
+		                                      </span>
+		                            </label>
+		                          )}
 	                      </div>
 
 	                      <div
@@ -20522,7 +20525,7 @@ function MainApp() {
                 <div className="mb-6 squircle-xl border border-slate-200/70 bg-white/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-base font-semibold text-slate-900">
+                      <h4 className="text-lg font-semibold text-slate-900">
                         Server Health
                       </h4>
                       <p className="text-sm text-slate-600">
@@ -20700,7 +20703,7 @@ function MainApp() {
 
 		                <div className="mb-4 sales-rep-leads-card sales-rep-combined-card">
                       <div className="border-b border-slate-200/60 pb-3">
-                        <h4 className="text-base font-semibold text-slate-900">Portal Controls</h4>
+                        <h4 className="text-lg font-semibold text-slate-900">Portal Controls</h4>
                         <p className="text-sm text-slate-600 mb-1">
                           Enable systems accessible to the physician network.
                         </p>
@@ -20918,7 +20921,7 @@ function MainApp() {
 	                  <div className="rounded-xl border border-slate-200/70 bg-white/70 p-4">
 	                    <div className="flex items-start gap-3">
 	                      <div className="min-w-0 flex-1 pr-2">
-	                        <h4 className="text-base font-semibold text-slate-900">
+	                        <h4 className="text-lg font-semibold text-slate-900">
 	                          Hand Delivery
 	                        </h4>
 	                        <p className="text-sm text-slate-600">
@@ -20987,8 +20990,8 @@ function MainApp() {
 	                {adminDashboardTab === "here_now" && (
 	                <div className="sales-rep-leads-card sales-rep-combined-card">
                   <div>
-                    <h4 className="text-base font-semibold text-slate-900">
-                      Live users
+                    <h4 className="text-lg font-semibold text-slate-900">
+                      Clients
                     </h4>
                     <p className="text-sm text-slate-600">
                       Users currently online or idle.
@@ -21212,10 +21215,9 @@ function MainApp() {
 
                     return (
                       <div className="space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-1">
-                        <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
-                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-slate-700">
+                        <div className="clients-controls-row flex flex-col gap-3 px-3 sm:px-1">
+                          <div className="clients-controls-leading flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-none sm:gap-3">
+                          <label className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 text-sm text-slate-700">
                             <input
                               type="checkbox"
                               className="brand-checkbox"
@@ -21227,12 +21229,30 @@ function MainApp() {
                           <span className="shrink-0 text-xs text-slate-500">
                             {onlineCount} online
                           </span>
+                        </div>
+                          <div className="clients-controls-search relative min-w-0 w-full max-w-full sm:basis-0 sm:flex-1">
+                            <Search
+                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                              style={{ color: "rgb(100, 116, 139)" }}
+                              aria-hidden="true"
+                            />
+                            <input
+                              value={adminLiveUsersSearch}
+                              onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                }
+                              }}
+                              placeholder="Search clients…"
+                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            />
                           </div>
-                          <label className="ml-auto relative flex min-w-0 flex-1 items-center text-xs text-slate-600 sm:ml-auto sm:min-w-[34%] sm:flex-none">
+                          <label className="clients-controls-filter relative flex min-w-0 w-full items-center text-xs text-slate-600 sm:w-[220px] sm:flex-none">
                             <select
                               value={adminLiveUsersRoleFilter}
                               onChange={(e) => setAdminLiveUsersRoleFilter(e.target.value)}
-                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)] sm:min-w-[34%]"
+                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
                             >
                               <option value="all">All</option>
                               <option value="admin">Admin</option>
@@ -21247,25 +21267,6 @@ function MainApp() {
                               </svg>
                             </span>
                           </label>
-                        </div>
-                          <div className="relative min-w-0 w-full max-w-full">
-                            <Search
-                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                              style={{ color: "rgb(100, 116, 139)" }}
-                              aria-hidden="true"
-                            />
-                            <input
-                              value={adminLiveUsersSearch}
-                              onChange={(e) => setAdminLiveUsersSearch(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                }
-                              }}
-                              placeholder="Search users…"
-                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                            />
-                          </div>
                         </div>
 
                         <div className={`sales-rep-table-wrapper admin-dashboard-list ${liveUsers.length === 0 ? "" : "live-users-scroll"}`}>
@@ -21457,7 +21458,7 @@ function MainApp() {
 		                  <div className="sales-rep-leads-card sales-rep-combined-card">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		                      <div>
-		                        <h4 className="text-base font-semibold text-slate-900">
+		                        <h4 className="text-lg font-semibold text-slate-900">
 		                          Certificates of Analysis
 		                        </h4>
 		                        <p className="text-sm text-slate-600">
@@ -21486,7 +21487,7 @@ function MainApp() {
 		                  <div className="sales-rep-leads-card sales-rep-combined-card">
 		                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		                      <div>
-		                        <h4 className="text-base font-semibold text-slate-900">
+		                        <h4 className="text-lg font-semibold text-slate-900">
 		                          Certificates of Analysis
 		                        </h4>
 		                        <p className="text-sm text-slate-600">
@@ -26771,7 +26772,7 @@ function MainApp() {
 		        </div>
 
 	      {isDelegateMode && (!delegateIsValidated || delegateError) ? null : isDelegateMode ? (
-	        <LegalFooter showContactCTA variant="ctaOnly" />
+	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : user ? (
 	        <LegalFooter showContactCTA={false} variant="full" />
 	      ) : (

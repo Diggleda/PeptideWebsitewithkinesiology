@@ -5932,9 +5932,18 @@ export function Header({
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
         <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
-          Configure a session for your patient, and share the link with them once configured. This system is intended to help you and other physicians fascilate independent peptide research. Please be consienscious when setting compensation and allowed products, as patients will see the disclosures you set here when they access the link. You can demo your own links before sharing by clicking the "View" button.
+          Configure a session for your patient, and share the link with them once configured. This tool is intended to help you fascilate independent peptide research. Please be consienscious when setting compensation and allowed products, as patients will see the disclosures you set when they access the link. You can demo your own links before sharing by clicking the "View" button.
         </p>
-	        <div className="mt-5 patient-link-form patient-link-form--generate">
+	        <div className="mt-5 patient-link-form patient-link-form--generate patient-link-form--grouped">
+            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="pt-1">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(95,179,249)]">
+                Subject & Access
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Define subject metadata and restrict which products are available in this delegate session.
+              </p>
+            </div>
 	          <Label
 	            htmlFor="patient-link-subject-label"
 	            className="patient-link-form__label patient-link-form__label--patient-id text-sm font-semibold text-slate-700"
@@ -5988,6 +5997,13 @@ export function Header({
 	            rows={2}
 	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
+            </div>
+            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="pt-2">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(95,179,249)]">
+                Pricing & Limits
+              </p>
+            </div>
 	          <Label
 	            htmlFor="patient-link-markup"
 	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
@@ -6073,6 +6089,13 @@ export function Header({
 	              </option>
 	            ))}
 	          </select>
+            </div>
+            <div className="patient-link-group rounded-xl border border-slate-200/70 bg-white/55 px-4 py-4 sm:px-5">
+            <div className="pt-2">
+              <p className="text-base font-semibold uppercase tracking-[0.08em] text-[rgb(95,179,249)]">
+                Notes & Instructions
+              </p>
+            </div>
 	          <Label
 	            htmlFor="patient-link-research-note"
 	            className="patient-link-form__label text-sm font-semibold text-slate-700"
@@ -6101,7 +6124,8 @@ export function Header({
 	            rows={2}
 	            className="patient-link-form__instructions min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
-	          <div className="flex items-center gap-3 pt-2 pb-3">
+            </div>
+	          <div className="flex items-center gap-3 pt-3 pb-6">
 	            <input
 	              type="checkbox"
 	              id="delegate-link-terms"

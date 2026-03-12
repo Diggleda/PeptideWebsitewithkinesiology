@@ -380,6 +380,10 @@ body {
   color: rgb(95, 179, 249);
 }
 
+.patient-link-form--grouped .patient-link-group + .patient-link-group {
+  margin-top: 1.1rem !important;
+}
+
 @media (min-width: 640px) {
   .patient-link-item {
     display: grid;
@@ -5352,6 +5356,45 @@ html {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.clients-controls-row {
+  width: 100%;
+}
+
+.clients-controls-leading {
+  min-width: 0;
+}
+
+.clients-controls-search {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .clients-controls-row {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) 220px;
+    align-items: center;
+    column-gap: 0.75rem;
+  }
+
+  .clients-controls-row--no-filter {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .clients-controls-leading {
+    min-width: max-content;
+  }
+
+  .clients-controls-search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .clients-controls-filter {
+    width: 220px;
+    min-width: 220px;
+  }
 }
 
 .sales-rep-chart-body {

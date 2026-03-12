@@ -549,6 +549,7 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
               <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-8">
                 <div
                   className="legal-richtext text-sm leading-relaxed text-slate-700"
+                  style={{ fontFamily: '"Lexend", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
                   dangerouslySetInnerHTML={{ __html: selectedDocument.html }}
                 />
               </div>

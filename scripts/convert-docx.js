@@ -26,7 +26,7 @@ const documents = [
   },
   {
     // Source doc is versioned in this repo; keep `privacy.html` as the stable output path.
-    docx: 'src/content/legal/Privacy-policy-4.docx',
+    docx: 'src/content/legal/Privacy-policy-6.docx',
     html: 'src/content/legal/privacy.html',
   },
   {
@@ -129,7 +129,20 @@ async function convertDocument({ docx, html }) {
 
   const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const content = bodyMatch ? bodyMatch[1].trim() : rawHtml.trim();
-  const finalHtml = `${styles ? `${styles}\n` : ''}${normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content)))}\n`;
+  const normalizedContent = normalizeSupportEmails(replaceRegionalAdministrator(linkifyEmails(content)));
+  const isLegalDoc = html.includes('src/content/legal/');
+  const lexendScopedStyle = isLegalDoc
+    ? `<style>
+.legal-docx-content,
+.legal-docx-content * {
+  font-family: "Lexend", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+</style>`
+    : '';
+  const wrappedContent = isLegalDoc
+    ? `<div class="legal-docx-content">${normalizedContent}</div>`
+    : normalizedContent;
+  const finalHtml = `${styles ? `${styles}\n` : ''}${lexendScopedStyle ? `${lexendScopedStyle}\n` : ''}${wrappedContent}\n`;
 
   await fs.writeFile(outputPath, finalHtml, 'utf8');
 

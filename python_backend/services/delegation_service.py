@@ -809,7 +809,10 @@ def resolve_delegate_token(token: str) -> Dict[str, Any]:
 
     if _using_mysql():
         _migrate_legacy_links_to_table()
-        link = patient_links_repository.find_by_token(token)
+        # Allow exhausted links to be resolved so delegates can still view
+        # proposal review outcomes (accepted/modified/rejected + notes).
+        # Revoked/expired links remain inaccessible.
+        link = patient_links_repository.find_by_token(token, include_inactive=True)
         if not isinstance(link, dict):
             err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
