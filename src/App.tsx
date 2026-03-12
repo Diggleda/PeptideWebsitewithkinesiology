@@ -96,6 +96,12 @@ import { LegalFooter } from "./components/LegalFooter";
 import { PublicSite, isPublicSitePath } from "./components/PublicPages";
 import { AuthActionResult } from "./types/auth";
 import {
+  physicianCompensationDisclosure,
+  productMatchesAllowedSku,
+  readDelegateTokenFromLocation,
+  RESEARCH_SUPPLY_DISCLOSURES,
+} from "./lib/researchSupplyLinks";
+import {
   DoctorCreditSummary,
   ReferralRecord,
   SalesRepDashboard,
@@ -3529,8 +3535,7 @@ function MainApp() {
     useState<PricingMode>("wholesale");
   const initialDelegateToken = (() => {
     if (typeof window === "undefined") return null;
-    const token = new URLSearchParams(window.location.search).get("delegate");
-    return token && token.trim() ? token.trim() : null;
+    return readDelegateTokenFromLocation(window.location);
   })();
   const [delegateToken, setDelegateToken] = useState<string | null>(
     initialDelegateToken,
@@ -3547,6 +3552,14 @@ function MainApp() {
     doctorName: string;
     markupPercent: number;
     doctorLogoUrl?: string | null;
+    subjectLabel?: string | null;
+    studyLabel?: string | null;
+    patientReference?: string | null;
+    instructions?: string | null;
+    allowedProducts?: string[];
+    status?: string | null;
+    disclosures?: string[];
+    compensationDisclosure?: string | null;
     createdAt?: string | null;
     expiresAt?: string | null;
     delegateSharedAt?: string | null;
@@ -3633,8 +3646,7 @@ function MainApp() {
     }
 
     const syncDelegateTokenFromUrl = () => {
-      const token = new URLSearchParams(window.location.search).get("delegate");
-      setDelegateToken(token && token.trim() ? token.trim() : null);
+      setDelegateToken(readDelegateTokenFromLocation(window.location));
     };
 
     window.addEventListener("popstate", syncDelegateTokenFromUrl);
@@ -3705,7 +3717,7 @@ function MainApp() {
           setDelegateExpiryMs(parsed);
           if (Date.now() >= parsed) {
             setDelegateContext(null);
-            setDelegateError("This delegate session has expired.");
+            setDelegateError("This delegate link has expired.");
             setDelegateLoading(false);
             setDelegateValidatedToken(delegateToken);
             return () => {
@@ -3740,6 +3752,14 @@ function MainApp() {
 	                  : typeof resolved?.delegate_instructions === 'string'
 	                    ? resolved.delegate_instructions
 	                    : null;
+	        const allowedProducts = Array.isArray(resolved?.allowedProducts)
+	          ? resolved.allowedProducts.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+	          : Array.isArray(resolved?.allowed_products)
+	            ? resolved.allowed_products.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+	            : [];
+	        const disclosures = Array.isArray(resolved?.disclosures)
+	          ? resolved.disclosures.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+	          : RESEARCH_SUPPLY_DISCLOSURES;
 	        const expiresAt =
 	          typeof resolved?.expiresAt === "string"
 	            ? resolved.expiresAt
@@ -3763,6 +3783,40 @@ function MainApp() {
 		          doctorName: String(resolved?.doctorName || resolved?.doctor_name || ""),
 		          markupPercent: Number(resolved?.markupPercent || resolved?.markup_percent) || 0,
 	          doctorLogoUrl: typeof resolved?.doctorLogoUrl === "string" ? resolved.doctorLogoUrl : null,
+	          subjectLabel:
+	            typeof resolved?.subjectLabel === 'string'
+	              ? resolved.subjectLabel
+	              : typeof resolved?.subject_label === 'string'
+	                ? resolved.subject_label
+	                : null,
+	          studyLabel:
+	            typeof resolved?.studyLabel === 'string'
+	              ? resolved.studyLabel
+	              : typeof resolved?.study_label === 'string'
+	                ? resolved.study_label
+	                : null,
+	          patientReference:
+	            typeof resolved?.patientReference === 'string'
+	              ? resolved.patientReference
+	              : typeof resolved?.patient_reference === 'string'
+	                ? resolved.patient_reference
+	                : null,
+	          instructions:
+	            typeof resolved?.instructions === 'string'
+	              ? resolved.instructions
+	              : null,
+	          allowedProducts,
+	          status:
+	            typeof resolved?.status === 'string'
+	              ? resolved.status
+	              : typeof resolved?.linkStatus === 'string'
+	                ? resolved.linkStatus
+	                : null,
+	          disclosures,
+	          compensationDisclosure:
+	            typeof resolved?.compensationDisclosure === 'string'
+	              ? resolved.compensationDisclosure
+	              : physicianCompensationDisclosure(Number(resolved?.markupPercent || resolved?.markup_percent) || 0),
 	          createdAt:
 	            typeof resolved?.createdAt === "string"
 	              ? resolved.createdAt
@@ -3808,7 +3862,7 @@ function MainApp() {
         const message =
           typeof error?.message === "string" && error.message.trim()
             ? error.message
-            : "Invalid or expired delegation link.";
+            : "Invalid or expired delegate link.";
         setDelegateContext(null);
         setDelegateError(message);
       } finally {
@@ -15752,6 +15806,14 @@ function MainApp() {
 	          });
 	        }
 
+          const delegateAllowedProducts = Array.isArray(delegateContext?.allowedProducts)
+            ? delegateContext.allowedProducts
+            : [];
+          const visibleBaseProducts =
+            isDelegateMode && delegateAllowedProducts.length > 0
+              ? baseProducts.filter((product) => productMatchesAllowedSku(product, delegateAllowedProducts))
+              : baseProducts;
+
           if (Array.isArray(wooProducts) && wooProducts.length > 0 && baseProducts.length === 0) {
             const mappingError =
               mapFailures > 0
@@ -15766,10 +15828,10 @@ function MainApp() {
             });
           }
 
-		        const hadBaseProducts = applyCatalogState(baseProducts);
+		        const hadBaseProducts = applyCatalogState(visibleBaseProducts);
             if (CATALOG_DEBUG) {
               console.info("[Catalog] Catalog state applied", {
-                products: baseProducts.length,
+                products: visibleBaseProducts.length,
                 categories: catalogCategories.length || categoryNamesFromApi.length,
                 durationMs: Date.now() - startedAt,
               });
@@ -15777,7 +15839,7 @@ function MainApp() {
             if (!background) {
               // If Woo returns an empty catalog during cold-start, retry quickly a few times
               // before allowing the UI to render "No products found".
-              if (!hadBaseProducts && baseProducts.length === 0 && catalogProducts.length === 0) {
+              if (!hadBaseProducts && visibleBaseProducts.length === 0 && catalogProducts.length === 0) {
                 if (catalogEmptyResultRetryCountRef.current < CATALOG_EMPTY_RESULT_RETRY_MAX) {
                   catalogEmptyResultRetryCountRef.current += 1;
                   const delayMs = Math.max(
@@ -15891,7 +15953,7 @@ function MainApp() {
 	      }
 	      window.clearInterval(intervalId);
 	    };
-	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError]);
+	  }, [ensureVariationCacheReady, persistVariationCache, isDelegateMode, delegateLoading, delegateError, delegateContext?.allowedProducts]);
 
   useEffect(() => {
     if (catalogEmptyTimerRef.current) {
@@ -26610,16 +26672,16 @@ function MainApp() {
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
 			                  <p className="text-lg font-semibold text-slate-900">Loading…</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Checking your delegate session.
+			                    Validating your delegate link.
 			                  </p>
 			                </div>
 			              </main>
 			            ) : delegateError ? (
 			              <main className="w-full h-screen min-h-screen flex items-center justify-center px-4 sm:px-6">
 			                <div className="glass-card squircle-xl border border-[var(--brand-glass-border-2)] px-6 py-8 shadow-xl bg-white/85 backdrop-blur-xl max-w-2xl w-full text-center">
-			                  <p className="text-lg font-semibold text-slate-900">This delegate session has expired.</p>
+			                  <p className="text-lg font-semibold text-slate-900">This delegate link has expired.</p>
 			                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
-			                    Please request a new link from your doctor and try again.
+			                    Please request a new delegate link from your physician and try again.
 			                  </p>
 			                </div>
 			              </main>
@@ -26635,11 +26697,55 @@ function MainApp() {
 			                    <div className="glass-card p-2 squircle-md border border-[var(--brand-glass-border-1)] bg-white/70 px-6 py-3 text-sm text-slate-700 inline-flex w-fit max-w-full items-center justify-center gap-2">
 			                      <Clock className="h-4 w-4 text-slate-700" aria-hidden="true" />
 			                      <span>
-			                        Session expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
+			                        Link expires in <span className="font-semibold">{delegateTimeRemainingLabel}</span>.
 			                      </span>
 			                    </div>
 			                  </div>
 			                )}
+			                <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0 pb-4">
+			                  <div className="glass-card squircle-xl border border-[var(--brand-glass-border-1)] bg-white/80 p-5 sm:p-6">
+			                    <div className="flex flex-col gap-4">
+			                      <div>
+			                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[rgb(95,179,249)]">Delegate Link</p>
+			                        <h2 className="mt-1 text-xl font-semibold text-slate-900">
+			                          {delegateContext?.studyLabel || delegateContext?.subjectLabel || 'Restricted research materials'}
+			                        </h2>
+			                        <p className="mt-1 text-sm leading-relaxed text-slate-700">
+			                          This link is for research material procurement only. It is not a prescription or treatment order.
+			                        </p>
+			                      </div>
+			                      <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+			                        {delegateContext?.subjectLabel && (
+			                          <div><span className="font-semibold">Subject:</span> {delegateContext.subjectLabel}</div>
+			                        )}
+			                        {delegateContext?.studyLabel && (
+			                          <div><span className="font-semibold">Study:</span> {delegateContext.studyLabel}</div>
+			                        )}
+			                        {delegateContext?.patientReference && (
+			                          <div><span className="font-semibold">Reference:</span> {delegateContext.patientReference}</div>
+			                        )}
+			                        {Array.isArray(delegateContext?.allowedProducts) && delegateContext.allowedProducts.length > 0 && (
+			                          <div className="sm:col-span-2">
+			                            <span className="font-semibold">Approved SKUs:</span> {delegateContext.allowedProducts.join(', ')}
+			                          </div>
+			                        )}
+			                        {delegateContext?.instructions && (
+			                          <div className="sm:col-span-2">
+			                            <span className="font-semibold">Research note:</span> {delegateContext.instructions}
+			                          </div>
+			                        )}
+			                        <div className="sm:col-span-2 font-semibold text-slate-900">
+			                          {delegateContext?.compensationDisclosure || physicianCompensationDisclosure(delegateContext?.markupPercent)}
+			                        </div>
+			                      </div>
+			                      <div className="space-y-1 text-xs leading-relaxed text-slate-600">
+			                        {(delegateContext?.disclosures && delegateContext.disclosures.length > 0 ? delegateContext.disclosures : RESEARCH_SUPPLY_DISCLOSURES).map((line) => (
+			                          <p key={line}>{line}</p>
+			                        ))}
+			                      </div>
+			                    </div>
+			                  </div>
+			                </div>
 		                {delegateHasSubmittedProposal ? (
 		                  <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-0">
 		                    <div className="glass-card squircle-xl mt-2 border border-[var(--brand-glass-border-1)] bg-white/80 p-8 sm:p-10">
@@ -26649,7 +26755,7 @@ function MainApp() {
 		                          <p className="mt-1 text-sm text-slate-700">
 		                            Your proposal has been sent to{' '}
 		                            {delegateDoctorNameForShare === 'Doctor'
-		                              ? 'your doctor'
+		                              ? 'your physician'
 		                              : `Dr. ${delegateDoctorNameForShare}`}
 		                            .
 		                          </p>

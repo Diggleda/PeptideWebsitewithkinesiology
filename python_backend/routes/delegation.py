@@ -79,7 +79,26 @@ def create_link():
             else payload.get("label")
         )
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id")
+        subject_label = payload.get("subjectLabel") if "subjectLabel" in payload else payload.get("subject_label")
+        study_label = payload.get("studyLabel") if "studyLabel" in payload else payload.get("study_label")
+        patient_reference = (
+            payload.get("patientReference")
+            if "patientReference" in payload
+            else payload.get("patient_reference")
+        )
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        instructions = payload.get("instructions") if "instructions" in payload else None
+        allowed_products = (
+            payload.get("allowedProducts")
+            if "allowedProducts" in payload
+            else payload.get("allowed_products")
+        )
+        expires_in_hours = (
+            payload.get("expiresInHours")
+            if "expiresInHours" in payload
+            else payload.get("expires_in_hours")
+        )
+        usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit")
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
             payload.get("paymentInstructions")
@@ -90,7 +109,14 @@ def create_link():
             doctor_id,
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
+            subject_label=subject_label if isinstance(subject_label, str) else None,
+            study_label=study_label if isinstance(study_label, str) else None,
+            patient_reference=patient_reference if isinstance(patient_reference, str) else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            instructions=instructions if isinstance(instructions, str) else None,
+            allowed_products=allowed_products,
+            expires_in_hours=expires_in_hours,
+            usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
         )
@@ -119,8 +145,33 @@ def update_link(token: str):
             else None
         )
         patient_id = payload.get("patientId") if "patientId" in payload else payload.get("patient_id") if "patient_id" in payload else None
+        subject_label = payload.get("subjectLabel") if "subjectLabel" in payload else payload.get("subject_label") if "subject_label" in payload else None
+        study_label = payload.get("studyLabel") if "studyLabel" in payload else payload.get("study_label") if "study_label" in payload else None
+        patient_reference = (
+            payload.get("patientReference")
+            if "patientReference" in payload
+            else payload.get("patient_reference")
+            if "patient_reference" in payload
+            else None
+        )
         revoke = payload.get("revoke") if "revoke" in payload else None
         markup_percent = payload.get("markupPercent") if "markupPercent" in payload else payload.get("markup_percent")
+        instructions = payload.get("instructions") if "instructions" in payload else None
+        allowed_products = (
+            payload.get("allowedProducts")
+            if "allowedProducts" in payload
+            else payload.get("allowed_products")
+            if "allowed_products" in payload
+            else None
+        )
+        expires_in_hours = (
+            payload.get("expiresInHours")
+            if "expiresInHours" in payload
+            else payload.get("expires_in_hours")
+            if "expires_in_hours" in payload
+            else None
+        )
+        usage_limit = payload.get("usageLimit") if "usageLimit" in payload else payload.get("usage_limit") if "usage_limit" in payload else None
         payment_method = payload.get("paymentMethod") if "paymentMethod" in payload else payload.get("payment_method")
         payment_instructions = (
           payload.get("paymentInstructions")
@@ -143,8 +194,15 @@ def update_link(token: str):
             token,
             reference_label=reference_label if isinstance(reference_label, str) else None,
             patient_id=patient_id if isinstance(patient_id, str) else None,
+            subject_label=subject_label if isinstance(subject_label, str) else None,
+            study_label=study_label if isinstance(study_label, str) else None,
+            patient_reference=patient_reference if isinstance(patient_reference, str) else None,
             revoke=bool(revoke) if revoke is not None else None,
             markup_percent=markup_percent if markup_percent is not None else None,
+            instructions=instructions if isinstance(instructions, str) else None,
+            allowed_products=allowed_products,
+            expires_in_hours=expires_in_hours,
+            usage_limit=usage_limit,
             payment_method=payment_method if isinstance(payment_method, str) else None,
             payment_instructions=payment_instructions if isinstance(payment_instructions, str) else None,
             received_payment=received_payment if received_payment is not None else None,

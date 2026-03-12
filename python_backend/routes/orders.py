@@ -535,14 +535,15 @@ def delegate_estimate_order_totals():
 
     def action():
         delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = delegate_info.get("doctorId")
         if not doctor_id:
-            err = ValueError("Invalid or expired delegation link")
+            err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
             raise err
         return order_service.estimate_order_totals(
             user_id=str(doctor_id),
-            items=items,
+            items=validated.get("validatedItems") or items,
             shipping_address=shipping_address,
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
@@ -567,16 +568,17 @@ def delegate_share_order():
 
     def action():
         delegate_info = delegation_service.resolve_delegate_token(str(delegate_token or ""))
+        validated = delegation_service.validate_delegate_items(str(delegate_token or ""), items)
         doctor_id = str(delegate_info.get("doctorId") or "").strip()
         doctor_name = str(delegate_info.get("doctorName") or "Doctor").strip() or "Doctor"
         if not doctor_id:
-            err = ValueError("Invalid or expired delegation link")
+            err = ValueError("Invalid or expired delegate link")
             setattr(err, "status", 404)
             raise err
 
         estimate = order_service.estimate_order_totals(
             user_id=doctor_id,
-            items=items,
+            items=validated.get("validatedItems") or items,
             shipping_address=shipping_address,
             shipping_estimate=shipping_estimate,
             shipping_total=shipping_total,
@@ -610,7 +612,7 @@ def delegate_share_order():
         order = {
             "id": order_id,
             "userId": doctor_id,
-            "items": items,
+            "items": validated.get("validatedItems") or items,
             "pricingMode": "wholesale",
             "total": items_subtotal,
             "itemsSubtotal": items_subtotal,
@@ -631,6 +633,7 @@ def delegate_share_order():
                 "doctorId": doctor_id,
                 "doctorName": doctor_name,
                 "markupPercent": delegate_info.get("markupPercent"),
+                "allowedProducts": delegate_info.get("allowedProducts") or [],
                 "sharedAt": now,
             },
         }
@@ -638,7 +641,7 @@ def delegate_share_order():
         stored_id = stored.get("id") if isinstance(stored, dict) else order_id
         delegation_service.store_delegate_submission(
             str(delegate_info.get("token") or ""),
-            cart={"items": items},
+            cart={"items": validated.get("validatedItems") or items},
             shipping={
                 "shippingAddress": shipping_address or {},
                 "shippingEstimate": shipping_estimate or {},

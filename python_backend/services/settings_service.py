@@ -33,6 +33,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "productsCommissionCsvDownloadedAt": None,
     # Default credit amount awarded for referral first-order bonuses.
     "referralCreditAmount": 250,
+    # Research supply links default to 72h and cap physician markup to reduce compliance risk.
+    "patientLinkDefaultExpiryHours": 72,
+    "patientLinkMaxMarkupPercent": 20,
 }
 
 _STRIPE_SECRET_PREFIXES = {
@@ -120,6 +123,26 @@ def _normalize_referral_credit_amount(value: Any) -> float:
     return round(parsed, 2)
 
 
+def _normalize_patient_link_default_expiry_hours(value: Any) -> int:
+    default_hours = 72
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return default_hours
+    return max(1, min(parsed, 24 * 30))
+
+
+def _normalize_patient_link_max_markup_percent(value: Any) -> float:
+    default_percent = 20.0
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default_percent
+    if parsed < 0:
+        return 0.0
+    return round(min(parsed, 100.0), 2)
+
+
 def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {**DEFAULT_SETTINGS, **(data or {})}
     merged["shopEnabled"] = _to_bool(merged.get("shopEnabled", True))
@@ -143,6 +166,12 @@ def normalize_settings(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     )
     merged["referralCreditAmount"] = _normalize_referral_credit_amount(
         merged.get("referralCreditAmount")
+    )
+    merged["patientLinkDefaultExpiryHours"] = _normalize_patient_link_default_expiry_hours(
+        merged.get("patientLinkDefaultExpiryHours")
+    )
+    merged["patientLinkMaxMarkupPercent"] = _normalize_patient_link_max_markup_percent(
+        merged.get("patientLinkMaxMarkupPercent")
     )
     return merged
 

@@ -43,6 +43,8 @@ def _limit_for_path(path: str) -> int:
     path = path or ""
     if path.startswith("/api/orders/sales-rep") or path.startswith("/api/woo"):
         return _EXPENSIVE_MAX
+    if path.startswith("/api/delegation/resolve") or path.startswith("/api/orders/delegate"):
+        return _EXPENSIVE_MAX
     return _DEFAULT_MAX
 
 
@@ -92,4 +94,3 @@ def init_rate_limit(app: Flask) -> None:
                 return response
 
             bucket.append(now)
-

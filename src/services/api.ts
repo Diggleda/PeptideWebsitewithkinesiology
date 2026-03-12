@@ -1872,7 +1872,14 @@ export const delegationAPI = {
   createLink: async (payload?: {
     referenceLabel?: string | null;
     patientId?: string | null;
+    subjectLabel?: string | null;
+    studyLabel?: string | null;
+    patientReference?: string | null;
     markupPercent?: number | null;
+    instructions?: string | null;
+    allowedProducts?: string[] | string | null;
+    expiresInHours?: number | null;
+    usageLimit?: number | null;
     paymentMethod?: string | null;
     paymentInstructions?: string | null;
   }) => {
@@ -1887,8 +1894,15 @@ export const delegationAPI = {
 	    payload: {
 	      referenceLabel?: string | null;
 	      patientId?: string | null;
+	      subjectLabel?: string | null;
+	      studyLabel?: string | null;
+	      patientReference?: string | null;
 	      revoke?: boolean | null;
 	      markupPercent?: number | null;
+	      instructions?: string | null;
+	      allowedProducts?: string[] | string | null;
+	      expiresInHours?: number | null;
+	      usageLimit?: number | null;
 	      paymentMethod?: string | null;
 	      paymentInstructions?: string | null;
 	      receivedPayment?: boolean | number | null;

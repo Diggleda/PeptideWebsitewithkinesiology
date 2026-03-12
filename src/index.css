@@ -395,6 +395,17 @@ body {
     row-gap: 0;
   }
 
+  .patient-link-form--generate {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    row-gap: 0;
+  }
+
+  .patient-link-form--generate > * {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+
   .patient-link-form__label--link {
     grid-column: 1;
     grid-row: 3;
@@ -463,8 +474,7 @@ body {
   }
 
   .patient-link-form--generate .patient-link-form__button {
-    grid-row: 10;
-    align-self: end;
+    align-self: stretch;
     margin-bottom: 0.55rem !important;
   }
 
@@ -6752,6 +6762,164 @@ body.account-modal-open .info-focus-overlay {
   padding-top: 1rem !important;
   padding-bottom: 1rem !important;
   min-height: calc(var(--spacing) * 16);
+}
+
+.legal-modal-layer,
+.legal-modal-overlay,
+.legal-modal-shell,
+.legal-modal-card {
+  transition-duration: 65ms !important;
+  transition-timing-function: ease-out !important;
+}
+
+.legal-modal-layer {
+  opacity: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+}
+
+.legal-modal-layer[data-legal-state="open"] {
+  animation: legal-modal-layer-in 65ms ease-out both;
+}
+
+.legal-modal-layer[data-legal-state="closing"] {
+  animation: legal-modal-layer-out 65ms ease-out both;
+}
+
+.legal-modal-overlay {
+  opacity: 0;
+  backdrop-filter: blur(0px) saturate(1);
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+}
+
+.legal-modal-overlay[data-legal-state="open"] {
+  animation: legal-modal-overlay-in 65ms ease-out both;
+}
+
+.legal-modal-overlay[data-legal-state="closing"] {
+  animation: legal-modal-overlay-out 65ms ease-out both;
+}
+
+.legal-modal-shell {
+  opacity: 0;
+  transform: translateY(1rem) scale(0.97);
+}
+
+.legal-modal-shell[data-legal-state="open"] {
+  animation: legal-modal-shell-in 65ms ease-out both;
+}
+
+.legal-modal-shell[data-legal-state="closing"] {
+  animation: legal-modal-shell-out 65ms ease-out both;
+}
+
+.legal-modal-card {
+  backdrop-filter: blur(0px) saturate(1);
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+}
+
+.legal-modal-card[data-legal-state="open"] {
+  animation: legal-modal-card-in 65ms ease-out both;
+}
+
+.legal-modal-card[data-legal-state="closing"] {
+  animation: legal-modal-card-out 65ms ease-out both;
+}
+
+@keyframes legal-modal-layer-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(var(--legal-layer-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--legal-layer-blur, 0px));
+  }
+}
+
+@keyframes legal-modal-layer-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(var(--legal-layer-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--legal-layer-blur, 0px));
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+}
+
+@keyframes legal-modal-overlay-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px) saturate(1);
+    -webkit-backdrop-filter: blur(0px) saturate(1);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(var(--legal-overlay-blur, 0px)) saturate(var(--legal-overlay-saturate, 1));
+    -webkit-backdrop-filter: blur(var(--legal-overlay-blur, 0px)) saturate(var(--legal-overlay-saturate, 1));
+  }
+}
+
+@keyframes legal-modal-overlay-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(var(--legal-overlay-blur, 0px)) saturate(var(--legal-overlay-saturate, 1));
+    -webkit-backdrop-filter: blur(var(--legal-overlay-blur, 0px)) saturate(var(--legal-overlay-saturate, 1));
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px) saturate(1);
+    -webkit-backdrop-filter: blur(0px) saturate(1);
+  }
+}
+
+@keyframes legal-modal-shell-in {
+  from {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes legal-modal-shell-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.97);
+  }
+}
+
+@keyframes legal-modal-card-in {
+  from {
+    backdrop-filter: blur(0px) saturate(1);
+    -webkit-backdrop-filter: blur(0px) saturate(1);
+  }
+  to {
+    backdrop-filter: blur(var(--legal-card-blur, 0px)) saturate(var(--legal-card-saturate, 1));
+    -webkit-backdrop-filter: blur(var(--legal-card-blur, 0px)) saturate(var(--legal-card-saturate, 1));
+  }
+}
+
+@keyframes legal-modal-card-out {
+  from {
+    backdrop-filter: blur(var(--legal-card-blur, 0px)) saturate(var(--legal-card-saturate, 1));
+    -webkit-backdrop-filter: blur(var(--legal-card-blur, 0px)) saturate(var(--legal-card-saturate, 1));
+  }
+  to {
+    backdrop-filter: blur(0px) saturate(1);
+    -webkit-backdrop-filter: blur(0px) saturate(1);
+  }
 }
 
 /* Ensure modals/dialogs are always on top */

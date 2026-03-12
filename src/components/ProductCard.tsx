@@ -341,7 +341,7 @@ export function ProductCard({ product, onAddToCart, onEnsureVariants, proposalMo
   };
 
   const currentUnitPrice = calculatePrice();
-  const totalPrice = currentUnitPrice * quantity;
+  const totalPrice = roundCurrency(currentUnitPrice * quantity);
   const nextTier = bulkTiers.find((tier) => tier.minQuantity > quantity) || null;
 
   const visibleBulkTiers = useMemo(() => {

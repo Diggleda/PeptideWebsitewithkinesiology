@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
-import secrets
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from ..database import mysql_client
 from ..services import get_config
 
 TTL_HOURS = 72
+TOKEN_VERSION_HASHED = 2
 
 
 def _using_mysql() -> bool:
@@ -30,6 +36,212 @@ def _serialize_json(value: Any) -> Optional[str]:
     return json.dumps(value)
 
 
+def _parse_json(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+    return None
+
+
+def _normalize_optional_text(value: Any, *, max_len: int = 190) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    return text[:max_len]
+
+
+def _normalize_optional_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(float(value))
+    except Exception:
+        return None
+    return max(1, min(parsed, 10_000))
+
+
+def _normalize_allowed_products(value: Any) -> List[str]:
+    if value is None:
+        return []
+    items: List[str]
+    if isinstance(value, str):
+        normalized = value.replace("\n", ",")
+        items = [part.strip() for part in normalized.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        items = [str(part or "").strip() for part in value]
+    else:
+        items = [str(value).strip()]
+    seen: set[str] = set()
+    normalized_items: List[str] = []
+    for item in items:
+        if not item:
+            continue
+        token = item.upper()
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized_items.append(token)
+    return normalized_items
+
+
+def _hash_token(raw_token: str) -> str:
+    return hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest()
+
+
+def _encryption_secret() -> str:
+    config = get_config()
+    encryption_key = str((config.encryption or {}).get("key") or "").strip()
+    if encryption_key:
+        return encryption_key
+    return str(config.jwt_secret or "").strip()
+
+
+def _encrypt_text(value: Optional[str]) -> Optional[str]:
+    text = _normalize_optional_text(value, max_len=4096) if isinstance(value, str) else value
+    if not text:
+        return None
+    secret = _encryption_secret()
+    if not secret:
+        return text
+    key = hashlib.sha256(secret.encode("utf-8")).digest()
+    aes = AESGCM(key)
+    iv = os.urandom(12)
+    ciphertext = aes.encrypt(iv, text.encode("utf-8"), None)
+    payload = {
+        "v": 1,
+        "alg": "aes-256-gcm",
+        "iv": base64.b64encode(iv).decode("ascii"),
+        "payload": base64.b64encode(ciphertext).decode("ascii"),
+    }
+    return json.dumps(payload)
+
+
+def _decrypt_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return text
+    if not isinstance(payload, dict) or "iv" not in payload or "payload" not in payload:
+        return text
+    secret = _encryption_secret()
+    if not secret:
+        return None
+    key = hashlib.sha256(secret.encode("utf-8")).digest()
+    aes = AESGCM(key)
+    try:
+        iv = base64.b64decode(payload["iv"])
+        ciphertext = base64.b64decode(payload["payload"])
+        plaintext = aes.decrypt(iv, ciphertext, None)
+        return plaintext.decode("utf-8")
+    except Exception:
+        return None
+
+
+def _lookup_params(raw_token: str) -> Dict[str, Any]:
+    normalized = str(raw_token or "").strip()
+    return {
+        "raw_token": normalized,
+        "hashed_token": _hash_token(normalized),
+    }
+
+
+def _resolve_row_public_token(row: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    version = int(row.get("token_version") or 1)
+    token_value = str(row.get("token") or "").strip()
+    if version >= TOKEN_VERSION_HASHED:
+        decrypted = _decrypt_text(row.get("token_ciphertext"))
+        if decrypted:
+            return decrypted
+        return fallback
+    return token_value or fallback
+
+
+def _derive_status(row: Dict[str, Any]) -> str:
+    if row.get("revoked_at"):
+        return "revoked"
+    usage_limit = _normalize_optional_int(row.get("usage_limit"))
+    usage_count = int(row.get("usage_count") or 0)
+    if usage_limit is not None and usage_count >= usage_limit:
+        return "exhausted"
+    status = str(row.get("status") or "").strip().lower()
+    return status or "active"
+
+
+def _map_row(row: Dict[str, Any], *, fallback_token: Optional[str] = None) -> Dict[str, Any]:
+    subject_label = row.get("subject_label") or row.get("patient_id")
+    study_label = row.get("study_label")
+    patient_reference = row.get("patient_reference") or row.get("reference_label")
+    allowed_products = _parse_json(row.get("allowed_products_json")) or []
+    if not isinstance(allowed_products, list):
+        allowed_products = []
+    status = _derive_status(row)
+    usage_limit = _normalize_optional_int(row.get("usage_limit"))
+    usage_count = int(row.get("usage_count") or 0)
+    return {
+        "token": _resolve_row_public_token(row, fallback=fallback_token),
+        "tokenHint": row.get("token_hint") or None,
+        "doctorId": row.get("doctor_id"),
+        "patientId": subject_label,
+        "patientReference": patient_reference,
+        "referenceLabel": patient_reference or study_label,
+        "label": patient_reference or study_label,
+        "subjectLabel": subject_label,
+        "studyLabel": study_label,
+        "createdAt": _fmt_datetime(row.get("created_at")),
+        "expiresAt": _fmt_datetime(row.get("expires_at")),
+        "markupPercent": float(row.get("markup_percent") or 0.0),
+        "instructions": row.get("instructions") or None,
+        "allowedProducts": allowed_products,
+        "usageLimit": usage_limit,
+        "usageCount": usage_count,
+        "openCount": int(row.get("open_count") or 0),
+        "status": status,
+        "paymentMethod": row.get("payment_method") or None,
+        "paymentInstructions": row.get("payment_instructions") or None,
+        "receivedPayment": bool(int(row.get("received_payment") or 0)),
+        "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
+        "lastOpenedAt": _fmt_datetime(row.get("last_opened_at")),
+        "lastOrderAt": _fmt_datetime(row.get("last_order_at")),
+        "revokedAt": _fmt_datetime(row.get("revoked_at")),
+        "delegateCart": _parse_json(row.get("delegate_cart_json")),
+        "delegateShipping": _parse_json(row.get("delegate_shipping_json")),
+        "delegatePayment": _parse_json(row.get("delegate_payment_json")),
+        "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
+        "delegateOrderId": row.get("delegate_order_id"),
+        "delegateReviewStatus": row.get("delegate_review_status"),
+        "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
+        "delegateReviewOrderId": row.get("delegate_review_order_id"),
+    }
+
+
 def delete_expired() -> int:
     if not _using_mysql():
         return 0
@@ -49,9 +261,16 @@ def create_link(
     *,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
+    subject_label: Optional[str] = None,
+    study_label: Optional[str] = None,
+    patient_reference: Optional[str] = None,
     markup_percent: Optional[float] = None,
     payment_method: Optional[str] = None,
     payment_instructions: Optional[str] = None,
+    instructions: Optional[str] = None,
+    allowed_products: Optional[Any] = None,
+    expires_in_hours: Optional[int] = None,
+    usage_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     if not _using_mysql():
         raise RuntimeError("MySQL backend is required for patient links")
@@ -59,20 +278,16 @@ def create_link(
     if not doctor_id:
         raise ValueError("doctor_id is required")
 
-    reference_label_value = (
-        str(reference_label).strip() if isinstance(reference_label, str) and str(reference_label).strip() else None
-    )
-    patient_id_value = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
-    payment_method_value = str(payment_method).strip() if isinstance(payment_method, str) and str(payment_method).strip() else None
-    payment_instructions_value = (
-        str(payment_instructions).strip()
-        if isinstance(payment_instructions, str) and str(payment_instructions).strip()
-        else None
-    )
+    subject_label_value = _normalize_optional_text(subject_label or patient_id)
+    study_label_value = _normalize_optional_text(study_label)
+    patient_reference_value = _normalize_optional_text(patient_reference or reference_label)
+    payment_method_value = _normalize_optional_text(payment_method, max_len=32)
+    payment_instructions_value = _normalize_optional_text(payment_instructions, max_len=4000)
+    instructions_value = _normalize_optional_text(instructions, max_len=4000)
+    allowed_products_value = _normalize_allowed_products(allowed_products)
+    usage_limit_value = _normalize_optional_int(usage_limit)
     delete_expired()
 
-    # Default markup comes from the doctor record (non-volatile across sessions),
-    # but callers may override it per link.
     if markup_percent is None:
         markup_percent = 0.0
         try:
@@ -84,19 +299,31 @@ def create_link(
         except Exception:
             markup_percent = 0.0
 
-    # Keep token URL-safe; collisions are extremely unlikely, but retry once on PK conflict.
+    hours = _normalize_optional_int(expires_in_hours) or TTL_HOURS
+
     for attempt in range(2):
-        token = secrets.token_urlsafe(24)
+        raw_token = str(uuid.uuid4())
+        token_hash = _hash_token(raw_token)
         now = datetime.now(timezone.utc)
-        expires = now + timedelta(hours=TTL_HOURS)
+        expires = now + timedelta(hours=hours)
         params = {
-            "token": token,
+            "token": token_hash,
+            "token_version": TOKEN_VERSION_HASHED,
+            "token_ciphertext": _encrypt_text(raw_token),
+            "token_hint": raw_token.split("-")[0],
             "doctor_id": doctor_id,
-            "patient_id": patient_id_value,
-            "reference_label": reference_label_value,
+            "patient_id": subject_label_value,
+            "reference_label": patient_reference_value or study_label_value,
+            "subject_label": subject_label_value,
+            "study_label": study_label_value,
+            "patient_reference": patient_reference_value,
             "created_at": now.replace(tzinfo=None),
             "expires_at": expires.replace(tzinfo=None),
             "markup_percent": float(markup_percent or 0.0),
+            "instructions": instructions_value,
+            "allowed_products_json": _serialize_json(allowed_products_value),
+            "usage_limit": usage_limit_value,
+            "status": "active",
             "payment_method": payment_method_value,
             "payment_instructions": payment_instructions_value,
         }
@@ -104,28 +331,46 @@ def create_link(
             mysql_client.execute(
                 """
                 INSERT INTO patient_links (
-                    token, doctor_id, patient_id, reference_label, created_at, expires_at, markup_percent,
+                    token, token_version, token_ciphertext, token_hint,
+                    doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
+                    created_at, expires_at, markup_percent, instructions, allowed_products_json,
+                    usage_limit, usage_count, open_count, status,
                     payment_method, payment_instructions
                 )
                 VALUES (
-                    %(token)s, %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(created_at)s, %(expires_at)s, %(markup_percent)s,
+                    %(token)s, %(token_version)s, %(token_ciphertext)s, %(token_hint)s,
+                    %(doctor_id)s, %(patient_id)s, %(reference_label)s, %(subject_label)s, %(study_label)s, %(patient_reference)s,
+                    %(created_at)s, %(expires_at)s, %(markup_percent)s, %(instructions)s, %(allowed_products_json)s,
+                    %(usage_limit)s, 0, 0, %(status)s,
                     %(payment_method)s, %(payment_instructions)s
                 )
                 """,
                 params,
             )
             return {
-                "token": token,
-                "patientId": patient_id_value,
-                "referenceLabel": reference_label_value,
-                "label": reference_label_value,
+                "token": raw_token,
+                "tokenHint": params["token_hint"],
+                "patientId": subject_label_value,
+                "patientReference": patient_reference_value,
+                "referenceLabel": patient_reference_value or study_label_value,
+                "label": patient_reference_value or study_label_value,
+                "subjectLabel": subject_label_value,
+                "studyLabel": study_label_value,
                 "createdAt": now.isoformat(),
                 "expiresAt": expires.isoformat(),
                 "markupPercent": float(markup_percent or 0.0),
+                "instructions": instructions_value,
+                "allowedProducts": allowed_products_value,
+                "usageLimit": usage_limit_value,
+                "usageCount": 0,
+                "openCount": 0,
+                "status": "active",
                 "paymentMethod": payment_method_value,
                 "paymentInstructions": payment_instructions_value,
                 "receivedPayment": False,
                 "lastUsedAt": None,
+                "lastOpenedAt": None,
+                "lastOrderAt": None,
                 "revokedAt": None,
             }
         except Exception:
@@ -145,10 +390,14 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
     delete_expired()
     rows = mysql_client.fetch_all(
         """
-        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
+        SELECT token, token_version, token_ciphertext, token_hint,
+               doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
+               created_at, expires_at, markup_percent, instructions, allowed_products_json,
+               usage_limit, usage_count, open_count, status,
                payment_method, payment_instructions,
                received_payment,
-               last_used_at, revoked_at,
+               last_used_at, last_opened_at, last_order_at, revoked_at,
+               delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
@@ -158,112 +407,66 @@ def list_links(doctor_id: str) -> List[Dict[str, Any]]:
         """,
         {"doctor_id": doctor_id},
     )
-    results: List[Dict[str, Any]] = []
-    for row in rows or []:
-        results.append(
-            {
-                "token": row.get("token"),
-                "patientId": row.get("patient_id"),
-                "referenceLabel": row.get("reference_label"),
-                "label": row.get("reference_label"),
-                "createdAt": _fmt_datetime(row.get("created_at")),
-                "expiresAt": _fmt_datetime(row.get("expires_at")),
-                "markupPercent": float(row.get("markup_percent") or 0.0),
-                "paymentMethod": row.get("payment_method") or None,
-                "paymentInstructions": row.get("payment_instructions") or None,
-                "receivedPayment": bool(int(row.get("received_payment") or 0)),
-                "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
-                "revokedAt": _fmt_datetime(row.get("revoked_at")),
-                "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
-                "delegateOrderId": row.get("delegate_order_id"),
-                "delegateReviewStatus": row.get("delegate_review_status"),
-                "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
-                "delegateReviewOrderId": row.get("delegate_review_order_id"),
-            }
-        )
-    return results
+    return [_map_row(row) for row in (rows or [])]
 
 
-def find_by_token(token: str) -> Optional[Dict[str, Any]]:
+def find_by_token(token: str, *, include_inactive: bool = False) -> Optional[Dict[str, Any]]:
     if not _using_mysql():
         return None
-    token = str(token or "").strip()
-    if not token:
+    normalized = str(token or "").strip()
+    if not normalized:
         return None
     delete_expired()
+    params = _lookup_params(normalized)
     row = mysql_client.fetch_one(
         """
-        SELECT token, doctor_id, patient_id, reference_label, created_at, expires_at, last_used_at, revoked_at,
-               markup_percent,
+        SELECT token, token_version, token_ciphertext, token_hint,
+               doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
+               created_at, expires_at, last_used_at, last_opened_at, last_order_at, revoked_at,
+               markup_percent, instructions, allowed_products_json,
+               usage_limit, usage_count, open_count, status,
                payment_method, payment_instructions,
                received_payment,
                delegate_cart_json, delegate_shipping_json, delegate_payment_json,
                delegate_shared_at, delegate_order_id,
                delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
-        WHERE token = %(token)s
+        WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND expires_at > UTC_TIMESTAMP()
+        LIMIT 1
         """,
-        {"token": token},
+        params,
     )
     if not row:
         return None
-
-    def _parse_json(value: Any) -> Any:
-        if value is None:
-            return None
-        if isinstance(value, (dict, list)):
-            return value
-        if isinstance(value, (bytes, bytearray)):
-            try:
-                value = value.decode("utf-8")
-            except Exception:
-                return None
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return None
-            try:
-                return json.loads(text)
-            except Exception:
-                return None
+    mapped = _map_row(row, fallback_token=normalized)
+    if include_inactive:
+        return mapped
+    if str(mapped.get("revokedAt") or "").strip():
         return None
-
-    return {
-        "token": row.get("token"),
-        "doctorId": row.get("doctor_id"),
-        "patientId": row.get("patient_id"),
-        "referenceLabel": row.get("reference_label"),
-        "label": row.get("reference_label"),
-        "createdAt": _fmt_datetime(row.get("created_at")),
-        "expiresAt": _fmt_datetime(row.get("expires_at")),
-        "markupPercent": float(row.get("markup_percent") or 0.0),
-        "paymentMethod": row.get("payment_method") or None,
-        "paymentInstructions": row.get("payment_instructions") or None,
-        "receivedPayment": bool(int(row.get("received_payment") or 0)),
-        "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
-        "revokedAt": _fmt_datetime(row.get("revoked_at")),
-        "delegateCart": _parse_json(row.get("delegate_cart_json")),
-        "delegateShipping": _parse_json(row.get("delegate_shipping_json")),
-        "delegatePayment": _parse_json(row.get("delegate_payment_json")),
-        "delegateSharedAt": _fmt_datetime(row.get("delegate_shared_at")),
-        "delegateOrderId": row.get("delegate_order_id"),
-        "delegateReviewStatus": row.get("delegate_review_status"),
-        "delegateReviewedAt": _fmt_datetime(row.get("delegate_reviewed_at")),
-        "delegateReviewOrderId": row.get("delegate_review_order_id"),
-    }
+    if mapped.get("status") in ("revoked", "exhausted"):
+        return None
+    return mapped
 
 
 def touch_last_used(token: str) -> None:
     if not _using_mysql():
         return
-    token = str(token or "").strip()
-    if not token:
+    normalized = str(token or "").strip()
+    if not normalized:
         return
     try:
         mysql_client.execute(
-            "UPDATE patient_links SET last_used_at = UTC_TIMESTAMP() WHERE token = %(token)s",
-            {"token": token},
+            """
+            UPDATE patient_links
+            SET
+                last_used_at = UTC_TIMESTAMP(),
+                last_opened_at = UTC_TIMESTAMP(),
+                open_count = COALESCE(open_count, 0) + 1
+            WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
+              AND expires_at > UTC_TIMESTAMP()
+            """,
+            _lookup_params(normalized),
         )
     except Exception:
         return
@@ -275,62 +478,93 @@ def update_link(
     *,
     reference_label: Optional[str] = None,
     patient_id: Optional[str] = None,
+    subject_label: Optional[str] = None,
+    study_label: Optional[str] = None,
+    patient_reference: Optional[str] = None,
     revoke: Optional[bool] = None,
     markup_percent: Optional[float] = None,
     payment_method: Optional[str] = None,
     payment_instructions: Optional[str] = None,
+    instructions: Optional[str] = None,
+    allowed_products: Optional[Any] = None,
+    expires_in_hours: Optional[int] = None,
+    usage_limit: Optional[Any] = None,
     received_payment: Optional[object] = None,
 ) -> Optional[Dict[str, Any]]:
     if not _using_mysql():
         return None
     doctor_id = str(doctor_id or "").strip()
-    token = str(token or "").strip()
-    if not doctor_id or not token:
+    raw_token = str(token or "").strip()
+    if not doctor_id or not raw_token:
         return None
 
     updates: list[str] = []
-    params: Dict[str, Any] = {"doctor_id": doctor_id, "token": token}
+    params: Dict[str, Any] = {"doctor_id": doctor_id, **_lookup_params(raw_token)}
 
-    if reference_label is not None:
-        reference_label_value = (
-            str(reference_label).strip()
-            if isinstance(reference_label, str) and str(reference_label).strip()
-            else None
-        )
-        updates.append("reference_label = %(reference_label)s")
-        params["reference_label"] = reference_label_value
+    next_subject_label = subject_label if subject_label is not None else patient_id
+    next_patient_reference = patient_reference if patient_reference is not None else reference_label
 
-    if patient_id is not None:
-        patient_id_value = str(patient_id).strip() if isinstance(patient_id, str) and str(patient_id).strip() else None
-        updates.append("patient_id = %(patient_id)s")
-        params["patient_id"] = patient_id_value
+    if next_subject_label is not None:
+        subject_label_value = _normalize_optional_text(next_subject_label)
+        updates.extend(["subject_label = %(subject_label)s", "patient_id = %(patient_id)s"])
+        params["subject_label"] = subject_label_value
+        params["patient_id"] = subject_label_value
+
+    if study_label is not None:
+        study_label_value = _normalize_optional_text(study_label)
+        updates.append("study_label = %(study_label)s")
+        params["study_label"] = study_label_value
+
+    if next_patient_reference is not None:
+        patient_reference_value = _normalize_optional_text(next_patient_reference)
+        updates.extend(["patient_reference = %(patient_reference)s", "reference_label = %(reference_label)s"])
+        params["patient_reference"] = patient_reference_value
+        params["reference_label"] = patient_reference_value
 
     if revoke is True:
-        updates.append("revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP())")
+        updates.extend(["revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP())", "status = 'revoked'"])
     elif revoke is False:
-        updates.append("revoked_at = NULL")
+        updates.extend(
+            [
+                "revoked_at = NULL",
+                "status = CASE WHEN usage_limit IS NOT NULL AND COALESCE(usage_count, 0) >= usage_limit THEN 'exhausted' ELSE 'active' END",
+            ]
+        )
 
     if markup_percent is not None:
         updates.append("markup_percent = %(markup_percent)s")
         params["markup_percent"] = float(markup_percent or 0.0)
 
     if payment_method is not None:
-        payment_method_value = (
-            str(payment_method).strip()
-            if isinstance(payment_method, str) and str(payment_method).strip()
-            else None
-        )
+        params["payment_method"] = _normalize_optional_text(payment_method, max_len=32)
         updates.append("payment_method = %(payment_method)s")
-        params["payment_method"] = payment_method_value
 
     if payment_instructions is not None:
-        payment_instructions_value = (
-            str(payment_instructions).strip()
-            if isinstance(payment_instructions, str) and str(payment_instructions).strip()
-            else None
-        )
+        params["payment_instructions"] = _normalize_optional_text(payment_instructions, max_len=4000)
         updates.append("payment_instructions = %(payment_instructions)s")
-        params["payment_instructions"] = payment_instructions_value
+
+    if instructions is not None:
+        params["instructions"] = _normalize_optional_text(instructions, max_len=4000)
+        updates.append("instructions = %(instructions)s")
+
+    if allowed_products is not None:
+        params["allowed_products_json"] = _serialize_json(_normalize_allowed_products(allowed_products))
+        updates.append("allowed_products_json = %(allowed_products_json)s")
+
+    if expires_in_hours is not None:
+        hours = _normalize_optional_int(expires_in_hours) or TTL_HOURS
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
+        params["expires_at"] = expires_at.replace(tzinfo=None)
+        updates.append("expires_at = %(expires_at)s")
+
+    if usage_limit is not None:
+        params["usage_limit"] = _normalize_optional_int(usage_limit)
+        updates.append("usage_limit = %(usage_limit)s")
+        updates.append(
+            "status = CASE WHEN revoked_at IS NOT NULL THEN 'revoked' "
+            "WHEN %(usage_limit)s IS NOT NULL AND COALESCE(usage_count, 0) >= %(usage_limit)s THEN 'exhausted' "
+            "ELSE 'active' END"
+        )
 
     if received_payment is not None:
         value: Optional[int] = None
@@ -339,10 +573,10 @@ def update_link(
         elif isinstance(received_payment, (int, float)):
             value = 1 if int(received_payment) == 1 else 0
         elif isinstance(received_payment, str):
-            normalized = received_payment.strip().lower()
-            if normalized in ("1", "true", "yes", "y", "paid"):
+            normalized_value = received_payment.strip().lower()
+            if normalized_value in ("1", "true", "yes", "y", "paid"):
                 value = 1
-            elif normalized in ("0", "false", "no", "n", "unpaid"):
+            elif normalized_value in ("0", "false", "no", "n", "unpaid"):
                 value = 0
         if value is not None:
             updates.append("received_payment = %(received_payment)s")
@@ -354,7 +588,7 @@ def update_link(
             f"""
             UPDATE patient_links
             SET {", ".join(updates)}
-            WHERE token = %(token)s
+            WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
               AND expires_at > UTC_TIMESTAMP()
             """,
@@ -363,33 +597,25 @@ def update_link(
 
     row = mysql_client.fetch_one(
         """
-        SELECT token, patient_id, reference_label, created_at, expires_at, markup_percent,
-               payment_method, payment_instructions,
-               received_payment,
-               last_used_at, revoked_at
+        SELECT token, token_version, token_ciphertext, token_hint,
+               doctor_id, patient_id, reference_label, subject_label, study_label, patient_reference,
+               created_at, expires_at, markup_percent, instructions, allowed_products_json,
+               usage_limit, usage_count, open_count, status,
+               payment_method, payment_instructions, received_payment,
+               last_used_at, last_opened_at, last_order_at, revoked_at,
+               delegate_cart_json, delegate_shipping_json, delegate_payment_json,
+               delegate_shared_at, delegate_order_id,
+               delegate_review_status, delegate_reviewed_at, delegate_review_order_id
         FROM patient_links
-        WHERE token = %(token)s
+        WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
           AND doctor_id = %(doctor_id)s
           AND expires_at > UTC_TIMESTAMP()
         """,
-        {"token": token, "doctor_id": doctor_id},
+        params,
     )
     if not row:
         return None
-    return {
-        "token": row.get("token"),
-        "patientId": row.get("patient_id"),
-        "referenceLabel": row.get("reference_label"),
-        "label": row.get("reference_label"),
-        "createdAt": _fmt_datetime(row.get("created_at")),
-        "expiresAt": _fmt_datetime(row.get("expires_at")),
-        "markupPercent": float(row.get("markup_percent") or 0.0),
-        "paymentMethod": row.get("payment_method") or None,
-        "paymentInstructions": row.get("payment_instructions") or None,
-        "receivedPayment": bool(int(row.get("received_payment") or 0)),
-        "lastUsedAt": _fmt_datetime(row.get("last_used_at")),
-        "revokedAt": _fmt_datetime(row.get("revoked_at")),
-    }
+    return _map_row(row, fallback_token=raw_token)
 
 
 def get_doctor_markup_percent(doctor_id: str) -> float:
@@ -451,8 +677,8 @@ def store_delegate_payload(
 ) -> bool:
     if not _using_mysql():
         return False
-    token = str(token or "").strip()
-    if not token:
+    normalized = str(token or "").strip()
+    if not normalized:
         return False
     delete_expired()
     when = shared_at.astimezone(timezone.utc) if isinstance(shared_at, datetime) else datetime.now(timezone.utc)
@@ -469,12 +695,19 @@ def store_delegate_payload(
                 delegate_review_status = 'pending',
                 delegate_reviewed_at = NULL,
                 delegate_review_order_id = NULL,
-                last_used_at = UTC_TIMESTAMP()
-            WHERE token = %(token)s
+                last_used_at = UTC_TIMESTAMP(),
+                last_order_at = %(shared_at)s,
+                usage_count = COALESCE(usage_count, 0) + 1,
+                status = CASE
+                    WHEN revoked_at IS NOT NULL THEN 'revoked'
+                    WHEN usage_limit IS NOT NULL AND COALESCE(usage_count, 0) + 1 >= usage_limit THEN 'exhausted'
+                    ELSE 'active'
+                END
+            WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND expires_at > UTC_TIMESTAMP()
             """,
             {
-                "token": token,
+                **_lookup_params(normalized),
                 "cart": _serialize_json(cart),
                 "shipping": _serialize_json(shipping),
                 "payment": _serialize_json(payment),
@@ -498,8 +731,8 @@ def set_delegate_review_status(
     if not _using_mysql():
         return False
     doctor_id = str(doctor_id or "").strip()
-    token = str(token or "").strip()
-    if not doctor_id or not token:
+    normalized = str(token or "").strip()
+    if not doctor_id or not normalized:
         return False
     normalized_status = str(status or "").strip().lower()
     allowed = {"pending", "accepted", "modified", "rejected"}
@@ -515,12 +748,12 @@ def set_delegate_review_status(
                 delegate_review_status = %(status)s,
                 delegate_reviewed_at = %(reviewed_at)s,
                 delegate_review_order_id = %(order_id)s
-            WHERE token = %(token)s
+            WHERE (token = %(hashed_token)s OR token = %(raw_token)s)
               AND doctor_id = %(doctor_id)s
               AND expires_at > UTC_TIMESTAMP()
             """,
             {
-                "token": token,
+                **_lookup_params(normalized),
                 "doctor_id": doctor_id,
                 "status": normalized_status,
                 "reviewed_at": when.replace(tzinfo=None),
@@ -528,5 +761,49 @@ def set_delegate_review_status(
             },
         )
         return int(affected or 0) > 0
+    except Exception:
+        return False
+
+
+def insert_audit_event(
+    *,
+    token: Optional[str] = None,
+    token_hash: Optional[str] = None,
+    doctor_id: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    actor_role: Optional[str] = None,
+    event_type: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> bool:
+    if not _using_mysql():
+        return False
+    event_name = str(event_type or "").strip().lower()
+    if not event_name:
+        return False
+    resolved_token_hash = str(token_hash or "").strip()
+    if not resolved_token_hash:
+        raw_token = str(token or "").strip()
+        if not raw_token:
+            return False
+        resolved_token_hash = _hash_token(raw_token)
+    try:
+        mysql_client.execute(
+            """
+            INSERT INTO patient_link_audit_events (
+                patient_link_token, doctor_id, actor_user_id, actor_role, event_type, event_payload_json
+            ) VALUES (
+                %(patient_link_token)s, %(doctor_id)s, %(actor_user_id)s, %(actor_role)s, %(event_type)s, %(event_payload_json)s
+            )
+            """,
+            {
+                "patient_link_token": resolved_token_hash,
+                "doctor_id": _normalize_optional_text(doctor_id, max_len=32),
+                "actor_user_id": _normalize_optional_text(actor_user_id, max_len=32),
+                "actor_role": _normalize_optional_text(actor_role, max_len=64),
+                "event_type": event_name[:64],
+                "event_payload_json": _serialize_json(payload or {}),
+            },
+        )
+        return True
     except Exception:
         return False

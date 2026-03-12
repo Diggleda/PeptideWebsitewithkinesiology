@@ -231,16 +231,30 @@ CREATE_TABLE_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS patient_links (
         token VARCHAR(128) PRIMARY KEY,
+        token_version SMALLINT NOT NULL DEFAULT 1,
+        token_ciphertext LONGTEXT NULL,
+        token_hint VARCHAR(32) NULL,
         doctor_id VARCHAR(32) NOT NULL,
         patient_id VARCHAR(128) NULL,
         reference_label VARCHAR(190) NULL,
+        subject_label VARCHAR(190) NULL,
+        study_label VARCHAR(190) NULL,
+        patient_reference VARCHAR(190) NULL,
         created_at DATETIME NOT NULL,
         expires_at DATETIME NOT NULL,
         markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+        instructions LONGTEXT NULL,
+        allowed_products_json JSON NULL,
+        usage_limit INT NULL,
+        usage_count INT NOT NULL DEFAULT 0,
+        open_count INT NOT NULL DEFAULT 0,
+        status VARCHAR(32) NOT NULL DEFAULT 'active',
         payment_method VARCHAR(32) NULL,
         payment_instructions LONGTEXT NULL,
         received_payment TINYINT(1) NOT NULL DEFAULT 0,
         last_used_at DATETIME NULL,
+        last_opened_at DATETIME NULL,
+        last_order_at DATETIME NULL,
         revoked_at DATETIME NULL,
         delegate_cart_json LONGTEXT NULL,
         delegate_shipping_json LONGTEXT NULL,
@@ -251,7 +265,24 @@ CREATE_TABLE_STATEMENTS = [
         delegate_reviewed_at DATETIME NULL,
         delegate_review_order_id VARCHAR(32) NULL,
         KEY idx_patient_links_doctor (doctor_id),
-        KEY idx_patient_links_expires (expires_at)
+        KEY idx_patient_links_expires (expires_at),
+        KEY idx_patient_links_status (status)
+    ) CHARACTER SET utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS patient_link_audit_events (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        patient_link_token VARCHAR(128) NOT NULL,
+        doctor_id VARCHAR(32) NULL,
+        actor_user_id VARCHAR(32) NULL,
+        actor_role VARCHAR(64) NULL,
+        event_type VARCHAR(64) NOT NULL,
+        event_payload_json LONGTEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_patient_link_audit_token (patient_link_token),
+        KEY idx_patient_link_audit_doctor (doctor_id),
+        KEY idx_patient_link_audit_event (event_type),
+        KEY idx_patient_link_audit_created (created_at)
     ) CHARACTER SET utf8mb4
     """,
     """
@@ -334,6 +365,21 @@ def ensure_schema() -> None:
                   AND index_name = %(index)s
                 """,
                 {"table": table, "index": index},
+            )
+            return int((row or {}).get("cnt") or 0) > 0
+        except Exception:
+            return False
+
+    def _table_exists(table: str) -> bool:
+        try:
+            row = mysql_client.fetch_one(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = %(table)s
+                """,
+                {"table": table},
             )
             return int((row or {}).get("cnt") or 0) > 0
         except Exception:
@@ -568,10 +614,22 @@ def ensure_schema() -> None:
 
     # Ensure patient_links snapshot has markup column (best-effort; table may not exist yet on older installs).
     try:
+        if not _column_exists("patient_links", "token_version"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN token_version SMALLINT NOT NULL DEFAULT 1")
+        if not _column_exists("patient_links", "token_ciphertext"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN token_ciphertext LONGTEXT NULL")
+        if not _column_exists("patient_links", "token_hint"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN token_hint VARCHAR(32) NULL")
         if not _column_exists("patient_links", "patient_id"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_id VARCHAR(128) NULL")
         if not _column_exists("patient_links", "reference_label"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN reference_label VARCHAR(190) NULL")
+        if not _column_exists("patient_links", "subject_label"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN subject_label VARCHAR(190) NULL")
+        if not _column_exists("patient_links", "study_label"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN study_label VARCHAR(190) NULL")
+        if not _column_exists("patient_links", "patient_reference"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN patient_reference VARCHAR(190) NULL")
         if not _column_exists("patient_links", "received_payment"):
             mysql_client.execute(
                 "ALTER TABLE patient_links ADD COLUMN received_payment TINYINT(1) NOT NULL DEFAULT 0"
@@ -584,6 +642,33 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links DROP COLUMN label")
         if not _column_exists("patient_links", "markup_percent"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0")
+        if not _column_exists("patient_links", "instructions"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN instructions LONGTEXT NULL")
+        if not _column_exists("patient_links", "allowed_products_json"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN allowed_products_json JSON NULL")
+        if not _column_exists("patient_links", "usage_limit"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN usage_limit INT NULL")
+        if not _column_exists("patient_links", "usage_count"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN usage_count INT NOT NULL DEFAULT 0")
+        if not _column_exists("patient_links", "open_count"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN open_count INT NOT NULL DEFAULT 0")
+        if not _column_exists("patient_links", "status"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'")
+        if not _column_exists("patient_links", "last_opened_at"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN last_opened_at DATETIME NULL")
+        if not _column_exists("patient_links", "last_order_at"):
+            mysql_client.execute("ALTER TABLE patient_links ADD COLUMN last_order_at DATETIME NULL")
+        try:
+            mysql_client.execute(
+                """
+                UPDATE patient_links
+                SET
+                    subject_label = COALESCE(subject_label, patient_id),
+                    patient_reference = COALESCE(patient_reference, reference_label)
+                """
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -595,5 +680,34 @@ def ensure_schema() -> None:
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_reviewed_at DATETIME NULL")
         if not _column_exists("patient_links", "delegate_review_order_id"):
             mysql_client.execute("ALTER TABLE patient_links ADD COLUMN delegate_review_order_id VARCHAR(32) NULL")
+    except Exception:
+        pass
+
+    try:
+        if not _index_exists("patient_links", "idx_patient_links_status"):
+            mysql_client.execute("ALTER TABLE patient_links ADD INDEX idx_patient_links_status (status)")
+    except Exception:
+        pass
+
+    try:
+        if not _table_exists("patient_link_audit_events"):
+            mysql_client.execute(
+                """
+                CREATE TABLE IF NOT EXISTS patient_link_audit_events (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    patient_link_token VARCHAR(128) NOT NULL,
+                    doctor_id VARCHAR(32) NULL,
+                    actor_user_id VARCHAR(32) NULL,
+                    actor_role VARCHAR(64) NULL,
+                    event_type VARCHAR(64) NOT NULL,
+                    event_payload_json LONGTEXT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_patient_link_audit_token (patient_link_token),
+                    KEY idx_patient_link_audit_doctor (doctor_id),
+                    KEY idx_patient_link_audit_event (event_type),
+                    KEY idx_patient_link_audit_created (created_at)
+                ) CHARACTER SET utf8mb4
+                """
+            )
     except Exception:
         pass

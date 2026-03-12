@@ -15,6 +15,10 @@ import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
 import { formatTimestampedNotesForDisplay } from '../lib/timestampedNotes';
 import { parseBackendTimestamp, parseBackendTimestampAsPacificWallTime } from '../lib/timezoneDate';
+import {
+  buildResearchSupplyLinkUrl,
+  normalizeAllowedProductsInput,
+} from '../lib/researchSupplyLinks';
 
 const normalizeRole = (role?: string | null) => (role || '').toLowerCase();
 const isAdmin = (role?: string | null) => normalizeRole(role) === 'admin';
@@ -64,10 +68,17 @@ const createNodeDummyPatientLink = (zelleContact?: string | null, doctorName?: s
   const expiresAt = new Date(Date.now() + 71 * 60 * 60 * 1000).toISOString();
   return {
     token: 'node-ui-dummy-link',
-    referenceLabel: 'UI Dummy Patient',
-    patientId: 'NODE-UI-001',
+    referenceLabel: 'Subject A104',
+    patientReference: 'RS-UI-001',
+    patientId: 'Subject A104',
+    subjectLabel: 'Subject A104',
+    studyLabel: 'GH response pilot',
     createdAt,
     expiresAt,
+    allowedProducts: ['BPC-157-5MG', 'TB-500-10MG'],
+    usageLimit: 5,
+    usageCount: 0,
+    status: 'active',
     markupPercent: 15,
     paymentMethod: 'zelle',
     paymentInstructions: buildPatientLinkDefaultInstructions('zelle', zelleContact, doctorName),
@@ -85,8 +96,11 @@ const createNodeDummyPatientLinks = (zelleContact?: string | null, doctorName?: 
     {
       ...base,
       token: 'node-ui-dummy-link-2',
-      referenceLabel: 'UI Dummy Proposal',
-      patientId: 'NODE-UI-002',
+      referenceLabel: 'Subject B205',
+      patientReference: 'RS-UI-002',
+      patientId: 'Subject B205',
+      subjectLabel: 'Subject B205',
+      studyLabel: 'GH response pilot',
       createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString(),
       lastUsedAt: proposalCreatedAt,
       delegateSharedAt: proposalCreatedAt,
@@ -1099,6 +1113,7 @@ export function Header({
   const [loginError, setLoginError] = useState('');
   const [signupError, setSignupError] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
   const [deleteAccountHoldCount, setDeleteAccountHoldCount] = useState(0);
   const [deleteAccountDeleting, setDeleteAccountDeleting] = useState(false);
@@ -1116,8 +1131,14 @@ export function Header({
   const patientLinkRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const patientLinkHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [patientLinkMarkupDraft, setPatientLinkMarkupDraft] = useState('0');
-  const [patientLinkLabelDraft, setPatientLinkLabelDraft] = useState('');
-  const [patientLinkPatientIdDraft, setPatientLinkPatientIdDraft] = useState('');
+  const [patientLinkSubjectLabelDraft, setPatientLinkSubjectLabelDraft] = useState('');
+  const [patientLinkStudyLabelDraft, setPatientLinkStudyLabelDraft] = useState('');
+  const [patientLinkReferenceDraft, setPatientLinkReferenceDraft] = useState('');
+  const [patientLinkAllowedProductsDraft, setPatientLinkAllowedProductsDraft] = useState('');
+  const [patientLinkExpiryHoursDraft, setPatientLinkExpiryHoursDraft] = useState('72');
+  const [patientLinkUsageLimitDraft, setPatientLinkUsageLimitDraft] = useState('');
+  const [patientLinkResearchNoteDraft, setPatientLinkResearchNoteDraft] = useState('');
+  const [patientLinkTermsAccepted, setPatientLinkTermsAccepted] = useState(false);
   const [patientLinkPaymentMethodDraft, setPatientLinkPaymentMethodDraft] = useState<PatientLinkPaymentMethod>('zelle');
   const [patientLinkInstructionsDraft, setPatientLinkInstructionsDraft] = useState<string>('');
   const [patientLinksCreating, setPatientLinksCreating] = useState(false);
@@ -1183,6 +1204,9 @@ export function Header({
   }>({ active: 0, queue: [] });
   const researchPanelRef = useRef<HTMLDivElement | null>(null);
   const accountModalShellRef = useRef<HTMLDivElement | null>(null);
+  const accountModalScrollRef = useRef<HTMLDivElement | null>(null);
+  const patientLinksScrollTopRef = useRef(0);
+  const restorePatientLinksScrollRef = useRef(false);
   const researchOverlayTimeoutRef = useRef<number | null>(null);
   const isResearchFullscreen = accountTab === 'research' && researchDashboardExpanded;
   const modalFullscreenHeight =
@@ -2641,6 +2665,42 @@ export function Header({
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleLegalState = (event: Event) => {
+      const custom = event as CustomEvent<{ open?: boolean }>;
+      setLegalModalOpen(Boolean(custom.detail?.open));
+    };
+    window.addEventListener('peppro:legal-state', handleLegalState);
+    return () => {
+      window.removeEventListener('peppro:legal-state', handleLegalState);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!welcomeOpen) {
+      patientLinksScrollTopRef.current = 0;
+      restorePatientLinksScrollRef.current = false;
+      return;
+    }
+    if (legalModalOpen) {
+      if (accountTab === 'patient_links' && accountModalScrollRef.current) {
+        patientLinksScrollTopRef.current = accountModalScrollRef.current.scrollTop;
+        restorePatientLinksScrollRef.current = true;
+      }
+      return;
+    }
+    if (!restorePatientLinksScrollRef.current || accountTab !== 'patient_links') {
+      return;
+    }
+    const scrollContainer = accountModalScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+    scrollContainer.scrollTop = patientLinksScrollTopRef.current;
+    restorePatientLinksScrollRef.current = false;
+  }, [accountTab, legalModalOpen, welcomeOpen]);
+
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSearch(searchQuery, { submitted: true });
@@ -3380,7 +3440,7 @@ export function Header({
       { id: 'orders', label: 'Orders', Icon: Package },
     ];
     if (showPatientLinksTab) {
-      tabs.push({ id: 'patient_links', label: 'Patient Links', Icon: Link2 });
+      tabs.push({ id: 'patient_links', label: 'Delegate Links', Icon: Link2 });
     }
     tabs.push({ id: 'research', label: 'Research', Icon: Users });
     return tabs;
@@ -3389,7 +3449,7 @@ export function Header({
   const accountTabDescriptionById: Record<AccountTabId, string> = {
     details: 'Update your profile, shipping info, and settings.',
     orders: 'Track your orders, reorders, and invoices.',
-    patient_links: 'Manage your patient sessions and proposals.',
+    patient_links: 'Manage delegate links, product allowlists, and delegate proposals.',
     research: 'Where you will soon find research tools and resources. We are excited to bring these to you!',
   };
 
@@ -3430,6 +3490,13 @@ export function Header({
       const links = Array.isArray((response as any)?.links) ? (response as any).links : [];
       const config = (response as any)?.config || {};
       const markupPercent = normalizeMarkupPercent((config as any).markupPercent ?? (config as any).markup_percent ?? 0);
+      const defaultExpiryHoursRaw =
+        typeof (config as any).defaultExpiryHours === 'number'
+          ? (config as any).defaultExpiryHours
+          : Number((config as any).defaultExpiryHours ?? (config as any).default_expiry_hours ?? 72);
+      const defaultExpiryHours = Number.isFinite(defaultExpiryHoursRaw) && defaultExpiryHoursRaw > 0
+        ? Math.round(defaultExpiryHoursRaw)
+        : 72;
       const sanitizedLinks = links.filter((link: any) => {
         const token = typeof (link as any)?.token === 'string' ? (link as any).token.trim() : '';
         return !token.startsWith('node-ui-dummy-link');
@@ -3443,24 +3510,27 @@ export function Header({
         setPatientLinks(sanitizedLinks);
       }
       setPatientLinkMarkupDraft(String(markupPercent));
+      setPatientLinkExpiryHoursDraft(String(defaultExpiryHours));
     } catch (error: any) {
       const status = typeof error?.status === 'number' ? error.status : null;
       const delegationRouteMissing = status === 404 || status === 405;
       if (delegationRouteMissing && isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
+        setPatientLinkExpiryHoursDraft('72');
         setPatientLinksError(null);
         return;
       }
       if (isNodePatientLinkDummyMode) {
         setPatientLinks(createNodeDummyPatientLinks(localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null));
         setPatientLinkMarkupDraft('15');
+        setPatientLinkExpiryHoursDraft('72');
         setPatientLinksError(null);
         return;
       }
       const message = typeof error?.message === 'string' && error.message.trim()
         ? error.message
-        : 'Unable to load patient links right now.';
+        : 'Unable to load delegate links right now.';
       setPatientLinksError(message);
       setPatientLinks([]);
     } finally {
@@ -3653,33 +3723,52 @@ export function Header({
     if (!showPatientLinksTab || patientLinksCreating) {
       return;
     }
+    if (!patientLinkTermsAccepted) {
+      toast.error('Accept the terms to continue.');
+      return;
+    }
     setPatientLinksCreating(true);
     try {
       const api = await import('../services/api');
-      const referenceLabel = patientLinkLabelDraft.trim();
-      const patientId = patientLinkPatientIdDraft.trim();
+      const subjectLabel = patientLinkSubjectLabelDraft.trim();
+      const studyLabel = patientLinkStudyLabelDraft.trim();
+      const patientReference = patientLinkReferenceDraft.trim();
       const markupPercent = normalizeMarkupPercent(patientLinkMarkupDraft);
+      const expiresInHours = Number(patientLinkExpiryHoursDraft);
+      const usageLimit = patientLinkUsageLimitDraft.trim() ? Number(patientLinkUsageLimitDraft) : null;
       const paymentMethod = patientLinkPaymentMethodDraft === 'zelle' ? 'zelle' : '';
       const paymentInstructionsDraft = patientLinkInstructionsDraft.trim();
       const paymentInstructions = paymentMethod === 'zelle'
         ? (paymentInstructionsDraft || buildPatientLinkDefaultInstructions('zelle', localUser?.zelleContact ?? null, localUser?.name ?? user?.name ?? null))
         : '';
       await api.delegationAPI.createLink({
-        referenceLabel: referenceLabel ? referenceLabel : null,
-        patientId: patientId ? patientId : null,
+        patientId: subjectLabel ? subjectLabel : null,
+        subjectLabel: subjectLabel ? subjectLabel : null,
+        studyLabel: studyLabel ? studyLabel : null,
+        patientReference: patientReference ? patientReference : null,
+        referenceLabel: patientReference ? patientReference : studyLabel ? studyLabel : null,
         markupPercent,
+        instructions: patientLinkResearchNoteDraft.trim() ? patientLinkResearchNoteDraft.trim() : null,
+        allowedProducts: normalizeAllowedProductsInput(patientLinkAllowedProductsDraft),
+        expiresInHours: Number.isFinite(expiresInHours) && expiresInHours > 0 ? expiresInHours : null,
+        usageLimit: usageLimit && Number.isFinite(usageLimit) && usageLimit > 0 ? usageLimit : null,
         paymentMethod,
         paymentInstructions,
       });
-      setPatientLinkPatientIdDraft('');
-      setPatientLinkLabelDraft('');
-      toast.success('Patient link created.');
+      setPatientLinkSubjectLabelDraft('');
+      setPatientLinkStudyLabelDraft('');
+      setPatientLinkReferenceDraft('');
+      setPatientLinkAllowedProductsDraft('');
+      setPatientLinkUsageLimitDraft('');
+      setPatientLinkResearchNoteDraft('');
+      setPatientLinkTermsAccepted(false);
+      toast.success('Delegate link created.');
       await loadPatientLinks();
     } catch (error: any) {
       toast.error(
         typeof error?.message === 'string' && error.message.trim()
           ? error.message
-          : 'Unable to create a patient link right now.',
+          : 'Unable to create a delegate link right now.',
       );
     } finally {
       setPatientLinksCreating(false);
@@ -3687,11 +3776,17 @@ export function Header({
   }, [
     loadPatientLinks,
     normalizeMarkupPercent,
-    patientLinkLabelDraft,
+    patientLinkAllowedProductsDraft,
+    patientLinkExpiryHoursDraft,
     patientLinkMarkupDraft,
-    patientLinkPatientIdDraft,
+    patientLinkReferenceDraft,
+    patientLinkResearchNoteDraft,
+    patientLinkStudyLabelDraft,
+    patientLinkSubjectLabelDraft,
+    patientLinkTermsAccepted,
     patientLinkInstructionsDraft,
     patientLinkPaymentMethodDraft,
+    patientLinkUsageLimitDraft,
     patientLinksCreating,
     localUser?.name,
     localUser?.zelleContact,
@@ -3703,7 +3798,16 @@ export function Header({
     if (typeof window === 'undefined') return '';
     const normalized = typeof token === 'string' ? token.trim() : '';
     if (!normalized) return '';
-    return `${window.location.origin}/?delegate=${encodeURIComponent(normalized)}`;
+    return buildResearchSupplyLinkUrl(window.location.origin, normalized, localUser?.name ?? user?.name ?? null);
+  }, [localUser?.name, user?.name]);
+
+  const openTermsOfService = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('peppro:open-legal', {
+        detail: { key: 'terms', preserveDialogs: true },
+      }),
+    );
   }, []);
 
   const handleCopyPatientLink = useCallback(async (token: string) => {
@@ -4135,7 +4239,7 @@ export function Header({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="squircle-sm"
+                    className="header-home-button squircle-sm bg-white text-slate-900"
                     disabled={avatarUploading}
                     onClick={() => avatarInputRef.current?.click()}
                   >
@@ -4614,7 +4718,7 @@ export function Header({
       && target.orderIds.length === 0
       && target.referenceLabels.length === 0
     ) {
-      toast.message('No associated patient link was found for this order.');
+      toast.message('No associated delegate link was found for this order.');
       return;
     }
     setAccountTab('patient_links');
@@ -4653,7 +4757,7 @@ export function Header({
         return;
       }
       setPendingPatientLinkScrollTarget(null);
-      toast.message('Associated patient link was not found in your current links.');
+      toast.message('Associated delegate link was not found in your current links.');
       return;
     }
 
@@ -4912,7 +5016,7 @@ export function Header({
                             type="button"
                             className="sales-account-indicator-badge squircle-sm"
                             onClick={() => handleDelegateLabelNavigateToPatientLink(order as any)}
-                            title="Open associated patient link"
+                            title="Open associated delegate link"
                           >
                             {delegateOrderLabel}
                           </button>
@@ -5781,9 +5885,10 @@ export function Header({
             />
 	            <Button
 	              type="button"
+                variant="outline"
 	              onClick={() => delegateLogoInputRef.current?.click()}
 	              disabled={delegateLogoUploading}
-	              className="h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+	              className="header-home-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm bg-white px-7 text-slate-900"
 	            >
               {delegateLogoUploading ? 'Uploading…' : 'Upload logo'}
             </Button>
@@ -5792,7 +5897,7 @@ export function Header({
 			              variant="outline"
 			              onClick={() => void handleRemoveDelegateLogo()}
 			              disabled={delegateLogoUploading}
-			              className="patient-link-payment-toggle-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:border-[rgba(95,179,249,0.45)] hover:text-[rgb(95,179,249)]"
+			              className="header-home-button patient-link-payment-toggle-button h-11 w-full sm:w-auto sm:shrink sm:min-w-0 max-w-full squircle-sm gap-2 bg-white text-slate-900"
 			            >
 			              Remove
 			            </Button>
@@ -5816,58 +5921,85 @@ export function Header({
             id="doctor-zelle-contact"
             value={zelleContactDraft}
             onChange={(event) => setZelleContactDraft(event.target.value)}
-            placeholder="e.g., billing@clinic.com or +1 (555) 555-5555"
+            placeholder="e.g., billing@clinic.com or +1 (444) 444-4444"
             className="patient-link-form__zelle-contact-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
           />
           <Button
             type="button"
             onClick={() => void handleSaveZelleContact()}
             disabled={!localUser || zelleContactSaving}
-            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
+            className="header-home-button patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm bg-white text-slate-900 px-7"
           >
             {zelleContactSaving ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </div>
       <div className="glass-card squircle-lg border border-[var(--brand-glass-border-1)] bg-white/80 p-6 sm:p-7">
-        <h3 className="text-lg font-semibold text-slate-900">Generate a patient link</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Create a delegate link</h3>
         <p className="mb-3 text-sm leading-relaxed text-slate-700">
-          Links are temporary and expire automatically after 72 hours. You can also revoke any link at any time.
+          Configure a session for your patient, and share the link with them once configured. This system is intended to help you and other physicians fascilate independent peptide research. Please be consienscious when setting compensation and allowed products, as patients will see the disclosures you set here when they access the link. You can demo your own links before sharing by clicking the "View" button.
         </p>
 	        <div className="mt-5 patient-link-form patient-link-form--generate">
 	          <Label
-	            htmlFor="patient-link-patient-id"
+	            htmlFor="patient-link-subject-label"
 	            className="patient-link-form__label patient-link-form__label--patient-id text-sm font-semibold text-slate-700"
 	          >
-	            Patient ID <span className="label-paren">(from your proprietary system)</span>
+	            Subject label <span className="label-paren">(optional, non-PHI)</span>
 	          </Label>
 	          <Input
-	            id="patient-link-patient-id"
-	            value={patientLinkPatientIdDraft}
-	            onChange={(event) => setPatientLinkPatientIdDraft(event.target.value)}
-	            placeholder="e.g., 12345"
+	            id="patient-link-subject-label"
+	            value={patientLinkSubjectLabelDraft}
+	            onChange={(event) => setPatientLinkSubjectLabelDraft(event.target.value)}
+	            placeholder="e.g., Subject 042"
             className="patient-link-form__patient-id-input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
 	          <Label
-	            htmlFor="patient-link-label"
+	            htmlFor="patient-link-study-label"
 	            className="patient-link-form__label patient-link-form__label--link text-sm font-semibold text-slate-700"
 	          >
-	            Referrence label for your link <span className="label-paren">(optional)</span>
+	            Study label <span className="label-paren">(optional, non-PHI)</span>
 	          </Label>
 	          <Input
-	            id="patient-link-label"
-	            value={patientLinkLabelDraft}
-	            onChange={(event) => setPatientLinkLabelDraft(event.target.value)}
-	            placeholder="e.g., John Doe"
+	            id="patient-link-study-label"
+	            value={patientLinkStudyLabelDraft}
+	            onChange={(event) => setPatientLinkStudyLabelDraft(event.target.value)}
+	            placeholder="e.g., GH response pilot"
             className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Label
+	            htmlFor="patient-link-reference"
+	            className="patient-link-form__label text-sm font-semibold text-slate-700"
+	          >
+	            Internal reference <span className="label-paren">(optional order or subject code)</span>
+	          </Label>
+	          <Input
+	            id="patient-link-reference"
+	            value={patientLinkReferenceDraft}
+	            onChange={(event) => setPatientLinkReferenceDraft(event.target.value)}
+	            placeholder="e.g., A104"
+            className="patient-link-form__input h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Label
+	            htmlFor="patient-link-allowed-products"
+	            className="patient-link-form__label text-sm font-semibold text-slate-700"
+	          >
+	            Allowed SKUs <span className="label-paren">(comma-separated whitelist)</span>
+	          </Label>
+	          <Textarea
+	            id="patient-link-allowed-products"
+	            value={patientLinkAllowedProductsDraft}
+	            onChange={(event) => setPatientLinkAllowedProductsDraft(event.target.value)}
+	            placeholder="e.g., BPC-157-5MG, TB-500-10MG"
+	            rows={2}
+	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
 	          <Label
 	            htmlFor="patient-link-markup"
 	            className="patient-link-form__label patient-link-form__label--markup text-sm font-semibold text-slate-700"
 	          >
-	            <span className="block">Patient Catelogue Markup %</span>
+	            <span className="block">Delegate markup %</span>
 	            <span className="label-paren mt-0.5 block">
-	              (The percent difference between what your patient pays you and what you pay us)
+	              (Cap this conservatively. Patients must see compensation disclosure.)
 	            </span>
 	          </Label>
 	          <div className="patient-link-form__markup relative w-full mb-0">
@@ -5882,6 +6014,36 @@ export function Header({
 	              style={{ direction: 'ltr' }}
 	            />
 	          </div>
+	          <Label
+	            htmlFor="patient-link-expiry-hours"
+	            className="patient-link-form__label text-sm font-semibold text-slate-700"
+	          >
+	            Expiration hours
+	          </Label>
+	          <Input
+	            id="patient-link-expiry-hours"
+	            type="text"
+	            inputMode="numeric"
+	            value={patientLinkExpiryHoursDraft}
+	            onChange={(event) => setPatientLinkExpiryHoursDraft(event.target.value.replace(/[^\d]/g, ''))}
+	            placeholder="72"
+            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Label
+	            htmlFor="patient-link-usage-limit"
+	            className="patient-link-form__label text-sm font-semibold text-slate-700"
+	          >
+	            Usage limit <span className="label-paren">(optional)</span>
+	          </Label>
+	          <Input
+	            id="patient-link-usage-limit"
+	            type="text"
+	            inputMode="numeric"
+	            value={patientLinkUsageLimitDraft}
+	            onChange={(event) => setPatientLinkUsageLimitDraft(event.target.value.replace(/[^\d]/g, ''))}
+	            placeholder="e.g., 5"
+            className="h-11 w-full mb-0 squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
 	          <Label
 	            htmlFor="patient-link-payment-method"
 	            className="patient-link-form__label patient-link-form__label--payment text-sm font-semibold text-slate-700"
@@ -5917,10 +6079,24 @@ export function Header({
 	            ))}
 	          </select>
 	          <Label
+	            htmlFor="patient-link-research-note"
+	            className="patient-link-form__label text-sm font-semibold text-slate-700"
+	          >
+	            Research note <span className="label-paren">(optional, non-clinical)</span>
+	          </Label>
+	          <Textarea
+	            id="patient-link-research-note"
+	            value={patientLinkResearchNoteDraft}
+	            onChange={(event) => setPatientLinkResearchNoteDraft(event.target.value)}
+	            placeholder="e.g., Restricted to approved protocol materials only."
+	            rows={2}
+	            className="min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
+	          />
+	          <Label
 	            htmlFor="patient-link-instructions"
 	            className="patient-link-form__label patient-link-form__label--instructions text-sm font-semibold text-slate-700"
 	          >
-	            Instructions <span className="label-paren">(shown to the delegate)</span>
+	            Payment instructions <span className="label-paren">(shown to the delegate)</span>
 	          </Label>
 	          <Textarea
 	            id="patient-link-instructions"
@@ -5930,14 +6106,40 @@ export function Header({
 	            rows={2}
 	            className="patient-link-form__instructions min-h-[56px] squircle-sm glass focus-visible:border-[rgb(95,179,249)] focus-visible:ring-[rgba(95,179,249,0.25)]"
 	          />
-	          <Button
-	            type="button"
-	            onClick={() => void handleCreatePatientLink()}
-	            disabled={!showPatientLinksTab || patientLinksCreating}
-	            className="patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm glass-brand btn-hover-lighter px-7 text-white shadow-lg shadow-[rgba(95,179,249,0.22)]"
-	          >
-	            {patientLinksCreating ? 'Creating…' : 'Create link'}
-	          </Button>
+	          <div className="flex items-center gap-3 pt-2 pb-3">
+	            <input
+	              type="checkbox"
+	              id="delegate-link-terms"
+	              className="brand-checkbox"
+	              checked={patientLinkTermsAccepted}
+	              onChange={(event) => setPatientLinkTermsAccepted(event.target.checked)}
+	            />
+	            <label htmlFor="delegate-link-terms" className="text-sm text-slate-700 leading-snug flex-1">
+	              I certify that I am {localUser?.name || user?.name || 'the licensed physician for this account'}, and I agree to PepPro&apos;s{' '}
+	              <button
+	                type="button"
+	                className="legal-inline-link"
+	                onClick={(event) => {
+	                  event.preventDefault();
+	                  event.stopPropagation();
+	                  openTermsOfService();
+	                }}
+	              >
+	                Terms of Service
+	              </button>
+	              .
+	            </label>
+	          </div>
+	          <div className="pb-3">
+	            <Button
+	              type="button"
+	              onClick={() => void handleCreatePatientLink()}
+	              disabled={!showPatientLinksTab || patientLinksCreating}
+	              className="header-home-button patient-link-form__button h-11 w-full mb-3 sm:mb-0 sm:w-full squircle-sm bg-white text-slate-900 px-7"
+	            >
+	              {patientLinksCreating ? 'Creating…' : 'Create delegate link'}
+	            </Button>
+	          </div>
 	        </div>
 	      </div>
 
@@ -5958,7 +6160,7 @@ export function Header({
           </Button>
         </div>
 	        <p className="text-sm leading-relaxed text-slate-700">
-	          Copy the link to share your configured session with your patient. Let your patient work as a delegate to build a proposal for your review. After 72 hours, the link will expire. Use “Revoke link” to disable it prematurely.
+	          Copy the link to share a restricted delegate session. Delegates can build a proposal for your review using only the approved SKUs tied to that link. Use “Revoke link” to disable it early.
 	        </p>
 
         {patientLinksError && (
@@ -5974,7 +6176,7 @@ export function Header({
 	        ) : patientLinks.length === 0 ? (
 	          <div className="glass-card squircle-lg p-6 border border-[var(--brand-glass-border-1)] bg-white/80">
 	            <div className="flex items-center justify-between gap-3">
-	              <p className="text-sm font-semibold text-slate-900">No patient links yet.</p>
+	              <p className="text-sm font-semibold text-slate-900">No delegate links yet.</p>
 	              <p className="text-sm text-slate-600">Create one above to get started.</p>
 	            </div>
 	          </div>
@@ -5982,21 +6184,33 @@ export function Header({
 	          <div className="space-y-4 pt-1">
 		            {patientLinks.map((link) => {
 		              const token = typeof link?.token === 'string' ? link.token : '';
-		              const referenceLabelRaw =
-		                (typeof link?.referenceLabel === 'string' && link.referenceLabel.trim())
-		                  ? link.referenceLabel.trim()
-		                  : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
-		                    ? (link as any).reference_label.trim()
-		                    : (typeof link?.label === 'string' && link.label.trim())
-		                      ? link.label.trim()
+		              const subjectLabel =
+		                (typeof (link as any)?.subjectLabel === 'string' && (link as any).subjectLabel.trim())
+		                  ? (link as any).subjectLabel.trim()
+		                  : (typeof link?.patientId === 'string' && link.patientId.trim())
+		                    ? link.patientId.trim()
+		                    : (typeof (link as any)?.patient_id === 'string' && (link as any).patient_id.trim())
+		                      ? (link as any).patient_id.trim()
 		                      : '';
-		              const label = referenceLabelRaw || 'Patient link';
-		              const patientId =
-		                (typeof link?.patientId === 'string' && link.patientId.trim())
-		                  ? link.patientId.trim()
-		                  : (typeof (link as any)?.patient_id === 'string' && (link as any).patient_id.trim())
-		                    ? (link as any).patient_id.trim()
+		              const studyLabel =
+		                (typeof (link as any)?.studyLabel === 'string' && (link as any).studyLabel.trim())
+		                  ? (link as any).studyLabel.trim()
+		                  : (typeof (link as any)?.study_label === 'string' && (link as any).study_label.trim())
+		                    ? (link as any).study_label.trim()
 		                    : '';
+		              const patientReference =
+		                (typeof (link as any)?.patientReference === 'string' && (link as any).patientReference.trim())
+		                  ? (link as any).patientReference.trim()
+		                  : (typeof (link as any)?.patient_reference === 'string' && (link as any).patient_reference.trim())
+		                    ? (link as any).patient_reference.trim()
+		                    : (typeof link?.referenceLabel === 'string' && link.referenceLabel.trim())
+		                      ? link.referenceLabel.trim()
+		                      : (typeof (link as any)?.reference_label === 'string' && (link as any).reference_label.trim())
+		                        ? (link as any).reference_label.trim()
+		                        : (typeof link?.label === 'string' && link.label.trim())
+		                          ? link.label.trim()
+		                          : '';
+		              const label = patientReference || studyLabel || subjectLabel || 'Delegate link';
 		              const revokedAt = typeof link?.revokedAt === 'string' && link.revokedAt.trim() ? link.revokedAt.trim() : '';
 		              const markupPercentValueRaw =
 		                typeof (link as any)?.markupPercent === 'number'
@@ -6009,9 +6223,38 @@ export function Header({
 		                        ? Number((link as any).markup_percent)
 		                        : 0;
 		              const markupPercentValue = Number.isFinite(markupPercentValueRaw) ? markupPercentValueRaw : 0;
-	              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
-	              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
-	              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
+		              const createdAt = typeof link?.createdAt === 'string' && link.createdAt.trim() ? link.createdAt.trim() : '';
+		              const expiresAt = typeof link?.expiresAt === 'string' && link.expiresAt.trim() ? link.expiresAt.trim() : '';
+		              const lastUsedAt = typeof link?.lastUsedAt === 'string' && link.lastUsedAt.trim() ? link.lastUsedAt.trim() : '';
+		              const statusRaw =
+		                typeof (link as any)?.status === 'string' && (link as any).status.trim()
+		                  ? (link as any).status.trim().toLowerCase()
+		                  : '';
+		              const allowedProducts = Array.isArray((link as any)?.allowedProducts)
+		                ? (link as any).allowedProducts.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+		                : [];
+		              const usageLimitRaw =
+		                typeof (link as any)?.usageLimit === 'number'
+		                  ? (link as any).usageLimit
+		                  : typeof (link as any)?.usageLimit === 'string'
+		                    ? Number((link as any).usageLimit)
+		                    : typeof (link as any)?.usage_limit === 'number'
+		                      ? (link as any).usage_limit
+		                      : typeof (link as any)?.usage_limit === 'string'
+		                        ? Number((link as any).usage_limit)
+		                        : null;
+		              const usageCountRaw =
+		                typeof (link as any)?.usageCount === 'number'
+		                  ? (link as any).usageCount
+		                  : typeof (link as any)?.usageCount === 'string'
+		                    ? Number((link as any).usageCount)
+		                    : typeof (link as any)?.usage_count === 'number'
+		                      ? (link as any).usage_count
+		                      : typeof (link as any)?.usage_count === 'string'
+		                        ? Number((link as any).usage_count)
+		                        : 0;
+		              const usageLimitValue = Number.isFinite(usageLimitRaw as number) ? Number(usageLimitRaw) : null;
+		              const usageCountValue = Number.isFinite(usageCountRaw) ? Number(usageCountRaw) : 0;
 	              const delegateSharedAt =
 	                typeof link?.delegateSharedAt === 'string' && link.delegateSharedAt.trim()
 	                  ? link.delegateSharedAt.trim()
@@ -6101,12 +6344,17 @@ export function Header({
 			                      {/* Revoked status is reflected by the disabled action button; no inline badge. */}
 			                    </div>
 		                    <div className="mt-1 text-xs text-slate-600 space-y-0.5">
-			                      {patientId && <div>Patient ID: {patientId}</div>}
+			                      {subjectLabel && <div>Subject: {subjectLabel}</div>}
+			                      {studyLabel && <div>Study: {studyLabel}</div>}
+			                      {patientReference && <div>Reference: {patientReference}</div>}
 			                      {createdAt && <div>Created: {formatLinkDateTime(createdAt) || createdAt}</div>}
 			                      {expiresAt && <div>Expires: {formatLinkDateTime(expiresAt) || expiresAt}</div>}
 			                      {lastUsedAt && <div>Last used: {formatLinkDateTime(lastUsedAt) || lastUsedAt}</div>}
+			                      {usageLimitValue ? <div>Uses: {usageCountValue} / {usageLimitValue}</div> : <div>Uses: {usageCountValue}</div>}
+			                      {allowedProducts.length > 0 && <div>Allowed SKUs: {allowedProducts.join(', ')}</div>}
 			                      <div>Payment: {paymentMethodLabel}</div>
 			                      <div>Markup: {Math.round((markupPercentValue + Number.EPSILON) * 100) / 100}%</div>
+			                      {statusRaw && <div>Status: {statusRaw.replace(/_/g, ' ')}</div>}
 			                      {hasProposal && (
 			                        <div className="font-semibold text-slate-700">
 			                          Proposal: {proposalLabel || 'Pending review'}
@@ -6123,7 +6371,7 @@ export function Header({
 		                        size="sm"
 		                        onClick={() => void handleViewPatientProposal(token)}
 		                        disabled={!token || isProposalBusy}
-		                        className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+		                        className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 		                      >
 		                        <ClipboardDocumentListIcon className="h-4 w-4" />
 		                        {isProposalBusy ? 'Loading…' : proposalActionLabel}
@@ -6135,7 +6383,7 @@ export function Header({
 		                      size="sm"
 		                      onClick={() => handleViewPatientLink(token)}
 		                      disabled={!token}
-		                      className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Eye className="h-4 w-4" aria-hidden="true" />
 	                      View
@@ -6146,7 +6394,7 @@ export function Header({
 		                      size="sm"
 		                      onClick={() => void handleCopyPatientLink(token)}
 		                      disabled={!token}
-		                      className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:bg-[rgba(95,179,249,0.08)] hover:text-[rgb(95,179,249)]"
+		                      className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                    >
 	                      <Copy className="h-4 w-4" aria-hidden="true" />
 	                      Copy link
@@ -6157,7 +6405,7 @@ export function Header({
 		                      size="sm"
 		                      onClick={() => void handleRevokePatientLink(token)}
 		                      disabled={!token || isRevoked || isUpdating}
-		                      className="patient-link-payment-toggle-button squircle-sm border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+		                      className="header-home-button patient-link-payment-toggle-button squircle-sm bg-white text-slate-900"
 		                    >
 			                      {isUpdating ? 'Working…' : isRevoked ? 'Revoked' : 'Revoke link'}
 			                    </Button>
@@ -6184,8 +6432,8 @@ export function Header({
 			                            disabled={!token || isUpdatingReceivedPayment || !receivedPayment}
 			                            className={
 			                              receivedPayment
-			                                ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                                : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-red-200 bg-red-50 text-red-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                                ? "header-home-button patient-link-payment-toggle-button h-9 w-9 squircle-sm bg-white text-slate-900"
+			                                : "header-home-button patient-link-payment-toggle-button h-9 w-9 squircle-sm bg-white text-slate-900"
 			                            }
 			                            title="Mark unpaid"
 			                            aria-label="Mark unpaid"
@@ -6200,8 +6448,8 @@ export function Header({
 			                            disabled={!token || isUpdatingReceivedPayment || receivedPayment}
 			                            className={
 			                              receivedPayment
-			                                ? "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
-			                                : "patient-link-payment-toggle-button h-9 w-9 squircle-sm border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+			                                ? "header-home-button patient-link-payment-toggle-button h-9 w-9 squircle-sm bg-white text-slate-900"
+			                                : "header-home-button patient-link-payment-toggle-button h-9 w-9 squircle-sm bg-white text-slate-900"
 			                            }
 			                            title="Mark paid"
 			                            aria-label="Mark paid"
@@ -6290,7 +6538,7 @@ export function Header({
 	                            size="sm"
 	                            onClick={() => void handleSavePatientLinkPaymentSettings(token)}
 	                            disabled={!token || isSavingPayment}
-	                            className="patient-link-payment-toggle-button squircle-sm gap-2 border-[rgba(95,179,249,0.35)] text-[rgb(95,179,249)] hover:text-[rgb(95,179,249)]"
+	                            className="header-home-button patient-link-payment-toggle-button squircle-sm gap-2 bg-white text-slate-900"
 	                          >
 	                            {isSavingPayment ? 'Saving…' : 'Save'}
 	                          </Button>
@@ -6361,8 +6609,12 @@ export function Header({
     </div>
   ) : user ? (
     <>
-      <Dialog open={welcomeOpen} onOpenChange={(open) => {
+      <Dialog open={welcomeOpen} modal={!legalModalOpen} onOpenChange={(open) => {
         console.debug('[Header] Welcome dialog open change', { open });
+        if (!open && legalModalOpen) {
+          console.debug('[Header] Welcome dialog close blocked by legal modal');
+          return;
+        }
         setWelcomeOpen(open);
       }}>
         <DialogTrigger asChild>
@@ -6398,16 +6650,25 @@ export function Header({
                     overlayClassName="bg-slate-950/40"
                     containerClassName="fixed inset-0 z-[10000] flex items-start justify-center px-3 py-6 sm:px-4 sm:py-8"
                     containerStyle={
-                      {
-                        paddingTop: "calc(var(--safe-area-top) + 0.75rem)",
-                        ["--modal-header-offset" as any]: "0px",
-                      } as CSSProperties
+                      legalModalOpen
+                        ? ({
+                            paddingTop: "calc(var(--safe-area-top) + 0.75rem)",
+                            ["--modal-header-offset" as any]: "0px",
+                            pointerEvents: 'none',
+                          } as CSSProperties)
+                        : ({
+                            paddingTop: "calc(var(--safe-area-top) + 0.75rem)",
+                            ["--modal-header-offset" as any]: "0px",
+                          } as CSSProperties)
                     }
 	              style={{
                   backdropFilter: "blur(38px) saturate(1.6)",
                   backgroundColor: "rgba(245, 251, 255, 1)",
                   ["--modal-header-offset" as any]: "0px",
                 }}
+                  data-legal-overlay={legalModalOpen ? 'true' : 'false'}
+                  trapFocus={!legalModalOpen}
+                  disableOutsidePointerEvents={false}
 					          >
 				          <div
 				            ref={accountModalShellRef}
@@ -6530,6 +6791,7 @@ export function Header({
             </div>
 	          </DialogHeader>
           <div
+            ref={accountModalScrollRef}
             className={clsx(
               "flex-1 overflow-y-auto px-6 pb-6",
               isResearchFullscreen && "opacity-0 invisible pointer-events-none select-none",

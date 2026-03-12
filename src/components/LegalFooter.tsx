@@ -69,11 +69,13 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   const [bugError, setBugError] = useState('');
   const [bugReport, setBugReport] = useState('');
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contactCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDocument = activeDocument ? LEGAL_DOCUMENTS[activeDocument] : null;
   // Keep this close to the Tailwind `duration-[..]` used below; this controls unmount timing.
-  const MODAL_FADE_MS = 80;
+  const MODAL_FADE_MS = 65;
+  const legalModalState = isClosing ? 'closing' : isVisible ? 'open' : 'closed';
 
   useEffect(() => {
     const body = document.body;
@@ -158,8 +160,19 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
 
   useEffect(() => {
     if (selectedDocument && !isClosing) {
-      const raf = requestAnimationFrame(() => setIsVisible(true));
-      return () => cancelAnimationFrame(raf);
+      if (openTimerRef.current) {
+        clearTimeout(openTimerRef.current);
+      }
+      openTimerRef.current = window.setTimeout(() => {
+        setIsVisible(true);
+        openTimerRef.current = null;
+      }, 18);
+      return () => {
+        if (openTimerRef.current) {
+          clearTimeout(openTimerRef.current);
+          openTimerRef.current = null;
+        }
+      };
     }
     if (!selectedDocument && !isClosing && isVisible) {
       setIsVisible(false);
@@ -180,6 +193,9 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
   useEffect(() => () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
+    }
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
     }
     if (contactCloseTimerRef.current) {
       clearTimeout(contactCloseTimerRef.current);
@@ -469,51 +485,48 @@ export function LegalFooter({ variant = 'full', showContactCTA = true }: LegalFo
 
       {selectedDocument && createPortal(
         <div
-          className={clsx(
-            'fixed inset-0 flex items-center justify-center p-6 sm:p-12 transition-opacity duration-[55ms] ease-out backdrop-blur-[16px] pointer-events-auto',
-            isVisible ? 'opacity-100' : 'opacity-0',
-          )}
+          data-legal-state={legalModalState}
+          className="legal-modal-layer fixed inset-0 flex items-center justify-center p-6 sm:p-12 pointer-events-auto"
           style={{
             zIndex: 2147483647,
             position: 'fixed',
-            willChange: 'opacity',
-            backdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
-            WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px)' : 'none',
+            willChange: 'opacity, backdrop-filter',
+            ['--legal-layer-blur' as any]: shouldBlurBackground ? '16px' : '0px',
           }}
         >
           <div
-            className={clsx(
-              'absolute inset-0 bg-[rgba(4,14,21,0.55)] transition-opacity duration-[55ms] ease-out',
-              isVisible ? 'opacity-100' : 'opacity-0',
-            )}
+            data-legal-state={legalModalState}
+            className="legal-modal-overlay absolute inset-0 bg-[rgba(4,14,21,0.55)]"
             onClick={handleClose}
             aria-hidden="true"
             style={{
-              willChange: 'opacity',
-              backdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
-              WebkitBackdropFilter: shouldBlurBackground ? 'blur(20px) saturate(1.55)' : 'none',
+              willChange: 'opacity, backdrop-filter',
+              ['--legal-overlay-blur' as any]: shouldBlurBackground ? '20px' : '0px',
+              ['--legal-overlay-saturate' as any]: shouldBlurBackground ? '1.55' : '1',
             }}
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
-            className={clsx(
-              'relative w-full max-w-3xl flex flex-col transition-[opacity,transform] duration-[55ms] ease-out h-full',
-              isVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-[0.97]',
-            )}
+            data-legal-state={legalModalState}
+            className="legal-modal-shell relative mx-auto flex flex-col h-full sm:h-auto"
             style={{
               willChange: 'opacity, transform',
+              width: 'calc(100vw - 1.5rem)',
+              maxWidth: '48rem',
               maxHeight: 'calc(var(--viewport-height, 100dvh) - 4rem)',
             }}
           >
             <div
-              className="squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"
+              data-legal-state={legalModalState}
+              className="legal-modal-card squircle-xl glass-card landing-glass shadow-[0_24px_60px_-25px_rgba(7,27,27,0.55)] h-full flex flex-col overflow-hidden border-[3px]"
               style={{
                 backgroundColor: 'rgba(245, 251, 255, 0.94)',
                 borderColor: 'rgba(95, 179, 249, 0.65)',
-                backdropFilter: shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none',
-                WebkitBackdropFilter: shouldBlurBackground ? 'blur(16px) saturate(1.45)' : 'none',
+                willChange: 'backdrop-filter',
+                ['--legal-card-blur' as any]: shouldBlurBackground ? '16px' : '0px',
+                ['--legal-card-saturate' as any]: shouldBlurBackground ? '1.45' : '1',
               }}
             >
               <div className="legal-modal-header flex items-center justify-between gap-4 px-4 sm:px-5 flex-shrink-0 border-b" style={{ borderColor: 'rgba(95, 179, 249, 0.2)', backgroundColor: 'rgb(255, 255, 255)' }}>
