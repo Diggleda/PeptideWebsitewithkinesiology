@@ -18,6 +18,7 @@ import { formatTimestampedNotesForDisplay } from "./lib/timestampedNotes";
 import { Header } from "./components/Header";
 import { FeaturedSection } from "./components/FeaturedSection";
 import { ProductCard } from "./components/ProductCard";
+import { ImageWithFallback } from "./components/ImageWithFallback";
 import type { Product as CardProduct } from "./components/ProductCard";
 import type { Product, ProductVariant, BulkPricingTier } from "./types/product";
 import { CategoryFilter } from "./components/CategoryFilter";
@@ -6520,8 +6521,6 @@ function MainApp() {
   useEffect(() => {
     trackingStatusByNumberRef.current = trackingStatusByNumber;
   }, [trackingStatusByNumber]);
-  const [salesOrderNotesDraft, setSalesOrderNotesDraft] = useState<string>("");
-  const [salesOrderNotesSaving, setSalesOrderNotesSaving] = useState(false);
   const [salesOrderHydratingIds, setSalesOrderHydratingIds] = useState<
     Set<string>
   >(new Set());
@@ -7616,9 +7615,6 @@ function MainApp() {
 	  const openSalesOrderDetails = useCallback(
 	    async (order: AccountOrderSummary) => {
 	      setSalesOrderDetail(order);
-	      setSalesOrderNotesDraft(
-	        typeof (order as any)?.notes === "string" ? String((order as any).notes) : "",
-	      );
 	      salesOrderFieldsInitializedForRef.current = null;
 	      setSalesOrderDetailLoading(true);
 	      try {
@@ -7646,15 +7642,10 @@ function MainApp() {
               resolveOrderPlacedAt(normalized[0] as any) ||
               null,
           };
-          setSalesOrderDetail(enriched);
-          const derived = deriveSalesOrderEditableFields(enriched);
+	          setSalesOrderDetail(enriched);
+	          const derived = deriveSalesOrderEditableFields(enriched);
 	          setSalesOrderFieldsSaved(derived);
 	          setSalesOrderFieldsDraft(derived);
-	          setSalesOrderNotesDraft(
-	            typeof (enriched as any)?.notes === "string"
-	              ? String((enriched as any).notes)
-	              : "",
-	          );
 	          mergeSalesOrderDetail(enriched);
 	        } else if (detail && typeof detail === "object") {
 	          const enriched = detail as AccountOrderSummary;
@@ -7662,11 +7653,6 @@ function MainApp() {
 	          const derived = deriveSalesOrderEditableFields(enriched);
 	          setSalesOrderFieldsSaved(derived);
 	          setSalesOrderFieldsDraft(derived);
-	          setSalesOrderNotesDraft(
-	            typeof (enriched as any)?.notes === "string"
-	              ? String((enriched as any).notes)
-	              : "",
-	          );
 	          mergeSalesOrderDetail(enriched);
         }
       } catch (error: any) {
@@ -7705,7 +7691,6 @@ function MainApp() {
 
 	  useEffect(() => {
 	    if (!salesOrderDetail) {
-	      setSalesOrderNotesDraft("");
 	      setSalesOrderFieldsSaved({
 	        trackingNumber: "",
 	        shippingCarrier: "",
@@ -7723,11 +7708,6 @@ function MainApp() {
 	      salesOrderFieldsInitializedForRef.current = null;
 	      return;
 	    }
-	    setSalesOrderNotesDraft(
-	      typeof (salesOrderDetail as any)?.notes === "string"
-	        ? String((salesOrderDetail as any).notes)
-	        : "",
-	    );
 	  }, [salesOrderDetail?.id]);
 
 	  useEffect(() => {
@@ -7811,54 +7791,6 @@ function MainApp() {
 	    setSalesOrderFieldsDraft(derived);
 	    salesOrderFieldsInitializedForRef.current = key;
 	  }, [deriveSalesOrderEditableFields, salesOrderDetail, salesOrderDetailLoading]);
-
-	  const handleSaveSalesOrderNotes = useCallback(async () => {
-	    if (!salesOrderDetail) {
-	      return;
-	    }
-    if (!user?.role || (!isRep(user.role) && !isAdmin(user.role))) {
-      toast.error("You don't have permission to edit order notes.");
-      return;
-    }
-    if (salesOrderNotesSaving) {
-      return;
-    }
-    const normalizedNotes = normalizeNotesValue(salesOrderNotesDraft);
-    const orderKey =
-      salesOrderDetail.wooOrderId || salesOrderDetail.id || salesOrderDetail.number || "";
-    if (!orderKey) {
-      toast.error("Unable to identify this order.");
-      return;
-    }
-    setSalesOrderNotesSaving(true);
-    try {
-      const response = (await ordersAPI.updateOrderNotes(orderKey, normalizedNotes)) as any;
-      const updatedOrder = (response && typeof response === "object" && response.order) || null;
-      const nextNotes =
-        updatedOrder && typeof updatedOrder?.notes === "string"
-          ? String(updatedOrder.notes)
-          : normalizedNotes;
-      setSalesOrderDetail((prev) => (prev ? { ...prev, notes: nextNotes } : prev));
-      mergeSalesOrderDetail({ ...salesOrderDetail, notes: nextNotes });
-      toast.success("Order notes updated.");
-    } catch (error: any) {
-      console.warn("[Orders] Failed to update order notes", error);
-      toast.error(
-        typeof error?.message === "string" && error.message
-          ? error.message
-          : "Unable to update order notes right now.",
-      );
-    } finally {
-      setSalesOrderNotesSaving(false);
-    }
-	  }, [
-	    mergeSalesOrderDetail,
-	    normalizeNotesValue,
-	    salesOrderDetail,
-	    salesOrderNotesDraft,
-	    salesOrderNotesSaving,
-	    user?.role,
-	  ]);
 
 	  const handleSaveSalesOrderFields = useCallback(async () => {
 	    if (!salesOrderDetail) {
@@ -27706,8 +27638,8 @@ function MainApp() {
 				                                salesRepSalesSummaryMeta?.periodEnd ??
 				                                null,
 				                            );
-				                            return (
-				                              <div className="flex items-center gap-2 flex-wrap">
+			                            return (
+			                              <div className="flex items-center gap-2 flex-wrap">
 					                                <p className="text-sm text-slate-600">
 					                                  Commission:{" "}
 			                                  {salesDoctorCommissionFromReportLoading
@@ -27716,96 +27648,6 @@ function MainApp() {
 			                                      ? "—"
 			                                      : formatCurrency(commissionValue)}
 			                                </p>
-			                                <Popover.Root
-			                                  open={salesDoctorCommissionPickerOpen}
-			                                  onOpenChange={setSalesDoctorCommissionPickerOpen}
-			                                >
-			                                  <Popover.Trigger asChild>
-				                                    <Button
-				                                      type="button"
-				                                      variant="outline"
-				                                      size="icon"
-					                                      className="header-home-button squircle-sm h-8 w-8"
-					                                      aria-label="Select commission date range"
-					                                    >
-				                                      <CalendarDays aria-hidden="true" />
-				                                    </Button>
-			                                  </Popover.Trigger>
-			                                  <Popover.Portal>
-			                                    <Popover.Content
-			                                      side="bottom"
-			                                      align="start"
-			                                      sideOffset={8}
-				                                      className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-				                                    >
-			                                      <div className="text-sm font-semibold text-slate-800">
-			                                        Commission timeframe
-			                                      </div>
-			                                      <div className="mt-2">
-			                                        <DayPicker
-			                                          mode="range"
-			                                          numberOfMonths={1}
-			                                          selected={salesDoctorCommissionRange}
-			                                          onSelect={(range) => {
-			                                            setSalesDoctorCommissionRange(range);
-			                                            if (range?.from && range?.to) {
-			                                              setSalesRepPeriodStart(formatDateInputValue(range.from));
-			                                              setSalesRepPeriodEnd(formatDateInputValue(range.to));
-			                                              applyAdminDashboardPeriod();
-			                                            }
-			                                          }}
-			                                          defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
-			                                        />
-			                                      </div>
-			                                      <div className="mt-3 flex items-center justify-between">
-			                                        <Button
-			                                          type="button"
-			                                          variant="ghost"
-			                                          size="sm"
-			                                          className="text-slate-700"
-			                                          onClick={() => {
-			                                            const cleared =
-			                                              getClearedSalesDoctorCommissionWindow();
-			                                            setSalesDoctorCommissionRange(cleared.range);
-			                                            setSalesRepPeriodStart(cleared.start);
-			                                            setSalesRepPeriodEnd(cleared.end);
-			                                            applyAdminDashboardPeriod();
-			                                          }}
-			                                        >
-			                                          Clear
-			                                        </Button>
-					                                      <Button
-					                                        type="button"
-					                                        variant="outline"
-					                                        size="sm"
-					                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-					                                        onClick={() => {
-					                                          if (
-					                                            salesDoctorCommissionRange?.from &&
-					                                            salesDoctorCommissionRange?.to
-					                                          ) {
-					                                            setSalesRepPeriodStart(
-					                                              formatDateInputValue(
-					                                                salesDoctorCommissionRange.from,
-					                                              ),
-					                                            );
-					                                            setSalesRepPeriodEnd(
-					                                              formatDateInputValue(
-					                                                salesDoctorCommissionRange.to,
-					                                              ),
-					                                            );
-					                                          }
-					                                          applyAdminDashboardPeriod();
-					                                          setSalesDoctorCommissionPickerOpen(false);
-					                                        }}
-					                                      >
-					                                        Done
-					                                      </Button>
-			                                      </div>
-			                                      <Popover.Arrow className="calendar-popover-arrow" />
-			                                    </Popover.Content>
-			                                  </Popover.Portal>
-			                                </Popover.Root>
 			                                <span className="text-sm text-slate-500">
 			                                  ({customRangeLabel || periodLabel})
 			                                </span>
@@ -27887,89 +27729,6 @@ function MainApp() {
 			                                  ? "Loading..."
 			                                  : formatCurrency(totalCommission)}
 			                              </p>
-			                              <Popover.Root
-			                                open={salesDoctorCommissionPickerOpen}
-			                                onOpenChange={setSalesDoctorCommissionPickerOpen}
-			                              >
-			                                <Popover.Trigger asChild>
-				                                  <Button
-				                                    type="button"
-				                                    variant="outline"
-				                                    size="icon"
-					                                    className="header-home-button squircle-sm h-8 w-8"
-					                                    aria-label="Select commission date range"
-					                                  >
-				                                    <CalendarDays aria-hidden="true" />
-				                                  </Button>
-			                                </Popover.Trigger>
-			                                <Popover.Portal>
-			                                  <Popover.Content
-			                                    side="bottom"
-			                                    align="start"
-			                                    sideOffset={8}
-				                                    className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-				                                  >
-			                                    <div className="text-sm font-semibold text-slate-800">
-			                                      Commission timeframe
-			                                    </div>
-			                                    <div className="mt-2">
-			                                      <DayPicker
-			                                        mode="range"
-			                                        numberOfMonths={1}
-			                                        selected={salesDoctorCommissionRange}
-			                                        onSelect={setSalesDoctorCommissionRange}
-			                                        defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
-			                                      />
-			                                    </div>
-			                                    <div className="mt-3 flex items-center justify-between">
-			                                      <Button
-			                                        type="button"
-			                                        variant="ghost"
-			                                        size="sm"
-			                                        className="text-slate-700"
-			                                        onClick={() => {
-                                              const cleared =
-                                                getClearedSalesDoctorCommissionWindow();
-                                              setSalesDoctorCommissionRange(cleared.range);
-                                              setSalesRepPeriodStart(cleared.start);
-                                              setSalesRepPeriodEnd(cleared.end);
-                                              applyAdminDashboardPeriod();
-                                            }}
-			                                      >
-			                                        Clear
-			                                      </Button>
-					                                      <Button
-					                                        type="button"
-					                                        variant="outline"
-					                                        size="sm"
-					                                        className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-					                                        onClick={() => {
-					                                          if (
-					                                            salesDoctorCommissionRange?.from &&
-					                                            salesDoctorCommissionRange?.to
-					                                          ) {
-					                                            setSalesRepPeriodStart(
-					                                              formatDateInputValue(
-					                                                salesDoctorCommissionRange.from,
-					                                              ),
-					                                            );
-					                                            setSalesRepPeriodEnd(
-					                                              formatDateInputValue(
-					                                                salesDoctorCommissionRange.to,
-					                                              ),
-					                                            );
-					                                          }
-					                                          applyAdminDashboardPeriod();
-					                                          setSalesDoctorCommissionPickerOpen(false);
-					                                        }}
-					                                      >
-					                                        Done
-					                                      </Button>
-			                                    </div>
-			                                    <Popover.Arrow className="calendar-popover-arrow" />
-			                                  </Popover.Content>
-			                                </Popover.Portal>
-			                              </Popover.Root>
 			                              <span className="text-sm text-slate-500">
 			                                ({customRangeLabel || periodLabel})
 			                              </span>
@@ -28009,6 +27768,159 @@ function MainApp() {
                     )}
                 </div>
               </div>
+
+              {(isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role)) && (() => {
+                const formatDateObject = (date?: Date | null) => {
+                  if (!date) return null;
+                  if (Number.isNaN(date.getTime())) return null;
+                  return date.toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  });
+                };
+                const formatOrdersPeriodLabel = (
+                  startRaw?: string | null,
+                  endRaw?: string | null,
+                ) => {
+                  const start = startRaw ? formatDate(String(startRaw)) : null;
+                  const end = endRaw ? formatDate(String(endRaw)) : null;
+                  if (start && end && start !== "—" && end !== "—") {
+                    return `${start} - ${end}`;
+                  }
+                  if (start && start !== "—") {
+                    return `Since ${start}`;
+                  }
+                  if (end && end !== "—") {
+                    return `Until ${end}`;
+                  }
+                  return "All time";
+                };
+                const hasCustomRange =
+                  Boolean(salesDoctorCommissionRange?.from) &&
+                  Boolean(salesDoctorCommissionRange?.to);
+                const customRangeLabel = hasCustomRange
+                  ? (() => {
+                      const start = formatDateObject(
+                        salesDoctorCommissionRange?.from || null,
+                      );
+                      const end = formatDateObject(
+                        salesDoctorCommissionRange?.to || null,
+                      );
+                      return start && end ? `${start} - ${end}` : start || end || null;
+                    })()
+                  : null;
+                const periodLabel = formatOrdersPeriodLabel(
+                  adminProductsCommissionMeta?.periodStart ??
+                    salesRepPeriodStart ??
+                    salesRepSalesSummaryMeta?.periodStart ??
+                    salesRepProductSalesSummaryMeta?.periodStart ??
+                    null,
+                  adminProductsCommissionMeta?.periodEnd ??
+                    salesRepPeriodEnd ??
+                    salesRepSalesSummaryMeta?.periodEnd ??
+                    salesRepProductSalesSummaryMeta?.periodEnd ??
+                    null,
+                );
+
+                return (
+                  <div className="border-t border-slate-200 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800">Timeframe</p>
+                        <p className="text-xs text-slate-500">
+                          {customRangeLabel || periodLabel}
+                        </p>
+                      </div>
+                      <Popover.Root
+                        open={salesDoctorCommissionPickerOpen}
+                        onOpenChange={setSalesDoctorCommissionPickerOpen}
+                      >
+                        <Popover.Trigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="header-home-button squircle-sm h-8 w-8"
+                            aria-label="Select user modal date range"
+                            title="Select date range"
+                          >
+                            <CalendarDays aria-hidden="true" />
+                          </Button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                          <Popover.Content
+                            side="bottom"
+                            align="start"
+                            sideOffset={8}
+                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+                          >
+                            <div className="text-sm font-semibold text-slate-800">
+                              User modal timeframe
+                            </div>
+                            <div className="mt-2">
+                              <DayPicker
+                                mode="range"
+                                numberOfMonths={1}
+                                selected={salesDoctorCommissionRange}
+                                onSelect={(range) => {
+                                  setSalesDoctorCommissionRange(range);
+                                  if (range?.from && range?.to) {
+                                    setSalesRepPeriodStart(formatDateInputValue(range.from));
+                                    setSalesRepPeriodEnd(formatDateInputValue(range.to));
+                                  }
+                                }}
+                                defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+                              />
+                            </div>
+                            <div className="mt-3 flex items-center justify-between">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-slate-700"
+                                onClick={() => {
+                                  const cleared = getClearedSalesDoctorCommissionWindow();
+                                  setSalesDoctorCommissionRange(cleared.range);
+                                  setSalesRepPeriodStart(cleared.start);
+                                  setSalesRepPeriodEnd(cleared.end);
+                                  applyAdminDashboardPeriod();
+                                }}
+                              >
+                                Clear
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+                                onClick={() => {
+                                  if (
+                                    salesDoctorCommissionRange?.from &&
+                                    salesDoctorCommissionRange?.to
+                                  ) {
+                                    setSalesRepPeriodStart(
+                                      formatDateInputValue(salesDoctorCommissionRange.from),
+                                    );
+                                    setSalesRepPeriodEnd(
+                                      formatDateInputValue(salesDoctorCommissionRange.to),
+                                    );
+                                  }
+                                  applyAdminDashboardPeriod();
+                                  setSalesDoctorCommissionPickerOpen(false);
+                                }}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                            <Popover.Arrow className="calendar-popover-arrow" />
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </Popover.Root>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -28123,6 +28035,159 @@ function MainApp() {
                   })()}
                 </div>
               </div>
+
+              {!(isRep(salesDoctorDetail.role) || isAdmin(salesDoctorDetail.role)) && (() => {
+                const formatDateObject = (date?: Date | null) => {
+                  if (!date) return null;
+                  if (Number.isNaN(date.getTime())) return null;
+                  return date.toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  });
+                };
+                const formatOrdersPeriodLabel = (
+                  startRaw?: string | null,
+                  endRaw?: string | null,
+                ) => {
+                  const start = startRaw ? formatDate(String(startRaw)) : null;
+                  const end = endRaw ? formatDate(String(endRaw)) : null;
+                  if (start && end && start !== "—" && end !== "—") {
+                    return `${start} - ${end}`;
+                  }
+                  if (start && start !== "—") {
+                    return `Since ${start}`;
+                  }
+                  if (end && end !== "—") {
+                    return `Until ${end}`;
+                  }
+                  return "All time";
+                };
+                const hasCustomRange =
+                  Boolean(salesDoctorCommissionRange?.from) &&
+                  Boolean(salesDoctorCommissionRange?.to);
+                const customRangeLabel = hasCustomRange
+                  ? (() => {
+                      const start = formatDateObject(
+                        salesDoctorCommissionRange?.from || null,
+                      );
+                      const end = formatDateObject(
+                        salesDoctorCommissionRange?.to || null,
+                      );
+                      return start && end ? `${start} - ${end}` : start || end || null;
+                    })()
+                  : null;
+                const periodLabel = formatOrdersPeriodLabel(
+                  adminProductsCommissionMeta?.periodStart ??
+                    salesRepPeriodStart ??
+                    salesRepSalesSummaryMeta?.periodStart ??
+                    salesRepProductSalesSummaryMeta?.periodStart ??
+                    null,
+                  adminProductsCommissionMeta?.periodEnd ??
+                    salesRepPeriodEnd ??
+                    salesRepSalesSummaryMeta?.periodEnd ??
+                    salesRepProductSalesSummaryMeta?.periodEnd ??
+                    null,
+                );
+
+                return (
+                  <div className="border-t border-slate-200 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800">Timeframe</p>
+                        <p className="text-xs text-slate-500">
+                          {customRangeLabel || periodLabel}
+                        </p>
+                      </div>
+                      <Popover.Root
+                        open={salesDoctorCommissionPickerOpen}
+                        onOpenChange={setSalesDoctorCommissionPickerOpen}
+                      >
+                        <Popover.Trigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="header-home-button squircle-sm h-8 w-8"
+                            aria-label="Select user modal date range"
+                            title="Select date range"
+                          >
+                            <CalendarDays aria-hidden="true" />
+                          </Button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                          <Popover.Content
+                            side="bottom"
+                            align="start"
+                            sideOffset={8}
+                            className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+                          >
+                            <div className="text-sm font-semibold text-slate-800">
+                              User modal timeframe
+                            </div>
+                            <div className="mt-2">
+                              <DayPicker
+                                mode="range"
+                                numberOfMonths={1}
+                                selected={salesDoctorCommissionRange}
+                                onSelect={(range) => {
+                                  setSalesDoctorCommissionRange(range);
+                                  if (range?.from && range?.to) {
+                                    setSalesRepPeriodStart(formatDateInputValue(range.from));
+                                    setSalesRepPeriodEnd(formatDateInputValue(range.to));
+                                  }
+                                }}
+                                defaultMonth={salesDoctorCommissionRange?.from ?? undefined}
+                              />
+                            </div>
+                            <div className="mt-3 flex items-center justify-between">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-slate-700"
+                                onClick={() => {
+                                  const cleared = getClearedSalesDoctorCommissionWindow();
+                                  setSalesDoctorCommissionRange(cleared.range);
+                                  setSalesRepPeriodStart(cleared.start);
+                                  setSalesRepPeriodEnd(cleared.end);
+                                  applyAdminDashboardPeriod();
+                                }}
+                              >
+                                Clear
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+                                onClick={() => {
+                                  if (
+                                    salesDoctorCommissionRange?.from &&
+                                    salesDoctorCommissionRange?.to
+                                  ) {
+                                    setSalesRepPeriodStart(
+                                      formatDateInputValue(salesDoctorCommissionRange.from),
+                                    );
+                                    setSalesRepPeriodEnd(
+                                      formatDateInputValue(salesDoctorCommissionRange.to),
+                                    );
+                                  }
+                                  applyAdminDashboardPeriod();
+                                  setSalesDoctorCommissionPickerOpen(false);
+                                }}
+                              >
+                                Done
+                              </Button>
+                            </div>
+                            <Popover.Arrow className="calendar-popover-arrow" />
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </Popover.Root>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {(() => {
                 const showMetricsSkeleton =
@@ -29124,7 +29189,7 @@ function MainApp() {
                             >
                               <div className="w-16 h-16 aspect-square rounded-md border border-slate-200 bg-white overflow-hidden flex items-center justify-center text-slate-500 flex-shrink-0">
                                 {line.image ? (
-                                  <img
+                                  <ImageWithFallback
                                     src={line.image}
                                     alt={line.name || "Item thumbnail"}
                                     className="h-full w-full object-cover"
@@ -29226,67 +29291,6 @@ function MainApp() {
 	                      </div>
 	                    </div>
 
-	                    <div className="space-y-2">
-	                      <h4 className="text-base font-semibold text-slate-900">
-	                        Notes <span className="text-sm font-normal text-slate-500">(Visible to the doctor)</span>
-	                      </h4>
-	                      {(() => {
-	                        const canEdit = Boolean(
-	                          user?.role && (isRep(user.role) || isAdmin(user.role)),
-	                        );
-	                        const saved =
-	                          typeof (salesOrderDetail as any)?.notes === "string"
-	                            ? String((salesOrderDetail as any).notes)
-	                            : "";
-	                        const normalizedSaved = normalizeNotesValue(saved);
-	                        const normalizedDraft = normalizeNotesValue(salesOrderNotesDraft);
-	                        const isDirty = normalizedSaved !== normalizedDraft;
-	                        const hasNotes = Boolean((normalizedSaved || normalizedDraft) && String(normalizedSaved || normalizedDraft).trim());
-
-	                        if (!canEdit) {
-	                          if (!hasNotes) {
-	                            return (
-	                              <p className="text-sm text-slate-500">
-	                                No notes for this order.
-	                              </p>
-	                            );
-	                          }
-	                          return (
-	                            <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
-	                              <p className="text-sm text-slate-700 whitespace-pre-wrap">
-	                                {formatTimestampedNotesForDisplay(normalizedSaved || "")}
-	                              </p>
-	                            </div>
-	                          );
-	                        }
-
-	                        return (
-	                          <div className="space-y-2">
-	                            <TimestampedNotesField
-	                              value={salesOrderNotesDraft}
-	                              onChange={(next) => setSalesOrderNotesDraft(next)}
-	                              placeholder="Add an order note…"
-	                              className="w-full rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-	                              disabled={salesOrderNotesSaving}
-	                            />
-	                            <div className="flex items-center justify-between gap-3">
-	                              <p className="text-xs text-slate-500">
-	                                {isDirty ? "Unsaved changes" : "Saved"}
-	                              </p>
-	                              <Button
-	                                type="button"
-	                                variant="outline"
-	                                onClick={handleSaveSalesOrderNotes}
-	                                disabled={salesOrderNotesSaving || !isDirty}
-	                                className="gap-2"
-	                              >
-	                                {salesOrderNotesSaving ? "Saving…" : "Save notes"}
-	                              </Button>
-	                            </div>
-	                          </div>
-	                        );
-	                      })()}
-	                    </div>
 	                  </div>
 	                );
 	              })()}

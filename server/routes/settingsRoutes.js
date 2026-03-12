@@ -110,6 +110,39 @@ const normalizeOwnershipIds = (values = []) =>
     .map((value) => String(value).trim())
     .filter(Boolean)));
 
+const normalizeOptionalText = (value) => {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+};
+
+const serializeUserProfile = (user) => {
+  if (!user) return null;
+  return {
+    id: String(user.id || ''),
+    name: user.name || null,
+    email: user.email || null,
+    phone: user.phone || null,
+    role: normalizeRole(user.role || ''),
+    status: user.status || null,
+    profileImageUrl: user.profileImageUrl || null,
+    salesRepId: user.salesRepId || null,
+    officeAddressLine1: user.officeAddressLine1 || null,
+    officeAddressLine2: user.officeAddressLine2 || null,
+    officeCity: user.officeCity || null,
+    officeState: user.officeState || null,
+    officePostalCode: user.officePostalCode || null,
+    officeCountry: user.officeCountry || null,
+    handDelivered: Boolean(user.handDelivered || user.hand_delivered),
+    receiveClientOrderUpdateEmails: Boolean(user.receiveClientOrderUpdateEmails),
+    devCommission: Boolean(user.devCommission),
+    lastSeenAt: user.lastSeenAt || null,
+    lastInteractionAt: user.lastInteractionAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+    createdAt: user.createdAt || null,
+  };
+};
+
 const buildDoctorOwnershipSet = async (ownerIds = []) => {
   const ownedDoctorIds = new Set();
   const ownedEmails = new Set();
@@ -389,6 +422,117 @@ router.put('/stripe', authenticate, requireAdmin, async (req, res) => {
     publishableKeyLive: env.stripe?.livePublishableKey || '',
     publishableKeyTest: env.stripe?.testPublishableKey || '',
     mysqlEnabled: mysqlClient.isEnabled(),
+  });
+});
+
+router.get('/users/:userId', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const userId = String(req.params?.userId || '').trim();
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const user =
+    userRepository.findById(userId)
+    || userRepository.getAll().find((candidate) => String(candidate?.salesRepId || '').trim() === userId)
+    || null;
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  return res.json({ user: serializeUserProfile(user) });
+});
+
+router.patch('/users/:userId', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const userId = String(req.params?.userId || '').trim();
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const existing = userRepository.findById(userId);
+  if (!existing) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const body = req.body || {};
+  const next = {
+    ...existing,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(body, 'phone')) {
+    next.phone = normalizeOptionalText(body.phone);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'salesRepId')) {
+    next.salesRepId = normalizeOptionalText(body.salesRepId);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officeAddressLine1')) {
+    next.officeAddressLine1 = normalizeOptionalText(body.officeAddressLine1);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officeAddressLine2')) {
+    next.officeAddressLine2 = normalizeOptionalText(body.officeAddressLine2);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officeCity')) {
+    next.officeCity = normalizeOptionalText(body.officeCity);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officeState')) {
+    next.officeState = normalizeOptionalText(body.officeState);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officePostalCode')) {
+    next.officePostalCode = normalizeOptionalText(body.officePostalCode);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'officeCountry')) {
+    next.officeCountry = normalizeOptionalText(body.officeCountry);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'handDelivered')) {
+    next.handDelivered = Boolean(body.handDelivered);
+    next.hand_delivered = next.handDelivered ? 1 : 0;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'receiveClientOrderUpdateEmails')) {
+    next.receiveClientOrderUpdateEmails = Boolean(body.receiveClientOrderUpdateEmails);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'devCommission')) {
+    next.devCommission = Boolean(body.devCommission);
+  }
+
+  const updated = userRepository.update(next);
+  if (!updated) {
+    return res.status(500).json({ error: 'Unable to update user' });
+  }
+
+  return res.json({ user: serializeUserProfile(updated) });
+});
+
+router.get('/sales-reps/:salesRepId', authenticate, requireAdminOrSalesLead, async (req, res) => {
+  const salesRepId = String(req.params?.salesRepId || '').trim();
+  if (!salesRepId) {
+    return res.status(400).json({ error: 'salesRepId is required' });
+  }
+
+  const rep =
+    salesRepRepository.findById(salesRepId)
+    || salesRepRepository.findByEmail(salesRepId)
+    || null;
+
+  if (!rep) {
+    return res.status(404).json({ error: 'Sales rep not found' });
+  }
+
+  const users = userRepository.getAll();
+  const resolvedUser =
+    users.find((candidate) => String(candidate?.salesRepId || '').trim() === String(rep.id || rep.salesRepId || '').trim())
+    || (rep?.email ? userRepository.findByEmail(rep.email) : null)
+    || null;
+
+  return res.json({
+    salesRep: {
+      id: String(rep.id || rep.salesRepId || salesRepId),
+      name: rep.name || null,
+      email: rep.email || null,
+      phone: rep.phone || null,
+      role: normalizeRole(rep.role || 'sales_rep'),
+      userId: resolvedUser?.id ? String(resolvedUser.id) : null,
+      salesRepId: String(rep.id || rep.salesRepId || salesRepId),
+    },
   });
 });
 

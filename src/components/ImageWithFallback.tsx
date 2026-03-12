@@ -39,6 +39,10 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
   const baseSrc = normalizedSrc ? normalizedSrc : PLACEHOLDER;
   const effectiveSrc = displaySrc ?? baseSrc;
   const isPlaceholder = effectiveSrc === PLACEHOLDER;
+  const isWaitingForPrimaryImage =
+    !didError &&
+    baseSrc !== PLACEHOLDER &&
+    (effectiveSrc === PLACEHOLDER || !isLoaded);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -154,7 +158,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden" style={style}>
-      {!isLoaded && !didError && !isPlaceholder && (
+      {isWaitingForPrimaryImage && (
         <div className="image-skeleton" aria-hidden="true" />
       )}
       <img
