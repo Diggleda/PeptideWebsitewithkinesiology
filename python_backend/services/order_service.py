@@ -343,7 +343,7 @@ def _compute_allowed_sales_rep_ids(
             if not email or email not in rep_email_candidates:
                 continue
             role = (user.get("role") or "").lower()
-            if role in ("sales_rep", "rep", "admin"):
+            if role in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
                 allowed_rep_ids.add(str(user.get("id")))
 
     return allowed_rep_ids
@@ -2025,12 +2025,29 @@ def get_orders_for_sales_rep(
     except Exception:
         local_orders = []
 
-    # Fallback scan catches cases where the doctor user isn't linked to the rep, but the order payload contains doctorSalesRepId.
-    if not local_orders and not use_admin_local_fast_path:
+    # Merge a recent sales-tracking scan so rep-attributed orders are still included even when the
+    # doctor user record is missing or stale. This is especially important for on-hold orders that
+    # may be keyed by order metadata before user-to-rep assignment catches up.
+    if not use_admin_local_fast_path:
         try:
-            local_orders = order_repository.list_recent_sales_tracking(750)
+            fallback_orders = order_repository.list_recent_sales_tracking(750)
         except Exception:
-            local_orders = []
+            fallback_orders = []
+        if fallback_orders:
+            existing_order_ids = {
+                str(order.get("id") or "").strip()
+                for order in local_orders
+                if isinstance(order, dict) and str(order.get("id") or "").strip()
+            }
+            for fallback_order in fallback_orders:
+                if not isinstance(fallback_order, dict):
+                    continue
+                fallback_order_id = str(fallback_order.get("id") or "").strip()
+                if fallback_order_id and fallback_order_id in existing_order_ids:
+                    continue
+                local_orders.append(fallback_order)
+                if fallback_order_id:
+                    existing_order_ids.add(fallback_order_id)
 
     seen_local_doctor_ids = set(str(doc.get("id")) for doc in doctors if doc.get("id") is not None)
     for local in local_orders or []:
