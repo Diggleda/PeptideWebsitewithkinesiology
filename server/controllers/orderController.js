@@ -392,11 +392,13 @@ const getOrdersForSalesRep = async (req, res, next) => {
     if (role !== 'sales_rep' && role !== 'rep' && role !== 'sales_lead' && role !== 'saleslead' && role !== 'admin') {
       return res.status(403).json({ error: 'Sales rep access required' });
     }
-    const scope = role === 'admin' && (req.query.scope || '').toLowerCase() === 'all' ? 'all' : 'mine';
+    const requestedScope = typeof req.query?.scope === 'string' ? req.query.scope.toLowerCase() : '';
+    const canViewAllDoctors = role === 'admin' || role === 'sales_lead' || role === 'saleslead' || role === 'sales-lead';
+    const scope = canViewAllDoctors && requestedScope === 'all' ? 'all' : 'mine';
     const querySalesRepId = typeof req.query?.salesRepId === 'string' ? req.query.salesRepId.trim() : '';
     const hasExplicitSalesRepId = Boolean(querySalesRepId);
     const requestedSalesRepId =
-      role === 'admin' && scope === 'all' && !hasExplicitSalesRepId
+      canViewAllDoctors && scope === 'all' && !hasExplicitSalesRepId
         ? null
         : (querySalesRepId || req.user?.salesRepId || req.user.id);
     const response = await orderService.getOrdersForSalesRep(requestedSalesRepId, {

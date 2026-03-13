@@ -48,12 +48,13 @@ const isSalesRep = (role) => {
 };
 
 const requireAdmin = (req, res, next) => {
-  const userId = req.user?.id;
+  const currentUser = req.currentUser || req.user || null;
+  const userId = currentUser?.id;
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const user = userRepository.findById(userId);
-  const role = normalizeRole(user?.role);
+  const user = currentUser?.role ? currentUser : userRepository.findById(userId);
+  const role = normalizeRole(user?.role || currentUser?.role);
   if (!isAdmin(role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -62,12 +63,13 @@ const requireAdmin = (req, res, next) => {
 };
 
 const requireAdminOrSalesLead = (req, res, next) => {
-  const userId = req.user?.id;
+  const currentUser = req.currentUser || req.user || null;
+  const userId = currentUser?.id;
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const user = userRepository.findById(userId);
-  const role = normalizeRole(user?.role);
+  const user = currentUser?.role ? currentUser : userRepository.findById(userId);
+  const role = normalizeRole(user?.role || currentUser?.role);
   if (!isAdmin(role) && !isSalesLead(role)) {
     return res.status(403).json({ error: 'Admin or Sales Lead access required' });
   }
@@ -76,12 +78,13 @@ const requireAdminOrSalesLead = (req, res, next) => {
 };
 
 const requireSalesRepOrAdmin = (req, res, next) => {
-  const userId = req.user?.id;
+  const currentUser = req.currentUser || req.user || null;
+  const userId = currentUser?.id;
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const user = userRepository.findById(userId);
-  const role = normalizeRole(user?.role);
+  const user = currentUser?.role ? currentUser : userRepository.findById(userId);
+  const role = normalizeRole(user?.role || currentUser?.role);
   if (!isAdmin(role) && !isSalesRep(role)) {
     return res.status(403).json({ error: 'Sales rep access required' });
   }

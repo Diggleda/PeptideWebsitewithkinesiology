@@ -13646,13 +13646,14 @@ function MainApp() {
 
 	  const fetchSalesTrackingOrders = useCallback(async (options?: { force?: boolean }) => {
 	    const role = userRole;
-	    const scope: "mine" | "all" = isAdmin(role) ? "all" : "mine";
+	    const canViewAllSalesOrders = isAdmin(role) || isSalesLead(role);
+	    const scope: "mine" | "all" = canViewAllSalesOrders ? "all" : "mine";
 	    const salesRepId = userSalesRepId || userId;
-	    const salesRepIdParam = isAdmin(role) && scope === "all" ? null : salesRepId;
+	    const salesRepIdParam = canViewAllSalesOrders && scope === "all" ? null : salesRepId;
 	    const currentUserId = userId != null ? String(userId).trim() : "";
 	    const currentUserEmail =
 	      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
-    if (!role || (!isRep(role) && !isAdmin(role))) {
+    if (!role || (!isRep(role) && !isSalesLead(role) && !isAdmin(role))) {
       setSalesTrackingOrders([]);
       setSalesTrackingDoctors(new Map());
       setSalesRepSalesSummary([]);
@@ -14281,7 +14282,7 @@ function MainApp() {
 	  );
 
   useEffect(() => {
-    if (postLoginHold || !userRole || (!isRep(userRole) && !isAdmin(userRole))) {
+    if (postLoginHold || !userRole || (!isRep(userRole) && !isSalesLead(userRole) && !isAdmin(userRole))) {
       return;
     }
 	    void fetchSalesTrackingOrders().catch((error) => {
@@ -14900,8 +14901,7 @@ function MainApp() {
             referrals: normalizedReferrals.length,
             credits: normalizedCredits,
           });
-	        } else if (isRep(user.role) || isAdmin(user.role)) {
-	          const isAdminRole = isAdmin(user.role);
+	        } else if (isRep(user.role) || isSalesLead(user.role) || isAdmin(user.role)) {
 	          // Sales leads should only see their own prospects (same scope as reps).
 	          const scopeAll = false;
 	          const dashboard = await referralAPI.getSalesRepDashboard({
@@ -19420,6 +19420,158 @@ function MainApp() {
 	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
 	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
 	    }, 0);
+	    const salesScopedOnHoldOrders = [...salesTrackingOrders]
+	      .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
+	      .sort((a, b) => resolveOrderSortTimeMs(b) - resolveOrderSortTimeMs(a));
+	    const salesScopedOnHoldOrderTotal = salesScopedOnHoldOrders.reduce((sum, order) => {
+	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
+	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
+	    }, 0);
+	    const renderSalesScopedOnHoldOrdersCard = () => (
+	      <div className="sales-rep-leads-card sales-rep-combined-card">
+	        <div className="mb-0 flex w-full items-start justify-between gap-3">
+	          <div className="min-w-0">
+	            <h3 className="text-lg font-semibold text-slate-900">
+	              Orders On-Hold
+	            </h3>
+	            <p className="text-sm text-slate-600">
+	              {isSalesLead(user?.role)
+	                ? "All client orders currently awaiting reception from our system."
+	                : "Your clients' orders currently awaiting reception from our system."}
+	            </p>
+	          </div>
+	          <Button
+	            type="button"
+	            variant="outline"
+	            size="sm"
+	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
+	            onClick={() => void fetchSalesTrackingOrders({ force: true })}
+	            disabled={salesTrackingLoading || salesTrackingRefreshing}
+	            aria-busy={salesTrackingLoading || salesTrackingRefreshing}
+	            title="Refresh on-hold orders"
+	          >
+	            {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing..." : "Refresh"}
+	          </Button>
+	        </div>
+	        <div
+	          className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+	          role="region"
+	          aria-label="Orders on-hold list"
+	        >
+	          {salesTrackingLoading && salesScopedOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              Loading orders…
+	            </div>
+	          ) : salesTrackingError && salesScopedOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+	              {salesTrackingError}
+	            </div>
+	          ) : salesScopedOnHoldOrders.length === 0 ? (
+	            <div className="px-4 py-3 text-sm text-slate-500">
+	              No on-hold orders found.
+	            </div>
+	          ) : (
+	            <div className="w-full" style={{ minWidth: 980 }}>
+	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+	                <span>Orders: {salesScopedOnHoldOrders.length}</span>
+	                <span>Total: {formatCurrency(salesScopedOnHoldOrderTotal)}</span>
+	              </div>
+	              <div className="w-full">
+	                <div
+	                  className="grid w-full items-center gap-3 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700"
+	                  style={{
+	                    gridTemplateColumns:
+	                      "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
+	                  }}
+	                >
+	                  <div className="whitespace-nowrap">Order</div>
+	                  <div className="whitespace-nowrap text-center">Ordered by</div>
+	                  <div className="whitespace-nowrap text-right">Placed</div>
+	                  <div className="whitespace-nowrap text-right">Total</div>
+	                </div>
+	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+	                  {salesScopedOnHoldOrders.map((order, index) => {
+	                    const orderNumber = order.number || order.id || "Order";
+	                    const orderAny = order as any;
+	                    const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;
+	                    const billingAddress = (orderAny?.billingAddress ?? orderAny?.billing_address ?? {}) as any;
+	                    const shippingName = `${String(shippingAddress?.firstName ?? shippingAddress?.first_name ?? "").trim()} ${String(shippingAddress?.lastName ?? shippingAddress?.last_name ?? "").trim()}`.trim();
+	                    const billingName = `${String(billingAddress?.firstName ?? billingAddress?.first_name ?? "").trim()} ${String(billingAddress?.lastName ?? billingAddress?.last_name ?? "").trim()}`.trim();
+	                    const rawDoctorName = String(order.doctorName ?? "").trim();
+	                    const normalizedDoctorName = rawDoctorName.toLowerCase();
+	                    const rawDoctorNameSnake = String(orderAny?.doctor_name ?? "").trim();
+	                    const normalizedDoctorNameSnake = rawDoctorNameSnake.toLowerCase();
+	                    const doctorNameFromApi =
+	                      (rawDoctorName &&
+	                      normalizedDoctorName !== "unknown doctor" &&
+	                      normalizedDoctorName !== "unknown"
+	                        ? rawDoctorName
+	                        : "") ||
+	                      (rawDoctorNameSnake &&
+	                      normalizedDoctorNameSnake !== "unknown doctor" &&
+	                      normalizedDoctorNameSnake !== "unknown"
+	                        ? rawDoctorNameSnake
+	                        : "");
+	                    const doctorLabel =
+	                      doctorNameFromApi ||
+	                      shippingName ||
+	                      billingName ||
+	                      shippingAddress?.name ||
+	                      billingAddress?.name ||
+	                      order.doctorEmail ||
+	                      orderAny?.doctor_email ||
+	                      shippingAddress?.email ||
+	                      billingAddress?.email ||
+	                      "Unknown doctor";
+	                    const orderPlacedAt =
+	                      formatOrderPlacedAtForLocalDisplay(order as any);
+	                    const total = Number(
+	                      (order as any)?.grandTotal ?? order.total ?? 0,
+	                    );
+	                    const key =
+	                      String(order.id || "").trim() ||
+	                      String(order.number || "").trim() ||
+	                      `sales-on-hold-${index}`;
+	                    return (
+	                      <li
+	                        key={key}
+	                        className="grid w-full items-center gap-3 px-3 py-1.5 border-b border-slate-200/70 last:border-b-0"
+	                        style={{
+	                          gridTemplateColumns:
+	                            "minmax(180px,1.05fr) minmax(220px,1.15fr) minmax(220px,1fr) minmax(130px,0.55fr)",
+	                        }}
+	                      >
+	                        <div className="text-sm font-semibold text-slate-900 min-w-0 truncate">
+	                          <button
+	                            type="button"
+	                            className="min-w-0 text-left hover:underline"
+	                            onClick={() => openSalesOrderDetails(order)}
+	                            title="Open order details"
+	                          >
+	                            {`Order #${orderNumber}`}
+	                          </button>
+	                        </div>
+	                        <div className="text-sm text-slate-700 min-w-0 truncate text-center">
+	                          {doctorLabel}
+	                        </div>
+	                        <div className="text-sm text-right text-slate-800 whitespace-nowrap">
+	                          {orderPlacedAt
+	                            ? orderPlacedAt
+	                            : "Date unavailable"}
+	                        </div>
+	                        <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+	                          {formatCurrency(total)}
+	                        </div>
+	                      </li>
+	                    );
+	                  })}
+	                </ul>
+	              </div>
+	            </div>
+	          )}
+	        </div>
+	      </div>
+	    );
 	    const renderAdminOnHoldOrdersCard = () => (
 	      <div className="sales-rep-leads-card sales-rep-combined-card">
 	        <div className="mb-0 flex w-full items-start justify-between gap-3">
@@ -19754,7 +19906,7 @@ function MainApp() {
 		            )}
 			          </div>
 
-			          {shouldShowLiveClientsCard && (
+		          {shouldShowLiveClientsCard && (
 			            <div
                     className={clsx(
                       "sales-rep-leads-card sales-rep-combined-card",
@@ -20129,6 +20281,8 @@ function MainApp() {
               </div>
             </div>
           )}
+
+		          {!isAdmin(user?.role) && showSalesDashboardTabs && renderSalesScopedOnHoldOrdersCard()}
 
 		          {isSalesLead(user?.role) && showSalesDashboardTabs && (
 		            <div className="mt-6">

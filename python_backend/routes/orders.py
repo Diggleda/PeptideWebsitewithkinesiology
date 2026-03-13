@@ -201,14 +201,15 @@ def list_orders_for_sales_rep():
             setattr(err, "status", 403)
             raise err
         scope = (request.args.get("scope") or "").strip().lower()
-        scope_all = role == "admin" and scope == "all"
+        can_view_all_doctors = role in ("admin", "sales_lead", "saleslead", "sales-lead")
+        scope_all = can_view_all_doctors and scope == "all"
 
         # Optional override: allow explicit salesRepId query param for admins and sales leads.
         override = (request.args.get("salesRepId") or "").strip() or None
-        if override and role in ("admin", "sales_lead", "saleslead", "sales-lead"):
+        if override and can_view_all_doctors:
             sales_rep_id = override
         else:
-            # When admin is requesting "all", omit the sales rep filter entirely.
+            # When admin or sales lead is requesting "all", omit the sales rep filter entirely.
             sales_rep_id = None if scope_all else g.current_user.get("id")
         force = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
         include_doctors = (request.args.get("includeDoctors") or "").strip().lower() not in ("0", "false", "no")
