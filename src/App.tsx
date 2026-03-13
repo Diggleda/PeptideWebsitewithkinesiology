@@ -7585,6 +7585,12 @@ function MainApp() {
   const [salesTrackingError, setSalesTrackingError] = useState<string | null>(
     null,
   );
+  const [salesOnHoldOrders, setSalesOnHoldOrders] = useState<AccountOrderSummary[]>([]);
+  const [salesOnHoldLoading, setSalesOnHoldLoading] = useState(false);
+  const [salesOnHoldRefreshing, setSalesOnHoldRefreshing] = useState(false);
+  const [salesOnHoldError, setSalesOnHoldError] = useState<string | null>(null);
+  const salesOnHoldLastFetchAtRef = useRef(0);
+  const salesOnHoldInFlightRef = useRef(false);
   const [adminOnHoldOrders, setAdminOnHoldOrders] = useState<AccountOrderSummary[]>([]);
   const [adminOnHoldLoading, setAdminOnHoldLoading] = useState(false);
   const [adminOnHoldRefreshing, setAdminOnHoldRefreshing] = useState(false);
@@ -13650,6 +13656,7 @@ function MainApp() {
 	    const scope: "mine" | "all" = canViewAllSalesOrders ? "all" : "mine";
 	    const salesRepId = userSalesRepId || userId;
 	    const salesRepIdParam = canViewAllSalesOrders && scope === "all" ? null : salesRepId;
+	    const useLocalOnlySalesTracking = true;
 	    const currentUserId = userId != null ? String(userId).trim() : "";
 	    const currentUserEmail =
 	      typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
@@ -13753,7 +13760,7 @@ function MainApp() {
 	          response = await ordersAPI.getForSalesRep({
 	            salesRepId: salesRepIdParam || undefined,
 	            scope,
-              localOnly: isAdmin(role) && scope === "all",
+              localOnly: useLocalOnlySalesTracking,
 	          });
 	          break;
 	        } catch (error: any) {
@@ -14281,6 +14288,73 @@ function MainApp() {
 	    [adminOnHoldOrders.length, postLoginHold, salesTrackingOrders, user?.role],
 	  );
 
+	  const refreshSalesOnHoldOrders = useCallback(
+	    async (options?: { force?: boolean }) => {
+	      const role = user?.role || null;
+	      if (!role || (!isRep(role) && !isSalesLead(role) && !isAdmin(role))) {
+	        setSalesOnHoldOrders([]);
+	        setSalesOnHoldError(null);
+	        setSalesOnHoldLoading(false);
+	        setSalesOnHoldRefreshing(false);
+	        return;
+	      }
+	      if (postLoginHold) {
+	        return;
+	      }
+	      const scope: "mine" | "all" = isAdmin(role) || isSalesLead(role) ? "all" : "mine";
+	      const now = Date.now();
+	      const ttlMs = 25_000;
+	      if (!options?.force && now - salesOnHoldLastFetchAtRef.current < ttlMs) {
+	        return;
+	      }
+	      if (salesOnHoldInFlightRef.current) {
+	        return;
+	      }
+	      salesOnHoldInFlightRef.current = true;
+	      salesOnHoldLastFetchAtRef.current = now;
+	      const hasExisting = salesOnHoldOrders.length > 0;
+	      setSalesOnHoldLoading(!hasExisting);
+	      setSalesOnHoldRefreshing(Boolean(options?.force && hasExisting));
+	      setSalesOnHoldError(null);
+	      try {
+	        const response = await ordersAPI.getOnHoldForSalesRep({ scope, limit: 1200 });
+	        const rawOrders = Array.isArray((response as any)?.orders)
+	          ? ((response as any).orders as any[])
+	          : Array.isArray(response)
+	            ? (response as any[])
+	            : [];
+	        const normalized = normalizeAccountOrdersResponse(
+	          { woo: rawOrders },
+	          { includeCanceled: true },
+	        );
+	        const sourceOrders = normalized.length > 0 ? normalized : (rawOrders as AccountOrderSummary[]);
+	        const sorted = sourceOrders.sort((a, b) => {
+	          const aTime = resolveOrderSortTimeMs(a as any);
+	          const bTime = resolveOrderSortTimeMs(b as any);
+	          const safeA = Number.isFinite(aTime) ? aTime : 0;
+	          const safeB = Number.isFinite(bTime) ? bTime : 0;
+	          return safeB - safeA;
+	        });
+	        setSalesOnHoldOrders(sorted as AccountOrderSummary[]);
+	        setSalesOnHoldError(null);
+	      } catch (error: any) {
+	        const message =
+	          typeof error?.message === "string" && error.message
+	            ? error.message
+	            : "Unable to load on-hold orders.";
+	        setSalesOnHoldError(message);
+	        if (!hasExisting) {
+	          setSalesOnHoldOrders([]);
+	        }
+	      } finally {
+	        setSalesOnHoldLoading(false);
+	        setSalesOnHoldRefreshing(false);
+	        salesOnHoldInFlightRef.current = false;
+	      }
+	    },
+	    [postLoginHold, salesOnHoldOrders.length, user?.role],
+	  );
+
   useEffect(() => {
     if (postLoginHold || !userRole || (!isRep(userRole) && !isSalesLead(userRole) && !isAdmin(userRole))) {
       return;
@@ -14312,6 +14386,29 @@ function MainApp() {
 	      window.clearInterval(pollHandle);
 	    };
 	  }, [postLoginHold, refreshAdminOnHoldOrders, user?.id, user?.role]);
+
+	  useEffect(() => {
+	    if (postLoginHold || !user || (!isRep(user.role) && !isSalesLead(user.role) && !isAdmin(user.role))) {
+	      return;
+	    }
+	    void refreshSalesOnHoldOrders();
+	    const leaderKey = "sales-on-hold-poll";
+	    const pollIntervalMs = 25_000;
+	    const leaderTtlMs = Math.max(45_000, pollIntervalMs * 2);
+	    const pollHandle = window.setInterval(() => {
+	      if (!isPageVisible()) {
+	        return;
+	      }
+	      if (!isTabLeader(leaderKey, leaderTtlMs)) {
+	        return;
+	      }
+	      void refreshSalesOnHoldOrders();
+	    }, pollIntervalMs);
+	    return () => {
+	      releaseTabLeadership(leaderKey);
+	      window.clearInterval(pollHandle);
+	    };
+	  }, [postLoginHold, refreshSalesOnHoldOrders, user?.id, user?.role]);
 
 	  const scopedSalesTrackingOrders = useMemo(() => {
 	    if (!isAdmin(user?.role)) {
@@ -19420,10 +19517,7 @@ function MainApp() {
 	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
 	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
 	    }, 0);
-	    const salesScopedOnHoldOrders = [...salesTrackingOrders]
-	      .filter((order) => isOrderOnHoldStatus((order as any)?.status || null))
-	      .sort((a, b) => resolveOrderSortTimeMs(b) - resolveOrderSortTimeMs(a));
-	    const salesScopedOnHoldOrderTotal = salesScopedOnHoldOrders.reduce((sum, order) => {
+	    const salesScopedOnHoldOrderTotal = salesOnHoldOrders.reduce((sum, order) => {
 	      const totalRaw = Number((order as any)?.grandTotal ?? (order as any)?.total ?? 0);
 	      return sum + (Number.isFinite(totalRaw) ? totalRaw : 0);
 	    }, 0);
@@ -19445,12 +19539,12 @@ function MainApp() {
 	            variant="outline"
 	            size="sm"
 	            className="header-home-button squircle-sm bg-white text-slate-900 shrink-0"
-	            onClick={() => void fetchSalesTrackingOrders({ force: true })}
-	            disabled={salesTrackingLoading || salesTrackingRefreshing}
-	            aria-busy={salesTrackingLoading || salesTrackingRefreshing}
+	            onClick={() => void refreshSalesOnHoldOrders({ force: true })}
+	            disabled={salesOnHoldLoading || salesOnHoldRefreshing}
+	            aria-busy={salesOnHoldLoading || salesOnHoldRefreshing}
 	            title="Refresh on-hold orders"
 	          >
-	            {salesTrackingLoading || salesTrackingRefreshing ? "Refreshing..." : "Refresh"}
+	            {salesOnHoldLoading || salesOnHoldRefreshing ? "Refreshing..." : "Refresh"}
 	          </Button>
 	        </div>
 	        <div
@@ -19458,22 +19552,22 @@ function MainApp() {
 	          role="region"
 	          aria-label="Orders on-hold list"
 	        >
-	          {salesTrackingLoading && salesScopedOnHoldOrders.length === 0 ? (
+	          {salesOnHoldLoading && salesOnHoldOrders.length === 0 ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
 	              Loading orders…
 	            </div>
-	          ) : salesTrackingError && salesScopedOnHoldOrders.length === 0 ? (
+	          ) : salesOnHoldError && salesOnHoldOrders.length === 0 ? (
 	            <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-	              {salesTrackingError}
+	              {salesOnHoldError}
 	            </div>
-	          ) : salesScopedOnHoldOrders.length === 0 ? (
+	          ) : salesOnHoldOrders.length === 0 ? (
 	            <div className="px-4 py-3 text-sm text-slate-500">
 	              No on-hold orders found.
 	            </div>
 	          ) : (
 	            <div className="w-full" style={{ minWidth: 980 }}>
 	              <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-	                <span>Orders: {salesScopedOnHoldOrders.length}</span>
+	                <span>Orders: {salesOnHoldOrders.length}</span>
 	                <span>Total: {formatCurrency(salesScopedOnHoldOrderTotal)}</span>
 	              </div>
 	              <div className="w-full">
@@ -19490,7 +19584,7 @@ function MainApp() {
 	                  <div className="whitespace-nowrap text-right">Total</div>
 	                </div>
 	                <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-	                  {salesScopedOnHoldOrders.map((order, index) => {
+	                  {salesOnHoldOrders.map((order, index) => {
 	                    const orderNumber = order.number || order.id || "Order";
 	                    const orderAny = order as any;
 	                    const shippingAddress = (orderAny?.shippingAddress ?? orderAny?.shipping_address ?? {}) as any;

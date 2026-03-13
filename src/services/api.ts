@@ -1731,6 +1731,19 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  getOnHoldForSalesRep: async (options?: { scope?: 'mine' | 'all'; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.scope) {
+      params.set('scope', options.scope);
+    }
+    if (typeof options?.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+      params.set('limit', String(Math.trunc(options.limit)));
+    }
+    const query = params.toString();
+    const url = query ? `${API_BASE_URL}/orders/sales-rep/on-hold?${query}` : `${API_BASE_URL}/orders/sales-rep/on-hold`;
+    return fetchWithAuth(url);
+  },
+
   getSalesByRepForAdmin: async (options?: { periodStart?: string; periodEnd?: string; force?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.periodStart) params.set('periodStart', options.periodStart);

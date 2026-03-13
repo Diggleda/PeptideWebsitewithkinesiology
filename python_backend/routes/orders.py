@@ -226,6 +226,35 @@ def list_orders_for_sales_rep():
     return handle_action(action)
 
 
+@blueprint.get("/sales-rep/on-hold")
+@require_auth
+def list_on_hold_orders_for_sales_rep():
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+            err = ValueError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
+        raw_limit = request.args.get("limit")
+        try:
+            limit = int(raw_limit) if raw_limit is not None else 1200
+        except Exception:
+            limit = 1200
+        limit = max(1, min(limit, 5000))
+        scope = (request.args.get("scope") or "").strip().lower()
+        can_view_all_doctors = role in ("admin", "sales_lead", "saleslead", "sales-lead")
+        include_all_doctors = can_view_all_doctors and scope == "all"
+        sales_rep_id = None if include_all_doctors else g.current_user.get("salesRepId") or g.current_user.get("id")
+        return order_service.get_on_hold_orders_for_sales_rep(
+            sales_rep_id,
+            include_all_doctors=include_all_doctors,
+            include_house_contacts=(role == "admin"),
+            limit=limit,
+        )
+
+    return handle_action(action)
+
+
 @blueprint.get("/sales-rep/<order_id>")
 @require_auth
 def get_sales_rep_order_detail(order_id: str):

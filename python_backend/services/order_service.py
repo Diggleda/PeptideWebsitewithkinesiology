@@ -2403,6 +2403,167 @@ def get_orders_for_sales_rep(
     return result
 
 
+def get_on_hold_orders_for_sales_rep(
+    sales_rep_id: Optional[str],
+    *,
+    include_all_doctors: bool = False,
+    include_house_contacts: bool = False,
+    limit: int = 500,
+) -> Dict[str, object]:
+    normalized_sales_rep_id = str(sales_rep_id or "").strip()
+    try:
+        effective_limit = int(limit)
+    except Exception:
+        effective_limit = 500
+    effective_limit = max(1, min(effective_limit, 5000))
+    scan_limit = max(effective_limit * 4, 1500)
+    scan_limit = min(scan_limit, 10000)
+
+    users = user_repository.get_all()
+    user_by_id = {
+        str(user.get("id")): user
+        for user in users
+        if isinstance(user, dict) and user.get("id") is not None
+    }
+    rep_records = {str(rep.get("id")): rep for rep in sales_rep_repository.get_all() if rep.get("id")}
+    allowed_rep_ids = (
+        _compute_allowed_sales_rep_ids(normalized_sales_rep_id, users, rep_records)
+        if normalized_sales_rep_id
+        else set()
+    )
+
+    def _normalize_status(value: object) -> str:
+        return str(value or "").strip().lower().replace("_", "-")
+
+    def _normalize_rep_id(value: object) -> str:
+        return str(value or "").strip()
+
+    def _normalize_lead_type(value: object) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _as_dict(value: object) -> Dict:
+        return value if isinstance(value, dict) else {}
+
+    def _first_text(*values: object) -> Optional[str]:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return None
+        return None
+
+    def _combined_name(first_name: object, last_name: object) -> Optional[str]:
+        first = str(first_name or "").strip()
+        last = str(last_name or "").strip()
+        full = f"{first} {last}".strip()
+        return full or None
+
+    local_orders = order_repository.list_recent_sales_tracking(scan_limit) or []
+    summaries: List[Dict] = []
+    for local in local_orders:
+        if not isinstance(local, dict):
+            continue
+        if _normalize_status(local.get("status")) not in ("on-hold", "onhold"):
+            continue
+
+        local_user_id = str(local.get("userId") or local.get("user_id") or "").strip()
+        doctor = user_by_id.get(local_user_id) or {}
+        doctor_lead_type = _normalize_lead_type(
+            doctor.get("leadType") or doctor.get("lead_type"),
+        )
+        doctor_is_house_contact = include_house_contacts and doctor_lead_type in (
+            "contact_form",
+            "house",
+            "house_contact",
+        )
+        rep_from_order = _normalize_rep_id(
+            local.get("doctorSalesRepId")
+            or local.get("salesRepId")
+            or local.get("sales_rep_id")
+            or local.get("doctor_sales_rep_id")
+        )
+        rep_from_user = _normalize_rep_id(
+            doctor.get("salesRepId") or doctor.get("sales_rep_id"),
+        )
+
+        if include_all_doctors:
+            if allowed_rep_ids and not (
+                (rep_from_order and rep_from_order in allowed_rep_ids)
+                or (rep_from_user and rep_from_user in allowed_rep_ids)
+                or doctor_is_house_contact
+            ):
+                continue
+        elif allowed_rep_ids and not (
+            (rep_from_order and rep_from_order in allowed_rep_ids)
+            or (rep_from_user and rep_from_user in allowed_rep_ids)
+            or doctor_is_house_contact
+        ):
+            continue
+
+        shipping = _as_dict(local.get("shippingAddress") or local.get("shipping_address"))
+        billing = _as_dict(local.get("billingAddress") or local.get("billing_address"))
+        customer = _as_dict(local.get("customer"))
+        shipping_name = _combined_name(
+            shipping.get("firstName") or shipping.get("first_name"),
+            shipping.get("lastName") or shipping.get("last_name"),
+        ) or _first_text(shipping.get("name"), shipping.get("company"))
+        billing_name = _combined_name(
+            billing.get("firstName") or billing.get("first_name"),
+            billing.get("lastName") or billing.get("last_name"),
+        ) or _first_text(billing.get("name"), billing.get("company"))
+        doctor_email = _first_text(
+            doctor.get("email"),
+            local.get("doctorEmail"),
+            local.get("doctor_email"),
+            local.get("email"),
+            customer.get("email"),
+            billing.get("email"),
+            shipping.get("email"),
+        )
+        doctor_name = _first_text(
+            doctor.get("name"),
+            local.get("doctorName"),
+            local.get("doctor_name"),
+            customer.get("name"),
+            shipping_name,
+            billing_name,
+            doctor_email,
+        ) or "Unknown doctor"
+        rep_id = rep_from_order or rep_from_user or None
+        rep_record = rep_records.get(rep_id) if rep_id else None
+        summaries.append(
+            {
+                "id": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "wooOrderId": local.get("wooOrderId") or local.get("woo_order_id") or None,
+                "wooOrderNumber": local.get("wooOrderNumber") or local.get("woo_order_number") or None,
+                "number": local.get("wooOrderNumber") or local.get("wooOrderId") or local.get("id"),
+                "status": local.get("status") or "on-hold",
+                "total": float(local.get("grandTotal") or local.get("total") or 0),
+                "grandTotal": float(local.get("grandTotal") or local.get("total") or 0),
+                "taxTotal": float(local.get("taxTotal") or 0),
+                "shippingTotal": float(local.get("shippingTotal") or 0),
+                "currency": local.get("currency") or "USD",
+                "createdAt": local.get("createdAt") or local.get("dateCreated") or local.get("date_created") or None,
+                "updatedAt": local.get("updatedAt") or None,
+                "doctorId": doctor.get("id") or local_user_id or None,
+                "doctorName": doctor_name,
+                "doctorEmail": doctor_email,
+                "doctorSalesRepId": rep_id,
+                "doctorSalesRepName": rep_record.get("name") if isinstance(rep_record, dict) else None,
+                "doctorSalesRepEmail": rep_record.get("email") if isinstance(rep_record, dict) else None,
+                "userId": doctor.get("id") or local_user_id or None,
+                "lineItems": local.get("items") or [],
+                "source": "peppro",
+            }
+        )
+
+    summaries.sort(
+        key=lambda order: str(order.get("createdAt") or order.get("updatedAt") or ""),
+        reverse=True,
+    )
+    return {"orders": summaries[:effective_limit]}
+
+
 def _normalize_order_identifier(order_id: str) -> List[str]:
     """
     Build candidate identifiers (id and number) from an incoming order id/number string.

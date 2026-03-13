@@ -10,7 +10,6 @@ import { Search, User, Gift, ShoppingCart, LogOut, Home, Copy, X, Check, Eye, Ey
 import { toast } from '../lib/toast';
 import { AuthActionResult } from '../types/auth';
 import clsx from 'clsx';
-import { ImageWithFallback } from './ImageWithFallback';
 import { proxifyWooMediaUrl } from '../lib/mediaProxy';
 import { isTabLeader, releaseTabLeadership } from '../lib/tabLocks';
 import { withStaticAssetStamp } from '../lib/assetUrl';
@@ -5124,11 +5123,14 @@ export function Header({
                                 style={{ maxHeight: '120px' }}
                               >
                                 {lineImage ? (
-                                  <ImageWithFallback
+                                  <img
                                     src={lineImage}
                                     alt={line.name || 'Item thumbnail'}
                                     className="object-contain"
                                     style={{ width: '100%', height: '100%', maxHeight: '120px' }}
+                                    onError={(event) => {
+                                      event.currentTarget.style.display = 'none';
+                                    }}
                                   />
                                 ) : (
                                   <Package className="h-6 w-6 opacity-60" />
@@ -5588,11 +5590,14 @@ export function Header({
                           style={{ maxHeight: '120px' }}
                         >
                           {lineImage ? (
-                            <ImageWithFallback
+                            <img
                               src={lineImage}
                               alt={line.name || 'Item thumbnail'}
                               className="object-contain"
                               style={{ width: '100%', height: '100%', maxHeight: '120px' }}
+                              onError={(event) => {
+                                event.currentTarget.style.display = 'none';
+                              }}
                             />
                           ) : (
                             <Package className="h-6 w-6 opacity-60" />
