@@ -2564,6 +2564,248 @@ def get_on_hold_orders_for_sales_rep(
     return {"orders": summaries[:effective_limit]}
 
 
+def get_sales_modal_detail(*, actor: Dict, target_user_id: str) -> Dict[str, object]:
+    actor_role = str((actor or {}).get("role") or "").strip().lower()
+    if actor_role not in ("admin", "sales_rep", "rep", "sales_lead", "saleslead", "sales-lead"):
+        raise _service_error("SALES_REP_ACCESS_REQUIRED", 403)
+
+    normalized_target_user_id = str(target_user_id or "").strip()
+    if not normalized_target_user_id:
+        raise _service_error("USER_ID_REQUIRED", 400)
+
+    users = user_repository.get_all()
+    user_by_id = {
+        str(user.get("id")): user
+        for user in users
+        if isinstance(user, dict) and user.get("id") is not None
+    }
+    rep_records = {
+        str(rep.get("id")): rep
+        for rep in sales_rep_repository.get_all()
+        if isinstance(rep, dict) and rep.get("id") is not None
+    }
+
+    target_user = user_by_id.get(normalized_target_user_id)
+    if not isinstance(target_user, dict):
+        raise _service_error("USER_NOT_FOUND", 404)
+
+    def _normalize_role(value: object) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _is_sales_actor_role(value: object) -> bool:
+        return _normalize_role(value) in ("admin", "sales_rep", "rep", "sales_lead", "saleslead")
+
+    def _resolve_sales_rep_id(user: Dict) -> Optional[str]:
+        candidates = [
+            user.get("salesRepId"),
+            user.get("sales_rep_id"),
+            user.get("ownerSalesRepId"),
+            user.get("owner_sales_rep_id"),
+        ]
+        for candidate in candidates:
+            normalized = str(candidate or "").strip()
+            if normalized:
+                return normalized
+        user_id = str(user.get("id") or "").strip()
+        if user_id:
+            allowed = _compute_allowed_sales_rep_ids(user_id, users, rep_records)
+            if allowed:
+                preferred = next((value for value in allowed if value in rep_records), None)
+                return preferred or next(iter(allowed))
+        return None
+
+    def _resolve_order_subtotal(order: Dict) -> float:
+        candidates = [
+            order.get("itemsSubtotal"),
+            order.get("items_subtotal"),
+            order.get("grandTotal"),
+            order.get("grand_total"),
+            order.get("total"),
+        ]
+        for candidate in candidates:
+            try:
+                value = float(candidate or 0)
+            except Exception:
+                value = 0.0
+            if value > 0:
+                return value
+        return 0.0
+
+    def _should_count_revenue(status: object) -> bool:
+        normalized = str(status or "").strip().lower().replace("_", "-")
+        return normalized not in ("cancelled", "canceled", "trash", "refunded", "failed")
+
+    def _order_sort_key(order: Dict) -> str:
+        return str(order.get("createdAt") or order.get("updatedAt") or "")
+
+    def _order_identity_key(order: Dict) -> str:
+        for candidate in (
+            order.get("wooOrderNumber"),
+            order.get("woo_order_number"),
+            order.get("number"),
+            order.get("wooOrderId"),
+            order.get("woo_order_id"),
+            order.get("id"),
+        ):
+            normalized = str(candidate or "").strip()
+            if normalized:
+                return normalized
+        return ""
+
+    actor_user_id = str((actor or {}).get("id") or "").strip()
+    actor_allowed_rep_ids = (
+        _compute_allowed_sales_rep_ids(actor_user_id, users, rep_records)
+        if actor_role != "admin" and actor_user_id
+        else set()
+    )
+    target_role = _normalize_role(target_user.get("role"))
+    target_is_sales_actor = _is_sales_actor_role(target_role)
+    target_sales_rep_id = _resolve_sales_rep_id(target_user)
+    target_allowed_rep_ids = (
+        _compute_allowed_sales_rep_ids(normalized_target_user_id, users, rep_records)
+        if target_is_sales_actor
+        else ({target_sales_rep_id} if target_sales_rep_id else set())
+    )
+
+    if actor_role != "admin":
+        if target_is_sales_actor:
+            if normalized_target_user_id != actor_user_id and actor_allowed_rep_ids.isdisjoint(target_allowed_rep_ids):
+                raise _service_error("USER_NOT_FOUND", 404)
+        else:
+            if not actor_allowed_rep_ids:
+                raise _service_error("USER_NOT_FOUND", 404)
+            doctor_rep_id = str(
+                target_user.get("salesRepId") or target_user.get("sales_rep_id") or ""
+            ).strip()
+            if not doctor_rep_id or doctor_rep_id not in actor_allowed_rep_ids:
+                raise _service_error("USER_NOT_FOUND", 404)
+
+    personal_orders = order_repository.list_user_overlay_fields(normalized_target_user_id)
+    personal_orders.sort(key=_order_sort_key, reverse=True)
+
+    sales_orders: List[Dict] = []
+    if target_is_sales_actor and target_allowed_rep_ids:
+        assigned_doctor_ids = [
+            str(user.get("id"))
+            for user in users
+            if isinstance(user, dict)
+            and user.get("id") is not None
+            and _normalize_role(user.get("role")) in ("doctor", "test_doctor")
+            and str(user.get("salesRepId") or user.get("sales_rep_id") or "").strip() in target_allowed_rep_ids
+        ]
+        if assigned_doctor_ids:
+            sales_orders = order_repository.find_sales_tracking_by_user_ids(assigned_doctor_ids)
+            sales_orders.sort(key=_order_sort_key, reverse=True)
+
+    personal_order_keys = {
+        _order_identity_key(order)
+        for order in personal_orders
+        if _order_identity_key(order)
+    }
+    filtered_sales_orders = [
+        order
+        for order in sales_orders
+        if _order_identity_key(order) not in personal_order_keys
+    ]
+
+    combined_by_key: Dict[str, Dict] = {}
+    for order in [*personal_orders, *filtered_sales_orders]:
+        key = _order_identity_key(order)
+        if not key or key in combined_by_key:
+            continue
+        combined_by_key[key] = order
+    combined_orders = sorted(combined_by_key.values(), key=_order_sort_key, reverse=True)
+
+    personal_revenue = sum(
+        _resolve_order_subtotal(order)
+        for order in personal_orders
+        if _should_count_revenue(order.get("status"))
+    )
+    sales_wholesale_revenue = 0.0
+    sales_retail_revenue = 0.0
+    for order in filtered_sales_orders:
+        if not _should_count_revenue(order.get("status")):
+            continue
+        subtotal = _resolve_order_subtotal(order)
+        pricing_mode = str(order.get("pricingMode") or order.get("pricing_mode") or "").strip().lower()
+        if pricing_mode == "wholesale":
+            sales_wholesale_revenue += subtotal
+        else:
+            sales_retail_revenue += subtotal
+    sales_revenue = sales_wholesale_revenue + sales_retail_revenue
+    total_order_value = sum(
+        _resolve_order_subtotal(order)
+        for order in combined_orders
+        if _should_count_revenue(order.get("status"))
+    )
+    order_quantity = sum(1 for order in combined_orders if _should_count_revenue(order.get("status")))
+    sales_order_count = sum(
+        1 for order in filtered_sales_orders if _should_count_revenue(order.get("status"))
+    )
+
+    address_parts = [
+        target_user.get("officeAddressLine1"),
+        target_user.get("officeAddressLine2"),
+        ", ".join(
+            [
+                value
+                for value in (
+                    target_user.get("officeCity"),
+                    target_user.get("officeState"),
+                    target_user.get("officePostalCode"),
+                )
+                if str(value or "").strip()
+            ]
+        ),
+        target_user.get("officeCountry"),
+    ]
+    address = "\n".join(
+        [str(part).strip() for part in address_parts if str(part or "").strip()]
+    ) or None
+    last_order_date = next(
+        (
+            order.get("createdAt") or order.get("updatedAt")
+            for order in combined_orders
+            if isinstance(order, dict)
+        ),
+        None,
+    )
+
+    return {
+        "user": {
+            "id": target_user.get("id"),
+            "name": target_user.get("name") or target_user.get("email") or "User",
+            "email": target_user.get("email"),
+            "phone": target_user.get("phone"),
+            "role": target_user.get("role"),
+            "profileImageUrl": target_user.get("profileImageUrl"),
+            "salesRepId": target_sales_rep_id,
+            "officeAddressLine1": target_user.get("officeAddressLine1"),
+            "officeAddressLine2": target_user.get("officeAddressLine2"),
+            "officeCity": target_user.get("officeCity"),
+            "officeState": target_user.get("officeState"),
+            "officePostalCode": target_user.get("officePostalCode"),
+            "officeCountry": target_user.get("officeCountry"),
+        },
+        "ownerSalesRepId": target_sales_rep_id,
+        "isSalesProfile": target_is_sales_actor,
+        "orders": combined_orders,
+        "personalOrders": personal_orders,
+        "salesOrders": filtered_sales_orders,
+        "personalOrdersLoaded": True,
+        "salesOrdersLoaded": True,
+        "personalRevenue": personal_revenue if personal_orders else None,
+        "salesRevenue": sales_revenue if target_is_sales_actor else None,
+        "salesWholesaleRevenue": sales_wholesale_revenue if target_is_sales_actor else None,
+        "salesRetailRevenue": sales_retail_revenue if target_is_sales_actor else None,
+        "orderQuantity": order_quantity,
+        "salesOrderCount": sales_order_count if target_is_sales_actor else None,
+        "totalOrderValue": total_order_value,
+        "lastOrderDate": last_order_date,
+        "address": address,
+    }
+
+
 def _normalize_order_identifier(order_id: str) -> List[str]:
     """
     Build candidate identifiers (id and number) from an incoming order id/number string.

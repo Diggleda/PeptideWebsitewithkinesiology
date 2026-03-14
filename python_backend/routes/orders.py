@@ -270,6 +270,20 @@ def get_sales_rep_order_detail(order_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/sales-rep/users/<user_id>/modal-detail")
+@require_auth
+def get_sales_modal_detail(user_id: str):
+    def action():
+        role = (g.current_user.get("role") or "").lower()
+        if role not in ("sales_rep", "rep", "sales_lead", "saleslead", "sales-lead", "admin"):
+            err = ValueError("Sales rep access required")
+            setattr(err, "status", 403)
+            raise err
+        return order_service.get_sales_modal_detail(actor=g.current_user, target_user_id=user_id)
+
+    return handle_action(action)
+
+
 @blueprint.post("/<order_id>/cancel")
 @require_auth
 def cancel_order(order_id: str):

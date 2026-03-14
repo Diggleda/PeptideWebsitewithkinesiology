@@ -6584,9 +6584,6 @@ function MainApp() {
 		  const [salesDoctorDetailLoading, setSalesDoctorDetailLoading] = useState(false);
       const [salesDoctorDetailHydrating, setSalesDoctorDetailHydrating] = useState(false);
       const salesDoctorDetailRequestIdRef = useRef(0);
-      const salesDoctorDetailProfileCacheRef = useRef<Map<string, any>>(new Map());
-      const salesDoctorDetailOrdersCacheRef = useRef<Map<string, AccountOrderSummary[]>>(new Map());
-      const salesDoctorDetailSalesOrdersCacheRef = useRef<Map<string, AccountOrderSummary[]>>(new Map());
       const salesDoctorRepFeedCacheRef = useRef<
         Map<string, { orders: AccountOrderSummary[]; doctors: any[] }>
       >(new Map());
@@ -8612,198 +8609,14 @@ function MainApp() {
 
 	      (async () => {
 	        try {
-          const profileCache = salesDoctorDetailProfileCacheRef.current;
-          const ordersCache = salesDoctorDetailOrdersCacheRef.current;
-          const salesOrdersCache = salesDoctorDetailSalesOrdersCacheRef.current;
-
-          const tryResolveUserProfile = async (candidateId: string) => {
-            const cacheKey = `user:${candidateId}`;
-            const cached = profileCache.get(cacheKey);
-            if (cached) {
-              return cached;
-            }
-            const profileResp = (await settingsAPI.getAdminUserProfile(candidateId)) as any;
-            const profile = (profileResp as any)?.user || null;
-            const canonicalUserId = String(profile?.id || candidateId || "").trim();
-            if (!canonicalUserId) {
-              throw new Error("USER_ID_NOT_RESOLVED");
-            }
-            const resolved = { profileResp, canonicalUserId };
-            profileCache.set(cacheKey, resolved);
-            profileCache.set(`user:${canonicalUserId}`, resolved);
-            return resolved;
-          };
-
-          const tryResolveSalesRepProfile = async (candidateId: string) => {
-            const cacheKey = `sales-rep:${candidateId}`;
-            const cached = profileCache.get(cacheKey);
-            if (cached) {
-              return cached;
-            }
-            const salesRepResp = (await settingsAPI.getSalesRepProfile(candidateId)) as any;
-            const rep = (salesRepResp as any)?.salesRep || (salesRepResp as any)?.sales_rep || null;
-            if (!rep) {
-              throw new Error("SALES_REP_NOT_FOUND");
-            }
-            const repId = String(rep?.id || candidateId || "").trim();
-            const repUserId = String(rep?.userId || "").trim();
-            const fallbackProfileResp = {
-              user: {
-                id: repUserId || repId || candidateId,
-                name: rep?.name || displayName,
-                email: rep?.email || entry?.email || null,
-                phone: rep?.phone || null,
-                role: normalizeRole(rep?.role || entryRole || "sales_rep") || "sales_rep",
-                profileImageUrl: avatarUrl,
-                salesRepId: repId || candidateId,
-              },
-            };
-            const resolved = {
-              profileResp: fallbackProfileResp,
-              canonicalUserId: repUserId || repId || candidateId,
-              resolvedSalesRepIdentifier: repId || candidateId,
-            };
-            profileCache.set(cacheKey, resolved);
-            if (repId) {
-              profileCache.set(`sales-rep:${repId}`, resolved);
-            }
-            return resolved;
-          };
-
-          const fetchAdminOrders = async (canonicalUserId: string) => {
-            const cacheKey = String(canonicalUserId || "").trim();
-            const cached = ordersCache.get(cacheKey);
-            if (cached) {
-              return cached;
-            }
-            const ordersResp = (await ordersAPI.getAdminOrdersForUser(canonicalUserId)) as any;
-            const normalized = normalizeAccountOrdersResponse(ordersResp, {
-              includeCanceled: true,
-            });
-            ordersCache.set(cacheKey, normalized);
-            return normalized;
-          };
-
-          const fetchSalesOrders = async (salesRepIdentifiers: string[]) => {
-            const normalizedIdentifiers = Array.from(
-              new Set(
-                salesRepIdentifiers
-                  .map((value) => String(value || "").trim())
-                  .filter((value) => value.length > 0),
-              ),
-            );
-            const cacheKey = normalizedIdentifiers
-              .slice()
-              .sort()
-              .join("|");
-            if (!cacheKey) {
-              return [] as AccountOrderSummary[];
-            }
-            const cached = salesOrdersCache.get(cacheKey);
-            if (cached) {
-              return cached;
-            }
-            const responses = await Promise.allSettled(
-              normalizedIdentifiers.map(async (repIdentifier) => {
-                const candidateResp = await ordersAPI.getForSalesRep({
-                  salesRepId: repIdentifier,
-                  scope: "all",
-                });
-                const candidateOrders = Array.isArray((candidateResp as any)?.orders)
-                  ? ((candidateResp as any).orders as any[])
-                  : [];
-                return candidateOrders;
-              }),
-            );
-            const repOrdersList = responses.flatMap((result) =>
-              result.status === "fulfilled" ? result.value : [],
-            );
-            const normalized = normalizeAccountOrdersResponse(
-              { local: repOrdersList },
-              { includeCanceled: true },
-            );
-            salesOrdersCache.set(cacheKey, normalized);
-            return normalized;
-          };
-
-          const resolveOrderSubtotal = (order: any) => resolveOrderItemsSubtotal(order);
-
-          let profileResp: any = null;
-          let resolvedUserId = id;
-          let resolvedSalesRepIdentifier = "";
-
-          for (const candidateId of candidateIds) {
-            if (entryIsSalesActor) {
-              try {
-                const loaded = await tryResolveSalesRepProfile(candidateId);
-                profileResp = loaded.profileResp;
-                resolvedUserId = loaded.canonicalUserId;
-                resolvedSalesRepIdentifier = loaded.resolvedSalesRepIdentifier;
-                break;
-              } catch {
-                // continue to next candidate/strategy
-              }
-            }
-
-            try {
-              const loaded = await tryResolveUserProfile(candidateId);
-              profileResp = loaded.profileResp;
-              resolvedUserId = loaded.canonicalUserId;
-              resolvedSalesRepIdentifier = candidateId;
-              break;
-            } catch {
-              // continue to next candidate/strategy
-            }
-
-            if (!entryIsSalesActor) {
-              try {
-                const loaded = await tryResolveSalesRepProfile(candidateId);
-                profileResp = loaded.profileResp;
-                resolvedUserId = loaded.canonicalUserId;
-                resolvedSalesRepIdentifier = loaded.resolvedSalesRepIdentifier;
-                break;
-              } catch {
-                // continue to next candidate
-              }
-            }
-          }
-
-          if (!profileResp && entryIsSalesActor) {
-            profileResp = {
-              user: {
-                id: resolvedUserId || id,
-                name: displayName,
-                email: entry?.email || null,
-                phone: null,
-                role: entryRole || "sales_rep",
-                profileImageUrl: avatarUrl,
-                salesRepId:
-                  resolvedSalesRepIdentifier ||
-                  String(entry?.salesRepId || entry?.sales_rep_id || id || "").trim() ||
-                  null,
-              },
-            } as any;
-          }
-
-          if (!profileResp) {
+          const modalResp = (await ordersAPI.getSalesModalDetail(id)) as any;
+          const profile = (modalResp as any)?.user || null;
+          if (!profile) {
             throw new Error("ADMIN_USER_RESOLUTION_FAILED");
           }
 
-          const profile = (profileResp as any)?.user || null;
+          const resolvedUserId = String(profile?.id || id || "").trim() || id;
           const roleFromProfile = normalizeRole(profile?.role || entryRole || "doctor");
-          const salesRepIdentifiers = Array.from(
-            new Set(
-              [
-                resolvedSalesRepIdentifier,
-                profile?.salesRepId,
-                profile?.sales_rep_id,
-                resolvedUserId,
-                ...candidateIds,
-              ]
-                .map((value) => String(value || "").trim())
-                .filter((value) => value.length > 0),
-            ),
-          );
           const profileNameKey =
             typeof profile?.name === "string" && profile.name.trim()
               ? profile.name.trim().toLowerCase()
@@ -8815,7 +8628,7 @@ function MainApp() {
               resolvedUserId,
               String(profile?.id || "").trim(),
               ...candidateIds,
-              ...salesRepIdentifiers,
+              String(profile?.salesRepId || profile?.sales_rep_id || "").trim(),
             ].filter((value) => value.length > 0),
           );
           const commissionRowForModal = adminCommissionRowsRef.current.find((row) => {
@@ -8835,22 +8648,20 @@ function MainApp() {
             return Boolean(profileNameKey && rowNameKey && profileNameKey === rowNameKey && rowRole === roleFromProfile);
           });
 
-          const addressParts = [
-            profile?.officeAddressLine1,
-            profile?.officeAddressLine2,
-            [profile?.officeCity, profile?.officeState, profile?.officePostalCode]
-              .filter(Boolean)
-              .join(", "),
-            profile?.officeCountry,
-          ].filter((part) => typeof part === "string" && part.trim().length > 0);
-          const address = addressParts.length > 0 ? addressParts.join("\n") : null;
-          const isSalesProfile =
-            roleFromProfile === "sales_rep" ||
-            roleFromProfile === "rep" ||
-            roleFromProfile === "sales_lead" ||
-            roleFromProfile === "saleslead" ||
-            roleFromProfile === "sales-lead" ||
-            roleFromProfile === "admin";
+          const address =
+            typeof modalResp?.address === "string" && modalResp.address.trim().length > 0
+              ? modalResp.address
+              : [
+                  profile?.officeAddressLine1,
+                  profile?.officeAddressLine2,
+                  [profile?.officeCity, profile?.officeState, profile?.officePostalCode]
+                    .filter(Boolean)
+                    .join(", "),
+                  profile?.officeCountry,
+                ]
+                  .filter((part) => typeof part === "string" && part.trim().length > 0)
+                  .join("\n") || null;
+          const isSalesProfile = Boolean(modalResp?.isSalesProfile);
 
           let immediateSalesWholesaleRevenue = salesWholesaleRevenue;
           let immediateSalesRetailRevenue = salesRetailRevenue;
@@ -8898,13 +8709,11 @@ function MainApp() {
               doctorAddress: address,
               addressOrigin: address ? "user" : null,
               ownerSalesRepId:
+                modalResp?.ownerSalesRepId ||
                 profile?.salesRepId ||
                 profile?.sales_rep_id ||
-                profile?.ownerSalesRepId ||
-                profile?.owner_sales_rep_id ||
                 entry?.ownerSalesRepId ||
                 entry?.owner_sales_rep_id ||
-                resolvedSalesRepIdentifier ||
                 null,
               isOnline: typeof entry?.isOnline === "boolean" ? entry.isOnline : null,
               isIdle: typeof entry?.isIdle === "boolean" ? entry.isIdle : null,
@@ -8915,363 +8724,57 @@ function MainApp() {
                     ? entry.idleForMinutes
                     : null,
               lastSeenAt: entry?.lastSeenAt || entry?.last_seen_at || null,
-              lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
-              lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
-              orders: [],
-              personalOrders: isSalesProfile ? undefined : [],
-              salesOrders: isSalesProfile ? undefined : [],
-              personalOrdersLoaded: false,
-              salesOrdersLoaded: !isSalesProfile,
-              total: 0,
-              personalRevenue: null,
-              salesRevenue: immediateSalesRevenue,
-              salesWholesaleRevenue: immediateSalesWholesaleRevenue,
-              salesRetailRevenue: immediateSalesRetailRevenue,
-              orderQuantity: immediateSalesOrderCount,
-              salesOrderCount: immediateSalesOrderCount,
-              totalOrderValue: 0,
+                lastInteractionAt: entry?.lastInteractionAt || entry?.last_interaction_at || null,
+                lastLoginAt: entry?.lastLoginAt || entry?.last_login_at || null,
+              orders: Array.isArray(modalResp?.orders) ? modalResp.orders : [],
+              personalOrders: Array.isArray(modalResp?.personalOrders) ? modalResp.personalOrders : [],
+              salesOrders: Array.isArray(modalResp?.salesOrders) ? modalResp.salesOrders : [],
+              personalOrdersLoaded: modalResp?.personalOrdersLoaded !== false,
+              salesOrdersLoaded: modalResp?.salesOrdersLoaded !== false,
+              total:
+                typeof modalResp?.totalOrderValue === "number" &&
+                Number.isFinite(modalResp.totalOrderValue)
+                  ? modalResp.totalOrderValue
+                  : 0,
+              personalRevenue:
+                typeof modalResp?.personalRevenue === "number" &&
+                Number.isFinite(modalResp.personalRevenue)
+                  ? modalResp.personalRevenue
+                  : null,
+              salesRevenue:
+                typeof modalResp?.salesRevenue === "number" &&
+                Number.isFinite(modalResp.salesRevenue)
+                  ? modalResp.salesRevenue
+                  : immediateSalesRevenue,
+              salesWholesaleRevenue:
+                typeof modalResp?.salesWholesaleRevenue === "number" &&
+                Number.isFinite(modalResp.salesWholesaleRevenue)
+                  ? modalResp.salesWholesaleRevenue
+                  : immediateSalesWholesaleRevenue,
+              salesRetailRevenue:
+                typeof modalResp?.salesRetailRevenue === "number" &&
+                Number.isFinite(modalResp.salesRetailRevenue)
+                  ? modalResp.salesRetailRevenue
+                  : immediateSalesRetailRevenue,
+              orderQuantity:
+                typeof modalResp?.orderQuantity === "number" && Number.isFinite(modalResp.orderQuantity)
+                  ? modalResp.orderQuantity
+                  : immediateSalesOrderCount,
+              salesOrderCount:
+                typeof modalResp?.salesOrderCount === "number" &&
+                Number.isFinite(modalResp.salesOrderCount)
+                  ? modalResp.salesOrderCount
+                  : immediateSalesOrderCount,
+              totalOrderValue:
+                typeof modalResp?.totalOrderValue === "number" &&
+                Number.isFinite(modalResp.totalOrderValue)
+                  ? modalResp.totalOrderValue
+                  : 0,
+              lastOrderDate:
+                typeof modalResp?.lastOrderDate === "string" ? modalResp.lastOrderDate : null,
             },
             roleFromProfile || "doctor",
           );
-
-          let personalOrdersForModal: AccountOrderSummary[] | null = null;
-          let salesOrdersForModal: AccountOrderSummary[] | null = isSalesProfile ? null : [];
-          let salesOrdersFetchFailed = false;
-
-          const resolveOrderEmailKey = (order: any): string => {
-            const raw =
-              order?.doctorEmail ||
-              order?.doctor_email ||
-              order?.billingAddress?.email ||
-              order?.billing?.email ||
-              order?.billing_email ||
-              order?.customerEmail ||
-              order?.customer_email ||
-              null;
-            return typeof raw === "string" ? raw.trim().toLowerCase() : "";
-          };
-
-          const resolveOrderNameKey = (order: any): string => {
-            const fromDoctorName =
-              typeof order?.doctorName === "string" ? order.doctorName.trim() : "";
-            if (fromDoctorName) {
-              return fromDoctorName.toLowerCase();
-            }
-            const billing =
-              order?.billingAddress || order?.billing || (order as any)?.billing_address || null;
-            const shipping =
-              order?.shippingAddress || order?.shipping || (order as any)?.shipping_address || null;
-            const buildKey = (addressLike: any) => {
-              if (!addressLike) return "";
-              const first =
-                addressLike?.firstName ||
-                addressLike?.first_name ||
-                addressLike?.firstname ||
-                "";
-              const last =
-                addressLike?.lastName ||
-                addressLike?.last_name ||
-                addressLike?.lastname ||
-                "";
-              const combined = [first, last].filter(Boolean).join(" ").trim();
-              return combined ? combined.toLowerCase() : "";
-            };
-            return buildKey(billing) || buildKey(shipping) || "";
-          };
-
-          const resolveOrderUserId = (order: any): string => {
-            try {
-              const resolved = resolveOrderDoctorId(order as any);
-              return resolved ? String(resolved) : "";
-            } catch {
-              return String(
-                order?.doctorId ||
-                  order?.doctor_id ||
-                  order?.userId ||
-                  order?.user_id ||
-                  "",
-              ).trim();
-            }
-          };
-
-          const getOrderCanonicalKey = (order: any): string => {
-            const numberKey = normalizeWooOrderNumberKey(
-              (order as any).wooOrderNumber ||
-                (order as any).woo_order_number ||
-                (order as any).number,
-            );
-            if (numberKey) return `num:${numberKey}`;
-            const wooIdKey = normalizeWooOrderId(
-              (order as any).wooOrderId ||
-                (order as any).woo_order_id ||
-                (order as any).wooId ||
-                (order as any).id,
-            );
-            if (wooIdKey) return `woo:${wooIdKey}`;
-            const localId =
-              typeof (order as any)?.id === "string"
-                ? (order as any).id.trim()
-                : (order as any)?.id != null
-                  ? String((order as any).id).trim()
-                  : "";
-            return localId ? `id:${localId}` : "";
-          };
-
-          const dedupeOrdersByCanonicalKey = (orders: any[]) => {
-            const byKey = new Map<string, any>();
-            for (const order of orders || []) {
-              const key = getOrderCanonicalKey(order);
-              if (!key) continue;
-              if (!byKey.has(key)) {
-                byKey.set(key, order);
-                continue;
-              }
-              const existing = byKey.get(key);
-              const existingItems = Array.isArray(existing?.lineItems)
-                ? existing.lineItems.length
-                : Array.isArray(existing?.items)
-                  ? existing.items.length
-                  : 0;
-              const nextItems = Array.isArray(order?.lineItems)
-                ? order.lineItems.length
-                : Array.isArray(order?.items)
-                  ? order.items.length
-                  : 0;
-              if (nextItems > existingItems) {
-                byKey.set(key, order);
-              }
-            }
-            return Array.from(byKey.values());
-          };
-
-          const recomputeDetail = () => {
-            if (salesDoctorDetailRequestIdRef.current !== requestId) {
-              return;
-            }
-            const personalOrders = personalOrdersForModal ?? [];
-            const salesOrdersRaw = salesOrdersForModal ?? [];
-            const personalIdentityIds = new Set<string>([
-              resolvedUserId,
-              ...candidateIds,
-              ...salesRepIdentifiers,
-            ]);
-            const entryEmail =
-              typeof profile?.email === "string"
-                ? profile.email.trim().toLowerCase()
-                : typeof entry?.email === "string"
-                  ? entry.email.trim().toLowerCase()
-                  : "";
-            const entryNameKey =
-              typeof profile?.name === "string" && profile.name.trim()
-                ? profile.name.trim().toLowerCase()
-                : typeof entry?.name === "string" && entry.name.trim()
-                  ? entry.name.trim().toLowerCase()
-                  : "";
-            const isPersonalOrderForRep = (order: any): boolean => {
-              const orderUserId = resolveOrderUserId(order);
-              if (orderUserId && personalIdentityIds.has(orderUserId)) {
-                return true;
-              }
-              const orderEmailKey = resolveOrderEmailKey(order);
-              if (entryEmail && orderEmailKey && entryEmail === orderEmailKey) {
-                return true;
-              }
-              const orderNameKey = resolveOrderNameKey(order);
-              if (entryNameKey && orderNameKey && entryNameKey === orderNameKey) {
-                return true;
-              }
-              return false;
-            };
-
-            const personalOrderKeys = new Set<string>();
-            const addPersonalKey = (key: string | null, prefix: string) => {
-              if (!key) return;
-              personalOrderKeys.add(`${prefix}:${key}`);
-            };
-            personalOrders.forEach((order) => {
-              addPersonalKey(
-                normalizeWooOrderId(
-                  (order as any).wooOrderId ||
-                    (order as any).woo_order_id ||
-                    (order as any).wooId ||
-                    order.id,
-                ),
-                "woo",
-              );
-              addPersonalKey(
-                normalizeWooOrderNumberKey(
-                  (order as any).wooOrderNumber ||
-                    (order as any).woo_order_number ||
-                    order.number,
-                ),
-                "num",
-              );
-              const localId = typeof order.id === "string" ? order.id.trim() : "";
-              if (localId) {
-                addPersonalKey(localId, "id");
-              }
-            });
-            const hasPersonalKey = (order: AccountOrderSummary) => {
-              const wooId = normalizeWooOrderId(
-                (order as any).wooOrderId ||
-                  (order as any).woo_order_id ||
-                  (order as any).wooId ||
-                  order.id,
-              );
-              if (wooId && personalOrderKeys.has(`woo:${wooId}`)) return true;
-              const wooNumber = normalizeWooOrderNumberKey(
-                (order as any).wooOrderNumber ||
-                  (order as any).woo_order_number ||
-                  order.number,
-              );
-              if (wooNumber && personalOrderKeys.has(`num:${wooNumber}`)) return true;
-              const localId = typeof order.id === "string" ? order.id.trim() : "";
-              if (localId && personalOrderKeys.has(`id:${localId}`)) return true;
-              return false;
-            };
-
-            const filteredSalesOrders = dedupeOrdersByCanonicalKey(
-              salesOrdersRaw.filter((order: any) => !isPersonalOrderForRep(order)),
-            ).filter((order) => !hasPersonalKey(order));
-            const combinedOrders = (() => {
-              const byKey = new Map<string, AccountOrderSummary>();
-              [...personalOrders, ...filteredSalesOrders].forEach((order) => {
-                const key =
-                  getOrderCanonicalKey(order) ||
-                  String(
-                    order.number ||
-                      (order as any).wooOrderNumber ||
-                      (order as any).wooOrderId ||
-                      order.id ||
-                      "",
-                  );
-                if (!key || byKey.has(key)) return;
-                byKey.set(key, order);
-              });
-              return Array.from(byKey.values());
-            })();
-
-            const orderQuantity = combinedOrders.filter((order) =>
-              shouldCountRevenueForStatus(order?.status),
-            ).length;
-            const personalRevenueValue = personalOrders.reduce((sum: number, order: any) => {
-              if (!shouldCountRevenueForStatus(order?.status)) {
-                return sum;
-              }
-              return sum + resolveOrderSubtotal(order);
-            }, 0);
-            const totalOrderValue = combinedOrders.reduce((sum: number, order: any) => {
-              if (!shouldCountRevenueForStatus(order?.status)) {
-                return sum;
-              }
-              return sum + resolveOrderSubtotal(order);
-            }, 0);
-            const salesTotals = filteredSalesOrders.reduce(
-              (acc: { total: number; wholesale: number; retail: number }, order: any) => {
-                if (!shouldCountRevenueForStatus(order?.status)) {
-                  return acc;
-                }
-                const amount = resolveOrderSubtotal(order);
-                const pricingModeRaw =
-                  order?.pricingMode ||
-                  (order as any)?.pricing_mode ||
-                  (order as any)?.pricing ||
-                  (order as any)?.priceType ||
-                  null;
-                const pricingMode = String(pricingModeRaw || "").toLowerCase().trim();
-                acc.total += amount;
-                if (pricingMode === "wholesale") {
-                  acc.wholesale += amount;
-                } else if (pricingMode === "retail") {
-                  acc.retail += amount;
-                } else {
-                  acc.retail += amount;
-                }
-                return acc;
-              },
-              { total: 0, wholesale: 0, retail: 0 },
-            );
-
-            let nextSalesWholesaleRevenue = salesWholesaleRevenue;
-            let nextSalesRetailRevenue = salesRetailRevenue;
-            let nextSalesRevenue: number | null = null;
-            let nextSalesOrderCount: number | null = immediateSalesOrderCount;
-            if (filteredSalesOrders.length > 0 || salesOrdersFetchFailed) {
-              nextSalesWholesaleRevenue = salesTotals.wholesale;
-              nextSalesRetailRevenue = salesTotals.retail;
-              nextSalesRevenue = salesTotals.total;
-              nextSalesOrderCount = filteredSalesOrders.filter((order) =>
-                shouldCountRevenueForStatus(order?.status),
-              ).length;
-            }
-            if (commissionRowForModal) {
-              const regularWholesaleBase = Number((commissionRowForModal as any)?.wholesaleBase || 0);
-              const regularRetailBase = Number((commissionRowForModal as any)?.retailBase || 0);
-              const houseWholesaleBase = Number((commissionRowForModal as any)?.houseWholesaleBase || 0);
-              const houseRetailBase = Number((commissionRowForModal as any)?.houseRetailBase || 0);
-              const modalWholesale = regularWholesaleBase + houseWholesaleBase;
-              const modalRetail = regularRetailBase + houseRetailBase;
-              const modalSalesRevenue = modalWholesale + modalRetail;
-              nextSalesWholesaleRevenue = Number.isFinite(modalWholesale)
-                ? modalWholesale
-                : nextSalesWholesaleRevenue;
-              nextSalesRetailRevenue = Number.isFinite(modalRetail)
-                ? modalRetail
-                : nextSalesRetailRevenue;
-              nextSalesRevenue = Number.isFinite(modalSalesRevenue)
-                ? modalSalesRevenue
-                : nextSalesRevenue;
-            }
-
-            mergeSalesDoctorDetail(requestId, {
-              orders: combinedOrders,
-              personalOrders,
-              salesOrders: filteredSalesOrders,
-              personalOrdersLoaded: personalOrdersForModal !== null,
-              salesOrdersLoaded: salesOrdersForModal !== null,
-              total: totalOrderValue,
-              personalRevenue: personalOrders.length > 0 ? personalRevenueValue : null,
-              salesRevenue: nextSalesRevenue,
-              salesWholesaleRevenue: nextSalesWholesaleRevenue,
-              salesRetailRevenue: nextSalesRetailRevenue,
-              orderQuantity,
-              salesOrderCount: nextSalesOrderCount,
-              totalOrderValue,
-            });
-          };
-
-          const pendingHydrators: Promise<void>[] = [];
-
-          pendingHydrators.push(
-            (async () => {
-              try {
-                personalOrdersForModal = await fetchAdminOrders(resolvedUserId);
-                recomputeDetail();
-              } catch (error) {
-                console.warn("[Admin] Failed to load personal orders for modal", error);
-                personalOrdersForModal = [];
-                recomputeDetail();
-              }
-            })(),
-          );
-
-          if (isSalesProfile) {
-            pendingHydrators.push(
-              (async () => {
-                try {
-                  salesOrdersForModal = await fetchSalesOrders(salesRepIdentifiers);
-                } catch (error) {
-                  salesOrdersFetchFailed = true;
-                  salesOrdersForModal = [];
-                  console.warn("[Admin] Failed to load sales orders for modal", error);
-                } finally {
-                  recomputeDetail();
-                }
-              })(),
-            );
-          }
-
-          await Promise.allSettled(pendingHydrators);
         } catch (error: any) {
           console.warn("[Admin] Failed to hydrate live user detail", error);
           const normalizedRole = normalizeRole(entryRole || entry?.role || "");

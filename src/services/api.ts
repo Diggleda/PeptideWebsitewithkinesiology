@@ -1828,6 +1828,16 @@ export const ordersAPI = {
     return fetchWithAuth(url);
   },
 
+  getSalesModalDetail: async (userId: string | number) => {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    return fetchWithAuth(
+      `${API_BASE_URL}/orders/sales-rep/users/${encodeURIComponent(String(userId))}/modal-detail`,
+      { method: 'GET' },
+    );
+  },
+
   updateOrderNotes: async (orderId: string | number, notes: string | null) => {
     if (!orderId) {
       throw new Error('orderId is required');

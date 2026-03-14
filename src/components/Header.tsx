@@ -4789,6 +4789,69 @@ export function Header({
 		    const doctorView = Boolean(isDoctorRole(accountRole));
 		    const salesRepEmail = (localUser?.salesRep?.email || '').trim();
         const normalizedQuery = ordersSearchQuery.trim().toLowerCase();
+        const renderOrdersLoadingState = () => (
+          <div className="space-y-4 pb-4" aria-live="polite" aria-busy="true">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div
+                key={`account-order-skeleton-${index}`}
+                className="account-order-card squircle-lg bg-white border border-[#d5d9d9] overflow-hidden"
+              >
+                <div className="px-6 py-4 bg-[#f5f6f6] border-b border-[#d5d9d9]">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-8 text-sm text-slate-700">
+                      <div className="space-y-2">
+                        <div className="news-loading-line news-loading-shimmer w-24" />
+                        <div className="news-loading-line news-loading-shimmer w-28" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="news-loading-line news-loading-shimmer w-16" />
+                        <div className="news-loading-line news-loading-shimmer w-20" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="news-loading-line news-loading-shimmer w-20" />
+                        <div className="news-loading-line news-loading-shimmer w-32" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="news-loading-line news-loading-shimmer w-28" />
+                      <div className="news-loading-line news-loading-shimmer w-24" />
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 pt-5 pb-6">
+                  <div className="flex flex-col gap-4 pt-4 md:flex-row md:items-start md:gap-6">
+                    <div className="space-y-4 flex-1 min-w-0">
+                      <div className="space-y-2">
+                        <div className="news-loading-line news-loading-shimmer w-40" />
+                        <div className="news-loading-line news-loading-shimmer w-32" />
+                      </div>
+                      <div className="space-y-3">
+                        {Array.from({ length: 2 }).map((__, lineIdx) => (
+                          <div
+                            key={`account-order-skeleton-line-${index}-${lineIdx}`}
+                            className="flex items-center gap-4 min-h-[60px]"
+                          >
+                            <div className="h-[60px] w-20 rounded-xl border border-[#d5d9d9] bg-white overflow-hidden flex-shrink-0">
+                              <div className="h-full w-full bg-slate-100" />
+                            </div>
+                            <div className="flex-1 space-y-2">
+                              <div className="news-loading-line news-loading-shimmer w-48" />
+                              <div className="news-loading-line news-loading-shimmer w-20" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="w-full md:w-auto md:min-w-[12rem] space-y-3">
+                      <div className="h-9 w-full rounded-[10px] bg-slate-100" />
+                      <div className="h-9 w-full rounded-[10px] bg-slate-100" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
 		    const visibleOrders = cachedAccountOrders
 	      .filter((order) => {
         const source = (order.source || '').toLowerCase();
@@ -4839,6 +4902,10 @@ export function Header({
 
         return haystack.includes(normalizedQuery);
       });
+
+    if (accountOrdersLoading && cachedAccountOrders.length === 0) {
+      return renderOrdersLoadingState();
+    }
 
     if (!visibleOrders.length) {
       return (
@@ -5238,6 +5305,7 @@ export function Header({
 
   const renderOrderDetails = () => {
     if (!selectedOrder) return null;
+    const isOrderDetailHydrating = Boolean(accountOrdersLoading);
     const integrationDetails = parseMaybeJson((selectedOrder as any).integrationDetails);
     const wooIntegration = parseMaybeJson(integrationDetails?.wooCommerce || integrationDetails?.woocommerce);
     const wooResponse = parseMaybeJson(wooIntegration?.response) || {};
@@ -5421,6 +5489,53 @@ export function Header({
       }
       return null;
     })();
+    const renderOrderDetailShimmer = (widthClass = 'w-24') => (
+      <span className={`news-loading-line news-loading-shimmer inline-block align-middle ${widthClass}`} aria-hidden="true" />
+    );
+    const renderOrderTextOrShimmer = (value: string | null | undefined, widthClass = 'w-24') => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (text) {
+        return text;
+      }
+      return isOrderDetailHydrating ? renderOrderDetailShimmer(widthClass) : '—';
+    };
+    const renderAddressLinesForOrderDetail = (address: any) => {
+      if (!address) {
+        return isOrderDetailHydrating ? (
+          <div className="space-y-2">
+            {renderOrderDetailShimmer('w-36')}
+            {renderOrderDetailShimmer('w-48')}
+            {renderOrderDetailShimmer('w-28')}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">—</p>
+        );
+      }
+      const lines = [
+        address.name,
+        [address.addressLine1, address.addressLine2].filter(Boolean).join(' ').trim(),
+        [address.city, address.state, address.postalCode].filter(Boolean).join(', ').trim(),
+        address.country,
+        address.phone,
+        address.email,
+      ]
+        .filter((line) => line && String(line).trim().length > 0)
+        .map((line, idx) => (
+          <p key={idx} className="text-sm text-slate-700">
+            {line}
+          </p>
+        ));
+      return lines.length > 0 ? lines : (
+        isOrderDetailHydrating ? (
+          <div className="space-y-2">
+            {renderOrderDetailShimmer('w-36')}
+            {renderOrderDetailShimmer('w-48')}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">—</p>
+        )
+      );
+    };
 
 	    return (
 	      <div className="space-y-6">
@@ -5452,14 +5567,16 @@ export function Header({
             <div className="space-y-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Placed</p>
-                <p className="text-sm font-semibold text-slate-900">
-                  {formatOrderDate(resolveOrderPlacedAt(selectedOrder))}
-                </p>
+                <div className="text-sm font-semibold text-slate-900">
+                  {renderOrderTextOrShimmer(formatOrderDate(resolveOrderPlacedAt(selectedOrder)), 'w-28')}
+                </div>
               </div>
               {showExpectedDeliveryDetails && (
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.08em] text-slate-500">Expected delivery</p>
-                  <p className="text-sm font-semibold text-slate-900">{expectedDelivery}</p>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {renderOrderTextOrShimmer(expectedDelivery, 'w-32')}
+                  </div>
                 </div>
               )}
             </div>
@@ -5475,7 +5592,7 @@ export function Header({
 	            <div className="grid gap-4 md:grid-cols-2">
 	              <div className="space-y-3">
 	                <h4 className="text-base font-semibold text-slate-900">Shipping Information</h4>
-	                {renderAddressLines(shippingAddress)}
+	                {renderAddressLinesForOrderDetail(shippingAddress)}
 	                <div className="text-sm text-slate-700 space-y-1">
 	                  {trackingNumber && (
 	                    <p>
@@ -5548,10 +5665,17 @@ export function Header({
 
 	              <div className="space-y-3">
 	                <h4 className="text-base font-semibold text-slate-900">Billing Information</h4>
-	                {renderAddressLines(billingAddress)}
+	                {renderAddressLinesForOrderDetail(billingAddress)}
 	                <div className="text-sm text-slate-700 space-y-1">
 	                  <p>
-	                    <span className="font-semibold">Payment:</span> {paymentDisplay ? `${paymentDisplay}` : '—'}
+	                    <span className="font-semibold">Payment:</span>{' '}
+                      {typeof paymentDisplay === 'string' && paymentDisplay.trim().length > 0 ? (
+                        paymentDisplay
+                      ) : isOrderDetailHydrating ? (
+                        renderOrderDetailShimmer('w-28')
+                      ) : (
+                        '—'
+                      )}
 	                  </p>
 	                  {stripeMeta?.cardLast4 && (
 	                    <p>
