@@ -7,6 +7,7 @@ const stamp =
 
 const env = {
   ...process.env,
+  NODE_ENV: "production",
   FRONTEND_BUILD: process.env.FRONTEND_BUILD || stamp,
   VITE_FRONTEND_BUILD_ID: process.env.VITE_FRONTEND_BUILD_ID || stamp,
 };
@@ -31,4 +32,3 @@ const tagAssetsResult = spawnSync(process.execPath, [path.join("scripts", "tag-a
 });
 
 process.exit(typeof tagAssetsResult.status === "number" ? tagAssetsResult.status : 0);
-

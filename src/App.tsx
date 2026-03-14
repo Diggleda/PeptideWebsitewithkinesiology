@@ -607,7 +607,6 @@ const resolveTrackingNumber = (order: any): string | null => {
   }
 
   if (tracking) {
-    console.info("[Tracking] Resolved tracking number", { order: orderLabel, tracking });
     return tracking;
   }
 
@@ -6787,6 +6786,7 @@ function MainApp() {
 		    }
 
 			    salesRepProspectsKeyRef.current = targetSalesRepId;
+          const shouldIncludeHouseContactProspects = targetRole === "admin";
 			    let canceled = false;
 				    (async () => {
 				      setSalesRepProspectsLoading(true);
@@ -6827,6 +6827,34 @@ function MainApp() {
 				            const status = sanitizeReferralStatus(row?.status);
 				            return status !== "nuture";
 				          })
+                  .filter((row: any) => {
+                    if (shouldIncludeHouseContactProspects) {
+                      return true;
+                    }
+                    const contactFormIdRaw =
+                      row?.contactFormId ||
+                      row?.contact_form_id ||
+                      row?.contactFormID ||
+                      row?.contact_formId ||
+                      null;
+                    const leadTypeRaw =
+                      typeof row?.leadType === "string"
+                        ? row.leadType
+                        : typeof row?.lead_type === "string"
+                          ? row.lead_type
+                          : "";
+                    const leadType = leadTypeRaw.trim().toLowerCase();
+                    const hasContactFormId =
+                      (typeof contactFormIdRaw === "string" && contactFormIdRaw.trim().length > 0) ||
+                      (typeof contactFormIdRaw === "number" && Number.isFinite(contactFormIdRaw));
+                    return !(
+                      hasContactFormId ||
+                      leadType === "contact_form" ||
+                      leadType === "house" ||
+                      leadType === "house_contact" ||
+                      leadType.includes("contact")
+                    );
+                  })
 				          .map((row: any) => {
 				            const contactFormIdRaw =
 				              row?.contactFormId ||
@@ -10038,34 +10066,49 @@ function MainApp() {
   const [adminDashboardTab, setAdminDashboardTab] =
     useState<AdminDashboardTabId>("here_now");
   type SalesDashboardTabId =
+    | "here_now"
+    | "your_team"
     | "crm"
     | "your_sales"
     | "doctor_referrals_manual"
     | "settings";
   const [salesDashboardTab, setSalesDashboardTab] =
-    useState<SalesDashboardTabId>("crm");
+    useState<SalesDashboardTabId>("here_now");
   const [crmSeamlessRawEntries, setCrmSeamlessRawEntries] = useState<SeamlessRawEntry[]>([]);
   const [crmSeamlessRawLoading, setCrmSeamlessRawLoading] = useState(false);
   const [crmSeamlessRawError, setCrmSeamlessRawError] = useState<string | null>(null);
   const [crmSeamlessRawLastFetchedAt, setCrmSeamlessRawLastFetchedAt] = useState<string | null>(null);
-  const salesDashboardTabs = useMemo(
-    () =>
-      [
-        { id: "crm" as const, label: "CRM", Icon: GlobeAmericasIcon },
-        { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
-        {
-          id: "doctor_referrals_manual" as const,
-          label: "Doctor Referrals and Manual",
-          Icon: UserGroupIcon,
-        },
-        { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
-      ] satisfies Array<{
-        id: SalesDashboardTabId;
-        label: string;
-        Icon: ({ className }: { className?: string }) => ReactNode;
-      }>,
-    [],
-  );
+  const salesDashboardTabs = useMemo(() => {
+    const tabs = [
+      { id: "crm" as const, label: "CRM", Icon: GlobeAmericasIcon },
+      {
+        id: "doctor_referrals_manual" as const,
+        label: "Your Leads",
+        Icon: UserGroupIcon,
+      },
+      { id: "your_sales" as const, label: "Your Sales", Icon: BuildingStorefrontIcon },
+      { id: "settings" as const, label: "Settings", Icon: AdjustmentsHorizontalIcon },
+    ];
+    if (!isAdmin(user?.role)) {
+      tabs.unshift({
+        id: "here_now" as const,
+        label: "Here and now",
+        Icon: GlobeAmericasIcon,
+      });
+    }
+    if (isSalesLead(user?.role)) {
+      tabs.splice(1, 0, {
+        id: "your_team" as const,
+        label: "Your Team",
+        Icon: UserGroupIcon,
+      });
+    }
+    return tabs satisfies Array<{
+      id: SalesDashboardTabId;
+      label: string;
+      Icon: ({ className }: { className?: string }) => ReactNode;
+    }>;
+  }, [user?.role]);
   const isSalesDashboardVisible = isRep(user?.role) || isSalesLead(user?.role) || isAdmin(user?.role);
   const salesDashboardTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const [salesDashboardIndicatorLeft, setSalesDashboardIndicatorLeft] = useState<number>(0);
@@ -10128,6 +10171,19 @@ function MainApp() {
       container.removeEventListener("scroll", handleScroll);
     };
   }, [isSalesDashboardVisible, updateSalesDashboardTabIndicator]);
+  useEffect(() => {
+    if (!isRep(user?.role) && !isSalesLead(user?.role) && !isAdmin(user?.role)) {
+      return;
+    }
+    const availableTabs = new Set(salesDashboardTabs.map((tab) => tab.id));
+    if (availableTabs.has(salesDashboardTab)) {
+      return;
+    }
+    const fallbackTab = salesDashboardTabs[0]?.id;
+    if (fallbackTab) {
+      setSalesDashboardTab(fallbackTab);
+    }
+  }, [salesDashboardTab, salesDashboardTabs, user?.role]);
   const refreshCrmSeamlessRawEntries = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!user) {
@@ -13638,13 +13694,6 @@ function MainApp() {
             arrival: normalizedOrders[0].shippingEstimate?.estimatedArrivalDate,
           },
       });
-	      void enrichMissingOrderDetails(normalizedOrders, {
-	        onlyIds:
-	          shouldShowInitialLoading || options?.force === true ? undefined : changedIds,
-	        force: options?.force === true,
-	      }).catch((error) => {
-	        console.debug("[Sales Tracking] Detail hydration task skipped", error);
-	      });
 	    } catch (error: any) {
 	      const message =
 	        typeof error?.message === "string"
@@ -18972,6 +19021,8 @@ function MainApp() {
 	    ).length;
     const showSalesDashboardTabs =
       isRep(user?.role) || isSalesLead(user?.role) || isAdmin(user?.role);
+    const isSalesHereNowActive = salesDashboardTab === "here_now";
+    const isSalesYourTeamActive = salesDashboardTab === "your_team";
     const isSalesCrmActive = salesDashboardTab === "crm";
     const isCrmVisibleForRole = crmEnabled || isTestRep(user?.role);
     const isSalesYourSalesActive = salesDashboardTab === "your_sales";
@@ -18982,9 +19033,17 @@ function MainApp() {
       isCrmVisibleForRole &&
       showSalesDashboardTabs &&
       isSalesCrmActive;
+    const isHereNowSectionActive =
+      showSalesDashboardTabs &&
+      !isAdmin(user?.role) &&
+      isSalesHereNowActive;
     const isYourSalesSectionActive =
       showSalesDashboardTabs &&
       isSalesYourSalesActive;
+    const isYourTeamSectionActive =
+      showSalesDashboardTabs &&
+      isSalesLead(user?.role) &&
+      isSalesYourTeamActive;
     const isDoctorReferralsManualSectionActive =
       showSalesDashboardTabs &&
       isSalesDoctorReferralsManualActive;
@@ -18995,8 +19054,7 @@ function MainApp() {
       showSalesDashboardTabs &&
       (isSalesYourSalesActive !== isSalesDoctorReferralsManualActive);
     const shouldShowLiveClientsCard =
-      showSalesDashboardTabs &&
-      !isAdmin(user?.role);
+      isHereNowSectionActive;
 	    const hasChartData = salesRepChartData.some((item) => item.count > 0);
 	    const adminDashboardPeriodLabel = (() => {
 	      const start = salesRepPeriodStart ? formatDate(salesRepPeriodStart) : null;
@@ -19503,7 +19561,371 @@ function MainApp() {
 		            )}
 			          </div>
 
-		          {shouldShowLiveClientsCard && (
+			          {showSalesDashboardTabs && !isAdmin(user?.role) && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={setSalesDashboardTabsContainerRef}
+                      onScroll={updateSalesDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {salesDashboardTabs.map((tab) => {
+                          if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
+                            return null;
+                          }
+                          const isActive = salesDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-sales-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setSalesDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-sales-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">{tab.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: salesDashboardIndicatorLeft,
+                        width: salesDashboardIndicatorWidth,
+                        opacity: salesDashboardIndicatorOpacity,
+                      }}
+                    />
+                  </div>
+                )}
+
+		          {isYourTeamSectionActive && (
+		            <div className="mt-6">
+		              <div className="sales-rep-leads-card sales-rep-combined-card">
+		                <div className="flex flex-col gap-3">
+		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
+			                    <div className="min-w-0">
+			                      <h3 className="text-lg font-semibold text-slate-900">
+			                        Sales by Sales Rep
+			                      </h3>
+			                      <p className="text-sm text-slate-600">
+			                        Orders placed by doctors assigned to each rep.
+			                      </p>
+			                    </div>
+			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
+			                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
+			                        <div className="flex flex-wrap items-center justify-end gap-2">
+			                          <Popover.Root
+			                            open={adminDashboardPeriodPickerOpen}
+			                            onOpenChange={setAdminDashboardPeriodPickerOpen}
+			                          >
+			                            <Popover.Trigger asChild>
+			                              <Button
+			                                type="button"
+			                                variant="outline"
+			                                size="icon"
+			                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
+			                                aria-label="Select sales by rep date range"
+			                                title="Select date range"
+			                              >
+			                                <CalendarDays aria-hidden="true" />
+			                              </Button>
+			                            </Popover.Trigger>
+			                            <Popover.Portal>
+			                              <Popover.Content
+			                                side="bottom"
+			                                align="end"
+			                                sideOffset={8}
+			                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
+			                              >
+			                                <div className="text-sm font-semibold text-slate-800">
+			                                  Sales by Sales Rep timeframe
+			                                </div>
+			                                <div className="mt-2">
+			                                  <DayPicker
+			                                    mode="range"
+			                                    numberOfMonths={1}
+			                                    selected={adminDashboardPeriodRange}
+			                                    onSelect={handleAdminDashboardPeriodSelect}
+			                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
+			                                  />
+			                                </div>
+			                                <div className="mt-3 flex items-center justify-between">
+			                                  <Button
+			                                    type="button"
+			                                    variant="ghost"
+			                                    size="sm"
+			                                    className="text-slate-700"
+			                                    onClick={() => {
+			                                      const defaults = getDefaultSalesBySalesRepPeriod();
+			                                      setSalesRepPeriodStart(defaults.start);
+			                                      setSalesRepPeriodEnd(defaults.end);
+			                                    }}
+			                                  >
+			                                    Default
+			                                  </Button>
+			                                  <Button
+			                                    type="button"
+			                                    variant="outline"
+			                                    size="sm"
+			                                    className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
+			                                    onClick={() => {
+			                                      applyAdminDashboardPeriod();
+			                                      setAdminDashboardPeriodPickerOpen(false);
+			                                    }}
+			                                  >
+			                                    Done
+			                                  </Button>
+			                                </div>
+			                                <Popover.Arrow className="calendar-popover-arrow" />
+			                              </Popover.Content>
+			                            </Popover.Portal>
+			                          </Popover.Root>
+			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
+			                            {adminDashboardPeriodLabel}
+			                          </span>
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            className="header-home-button squircle-sm bg-white text-slate-900"
+			                            onClick={() => void refreshSalesBySalesRepSummary()}
+			                            disabled={salesRepSalesSummaryLoading}
+			                            aria-busy={salesRepSalesSummaryLoading}
+			                            title="Refresh"
+			                          >
+			                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
+			                          </Button>
+			                        </div>
+			                        <div className="flex flex-wrap items-center justify-end gap-2">
+			                          <Button
+			                            type="button"
+			                            variant="outline"
+			                            size="sm"
+			                            className="gap-2"
+			                            onClick={downloadSalesBySalesRepCsv}
+			                            disabled={salesRepSalesSummary.length === 0}
+			                            title="Download CSV"
+			                          >
+			                            <Download className="h-4 w-4" aria-hidden="true" />
+			                            Download CSV
+			                          </Button>
+			                          <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
+			                            <span className="block min-w-0 truncate">
+			                              Last downloaded:{" "}
+			                              {salesRepSalesCsvDownloadedAt
+			                                ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
+			                                    timeZone: "America/Los_Angeles",
+			                                  })
+			                                : "—"}
+			                            </span>
+			                          </span>
+			                        </div>
+			                      </div>
+			                    </div>
+			                  </div>
+		                    {/* Totals shown inline above list below */}
+		                </div>
+		                <div
+		                  className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
+		                  role="region"
+		                  aria-label="Sales by sales rep list"
+		                >
+		                  {salesRepSalesSummaryError ? (
+		                    <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
+		                      {salesRepSalesSummaryError}
+		                    </div>
+		                  ) : salesRepSalesSummaryLoading ? (
+		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
+		                      Checking sales…
+		                    </div>
+		                  ) : salesRepSalesSummaryLastFetchedAt === null ? (
+		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
+		                      Click Refresh to load sales.
+		                    </div>
+		                  ) : salesRepSalesSummary.length === 0 ? (
+		                    <div className="px-4 py-3 text-sm text-slate-500">
+		                      No sales recorded yet.
+		                    </div>
+		                  ) : (
+		                    <div className="w-full" style={{ minWidth: 920 }}>
+		                      {(() => {
+		                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
+		                        const totals = metaTotals
+		                          ? metaTotals
+		                          : {
+		                              totalOrders: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.totalOrders) || 0),
+		                                0,
+		                              ),
+		                              totalRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.totalRevenue) || 0),
+		                                0,
+		                              ),
+		                              wholesaleRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.wholesaleRevenue) || 0),
+		                                0,
+		                              ),
+		                              retailRevenue: salesRepSalesSummary.reduce(
+		                                (sum, row) => sum + (Number(row.retailRevenue) || 0),
+		                                0,
+		                              ),
+		                            };
+		                        const hasTotals =
+		                          typeof totals.totalOrders === "number" &&
+		                          typeof totals.totalRevenue === "number";
+		                        if (!hasTotals) return null;
+		                        return (
+		                          <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
+		                            <span>Total Orders: {totals.totalOrders}</span>
+		                            <span>
+		                              Wholesale:{" "}
+		                              {formatCurrency(Number(totals.wholesaleRevenue) || 0)}
+		                            </span>
+		                            <span>
+		                              Retail:{" "}
+		                              {formatCurrency(Number(totals.retailRevenue) || 0)}
+		                            </span>
+		                          </div>
+		                        );
+		                      })()}
+		                      <div className="w-max">
+		                        <div
+		                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
+		                          style={{
+		                            gridTemplateColumns:
+		                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+		                          }}
+		                        >
+		                          <div className="whitespace-nowrap">Sales Rep</div>
+		                          <div className="whitespace-nowrap">Email</div>
+		                          <div className="whitespace-nowrap text-right">Orders</div>
+		                          <div className="whitespace-nowrap text-right">Wholesale</div>
+		                          <div className="whitespace-nowrap text-right">Retail</div>
+		                        </div>
+		                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
+		                          {salesRepSalesSummary.map((rep) => (
+		                            <li
+		                              key={rep.salesRepId}
+		                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
+		                              style={{
+		                                gridTemplateColumns:
+		                                  "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
+		                              }}
+		                            >
+		                              <div className="text-sm font-semibold text-slate-900 min-w-0">
+		                                <button
+		                                  type="button"
+		                                  className="min-w-0 text-left hover:underline"
+		                                  onClick={() =>
+		                                    openLiveUserDetail(
+		                                      {
+		                                        id: rep.salesRepUserId || rep.salesRepId,
+		                                        name: rep.salesRepName,
+		                                        email: rep.salesRepEmail,
+		                                        role: "sales_rep",
+		                                      },
+		                                      {
+		                                        salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
+		                                        salesRepRetailRevenue: Number(rep.retailRevenue || 0),
+		                                      },
+		                                    )
+		                                  }
+		                                  title="Open sales rep details"
+		                                >
+		                                  {rep.salesRepName}
+		                                </button>
+		                              </div>
+		                              <div
+		                                className="text-sm text-slate-700 truncate"
+		                                title={rep.salesRepEmail || ""}
+		                              >
+		                                {rep.salesRepEmail || "—"}
+		                              </div>
+		                              <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
+		                                {rep.totalOrders}
+		                              </div>
+		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                                {formatCurrency(rep.wholesaleRevenue || 0)}
+		                              </div>
+		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+		                                {formatCurrency(rep.retailRevenue || 0)}
+		                              </div>
+		                            </li>
+		                          ))}
+		                        </ul>
+		                      </div>
+		                    </div>
+		                  )}
+		                </div>
+		              </div>
+		            </div>
+		          )}
+
+                {isAdmin(user?.role) && (
+                  <div className="relative w-full">
+                    <div
+                      className="w-full account-tab-scroll-container"
+                      ref={setAdminDashboardTabsContainerRef}
+                      onScroll={updateAdminDashboardTabIndicator}
+                    >
+                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
+                        {adminDashboardTabs.map((tab) => {
+                          const isActive = adminDashboardTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={clsx(
+                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
+                                isActive && "text-slate-900",
+                              )}
+                              data-admin-dashboard-tab={tab.id}
+                              aria-pressed={isActive}
+                              onClick={() => setAdminDashboardTab(tab.id)}
+                            >
+                              <span
+                                className="inline-flex items-center gap-2"
+                                data-admin-dashboard-tab-content
+                              >
+                                <span className="inline-flex h-5 w-5 items-center justify-center">
+                                  <tab.Icon className="h-5 w-5" />
+                                </span>
+                                <span className="inline-flex items-center">
+                                  {tab.id === "crm" ? "CRM In-Development" : tab.label}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="account-tab-underline-indicator"
+                      style={{
+                        left: adminDashboardTabIndicator.left,
+                        width: adminDashboardTabIndicator.width,
+                        opacity: adminDashboardTabIndicator.opacity,
+                      }}
+                    />
+                  </div>
+                )}
+
+                {shouldShowLiveClientsCard && (
 			            <div
                     className={clsx(
                       "sales-rep-leads-card sales-rep-combined-card",
@@ -19879,371 +20301,7 @@ function MainApp() {
             </div>
           )}
 
-		          {!isAdmin(user?.role) && showSalesDashboardTabs && renderSalesScopedOnHoldOrdersCard()}
-
-		          {isSalesLead(user?.role) && showSalesDashboardTabs && (
-		            <div className="mt-6">
-		              <div className="sales-rep-leads-card sales-rep-combined-card">
-		                <div className="flex flex-col gap-3">
-		                  <div className="sales-rep-header-row flex w-full flex-col gap-3">
-			                    <div className="min-w-0">
-			                      <h3 className="text-lg font-semibold text-slate-900">
-			                        Sales by Sales Rep
-			                      </h3>
-			                      <p className="text-sm text-slate-600">
-			                        Orders placed by doctors assigned to each rep.
-			                      </p>
-			                    </div>
-			                    <div className="sales-rep-header-actions flex flex-row flex-wrap justify-end gap-4">
-			                      <div className="sales-rep-action flex min-w-0 flex-col items-end justify-end gap-2 sm:!flex-col sm:items-end sm:gap-1">
-			                        <div className="flex flex-wrap items-center justify-end gap-2">
-			                          <Popover.Root
-			                            open={adminDashboardPeriodPickerOpen}
-			                            onOpenChange={setAdminDashboardPeriodPickerOpen}
-			                          >
-			                            <Popover.Trigger asChild>
-			                              <Button
-			                                type="button"
-			                                variant="outline"
-			                                size="icon"
-			                                className="header-home-button squircle-sm h-9 w-9 shrink-0"
-			                                aria-label="Select sales by rep date range"
-			                                title="Select date range"
-			                              >
-			                                <CalendarDays aria-hidden="true" />
-			                              </Button>
-			                            </Popover.Trigger>
-			                            <Popover.Portal>
-			                              <Popover.Content
-			                                side="bottom"
-			                                align="end"
-			                                sideOffset={8}
-			                                className="calendar-popover z-[10000] w-[320px] glass-liquid rounded-xl border border-white/60 p-3 shadow-xl"
-			                              >
-			                                <div className="text-sm font-semibold text-slate-800">
-			                                  Sales by Sales Rep timeframe
-			                                </div>
-			                                <div className="mt-2">
-			                                  <DayPicker
-			                                    mode="range"
-			                                    numberOfMonths={1}
-			                                    selected={adminDashboardPeriodRange}
-			                                    onSelect={handleAdminDashboardPeriodSelect}
-			                                    defaultMonth={adminDashboardPeriodRange?.from ?? undefined}
-			                                  />
-			                                </div>
-			                                <div className="mt-3 flex items-center justify-between">
-			                                  <Button
-			                                    type="button"
-			                                    variant="ghost"
-			                                    size="sm"
-			                                    className="text-slate-700"
-			                                    onClick={() => {
-			                                      const defaults = getDefaultSalesBySalesRepPeriod();
-			                                      setSalesRepPeriodStart(defaults.start);
-			                                      setSalesRepPeriodEnd(defaults.end);
-			                                    }}
-			                                  >
-			                                    Default
-			                                  </Button>
-			                                  <Button
-			                                    type="button"
-			                                    variant="outline"
-			                                    size="sm"
-			                                    className="calendar-done-button text-[rgb(95,179,249)] border-[rgba(95,179,249,0.45)] hover:border-[rgba(95,179,249,0.7)] hover:text-[rgb(95,179,249)]"
-			                                    onClick={() => {
-			                                      applyAdminDashboardPeriod();
-			                                      setAdminDashboardPeriodPickerOpen(false);
-			                                    }}
-			                                  >
-			                                    Done
-			                                  </Button>
-			                                </div>
-			                                <Popover.Arrow className="calendar-popover-arrow" />
-			                              </Popover.Content>
-			                            </Popover.Portal>
-			                          </Popover.Root>
-			                          <span className="text-sm font-semibold text-slate-900 min-w-0 leading-tight truncate">
-			                            {adminDashboardPeriodLabel}
-			                          </span>
-			                          <Button
-			                            type="button"
-			                            variant="outline"
-			                            size="sm"
-			                            className="header-home-button squircle-sm bg-white text-slate-900"
-			                            onClick={() => void refreshSalesBySalesRepSummary()}
-			                            disabled={salesRepSalesSummaryLoading}
-			                            aria-busy={salesRepSalesSummaryLoading}
-			                            title="Refresh"
-			                          >
-			                            {salesRepSalesSummaryLoading ? "Refreshing…" : "Refresh"}
-			                          </Button>
-			                        </div>
-			                        <div className="flex flex-wrap items-center justify-end gap-2">
-			                          <Button
-			                            type="button"
-			                            variant="outline"
-			                            size="sm"
-			                            className="gap-2"
-			                            onClick={downloadSalesBySalesRepCsv}
-			                            disabled={salesRepSalesSummary.length === 0}
-			                            title="Download CSV"
-			                          >
-			                            <Download className="h-4 w-4" aria-hidden="true" />
-			                            Download CSV
-			                          </Button>
-			                          <span className="sales-rep-action-meta min-w-0 text-[11px] text-slate-500 leading-tight text-right">
-			                            <span className="block min-w-0 truncate">
-			                              Last downloaded:{" "}
-			                              {salesRepSalesCsvDownloadedAt
-			                                ? new Date(salesRepSalesCsvDownloadedAt).toLocaleString(undefined, {
-			                                    timeZone: "America/Los_Angeles",
-			                                  })
-			                                : "—"}
-			                            </span>
-			                          </span>
-			                        </div>
-			                      </div>
-			                    </div>
-			                  </div>
-		                    {/* Totals shown inline above list below */}
-		                </div>
-		                <div
-		                  className="sales-rep-table-wrapper admin-dashboard-list p-0 overflow-x-auto no-scrollbar"
-		                  role="region"
-		                  aria-label="Sales by sales rep list"
-		                >
-		                  {salesRepSalesSummaryError ? (
-		                    <div className="px-4 py-3 text-sm text-amber-700 mb-3 bg-amber-50 border border-amber-200 rounded-md">
-		                      {salesRepSalesSummaryError}
-		                    </div>
-		                  ) : salesRepSalesSummaryLoading ? (
-		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
-		                      Checking sales…
-		                    </div>
-		                  ) : salesRepSalesSummaryLastFetchedAt === null ? (
-		                    <div className="px-4 py-3 text-sm mb-3 text-slate-500">
-		                      Click Refresh to load sales.
-		                    </div>
-		                  ) : salesRepSalesSummary.length === 0 ? (
-		                    <div className="px-4 py-3 text-sm text-slate-500">
-		                      No sales recorded yet.
-		                    </div>
-		                  ) : (
-		                    <div className="w-full" style={{ minWidth: 920 }}>
-		                      {(() => {
-		                        const metaTotals = salesRepSalesSummaryMeta?.totals || null;
-		                        const totals = metaTotals
-		                          ? metaTotals
-		                          : {
-		                              totalOrders: salesRepSalesSummary.reduce(
-		                                (sum, row) => sum + (Number(row.totalOrders) || 0),
-		                                0,
-		                              ),
-		                              totalRevenue: salesRepSalesSummary.reduce(
-		                                (sum, row) => sum + (Number(row.totalRevenue) || 0),
-		                                0,
-		                              ),
-		                              wholesaleRevenue: salesRepSalesSummary.reduce(
-		                                (sum, row) => sum + (Number(row.wholesaleRevenue) || 0),
-		                                0,
-		                              ),
-		                              retailRevenue: salesRepSalesSummary.reduce(
-		                                (sum, row) => sum + (Number(row.retailRevenue) || 0),
-		                                0,
-		                              ),
-		                            };
-		                        const hasTotals =
-		                          typeof totals.totalOrders === "number" &&
-		                          typeof totals.totalRevenue === "number";
-		                        if (!hasTotals) return null;
-		                        return (
-		                          <div className="flex flex-wrap items-center justify-between gap-1 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-900 border-b-4 border-slate-200/70">
-		                            <span>Total Orders: {totals.totalOrders}</span>
-		                            <span>
-		                              Wholesale:{" "}
-		                              {formatCurrency(Number(totals.wholesaleRevenue) || 0)}
-		                            </span>
-		                            <span>
-		                              Retail:{" "}
-		                              {formatCurrency(Number(totals.retailRevenue) || 0)}
-		                            </span>
-		                          </div>
-		                        );
-		                      })()}
-		                      <div className="w-max">
-		                        <div
-		                          className="grid w-full items-center gap-2 border-x border-slate-200/70 bg-[rgba(95,179,249,0.08)] px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700"
-		                          style={{
-		                            gridTemplateColumns:
-		                              "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
-		                          }}
-		                        >
-		                          <div className="whitespace-nowrap">Sales Rep</div>
-		                          <div className="whitespace-nowrap">Email</div>
-		                          <div className="whitespace-nowrap text-right">Orders</div>
-		                          <div className="whitespace-nowrap text-right">Wholesale</div>
-		                          <div className="whitespace-nowrap text-right">Retail</div>
-		                        </div>
-		                        <ul className="w-full border-x border-b border-slate-200/70 max-h-[420px] overflow-y-auto">
-		                          {salesRepSalesSummary.map((rep) => (
-		                            <li
-		                              key={rep.salesRepId}
-		                              className="grid w-full items-center gap-2 px-2 py-1 border-b border-slate-200/70 last:border-b-0"
-		                              style={{
-		                                gridTemplateColumns:
-		                                  "minmax(120px,1fr) minmax(160px,1fr) max-content max-content max-content",
-		                              }}
-		                            >
-		                              <div className="text-sm font-semibold text-slate-900 min-w-0">
-		                                <button
-		                                  type="button"
-		                                  className="min-w-0 text-left hover:underline"
-		                                  onClick={() =>
-		                                    openLiveUserDetail(
-		                                      {
-		                                        id: rep.salesRepUserId || rep.salesRepId,
-		                                        name: rep.salesRepName,
-		                                        email: rep.salesRepEmail,
-		                                        role: "sales_rep",
-		                                      },
-		                                      {
-		                                        salesRepWholesaleRevenue: Number(rep.wholesaleRevenue || 0),
-		                                        salesRepRetailRevenue: Number(rep.retailRevenue || 0),
-		                                      },
-		                                    )
-		                                  }
-		                                  title="Open sales rep details"
-		                                >
-		                                  {rep.salesRepName}
-		                                </button>
-		                              </div>
-		                              <div
-		                                className="text-sm text-slate-700 truncate"
-		                                title={rep.salesRepEmail || ""}
-		                              >
-		                                {rep.salesRepEmail || "—"}
-		                              </div>
-		                              <div className="text-sm text-right text-slate-800 tabular-nums whitespace-nowrap">
-		                                {rep.totalOrders}
-		                              </div>
-		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-		                                {formatCurrency(rep.wholesaleRevenue || 0)}
-		                              </div>
-		                              <div className="text-sm text-right font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-		                                {formatCurrency(rep.retailRevenue || 0)}
-		                              </div>
-		                            </li>
-		                          ))}
-		                        </ul>
-		                      </div>
-		                    </div>
-		                  )}
-		                </div>
-		              </div>
-		            </div>
-		          )}
-
-                {isAdmin(user?.role) && (
-                  <div className="relative w-full">
-                    <div
-                      className="w-full account-tab-scroll-container"
-                      ref={setAdminDashboardTabsContainerRef}
-                      onScroll={updateAdminDashboardTabIndicator}
-                    >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
-                        {adminDashboardTabs.map((tab) => {
-                          const isActive = adminDashboardTab === tab.id;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
-                                isActive && "text-slate-900",
-                              )}
-                              data-admin-dashboard-tab={tab.id}
-                              aria-pressed={isActive}
-                              onClick={() => setAdminDashboardTab(tab.id)}
-                            >
-                              <span
-                                className="inline-flex items-center gap-2"
-                                data-admin-dashboard-tab-content
-                              >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
-                                </span>
-                                <span className="inline-flex items-center">
-                                  {tab.id === "crm" ? "CRM In-Development" : tab.label}
-                                </span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className="account-tab-underline-indicator"
-                      style={{
-                        left: adminDashboardTabIndicator.left,
-                        width: adminDashboardTabIndicator.width,
-                        opacity: adminDashboardTabIndicator.opacity,
-                      }}
-                    />
-                  </div>
-                )}
-
-			          {showSalesDashboardTabs && !isAdmin(user?.role) && (
-                  <div className="relative w-full">
-                    <div
-                      className="w-full account-tab-scroll-container"
-                      ref={setSalesDashboardTabsContainerRef}
-                      onScroll={updateSalesDashboardTabIndicator}
-                    >
-                      <div className="flex items-center gap-4 pb-0 sm:pb-4 account-tab-row">
-                        {salesDashboardTabs.map((tab) => {
-                          if (tab.id === "crm" && !crmEnabled && !isTestRep(user?.role)) {
-                            return null;
-                          }
-                          const isActive = salesDashboardTab === tab.id;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              className={clsx(
-                                "relative inline-flex items-center gap-2 px-3 pb-4 pt-1 text-sm font-semibold whitespace-nowrap transition-colors text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/30 flex-shrink-0 overflow-visible",
-                                isActive && "text-slate-900",
-                              )}
-                              data-sales-dashboard-tab={tab.id}
-                              aria-pressed={isActive}
-                              onClick={() => setSalesDashboardTab(tab.id)}
-                            >
-                              <span
-                                className="inline-flex items-center gap-2"
-                                data-sales-dashboard-tab-content
-                              >
-                                <span className="inline-flex h-5 w-5 items-center justify-center">
-                                  <tab.Icon className="h-5 w-5" />
-                                </span>
-                                <span className="inline-flex items-center">{tab.label}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className="account-tab-underline-indicator"
-                      style={{
-                        left: salesDashboardIndicatorLeft,
-                        width: salesDashboardIndicatorWidth,
-                        opacity: salesDashboardIndicatorOpacity,
-                      }}
-                    />
-                  </div>
-                )}
+		          {isHereNowSectionActive && renderSalesScopedOnHoldOrdersCard()}
 
 
 		          {adminActionState.error && (
@@ -22925,18 +22983,31 @@ function MainApp() {
             </div>
             )}
             {isDoctorReferralsManualSectionActive && (
-            <div className="sales-rep-leads-card sales-rep-combined-card">
-              <div className="sales-rep-leads-header">
-                <div className="sales-rep-leads-title">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                      <h3 className="text-lg sm:text-xl">Your Leads</h3>
-                      <p>
-                        Advance referrals and inbound requests through your
-                        pipeline.
-                      </p>
-                    </div>
-                    <div className="sales-rep-card-controls">
+            <div className="space-y-4">
+                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card">
+                  <div className="lead-panel-header">
+                    <div className="w-full">
+                      <div className="lead-panel-filter-row">
+                        <h4>
+                          {filteredActiveProspects.length} Active Prospect
+                          {filteredActiveProspects.length === 1 ? "" : "s"}
+                        </h4>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <select
+                            value={activeProspectFilter}
+                            onChange={(e) =>
+                              setActiveProspectFilter(e.target.value)
+                            }
+                            className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                          >
+                            {activeProspectFilterOptions.map((option) => (
+                              <option key={option} value={option}>
+                                {option === "all"
+                                  ? "All statuses"
+                                  : humanizeReferralStatus(option)}
+                              </option>
+                            ))}
+                          </select>
 	                      <Button
 	                        type="button"
 	                        variant="outline"
@@ -22952,38 +23023,8 @@ function MainApp() {
 	                      >
 	                        {referralDataLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="sales-rep-lead-grid">
-                <section className="lead-panel">
-                  <div className="lead-panel-header">
-                    <div className="w-full">
-                      <div className="lead-panel-filter-row">
-                        <h4>
-                          {filteredActiveProspects.length} Active Prospect
-                          {filteredActiveProspects.length === 1 ? "" : "s"}
-                        </h4>
-                        <select
-                          value={activeProspectFilter}
-                          onChange={(e) =>
-                            setActiveProspectFilter(e.target.value)
-                          }
-                          className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                        >
-                          {activeProspectFilterOptions.map((option) => (
-                            <option key={option} value={option}>
-                              {option === "all"
-                                ? "All statuses"
-                                : humanizeReferralStatus(option)}
-                            </option>
-                          ))}
-                        </select>
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-500 referrals-subtitle">
-                        Combination of referral and contact form prospects.
-                      </p>
                       <div className="mt-2">
                         <Button
                           type="button"
@@ -23699,7 +23740,7 @@ function MainApp() {
                     </div>
                   )}
                 </section>
-                <section className="lead-panel">
+                <section className="lead-panel sales-rep-leads-card sales-rep-combined-card">
 	                  <div className="lead-panel-header">
 	                    <div className="w-full">
 	                      <div className="lead-panel-filter-row">
@@ -23707,6 +23748,21 @@ function MainApp() {
 	                          {filteredSalesRepReferrals.length} Referral
 	                          {filteredSalesRepReferrals.length === 1 ? "" : "s"}
 	                        </h4>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void tracedRefreshReferralData("sales-rep-manual-refresh", {
+                                showLoading: true,
+                              });
+                            }}
+                            disabled={referralDataLoading}
+                            className="header-home-button squircle-sm bg-white text-slate-900"
+                          >
+                            {referralDataLoading ? "Refreshing…" : "Refresh"}
+                          </Button>
 	                      </div>
 	                      <p className="text-sm text-slate-500 referrals-subtitle">
 	                        Qualify new referrals and update their status.
@@ -23992,6 +24048,7 @@ function MainApp() {
                   </div>
                 </section>
                 {isAdmin(user?.role) && (
+                  <div className="sales-rep-leads-card sales-rep-combined-card">
                   <section className="lead-panel">
 	                    <div className="lead-panel-header">
 	                      <div>
@@ -24162,8 +24219,8 @@ function MainApp() {
                       </table>
                     </div>
                   </section>
+                  </div>
                 )}
-              </div>
               {/* Historic prospects removed; credited referrals appear in Sales */}
 	            </div>
             )}
@@ -26819,8 +26876,9 @@ function MainApp() {
               </Button>
               <Button
                 type="submit"
+                variant="outline"
                 disabled={manualProspectSubmitting}
-                className="squircle-sm glass-brand"
+                className="header-home-button squircle-sm bg-white text-slate-900"
               >
                 {manualProspectSubmitting ? (
                   <span className="flex items-center gap-2">
@@ -28032,7 +28090,7 @@ function MainApp() {
                       return (
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <p className="text-sm font-semibold text-slate-700">
-                            Orders by type
+                            {isDoctorRole(salesDoctorDetail.role) ? "Orders" : "Orders by type"}
                           </p>
                           <span className="text-xs text-slate-500">
                             {customRangeLabel || periodLabel}
@@ -28056,7 +28114,7 @@ function MainApp() {
                       if (showOrdersSkeleton) {
                         return renderSalesDoctorOrdersSkeleton();
                       }
-			                  const {
+		                  const {
 			                    personalOrders,
 			                    salesOrders,
 			                    allOrdersInRange,
@@ -28067,6 +28125,7 @@ function MainApp() {
 			                    salesDoctorDetail,
 			                    salesDoctorCommissionRange,
 			                  );
+                      const forceSingleOrdersList = isDoctorRole(salesDoctorDetail.role);
 		                  const personalRevenueForDisplay =
 		                    personalOrders.length > 0
 		                      ? sumRevenueFromOrders(personalOrdersInRange)
@@ -28082,6 +28141,22 @@ function MainApp() {
 	                  const renderOrdersList = (orders: AccountOrderSummary[]) => (
 	                    <div className="space-y-2">
 	                      {orders.map((order) => {
+                          const displayOrderNumber =
+                            (typeof (order as any).wooOrderNumber === "string" &&
+                            (order as any).wooOrderNumber.trim().length > 0
+                              ? (order as any).wooOrderNumber.trim()
+                              : null) ||
+                            (typeof (order as any).wooOrderId === "string" &&
+                            (order as any).wooOrderId.trim().length > 0
+                              ? (order as any).wooOrderId.trim()
+                              : null) ||
+                            (typeof order.number === "string" && order.number.trim().length > 0
+                              ? order.number.trim()
+                              : null) ||
+                            (typeof order.id === "string" && order.id.trim().length > 0
+                              ? order.id.trim()
+                              : null) ||
+                            "Unknown";
                           const delegateOrderLabel =
                             normalizeDelegateOrderLabel((order as any)?.asDelegate) ||
                             normalizeDelegateOrderLabel((order as any)?.as_delegate);
@@ -28097,7 +28172,7 @@ function MainApp() {
 	                          <div className="min-w-0 text-sm text-slate-700">
 	                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
 	                              <span className="font-semibold text-slate-800 truncate">
-	                                {`Order #${order.number ?? order.id}`}
+	                                {`Order #${displayOrderNumber}`}
 	                              </span>
 	                              <span className="sales-tracking-row-status shrink-0">
 	                                {describeSalesOrderStatus(order as any)}
@@ -28121,7 +28196,7 @@ function MainApp() {
 	                    </div>
 	                  );
 
-		                  if (!hasSplit) {
+		                  if (forceSingleOrdersList || !hasSplit) {
 		                    return (
 		                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
 		                        {allOrdersInRange.length > 0 ? (
@@ -28539,8 +28614,8 @@ function MainApp() {
                   typeof storedGrandTotal === "number" && Number.isFinite(storedGrandTotal) && storedGrandTotal > 0
                     ? storedGrandTotal
                     : computedGrandTotal;
-		                const paymentDisplay =
-		                  (() => {
+                const paymentDisplay =
+                  (() => {
 		                    const integrations = (salesOrderDetail as any).integrationDetails || (salesOrderDetail as any).integrations || {};
 		                    const stripeMeta = integrations?.stripe || integrations?.Stripe || null;
 	                    const last4 =
@@ -28568,8 +28643,41 @@ function MainApp() {
 		                    }
 		                    return fallback;
 		                  })();
+                const renderOrderDetailPlaceholder = (widthClass = "w-16") => (
+                  <span
+                    aria-hidden="true"
+                    className={`news-loading-shimmer inline-block h-[0.95em] ${widthClass} rounded-full bg-slate-200/80 align-middle`}
+                  />
+                );
+                const renderOrderDetailValue = (
+                  value: string | number | null | undefined,
+                  options?: { widthClass?: string; fallback?: string },
+                ) => {
+                  const hasValue =
+                    value !== null &&
+                    value !== undefined &&
+                    String(value).trim().length > 0;
+                  if (hasValue) {
+                    return value;
+                  }
+                  if (salesOrderDetailLoading) {
+                    return renderOrderDetailPlaceholder(options?.widthClass);
+                  }
+                  return options?.fallback ?? "—";
+                };
                 const renderAddressLines = (address: any) => {
-                  if (!address) return <p className="text-sm text-slate-500">—</p>;
+                  if (!address) {
+                    if (salesOrderDetailLoading) {
+                      return (
+                        <div className="space-y-2 py-0.5" aria-hidden="true">
+                          <div className="news-loading-shimmer h-4 w-40 rounded-full bg-slate-200/80" />
+                          <div className="news-loading-shimmer h-4 w-56 rounded-full bg-slate-200/70" />
+                          <div className="news-loading-shimmer h-4 w-36 rounded-full bg-slate-200/60" />
+                        </div>
+                      );
+                    }
+                    return <p className="text-sm text-slate-500">—</p>;
+                  }
                   const lines = [
                     address.name,
                     [address.addressLine1, address.addressLine2]
@@ -28590,7 +28698,18 @@ function MainApp() {
                         {line}
                       </p>
                     ));
-                  return lines.length > 0 ? lines : <p className="text-sm text-slate-500">—</p>;
+                  if (lines.length > 0) {
+                    return lines;
+                  }
+                  if (salesOrderDetailLoading) {
+                    return (
+                      <div className="space-y-2 py-0.5" aria-hidden="true">
+                        <div className="news-loading-shimmer h-4 w-40 rounded-full bg-slate-200/80" />
+                        <div className="news-loading-shimmer h-4 w-56 rounded-full bg-slate-200/70" />
+                      </div>
+                    );
+                  }
+                  return <p className="text-sm text-slate-500">—</p>;
                 };
 
                 const placedDate =
@@ -28610,7 +28729,7 @@ function MainApp() {
                 const expectedDelivery =
                   isShippedDetail && shipping?.estimatedArrivalDate
                     ? formatDate(shipping.estimatedArrivalDate)
-                    : "—";
+                    : null;
 
                 const formatShippingCode = (value?: string | null) => {
                   if (!value) return null;
@@ -28667,9 +28786,7 @@ function MainApp() {
                           Order placed
                         </p>
                         <p className="font-semibold text-slate-900">
-                          {placedDate
-                            ? placedDate
-                            : "—"}
+                          {renderOrderDetailValue(placedDate, { widthClass: "w-28" })}
                         </p>
                       </div>
                       <div>
@@ -28703,7 +28820,7 @@ function MainApp() {
                           Expected delivery
                         </p>
                         <p className="font-semibold text-slate-900">
-                          {expectedDelivery}
+                          {renderOrderDetailValue(expectedDelivery, { widthClass: "w-24" })}
                         </p>
                       </div>
                     </div>
@@ -28922,7 +29039,7 @@ function MainApp() {
                         <div className="text-sm text-slate-700 space-y-1">
                           <p>
                             <span className="font-semibold">Payment:</span>{" "}
-                            {paymentDisplay || "—"}
+                            {renderOrderDetailValue(paymentDisplay, { widthClass: "w-20" })}
                           </p>
                         </div>
                       </div>
@@ -28955,7 +29072,7 @@ function MainApp() {
                                   {line.name || "Item"}
                                 </p>
                                 <p className="text-slate-600">
-                                  Qty: {line.quantity ?? "—"}
+                                  Qty: {renderOrderDetailValue(line.quantity ?? null, { widthClass: "w-8" })}
                                 </p>
                               </div>
                               <div className="text-sm text-slate-700 text-right min-w-[6rem]">

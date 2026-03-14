@@ -11,7 +11,10 @@ const isReplit = Boolean(
 );
 
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  // Production builds are currently hanging inside the React SWC plugin path.
+  // Vite's native esbuild TSX handling is sufficient for build output here,
+  // so keep SWC only for dev where fast refresh matters.
+  plugins: command === 'build' ? [] : [react()],
   define: {
     // Force React to pick production builds during `vite build`.
     'process.env.NODE_ENV': JSON.stringify(command === 'build' ? 'production' : 'development'),

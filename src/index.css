@@ -4139,6 +4139,15 @@ html {
   gap: 1rem;
 }
 
+.lead-panel.sales-rep-leads-card {
+  border: 1px solid rgba(95, 179, 249, 0.55);
+  border-radius: var(--squircle-lg, 20px);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.94), rgba(236, 244, 255, 0.9));
+  box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.35);
+  padding: 1.5rem;
+  gap: 1rem;
+}
+
 .lead-panel-header {
   display: flex;
   align-items: flex-start;
