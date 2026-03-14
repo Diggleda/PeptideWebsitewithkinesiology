@@ -442,10 +442,16 @@ def _compute_live_clients_payload(
     contact_emails = {e for e in contact_emails if e and "@" in e}
 
     candidate_by_id: dict[str, dict] = {}
+    sales_actor_by_id: dict[str, dict] = {}
     for user in all_users or []:
         if not isinstance(user, dict):
             continue
         user_role = _normalize_role(user.get("role"))
+        if user_role in ("admin", "sales_lead", "saleslead", "sales-lead"):
+            uid = str(user.get("id") or "").strip()
+            if uid:
+                sales_actor_by_id[uid] = user
+            continue
         if user_role not in ("doctor", "test_doctor"):
             continue
         uid = str(user.get("id") or "").strip()
@@ -470,7 +476,8 @@ def _compute_live_clients_payload(
     presence = presence_service.snapshot()
 
     clients = []
-    for user in candidate_by_id.values():
+    visible_users = list(candidate_by_id.values()) + list(sales_actor_by_id.values())
+    for user in visible_users:
         snapshot = _compute_presence_snapshot(
             user,
             now_epoch=now_epoch,

@@ -11362,9 +11362,10 @@ function MainApp() {
               : (Array.isArray(payload?.clients) ? payload.clients : []);
 		        const clients = raw.filter((entry: any) => {
 		          const role = normalizeRole(entry?.role || "");
-              if (!isSalesLeadRole) return isDoctorRole(role);
-		          if (role === "admin") return false;
-		          return isDoctorRole(role) || isRep(role);
+              if (!isSalesLeadRole) {
+                return isDoctorRole(role) || isAdmin(role) || isSalesLead(role);
+              }
+		          return true;
 		        });
 		        setLiveClients(clients);
 		      } catch (error: any) {
@@ -11431,9 +11432,10 @@ function MainApp() {
                   : (Array.isArray(payload?.clients) ? payload.clients : []);
 		          const clients = raw.filter((entry: any) => {
 		            const role = normalizeRole(entry?.role || "");
-                if (!isSalesLeadRole) return isDoctorRole(role);
-		            if (role === "admin") return false;
-		            return isDoctorRole(role) || isRep(role);
+                if (!isSalesLeadRole) {
+                  return isDoctorRole(role) || isAdmin(role) || isSalesLead(role);
+                }
+		            return true;
 		          });
 		          setLiveClients(clients);
               setLiveClientsError(null);
@@ -20191,9 +20193,6 @@ function MainApp() {
                                     "test_rep",
 		                            "salesrep",
 		                            "rep",
-		                            "sales_lead",
-		                            "saleslead",
-		                            "sales-lead",
 		                          ].includes(role)
 		                        ) {
 		                          return false;
@@ -20301,6 +20300,8 @@ function MainApp() {
 		                                className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
 		                              >
 		                                <option value="all">All</option>
+		                                <option value="admin">Admin</option>
+		                                <option value="sales_lead">Sales Lead</option>
 		                                <option value="sales_rep">Sales / Test Rep</option>
 		                                <option value="doctor">Doctors</option>
 		                                <option value="test_doctor">Test doctors</option>
