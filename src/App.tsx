@@ -10837,9 +10837,13 @@ function MainApp() {
 		  const liveClientsEtagRef = useRef<string | null>(null);
 		  const liveClientsLongPollDisabledRef = useRef(false);
       const liveClientsRetryDelayMsRef = useRef(1000);
-		  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
-		  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
-		  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
+	  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
+	  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
+	  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
+  const [livePresenceProfileImageByUserId, setLivePresenceProfileImageByUserId] = useState<
+    Record<string, string | null>
+  >({});
+  const livePresenceProfileImageRequestIdsRef = useRef<Set<string>>(new Set());
 
 	  const [adminLiveUsers, setAdminLiveUsers] = useState<any[]>([]);
 	  const [adminLiveUsersLoading, setAdminLiveUsersLoading] = useState(false);
@@ -10933,6 +10937,91 @@ function MainApp() {
 
     return false;
   }, [adminHandDeliveryUsers, adminLiveUsers, liveClients, user]);
+
+  useEffect(() => {
+    const canFetchSqlProfileImages = Boolean(user?.role) && (isAdmin(user?.role) || isSalesLead(user?.role));
+    if (!canFetchSqlProfileImages) {
+      return;
+    }
+
+    const sourceEntries = [
+      ...(Array.isArray(liveClients) ? liveClients : []),
+      ...(Array.isArray(adminLiveUsers) ? adminLiveUsers : []),
+    ];
+    const missingIds = Array.from(
+      new Set(
+        sourceEntries
+          .map((entry: any) => {
+            const userId = String(entry?.id || "").trim();
+            if (!userId) return null;
+            const existingAvatar =
+              typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
+                ? entry.profileImageUrl.trim()
+                : null;
+            if (existingAvatar) return null;
+            if (Object.prototype.hasOwnProperty.call(livePresenceProfileImageByUserId, userId)) return null;
+            if (livePresenceProfileImageRequestIdsRef.current.has(userId)) return null;
+            return userId;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    if (!missingIds.length) {
+      return;
+    }
+
+    const batchIds = missingIds.slice(0, 40);
+    batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.add(userId));
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const payload = (await settingsAPI.getAdminUserProfiles(batchIds)) as any;
+        if (cancelled) return;
+        const users = Array.isArray(payload?.users) ? payload.users : [];
+        const nextById: Record<string, string | null> = {};
+        batchIds.forEach((userId) => {
+          nextById[userId] = null;
+        });
+        users.forEach((profile: any) => {
+          const userId = String(profile?.id || "").trim();
+          if (!userId) return;
+          nextById[userId] =
+            typeof profile?.profileImageUrl === "string" && profile.profileImageUrl.trim().length > 0
+              ? profile.profileImageUrl.trim()
+              : null;
+        });
+        setLivePresenceProfileImageByUserId((current) => ({ ...current, ...nextById }));
+      } catch {
+        if (cancelled) return;
+      } finally {
+        batchIds.forEach((userId) => livePresenceProfileImageRequestIdsRef.current.delete(userId));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminLiveUsers, liveClients, livePresenceProfileImageByUserId, user?.role]);
+
+  const resolveLivePresenceAvatarUrl = useCallback(
+    (entry: any) => {
+      const inlineAvatar =
+        typeof entry?.profileImageUrl === "string" && entry.profileImageUrl.trim().length > 0
+          ? entry.profileImageUrl.trim()
+          : null;
+      if (inlineAvatar) {
+        return inlineAvatar;
+      }
+      const userId = String(entry?.id || "").trim();
+      if (!userId) {
+        return null;
+      }
+      return livePresenceProfileImageByUserId[userId] ?? null;
+    },
+    [livePresenceProfileImageByUserId],
+  );
 
 	  const normalizeHandDeliveryEntry = useCallback(
 	    (entry: any): HandDeliveryEntry | null => {
@@ -11305,8 +11394,8 @@ function MainApp() {
 
     const getPresenceRetryDelayMs = (error: any, currentDelayMs: number) => {
       const status = typeof error?.status === "number" ? error.status : null;
-      const minDelayMs = status === 429 ? 10000 : 5000;
-      const maxDelayMs = status === 429 ? 60000 : 30000;
+      const minDelayMs = status === 429 ? 7500 : 2500;
+      const maxDelayMs = status === 429 ? 30000 : 15000;
       if (!isPresenceFetchError(error)) {
         return 1000;
       }
@@ -11320,9 +11409,9 @@ function MainApp() {
       return typeof error?.message === "string" ? error.message : fallback;
     };
 
-    const LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS = 30_000;
-    const LIVE_PRESENCE_MIN_LOOP_MS = 10_000;
-    const LIVE_PRESENCE_FALLBACK_INTERVAL_MS = 15_000;
+    const LIVE_PRESENCE_LONGPOLL_TIMEOUT_MS = 25_000;
+    const LIVE_PRESENCE_MIN_LOOP_MS = 4_000;
+    const LIVE_PRESENCE_FALLBACK_INTERVAL_MS = 8_000;
 
 		  useEffect(() => {
 		    const userRole = user?.role || null;
@@ -11362,8 +11451,11 @@ function MainApp() {
               : (Array.isArray(payload?.clients) ? payload.clients : []);
 		        const clients = raw.filter((entry: any) => {
 		          const role = normalizeRole(entry?.role || "");
+              if (role === "test_doctor") {
+                return false;
+              }
               if (!isSalesLeadRole) {
-                return isDoctorRole(role) || isAdmin(role) || isSalesLead(role);
+                return role === "doctor" || isAdmin(role) || isSalesLead(role);
               }
 		          return true;
 		        });
@@ -11432,8 +11524,11 @@ function MainApp() {
                   : (Array.isArray(payload?.clients) ? payload.clients : []);
 		          const clients = raw.filter((entry: any) => {
 		            const role = normalizeRole(entry?.role || "");
+                if (role === "test_doctor") {
+                  return false;
+                }
                 if (!isSalesLeadRole) {
-                  return isDoctorRole(role) || isAdmin(role) || isSalesLead(role);
+                  return role === "doctor" || isAdmin(role) || isSalesLead(role);
                 }
 		            return true;
 		          });
@@ -11460,7 +11555,13 @@ function MainApp() {
 	      }
 	    };
 
-	    void runLongPoll();
+      const startPresenceLoop = async () => {
+        await fetchOnce();
+        if (cancelled) return;
+        await runLongPoll();
+      };
+
+	    void startPresenceLoop();
 
 	    return () => {
 	      cancelled = true;
@@ -11571,7 +11672,13 @@ function MainApp() {
 	      }
 	    };
 
-	    void runLongPoll();
+      const startPresenceLoop = async () => {
+        await fetchOnce();
+        if (cancelled) return;
+        await runLongPoll();
+      };
+
+	    void startPresenceLoop();
 
 	    return () => {
 	      cancelled = true;
@@ -20326,7 +20433,7 @@ function MainApp() {
 	                          ) : (
 	                            <div className="flex w-full min-w-0 flex-col gap-2 sm:min-w-[900px]">
 		                          {liveUsers.map((entry: any) => {
-		                        const avatarUrl = entry.profileImageUrl || null;
+		                        const avatarUrl = resolveLivePresenceAvatarUrl(entry);
 		                        const displayName = entry.name || entry.email || "Doctor";
 		                        const resolveLastSeenMs = () => {
 		                          const raw =
@@ -21335,7 +21442,7 @@ function MainApp() {
 			                                }
 		                                return null;
 			                              })();
-			                              const avatarUrl = entry.profileImageUrl || null;
+		                              const avatarUrl = resolveLivePresenceAvatarUrl(entry);
 			                              const displayName = entry.name || entry.email || "User";
 			                              const resolveLastSeenMs = () => {
 			                                if (isEntryCurrentUser(entry)) {

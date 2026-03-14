@@ -1030,6 +1030,49 @@ def get_user_profile(user_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/users")
+@require_auth
+def get_user_profiles():
+    def action():
+        _require_admin_or_sales_lead()
+        raw_ids = str(request.args.get("ids") or "").strip()
+        if not raw_ids:
+            err = RuntimeError("ids is required")
+            setattr(err, "status", 400)
+            raise err
+
+        requested_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for raw_id in raw_ids.split(","):
+            target_id = str(raw_id or "").strip()
+            if not target_id or target_id in seen_ids:
+                continue
+            seen_ids.add(target_id)
+            requested_ids.append(target_id)
+            if len(requested_ids) >= 100:
+                break
+
+        users: list[dict] = []
+        for target_id in requested_ids:
+            user = user_repository.find_by_id(target_id)
+            if not user:
+                continue
+            profile = _public_user_profile(user)
+            users.append(
+                {
+                    "id": profile.get("id"),
+                    "name": profile.get("name"),
+                    "email": profile.get("email"),
+                    "role": profile.get("role"),
+                    "profileImageUrl": profile.get("profileImageUrl"),
+                }
+            )
+
+        return {"users": users}
+
+    return handle_action(action)
+
+
 @blueprint.get("/sales-reps/<sales_rep_id>")
 @require_auth
 def get_sales_rep_profile(sales_rep_id: str):

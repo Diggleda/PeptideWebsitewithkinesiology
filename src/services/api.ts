@@ -1381,6 +1381,19 @@ export const settingsAPI = {
       method: 'GET',
     });
   },
+  getAdminUserProfiles: async (userIds: Array<string | number>) => {
+    const ids = (Array.isArray(userIds) ? userIds : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value.length > 0);
+    if (!ids.length) {
+      return { users: [] };
+    }
+    const params = new URLSearchParams();
+    params.set('ids', ids.join(','));
+    return fetchWithAuth(`${API_BASE_URL}/settings/users?${params.toString()}`, {
+      method: 'GET',
+    });
+  },
   getSalesRepProfile: async (salesRepId: string | number) => {
     if (!salesRepId) {
       throw new Error('salesRepId is required');
