@@ -1773,6 +1773,9 @@ const normalizeAccountOrdersResponse = (
   const shouldIncludeStatus = (status?: string | null) => {
     if (!status) return true;
     const normalized = String(status).trim().toLowerCase();
+    if (normalized === "delegation_draft") {
+      return false;
+    }
     const isCanceledOrRefunded =
       normalized === "trash" ||
       normalized.includes("cancel") ||

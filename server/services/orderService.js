@@ -2053,6 +2053,7 @@ const getOrdersForUser = async (userId) => {
   }
 
   let localSummaries = [];
+  const isDelegationDraftStatus = (status) => String(status || '').trim().toLowerCase() === 'delegation_draft';
   const normalizeLookupToken = (value) => {
     if (value === undefined || value === null) return '';
     const token = String(value).trim().toLowerCase();
@@ -2070,7 +2071,7 @@ const getOrdersForUser = async (userId) => {
     const combined = []
       .concat(localOrders || [])
       .concat(Array.isArray(sqlOrders) ? sqlOrders : [])
-      .filter((order) => order && typeof order === 'object');
+      .filter((order) => order && typeof order === 'object' && !isDelegationDraftStatus(order?.status));
     const dedupedById = new Map();
     combined.forEach((order) => {
       const id = normalizeLookupToken(order?.id);
@@ -2110,6 +2111,9 @@ const getOrdersForUser = async (userId) => {
   if (email && typeof wooCommerceClient.fetchOrdersByEmail === 'function') {
     try {
       wooOrders = await wooCommerceClient.fetchOrdersByEmail(email, { perPage: 20 });
+      wooOrders = Array.isArray(wooOrders)
+        ? wooOrders.filter((order) => !isDelegationDraftStatus(order?.status))
+        : [];
       if (Array.isArray(wooOrders) && wooOrders.length > 0) {
         const enriched = [];
         // Preserve Stripe/local payment metadata while enriching with ShipStation status/tracking.
@@ -2645,6 +2649,7 @@ const getSalesByRep = async ({
     ? salesRepRepository.getAll()
     : [];
   const repLookup = new Map();
+  const repUserIdByRepId = new Map();
   const repEmailFromTableById = new Map();
 
   // Canonicalize rep identity: in many deployments, `users.sales_rep_id` is used as an external rep key
@@ -2656,16 +2661,25 @@ const getSalesByRep = async ({
     const canonical = normalizeId(repUser?.id);
     if (alias && canonical && alias !== '__house__') {
       canonicalRepIdByAlias.set(alias, canonical);
+      repUserIdByRepId.set(alias, canonical);
+    }
+    if (canonical) {
+      repUserIdByRepId.set(canonical, canonical);
     }
   });
   repsFromStore.forEach((repRecord) => {
     const recordAlias = normalizeRepAlias(repRecord?.id || repRecord?.salesRepId);
     const recordEmail = normalizeEmail(repRecord?.email);
+    const legacyUserId = normalizeId(repRecord?.legacyUserId || repRecord?.legacy_user_id);
+    if (recordAlias && legacyUserId) {
+      repUserIdByRepId.set(recordAlias, legacyUserId);
+    }
     if (!recordAlias || recordAlias === '__house__' || !recordEmail) return;
     const userMatch = repsFromUsers.find((u) => normalizeEmail(u?.email) === recordEmail) || null;
     const canonical = normalizeId(userMatch?.id);
     if (canonical) {
       canonicalRepIdByAlias.set(recordAlias, canonical);
+      repUserIdByRepId.set(recordAlias, canonical);
     }
   });
 
@@ -2689,11 +2703,13 @@ const getSalesByRep = async ({
     const canonical = normalizeId(rep?.id);
     if (canonical) {
       repLookup.set(canonical, { id: canonical, name, email });
+      repUserIdByRepId.set(canonical, canonical);
     }
     const alias = normalizeRepAlias(rep?.salesRepId);
     if (alias && alias !== '__house__') {
       const mapped = canonicalRepIdByAlias.get(alias) || alias;
       repLookup.set(mapped, { id: mapped, name, email });
+      repUserIdByRepId.set(mapped, canonical || mapped);
     }
   }
   const userToRep = new Map();
@@ -3118,6 +3134,7 @@ const getSalesByRep = async ({
       }
       return {
         salesRepId: repId,
+        salesRepUserId: repUserIdByRepId.get(repId) || null,
         salesRepName: rep.name || rep.email || 'Sales Rep',
         salesRepEmail: repEmailFromTableById.get(repId) || null,
         totalOrders: totals.totalOrders,

@@ -1379,6 +1379,9 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
     if not user:
         raise _service_error("User not found", 404)
 
+    def _is_delegation_draft(order: object) -> bool:
+        return isinstance(order, dict) and str(order.get("status") or "").strip().lower() == "delegation_draft"
+
     local_orders = []
     woo_orders = []
     woo_error = None
@@ -1386,6 +1389,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
     try:
         # Avoid pulling large payload columns; only load fields needed to overlay UI.
         local_orders = order_repository.list_user_overlay_fields(user_id) or []
+        local_orders = [order for order in local_orders if not _is_delegation_draft(order)]
     except Exception:
         local_orders = []
 
@@ -1394,6 +1398,7 @@ def get_orders_for_user(user_id: str, *, force: bool = False):
         try:
             t0 = time.perf_counter()
             woo_orders = woo_commerce.fetch_orders_by_email(email, force=force)
+            woo_orders = [order for order in (woo_orders or []) if not _is_delegation_draft(order)]
             _perf_log(
                 f"woo_commerce.fetch_orders_by_email userId={user_id} count={len(woo_orders) if isinstance(woo_orders, list) else 'n/a'}",
                 duration_ms=(time.perf_counter() - t0) * 1000,
@@ -3390,19 +3395,26 @@ def get_sales_by_rep(
             if email:
                 users_by_email[email] = u
 
+        rep_user_id_by_rep_id: Dict[str, str] = {}
+
         # Allow resolving a rep by their `users.sales_rep_id` external key (common in MySQL deployments).
         for u in users:
             if _norm_role(u.get("role")) not in rep_like_roles:
                 continue
+            user_id = str(u.get("id") or "").strip()
+            if user_id:
+                rep_user_id_by_rep_id[user_id] = user_id
             rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
-            if rep_alias and rep_alias not in user_lookup:
-                user_lookup[rep_alias] = u
+            if rep_alias:
+                if rep_alias not in user_lookup:
+                    user_lookup[rep_alias] = u
+                if user_id:
+                    rep_user_id_by_rep_id[rep_alias] = user_id
 
         # Canonical rep id is `sales_reps.id`.
         # We treat `users.id`, `users.sales_rep_id` (external key), and `sales_reps.legacy_user_id`
         # as aliases that should resolve to `sales_reps.id` for reporting.
         rep_id_by_email: Dict[str, str] = {}
-        rep_user_id_by_rep_id: Dict[str, str] = {}
         rep_record_by_email: Dict[str, Dict] = {}
         for rep_record in rep_records_list:
             rep_id = str(rep_record.get("id") or "").strip()
@@ -3443,9 +3455,24 @@ def get_sales_by_rep(
             user_id = str(u.get("id") or "").strip()
             if user_id:
                 alias_to_rep_id[user_id] = canonical_rep_id
+                rep_user_id_by_rep_id[canonical_rep_id] = user_id
             rep_alias = str(u.get("salesRepId") or u.get("sales_rep_id") or "").strip()
             if rep_alias:
                 alias_to_rep_id[rep_alias] = canonical_rep_id
+                if user_id:
+                    rep_user_id_by_rep_id[rep_alias] = user_id
+
+        # Keep alias and canonical rep ids synchronized back to a real user id whenever one is known.
+        for alias, canonical_rep_id in list(alias_to_rep_id.items()):
+            alias_key = str(alias or "").strip()
+            canonical_key = str(canonical_rep_id or "").strip()
+            if not alias_key or not canonical_key:
+                continue
+            linked_user_id = rep_user_id_by_rep_id.get(alias_key) or rep_user_id_by_rep_id.get(canonical_key)
+            if not linked_user_id:
+                continue
+            rep_user_id_by_rep_id.setdefault(alias_key, linked_user_id)
+            rep_user_id_by_rep_id.setdefault(canonical_key, linked_user_id)
 
         # Prospect-backed mapping for doctors that don't have `salesRepId` persisted yet.
         prospect_rep_by_doctor: Dict[str, str] = {}
@@ -3878,11 +3905,18 @@ def get_sales_by_rep(
             rep = rep_lookup.get(rep_id) or user_lookup.get(rep_id) or {}
             rep_record = rep_records.get(rep_id) or {}
 
-            rep_user_id = rep_user_id_by_rep_id.get(rep_id) or ""
+            rep_user_id = (
+                rep_user_id_by_rep_id.get(rep_id)
+                or rep_user_id_by_rep_id.get(str(rep_record.get("id") or "").strip())
+                or ""
+            )
             if not rep_user_id:
                 rep_email_key = _norm_email(rep_record.get("email")) if isinstance(rep_record, dict) else ""
                 if rep_email_key and rep_email_key in users_by_email:
                     rep_user_id = str((users_by_email[rep_email_key] or {}).get("id") or "").strip()
+            if not rep_user_id:
+                canonical_rep_id = alias_to_rep_id.get(rep_id, rep_id)
+                rep_user_id = rep_user_id_by_rep_id.get(canonical_rep_id) or ""
             if not rep_user_id and rep_id in user_lookup:
                 rep_user_id = rep_id
             # Prefer the linked user's name if available (sales reps edit their own name there).
