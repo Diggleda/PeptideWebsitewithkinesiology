@@ -7639,3 +7639,16 @@ a[href^="mailto:"]:hover {
 .product-section-scroll-stable {
   overflow-anchor: none;
 }
+
+.active-prospects-filter-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .active-prospects-filter-layout {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}

@@ -10717,12 +10717,13 @@ function MainApp() {
 		    return () => window.clearInterval(id);
 		  }, [user?.role]);
 
-		  const [liveClients, setLiveClients] = useState<any[]>([]);
+	  const [liveClients, setLiveClients] = useState<any[]>([]);
 		  const [liveClientsLoading, setLiveClientsLoading] = useState(false);
 		  const [liveClientsError, setLiveClientsError] = useState<string | null>(null);
 		  const liveClientsInitialLoadDoneRef = useRef(false);
 		  const liveClientsEtagRef = useRef<string | null>(null);
 		  const liveClientsLongPollDisabledRef = useRef(false);
+      const liveClientsRetryDelayMsRef = useRef(1000);
 		  const [liveClientsShowOffline, setLiveClientsShowOffline] = useState(true);
 		  const [liveClientsSearch, setLiveClientsSearch] = useState<string>("");
 		  const [salesLeadLiveUsersRoleFilter, setSalesLeadLiveUsersRoleFilter] = useState<string>("all");
@@ -10733,6 +10734,7 @@ function MainApp() {
   const adminLiveUsersInitialLoadDoneRef = useRef(false);
 	  const adminLiveUsersEtagRef = useRef<string | null>(null);
 	  const adminLiveUsersLongPollDisabledRef = useRef(false);
+    const adminLiveUsersRetryDelayMsRef = useRef(1000);
 	  const [adminLiveUsersShowOffline, setAdminLiveUsersShowOffline] = useState(true);
 	  const [adminLiveUsersSearch, setAdminLiveUsersSearch] = useState<string>("");
 	  const [adminLiveUsersRoleFilter, setAdminLiveUsersRoleFilter] = useState<string>("all");
@@ -11172,6 +11174,39 @@ function MainApp() {
 	    user?.role,
 	  ]);
 
+    const isPresenceFetchError = (error: any) => {
+      const status = typeof error?.status === "number" ? error.status : null;
+      const message = String(error?.message || "").toLowerCase();
+      return (
+        status === 429 ||
+        (status != null && status >= 500) ||
+        message.includes("failed to fetch") ||
+        message.includes("fetch api cannot load") ||
+        message.includes("networkerror") ||
+        message.includes("load failed") ||
+        message.includes("request timed out") ||
+        message.includes("access control") ||
+        message.includes("access-control")
+      );
+    };
+
+    const getPresenceRetryDelayMs = (error: any, currentDelayMs: number) => {
+      const status = typeof error?.status === "number" ? error.status : null;
+      const minDelayMs = status === 429 ? 10000 : 5000;
+      const maxDelayMs = status === 429 ? 60000 : 30000;
+      if (!isPresenceFetchError(error)) {
+        return 1000;
+      }
+      return Math.min(maxDelayMs, Math.max(minDelayMs, currentDelayMs * 2));
+    };
+
+    const getPresenceErrorMessage = (error: any, fallback: string) => {
+      if (isPresenceFetchError(error)) {
+        return "Live presence is temporarily unavailable. Retrying in the background.";
+      }
+      return typeof error?.message === "string" ? error.message : fallback;
+    };
+
 		  useEffect(() => {
 		    const userRole = user?.role || null;
 		    const isSalesLeadRole = isSalesLead(userRole);
@@ -11183,12 +11218,14 @@ function MainApp() {
 		      setLiveClientsError(null);
 		      liveClientsEtagRef.current = null;
 		      liveClientsLongPollDisabledRef.current = false;
+          liveClientsRetryDelayMsRef.current = 1000;
 		      return;
 		    }
 
 	    let cancelled = false;
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
-      liveClientsLongPollDisabledRef.current = true;
+      liveClientsLongPollDisabledRef.current = false;
+      liveClientsRetryDelayMsRef.current = 1000;
 
 	    const fetchOnce = async () => {
 		      try {
@@ -11200,6 +11237,7 @@ function MainApp() {
               ? ((await settingsAPI.getLiveUsers()) as any)
               : ((await settingsAPI.getLiveClients()) as any));
 		        if (cancelled) return;
+            liveClientsRetryDelayMsRef.current = 1000;
 		        liveClientsEtagRef.current =
 		          typeof payload?.etag === "string" ? payload.etag : null;
 		        const raw = isSalesLeadRole
@@ -11214,11 +11252,8 @@ function MainApp() {
 		        setLiveClients(clients);
 		      } catch (error: any) {
 		        if (cancelled) return;
-		        setLiveClients([]);
 		        setLiveClientsError(
-	          typeof error?.message === "string"
-	            ? error.message
-	            : "Unable to load clients.",
+              getPresenceErrorMessage(error, "Unable to load clients."),
 	        );
 	      } finally {
 	          liveClientsInitialLoadDoneRef.current = true;
@@ -11284,6 +11319,8 @@ function MainApp() {
 		            return isDoctorRole(role) || isRep(role);
 		          });
 		          setLiveClients(clients);
+              setLiveClientsError(null);
+              liveClientsRetryDelayMsRef.current = 1000;
 	        } catch (error: any) {
 	          if (cancelled) break;
 	          if (typeof error?.status === "number" && error.status === 404) {
@@ -11291,11 +11328,15 @@ function MainApp() {
 	            startIntervalFallback();
 	            return;
 	          }
-	          const status = typeof error?.status === "number" ? error.status : null;
-	          const message = typeof error?.message === "string" ? error.message : "";
-	          const isRateLimited = status === 429 || message.includes("429");
+            liveClientsRetryDelayMsRef.current = getPresenceRetryDelayMs(
+              error,
+              liveClientsRetryDelayMsRef.current,
+            );
+            setLiveClientsError((current) =>
+              current || getPresenceErrorMessage(error, "Unable to load clients."),
+            );
 	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(isRateLimited ? 10000 : 1000);
+	          await sleep(liveClientsRetryDelayMsRef.current);
 	        }
 	      }
 	    };
@@ -11317,12 +11358,14 @@ function MainApp() {
 	      setAdminLiveUsersError(null);
 	      adminLiveUsersEtagRef.current = null;
 	      adminLiveUsersLongPollDisabledRef.current = false;
+        adminLiveUsersRetryDelayMsRef.current = 1000;
 	      return;
 	    }
 
 	    let cancelled = false;
 	    let intervalId: ReturnType<typeof window.setInterval> | null = null;
-      adminLiveUsersLongPollDisabledRef.current = true;
+      adminLiveUsersLongPollDisabledRef.current = false;
+      adminLiveUsersRetryDelayMsRef.current = 1000;
 
 	    const fetchOnce = async () => {
 	      try {
@@ -11332,14 +11375,14 @@ function MainApp() {
 	        setAdminLiveUsersError(null);
 	        const payload = (await settingsAPI.getLiveUsers()) as any;
 	        if (cancelled) return;
+          adminLiveUsersRetryDelayMsRef.current = 1000;
 	        adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 	        const users = Array.isArray(payload?.users) ? payload.users : [];
 	        setAdminLiveUsers(users);
 	      } catch (error: any) {
 	        if (cancelled) return;
-	        setAdminLiveUsers([]);
 	        setAdminLiveUsersError(
-	          typeof error?.message === "string" ? error.message : "Unable to load users.",
+            getPresenceErrorMessage(error, "Unable to load users."),
 	        );
 	      } finally {
           adminLiveUsersInitialLoadDoneRef.current = true;
@@ -11387,6 +11430,8 @@ function MainApp() {
 		          adminLiveUsersEtagRef.current = typeof payload?.etag === "string" ? payload.etag : null;
 		          const users = Array.isArray(payload?.users) ? payload.users : [];
 		          setAdminLiveUsers(users);
+              setAdminLiveUsersError(null);
+              adminLiveUsersRetryDelayMsRef.current = 1000;
 		        } catch (error: any) {
 		          if (cancelled) break;
 	          if (typeof error?.status === "number" && error.status === 404) {
@@ -11394,11 +11439,15 @@ function MainApp() {
 	            startIntervalFallback();
 	            return;
 	          }
-	          const status = typeof error?.status === "number" ? error.status : null;
-	          const message = typeof error?.message === "string" ? error.message : "";
-	          const isRateLimited = status === 429 || message.includes("429");
+            adminLiveUsersRetryDelayMsRef.current = getPresenceRetryDelayMs(
+              error,
+              adminLiveUsersRetryDelayMsRef.current,
+            );
+            setAdminLiveUsersError((current) =>
+              current || getPresenceErrorMessage(error, "Unable to load users."),
+            );
 	          // eslint-disable-next-line no-await-in-loop
-	          await sleep(isRateLimited ? 10000 : 1000);
+	          await sleep(adminLiveUsersRetryDelayMsRef.current);
 	        }
 	      }
 	    };
@@ -12525,6 +12574,7 @@ function MainApp() {
 	  }, [contactFormPipeline, manualProspectEntries, referralLeadEntries]);
 
 		  const [activeProspectFilter, setActiveProspectFilter] = useState<string>("all");
+  const [activeProspectSearch, setActiveProspectSearch] = useState("");
 	  const activeProspectSortOrderRef = useRef<Map<string, number>>(new Map());
 	  const activeProspectSortOrderCounterRef = useRef(0);
 
@@ -12970,14 +13020,35 @@ function MainApp() {
   ]);
 
   const filteredActiveProspects = useMemo(() => {
-    if (activeProspectFilter === "all") {
-      return activeProspectEntries;
+    const statusFiltered =
+      activeProspectFilter === "all"
+        ? activeProspectEntries
+        : activeProspectEntries.filter(
+            ({ record }) => sanitizeReferralStatus(record.status) === activeProspectFilter.toLowerCase(),
+          );
+
+    const normalizedQuery = activeProspectSearch.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return statusFiltered;
     }
-    const key = activeProspectFilter.toLowerCase();
-    return activeProspectEntries.filter(
-      ({ record }) => sanitizeReferralStatus(record.status) === key,
-    );
-  }, [activeProspectEntries, activeProspectFilter]);
+
+    return statusFiltered.filter(({ kind, record }) => {
+      const haystack = [
+        kind,
+        record?.status,
+        record?.referredContactName,
+        record?.referredContactEmail,
+        record?.referredContactPhone,
+        record?.referrerDoctorName,
+        (record as any)?.officeName,
+        (record as any)?.companyName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [activeProspectEntries, activeProspectFilter, activeProspectSearch]);
 
   const filteredSalesRepReferrals = useMemo(() => {
     return referralRecords.filter(
@@ -13562,6 +13633,11 @@ function MainApp() {
         })
         .filter((order) => {
           if (!currentUserId && !currentUserEmail) return true;
+          const normalizeLeadType = (value: unknown) =>
+            String(value || "")
+              .trim()
+              .toLowerCase()
+              .replace(/[\s-]+/g, "_");
           const candidateId =
             resolveOrderDoctorIdForBucket(order) ||
             (order as any)?.doctorId ||
@@ -13569,7 +13645,29 @@ function MainApp() {
             (order as any)?.userId ||
             (order as any)?.user_id ||
             null;
+          const doctorInfo = candidateId ? doctorLookup.get(String(candidateId)) : null;
+          const ownerCandidates = [
+            (order as any)?.doctorSalesRepId,
+            (order as any)?.doctor_sales_rep_id,
+            (order as any)?.salesRepId,
+            (order as any)?.sales_rep_id,
+            doctorInfo?.salesRepId,
+          ]
+            .filter((value) => value != null)
+            .map((value) => String(value).trim().toLowerCase())
+            .filter(Boolean);
+          const isHouseAttributedForAdmin =
+            isAdmin(role) &&
+            (ownerCandidates.some((value) => value === "__house__" || value === "house") ||
+              ["house", "contact_form", "house_contact"].includes(
+                normalizeLeadType(
+                  doctorInfo?.leadType ||
+                    (order as any)?.leadType ||
+                    (order as any)?.lead_type,
+                ),
+              ));
           if (
+            !isHouseAttributedForAdmin &&
             currentUserId &&
             candidateId != null &&
             String(candidateId).trim() === currentUserId
@@ -13589,7 +13687,7 @@ function MainApp() {
               .filter((value) => typeof value === "string")
               .map((value) => String(value).trim().toLowerCase())
               .filter(Boolean);
-            if (candidateEmails.includes(currentUserEmail)) {
+            if (!isHouseAttributedForAdmin && candidateEmails.includes(currentUserEmail)) {
               return false;
             }
           }
@@ -23003,27 +23101,25 @@ function MainApp() {
                 <section className="lead-panel sales-rep-leads-card sales-rep-combined-card active-prospects-panel w-full min-w-0">
                   <div className="lead-panel-header">
                     <div className="w-full">
-                      <div className="lead-panel-filter-row">
-                        <h4>
-                          {filteredActiveProspects.length} Active Prospect
-                          {filteredActiveProspects.length === 1 ? "" : "s"}
-                        </h4>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <select
-                            value={activeProspectFilter}
-                            onChange={(e) =>
-                              setActiveProspectFilter(e.target.value)
-                            }
-                            className="rounded-md border border-slate-200/80 bg-white/95 px-3 py-2 text-sm focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
-                          >
-                            {activeProspectFilterOptions.map((option) => (
-                              <option key={option} value={option}>
-                                {option === "all"
-                                  ? "All statuses"
-                                  : humanizeReferralStatus(option)}
-                              </option>
-                            ))}
-                          </select>
+                      <div className="space-y-2">
+                        <div className="lead-panel-filter-row">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                            <h4>
+                              {filteredActiveProspects.length} Prospect
+                              {filteredActiveProspects.length === 1 ? "" : "s"}
+                            </h4>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setShowManualProspectModal(true)}
+                              size="sm"
+                              className="header-home-button squircle-sm gap-2 bg-white text-slate-900"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add
+                            </Button>
 	                      <Button
 	                        type="button"
 	                        variant="outline"
@@ -23039,18 +23135,50 @@ function MainApp() {
 	                      >
 	                        {referralDataLoading ? "Refreshing…" : "Refresh"}
 	                      </Button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="mt-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShowManualProspectModal(true)}
-                          className="gap-2 text-sm"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Manual Prospect
-                        </Button>
+                        <div className="active-prospects-filter-layout">
+                          <div className="relative min-w-0 w-full max-w-full">
+                            <Search
+                              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                              style={{ color: "rgb(100, 116, 139)" }}
+                              aria-hidden="true"
+                            />
+                            <input
+                              value={activeProspectSearch}
+                              onChange={(e) => setActiveProspectSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                }
+                              }}
+                              placeholder="Search prospects…"
+                              className="header-search-input squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 pl-10 pr-3 text-sm placeholder:text-slate-500 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            />
+                          </div>
+                          <label className="relative flex min-w-0 w-full items-center text-xs text-slate-600">
+                            <select
+                              value={activeProspectFilter}
+                              onChange={(e) =>
+                                setActiveProspectFilter(e.target.value)
+                              }
+                              className="product-card-select squircle-sm h-10 min-w-0 w-full max-w-full border border-slate-200/80 bg-white/95 px-3 text-sm font-medium text-slate-700 focus:border-[rgb(95,179,249)] focus:outline-none focus:ring-2 focus:ring-[rgba(95,179,249,0.3)]"
+                            >
+                              {activeProspectFilterOptions.map((option) => (
+                                <option key={option} value={option}>
+                                  {option === "all"
+                                    ? "All statuses"
+                                    : humanizeReferralStatus(option)}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="product-card-select__chevron" aria-hidden="true">
+                              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                              </svg>
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   </div>

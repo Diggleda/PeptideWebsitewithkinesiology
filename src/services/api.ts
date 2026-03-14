@@ -47,7 +47,14 @@ export const API_BASE_URL = (() => {
   return normalizedWithApi;
 })();
 
-const shouldUseSameOriginApiFallback = (requestUrl: string) => {
+type AuthenticatedRequestInit = RequestInit & {
+  preferSameOriginApiFallback?: boolean;
+};
+
+const shouldUseSameOriginApiFallback = (
+  requestUrl: string,
+  options?: AuthenticatedRequestInit,
+) => {
   if (typeof window === 'undefined' || !window.location?.origin) {
     return false;
   }
@@ -56,6 +63,9 @@ const shouldUseSameOriginApiFallback = (requestUrl: string) => {
     const current = new URL(window.location.origin);
     if (request.origin === current.origin) {
       return false;
+    }
+    if (options?.preferSameOriginApiFallback) {
+      return request.pathname.startsWith('/api/');
     }
     // If the app is intentionally configured to use a cross-origin API, do not
     // silently retry onto `window.location.origin/api/*`.
@@ -482,7 +492,7 @@ const rewriteBlockedAdminPaths = (url: string) => {
 };
 
 // Helper function to make authenticated requests
-const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+const fetchWithAuth = async (url: string, options: AuthenticatedRequestInit = {}) => {
   const rewrittenUrl = rewriteBlockedAdminPaths(url);
   const token = getAuthToken();
   const method = (options.method || 'GET').toUpperCase();
@@ -532,7 +542,7 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
       response = await _fetchWithTimeout(requestUrl, requestInit, timeoutMs);
     } catch (error: any) {
       const sameOriginFallbackUrl =
-        ((method === 'GET' || method === 'HEAD') && shouldUseSameOriginApiFallback(requestUrl))
+        ((method === 'GET' || method === 'HEAD') && shouldUseSameOriginApiFallback(requestUrl, options))
           ? toSameOriginApiUrl(requestUrl)
           : null;
       if (sameOriginFallbackUrl && isNetworkLikeFetchError(error)) {
@@ -1310,6 +1320,7 @@ export const settingsAPI = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients${query}`, {
       method: 'GET',
+      preferSameOriginApiFallback: true,
     });
   },
   getLiveClientsLongPoll: async (
@@ -1332,12 +1343,14 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-clients/longpoll${query}`, {
       method: 'GET',
       signal,
+      preferSameOriginApiFallback: true,
     });
   },
 
   getLiveUsers: async () => {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users`, {
       method: 'GET',
+      preferSameOriginApiFallback: true,
     });
   },
 
@@ -1357,6 +1370,7 @@ export const settingsAPI = {
     return fetchWithAuth(`${API_BASE_URL}/settings/live-users/longpoll${query}`, {
       method: 'GET',
       signal,
+      preferSameOriginApiFallback: true,
     });
   },
   getAdminUserProfile: async (userId: string | number) => {
